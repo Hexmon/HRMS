@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppTimesheetRouteImport } from './routes/_app/timesheet'
 import { Route as AppReportsRouteImport } from './routes/_app/reports'
 import { Route as AppProjectsRouteImport } from './routes/_app/projects'
+import { Route as AppLeaveWfhRouteImport } from './routes/_app/leave-wfh'
 import { Route as AppHelpdeskRouteImport } from './routes/_app/helpdesk'
 import { Route as AppExpensesRouteImport } from './routes/_app/expenses'
 import { Route as AppEmsRouteImport } from './routes/_app/ems'
@@ -50,6 +51,11 @@ const AppReportsRoute = AppReportsRouteImport.update({
 const AppProjectsRoute = AppProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLeaveWfhRoute = AppLeaveWfhRouteImport.update({
+  id: '/leave-wfh',
+  path: '/leave-wfh',
   getParentRoute: () => AppRoute,
 } as any)
 const AppHelpdeskRoute = AppHelpdeskRouteImport.update({
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/ems': typeof AppEmsRoute
   '/expenses': typeof AppExpensesRoute
   '/helpdesk': typeof AppHelpdeskRoute
+  '/leave-wfh': typeof AppLeaveWfhRoute
   '/projects': typeof AppProjectsRoute
   '/reports': typeof AppReportsRoute
   '/timesheet': typeof AppTimesheetRoute
@@ -112,6 +119,7 @@ export interface FileRoutesByTo {
   '/ems': typeof AppEmsRoute
   '/expenses': typeof AppExpensesRoute
   '/helpdesk': typeof AppHelpdeskRoute
+  '/leave-wfh': typeof AppLeaveWfhRoute
   '/projects': typeof AppProjectsRoute
   '/reports': typeof AppReportsRoute
   '/timesheet': typeof AppTimesheetRoute
@@ -128,6 +136,7 @@ export interface FileRoutesById {
   '/_app/ems': typeof AppEmsRoute
   '/_app/expenses': typeof AppExpensesRoute
   '/_app/helpdesk': typeof AppHelpdeskRoute
+  '/_app/leave-wfh': typeof AppLeaveWfhRoute
   '/_app/projects': typeof AppProjectsRoute
   '/_app/reports': typeof AppReportsRoute
   '/_app/timesheet': typeof AppTimesheetRoute
@@ -144,6 +153,7 @@ export interface FileRouteTypes {
     | '/ems'
     | '/expenses'
     | '/helpdesk'
+    | '/leave-wfh'
     | '/projects'
     | '/reports'
     | '/timesheet'
@@ -158,6 +168,7 @@ export interface FileRouteTypes {
     | '/ems'
     | '/expenses'
     | '/helpdesk'
+    | '/leave-wfh'
     | '/projects'
     | '/reports'
     | '/timesheet'
@@ -173,6 +184,7 @@ export interface FileRouteTypes {
     | '/_app/ems'
     | '/_app/expenses'
     | '/_app/helpdesk'
+    | '/_app/leave-wfh'
     | '/_app/projects'
     | '/_app/reports'
     | '/_app/timesheet'
@@ -226,6 +238,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof AppProjectsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/leave-wfh': {
+      id: '/_app/leave-wfh'
+      path: '/leave-wfh'
+      fullPath: '/leave-wfh'
+      preLoaderRoute: typeof AppLeaveWfhRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/helpdesk': {
@@ -288,6 +307,7 @@ interface AppRouteChildren {
   AppEmsRoute: typeof AppEmsRoute
   AppExpensesRoute: typeof AppExpensesRoute
   AppHelpdeskRoute: typeof AppHelpdeskRoute
+  AppLeaveWfhRoute: typeof AppLeaveWfhRoute
   AppProjectsRoute: typeof AppProjectsRoute
   AppReportsRoute: typeof AppReportsRoute
   AppTimesheetRoute: typeof AppTimesheetRoute
@@ -301,6 +321,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppEmsRoute: AppEmsRoute,
   AppExpensesRoute: AppExpensesRoute,
   AppHelpdeskRoute: AppHelpdeskRoute,
+  AppLeaveWfhRoute: AppLeaveWfhRoute,
   AppProjectsRoute: AppProjectsRoute,
   AppReportsRoute: AppReportsRoute,
   AppTimesheetRoute: AppTimesheetRoute,
@@ -316,3 +337,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
