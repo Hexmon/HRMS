@@ -1,8 +1,7 @@
 import { ReactNode, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Search, SlidersHorizontal, Download } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -17,6 +16,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SearchFilterBar } from "./search-filter-bar";
+import { EmptyState } from "./empty-state";
+import { Search } from "lucide-react";
 
 export interface Column<T> {
   key: string;
@@ -32,7 +34,7 @@ interface Props<T extends { id: string }> {
   emptyTitle?: string;
   emptyDescription?: string;
   rowActions?: (row: T) => { label: string; onClick?: () => void; tone?: "default" | "destructive" }[];
-  toolbar?: ReactNode;
+  toolbarRight?: ReactNode;
 }
 
 export function DataTable<T extends { id: string }>({
@@ -42,43 +44,23 @@ export function DataTable<T extends { id: string }>({
   emptyTitle = "Nothing to show yet",
   emptyDescription = "Once data arrives, it'll appear here.",
   rowActions,
-  toolbar,
+  toolbarRight,
 }: Props<T>) {
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
     if (!q) return rows;
     const ql = q.toLowerCase();
-    return rows.filter((r) =>
-      searchKeys.some((k) => String(r[k] ?? "").toLowerCase().includes(ql))
-    );
+    return rows.filter((r) => searchKeys.some((k) => String(r[k] ?? "").toLowerCase().includes(ql)));
   }, [rows, q, searchKeys]);
 
   return (
     <Card className="overflow-hidden rounded-2xl border-border/60">
-      <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="h-9 rounded-full pl-9" />
-        </div>
-        <div className="flex items-center gap-2">
-          {toolbar}
-          <Button variant="outline" size="sm" className="rounded-full">
-            <SlidersHorizontal className="mr-1.5 h-4 w-4" /> Filters
-          </Button>
-          <Button variant="outline" size="sm" className="rounded-full">
-            <Download className="mr-1.5 h-4 w-4" /> Export
-          </Button>
-        </div>
+      <div className="border-b p-4">
+        <SearchFilterBar value={q} onValueChange={setQ} rightSlot={toolbarRight} />
       </div>
 
       {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-          <div className="mb-3 grid h-12 w-12 place-items-center rounded-full bg-primary-soft text-primary">
-            <Search className="h-5 w-5" />
-          </div>
-          <p className="text-sm font-semibold">{emptyTitle}</p>
-          <p className="mt-1 max-w-sm text-xs text-muted-foreground">{emptyDescription}</p>
-        </div>
+        <EmptyState icon={Search} title={emptyTitle} description={emptyDescription} />
       ) : (
         <div className="overflow-x-auto">
           <Table>
@@ -106,7 +88,11 @@ export function DataTable<T extends { id: string }>({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           {rowActions(row).map((a, i) => (
-                            <DropdownMenuItem key={i} onClick={a.onClick} className={a.tone === "destructive" ? "text-destructive focus:text-destructive" : ""}>
+                            <DropdownMenuItem
+                              key={i}
+                              onClick={a.onClick}
+                              className={a.tone === "destructive" ? "text-destructive focus:text-destructive" : ""}
+                            >
                               {a.label}
                             </DropdownMenuItem>
                           ))}

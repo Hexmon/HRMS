@@ -12,12 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppUtilizationRouteImport } from './routes/_app/utilization'
 import { Route as AppTimesheetRouteImport } from './routes/_app/timesheet'
-import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppReportsRouteImport } from './routes/_app/reports'
 import { Route as AppProjectsRouteImport } from './routes/_app/projects'
-import { Route as AppLeaveRouteImport } from './routes/_app/leave'
+import { Route as AppLeaveWfhRouteImport } from './routes/_app/leave-wfh'
 import { Route as AppHelpdeskRouteImport } from './routes/_app/helpdesk'
 import { Route as AppExpensesRouteImport } from './routes/_app/expenses'
 import { Route as AppEmsRouteImport } from './routes/_app/ems'
@@ -40,19 +38,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppUtilizationRoute = AppUtilizationRouteImport.update({
-  id: '/utilization',
-  path: '/utilization',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppTimesheetRoute = AppTimesheetRouteImport.update({
   id: '/timesheet',
   path: '/timesheet',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppSettingsRoute = AppSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
 const AppReportsRoute = AppReportsRouteImport.update({
@@ -65,9 +53,9 @@ const AppProjectsRoute = AppProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => AppRoute,
 } as any)
-const AppLeaveRoute = AppLeaveRouteImport.update({
-  id: '/leave',
-  path: '/leave',
+const AppLeaveWfhRoute = AppLeaveWfhRouteImport.update({
+  id: '/leave-wfh',
+  path: '/leave-wfh',
   getParentRoute: () => AppRoute,
 } as any)
 const AppHelpdeskRoute = AppHelpdeskRouteImport.update({
@@ -116,12 +104,10 @@ export interface FileRoutesByFullPath {
   '/ems': typeof AppEmsRoute
   '/expenses': typeof AppExpensesRoute
   '/helpdesk': typeof AppHelpdeskRoute
-  '/leave': typeof AppLeaveRoute
+  '/leave-wfh': typeof AppLeaveWfhRoute
   '/projects': typeof AppProjectsRoute
   '/reports': typeof AppReportsRoute
-  '/settings': typeof AppSettingsRoute
   '/timesheet': typeof AppTimesheetRoute
-  '/utilization': typeof AppUtilizationRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -133,12 +119,10 @@ export interface FileRoutesByTo {
   '/ems': typeof AppEmsRoute
   '/expenses': typeof AppExpensesRoute
   '/helpdesk': typeof AppHelpdeskRoute
-  '/leave': typeof AppLeaveRoute
+  '/leave-wfh': typeof AppLeaveWfhRoute
   '/projects': typeof AppProjectsRoute
   '/reports': typeof AppReportsRoute
-  '/settings': typeof AppSettingsRoute
   '/timesheet': typeof AppTimesheetRoute
-  '/utilization': typeof AppUtilizationRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -152,12 +136,10 @@ export interface FileRoutesById {
   '/_app/ems': typeof AppEmsRoute
   '/_app/expenses': typeof AppExpensesRoute
   '/_app/helpdesk': typeof AppHelpdeskRoute
-  '/_app/leave': typeof AppLeaveRoute
+  '/_app/leave-wfh': typeof AppLeaveWfhRoute
   '/_app/projects': typeof AppProjectsRoute
   '/_app/reports': typeof AppReportsRoute
-  '/_app/settings': typeof AppSettingsRoute
   '/_app/timesheet': typeof AppTimesheetRoute
-  '/_app/utilization': typeof AppUtilizationRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -171,12 +153,10 @@ export interface FileRouteTypes {
     | '/ems'
     | '/expenses'
     | '/helpdesk'
-    | '/leave'
+    | '/leave-wfh'
     | '/projects'
     | '/reports'
-    | '/settings'
     | '/timesheet'
-    | '/utilization'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -188,12 +168,10 @@ export interface FileRouteTypes {
     | '/ems'
     | '/expenses'
     | '/helpdesk'
-    | '/leave'
+    | '/leave-wfh'
     | '/projects'
     | '/reports'
-    | '/settings'
     | '/timesheet'
-    | '/utilization'
   id:
     | '__root__'
     | '/'
@@ -206,12 +184,10 @@ export interface FileRouteTypes {
     | '/_app/ems'
     | '/_app/expenses'
     | '/_app/helpdesk'
-    | '/_app/leave'
+    | '/_app/leave-wfh'
     | '/_app/projects'
     | '/_app/reports'
-    | '/_app/settings'
     | '/_app/timesheet'
-    | '/_app/utilization'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -243,25 +219,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/utilization': {
-      id: '/_app/utilization'
-      path: '/utilization'
-      fullPath: '/utilization'
-      preLoaderRoute: typeof AppUtilizationRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/timesheet': {
       id: '/_app/timesheet'
       path: '/timesheet'
       fullPath: '/timesheet'
       preLoaderRoute: typeof AppTimesheetRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/settings': {
-      id: '/_app/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/reports': {
@@ -278,11 +240,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/leave': {
-      id: '/_app/leave'
-      path: '/leave'
-      fullPath: '/leave'
-      preLoaderRoute: typeof AppLeaveRouteImport
+    '/_app/leave-wfh': {
+      id: '/_app/leave-wfh'
+      path: '/leave-wfh'
+      fullPath: '/leave-wfh'
+      preLoaderRoute: typeof AppLeaveWfhRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/helpdesk': {
@@ -345,12 +307,10 @@ interface AppRouteChildren {
   AppEmsRoute: typeof AppEmsRoute
   AppExpensesRoute: typeof AppExpensesRoute
   AppHelpdeskRoute: typeof AppHelpdeskRoute
-  AppLeaveRoute: typeof AppLeaveRoute
+  AppLeaveWfhRoute: typeof AppLeaveWfhRoute
   AppProjectsRoute: typeof AppProjectsRoute
   AppReportsRoute: typeof AppReportsRoute
-  AppSettingsRoute: typeof AppSettingsRoute
   AppTimesheetRoute: typeof AppTimesheetRoute
-  AppUtilizationRoute: typeof AppUtilizationRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -361,12 +321,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppEmsRoute: AppEmsRoute,
   AppExpensesRoute: AppExpensesRoute,
   AppHelpdeskRoute: AppHelpdeskRoute,
-  AppLeaveRoute: AppLeaveRoute,
+  AppLeaveWfhRoute: AppLeaveWfhRoute,
   AppProjectsRoute: AppProjectsRoute,
   AppReportsRoute: AppReportsRoute,
-  AppSettingsRoute: AppSettingsRoute,
   AppTimesheetRoute: AppTimesheetRoute,
-  AppUtilizationRoute: AppUtilizationRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
