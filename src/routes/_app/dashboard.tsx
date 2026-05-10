@@ -1,29 +1,100 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  Users,
+  Clock,
+  CalendarDays,
+  LifeBuoy,
+  ClipboardCheck,
+  Activity,
+  Plus,
+  CalendarPlus,
+  Timer,
+  Receipt,
+  Briefcase,
+  ChevronRight,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Progress } from "@/components/ui/progress";
-import { StatusBadge } from "@/components/status-badge";
-import { useAuth, ROLE_LABELS } from "@/lib/auth";
-import { DASHBOARD_STATS, LEAVES, PROJECTS, TICKETS } from "@/lib/mock-data";
-import { ArrowUpRight, Clock, Users, CalendarDays, LifeBuoy, ClipboardCheck, Activity, ChevronRight } from "lucide-react";
+import { useAuth, ROLE_MAP } from "@/lib/auth";
+import {
+  StatCard,
+  DataCard,
+  QuickActionCard,
+  ApprovalTimeline,
+  StatusBadge,
+  UserAvatar,
+} from "@/components/ui-kit";
+import { NOTIFICATIONS } from "@/lib/mock";
 
 export const Route = createFileRoute("/_app/dashboard")({
   component: Dashboard,
 });
 
-const stats = [
-  { label: "Total headcount", value: DASHBOARD_STATS.headcount, change: "+8 this month", icon: Users, tone: "primary" },
-  { label: "Present today", value: DASHBOARD_STATS.presentToday, change: "85% of org", icon: Clock, tone: "success" },
-  { label: "On leave", value: DASHBOARD_STATS.onLeave, change: "Across 6 teams", icon: CalendarDays, tone: "warning" },
-  { label: "Open tickets", value: DASHBOARD_STATS.openTickets, change: "2 high priority", icon: LifeBuoy, tone: "info" },
-  { label: "Pending approvals", value: DASHBOARD_STATS.pendingApprovals, change: "Requires your action", icon: ClipboardCheck, tone: "primary" },
-  { label: "Team utilization", value: `${DASHBOARD_STATS.utilization}%`, change: "+4% vs last week", icon: Activity, tone: "success" },
-] as const;
+const ROLE_STATS: Record<string, { label: string; value: string; hint?: string; icon: any; tone: any }[]> = {
+  main_admin: [
+    { label: "Total headcount", value: "248", hint: "+8 this month", icon: Users, tone: "primary" },
+    { label: "Present today", value: "212", hint: "85% of org", icon: Clock, tone: "success" },
+    { label: "On leave", value: "14", hint: "Across 6 teams", icon: CalendarDays, tone: "warning" },
+    { label: "Open tickets", value: "9", hint: "2 high priority", icon: LifeBuoy, tone: "info" },
+    { label: "Pending approvals", value: "17", hint: "Action required", icon: ClipboardCheck, tone: "primary" },
+    { label: "Team utilization", value: "86%", hint: "+4% w/w", icon: Activity, tone: "success" },
+  ],
+  hr_admin: [
+    { label: "Active employees", value: "238", hint: "10 inactive", icon: Users, tone: "primary" },
+    { label: "Present today", value: "212", icon: Clock, tone: "success" },
+    { label: "Leave requests", value: "12", hint: "Pending approval", icon: CalendarDays, tone: "warning" },
+    { label: "New joiners (30d)", value: "8", icon: ClipboardCheck, tone: "info" },
+  ],
+  manager: [
+    { label: "My team", value: "12", icon: Users, tone: "primary" },
+    { label: "Present today", value: "10", icon: Clock, tone: "success" },
+    { label: "Pending approvals", value: "5", hint: "Leave + timesheet", icon: ClipboardCheck, tone: "warning" },
+    { label: "Team utilization", value: "82%", icon: Activity, tone: "info" },
+  ],
+  project_manager: [
+    { label: "Active projects", value: "4", icon: Briefcase, tone: "primary" },
+    { label: "Allocated members", value: "31", icon: Users, tone: "info" },
+    { label: "Timesheets pending", value: "6", icon: Timer, tone: "warning" },
+    { label: "On track", value: "3 / 4", icon: Activity, tone: "success" },
+  ],
+  finance_manager: [
+    { label: "Pending claims", value: "USD 1,284", icon: Receipt, tone: "warning" },
+    { label: "Approved this month", value: "USD 18,742", icon: ClipboardCheck, tone: "success" },
+    { label: "Paid YTD", value: "USD 142,901", icon: Activity, tone: "primary" },
+    { label: "Avg cycle time", value: "2.4 days", icon: Clock, tone: "info" },
+  ],
+  asset_admin: [
+    { label: "Assets in fleet", value: "612", icon: Briefcase, tone: "primary" },
+    { label: "Assigned", value: "548", icon: Users, tone: "success" },
+    { label: "In repair", value: "9", icon: Activity, tone: "warning" },
+    { label: "IT tickets open", value: "5", icon: LifeBuoy, tone: "info" },
+  ],
+  helpdesk_agent: [
+    { label: "Open tickets", value: "9", icon: LifeBuoy, tone: "primary" },
+    { label: "Assigned to me", value: "4", icon: ClipboardCheck, tone: "info" },
+    { label: "Resolved today", value: "7", icon: Activity, tone: "success" },
+    { label: "Breaching SLA", value: "1", icon: Clock, tone: "warning" },
+  ],
+  employee: [
+    { label: "Leave balance", value: "12 d", icon: CalendarDays, tone: "primary" },
+    { label: "Hours this week", value: "32 / 40", icon: Timer, tone: "info" },
+    { label: "Pending claims", value: "1", icon: Receipt, tone: "warning" },
+    { label: "Open tickets", value: "0", icon: LifeBuoy, tone: "success" },
+  ],
+};
 
 function Dashboard() {
   const { user, activeRole } = useAuth();
-  const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
+  const greeting =
+    new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
+  if (!user || !activeRole) return null;
+  const stats = ROLE_STATS[activeRole] ?? ROLE_STATS.employee;
+
+  const approvalSteps = [
+    { approver: "Sara Iqbal", role: "Engineering Manager", status: "approved" as const, at: "May 8 · 10:14", remark: "Coverage confirmed for those days." },
+    { approver: "Rahul Verma", role: "HR Director", status: "pending" as const },
+    { approver: "Aanya Mehta", role: "Main Admin", status: "skipped" as const },
+  ];
 
   return (
     <>
@@ -32,137 +103,103 @@ function Dashboard() {
         <div className="relative p-6 sm:p-8" style={{ background: "var(--gradient-hero)" }}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-primary/80">{activeRole && ROLE_LABELS[activeRole]} workspace</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
-                {greeting}, {user?.name.split(" ")[0]} 👋
-              </h1>
-              <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-                Here's a snapshot of your organisation today. 17 items need your attention across approvals, tickets and timesheets.
+              <p className="text-xs font-medium uppercase tracking-wider text-primary/80">
+                {ROLE_MAP[activeRole].label} workspace
               </p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
+                {greeting}, {user.name.split(" ")[0]} 👋
+              </h1>
+              <p className="mt-1 max-w-xl text-sm text-muted-foreground">{ROLE_MAP[activeRole].description}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button asChild variant="outline" className="rounded-full">
-                <Link to="/leave">Apply for leave</Link>
+                <Link to="/leave-wfh">Apply for leave</Link>
               </Button>
-              <Button asChild className="rounded-full" style={{ background: "var(--gradient-primary)" }}>
-                <Link to="/timesheet">Log timesheet <ArrowUpRight className="ml-1 h-4 w-4" /></Link>
+              <Button
+                asChild
+                className="rounded-full text-primary-foreground"
+                style={{ background: "var(--gradient-primary)" }}
+              >
+                <Link to="/timesheet">Log timesheet</Link>
               </Button>
             </div>
           </div>
         </div>
       </Card>
 
-      {/* Stats grid */}
+      {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((s) => (
-          <Card key={s.label} className="rounded-2xl border-border/60 p-5 transition hover:shadow-md">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">{s.label}</p>
-                <p className="mt-2 text-3xl font-semibold tracking-tight">{s.value}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{s.change}</p>
-              </div>
-              <div className={`grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary`}>
-                <s.icon className="h-5 w-5" />
-              </div>
-            </div>
-          </Card>
+          <StatCard key={s.label} label={s.label} value={s.value} hint={s.hint} icon={s.icon} tone={s.tone} />
         ))}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Pending approvals */}
-        <Card className="rounded-2xl border-border/60 lg:col-span-2">
-          <div className="flex items-center justify-between border-b p-5">
-            <div>
-              <h3 className="text-sm font-semibold">Pending approvals</h3>
-              <p className="text-xs text-muted-foreground">Leave, WFH and timesheet requests awaiting your decision.</p>
-            </div>
-            <Button asChild variant="ghost" size="sm" className="text-primary">
-              <Link to="/leave">View all <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link>
-            </Button>
+        <DataCard title="Quick actions" description="Jump straight into a workflow." className="lg:col-span-2" padded={false}>
+          <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
+            <QuickActionCard icon={CalendarPlus} title="Apply for leave" description="Casual, sick or earned leave." to="/leave-wfh" />
+            <QuickActionCard icon={Timer} title="Log time" description="Submit your weekly timesheet." to="/timesheet" />
+            <QuickActionCard icon={Receipt} title="New expense" description="Submit a claim for reimbursement." to="/expenses" />
+            <QuickActionCard icon={LifeBuoy} title="Raise a ticket" description="IT, HR or finance support." to="/helpdesk" />
+            <QuickActionCard icon={Users} title="Invite employee" description="Send a welcome invite." to="/employees" />
+            <QuickActionCard icon={Plus} title="New project" description="Spin up a delivery workspace." to="/projects" />
           </div>
-          <ul className="divide-y">
-            {LEAVES.filter((l) => l.status === "pending").map((l) => (
-              <li key={l.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-9 w-9">
-                    <AvatarFallback className="bg-primary-soft text-primary text-xs font-semibold">
-                      {l.employee.split(" ").map((n) => n[0]).slice(0, 2).join("")}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="text-sm font-medium">{l.employee} <span className="text-muted-foreground">· {l.type}</span></p>
-                    <p className="text-xs text-muted-foreground">{l.from} → {l.to} · {l.days} day{l.days > 1 ? "s" : ""}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <StatusBadge status={l.status} />
-                  <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10">Reject</Button>
-                  <Button size="sm" className="bg-success text-success-foreground hover:opacity-90">Approve</Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        </DataCard>
 
-        {/* Tickets */}
-        <Card className="rounded-2xl border-border/60">
-          <div className="flex items-center justify-between border-b p-5">
-            <h3 className="text-sm font-semibold">Helpdesk tickets</h3>
-            <Button asChild variant="ghost" size="sm" className="text-primary">
-              <Link to="/helpdesk">All <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link>
-            </Button>
-          </div>
+        <DataCard
+          title="Recent activity"
+          description="What's happening in your workspace."
+          padded={false}
+        >
           <ul className="divide-y">
-            {TICKETS.slice(0, 4).map((t) => (
-              <li key={t.id} className="px-5 py-3.5">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-muted-foreground">{t.id} · {t.category}</p>
-                  <StatusBadge status={t.status} />
+            {NOTIFICATIONS.slice(0, 4).map((n) => (
+              <li key={n.id} className="flex items-start gap-3 px-5 py-3.5">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium leading-tight">{n.title}</p>
+                  <p className="line-clamp-1 text-xs text-muted-foreground">{n.description}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{n.time}</p>
                 </div>
-                <p className="mt-1 text-sm font-medium">{t.title}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">By {t.raisedBy} · {t.priority} priority</p>
               </li>
             ))}
           </ul>
-        </Card>
+        </DataCard>
       </div>
 
-      {/* Active projects */}
-      <Card className="rounded-2xl border-border/60">
-        <div className="flex items-center justify-between border-b p-5">
-          <div>
-            <h3 className="text-sm font-semibold">Active projects</h3>
-            <p className="text-xs text-muted-foreground">Live progress across your portfolio.</p>
-          </div>
-          <Button asChild variant="ghost" size="sm" className="text-primary">
-            <Link to="/projects">View all <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link>
-          </Button>
-        </div>
-        <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
-          {PROJECTS.filter((p) => p.status !== "completed").map((p) => (
-            <div key={p.id} className="rounded-xl border bg-card p-4 transition hover:shadow-sm">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-semibold">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">{p.client} · {p.team} members</p>
-                </div>
-                <StatusBadge status={p.status} />
-              </div>
-              <div className="mt-4 flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Progress</span>
-                <span className="font-semibold">{p.progress}%</span>
-              </div>
-              <Progress value={p.progress} className="mt-1.5 h-1.5" />
-              <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                <span>Due {p.dueDate}</span>
-                <span>PM · {p.manager}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <DataCard
+          title="Approval timeline"
+          description="Sample multi-level approval flow."
+          actions={<StatusBadge status="pending" />}
+        >
+          <ApprovalTimeline steps={approvalSteps} />
+        </DataCard>
+
+        <DataCard
+          title="Your team"
+          description="Reporting members at a glance."
+          actions={
+            <Button asChild variant="ghost" size="sm" className="text-primary">
+              <Link to="/employees">View all <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link>
+            </Button>
+          }
+          padded={false}
+        >
+          <ul className="divide-y">
+            {[
+              { name: "Daniel Park", role: "Senior Software Engineer", status: "present" },
+              { name: "Mei Lin", role: "Product Designer", status: "wfh" },
+              { name: "Fatima Noor", role: "Backend Engineer", status: "absent" },
+              { name: "Hana Kobayashi", role: "Data Analyst", status: "present" },
+            ].map((m) => (
+              <li key={m.name} className="flex items-center justify-between px-5 py-3.5">
+                <UserAvatar name={m.name} subtitle={m.role} size="sm" showMeta />
+                <StatusBadge status={m.status} />
+              </li>
+            ))}
+          </ul>
+        </DataCard>
+      </div>
     </>
   );
 }
