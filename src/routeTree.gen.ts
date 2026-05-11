@@ -30,6 +30,7 @@ import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
 import { Route as AppAssetsRouteImport } from './routes/_app/assets'
+import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin-settings'
 import { Route as AppTimesheetIndexRouteImport } from './routes/_app/timesheet.index'
 import { Route as AppReportsIndexRouteImport } from './routes/_app/reports.index'
 import { Route as AppLeaveWfhIndexRouteImport } from './routes/_app/leave-wfh.index'
@@ -38,6 +39,7 @@ import { Route as AppExpensesIndexRouteImport } from './routes/_app/expenses.ind
 import { Route as AppEmsIndexRouteImport } from './routes/_app/ems.index'
 import { Route as AppAttendanceIndexRouteImport } from './routes/_app/attendance.index'
 import { Route as AppAssetsIndexRouteImport } from './routes/_app/assets.index'
+import { Route as AppAdminSettingsIndexRouteImport } from './routes/_app/admin-settings.index'
 import { Route as AppTimesheetProjectsRouteImport } from './routes/_app/timesheet.projects'
 import { Route as AppTimesheetApprovalsRouteImport } from './routes/_app/timesheet.approvals'
 import { Route as AppReportsTimesheetRouteImport } from './routes/_app/reports.timesheet'
@@ -86,6 +88,15 @@ import { Route as AppAssetsRequestsRouteImport } from './routes/_app/assets.requ
 import { Route as AppAssetsMyRouteImport } from './routes/_app/assets.my'
 import { Route as AppAssetsInventoryRouteImport } from './routes/_app/assets.inventory'
 import { Route as AppAssetsIdRouteImport } from './routes/_app/assets.$id'
+import { Route as AppAdminSettingsWorkflowsRouteImport } from './routes/_app/admin-settings.workflows'
+import { Route as AppAdminSettingsSecurityRouteImport } from './routes/_app/admin-settings.security'
+import { Route as AppAdminSettingsRolesRouteImport } from './routes/_app/admin-settings.roles'
+import { Route as AppAdminSettingsPoliciesRouteImport } from './routes/_app/admin-settings.policies'
+import { Route as AppAdminSettingsNotificationsRouteImport } from './routes/_app/admin-settings.notifications'
+import { Route as AppAdminSettingsMasterDataRouteImport } from './routes/_app/admin-settings.master-data'
+import { Route as AppAdminSettingsEmailTemplatesRouteImport } from './routes/_app/admin-settings.email-templates'
+import { Route as AppAdminSettingsCompanyRouteImport } from './routes/_app/admin-settings.company'
+import { Route as AppAdminSettingsAuditRouteImport } from './routes/_app/admin-settings.audit'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
@@ -191,6 +202,11 @@ const AppAssetsRoute = AppAssetsRouteImport.update({
   path: '/assets',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAdminSettingsRoute = AppAdminSettingsRouteImport.update({
+  id: '/admin-settings',
+  path: '/admin-settings',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppTimesheetIndexRoute = AppTimesheetIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -230,6 +246,11 @@ const AppAssetsIndexRoute = AppAssetsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAdminSettingsIndexRoute = AppAdminSettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppAdminSettingsRoute,
 } as any)
 const AppTimesheetProjectsRoute = AppTimesheetProjectsRouteImport.update({
   id: '/projects',
@@ -471,6 +492,57 @@ const AppAssetsIdRoute = AppAssetsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppAssetsRoute,
 } as any)
+const AppAdminSettingsWorkflowsRoute =
+  AppAdminSettingsWorkflowsRouteImport.update({
+    id: '/workflows',
+    path: '/workflows',
+    getParentRoute: () => AppAdminSettingsRoute,
+  } as any)
+const AppAdminSettingsSecurityRoute =
+  AppAdminSettingsSecurityRouteImport.update({
+    id: '/security',
+    path: '/security',
+    getParentRoute: () => AppAdminSettingsRoute,
+  } as any)
+const AppAdminSettingsRolesRoute = AppAdminSettingsRolesRouteImport.update({
+  id: '/roles',
+  path: '/roles',
+  getParentRoute: () => AppAdminSettingsRoute,
+} as any)
+const AppAdminSettingsPoliciesRoute =
+  AppAdminSettingsPoliciesRouteImport.update({
+    id: '/policies',
+    path: '/policies',
+    getParentRoute: () => AppAdminSettingsRoute,
+  } as any)
+const AppAdminSettingsNotificationsRoute =
+  AppAdminSettingsNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AppAdminSettingsRoute,
+  } as any)
+const AppAdminSettingsMasterDataRoute =
+  AppAdminSettingsMasterDataRouteImport.update({
+    id: '/master-data',
+    path: '/master-data',
+    getParentRoute: () => AppAdminSettingsRoute,
+  } as any)
+const AppAdminSettingsEmailTemplatesRoute =
+  AppAdminSettingsEmailTemplatesRouteImport.update({
+    id: '/email-templates',
+    path: '/email-templates',
+    getParentRoute: () => AppAdminSettingsRoute,
+  } as any)
+const AppAdminSettingsCompanyRoute = AppAdminSettingsCompanyRouteImport.update({
+  id: '/company',
+  path: '/company',
+  getParentRoute: () => AppAdminSettingsRoute,
+} as any)
+const AppAdminSettingsAuditRoute = AppAdminSettingsAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AppAdminSettingsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -481,6 +553,7 @@ export interface FileRoutesByFullPath {
   '/set-password': typeof SetPasswordRoute
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/admin-settings': typeof AppAdminSettingsRouteWithChildren
   '/assets': typeof AppAssetsRouteWithChildren
   '/attendance': typeof AppAttendanceRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
@@ -493,6 +566,15 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AppReportsRouteWithChildren
   '/team-utilization': typeof AppTeamUtilizationRoute
   '/timesheet': typeof AppTimesheetRouteWithChildren
+  '/admin-settings/audit': typeof AppAdminSettingsAuditRoute
+  '/admin-settings/company': typeof AppAdminSettingsCompanyRoute
+  '/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
+  '/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
+  '/admin-settings/notifications': typeof AppAdminSettingsNotificationsRoute
+  '/admin-settings/policies': typeof AppAdminSettingsPoliciesRoute
+  '/admin-settings/roles': typeof AppAdminSettingsRolesRoute
+  '/admin-settings/security': typeof AppAdminSettingsSecurityRoute
+  '/admin-settings/workflows': typeof AppAdminSettingsWorkflowsRoute
   '/assets/$id': typeof AppAssetsIdRoute
   '/assets/inventory': typeof AppAssetsInventoryRoute
   '/assets/my': typeof AppAssetsMyRoute
@@ -541,6 +623,7 @@ export interface FileRoutesByFullPath {
   '/reports/timesheet': typeof AppReportsTimesheetRoute
   '/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/timesheet/projects': typeof AppTimesheetProjectsRoute
+  '/admin-settings/': typeof AppAdminSettingsIndexRoute
   '/assets/': typeof AppAssetsIndexRoute
   '/attendance/': typeof AppAttendanceIndexRoute
   '/ems/': typeof AppEmsIndexRoute
@@ -563,6 +646,15 @@ export interface FileRoutesByTo {
   '/employees': typeof AppEmployeesRouteWithChildren
   '/projects': typeof AppProjectsRouteWithChildren
   '/team-utilization': typeof AppTeamUtilizationRoute
+  '/admin-settings/audit': typeof AppAdminSettingsAuditRoute
+  '/admin-settings/company': typeof AppAdminSettingsCompanyRoute
+  '/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
+  '/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
+  '/admin-settings/notifications': typeof AppAdminSettingsNotificationsRoute
+  '/admin-settings/policies': typeof AppAdminSettingsPoliciesRoute
+  '/admin-settings/roles': typeof AppAdminSettingsRolesRoute
+  '/admin-settings/security': typeof AppAdminSettingsSecurityRoute
+  '/admin-settings/workflows': typeof AppAdminSettingsWorkflowsRoute
   '/assets/$id': typeof AppAssetsIdRoute
   '/assets/inventory': typeof AppAssetsInventoryRoute
   '/assets/my': typeof AppAssetsMyRoute
@@ -611,6 +703,7 @@ export interface FileRoutesByTo {
   '/reports/timesheet': typeof AppReportsTimesheetRoute
   '/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/timesheet/projects': typeof AppTimesheetProjectsRoute
+  '/admin-settings': typeof AppAdminSettingsIndexRoute
   '/assets': typeof AppAssetsIndexRoute
   '/attendance': typeof AppAttendanceIndexRoute
   '/ems': typeof AppEmsIndexRoute
@@ -631,6 +724,7 @@ export interface FileRoutesById {
   '/set-password': typeof SetPasswordRoute
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/_app/admin-settings': typeof AppAdminSettingsRouteWithChildren
   '/_app/assets': typeof AppAssetsRouteWithChildren
   '/_app/attendance': typeof AppAttendanceRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
@@ -643,6 +737,15 @@ export interface FileRoutesById {
   '/_app/reports': typeof AppReportsRouteWithChildren
   '/_app/team-utilization': typeof AppTeamUtilizationRoute
   '/_app/timesheet': typeof AppTimesheetRouteWithChildren
+  '/_app/admin-settings/audit': typeof AppAdminSettingsAuditRoute
+  '/_app/admin-settings/company': typeof AppAdminSettingsCompanyRoute
+  '/_app/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
+  '/_app/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
+  '/_app/admin-settings/notifications': typeof AppAdminSettingsNotificationsRoute
+  '/_app/admin-settings/policies': typeof AppAdminSettingsPoliciesRoute
+  '/_app/admin-settings/roles': typeof AppAdminSettingsRolesRoute
+  '/_app/admin-settings/security': typeof AppAdminSettingsSecurityRoute
+  '/_app/admin-settings/workflows': typeof AppAdminSettingsWorkflowsRoute
   '/_app/assets/$id': typeof AppAssetsIdRoute
   '/_app/assets/inventory': typeof AppAssetsInventoryRoute
   '/_app/assets/my': typeof AppAssetsMyRoute
@@ -691,6 +794,7 @@ export interface FileRoutesById {
   '/_app/reports/timesheet': typeof AppReportsTimesheetRoute
   '/_app/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/_app/timesheet/projects': typeof AppTimesheetProjectsRoute
+  '/_app/admin-settings/': typeof AppAdminSettingsIndexRoute
   '/_app/assets/': typeof AppAssetsIndexRoute
   '/_app/attendance/': typeof AppAttendanceIndexRoute
   '/_app/ems/': typeof AppEmsIndexRoute
@@ -711,6 +815,7 @@ export interface FileRouteTypes {
     | '/set-password'
     | '/signup'
     | '/verify-email'
+    | '/admin-settings'
     | '/assets'
     | '/attendance'
     | '/dashboard'
@@ -723,6 +828,15 @@ export interface FileRouteTypes {
     | '/reports'
     | '/team-utilization'
     | '/timesheet'
+    | '/admin-settings/audit'
+    | '/admin-settings/company'
+    | '/admin-settings/email-templates'
+    | '/admin-settings/master-data'
+    | '/admin-settings/notifications'
+    | '/admin-settings/policies'
+    | '/admin-settings/roles'
+    | '/admin-settings/security'
+    | '/admin-settings/workflows'
     | '/assets/$id'
     | '/assets/inventory'
     | '/assets/my'
@@ -771,6 +885,7 @@ export interface FileRouteTypes {
     | '/reports/timesheet'
     | '/timesheet/approvals'
     | '/timesheet/projects'
+    | '/admin-settings/'
     | '/assets/'
     | '/attendance/'
     | '/ems/'
@@ -793,6 +908,15 @@ export interface FileRouteTypes {
     | '/employees'
     | '/projects'
     | '/team-utilization'
+    | '/admin-settings/audit'
+    | '/admin-settings/company'
+    | '/admin-settings/email-templates'
+    | '/admin-settings/master-data'
+    | '/admin-settings/notifications'
+    | '/admin-settings/policies'
+    | '/admin-settings/roles'
+    | '/admin-settings/security'
+    | '/admin-settings/workflows'
     | '/assets/$id'
     | '/assets/inventory'
     | '/assets/my'
@@ -841,6 +965,7 @@ export interface FileRouteTypes {
     | '/reports/timesheet'
     | '/timesheet/approvals'
     | '/timesheet/projects'
+    | '/admin-settings'
     | '/assets'
     | '/attendance'
     | '/ems'
@@ -860,6 +985,7 @@ export interface FileRouteTypes {
     | '/set-password'
     | '/signup'
     | '/verify-email'
+    | '/_app/admin-settings'
     | '/_app/assets'
     | '/_app/attendance'
     | '/_app/dashboard'
@@ -872,6 +998,15 @@ export interface FileRouteTypes {
     | '/_app/reports'
     | '/_app/team-utilization'
     | '/_app/timesheet'
+    | '/_app/admin-settings/audit'
+    | '/_app/admin-settings/company'
+    | '/_app/admin-settings/email-templates'
+    | '/_app/admin-settings/master-data'
+    | '/_app/admin-settings/notifications'
+    | '/_app/admin-settings/policies'
+    | '/_app/admin-settings/roles'
+    | '/_app/admin-settings/security'
+    | '/_app/admin-settings/workflows'
     | '/_app/assets/$id'
     | '/_app/assets/inventory'
     | '/_app/assets/my'
@@ -920,6 +1055,7 @@ export interface FileRouteTypes {
     | '/_app/reports/timesheet'
     | '/_app/timesheet/approvals'
     | '/_app/timesheet/projects'
+    | '/_app/admin-settings/'
     | '/_app/assets/'
     | '/_app/attendance/'
     | '/_app/ems/'
@@ -1091,6 +1227,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAssetsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/admin-settings': {
+      id: '/_app/admin-settings'
+      path: '/admin-settings'
+      fullPath: '/admin-settings'
+      preLoaderRoute: typeof AppAdminSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/timesheet/': {
       id: '/_app/timesheet/'
       path: '/'
@@ -1146,6 +1289,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/assets/'
       preLoaderRoute: typeof AppAssetsIndexRouteImport
       parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/admin-settings/': {
+      id: '/_app/admin-settings/'
+      path: '/'
+      fullPath: '/admin-settings/'
+      preLoaderRoute: typeof AppAdminSettingsIndexRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
     }
     '/_app/timesheet/projects': {
       id: '/_app/timesheet/projects'
@@ -1483,8 +1633,100 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAssetsIdRouteImport
       parentRoute: typeof AppAssetsRoute
     }
+    '/_app/admin-settings/workflows': {
+      id: '/_app/admin-settings/workflows'
+      path: '/workflows'
+      fullPath: '/admin-settings/workflows'
+      preLoaderRoute: typeof AppAdminSettingsWorkflowsRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/security': {
+      id: '/_app/admin-settings/security'
+      path: '/security'
+      fullPath: '/admin-settings/security'
+      preLoaderRoute: typeof AppAdminSettingsSecurityRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/roles': {
+      id: '/_app/admin-settings/roles'
+      path: '/roles'
+      fullPath: '/admin-settings/roles'
+      preLoaderRoute: typeof AppAdminSettingsRolesRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/policies': {
+      id: '/_app/admin-settings/policies'
+      path: '/policies'
+      fullPath: '/admin-settings/policies'
+      preLoaderRoute: typeof AppAdminSettingsPoliciesRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/notifications': {
+      id: '/_app/admin-settings/notifications'
+      path: '/notifications'
+      fullPath: '/admin-settings/notifications'
+      preLoaderRoute: typeof AppAdminSettingsNotificationsRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/master-data': {
+      id: '/_app/admin-settings/master-data'
+      path: '/master-data'
+      fullPath: '/admin-settings/master-data'
+      preLoaderRoute: typeof AppAdminSettingsMasterDataRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/email-templates': {
+      id: '/_app/admin-settings/email-templates'
+      path: '/email-templates'
+      fullPath: '/admin-settings/email-templates'
+      preLoaderRoute: typeof AppAdminSettingsEmailTemplatesRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/company': {
+      id: '/_app/admin-settings/company'
+      path: '/company'
+      fullPath: '/admin-settings/company'
+      preLoaderRoute: typeof AppAdminSettingsCompanyRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/audit': {
+      id: '/_app/admin-settings/audit'
+      path: '/audit'
+      fullPath: '/admin-settings/audit'
+      preLoaderRoute: typeof AppAdminSettingsAuditRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
   }
 }
+
+interface AppAdminSettingsRouteChildren {
+  AppAdminSettingsAuditRoute: typeof AppAdminSettingsAuditRoute
+  AppAdminSettingsCompanyRoute: typeof AppAdminSettingsCompanyRoute
+  AppAdminSettingsEmailTemplatesRoute: typeof AppAdminSettingsEmailTemplatesRoute
+  AppAdminSettingsMasterDataRoute: typeof AppAdminSettingsMasterDataRoute
+  AppAdminSettingsNotificationsRoute: typeof AppAdminSettingsNotificationsRoute
+  AppAdminSettingsPoliciesRoute: typeof AppAdminSettingsPoliciesRoute
+  AppAdminSettingsRolesRoute: typeof AppAdminSettingsRolesRoute
+  AppAdminSettingsSecurityRoute: typeof AppAdminSettingsSecurityRoute
+  AppAdminSettingsWorkflowsRoute: typeof AppAdminSettingsWorkflowsRoute
+  AppAdminSettingsIndexRoute: typeof AppAdminSettingsIndexRoute
+}
+
+const AppAdminSettingsRouteChildren: AppAdminSettingsRouteChildren = {
+  AppAdminSettingsAuditRoute: AppAdminSettingsAuditRoute,
+  AppAdminSettingsCompanyRoute: AppAdminSettingsCompanyRoute,
+  AppAdminSettingsEmailTemplatesRoute: AppAdminSettingsEmailTemplatesRoute,
+  AppAdminSettingsMasterDataRoute: AppAdminSettingsMasterDataRoute,
+  AppAdminSettingsNotificationsRoute: AppAdminSettingsNotificationsRoute,
+  AppAdminSettingsPoliciesRoute: AppAdminSettingsPoliciesRoute,
+  AppAdminSettingsRolesRoute: AppAdminSettingsRolesRoute,
+  AppAdminSettingsSecurityRoute: AppAdminSettingsSecurityRoute,
+  AppAdminSettingsWorkflowsRoute: AppAdminSettingsWorkflowsRoute,
+  AppAdminSettingsIndexRoute: AppAdminSettingsIndexRoute,
+}
+
+const AppAdminSettingsRouteWithChildren =
+  AppAdminSettingsRoute._addFileChildren(AppAdminSettingsRouteChildren)
 
 interface AppAssetsRouteChildren {
   AppAssetsIdRoute: typeof AppAssetsIdRoute
@@ -1698,6 +1940,7 @@ const AppTimesheetRouteWithChildren = AppTimesheetRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppAdminSettingsRoute: typeof AppAdminSettingsRouteWithChildren
   AppAssetsRoute: typeof AppAssetsRouteWithChildren
   AppAttendanceRoute: typeof AppAttendanceRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
@@ -1713,6 +1956,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAdminSettingsRoute: AppAdminSettingsRouteWithChildren,
   AppAssetsRoute: AppAssetsRouteWithChildren,
   AppAttendanceRoute: AppAttendanceRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
