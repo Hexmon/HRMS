@@ -19,6 +19,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppTimesheetRouteImport } from './routes/_app/timesheet'
+import { Route as AppTeamUtilizationRouteImport } from './routes/_app/team-utilization'
 import { Route as AppReportsRouteImport } from './routes/_app/reports'
 import { Route as AppProjectsRouteImport } from './routes/_app/projects'
 import { Route as AppLeaveWfhRouteImport } from './routes/_app/leave-wfh'
@@ -99,6 +100,11 @@ const IndexRoute = IndexRouteImport.update({
 const AppTimesheetRoute = AppTimesheetRouteImport.update({
   id: '/timesheet',
   path: '/timesheet',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTeamUtilizationRoute = AppTeamUtilizationRouteImport.update({
+  id: '/team-utilization',
+  path: '/team-utilization',
   getParentRoute: () => AppRoute,
 } as any)
 const AppReportsRoute = AppReportsRouteImport.update({
@@ -281,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/leave-wfh': typeof AppLeaveWfhRouteWithChildren
   '/projects': typeof AppProjectsRouteWithChildren
   '/reports': typeof AppReportsRoute
+  '/team-utilization': typeof AppTeamUtilizationRoute
   '/timesheet': typeof AppTimesheetRouteWithChildren
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
@@ -321,6 +328,7 @@ export interface FileRoutesByTo {
   '/helpdesk': typeof AppHelpdeskRoute
   '/projects': typeof AppProjectsRouteWithChildren
   '/reports': typeof AppReportsRoute
+  '/team-utilization': typeof AppTeamUtilizationRoute
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
   '/employees/$id': typeof AppEmployeesIdRoute
@@ -365,6 +373,7 @@ export interface FileRoutesById {
   '/_app/leave-wfh': typeof AppLeaveWfhRouteWithChildren
   '/_app/projects': typeof AppProjectsRouteWithChildren
   '/_app/reports': typeof AppReportsRoute
+  '/_app/team-utilization': typeof AppTeamUtilizationRoute
   '/_app/timesheet': typeof AppTimesheetRouteWithChildren
   '/_app/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/_app/attendance/exceptions': typeof AppAttendanceExceptionsRoute
@@ -410,6 +419,7 @@ export interface FileRouteTypes {
     | '/leave-wfh'
     | '/projects'
     | '/reports'
+    | '/team-utilization'
     | '/timesheet'
     | '/attendance/calendar'
     | '/attendance/exceptions'
@@ -450,6 +460,7 @@ export interface FileRouteTypes {
     | '/helpdesk'
     | '/projects'
     | '/reports'
+    | '/team-utilization'
     | '/attendance/calendar'
     | '/attendance/exceptions'
     | '/employees/$id'
@@ -493,6 +504,7 @@ export interface FileRouteTypes {
     | '/_app/leave-wfh'
     | '/_app/projects'
     | '/_app/reports'
+    | '/_app/team-utilization'
     | '/_app/timesheet'
     | '/_app/attendance/calendar'
     | '/_app/attendance/exceptions'
@@ -600,6 +612,13 @@ declare module '@tanstack/react-router' {
       path: '/timesheet'
       fullPath: '/timesheet'
       preLoaderRoute: typeof AppTimesheetRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/team-utilization': {
+      id: '/_app/team-utilization'
+      path: '/team-utilization'
+      fullPath: '/team-utilization'
+      preLoaderRoute: typeof AppTeamUtilizationRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/reports': {
@@ -943,6 +962,7 @@ interface AppRouteChildren {
   AppLeaveWfhRoute: typeof AppLeaveWfhRouteWithChildren
   AppProjectsRoute: typeof AppProjectsRouteWithChildren
   AppReportsRoute: typeof AppReportsRoute
+  AppTeamUtilizationRoute: typeof AppTeamUtilizationRoute
   AppTimesheetRoute: typeof AppTimesheetRouteWithChildren
 }
 
@@ -957,6 +977,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppLeaveWfhRoute: AppLeaveWfhRouteWithChildren,
   AppProjectsRoute: AppProjectsRouteWithChildren,
   AppReportsRoute: AppReportsRoute,
+  AppTeamUtilizationRoute: AppTeamUtilizationRoute,
   AppTimesheetRoute: AppTimesheetRouteWithChildren,
 }
 
