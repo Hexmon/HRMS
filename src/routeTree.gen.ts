@@ -29,8 +29,14 @@ import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
 import { Route as AppAssetsRouteImport } from './routes/_app/assets'
+import { Route as AppLeaveWfhIndexRouteImport } from './routes/_app/leave-wfh.index'
 import { Route as AppEmsIndexRouteImport } from './routes/_app/ems.index'
 import { Route as AppAttendanceIndexRouteImport } from './routes/_app/attendance.index'
+import { Route as AppLeaveWfhMonitorRouteImport } from './routes/_app/leave-wfh.monitor'
+import { Route as AppLeaveWfhHolidaysRouteImport } from './routes/_app/leave-wfh.holidays'
+import { Route as AppLeaveWfhApprovalsRouteImport } from './routes/_app/leave-wfh.approvals'
+import { Route as AppLeaveWfhApplyWfhRouteImport } from './routes/_app/leave-wfh.apply-wfh'
+import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-wfh.apply-leave'
 import { Route as AppEmsRequestsRouteImport } from './routes/_app/ems.requests'
 import { Route as AppEmsProfileRouteImport } from './routes/_app/ems.profile'
 import { Route as AppEmsPoliciesRouteImport } from './routes/_app/ems.policies'
@@ -141,6 +147,11 @@ const AppAssetsRoute = AppAssetsRouteImport.update({
   path: '/assets',
   getParentRoute: () => AppRoute,
 } as any)
+const AppLeaveWfhIndexRoute = AppLeaveWfhIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
 const AppEmsIndexRoute = AppEmsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -150,6 +161,31 @@ const AppAttendanceIndexRoute = AppAttendanceIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppAttendanceRoute,
+} as any)
+const AppLeaveWfhMonitorRoute = AppLeaveWfhMonitorRouteImport.update({
+  id: '/monitor',
+  path: '/monitor',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppLeaveWfhHolidaysRoute = AppLeaveWfhHolidaysRouteImport.update({
+  id: '/holidays',
+  path: '/holidays',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppLeaveWfhApprovalsRoute = AppLeaveWfhApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppLeaveWfhApplyWfhRoute = AppLeaveWfhApplyWfhRouteImport.update({
+  id: '/apply-wfh',
+  path: '/apply-wfh',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppLeaveWfhApplyLeaveRoute = AppLeaveWfhApplyLeaveRouteImport.update({
+  id: '/apply-leave',
+  path: '/apply-leave',
+  getParentRoute: () => AppLeaveWfhRoute,
 } as any)
 const AppEmsRequestsRoute = AppEmsRequestsRouteImport.update({
   id: '/requests',
@@ -218,7 +254,7 @@ export interface FileRoutesByFullPath {
   '/ems': typeof AppEmsRouteWithChildren
   '/expenses': typeof AppExpensesRoute
   '/helpdesk': typeof AppHelpdeskRoute
-  '/leave-wfh': typeof AppLeaveWfhRoute
+  '/leave-wfh': typeof AppLeaveWfhRouteWithChildren
   '/projects': typeof AppProjectsRoute
   '/reports': typeof AppReportsRoute
   '/timesheet': typeof AppTimesheetRoute
@@ -232,8 +268,14 @@ export interface FileRoutesByFullPath {
   '/ems/policies': typeof AppEmsPoliciesRoute
   '/ems/profile': typeof AppEmsProfileRoute
   '/ems/requests': typeof AppEmsRequestsRoute
+  '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
+  '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
+  '/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
+  '/leave-wfh/holidays': typeof AppLeaveWfhHolidaysRoute
+  '/leave-wfh/monitor': typeof AppLeaveWfhMonitorRoute
   '/attendance/': typeof AppAttendanceIndexRoute
   '/ems/': typeof AppEmsIndexRoute
+  '/leave-wfh/': typeof AppLeaveWfhIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -249,7 +291,6 @@ export interface FileRoutesByTo {
   '/employees': typeof AppEmployeesRouteWithChildren
   '/expenses': typeof AppExpensesRoute
   '/helpdesk': typeof AppHelpdeskRoute
-  '/leave-wfh': typeof AppLeaveWfhRoute
   '/projects': typeof AppProjectsRoute
   '/reports': typeof AppReportsRoute
   '/timesheet': typeof AppTimesheetRoute
@@ -263,8 +304,14 @@ export interface FileRoutesByTo {
   '/ems/policies': typeof AppEmsPoliciesRoute
   '/ems/profile': typeof AppEmsProfileRoute
   '/ems/requests': typeof AppEmsRequestsRoute
+  '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
+  '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
+  '/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
+  '/leave-wfh/holidays': typeof AppLeaveWfhHolidaysRoute
+  '/leave-wfh/monitor': typeof AppLeaveWfhMonitorRoute
   '/attendance': typeof AppAttendanceIndexRoute
   '/ems': typeof AppEmsIndexRoute
+  '/leave-wfh': typeof AppLeaveWfhIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -284,7 +331,7 @@ export interface FileRoutesById {
   '/_app/ems': typeof AppEmsRouteWithChildren
   '/_app/expenses': typeof AppExpensesRoute
   '/_app/helpdesk': typeof AppHelpdeskRoute
-  '/_app/leave-wfh': typeof AppLeaveWfhRoute
+  '/_app/leave-wfh': typeof AppLeaveWfhRouteWithChildren
   '/_app/projects': typeof AppProjectsRoute
   '/_app/reports': typeof AppReportsRoute
   '/_app/timesheet': typeof AppTimesheetRoute
@@ -298,8 +345,14 @@ export interface FileRoutesById {
   '/_app/ems/policies': typeof AppEmsPoliciesRoute
   '/_app/ems/profile': typeof AppEmsProfileRoute
   '/_app/ems/requests': typeof AppEmsRequestsRoute
+  '/_app/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
+  '/_app/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
+  '/_app/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
+  '/_app/leave-wfh/holidays': typeof AppLeaveWfhHolidaysRoute
+  '/_app/leave-wfh/monitor': typeof AppLeaveWfhMonitorRoute
   '/_app/attendance/': typeof AppAttendanceIndexRoute
   '/_app/ems/': typeof AppEmsIndexRoute
+  '/_app/leave-wfh/': typeof AppLeaveWfhIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -333,8 +386,14 @@ export interface FileRouteTypes {
     | '/ems/policies'
     | '/ems/profile'
     | '/ems/requests'
+    | '/leave-wfh/apply-leave'
+    | '/leave-wfh/apply-wfh'
+    | '/leave-wfh/approvals'
+    | '/leave-wfh/holidays'
+    | '/leave-wfh/monitor'
     | '/attendance/'
     | '/ems/'
+    | '/leave-wfh/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -350,7 +409,6 @@ export interface FileRouteTypes {
     | '/employees'
     | '/expenses'
     | '/helpdesk'
-    | '/leave-wfh'
     | '/projects'
     | '/reports'
     | '/timesheet'
@@ -364,8 +422,14 @@ export interface FileRouteTypes {
     | '/ems/policies'
     | '/ems/profile'
     | '/ems/requests'
+    | '/leave-wfh/apply-leave'
+    | '/leave-wfh/apply-wfh'
+    | '/leave-wfh/approvals'
+    | '/leave-wfh/holidays'
+    | '/leave-wfh/monitor'
     | '/attendance'
     | '/ems'
+    | '/leave-wfh'
   id:
     | '__root__'
     | '/'
@@ -398,8 +462,14 @@ export interface FileRouteTypes {
     | '/_app/ems/policies'
     | '/_app/ems/profile'
     | '/_app/ems/requests'
+    | '/_app/leave-wfh/apply-leave'
+    | '/_app/leave-wfh/apply-wfh'
+    | '/_app/leave-wfh/approvals'
+    | '/_app/leave-wfh/holidays'
+    | '/_app/leave-wfh/monitor'
     | '/_app/attendance/'
     | '/_app/ems/'
+    | '/_app/leave-wfh/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -556,6 +626,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAssetsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/leave-wfh/': {
+      id: '/_app/leave-wfh/'
+      path: '/'
+      fullPath: '/leave-wfh/'
+      preLoaderRoute: typeof AppLeaveWfhIndexRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
     '/_app/ems/': {
       id: '/_app/ems/'
       path: '/'
@@ -569,6 +646,41 @@ declare module '@tanstack/react-router' {
       fullPath: '/attendance/'
       preLoaderRoute: typeof AppAttendanceIndexRouteImport
       parentRoute: typeof AppAttendanceRoute
+    }
+    '/_app/leave-wfh/monitor': {
+      id: '/_app/leave-wfh/monitor'
+      path: '/monitor'
+      fullPath: '/leave-wfh/monitor'
+      preLoaderRoute: typeof AppLeaveWfhMonitorRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/leave-wfh/holidays': {
+      id: '/_app/leave-wfh/holidays'
+      path: '/holidays'
+      fullPath: '/leave-wfh/holidays'
+      preLoaderRoute: typeof AppLeaveWfhHolidaysRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/leave-wfh/approvals': {
+      id: '/_app/leave-wfh/approvals'
+      path: '/approvals'
+      fullPath: '/leave-wfh/approvals'
+      preLoaderRoute: typeof AppLeaveWfhApprovalsRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/leave-wfh/apply-wfh': {
+      id: '/_app/leave-wfh/apply-wfh'
+      path: '/apply-wfh'
+      fullPath: '/leave-wfh/apply-wfh'
+      preLoaderRoute: typeof AppLeaveWfhApplyWfhRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/leave-wfh/apply-leave': {
+      id: '/_app/leave-wfh/apply-leave'
+      path: '/apply-leave'
+      fullPath: '/leave-wfh/apply-leave'
+      preLoaderRoute: typeof AppLeaveWfhApplyLeaveRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
     }
     '/_app/ems/requests': {
       id: '/_app/ems/requests'
@@ -696,6 +808,28 @@ const AppEmsRouteChildren: AppEmsRouteChildren = {
 const AppEmsRouteWithChildren =
   AppEmsRoute._addFileChildren(AppEmsRouteChildren)
 
+interface AppLeaveWfhRouteChildren {
+  AppLeaveWfhApplyLeaveRoute: typeof AppLeaveWfhApplyLeaveRoute
+  AppLeaveWfhApplyWfhRoute: typeof AppLeaveWfhApplyWfhRoute
+  AppLeaveWfhApprovalsRoute: typeof AppLeaveWfhApprovalsRoute
+  AppLeaveWfhHolidaysRoute: typeof AppLeaveWfhHolidaysRoute
+  AppLeaveWfhMonitorRoute: typeof AppLeaveWfhMonitorRoute
+  AppLeaveWfhIndexRoute: typeof AppLeaveWfhIndexRoute
+}
+
+const AppLeaveWfhRouteChildren: AppLeaveWfhRouteChildren = {
+  AppLeaveWfhApplyLeaveRoute: AppLeaveWfhApplyLeaveRoute,
+  AppLeaveWfhApplyWfhRoute: AppLeaveWfhApplyWfhRoute,
+  AppLeaveWfhApprovalsRoute: AppLeaveWfhApprovalsRoute,
+  AppLeaveWfhHolidaysRoute: AppLeaveWfhHolidaysRoute,
+  AppLeaveWfhMonitorRoute: AppLeaveWfhMonitorRoute,
+  AppLeaveWfhIndexRoute: AppLeaveWfhIndexRoute,
+}
+
+const AppLeaveWfhRouteWithChildren = AppLeaveWfhRoute._addFileChildren(
+  AppLeaveWfhRouteChildren,
+)
+
 interface AppRouteChildren {
   AppAssetsRoute: typeof AppAssetsRoute
   AppAttendanceRoute: typeof AppAttendanceRouteWithChildren
@@ -704,7 +838,7 @@ interface AppRouteChildren {
   AppEmsRoute: typeof AppEmsRouteWithChildren
   AppExpensesRoute: typeof AppExpensesRoute
   AppHelpdeskRoute: typeof AppHelpdeskRoute
-  AppLeaveWfhRoute: typeof AppLeaveWfhRoute
+  AppLeaveWfhRoute: typeof AppLeaveWfhRouteWithChildren
   AppProjectsRoute: typeof AppProjectsRoute
   AppReportsRoute: typeof AppReportsRoute
   AppTimesheetRoute: typeof AppTimesheetRoute
@@ -718,7 +852,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppEmsRoute: AppEmsRouteWithChildren,
   AppExpensesRoute: AppExpensesRoute,
   AppHelpdeskRoute: AppHelpdeskRoute,
-  AppLeaveWfhRoute: AppLeaveWfhRoute,
+  AppLeaveWfhRoute: AppLeaveWfhRouteWithChildren,
   AppProjectsRoute: AppProjectsRoute,
   AppReportsRoute: AppReportsRoute,
   AppTimesheetRoute: AppTimesheetRoute,
