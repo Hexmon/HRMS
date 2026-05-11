@@ -122,7 +122,7 @@ function ProjectReports() {
       </TabsContent>
 
       <TabsContent value="history" className="mt-4">
-        <ReportShell
+        <ReportShell<HistoryRow>
           title="Employee Project History"
           description="Past and current project assignments by employee."
           facets={{ showEmployee: true, employeePool: Array.from(new Set(history.map((h) => h.employee))) }}
