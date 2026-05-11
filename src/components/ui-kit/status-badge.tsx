@@ -39,6 +39,22 @@ const MAP: Record<string, { label: string; cls: string }> = {
   rejected: { label: "Rejected", cls: "bg-destructive/15 text-destructive border-destructive/30" },
   absent: { label: "Absent", cls: "bg-destructive/15 text-destructive border-destructive/30" },
   overdue: { label: "Overdue", cls: "bg-destructive/15 text-destructive border-destructive/30" },
+  // Expense workflow
+  submitted: { label: "Submitted", cls: "bg-info/15 text-info border-info/30" },
+  pending_reviewer: { label: "Pending Reviewer", cls: "bg-warning/20 text-warning-foreground border-warning/40" },
+  reviewer_returned: { label: "Reviewer Returned", cls: "bg-warning/20 text-warning-foreground border-warning/40" },
+  reviewer_rejected: { label: "Reviewer Rejected", cls: "bg-destructive/15 text-destructive border-destructive/30" },
+  pending_director: { label: "Pending Director", cls: "bg-warning/20 text-warning-foreground border-warning/40" },
+  director_returned: { label: "Director Returned", cls: "bg-warning/20 text-warning-foreground border-warning/40" },
+  director_rejected: { label: "Director Rejected", cls: "bg-destructive/15 text-destructive border-destructive/30" },
+  finance_verification: { label: "Finance Verification", cls: "bg-info/15 text-info border-info/30" },
+  finance_hold: { label: "Finance Hold", cls: "bg-warning/20 text-warning-foreground border-warning/40" },
+  finance_verified: { label: "Finance Verified", cls: "bg-success/15 text-success border-success/20" },
+  payment_released: { label: "Payment Released", cls: "bg-success/15 text-success border-success/20" },
+  bills_submitted: { label: "Bills Submitted", cls: "bg-info/15 text-info border-info/30" },
+  settlement_review: { label: "Settlement Review", cls: "bg-warning/20 text-warning-foreground border-warning/40" },
+  pending_adjustment: { label: "Pending Adjustment", cls: "bg-warning/20 text-warning-foreground border-warning/40" },
+  withdrawn: { label: "Withdrawn", cls: "bg-muted text-muted-foreground border-border" },
 };
 
 export function StatusBadge({ status, label }: { status: string; label?: string }) {
