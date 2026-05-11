@@ -30,6 +30,7 @@ import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
 import { Route as AppAssetsRouteImport } from './routes/_app/assets'
 import { Route as AppEmsIndexRouteImport } from './routes/_app/ems.index'
+import { Route as AppAttendanceIndexRouteImport } from './routes/_app/attendance.index'
 import { Route as AppEmsRequestsRouteImport } from './routes/_app/ems.requests'
 import { Route as AppEmsProfileRouteImport } from './routes/_app/ems.profile'
 import { Route as AppEmsPoliciesRouteImport } from './routes/_app/ems.policies'
@@ -38,6 +39,8 @@ import { Route as AppEmsDocumentsRouteImport } from './routes/_app/ems.documents
 import { Route as AppEmsApprovalsRouteImport } from './routes/_app/ems.approvals'
 import { Route as AppEmsAdminRouteImport } from './routes/_app/ems.admin'
 import { Route as AppEmployeesIdRouteImport } from './routes/_app/employees.$id'
+import { Route as AppAttendanceExceptionsRouteImport } from './routes/_app/attendance.exceptions'
+import { Route as AppAttendanceCalendarRouteImport } from './routes/_app/attendance.calendar'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
@@ -143,6 +146,11 @@ const AppEmsIndexRoute = AppEmsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppEmsRoute,
 } as any)
+const AppAttendanceIndexRoute = AppAttendanceIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppAttendanceRoute,
+} as any)
 const AppEmsRequestsRoute = AppEmsRequestsRouteImport.update({
   id: '/requests',
   path: '/requests',
@@ -183,6 +191,16 @@ const AppEmployeesIdRoute = AppEmployeesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppEmployeesRoute,
 } as any)
+const AppAttendanceExceptionsRoute = AppAttendanceExceptionsRouteImport.update({
+  id: '/exceptions',
+  path: '/exceptions',
+  getParentRoute: () => AppAttendanceRoute,
+} as any)
+const AppAttendanceCalendarRoute = AppAttendanceCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => AppAttendanceRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -194,7 +212,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
   '/assets': typeof AppAssetsRoute
-  '/attendance': typeof AppAttendanceRoute
+  '/attendance': typeof AppAttendanceRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
   '/ems': typeof AppEmsRouteWithChildren
@@ -204,6 +222,8 @@ export interface FileRoutesByFullPath {
   '/projects': typeof AppProjectsRoute
   '/reports': typeof AppReportsRoute
   '/timesheet': typeof AppTimesheetRoute
+  '/attendance/calendar': typeof AppAttendanceCalendarRoute
+  '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
   '/employees/$id': typeof AppEmployeesIdRoute
   '/ems/admin': typeof AppEmsAdminRoute
   '/ems/approvals': typeof AppEmsApprovalsRoute
@@ -212,6 +232,7 @@ export interface FileRoutesByFullPath {
   '/ems/policies': typeof AppEmsPoliciesRoute
   '/ems/profile': typeof AppEmsProfileRoute
   '/ems/requests': typeof AppEmsRequestsRoute
+  '/attendance/': typeof AppAttendanceIndexRoute
   '/ems/': typeof AppEmsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -224,7 +245,6 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
   '/assets': typeof AppAssetsRoute
-  '/attendance': typeof AppAttendanceRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
   '/expenses': typeof AppExpensesRoute
@@ -233,6 +253,8 @@ export interface FileRoutesByTo {
   '/projects': typeof AppProjectsRoute
   '/reports': typeof AppReportsRoute
   '/timesheet': typeof AppTimesheetRoute
+  '/attendance/calendar': typeof AppAttendanceCalendarRoute
+  '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
   '/employees/$id': typeof AppEmployeesIdRoute
   '/ems/admin': typeof AppEmsAdminRoute
   '/ems/approvals': typeof AppEmsApprovalsRoute
@@ -241,6 +263,7 @@ export interface FileRoutesByTo {
   '/ems/policies': typeof AppEmsPoliciesRoute
   '/ems/profile': typeof AppEmsProfileRoute
   '/ems/requests': typeof AppEmsRequestsRoute
+  '/attendance': typeof AppAttendanceIndexRoute
   '/ems': typeof AppEmsIndexRoute
 }
 export interface FileRoutesById {
@@ -255,7 +278,7 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
   '/_app/assets': typeof AppAssetsRoute
-  '/_app/attendance': typeof AppAttendanceRoute
+  '/_app/attendance': typeof AppAttendanceRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/employees': typeof AppEmployeesRouteWithChildren
   '/_app/ems': typeof AppEmsRouteWithChildren
@@ -265,6 +288,8 @@ export interface FileRoutesById {
   '/_app/projects': typeof AppProjectsRoute
   '/_app/reports': typeof AppReportsRoute
   '/_app/timesheet': typeof AppTimesheetRoute
+  '/_app/attendance/calendar': typeof AppAttendanceCalendarRoute
+  '/_app/attendance/exceptions': typeof AppAttendanceExceptionsRoute
   '/_app/employees/$id': typeof AppEmployeesIdRoute
   '/_app/ems/admin': typeof AppEmsAdminRoute
   '/_app/ems/approvals': typeof AppEmsApprovalsRoute
@@ -273,6 +298,7 @@ export interface FileRoutesById {
   '/_app/ems/policies': typeof AppEmsPoliciesRoute
   '/_app/ems/profile': typeof AppEmsProfileRoute
   '/_app/ems/requests': typeof AppEmsRequestsRoute
+  '/_app/attendance/': typeof AppAttendanceIndexRoute
   '/_app/ems/': typeof AppEmsIndexRoute
 }
 export interface FileRouteTypes {
@@ -297,6 +323,8 @@ export interface FileRouteTypes {
     | '/projects'
     | '/reports'
     | '/timesheet'
+    | '/attendance/calendar'
+    | '/attendance/exceptions'
     | '/employees/$id'
     | '/ems/admin'
     | '/ems/approvals'
@@ -305,6 +333,7 @@ export interface FileRouteTypes {
     | '/ems/policies'
     | '/ems/profile'
     | '/ems/requests'
+    | '/attendance/'
     | '/ems/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -317,7 +346,6 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-email'
     | '/assets'
-    | '/attendance'
     | '/dashboard'
     | '/employees'
     | '/expenses'
@@ -326,6 +354,8 @@ export interface FileRouteTypes {
     | '/projects'
     | '/reports'
     | '/timesheet'
+    | '/attendance/calendar'
+    | '/attendance/exceptions'
     | '/employees/$id'
     | '/ems/admin'
     | '/ems/approvals'
@@ -334,6 +364,7 @@ export interface FileRouteTypes {
     | '/ems/policies'
     | '/ems/profile'
     | '/ems/requests'
+    | '/attendance'
     | '/ems'
   id:
     | '__root__'
@@ -357,6 +388,8 @@ export interface FileRouteTypes {
     | '/_app/projects'
     | '/_app/reports'
     | '/_app/timesheet'
+    | '/_app/attendance/calendar'
+    | '/_app/attendance/exceptions'
     | '/_app/employees/$id'
     | '/_app/ems/admin'
     | '/_app/ems/approvals'
@@ -365,6 +398,7 @@ export interface FileRouteTypes {
     | '/_app/ems/policies'
     | '/_app/ems/profile'
     | '/_app/ems/requests'
+    | '/_app/attendance/'
     | '/_app/ems/'
   fileRoutesById: FileRoutesById
 }
@@ -529,6 +563,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppEmsIndexRouteImport
       parentRoute: typeof AppEmsRoute
     }
+    '/_app/attendance/': {
+      id: '/_app/attendance/'
+      path: '/'
+      fullPath: '/attendance/'
+      preLoaderRoute: typeof AppAttendanceIndexRouteImport
+      parentRoute: typeof AppAttendanceRoute
+    }
     '/_app/ems/requests': {
       id: '/_app/ems/requests'
       path: '/requests'
@@ -585,8 +626,38 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppEmployeesIdRouteImport
       parentRoute: typeof AppEmployeesRoute
     }
+    '/_app/attendance/exceptions': {
+      id: '/_app/attendance/exceptions'
+      path: '/exceptions'
+      fullPath: '/attendance/exceptions'
+      preLoaderRoute: typeof AppAttendanceExceptionsRouteImport
+      parentRoute: typeof AppAttendanceRoute
+    }
+    '/_app/attendance/calendar': {
+      id: '/_app/attendance/calendar'
+      path: '/calendar'
+      fullPath: '/attendance/calendar'
+      preLoaderRoute: typeof AppAttendanceCalendarRouteImport
+      parentRoute: typeof AppAttendanceRoute
+    }
   }
 }
+
+interface AppAttendanceRouteChildren {
+  AppAttendanceCalendarRoute: typeof AppAttendanceCalendarRoute
+  AppAttendanceExceptionsRoute: typeof AppAttendanceExceptionsRoute
+  AppAttendanceIndexRoute: typeof AppAttendanceIndexRoute
+}
+
+const AppAttendanceRouteChildren: AppAttendanceRouteChildren = {
+  AppAttendanceCalendarRoute: AppAttendanceCalendarRoute,
+  AppAttendanceExceptionsRoute: AppAttendanceExceptionsRoute,
+  AppAttendanceIndexRoute: AppAttendanceIndexRoute,
+}
+
+const AppAttendanceRouteWithChildren = AppAttendanceRoute._addFileChildren(
+  AppAttendanceRouteChildren,
+)
 
 interface AppEmployeesRouteChildren {
   AppEmployeesIdRoute: typeof AppEmployeesIdRoute
@@ -627,7 +698,7 @@ const AppEmsRouteWithChildren =
 
 interface AppRouteChildren {
   AppAssetsRoute: typeof AppAssetsRoute
-  AppAttendanceRoute: typeof AppAttendanceRoute
+  AppAttendanceRoute: typeof AppAttendanceRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
   AppEmployeesRoute: typeof AppEmployeesRouteWithChildren
   AppEmsRoute: typeof AppEmsRouteWithChildren
@@ -641,7 +712,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAssetsRoute: AppAssetsRoute,
-  AppAttendanceRoute: AppAttendanceRoute,
+  AppAttendanceRoute: AppAttendanceRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppEmployeesRoute: AppEmployeesRouteWithChildren,
   AppEmsRoute: AppEmsRouteWithChildren,
