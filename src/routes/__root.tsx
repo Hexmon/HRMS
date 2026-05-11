@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth";
 import { EmployeesProvider } from "@/lib/employees-store";
+import { LeaveProvider } from "@/lib/leave-store";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -92,10 +93,12 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <EmployeesProvider>
-          <TooltipProvider delayDuration={150}>
-            <Outlet />
-            <Toaster />
-          </TooltipProvider>
+          <LeaveProvider>
+            <TooltipProvider delayDuration={150}>
+              <Outlet />
+              <Toaster />
+            </TooltipProvider>
+          </LeaveProvider>
         </EmployeesProvider>
       </AuthProvider>
     </QueryClientProvider>
