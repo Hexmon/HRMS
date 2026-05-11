@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard, Boxes, Laptop, Inbox, Undo2, ShieldCheck, UserCircle,
+  LayoutDashboard, Boxes, Laptop, Inbox, Undo2, ShieldCheck,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_app/assets")({ component: AssetsLayout });
@@ -51,6 +51,3 @@ function AssetsLayout() {
     </>
   );
 }
-
-// placeholder reference to silence unused import
-const _ = UserCircle;
