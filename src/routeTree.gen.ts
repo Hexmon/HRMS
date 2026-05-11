@@ -45,6 +45,7 @@ import { Route as AppLeaveWfhApplyWfhRouteImport } from './routes/_app/leave-wfh
 import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-wfh.apply-leave'
 import { Route as AppExpensesMyRouteImport } from './routes/_app/expenses.my'
 import { Route as AppExpensesCreateRouteImport } from './routes/_app/expenses.create'
+import { Route as AppExpensesIdRouteImport } from './routes/_app/expenses.$id'
 import { Route as AppEmsRequestsRouteImport } from './routes/_app/ems.requests'
 import { Route as AppEmsProfileRouteImport } from './routes/_app/ems.profile'
 import { Route as AppEmsPoliciesRouteImport } from './routes/_app/ems.policies'
@@ -235,6 +236,11 @@ const AppExpensesCreateRoute = AppExpensesCreateRouteImport.update({
   path: '/create',
   getParentRoute: () => AppExpensesRoute,
 } as any)
+const AppExpensesIdRoute = AppExpensesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
 const AppEmsRequestsRoute = AppEmsRequestsRouteImport.update({
   id: '/requests',
   path: '/requests',
@@ -317,6 +323,7 @@ export interface FileRoutesByFullPath {
   '/ems/policies': typeof AppEmsPoliciesRoute
   '/ems/profile': typeof AppEmsProfileRoute
   '/ems/requests': typeof AppEmsRequestsRoute
+  '/expenses/$id': typeof AppExpensesIdRoute
   '/expenses/create': typeof AppExpensesCreateRoute
   '/expenses/my': typeof AppExpensesMyRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
@@ -359,6 +366,7 @@ export interface FileRoutesByTo {
   '/ems/policies': typeof AppEmsPoliciesRoute
   '/ems/profile': typeof AppEmsProfileRoute
   '/ems/requests': typeof AppEmsRequestsRoute
+  '/expenses/$id': typeof AppExpensesIdRoute
   '/expenses/create': typeof AppExpensesCreateRoute
   '/expenses/my': typeof AppExpensesMyRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
@@ -408,6 +416,7 @@ export interface FileRoutesById {
   '/_app/ems/policies': typeof AppEmsPoliciesRoute
   '/_app/ems/profile': typeof AppEmsProfileRoute
   '/_app/ems/requests': typeof AppEmsRequestsRoute
+  '/_app/expenses/$id': typeof AppExpensesIdRoute
   '/_app/expenses/create': typeof AppExpensesCreateRoute
   '/_app/expenses/my': typeof AppExpensesMyRoute
   '/_app/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
@@ -457,6 +466,7 @@ export interface FileRouteTypes {
     | '/ems/policies'
     | '/ems/profile'
     | '/ems/requests'
+    | '/expenses/$id'
     | '/expenses/create'
     | '/expenses/my'
     | '/leave-wfh/apply-leave'
@@ -499,6 +509,7 @@ export interface FileRouteTypes {
     | '/ems/policies'
     | '/ems/profile'
     | '/ems/requests'
+    | '/expenses/$id'
     | '/expenses/create'
     | '/expenses/my'
     | '/leave-wfh/apply-leave'
@@ -547,6 +558,7 @@ export interface FileRouteTypes {
     | '/_app/ems/policies'
     | '/_app/ems/profile'
     | '/_app/ems/requests'
+    | '/_app/expenses/$id'
     | '/_app/expenses/create'
     | '/_app/expenses/my'
     | '/_app/leave-wfh/apply-leave'
@@ -830,6 +842,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppExpensesCreateRouteImport
       parentRoute: typeof AppExpensesRoute
     }
+    '/_app/expenses/$id': {
+      id: '/_app/expenses/$id'
+      path: '/$id'
+      fullPath: '/expenses/$id'
+      preLoaderRoute: typeof AppExpensesIdRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
     '/_app/ems/requests': {
       id: '/_app/ems/requests'
       path: '/requests'
@@ -957,12 +976,14 @@ const AppEmsRouteWithChildren =
   AppEmsRoute._addFileChildren(AppEmsRouteChildren)
 
 interface AppExpensesRouteChildren {
+  AppExpensesIdRoute: typeof AppExpensesIdRoute
   AppExpensesCreateRoute: typeof AppExpensesCreateRoute
   AppExpensesMyRoute: typeof AppExpensesMyRoute
   AppExpensesIndexRoute: typeof AppExpensesIndexRoute
 }
 
 const AppExpensesRouteChildren: AppExpensesRouteChildren = {
+  AppExpensesIdRoute: AppExpensesIdRoute,
   AppExpensesCreateRoute: AppExpensesCreateRoute,
   AppExpensesMyRoute: AppExpensesMyRoute,
   AppExpensesIndexRoute: AppExpensesIndexRoute,
