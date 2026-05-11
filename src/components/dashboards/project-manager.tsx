@@ -50,16 +50,17 @@ export function ProjectManagerDashboard() {
         <DataCard title="Project health" description="Status & delivery progress" className="lg:col-span-2" padded={false}>
           <ul className="divide-y">
             {PROJECTS.map((p) => {
-              const tone = p.status === "on_hold" ? "warning" : p.progress < 50 ? "info" : "primary";
+              const progress = p.estimatedHours ? Math.min(100, Math.round((p.actualHours / p.estimatedHours) * 100)) : 0;
+              const tone = p.status === "on_hold" ? "warning" : progress < 50 ? "info" : "primary";
               return (
                 <li key={p.id} className="grid grid-cols-12 items-center gap-3 px-5 py-3.5">
                   <div className="col-span-12 sm:col-span-5">
                     <p className="text-sm font-semibold">{p.name}</p>
-                    <p className="text-xs text-muted-foreground">{p.client} · Due {p.dueDate}</p>
+                    <p className="text-xs text-muted-foreground">{p.client} · Due {p.endDate}</p>
                   </div>
                   <div className="col-span-8 sm:col-span-5 space-y-1.5">
-                    <ProgressBar value={p.progress} tone={tone as any} />
-                    <p className="text-[11px] text-muted-foreground">{p.progress}% complete · {p.team} members</p>
+                    <ProgressBar value={progress} tone={tone as any} />
+                    <p className="text-[11px] text-muted-foreground">{progress}% complete · {p.members.length} members</p>
                   </div>
                   <div className="col-span-4 sm:col-span-2 sm:text-right">
                     <StatusBadge status={p.status} />
