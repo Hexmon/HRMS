@@ -1,39 +1,81 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { PageHeader } from "@/components/page-header";
-import { Card } from "@/components/ui/card";
-import { ChevronRight } from "lucide-react";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { PageHeader } from "@/components/ui-kit";
+import { useAuth } from "@/lib/auth";
+import { cn } from "@/lib/utils";
+import {
+  LayoutDashboard, Users, Clock, Plane, Briefcase, Timer, Wallet,
+  Boxes, LifeBuoy, ShieldCheck, ChevronLeft,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-export const Route = createFileRoute("/_app/reports")({
-  component: ReportsPage,
-});
+export const Route = createFileRoute("/_app/reports")({ component: ReportsLayout });
 
-const reports = [
-  { name: "Headcount summary", desc: "Active vs inactive, by department and location.", tag: "HR" },
-  { name: "Attendance compliance", desc: "Late check-ins, absences and WFH ratios.", tag: "HR" },
-  { name: "Leave utilization", desc: "Balances, accruals and burn-down across teams.", tag: "HR" },
-  { name: "Project profitability", desc: "Billable vs cost across active engagements.", tag: "Delivery" },
-  { name: "Timesheet compliance", desc: "Submitted, approved and pending entries.", tag: "Delivery" },
-  { name: "Expense ageing", desc: "Pending claims by age, by category, by approver.", tag: "Finance" },
-  { name: "Asset inventory", desc: "Allocated, in-stock, in-repair and retired.", tag: "IT" },
-  { name: "Helpdesk SLA", desc: "First-response and resolution against SLA.", tag: "Support" },
+interface CategoryDef {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  roles: string[]; // role keys allowed
+}
+
+export const REPORT_CATEGORIES: CategoryDef[] = [
+  { to: "/reports/hr", label: "HR Reports", icon: Users, roles: ["main_admin", "hr_admin"] },
+  { to: "/reports/attendance", label: "Attendance Reports", icon: Clock, roles: ["main_admin", "hr_admin", "manager"] },
+  { to: "/reports/leave", label: "Leave & WFH Reports", icon: Plane, roles: ["main_admin", "hr_admin", "manager"] },
+  { to: "/reports/projects", label: "Project Reports", icon: Briefcase, roles: ["main_admin", "manager", "project_manager"] },
+  { to: "/reports/timesheet", label: "Timesheet Reports", icon: Timer, roles: ["main_admin", "manager", "project_manager", "hr_admin"] },
+  { to: "/reports/expenses", label: "Expense Reports", icon: Wallet, roles: ["main_admin", "finance_manager"] },
+  { to: "/reports/assets", label: "Asset Reports", icon: Boxes, roles: ["main_admin", "asset_admin"] },
+  { to: "/reports/helpdesk", label: "Helpdesk Reports", icon: LifeBuoy, roles: ["main_admin", "helpdesk_agent", "asset_admin", "hr_admin", "finance_manager"] },
+  { to: "/reports/audit", label: "Audit Reports", icon: ShieldCheck, roles: ["main_admin"] },
 ];
 
-function ReportsPage() {
+export function visibleCategoriesForRole(role: string | null) {
+  if (!role) return [];
+  return REPORT_CATEGORIES.filter((c) => c.roles.includes(role));
+}
+
+function ReportsLayout() {
+  const { activeRole } = useAuth();
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const isIndex = path === "/reports" || path === "/reports/";
+  const current = REPORT_CATEGORIES.find((c) => path === c.to || path.startsWith(c.to + "/"));
+
   return (
     <>
-      <PageHeader title="Reports" description="A curated library of operational, people and financial reports." />
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {reports.map((r) => (
-          <Card key={r.name} className="group cursor-pointer rounded-2xl border-border/60 p-5 transition hover:-translate-y-0.5 hover:shadow-md">
-            <div className="flex items-start justify-between">
-              <span className="rounded-full bg-primary-soft px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-primary">{r.tag}</span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-primary" />
-            </div>
-            <h3 className="mt-3 text-base font-semibold tracking-tight">{r.name}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{r.desc}</p>
-          </Card>
-        ))}
-      </div>
+      <PageHeader
+        eyebrow="Insights"
+        title={current?.label ?? "Reports"}
+        description={
+          isIndex
+            ? "Curated, role-aware reports across people, projects, finance and IT."
+            : "Filter, drill down and export role-specific data."
+        }
+        actions={
+          !isIndex && (
+            <Button asChild size="sm" variant="ghost">
+              <Link to="/reports"><ChevronLeft className="mr-1 h-4 w-4" /> Back to reports</Link>
+            </Button>
+          )
+        }
+      />
+      {!isIndex && (
+        <div className="-mx-1 flex gap-1 overflow-x-auto border-b pt-1">
+          {visibleCategoriesForRole(activeRole ?? null).map((c) => {
+            const active = path === c.to || path.startsWith(c.to + "/");
+            return (
+              <Link key={c.to} to={c.to}
+                className={cn(
+                  "inline-flex items-center gap-2 whitespace-nowrap rounded-t-xl border-b-2 px-3 py-2.5 text-sm font-medium transition",
+                  active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <c.icon className="h-4 w-4" />{c.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+      <div className="pt-2"><Outlet /></div>
     </>
   );
 }
