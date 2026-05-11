@@ -18,7 +18,7 @@ interface Field { label: string; value: string; }
 
 function Section({ title, icon: Icon, fields }: { title: string; icon: any; fields: Field[] }) {
   return (
-    <DataCard title={title} icon={Icon}>
+    <DataCard title={title} actions={<Icon className="h-4 w-4 text-primary" />}>
       <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
         {fields.map((f) => (
           <div key={f.label}>
