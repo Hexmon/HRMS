@@ -95,10 +95,12 @@ function RootComponent() {
       <AuthProvider>
         <EmployeesProvider>
           <LeaveProvider>
-            <TooltipProvider delayDuration={150}>
-              <Outlet />
-              <Toaster />
-            </TooltipProvider>
+            <ProjectsProvider>
+              <TooltipProvider delayDuration={150}>
+                <Outlet />
+                <Toaster />
+              </TooltipProvider>
+            </ProjectsProvider>
           </LeaveProvider>
         </EmployeesProvider>
       </AuthProvider>
