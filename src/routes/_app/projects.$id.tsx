@@ -545,10 +545,10 @@ function ProjectDetailPage() {
                 .reverse()
                 .map((a) => ({
                   status: "approved" as const,
-                  label: a.action,
-                  actor: a.actor,
+                  approver: a.actor,
+                  role: a.action,
                   at: new Date(a.at).toLocaleString(),
-                  remarks: a.remarks,
+                  remark: a.remarks,
                 }))}
             />
           </Card>
