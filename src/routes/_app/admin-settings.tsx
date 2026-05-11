@@ -1,7 +1,6 @@
-import { createFileRoute, Link, Outlet, useRouterState, redirect } from "@tanstack/react-router";
-import { PageHeader } from "@/components/ui-kit";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { PageHeader, ModuleTabs } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
-import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Building2, Database, ShieldCheck, GitBranch, FileText,
   Mail, BellRing, Lock, ScrollText,
