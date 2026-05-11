@@ -50,6 +50,7 @@ import { Route as AppHelpdeskReportsRouteImport } from './routes/_app/helpdesk.r
 import { Route as AppHelpdeskQueueRouteImport } from './routes/_app/helpdesk.queue'
 import { Route as AppHelpdeskMyRouteImport } from './routes/_app/helpdesk.my'
 import { Route as AppHelpdeskCategoriesRouteImport } from './routes/_app/helpdesk.categories'
+import { Route as AppHelpdeskIdRouteImport } from './routes/_app/helpdesk.$id'
 import { Route as AppExpensesReviewRouteImport } from './routes/_app/expenses.review'
 import { Route as AppExpensesReportsRouteImport } from './routes/_app/expenses.reports'
 import { Route as AppExpensesRegisterRouteImport } from './routes/_app/expenses.register'
@@ -280,6 +281,11 @@ const AppHelpdeskCategoriesRoute = AppHelpdeskCategoriesRouteImport.update({
   path: '/categories',
   getParentRoute: () => AppHelpdeskRoute,
 } as any)
+const AppHelpdeskIdRoute = AppHelpdeskIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
 const AppExpensesReviewRoute = AppExpensesReviewRouteImport.update({
   id: '/review',
   path: '/review',
@@ -452,6 +458,7 @@ export interface FileRoutesByFullPath {
   '/expenses/register': typeof AppExpensesRegisterRoute
   '/expenses/reports': typeof AppExpensesReportsRoute
   '/expenses/review': typeof AppExpensesReviewRoute
+  '/helpdesk/$id': typeof AppHelpdeskIdRoute
   '/helpdesk/categories': typeof AppHelpdeskCategoriesRoute
   '/helpdesk/my': typeof AppHelpdeskMyRoute
   '/helpdesk/queue': typeof AppHelpdeskQueueRoute
@@ -512,6 +519,7 @@ export interface FileRoutesByTo {
   '/expenses/register': typeof AppExpensesRegisterRoute
   '/expenses/reports': typeof AppExpensesReportsRoute
   '/expenses/review': typeof AppExpensesReviewRoute
+  '/helpdesk/$id': typeof AppHelpdeskIdRoute
   '/helpdesk/categories': typeof AppHelpdeskCategoriesRoute
   '/helpdesk/my': typeof AppHelpdeskMyRoute
   '/helpdesk/queue': typeof AppHelpdeskQueueRoute
@@ -581,6 +589,7 @@ export interface FileRoutesById {
   '/_app/expenses/register': typeof AppExpensesRegisterRoute
   '/_app/expenses/reports': typeof AppExpensesReportsRoute
   '/_app/expenses/review': typeof AppExpensesReviewRoute
+  '/_app/helpdesk/$id': typeof AppHelpdeskIdRoute
   '/_app/helpdesk/categories': typeof AppHelpdeskCategoriesRoute
   '/_app/helpdesk/my': typeof AppHelpdeskMyRoute
   '/_app/helpdesk/queue': typeof AppHelpdeskQueueRoute
@@ -650,6 +659,7 @@ export interface FileRouteTypes {
     | '/expenses/register'
     | '/expenses/reports'
     | '/expenses/review'
+    | '/helpdesk/$id'
     | '/helpdesk/categories'
     | '/helpdesk/my'
     | '/helpdesk/queue'
@@ -710,6 +720,7 @@ export interface FileRouteTypes {
     | '/expenses/register'
     | '/expenses/reports'
     | '/expenses/review'
+    | '/helpdesk/$id'
     | '/helpdesk/categories'
     | '/helpdesk/my'
     | '/helpdesk/queue'
@@ -778,6 +789,7 @@ export interface FileRouteTypes {
     | '/_app/expenses/register'
     | '/_app/expenses/reports'
     | '/_app/expenses/review'
+    | '/_app/helpdesk/$id'
     | '/_app/helpdesk/categories'
     | '/_app/helpdesk/my'
     | '/_app/helpdesk/queue'
@@ -1101,6 +1113,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppHelpdeskCategoriesRouteImport
       parentRoute: typeof AppHelpdeskRoute
     }
+    '/_app/helpdesk/$id': {
+      id: '/_app/helpdesk/$id'
+      path: '/$id'
+      fullPath: '/helpdesk/$id'
+      preLoaderRoute: typeof AppHelpdeskIdRouteImport
+      parentRoute: typeof AppHelpdeskRoute
+    }
     '/_app/expenses/review': {
       id: '/_app/expenses/review'
       path: '/review'
@@ -1387,6 +1406,7 @@ const AppExpensesRouteWithChildren = AppExpensesRoute._addFileChildren(
 )
 
 interface AppHelpdeskRouteChildren {
+  AppHelpdeskIdRoute: typeof AppHelpdeskIdRoute
   AppHelpdeskCategoriesRoute: typeof AppHelpdeskCategoriesRoute
   AppHelpdeskMyRoute: typeof AppHelpdeskMyRoute
   AppHelpdeskQueueRoute: typeof AppHelpdeskQueueRoute
@@ -1396,6 +1416,7 @@ interface AppHelpdeskRouteChildren {
 }
 
 const AppHelpdeskRouteChildren: AppHelpdeskRouteChildren = {
+  AppHelpdeskIdRoute: AppHelpdeskIdRoute,
   AppHelpdeskCategoriesRoute: AppHelpdeskCategoriesRoute,
   AppHelpdeskMyRoute: AppHelpdeskMyRoute,
   AppHelpdeskQueueRoute: AppHelpdeskQueueRoute,
