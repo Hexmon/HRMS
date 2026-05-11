@@ -18,10 +18,7 @@ function HelpdeskLayout() {
   const isAdmin = activeRole === "main_admin";
   const [open, setOpen] = useState(false);
 
-  // Don't render layout chrome on the detail page — that page owns its own header.
-  if (/^\/helpdesk\/[^/]+$/.test(path) && !["/helpdesk/queue", "/helpdesk/sla", "/helpdesk/categories", "/helpdesk/reports", "/helpdesk/my"].includes(path)) {
-    return <Outlet />;
-  }
+  const isDetail = /^\/helpdesk\/TKT-/.test(path);
 
   const TABS = [
     { to: "/helpdesk", label: "Dashboard", icon: LayoutDashboard, exact: true, show: true },
@@ -46,23 +43,25 @@ function HelpdeskLayout() {
           </ActionButton>
         }
       />
-      <div className="-mx-1 flex gap-1 overflow-x-auto border-b pt-1">
-        {visible.map((t) => {
-          const active = t.exact ? path === t.to : path === t.to || path.startsWith(t.to + "/");
-          return (
-            <Link
-              key={t.to}
-              to={t.to}
-              className={cn(
-                "inline-flex items-center gap-2 whitespace-nowrap rounded-t-xl border-b-2 px-3 py-2.5 text-sm font-medium transition",
-                active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <t.icon className="h-4 w-4" />{t.label}
-            </Link>
-          );
-        })}
-      </div>
+      {!isDetail && (
+        <div className="-mx-1 flex gap-1 overflow-x-auto border-b pt-1">
+          {visible.map((t) => {
+            const active = t.exact ? path === t.to : path === t.to || path.startsWith(t.to + "/");
+            return (
+              <Link
+                key={t.to}
+                to={t.to}
+                className={cn(
+                  "inline-flex items-center gap-2 whitespace-nowrap rounded-t-xl border-b-2 px-3 py-2.5 text-sm font-medium transition",
+                  active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <t.icon className="h-4 w-4" />{t.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
       <div className="pt-2"><Outlet /></div>
       <RaiseTicketDrawer open={open} onOpenChange={setOpen} />
     </>
