@@ -18,3 +18,4 @@ export { QuickActionCard } from "./quick-action-card";
 export { ComingSoon } from "./coming-soon";
 export { ConfirmDialog } from "./confirm-dialog";
 export { SkeletonCard, SkeletonList, SkeletonStats } from "./skeletons";
+export { ModuleTabs, type ModuleTab } from "./module-tabs";
