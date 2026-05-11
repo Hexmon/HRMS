@@ -9,6 +9,11 @@ import {
   Settings as SettingsIcon,
   UserCog,
   ShieldCheck,
+  Briefcase,
+  Receipt,
+  Plane,
+  LifeBuoy,
+  Timer,
 } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Input } from "@/components/ui/input";
@@ -28,6 +33,7 @@ import { useAuth, ROLES, ROLE_MAP } from "@/lib/auth";
 import type { Role } from "@/lib/mock";
 import { UserAvatar } from "@/components/ui-kit/user-avatar";
 import { NotificationPanel } from "@/components/ui-kit/notification-panel";
+import { toast } from "sonner";
 
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -45,47 +51,105 @@ const PAGE_TITLES: Record<string, string> = {
   "/admin-settings": "Admin Settings",
 };
 
+interface QuickAction {
+  label: string;
+  to: string;
+  icon: typeof Plus;
+  hint: string;
+  requires?: string; // role-key
+}
+
+const QUICK_ACTIONS: QuickAction[] = [
+  { label: "Apply leave", to: "/leave-wfh/apply-leave", icon: Plane, hint: "Personal" },
+  { label: "Submit timesheet", to: "/timesheet", icon: Timer, hint: "Personal" },
+  { label: "New expense claim", to: "/expenses/create", icon: Receipt, hint: "Personal" },
+  { label: "Raise a ticket", to: "/helpdesk", icon: LifeBuoy, hint: "Support" },
+  { label: "Create project", to: "/projects", icon: Briefcase, hint: "Manager" },
+];
+
 export function Topbar() {
   const { user, activeRole, setActiveRole, logout } = useAuth();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const title = PAGE_TITLES[path] ?? "Hawkaii";
+  const title =
+    PAGE_TITLES[path] ??
+    Object.entries(PAGE_TITLES).find(([k]) => path.startsWith(k + "/"))?.[1] ??
+    "Hawkaii";
 
   if (!user || !activeRole) return null;
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b bg-background/80 px-3 backdrop-blur sm:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/65 sm:px-6">
       <SidebarTrigger className="text-muted-foreground" />
 
       {/* Page title */}
       <div className="ml-1 hidden min-w-0 sm:block">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Hawkaii</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80">
+          Hawkaii
+        </p>
         <h1 className="-mt-0.5 truncate text-sm font-semibold">{title}</h1>
       </div>
 
       {/* Search */}
-      <div className="relative ml-2 hidden max-w-sm flex-1 md:block">
+      <div className="relative ml-3 hidden max-w-sm flex-1 lg:block">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Search employees, projects, tickets…"
-          className="h-9 rounded-full border-border/70 bg-secondary/60 pl-9 pr-4 text-sm focus-visible:ring-primary/30"
+          aria-label="Global search"
+          onFocus={(e) => {
+            e.currentTarget.blur();
+            toast.info("Global search is coming soon.", { description: "Use the search bar in any module for now." });
+          }}
+          className="h-9 rounded-full border-border/70 bg-secondary/60 pl-9 pr-16 text-sm focus-visible:ring-primary/30"
         />
+        <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 select-none rounded-md border bg-background px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground sm:block">
+          ⌘K
+        </kbd>
       </div>
 
       <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-        {/* Quick action */}
-        <Button
-          size="sm"
-          className="hidden rounded-full text-primary-foreground sm:inline-flex"
-          style={{ background: "var(--gradient-primary)" }}
-        >
-          <Plus className="mr-1 h-4 w-4" /> Quick action
-        </Button>
+        {/* Quick action menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="sm"
+              className="hidden rounded-full text-primary-foreground shadow-sm sm:inline-flex"
+              style={{ background: "var(--gradient-primary)" }}
+            >
+              <Plus className="mr-1 h-4 w-4" /> Quick action
+              <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-80" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Create
+            </DropdownMenuLabel>
+            {QUICK_ACTIONS.map((a) => (
+              <DropdownMenuItem key={a.to} asChild>
+                <Link to={a.to} className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <a.icon className="h-4 w-4 text-muted-foreground" />
+                    {a.label}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80">
+                    {a.hint}
+                  </span>
+                </Link>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Help */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="rounded-full" aria-label="Help">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full"
+              aria-label="Help"
+              onClick={() => toast.info("Help center is coming soon.")}
+            >
               <HelpCircle className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
@@ -109,7 +173,7 @@ export function Topbar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
-            <DropdownMenuLabel className="text-xs uppercase text-muted-foreground">
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
               Switch role (prototype)
             </DropdownMenuLabel>
             <DropdownMenuRadioGroup value={activeRole} onValueChange={(v) => setActiveRole(v as Role)}>
@@ -126,7 +190,10 @@ export function Topbar() {
         {/* Profile dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 rounded-full border bg-card px-1.5 py-1 text-left transition hover:bg-accent">
+            <button
+              className="flex items-center gap-2 rounded-full border bg-card px-1.5 py-1 text-left transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2"
+              aria-label="Account menu"
+            >
               <UserAvatar name={user.name} size="sm" />
               <div className="hidden pr-1 text-xs leading-tight md:block">
                 <p className="font-semibold">{user.name.split(" ")[0]}</p>
@@ -146,11 +213,13 @@ export function Topbar() {
             <DropdownMenuItem asChild>
               <Link to="/ems"><UserIcon className="mr-2 h-4 w-4" /> My Profile</Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to="/admin-settings"><SettingsIcon className="mr-2 h-4 w-4" /> My Settings</Link>
-            </DropdownMenuItem>
+            {(activeRole === "main_admin" || activeRole === "hr_admin") && (
+              <DropdownMenuItem asChild>
+                <Link to="/admin-settings"><SettingsIcon className="mr-2 h-4 w-4" /> Settings</Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs uppercase text-muted-foreground">
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
               <UserCog className="mr-1 inline h-3 w-3" /> Switch role
             </DropdownMenuLabel>
             <DropdownMenuRadioGroup value={activeRole} onValueChange={(v) => setActiveRole(v as Role)}>

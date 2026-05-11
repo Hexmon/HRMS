@@ -12,6 +12,8 @@ interface Props {
   trend?: { value: string; direction: "up" | "down" };
   icon?: React.ComponentType<{ className?: string }>;
   tone?: StatTone;
+  /** Subtle gradient ribbon at the top of the card. */
+  accent?: boolean;
 }
 
 const TONE: Record<StatTone, string> = {
@@ -22,14 +24,28 @@ const TONE: Record<StatTone, string> = {
   destructive: "bg-destructive/15 text-destructive",
 };
 
-export function StatCard({ label, value, hint, trend, icon: Icon, tone = "primary" }: Props) {
+const ACCENT: Record<StatTone, string> = {
+  primary: "from-primary/70 to-primary/0",
+  success: "from-success/70 to-success/0",
+  warning: "from-warning/80 to-warning/0",
+  info: "from-info/70 to-info/0",
+  destructive: "from-destructive/70 to-destructive/0",
+};
+
+export function StatCard({ label, value, hint, trend, icon: Icon, tone = "primary", accent = false }: Props) {
   return (
-    <Card className="rounded-2xl border-border/60 p-5 transition hover:-translate-y-0.5 hover:shadow-md">
-      <div className="flex items-start justify-between">
+    <Card className="surface-card-hover relative overflow-hidden p-5">
+      {accent && (
+        <div
+          aria-hidden
+          className={cn("absolute inset-x-0 top-0 h-px bg-gradient-to-r", ACCENT[tone])}
+        />
+      )}
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight">{value}</p>
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{value}</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             {trend && (
               <span
                 className={cn(
@@ -45,7 +61,7 @@ export function StatCard({ label, value, hint, trend, icon: Icon, tone = "primar
           </div>
         </div>
         {Icon && (
-          <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", TONE[tone])}>
+          <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl ring-1 ring-border/60", TONE[tone])}>
             <Icon className="h-5 w-5" />
           </div>
         )}
