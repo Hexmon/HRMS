@@ -40,6 +40,7 @@ import { Route as AppAttendanceIndexRouteImport } from './routes/_app/attendance
 import { Route as AppAssetsIndexRouteImport } from './routes/_app/assets.index'
 import { Route as AppTimesheetProjectsRouteImport } from './routes/_app/timesheet.projects'
 import { Route as AppTimesheetApprovalsRouteImport } from './routes/_app/timesheet.approvals'
+import { Route as AppReportsLeaveRouteImport } from './routes/_app/reports.leave'
 import { Route as AppReportsHrRouteImport } from './routes/_app/reports.hr'
 import { Route as AppReportsAttendanceRouteImport } from './routes/_app/reports.attendance'
 import { Route as AppProjectsIdRouteImport } from './routes/_app/projects.$id'
@@ -233,6 +234,11 @@ const AppTimesheetApprovalsRoute = AppTimesheetApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
   getParentRoute: () => AppTimesheetRoute,
+} as any)
+const AppReportsLeaveRoute = AppReportsLeaveRouteImport.update({
+  id: '/leave',
+  path: '/leave',
+  getParentRoute: () => AppReportsRoute,
 } as any)
 const AppReportsHrRoute = AppReportsHrRouteImport.update({
   id: '/hr',
@@ -490,6 +496,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id': typeof AppProjectsIdRoute
   '/reports/attendance': typeof AppReportsAttendanceRoute
   '/reports/hr': typeof AppReportsHrRoute
+  '/reports/leave': typeof AppReportsLeaveRoute
   '/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/timesheet/projects': typeof AppTimesheetProjectsRoute
   '/assets/': typeof AppAssetsIndexRoute
@@ -553,6 +560,7 @@ export interface FileRoutesByTo {
   '/projects/$id': typeof AppProjectsIdRoute
   '/reports/attendance': typeof AppReportsAttendanceRoute
   '/reports/hr': typeof AppReportsHrRoute
+  '/reports/leave': typeof AppReportsLeaveRoute
   '/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/timesheet/projects': typeof AppTimesheetProjectsRoute
   '/assets': typeof AppAssetsIndexRoute
@@ -626,6 +634,7 @@ export interface FileRoutesById {
   '/_app/projects/$id': typeof AppProjectsIdRoute
   '/_app/reports/attendance': typeof AppReportsAttendanceRoute
   '/_app/reports/hr': typeof AppReportsHrRoute
+  '/_app/reports/leave': typeof AppReportsLeaveRoute
   '/_app/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/_app/timesheet/projects': typeof AppTimesheetProjectsRoute
   '/_app/assets/': typeof AppAssetsIndexRoute
@@ -699,6 +708,7 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/reports/attendance'
     | '/reports/hr'
+    | '/reports/leave'
     | '/timesheet/approvals'
     | '/timesheet/projects'
     | '/assets/'
@@ -762,6 +772,7 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/reports/attendance'
     | '/reports/hr'
+    | '/reports/leave'
     | '/timesheet/approvals'
     | '/timesheet/projects'
     | '/assets'
@@ -834,6 +845,7 @@ export interface FileRouteTypes {
     | '/_app/projects/$id'
     | '/_app/reports/attendance'
     | '/_app/reports/hr'
+    | '/_app/reports/leave'
     | '/_app/timesheet/approvals'
     | '/_app/timesheet/projects'
     | '/_app/assets/'
@@ -1076,6 +1088,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/timesheet/approvals'
       preLoaderRoute: typeof AppTimesheetApprovalsRouteImport
       parentRoute: typeof AppTimesheetRoute
+    }
+    '/_app/reports/leave': {
+      id: '/_app/reports/leave'
+      path: '/leave'
+      fullPath: '/reports/leave'
+      preLoaderRoute: typeof AppReportsLeaveRouteImport
+      parentRoute: typeof AppReportsRoute
     }
     '/_app/reports/hr': {
       id: '/_app/reports/hr'
@@ -1521,12 +1540,14 @@ const AppProjectsRouteWithChildren = AppProjectsRoute._addFileChildren(
 interface AppReportsRouteChildren {
   AppReportsAttendanceRoute: typeof AppReportsAttendanceRoute
   AppReportsHrRoute: typeof AppReportsHrRoute
+  AppReportsLeaveRoute: typeof AppReportsLeaveRoute
   AppReportsIndexRoute: typeof AppReportsIndexRoute
 }
 
 const AppReportsRouteChildren: AppReportsRouteChildren = {
   AppReportsAttendanceRoute: AppReportsAttendanceRoute,
   AppReportsHrRoute: AppReportsHrRoute,
+  AppReportsLeaveRoute: AppReportsLeaveRoute,
   AppReportsIndexRoute: AppReportsIndexRoute,
 }
 
