@@ -13,7 +13,6 @@ import {
   LifeBuoy,
   BarChart3,
   Settings,
-  Lock,
 } from "lucide-react";
 import {
   Sidebar,
@@ -59,6 +58,14 @@ const INSIGHTS: Item[] = [
   { title: "Admin Settings", url: "/admin-settings", icon: Settings },
 ];
 
+const ALL_GROUPS: { label: string; items: Item[] }[] = [
+  { label: "Workspace", items: WORKSPACE },
+  { label: "Operations", items: OPERATIONS },
+  { label: "Insights", items: INSIGHTS },
+];
+
+const ALL_MODULES = WORKSPACE.length + OPERATIONS.length + INSIGHTS.length;
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
@@ -70,55 +77,43 @@ export function AppSidebar() {
   const isActive = (url: string) => path === url || path.startsWith(url + "/");
   const canAccess = (url: string) => accessible.includes(url);
 
-  const renderGroup = (label: string, items: Item[]) => (
-    <SidebarGroup>
-      {!collapsed && (
-        <SidebarGroupLabel className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-          {label}
-        </SidebarGroupLabel>
-      )}
-      <SidebarGroupContent>
-        <SidebarMenu>
-          {items.map((item) => {
-            const allowed = canAccess(item.url);
-            return (
+  const renderGroup = (label: string, items: Item[]) => {
+    const visible = items.filter((i) => canAccess(i.url));
+    if (visible.length === 0) return null;
+    return (
+      <SidebarGroup key={label}>
+        {!collapsed && (
+          <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+            {label}
+          </SidebarGroupLabel>
+        )}
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {visible.map((item) => (
               <SidebarMenuItem key={item.url}>
                 <SidebarMenuButton
                   asChild
-                  isActive={isActive(item.url) && allowed}
-                  className="data-[active=true]:bg-primary-soft data-[active=true]:text-primary data-[active=true]:font-semibold"
+                  isActive={isActive(item.url)}
+                  className="rounded-xl transition data-[active=true]:bg-primary-soft data-[active=true]:text-primary data-[active=true]:font-semibold data-[active=true]:shadow-[inset_3px_0_0_var(--color-primary)]"
                   tooltip={item.title}
                 >
-                  <Link
-                    to={item.url}
-                    aria-disabled={!allowed}
-                    onClick={(e) => {
-                      if (!allowed) e.preventDefault();
-                    }}
-                    className={
-                      "flex items-center gap-3 " +
-                      (!allowed ? "cursor-not-allowed text-muted-foreground/60 hover:bg-transparent hover:text-muted-foreground/60" : "")
-                    }
-                  >
+                  <Link to={item.url} className="flex items-center gap-3">
                     <item.icon className="h-4 w-4 shrink-0" />
-                    {!collapsed && (
-                      <span className="flex-1 truncate">{item.title}</span>
-                    )}
-                    {!collapsed && !allowed && <Lock className="h-3 w-3 opacity-60" />}
+                    {!collapsed && <span className="flex-1 truncate">{item.title}</span>}
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            );
-          })}
-        </SidebarMenu>
-      </SidebarGroupContent>
-    </SidebarGroup>
-  );
+            ))}
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+    );
+  };
 
   return (
     <Sidebar collapsible="icon" className="border-r">
       <SidebarHeader className="border-b px-4 py-4">
-        <Link to="/dashboard" className="flex items-center gap-2.5">
+        <Link to="/dashboard" className="flex items-center gap-2.5 rounded-xl outline-none">
           <div
             className="grid h-9 w-9 place-items-center rounded-xl text-primary-foreground shadow-md"
             style={{ background: "var(--gradient-primary)" }}
@@ -128,25 +123,25 @@ export function AppSidebar() {
           {!collapsed && (
             <div className="flex flex-col leading-tight">
               <span className="text-base font-semibold tracking-tight">Hawkaii</span>
-              <span className="text-[11px] text-muted-foreground">HRMS</span>
+              <span className="text-[11px] text-muted-foreground">HRMS · Workforce OS</span>
             </div>
           )}
         </Link>
       </SidebarHeader>
 
       <SidebarContent className="px-2 py-2">
-        {renderGroup("Workspace", WORKSPACE)}
-        {renderGroup("Operations", OPERATIONS)}
-        {renderGroup("Insights", INSIGHTS)}
+        {ALL_GROUPS.map((g) => renderGroup(g.label, g.items))}
       </SidebarContent>
 
       {!collapsed && activeRole && (
         <SidebarFooter className="border-t p-3">
-          <div className="rounded-xl bg-primary-soft/60 p-3">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-primary/80">Active role</p>
+          <div className="rounded-xl border border-primary/15 bg-primary-soft/60 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary/80">
+              Active role
+            </p>
             <p className="mt-0.5 text-sm font-semibold text-primary">{ROLE_MAP[activeRole].label}</p>
             <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-              {accessible.length} of {WORKSPACE.length + OPERATIONS.length + INSIGHTS.length} modules visible
+              {accessible.length} of {ALL_MODULES} modules visible
             </p>
           </div>
         </SidebarFooter>
