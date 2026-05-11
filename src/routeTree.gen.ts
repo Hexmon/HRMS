@@ -29,6 +29,14 @@ import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
 import { Route as AppAssetsRouteImport } from './routes/_app/assets'
+import { Route as AppEmsIndexRouteImport } from './routes/_app/ems.index'
+import { Route as AppEmsRequestsRouteImport } from './routes/_app/ems.requests'
+import { Route as AppEmsProfileRouteImport } from './routes/_app/ems.profile'
+import { Route as AppEmsPoliciesRouteImport } from './routes/_app/ems.policies'
+import { Route as AppEmsLettersRouteImport } from './routes/_app/ems.letters'
+import { Route as AppEmsDocumentsRouteImport } from './routes/_app/ems.documents'
+import { Route as AppEmsApprovalsRouteImport } from './routes/_app/ems.approvals'
+import { Route as AppEmsAdminRouteImport } from './routes/_app/ems.admin'
 import { Route as AppEmployeesIdRouteImport } from './routes/_app/employees.$id'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
@@ -130,6 +138,46 @@ const AppAssetsRoute = AppAssetsRouteImport.update({
   path: '/assets',
   getParentRoute: () => AppRoute,
 } as any)
+const AppEmsIndexRoute = AppEmsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsRequestsRoute = AppEmsRequestsRouteImport.update({
+  id: '/requests',
+  path: '/requests',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsProfileRoute = AppEmsProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsPoliciesRoute = AppEmsPoliciesRouteImport.update({
+  id: '/policies',
+  path: '/policies',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsLettersRoute = AppEmsLettersRouteImport.update({
+  id: '/letters',
+  path: '/letters',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsDocumentsRoute = AppEmsDocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsApprovalsRoute = AppEmsApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsAdminRoute = AppEmsAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AppEmsRoute,
+} as any)
 const AppEmployeesIdRoute = AppEmployeesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -149,7 +197,7 @@ export interface FileRoutesByFullPath {
   '/attendance': typeof AppAttendanceRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
-  '/ems': typeof AppEmsRoute
+  '/ems': typeof AppEmsRouteWithChildren
   '/expenses': typeof AppExpensesRoute
   '/helpdesk': typeof AppHelpdeskRoute
   '/leave-wfh': typeof AppLeaveWfhRoute
@@ -157,6 +205,14 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AppReportsRoute
   '/timesheet': typeof AppTimesheetRoute
   '/employees/$id': typeof AppEmployeesIdRoute
+  '/ems/admin': typeof AppEmsAdminRoute
+  '/ems/approvals': typeof AppEmsApprovalsRoute
+  '/ems/documents': typeof AppEmsDocumentsRoute
+  '/ems/letters': typeof AppEmsLettersRoute
+  '/ems/policies': typeof AppEmsPoliciesRoute
+  '/ems/profile': typeof AppEmsProfileRoute
+  '/ems/requests': typeof AppEmsRequestsRoute
+  '/ems/': typeof AppEmsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -171,7 +227,6 @@ export interface FileRoutesByTo {
   '/attendance': typeof AppAttendanceRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
-  '/ems': typeof AppEmsRoute
   '/expenses': typeof AppExpensesRoute
   '/helpdesk': typeof AppHelpdeskRoute
   '/leave-wfh': typeof AppLeaveWfhRoute
@@ -179,6 +234,14 @@ export interface FileRoutesByTo {
   '/reports': typeof AppReportsRoute
   '/timesheet': typeof AppTimesheetRoute
   '/employees/$id': typeof AppEmployeesIdRoute
+  '/ems/admin': typeof AppEmsAdminRoute
+  '/ems/approvals': typeof AppEmsApprovalsRoute
+  '/ems/documents': typeof AppEmsDocumentsRoute
+  '/ems/letters': typeof AppEmsLettersRoute
+  '/ems/policies': typeof AppEmsPoliciesRoute
+  '/ems/profile': typeof AppEmsProfileRoute
+  '/ems/requests': typeof AppEmsRequestsRoute
+  '/ems': typeof AppEmsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -195,7 +258,7 @@ export interface FileRoutesById {
   '/_app/attendance': typeof AppAttendanceRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/employees': typeof AppEmployeesRouteWithChildren
-  '/_app/ems': typeof AppEmsRoute
+  '/_app/ems': typeof AppEmsRouteWithChildren
   '/_app/expenses': typeof AppExpensesRoute
   '/_app/helpdesk': typeof AppHelpdeskRoute
   '/_app/leave-wfh': typeof AppLeaveWfhRoute
@@ -203,6 +266,14 @@ export interface FileRoutesById {
   '/_app/reports': typeof AppReportsRoute
   '/_app/timesheet': typeof AppTimesheetRoute
   '/_app/employees/$id': typeof AppEmployeesIdRoute
+  '/_app/ems/admin': typeof AppEmsAdminRoute
+  '/_app/ems/approvals': typeof AppEmsApprovalsRoute
+  '/_app/ems/documents': typeof AppEmsDocumentsRoute
+  '/_app/ems/letters': typeof AppEmsLettersRoute
+  '/_app/ems/policies': typeof AppEmsPoliciesRoute
+  '/_app/ems/profile': typeof AppEmsProfileRoute
+  '/_app/ems/requests': typeof AppEmsRequestsRoute
+  '/_app/ems/': typeof AppEmsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -227,6 +298,14 @@ export interface FileRouteTypes {
     | '/reports'
     | '/timesheet'
     | '/employees/$id'
+    | '/ems/admin'
+    | '/ems/approvals'
+    | '/ems/documents'
+    | '/ems/letters'
+    | '/ems/policies'
+    | '/ems/profile'
+    | '/ems/requests'
+    | '/ems/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -241,7 +320,6 @@ export interface FileRouteTypes {
     | '/attendance'
     | '/dashboard'
     | '/employees'
-    | '/ems'
     | '/expenses'
     | '/helpdesk'
     | '/leave-wfh'
@@ -249,6 +327,14 @@ export interface FileRouteTypes {
     | '/reports'
     | '/timesheet'
     | '/employees/$id'
+    | '/ems/admin'
+    | '/ems/approvals'
+    | '/ems/documents'
+    | '/ems/letters'
+    | '/ems/policies'
+    | '/ems/profile'
+    | '/ems/requests'
+    | '/ems'
   id:
     | '__root__'
     | '/'
@@ -272,6 +358,14 @@ export interface FileRouteTypes {
     | '/_app/reports'
     | '/_app/timesheet'
     | '/_app/employees/$id'
+    | '/_app/ems/admin'
+    | '/_app/ems/approvals'
+    | '/_app/ems/documents'
+    | '/_app/ems/letters'
+    | '/_app/ems/policies'
+    | '/_app/ems/profile'
+    | '/_app/ems/requests'
+    | '/_app/ems/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -428,6 +522,62 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAssetsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/ems/': {
+      id: '/_app/ems/'
+      path: '/'
+      fullPath: '/ems/'
+      preLoaderRoute: typeof AppEmsIndexRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/requests': {
+      id: '/_app/ems/requests'
+      path: '/requests'
+      fullPath: '/ems/requests'
+      preLoaderRoute: typeof AppEmsRequestsRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/profile': {
+      id: '/_app/ems/profile'
+      path: '/profile'
+      fullPath: '/ems/profile'
+      preLoaderRoute: typeof AppEmsProfileRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/policies': {
+      id: '/_app/ems/policies'
+      path: '/policies'
+      fullPath: '/ems/policies'
+      preLoaderRoute: typeof AppEmsPoliciesRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/letters': {
+      id: '/_app/ems/letters'
+      path: '/letters'
+      fullPath: '/ems/letters'
+      preLoaderRoute: typeof AppEmsLettersRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/documents': {
+      id: '/_app/ems/documents'
+      path: '/documents'
+      fullPath: '/ems/documents'
+      preLoaderRoute: typeof AppEmsDocumentsRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/approvals': {
+      id: '/_app/ems/approvals'
+      path: '/approvals'
+      fullPath: '/ems/approvals'
+      preLoaderRoute: typeof AppEmsApprovalsRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/admin': {
+      id: '/_app/ems/admin'
+      path: '/admin'
+      fullPath: '/ems/admin'
+      preLoaderRoute: typeof AppEmsAdminRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
     '/_app/employees/$id': {
       id: '/_app/employees/$id'
       path: '/$id'
@@ -450,12 +600,37 @@ const AppEmployeesRouteWithChildren = AppEmployeesRoute._addFileChildren(
   AppEmployeesRouteChildren,
 )
 
+interface AppEmsRouteChildren {
+  AppEmsAdminRoute: typeof AppEmsAdminRoute
+  AppEmsApprovalsRoute: typeof AppEmsApprovalsRoute
+  AppEmsDocumentsRoute: typeof AppEmsDocumentsRoute
+  AppEmsLettersRoute: typeof AppEmsLettersRoute
+  AppEmsPoliciesRoute: typeof AppEmsPoliciesRoute
+  AppEmsProfileRoute: typeof AppEmsProfileRoute
+  AppEmsRequestsRoute: typeof AppEmsRequestsRoute
+  AppEmsIndexRoute: typeof AppEmsIndexRoute
+}
+
+const AppEmsRouteChildren: AppEmsRouteChildren = {
+  AppEmsAdminRoute: AppEmsAdminRoute,
+  AppEmsApprovalsRoute: AppEmsApprovalsRoute,
+  AppEmsDocumentsRoute: AppEmsDocumentsRoute,
+  AppEmsLettersRoute: AppEmsLettersRoute,
+  AppEmsPoliciesRoute: AppEmsPoliciesRoute,
+  AppEmsProfileRoute: AppEmsProfileRoute,
+  AppEmsRequestsRoute: AppEmsRequestsRoute,
+  AppEmsIndexRoute: AppEmsIndexRoute,
+}
+
+const AppEmsRouteWithChildren =
+  AppEmsRoute._addFileChildren(AppEmsRouteChildren)
+
 interface AppRouteChildren {
   AppAssetsRoute: typeof AppAssetsRoute
   AppAttendanceRoute: typeof AppAttendanceRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppEmployeesRoute: typeof AppEmployeesRouteWithChildren
-  AppEmsRoute: typeof AppEmsRoute
+  AppEmsRoute: typeof AppEmsRouteWithChildren
   AppExpensesRoute: typeof AppExpensesRoute
   AppHelpdeskRoute: typeof AppHelpdeskRoute
   AppLeaveWfhRoute: typeof AppLeaveWfhRoute
@@ -469,7 +644,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAttendanceRoute: AppAttendanceRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppEmployeesRoute: AppEmployeesRouteWithChildren,
-  AppEmsRoute: AppEmsRoute,
+  AppEmsRoute: AppEmsRouteWithChildren,
   AppExpensesRoute: AppExpensesRoute,
   AppHelpdeskRoute: AppHelpdeskRoute,
   AppLeaveWfhRoute: AppLeaveWfhRoute,
