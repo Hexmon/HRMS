@@ -22,10 +22,10 @@ export const Route = createFileRoute("/_app/admin-settings")({
   component: AdminSettingsLayout,
 });
 
-interface Tab { to: string; label: string; icon: typeof LayoutDashboard; mainOnly?: boolean }
+interface Tab { to: string; label: string; icon: typeof LayoutDashboard; mainOnly?: boolean; exact?: boolean }
 
 const TABS: Tab[] = [
-  { to: "/admin-settings", label: "Overview", icon: LayoutDashboard },
+  { to: "/admin-settings", label: "Overview", icon: LayoutDashboard, exact: true },
   { to: "/admin-settings/company", label: "Company", icon: Building2 },
   { to: "/admin-settings/master-data", label: "Master Data", icon: Database },
   { to: "/admin-settings/roles", label: "Roles & Permissions", icon: ShieldCheck, mainOnly: true },
@@ -39,14 +39,8 @@ const TABS: Tab[] = [
 
 function AdminSettingsLayout() {
   const { activeRole } = useAuth();
-  const path = useRouterState({ select: (s) => s.location.pathname });
   const isMain = activeRole === "main_admin";
-
   const visible = TABS.filter((t) => isMain || !t.mainOnly);
-
-  const isExact = (to: string) => path === to || path === to + "/";
-  const isActive = (to: string) =>
-    to === "/admin-settings" ? isExact(to) : path === to || path.startsWith(to + "/");
 
   return (
     <>
@@ -59,24 +53,8 @@ function AdminSettingsLayout() {
             : "Manage HR-related configuration: master data, policies, templates and notifications."
         }
       />
-      <div className="-mx-1 flex gap-1 overflow-x-auto border-b pt-1">
-        {visible.map((t) => {
-          const active = isActive(t.to);
-          return (
-            <Link
-              key={t.to}
-              to={t.to}
-              className={cn(
-                "inline-flex items-center gap-2 whitespace-nowrap rounded-t-xl border-b-2 px-3 py-2.5 text-sm font-medium transition",
-                active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <t.icon className="h-4 w-4" />{t.label}
-            </Link>
-          );
-        })}
-      </div>
-      <div className="pt-4"><Outlet /></div>
+      <ModuleTabs tabs={visible} />
+      <div className="pt-4 page-fade-in"><Outlet /></div>
     </>
   );
 }
