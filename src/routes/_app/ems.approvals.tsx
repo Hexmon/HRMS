@@ -47,14 +47,14 @@ function ApprovalTable({ rows, kind }: { rows: Row[]; kind: string }) {
     toast.success(`${kind} ${ok ? "approved" : "rejected"}`);
   };
   const columns: Column<Row>[] = [
-    { key: "id", header: "ID", cell: (r) => <span className="font-mono text-xs">{r.id}</span> },
+    { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "person", header: "Requester" },
-    { key: "subject", header: "Subject", cell: (r) => <span className="font-medium">{r.subject}</span> },
+    { key: "subject", header: "Subject", render: (r) => <span className="font-medium">{r.subject}</span> },
     { key: "raisedOn", header: "Raised" },
-    { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
+    { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
     {
       key: "actions", header: "Actions",
-      cell: (r) => (
+      render: (r) => (
         <div className="flex gap-2">
           <Button size="sm" className="h-7 rounded-full" onClick={() => act(r.id, true)}><Check className="h-3.5 w-3.5" /></Button>
           <Button size="sm" variant="outline" className="h-7 rounded-full" onClick={() => act(r.id, false)}><X className="h-3.5 w-3.5" /></Button>
@@ -64,7 +64,7 @@ function ApprovalTable({ rows, kind }: { rows: Row[]; kind: string }) {
   ];
   if (data.length === 0)
     return <EmptyState icon={CheckSquare} title="All caught up" description="No pending items in this queue." />;
-  return <DataTable data={data} columns={columns} />;
+  return <DataTable rows={data} columns={columns} />;
 }
 
 function MyApprovals() {

@@ -61,37 +61,37 @@ const POLICIES = [
 
 function DocQueue() {
   const cols: Column<DocRow>[] = [
-    { key: "id", header: "ID", cell: (r) => <span className="font-mono text-xs">{r.id}</span> },
+    { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "employee", header: "Employee" },
-    { key: "doc", header: "Document", cell: (r) => <span className="font-medium">{r.doc}</span> },
+    { key: "doc", header: "Document", render: (r) => <span className="font-medium">{r.doc}</span> },
     { key: "uploadedOn", header: "Uploaded" },
-    { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
-    { key: "a", header: "Actions", cell: () => (
+    { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
+    { key: "a", header: "Actions", render: () => (
       <div className="flex gap-2">
         <Button size="sm" className="h-7 rounded-full" onClick={() => toast.success("Document verified")}><Check className="h-3.5 w-3.5" /></Button>
         <Button size="sm" variant="outline" className="h-7 rounded-full" onClick={() => toast("Rejection note required")}><X className="h-3.5 w-3.5" /></Button>
       </div>
     ) },
   ];
-  return <DataTable data={DOC_QUEUE} columns={cols} />;
+  return <DataTable rows={DOC_QUEUE} columns={cols} />;
 }
 
 function ProfileQueue() {
   const cols: Column<ProfRow>[] = [
-    { key: "id", header: "ID", cell: (r) => <span className="font-mono text-xs">{r.id}</span> },
+    { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "employee", header: "Employee" },
     { key: "field", header: "Field" },
-    { key: "oldVal", header: "Current", cell: (r) => <span className="text-muted-foreground">{r.oldVal}</span> },
-    { key: "newVal", header: "Requested", cell: (r) => <span className="font-medium">{r.newVal}</span> },
+    { key: "oldVal", header: "Current", render: (r) => <span className="text-muted-foreground">{r.oldVal}</span> },
+    { key: "newVal", header: "Requested", render: (r) => <span className="font-medium">{r.newVal}</span> },
     { key: "raisedOn", header: "Raised" },
-    { key: "a", header: "Actions", cell: () => (
+    { key: "a", header: "Actions", render: () => (
       <div className="flex gap-2">
         <Button size="sm" className="h-7 rounded-full" onClick={() => toast.success("Update approved")}><Check className="h-3.5 w-3.5" /></Button>
         <Button size="sm" variant="outline" className="h-7 rounded-full" onClick={() => toast("Update rejected")}><X className="h-3.5 w-3.5" /></Button>
       </div>
     ) },
   ];
-  return <DataTable data={PROFILE_QUEUE} columns={cols} />;
+  return <DataTable rows={PROFILE_QUEUE} columns={cols} />;
 }
 
 function OnboardingChecklist() {
@@ -122,19 +122,19 @@ function OnboardingChecklist() {
 
 function ProbationQueue() {
   const cols: Column<Probation>[] = [
-    { key: "id", header: "ID", cell: (r) => <span className="font-mono text-xs">{r.id}</span> },
+    { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "employee", header: "Employee" },
     { key: "joining", header: "Joining" },
     { key: "due", header: "Confirmation due" },
-    { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
-    { key: "a", header: "Actions", cell: () => (
+    { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
+    { key: "a", header: "Actions", render: () => (
       <div className="flex gap-2">
         <Button size="sm" className="h-7 rounded-full" onClick={() => toast.success("Confirmation issued")}>Confirm</Button>
         <Button size="sm" variant="outline" className="h-7 rounded-full" onClick={() => toast("Probation extended")}>Extend</Button>
       </div>
     ) },
   ];
-  return <DataTable data={PROBATION} columns={cols} />;
+  return <DataTable rows={PROBATION} columns={cols} />;
 }
 
 function ExitChecklist() {
@@ -190,19 +190,19 @@ function PolicyMgmt() {
 
 function LetterQueue() {
   const cols: Column<LetterRow>[] = [
-    { key: "id", header: "ID", cell: (r) => <span className="font-mono text-xs">{r.id}</span> },
+    { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "employee", header: "Employee" },
-    { key: "type", header: "Letter type", cell: (r) => <span className="font-medium">{r.type}</span> },
+    { key: "type", header: "Letter type", render: (r) => <span className="font-medium">{r.type}</span> },
     { key: "raisedOn", header: "Raised" },
-    { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
-    { key: "a", header: "Actions", cell: () => (
+    { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
+    { key: "a", header: "Actions", render: () => (
       <div className="flex gap-2">
         <Button size="sm" className="h-7 rounded-full" onClick={() => toast.success("Letter generated")}>Generate</Button>
         <Button size="sm" variant="outline" className="h-7 rounded-full" onClick={() => toast("Sent to employee")}>Send</Button>
       </div>
     ) },
   ];
-  return <DataTable data={LETTERS} columns={cols} />;
+  return <DataTable rows={LETTERS} columns={cols} />;
 }
 
 function EmsAdmin() {

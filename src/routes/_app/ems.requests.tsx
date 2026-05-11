@@ -60,12 +60,12 @@ function MyRequests() {
   };
 
   const columns: Column<ReqRow>[] = [
-    { key: "id", header: "Request ID", cell: (r) => <span className="font-mono text-xs">{r.id}</span> },
-    { key: "type", header: "Type", cell: (r) => <span className="text-sm">{TYPE_LABEL[r.type]}</span> },
-    { key: "subject", header: "Subject", cell: (r) => <span className="text-sm font-medium">{r.subject}</span> },
+    { key: "id", header: "Request ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
+    { key: "type", header: "Type", render: (r) => <span className="text-sm">{TYPE_LABEL[r.type]}</span> },
+    { key: "subject", header: "Subject", render: (r) => <span className="text-sm font-medium">{r.subject}</span> },
     { key: "approver", header: "Approver" },
     { key: "raisedOn", header: "Raised on" },
-    { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
+    { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
   ];
 
   return (
@@ -80,7 +80,7 @@ function MyRequests() {
       {rows.length === 0 ? (
         <EmptyState icon={Inbox} title="No requests yet" description="Click ‘New request’ to raise one." />
       ) : (
-        <DataTable data={rows} columns={columns} />
+        <DataTable rows={rows} columns={columns} />
       )}
 
       <Modal
