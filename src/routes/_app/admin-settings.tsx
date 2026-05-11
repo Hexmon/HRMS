@@ -12,7 +12,7 @@ export const Route = createFileRoute("/_app/admin-settings")({
     if (typeof window === "undefined") return;
     try {
       const raw = window.localStorage.getItem("hawkaii_session");
-      const role = raw ? (JSON.parse(raw).activeRole as string | null) : null;
+      const role = raw ? (JSON.parse(raw).role as string | null) : null;
       if (role && role !== "main_admin" && role !== "hr_admin") {
         throw redirect({ to: "/dashboard" });
       }
