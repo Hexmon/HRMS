@@ -41,6 +41,7 @@ import { Route as AppAssetsIndexRouteImport } from './routes/_app/assets.index'
 import { Route as AppTimesheetProjectsRouteImport } from './routes/_app/timesheet.projects'
 import { Route as AppTimesheetApprovalsRouteImport } from './routes/_app/timesheet.approvals'
 import { Route as AppReportsHrRouteImport } from './routes/_app/reports.hr'
+import { Route as AppReportsAttendanceRouteImport } from './routes/_app/reports.attendance'
 import { Route as AppProjectsIdRouteImport } from './routes/_app/projects.$id'
 import { Route as AppLeaveWfhMonitorRouteImport } from './routes/_app/leave-wfh.monitor'
 import { Route as AppLeaveWfhHolidaysRouteImport } from './routes/_app/leave-wfh.holidays'
@@ -236,6 +237,11 @@ const AppTimesheetApprovalsRoute = AppTimesheetApprovalsRouteImport.update({
 const AppReportsHrRoute = AppReportsHrRouteImport.update({
   id: '/hr',
   path: '/hr',
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppReportsAttendanceRoute = AppReportsAttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
   getParentRoute: () => AppReportsRoute,
 } as any)
 const AppProjectsIdRoute = AppProjectsIdRouteImport.update({
@@ -482,6 +488,7 @@ export interface FileRoutesByFullPath {
   '/leave-wfh/holidays': typeof AppLeaveWfhHolidaysRoute
   '/leave-wfh/monitor': typeof AppLeaveWfhMonitorRoute
   '/projects/$id': typeof AppProjectsIdRoute
+  '/reports/attendance': typeof AppReportsAttendanceRoute
   '/reports/hr': typeof AppReportsHrRoute
   '/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/timesheet/projects': typeof AppTimesheetProjectsRoute
@@ -544,6 +551,7 @@ export interface FileRoutesByTo {
   '/leave-wfh/holidays': typeof AppLeaveWfhHolidaysRoute
   '/leave-wfh/monitor': typeof AppLeaveWfhMonitorRoute
   '/projects/$id': typeof AppProjectsIdRoute
+  '/reports/attendance': typeof AppReportsAttendanceRoute
   '/reports/hr': typeof AppReportsHrRoute
   '/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/timesheet/projects': typeof AppTimesheetProjectsRoute
@@ -616,6 +624,7 @@ export interface FileRoutesById {
   '/_app/leave-wfh/holidays': typeof AppLeaveWfhHolidaysRoute
   '/_app/leave-wfh/monitor': typeof AppLeaveWfhMonitorRoute
   '/_app/projects/$id': typeof AppProjectsIdRoute
+  '/_app/reports/attendance': typeof AppReportsAttendanceRoute
   '/_app/reports/hr': typeof AppReportsHrRoute
   '/_app/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/_app/timesheet/projects': typeof AppTimesheetProjectsRoute
@@ -688,6 +697,7 @@ export interface FileRouteTypes {
     | '/leave-wfh/holidays'
     | '/leave-wfh/monitor'
     | '/projects/$id'
+    | '/reports/attendance'
     | '/reports/hr'
     | '/timesheet/approvals'
     | '/timesheet/projects'
@@ -750,6 +760,7 @@ export interface FileRouteTypes {
     | '/leave-wfh/holidays'
     | '/leave-wfh/monitor'
     | '/projects/$id'
+    | '/reports/attendance'
     | '/reports/hr'
     | '/timesheet/approvals'
     | '/timesheet/projects'
@@ -821,6 +832,7 @@ export interface FileRouteTypes {
     | '/_app/leave-wfh/holidays'
     | '/_app/leave-wfh/monitor'
     | '/_app/projects/$id'
+    | '/_app/reports/attendance'
     | '/_app/reports/hr'
     | '/_app/timesheet/approvals'
     | '/_app/timesheet/projects'
@@ -1070,6 +1082,13 @@ declare module '@tanstack/react-router' {
       path: '/hr'
       fullPath: '/reports/hr'
       preLoaderRoute: typeof AppReportsHrRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/reports/attendance': {
+      id: '/_app/reports/attendance'
+      path: '/attendance'
+      fullPath: '/reports/attendance'
+      preLoaderRoute: typeof AppReportsAttendanceRouteImport
       parentRoute: typeof AppReportsRoute
     }
     '/_app/projects/$id': {
@@ -1500,11 +1519,13 @@ const AppProjectsRouteWithChildren = AppProjectsRoute._addFileChildren(
 )
 
 interface AppReportsRouteChildren {
+  AppReportsAttendanceRoute: typeof AppReportsAttendanceRoute
   AppReportsHrRoute: typeof AppReportsHrRoute
   AppReportsIndexRoute: typeof AppReportsIndexRoute
 }
 
 const AppReportsRouteChildren: AppReportsRouteChildren = {
+  AppReportsAttendanceRoute: AppReportsAttendanceRoute,
   AppReportsHrRoute: AppReportsHrRoute,
   AppReportsIndexRoute: AppReportsIndexRoute,
 }
@@ -1575,3 +1596,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
