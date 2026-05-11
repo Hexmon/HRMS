@@ -1,7 +1,6 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { PageHeader } from "@/components/ui-kit";
+import { PageHeader, ModuleTabs } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
-import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Users, Clock, Plane, Briefcase, Timer, Wallet,
   Boxes, LifeBuoy, ShieldCheck, ChevronLeft,
@@ -59,23 +58,9 @@ function ReportsLayout() {
         }
       />
       {!isIndex && (
-        <div className="-mx-1 flex gap-1 overflow-x-auto border-b pt-1">
-          {visibleCategoriesForRole(activeRole ?? null).map((c) => {
-            const active = path === c.to || path.startsWith(c.to + "/");
-            return (
-              <Link key={c.to} to={c.to}
-                className={cn(
-                  "inline-flex items-center gap-2 whitespace-nowrap rounded-t-xl border-b-2 px-3 py-2.5 text-sm font-medium transition",
-                  active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <c.icon className="h-4 w-4" />{c.label}
-              </Link>
-            );
-          })}
-        </div>
+        <ModuleTabs tabs={visibleCategoriesForRole(activeRole ?? null).map((c) => ({ to: c.to, label: c.label, icon: c.icon }))} />
       )}
-      <div className="pt-2"><Outlet /></div>
+      <div className="pt-4 page-fade-in"><Outlet /></div>
     </>
   );
 }
