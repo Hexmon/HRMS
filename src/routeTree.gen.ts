@@ -45,6 +45,7 @@ import { Route as AppLeaveWfhHolidaysRouteImport } from './routes/_app/leave-wfh
 import { Route as AppLeaveWfhApprovalsRouteImport } from './routes/_app/leave-wfh.approvals'
 import { Route as AppLeaveWfhApplyWfhRouteImport } from './routes/_app/leave-wfh.apply-wfh'
 import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-wfh.apply-leave'
+import { Route as AppHelpdeskMyRouteImport } from './routes/_app/helpdesk.my'
 import { Route as AppExpensesReviewRouteImport } from './routes/_app/expenses.review'
 import { Route as AppExpensesReportsRouteImport } from './routes/_app/expenses.reports'
 import { Route as AppExpensesRegisterRouteImport } from './routes/_app/expenses.register'
@@ -250,6 +251,11 @@ const AppLeaveWfhApplyLeaveRoute = AppLeaveWfhApplyLeaveRouteImport.update({
   path: '/apply-leave',
   getParentRoute: () => AppLeaveWfhRoute,
 } as any)
+const AppHelpdeskMyRoute = AppHelpdeskMyRouteImport.update({
+  id: '/my',
+  path: '/my',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
 const AppExpensesReviewRoute = AppExpensesReviewRouteImport.update({
   id: '/review',
   path: '/review',
@@ -422,6 +428,7 @@ export interface FileRoutesByFullPath {
   '/expenses/register': typeof AppExpensesRegisterRoute
   '/expenses/reports': typeof AppExpensesReportsRoute
   '/expenses/review': typeof AppExpensesReviewRoute
+  '/helpdesk/my': typeof AppHelpdeskMyRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -477,6 +484,7 @@ export interface FileRoutesByTo {
   '/expenses/register': typeof AppExpensesRegisterRoute
   '/expenses/reports': typeof AppExpensesReportsRoute
   '/expenses/review': typeof AppExpensesReviewRoute
+  '/helpdesk/my': typeof AppHelpdeskMyRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -541,6 +549,7 @@ export interface FileRoutesById {
   '/_app/expenses/register': typeof AppExpensesRegisterRoute
   '/_app/expenses/reports': typeof AppExpensesReportsRoute
   '/_app/expenses/review': typeof AppExpensesReviewRoute
+  '/_app/helpdesk/my': typeof AppHelpdeskMyRoute
   '/_app/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/_app/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/_app/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -605,6 +614,7 @@ export interface FileRouteTypes {
     | '/expenses/register'
     | '/expenses/reports'
     | '/expenses/review'
+    | '/helpdesk/my'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
     | '/leave-wfh/approvals'
@@ -660,6 +670,7 @@ export interface FileRouteTypes {
     | '/expenses/register'
     | '/expenses/reports'
     | '/expenses/review'
+    | '/helpdesk/my'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
     | '/leave-wfh/approvals'
@@ -723,6 +734,7 @@ export interface FileRouteTypes {
     | '/_app/expenses/register'
     | '/_app/expenses/reports'
     | '/_app/expenses/review'
+    | '/_app/helpdesk/my'
     | '/_app/leave-wfh/apply-leave'
     | '/_app/leave-wfh/apply-wfh'
     | '/_app/leave-wfh/approvals'
@@ -1005,6 +1017,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/leave-wfh/apply-leave'
       preLoaderRoute: typeof AppLeaveWfhApplyLeaveRouteImport
       parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/helpdesk/my': {
+      id: '/_app/helpdesk/my'
+      path: '/my'
+      fullPath: '/helpdesk/my'
+      preLoaderRoute: typeof AppHelpdeskMyRouteImport
+      parentRoute: typeof AppHelpdeskRoute
     }
     '/_app/expenses/review': {
       id: '/_app/expenses/review'
@@ -1292,10 +1311,12 @@ const AppExpensesRouteWithChildren = AppExpensesRoute._addFileChildren(
 )
 
 interface AppHelpdeskRouteChildren {
+  AppHelpdeskMyRoute: typeof AppHelpdeskMyRoute
   AppHelpdeskIndexRoute: typeof AppHelpdeskIndexRoute
 }
 
 const AppHelpdeskRouteChildren: AppHelpdeskRouteChildren = {
+  AppHelpdeskMyRoute: AppHelpdeskMyRoute,
   AppHelpdeskIndexRoute: AppHelpdeskIndexRoute,
 }
 
