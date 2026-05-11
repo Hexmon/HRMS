@@ -62,9 +62,9 @@ const POLICIES = [
 function DocQueue() {
   const cols: Column<DocRow>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
-    { key: "employee", header: "Employee" },
+    { key: "employee", header: "Employee", render: (r: any) => <>{r.employee}</> },
     { key: "doc", header: "Document", render: (r) => <span className="font-medium">{r.doc}</span> },
-    { key: "uploadedOn", header: "Uploaded" },
+    { key: "uploadedOn", header: "Uploaded", render: (r: any) => <>{r.uploadedOn}</> },
     { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
     { key: "a", header: "Actions", render: () => (
       <div className="flex gap-2">
@@ -79,11 +79,11 @@ function DocQueue() {
 function ProfileQueue() {
   const cols: Column<ProfRow>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
-    { key: "employee", header: "Employee" },
-    { key: "field", header: "Field" },
+    { key: "employee", header: "Employee", render: (r: any) => <>{r.employee}</> },
+    { key: "field", header: "Field", render: (r: any) => <>{r.field}</> },
     { key: "oldVal", header: "Current", render: (r) => <span className="text-muted-foreground">{r.oldVal}</span> },
     { key: "newVal", header: "Requested", render: (r) => <span className="font-medium">{r.newVal}</span> },
-    { key: "raisedOn", header: "Raised" },
+    { key: "raisedOn", header: "Raised", render: (r: any) => <>{r.raisedOn}</> },
     { key: "a", header: "Actions", render: () => (
       <div className="flex gap-2">
         <Button size="sm" className="h-7 rounded-full" onClick={() => toast.success("Update approved")}><Check className="h-3.5 w-3.5" /></Button>
@@ -123,9 +123,9 @@ function OnboardingChecklist() {
 function ProbationQueue() {
   const cols: Column<Probation>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
-    { key: "employee", header: "Employee" },
-    { key: "joining", header: "Joining" },
-    { key: "due", header: "Confirmation due" },
+    { key: "employee", header: "Employee", render: (r: any) => <>{r.employee}</> },
+    { key: "joining", header: "Joining", render: (r: any) => <>{r.joining}</> },
+    { key: "due", header: "Confirmation due", render: (r: any) => <>{r.due}</> },
     { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
     { key: "a", header: "Actions", render: () => (
       <div className="flex gap-2">
@@ -191,9 +191,9 @@ function PolicyMgmt() {
 function LetterQueue() {
   const cols: Column<LetterRow>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
-    { key: "employee", header: "Employee" },
+    { key: "employee", header: "Employee", render: (r: any) => <>{r.employee}</> },
     { key: "type", header: "Letter type", render: (r) => <span className="font-medium">{r.type}</span> },
-    { key: "raisedOn", header: "Raised" },
+    { key: "raisedOn", header: "Raised", render: (r: any) => <>{r.raisedOn}</> },
     { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
     { key: "a", header: "Actions", render: () => (
       <div className="flex gap-2">

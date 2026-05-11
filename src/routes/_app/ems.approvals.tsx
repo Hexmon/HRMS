@@ -48,9 +48,9 @@ function ApprovalTable({ rows, kind }: { rows: Row[]; kind: string }) {
   };
   const columns: Column<Row>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
-    { key: "person", header: "Requester" },
+    { key: "person", header: "Requester", render: (r: any) => <>{r.person}</> },
     { key: "subject", header: "Subject", render: (r) => <span className="font-medium">{r.subject}</span> },
-    { key: "raisedOn", header: "Raised" },
+    { key: "raisedOn", header: "Raised", render: (r: any) => <>{r.raisedOn}</> },
     { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
     {
       key: "actions", header: "Actions",

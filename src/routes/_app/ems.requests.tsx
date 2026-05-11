@@ -63,8 +63,8 @@ function MyRequests() {
     { key: "id", header: "Request ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "type", header: "Type", render: (r) => <span className="text-sm">{TYPE_LABEL[r.type]}</span> },
     { key: "subject", header: "Subject", render: (r) => <span className="text-sm font-medium">{r.subject}</span> },
-    { key: "approver", header: "Approver" },
-    { key: "raisedOn", header: "Raised on" },
+    { key: "approver", header: "Approver", render: (r: any) => <>{r.approver}</> },
+    { key: "raisedOn", header: "Raised on", render: (r: any) => <>{r.raisedOn}</> },
     { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
   ];
 
