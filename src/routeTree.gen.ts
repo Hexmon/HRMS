@@ -45,6 +45,7 @@ import { Route as AppLeaveWfhHolidaysRouteImport } from './routes/_app/leave-wfh
 import { Route as AppLeaveWfhApprovalsRouteImport } from './routes/_app/leave-wfh.approvals'
 import { Route as AppLeaveWfhApplyWfhRouteImport } from './routes/_app/leave-wfh.apply-wfh'
 import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-wfh.apply-leave'
+import { Route as AppHelpdeskSlaRouteImport } from './routes/_app/helpdesk.sla'
 import { Route as AppHelpdeskQueueRouteImport } from './routes/_app/helpdesk.queue'
 import { Route as AppHelpdeskMyRouteImport } from './routes/_app/helpdesk.my'
 import { Route as AppExpensesReviewRouteImport } from './routes/_app/expenses.review'
@@ -252,6 +253,11 @@ const AppLeaveWfhApplyLeaveRoute = AppLeaveWfhApplyLeaveRouteImport.update({
   path: '/apply-leave',
   getParentRoute: () => AppLeaveWfhRoute,
 } as any)
+const AppHelpdeskSlaRoute = AppHelpdeskSlaRouteImport.update({
+  id: '/sla',
+  path: '/sla',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
 const AppHelpdeskQueueRoute = AppHelpdeskQueueRouteImport.update({
   id: '/queue',
   path: '/queue',
@@ -436,6 +442,7 @@ export interface FileRoutesByFullPath {
   '/expenses/review': typeof AppExpensesReviewRoute
   '/helpdesk/my': typeof AppHelpdeskMyRoute
   '/helpdesk/queue': typeof AppHelpdeskQueueRoute
+  '/helpdesk/sla': typeof AppHelpdeskSlaRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -493,6 +500,7 @@ export interface FileRoutesByTo {
   '/expenses/review': typeof AppExpensesReviewRoute
   '/helpdesk/my': typeof AppHelpdeskMyRoute
   '/helpdesk/queue': typeof AppHelpdeskQueueRoute
+  '/helpdesk/sla': typeof AppHelpdeskSlaRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -559,6 +567,7 @@ export interface FileRoutesById {
   '/_app/expenses/review': typeof AppExpensesReviewRoute
   '/_app/helpdesk/my': typeof AppHelpdeskMyRoute
   '/_app/helpdesk/queue': typeof AppHelpdeskQueueRoute
+  '/_app/helpdesk/sla': typeof AppHelpdeskSlaRoute
   '/_app/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/_app/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/_app/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -625,6 +634,7 @@ export interface FileRouteTypes {
     | '/expenses/review'
     | '/helpdesk/my'
     | '/helpdesk/queue'
+    | '/helpdesk/sla'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
     | '/leave-wfh/approvals'
@@ -682,6 +692,7 @@ export interface FileRouteTypes {
     | '/expenses/review'
     | '/helpdesk/my'
     | '/helpdesk/queue'
+    | '/helpdesk/sla'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
     | '/leave-wfh/approvals'
@@ -747,6 +758,7 @@ export interface FileRouteTypes {
     | '/_app/expenses/review'
     | '/_app/helpdesk/my'
     | '/_app/helpdesk/queue'
+    | '/_app/helpdesk/sla'
     | '/_app/leave-wfh/apply-leave'
     | '/_app/leave-wfh/apply-wfh'
     | '/_app/leave-wfh/approvals'
@@ -1029,6 +1041,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/leave-wfh/apply-leave'
       preLoaderRoute: typeof AppLeaveWfhApplyLeaveRouteImport
       parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/helpdesk/sla': {
+      id: '/_app/helpdesk/sla'
+      path: '/sla'
+      fullPath: '/helpdesk/sla'
+      preLoaderRoute: typeof AppHelpdeskSlaRouteImport
+      parentRoute: typeof AppHelpdeskRoute
     }
     '/_app/helpdesk/queue': {
       id: '/_app/helpdesk/queue'
@@ -1332,12 +1351,14 @@ const AppExpensesRouteWithChildren = AppExpensesRoute._addFileChildren(
 interface AppHelpdeskRouteChildren {
   AppHelpdeskMyRoute: typeof AppHelpdeskMyRoute
   AppHelpdeskQueueRoute: typeof AppHelpdeskQueueRoute
+  AppHelpdeskSlaRoute: typeof AppHelpdeskSlaRoute
   AppHelpdeskIndexRoute: typeof AppHelpdeskIndexRoute
 }
 
 const AppHelpdeskRouteChildren: AppHelpdeskRouteChildren = {
   AppHelpdeskMyRoute: AppHelpdeskMyRoute,
   AppHelpdeskQueueRoute: AppHelpdeskQueueRoute,
+  AppHelpdeskSlaRoute: AppHelpdeskSlaRoute,
   AppHelpdeskIndexRoute: AppHelpdeskIndexRoute,
 }
 
