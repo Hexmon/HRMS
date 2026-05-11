@@ -1,56 +1,182 @@
 import * as React from "react";
-import { EMPLOYEES, type Employee } from "./mock/employees";
+import {
+  EMPLOYEES,
+  type Employee,
+  type AuditEntry,
+  type RoleHistoryEntry,
+} from "./mock/employees";
+import { DEPARTMENTS as SEED_DEPTS, type Department } from "./mock/departments";
+import { DESIGNATIONS as SEED_DESIGS, type Designation } from "./mock/designations";
 
-const STORAGE_KEY = "hawkaii_employees";
+const EMP_KEY = "hawkaii_employees_v2";
+const DEPT_KEY = "hawkaii_departments_v1";
+const DESG_KEY = "hawkaii_designations_v1";
 
 interface Ctx {
   employees: Employee[];
-  upsert: (e: Employee) => void;
-  remove: (id: string) => void;
-  setStatus: (id: string, status: Employee["status"]) => void;
+  departments: Department[];
+  designations: Designation[];
+  upsert: (e: Employee, actor?: string) => void;
+  remove: (id: string, actor?: string) => void;
+  setStatus: (id: string, status: Employee["status"], actor?: string) => void;
+  setLogin: (id: string, enabled: boolean, actor?: string) => void;
+  setRoles: (id: string, roles: string[], actor?: string) => void;
+  addDepartment: (name: string, description?: string) => Department;
+  addDesignation: (title: string, department: string) => Designation;
   reset: () => void;
 }
 
-const EmployeesCtx = React.createContext<Ctx | null>(null);
+const Ctx = React.createContext<Ctx | null>(null);
+
+function loadLs<T>(k: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(k);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveLs(k: string, v: unknown) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(k, JSON.stringify(v));
+}
+
+const newAudit = (actor: string, action: string, remarks?: string): AuditEntry => ({
+  id: "a_" + Math.random().toString(36).slice(2, 10),
+  at: new Date().toISOString(),
+  actor,
+  action,
+  remarks,
+});
 
 export function EmployeesProvider({ children }: { children: React.ReactNode }) {
   const [employees, setEmployees] = React.useState<Employee[]>(EMPLOYEES);
+  const [departments, setDepartments] = React.useState<Department[]>(SEED_DEPTS);
+  const [designations, setDesignations] = React.useState<Designation[]>(SEED_DESIGS);
 
   React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) setEmployees(JSON.parse(raw));
-    } catch {
-      // ignore
-    }
+    setEmployees(loadLs(EMP_KEY, EMPLOYEES));
+    setDepartments(loadLs(DEPT_KEY, SEED_DEPTS));
+    setDesignations(loadLs(DESG_KEY, SEED_DESIGS));
   }, []);
 
-  const persist = (next: Employee[]) => {
+  const persistE = (next: Employee[]) => {
     setEmployees(next);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    }
+    saveLs(EMP_KEY, next);
+  };
+  const persistD = (next: Department[]) => {
+    setDepartments(next);
+    saveLs(DEPT_KEY, next);
+  };
+  const persistG = (next: Designation[]) => {
+    setDesignations(next);
+    saveLs(DESG_KEY, next);
   };
 
-  const upsert: Ctx["upsert"] = (e) => {
+  const upsert: Ctx["upsert"] = (e, actor = "Rahul Verma") => {
     const exists = employees.some((x) => x.id === e.id);
-    persist(exists ? employees.map((x) => (x.id === e.id ? e : x)) : [e, ...employees]);
+    const action = exists ? "Profile updated" : "Profile created";
+    const next: Employee = {
+      ...e,
+      audit: [newAudit(actor, action), ...(e.audit ?? [])],
+    };
+    persistE(exists ? employees.map((x) => (x.id === e.id ? next : x)) : [next, ...employees]);
   };
-  const remove: Ctx["remove"] = (id) => persist(employees.filter((x) => x.id !== id));
-  const setStatus: Ctx["setStatus"] = (id, status) =>
-    persist(employees.map((x) => (x.id === id ? { ...x, status } : x)));
-  const reset = () => persist(EMPLOYEES);
+
+  const remove: Ctx["remove"] = (id) => persistE(employees.filter((x) => x.id !== id));
+
+  const setStatus: Ctx["setStatus"] = (id, status, actor = "Rahul Verma") => {
+    persistE(
+      employees.map((x) =>
+        x.id === id
+          ? {
+              ...x,
+              status,
+              audit: [newAudit(actor, "Status changed", `Status set to ${status}`), ...x.audit],
+            }
+          : x,
+      ),
+    );
+  };
+
+  const setLogin: Ctx["setLogin"] = (id, enabled, actor = "Rahul Verma") => {
+    persistE(
+      employees.map((x) =>
+        x.id === id
+          ? {
+              ...x,
+              loginEnabled: enabled,
+              audit: [newAudit(actor, enabled ? "Login enabled" : "Login disabled"), ...x.audit],
+            }
+          : x,
+      ),
+    );
+  };
+
+  const setRoles: Ctx["setRoles"] = (id, roles, actor = "Rahul Verma") => {
+    persistE(
+      employees.map((x) => {
+        if (x.id !== id) return x;
+        const entry: RoleHistoryEntry = {
+          at: new Date().toISOString(),
+          actor,
+          from: x.systemRoles,
+          to: roles,
+        };
+        return {
+          ...x,
+          systemRoles: roles,
+          roleHistory: [entry, ...x.roleHistory],
+          audit: [newAudit(actor, "Roles updated", roles.join(", ")), ...x.audit],
+        };
+      }),
+    );
+  };
+
+  const addDepartment: Ctx["addDepartment"] = (name, _description) => {
+    const id = `DEP-${String(departments.length + 1).padStart(2, "0")}`;
+    const dept: Department = { id, name, head: "—", headcount: 0 };
+    persistD([...departments, dept]);
+    return dept;
+  };
+
+  const addDesignation: Ctx["addDesignation"] = (title, department) => {
+    const id = `DSG-${String(designations.length + 1).padStart(2, "0")}`;
+    const desig: Designation = { id, title, level: "Mid", department };
+    persistG([...designations, desig]);
+    return desig;
+  };
+
+  const reset = () => {
+    persistE(EMPLOYEES);
+    persistD(SEED_DEPTS);
+    persistG(SEED_DESIGS);
+  };
 
   return (
-    <EmployeesCtx.Provider value={{ employees, upsert, remove, setStatus, reset }}>
+    <Ctx.Provider
+      value={{
+        employees,
+        departments,
+        designations,
+        upsert,
+        remove,
+        setStatus,
+        setLogin,
+        setRoles,
+        addDepartment,
+        addDesignation,
+        reset,
+      }}
+    >
       {children}
-    </EmployeesCtx.Provider>
+    </Ctx.Provider>
   );
 }
 
 export function useEmployees() {
-  const ctx = React.useContext(EmployeesCtx);
+  const ctx = React.useContext(Ctx);
   if (!ctx) throw new Error("useEmployees must be used inside EmployeesProvider");
   return ctx;
 }
