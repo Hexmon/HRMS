@@ -48,6 +48,7 @@ import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-w
 import { Route as AppHelpdeskSlaRouteImport } from './routes/_app/helpdesk.sla'
 import { Route as AppHelpdeskQueueRouteImport } from './routes/_app/helpdesk.queue'
 import { Route as AppHelpdeskMyRouteImport } from './routes/_app/helpdesk.my'
+import { Route as AppHelpdeskCategoriesRouteImport } from './routes/_app/helpdesk.categories'
 import { Route as AppExpensesReviewRouteImport } from './routes/_app/expenses.review'
 import { Route as AppExpensesReportsRouteImport } from './routes/_app/expenses.reports'
 import { Route as AppExpensesRegisterRouteImport } from './routes/_app/expenses.register'
@@ -268,6 +269,11 @@ const AppHelpdeskMyRoute = AppHelpdeskMyRouteImport.update({
   path: '/my',
   getParentRoute: () => AppHelpdeskRoute,
 } as any)
+const AppHelpdeskCategoriesRoute = AppHelpdeskCategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
 const AppExpensesReviewRoute = AppExpensesReviewRouteImport.update({
   id: '/review',
   path: '/review',
@@ -440,6 +446,7 @@ export interface FileRoutesByFullPath {
   '/expenses/register': typeof AppExpensesRegisterRoute
   '/expenses/reports': typeof AppExpensesReportsRoute
   '/expenses/review': typeof AppExpensesReviewRoute
+  '/helpdesk/categories': typeof AppHelpdeskCategoriesRoute
   '/helpdesk/my': typeof AppHelpdeskMyRoute
   '/helpdesk/queue': typeof AppHelpdeskQueueRoute
   '/helpdesk/sla': typeof AppHelpdeskSlaRoute
@@ -498,6 +505,7 @@ export interface FileRoutesByTo {
   '/expenses/register': typeof AppExpensesRegisterRoute
   '/expenses/reports': typeof AppExpensesReportsRoute
   '/expenses/review': typeof AppExpensesReviewRoute
+  '/helpdesk/categories': typeof AppHelpdeskCategoriesRoute
   '/helpdesk/my': typeof AppHelpdeskMyRoute
   '/helpdesk/queue': typeof AppHelpdeskQueueRoute
   '/helpdesk/sla': typeof AppHelpdeskSlaRoute
@@ -565,6 +573,7 @@ export interface FileRoutesById {
   '/_app/expenses/register': typeof AppExpensesRegisterRoute
   '/_app/expenses/reports': typeof AppExpensesReportsRoute
   '/_app/expenses/review': typeof AppExpensesReviewRoute
+  '/_app/helpdesk/categories': typeof AppHelpdeskCategoriesRoute
   '/_app/helpdesk/my': typeof AppHelpdeskMyRoute
   '/_app/helpdesk/queue': typeof AppHelpdeskQueueRoute
   '/_app/helpdesk/sla': typeof AppHelpdeskSlaRoute
@@ -632,6 +641,7 @@ export interface FileRouteTypes {
     | '/expenses/register'
     | '/expenses/reports'
     | '/expenses/review'
+    | '/helpdesk/categories'
     | '/helpdesk/my'
     | '/helpdesk/queue'
     | '/helpdesk/sla'
@@ -690,6 +700,7 @@ export interface FileRouteTypes {
     | '/expenses/register'
     | '/expenses/reports'
     | '/expenses/review'
+    | '/helpdesk/categories'
     | '/helpdesk/my'
     | '/helpdesk/queue'
     | '/helpdesk/sla'
@@ -756,6 +767,7 @@ export interface FileRouteTypes {
     | '/_app/expenses/register'
     | '/_app/expenses/reports'
     | '/_app/expenses/review'
+    | '/_app/helpdesk/categories'
     | '/_app/helpdesk/my'
     | '/_app/helpdesk/queue'
     | '/_app/helpdesk/sla'
@@ -1063,6 +1075,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppHelpdeskMyRouteImport
       parentRoute: typeof AppHelpdeskRoute
     }
+    '/_app/helpdesk/categories': {
+      id: '/_app/helpdesk/categories'
+      path: '/categories'
+      fullPath: '/helpdesk/categories'
+      preLoaderRoute: typeof AppHelpdeskCategoriesRouteImport
+      parentRoute: typeof AppHelpdeskRoute
+    }
     '/_app/expenses/review': {
       id: '/_app/expenses/review'
       path: '/review'
@@ -1349,6 +1368,7 @@ const AppExpensesRouteWithChildren = AppExpensesRoute._addFileChildren(
 )
 
 interface AppHelpdeskRouteChildren {
+  AppHelpdeskCategoriesRoute: typeof AppHelpdeskCategoriesRoute
   AppHelpdeskMyRoute: typeof AppHelpdeskMyRoute
   AppHelpdeskQueueRoute: typeof AppHelpdeskQueueRoute
   AppHelpdeskSlaRoute: typeof AppHelpdeskSlaRoute
@@ -1356,6 +1376,7 @@ interface AppHelpdeskRouteChildren {
 }
 
 const AppHelpdeskRouteChildren: AppHelpdeskRouteChildren = {
+  AppHelpdeskCategoriesRoute: AppHelpdeskCategoriesRoute,
   AppHelpdeskMyRoute: AppHelpdeskMyRoute,
   AppHelpdeskQueueRoute: AppHelpdeskQueueRoute,
   AppHelpdeskSlaRoute: AppHelpdeskSlaRoute,
