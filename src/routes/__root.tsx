@@ -15,6 +15,7 @@ import { TimesheetsProvider } from "@/lib/timesheets-store";
 import { ExpensesProvider } from "@/lib/expenses-store";
 import { AssetsProvider } from "@/lib/assets-store";
 import { HelpdeskProvider } from "@/lib/helpdesk-store";
+import { AdminSettingsProvider } from "@/lib/admin-settings-store";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -104,10 +105,12 @@ function RootComponent() {
                 <ExpensesProvider>
                   <AssetsProvider>
                     <HelpdeskProvider>
-                      <TooltipProvider delayDuration={150}>
-                        <Outlet />
-                        <Toaster />
-                      </TooltipProvider>
+                      <AdminSettingsProvider>
+                        <TooltipProvider delayDuration={150}>
+                          <Outlet />
+                          <Toaster />
+                        </TooltipProvider>
+                      </AdminSettingsProvider>
                     </HelpdeskProvider>
                   </AssetsProvider>
                 </ExpensesProvider>
