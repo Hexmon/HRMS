@@ -1,7 +1,6 @@
-import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { PageHeader } from "@/components/ui-kit";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { PageHeader, ModuleTabs, type ModuleTab } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
-import { cn } from "@/lib/utils";
 import {
   REVIEWER_ROLES, DIRECTOR_ROLES, FINANCE_ROLES, ADMIN_ROLES,
 } from "@/lib/expenses-store";
@@ -26,8 +25,7 @@ const TABS = [
 
 function ExpensesLayout() {
   const { activeRole } = useAuth();
-  const path = useRouterState({ select: (s) => s.location.pathname });
-  const visible = TABS.filter((t) => {
+  const visible: ModuleTab[] = TABS.filter((t) => {
     if (!t.gate) return true;
     if (!activeRole) return false;
     if (t.gate === "reviewer") return REVIEWER_ROLES.includes(activeRole);
@@ -44,22 +42,8 @@ function ExpensesLayout() {
         title="Expenses"
         description="Submit, review and settle project, sales and reimbursement expenses end-to-end."
       />
-      <div className="-mx-1 flex gap-1 overflow-x-auto border-b pt-1">
-        {visible.map((t) => {
-          const active = t.exact ? path === t.to : path === t.to || path.startsWith(t.to + "/");
-          return (
-            <Link key={t.to} to={t.to}
-              className={cn(
-                "inline-flex items-center gap-2 whitespace-nowrap rounded-t-xl border-b-2 px-3 py-2.5 text-sm font-medium transition",
-                active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <t.icon className="h-4 w-4" />{t.label}
-            </Link>
-          );
-        })}
-      </div>
-      <div className="pt-2"><Outlet /></div>
+      <ModuleTabs tabs={visible} />
+      <div className="pt-4 page-fade-in"><Outlet /></div>
     </>
   );
 }

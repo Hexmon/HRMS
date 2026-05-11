@@ -1,9 +1,8 @@
-import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
-import { PageHeader, ActionButton } from "@/components/ui-kit";
+import { PageHeader, ActionButton, ModuleTabs, type ModuleTab } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import { HELPDESK_AGENT_ROLES } from "@/lib/helpdesk-store";
-import { cn } from "@/lib/utils";
 import { RaiseTicketDrawer } from "@/components/helpdesk/raise-ticket-drawer";
 import {
   LayoutDashboard, Inbox, Headphones, Timer, FolderTree, BarChart3, Plus,
@@ -20,7 +19,7 @@ function HelpdeskLayout() {
 
   const isDetail = /^\/helpdesk\/TKT-/.test(path);
 
-  const TABS = [
+  const TABS: (ModuleTab & { show: boolean })[] = [
     { to: "/helpdesk", label: "Dashboard", icon: LayoutDashboard, exact: true, show: true },
     { to: "/helpdesk/my", label: "My Tickets", icon: Inbox, show: true },
     { to: "/helpdesk/queue", label: "Agent Queue", icon: Headphones, show: isAgent },
@@ -43,26 +42,8 @@ function HelpdeskLayout() {
           </ActionButton>
         }
       />
-      {!isDetail && (
-        <div className="-mx-1 flex gap-1 overflow-x-auto border-b pt-1">
-          {visible.map((t) => {
-            const active = t.exact ? path === t.to : path === t.to || path.startsWith(t.to + "/");
-            return (
-              <Link
-                key={t.to}
-                to={t.to}
-                className={cn(
-                  "inline-flex items-center gap-2 whitespace-nowrap rounded-t-xl border-b-2 px-3 py-2.5 text-sm font-medium transition",
-                  active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <t.icon className="h-4 w-4" />{t.label}
-              </Link>
-            );
-          })}
-        </div>
-      )}
-      <div className="pt-2"><Outlet /></div>
+      {!isDetail && <ModuleTabs tabs={visible} />}
+      <div className="pt-4 page-fade-in"><Outlet /></div>
       <RaiseTicketDrawer open={open} onOpenChange={setOpen} />
     </>
   );
