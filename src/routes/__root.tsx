@@ -11,6 +11,7 @@ import { AuthProvider } from "@/lib/auth";
 import { EmployeesProvider } from "@/lib/employees-store";
 import { LeaveProvider } from "@/lib/leave-store";
 import { ProjectsProvider } from "@/lib/projects-store";
+import { TimesheetsProvider } from "@/lib/timesheets-store";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
