@@ -64,6 +64,7 @@ import { Route as AppEmployeesIdRouteImport } from './routes/_app/employees.$id'
 import { Route as AppAttendanceExceptionsRouteImport } from './routes/_app/attendance.exceptions'
 import { Route as AppAttendanceCalendarRouteImport } from './routes/_app/attendance.calendar'
 import { Route as AppAssetsInventoryRouteImport } from './routes/_app/assets.inventory'
+import { Route as AppAssetsIdRouteImport } from './routes/_app/assets.$id'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
@@ -339,6 +340,11 @@ const AppAssetsInventoryRoute = AppAssetsInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => AppAssetsRoute,
 } as any)
+const AppAssetsIdRoute = AppAssetsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -361,6 +367,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AppReportsRoute
   '/team-utilization': typeof AppTeamUtilizationRoute
   '/timesheet': typeof AppTimesheetRouteWithChildren
+  '/assets/$id': typeof AppAssetsIdRoute
   '/assets/inventory': typeof AppAssetsInventoryRoute
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
@@ -411,6 +418,7 @@ export interface FileRoutesByTo {
   '/projects': typeof AppProjectsRouteWithChildren
   '/reports': typeof AppReportsRoute
   '/team-utilization': typeof AppTeamUtilizationRoute
+  '/assets/$id': typeof AppAssetsIdRoute
   '/assets/inventory': typeof AppAssetsInventoryRoute
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
@@ -469,6 +477,7 @@ export interface FileRoutesById {
   '/_app/reports': typeof AppReportsRoute
   '/_app/team-utilization': typeof AppTeamUtilizationRoute
   '/_app/timesheet': typeof AppTimesheetRouteWithChildren
+  '/_app/assets/$id': typeof AppAssetsIdRoute
   '/_app/assets/inventory': typeof AppAssetsInventoryRoute
   '/_app/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/_app/attendance/exceptions': typeof AppAttendanceExceptionsRoute
@@ -527,6 +536,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/team-utilization'
     | '/timesheet'
+    | '/assets/$id'
     | '/assets/inventory'
     | '/attendance/calendar'
     | '/attendance/exceptions'
@@ -577,6 +587,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/reports'
     | '/team-utilization'
+    | '/assets/$id'
     | '/assets/inventory'
     | '/attendance/calendar'
     | '/attendance/exceptions'
@@ -634,6 +645,7 @@ export interface FileRouteTypes {
     | '/_app/reports'
     | '/_app/team-utilization'
     | '/_app/timesheet'
+    | '/_app/assets/$id'
     | '/_app/assets/inventory'
     | '/_app/attendance/calendar'
     | '/_app/attendance/exceptions'
@@ -1069,15 +1081,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAssetsInventoryRouteImport
       parentRoute: typeof AppAssetsRoute
     }
+    '/_app/assets/$id': {
+      id: '/_app/assets/$id'
+      path: '/$id'
+      fullPath: '/assets/$id'
+      preLoaderRoute: typeof AppAssetsIdRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
   }
 }
 
 interface AppAssetsRouteChildren {
+  AppAssetsIdRoute: typeof AppAssetsIdRoute
   AppAssetsInventoryRoute: typeof AppAssetsInventoryRoute
   AppAssetsIndexRoute: typeof AppAssetsIndexRoute
 }
 
 const AppAssetsRouteChildren: AppAssetsRouteChildren = {
+  AppAssetsIdRoute: AppAssetsIdRoute,
   AppAssetsInventoryRoute: AppAssetsInventoryRoute,
   AppAssetsIndexRoute: AppAssetsIndexRoute,
 }
