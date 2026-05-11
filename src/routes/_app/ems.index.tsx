@@ -62,7 +62,7 @@ function EmsDashboard() {
         <div className="space-y-4 lg:col-span-2">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard label="Today" value="Present" hint="In at 09:08" icon={Clock} tone="success" />
-            <StatCard label="Leave balance" value="12" hint="days remaining" icon={CalendarDays} tone="info" />
+            <StatCard label="Leave balance" value="12" hint="days remaining" tone="info" />
             <StatCard label="Pending timesheet" value="1" hint="week to submit" icon={Timer} tone="warning" />
             <StatCard label="Pending expenses" value="2" hint="USD 184.00" icon={Receipt} tone="primary" />
           </div>
@@ -108,7 +108,7 @@ function EmsDashboard() {
         <DataCard
           title="Company announcements"
           description="Latest updates from leadership and HR"
-          icon={Megaphone}
+         
           className="lg:col-span-2"
         >
           <ul className="divide-y">
@@ -129,7 +129,7 @@ function EmsDashboard() {
           </ul>
         </DataCard>
 
-        <DataCard title="Upcoming holidays" description="Next 30 days" icon={CalendarDays}>
+        <DataCard title="Upcoming holidays" description="Next 30 days">
           <ul className="space-y-3">
             {HOLIDAYS.map((h) => (
               <li key={h.name} className="flex items-center justify-between text-sm">
@@ -145,7 +145,7 @@ function EmsDashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <DataCard title="My helpdesk tickets" description="Recent activity" icon={LifeBuoy}>
+        <DataCard title="My helpdesk tickets" description="Recent activity">
           <ul className="space-y-2.5 text-sm">
             {[
               { id: "TKT-12044", subject: "Mac running slow after update", status: "in_progress" },
@@ -162,7 +162,7 @@ function EmsDashboard() {
           </ul>
         </DataCard>
 
-        <DataCard title="My documents" description="Personal documents" icon={FileText}>
+        <DataCard title="My documents" description="Personal documents">
           <ul className="space-y-2.5 text-sm">
             {[
               { name: "Offer Letter", status: "verified" },
