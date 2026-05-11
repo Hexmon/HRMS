@@ -43,7 +43,13 @@ import { Route as AppLeaveWfhHolidaysRouteImport } from './routes/_app/leave-wfh
 import { Route as AppLeaveWfhApprovalsRouteImport } from './routes/_app/leave-wfh.approvals'
 import { Route as AppLeaveWfhApplyWfhRouteImport } from './routes/_app/leave-wfh.apply-wfh'
 import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-wfh.apply-leave'
+import { Route as AppExpensesReviewRouteImport } from './routes/_app/expenses.review'
+import { Route as AppExpensesReportsRouteImport } from './routes/_app/expenses.reports'
+import { Route as AppExpensesRegisterRouteImport } from './routes/_app/expenses.register'
 import { Route as AppExpensesMyRouteImport } from './routes/_app/expenses.my'
+import { Route as AppExpensesMappingRouteImport } from './routes/_app/expenses.mapping'
+import { Route as AppExpensesFinanceRouteImport } from './routes/_app/expenses.finance'
+import { Route as AppExpensesDirectorRouteImport } from './routes/_app/expenses.director'
 import { Route as AppExpensesCreateRouteImport } from './routes/_app/expenses.create'
 import { Route as AppExpensesIdRouteImport } from './routes/_app/expenses.$id'
 import { Route as AppEmsRequestsRouteImport } from './routes/_app/ems.requests'
@@ -226,9 +232,39 @@ const AppLeaveWfhApplyLeaveRoute = AppLeaveWfhApplyLeaveRouteImport.update({
   path: '/apply-leave',
   getParentRoute: () => AppLeaveWfhRoute,
 } as any)
+const AppExpensesReviewRoute = AppExpensesReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesReportsRoute = AppExpensesReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesRegisterRoute = AppExpensesRegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
 const AppExpensesMyRoute = AppExpensesMyRouteImport.update({
   id: '/my',
   path: '/my',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesMappingRoute = AppExpensesMappingRouteImport.update({
+  id: '/mapping',
+  path: '/mapping',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesFinanceRoute = AppExpensesFinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesDirectorRoute = AppExpensesDirectorRouteImport.update({
+  id: '/director',
+  path: '/director',
   getParentRoute: () => AppExpensesRoute,
 } as any)
 const AppExpensesCreateRoute = AppExpensesCreateRouteImport.update({
@@ -325,7 +361,13 @@ export interface FileRoutesByFullPath {
   '/ems/requests': typeof AppEmsRequestsRoute
   '/expenses/$id': typeof AppExpensesIdRoute
   '/expenses/create': typeof AppExpensesCreateRoute
+  '/expenses/director': typeof AppExpensesDirectorRoute
+  '/expenses/finance': typeof AppExpensesFinanceRoute
+  '/expenses/mapping': typeof AppExpensesMappingRoute
   '/expenses/my': typeof AppExpensesMyRoute
+  '/expenses/register': typeof AppExpensesRegisterRoute
+  '/expenses/reports': typeof AppExpensesReportsRoute
+  '/expenses/review': typeof AppExpensesReviewRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -368,7 +410,13 @@ export interface FileRoutesByTo {
   '/ems/requests': typeof AppEmsRequestsRoute
   '/expenses/$id': typeof AppExpensesIdRoute
   '/expenses/create': typeof AppExpensesCreateRoute
+  '/expenses/director': typeof AppExpensesDirectorRoute
+  '/expenses/finance': typeof AppExpensesFinanceRoute
+  '/expenses/mapping': typeof AppExpensesMappingRoute
   '/expenses/my': typeof AppExpensesMyRoute
+  '/expenses/register': typeof AppExpensesRegisterRoute
+  '/expenses/reports': typeof AppExpensesReportsRoute
+  '/expenses/review': typeof AppExpensesReviewRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -418,7 +466,13 @@ export interface FileRoutesById {
   '/_app/ems/requests': typeof AppEmsRequestsRoute
   '/_app/expenses/$id': typeof AppExpensesIdRoute
   '/_app/expenses/create': typeof AppExpensesCreateRoute
+  '/_app/expenses/director': typeof AppExpensesDirectorRoute
+  '/_app/expenses/finance': typeof AppExpensesFinanceRoute
+  '/_app/expenses/mapping': typeof AppExpensesMappingRoute
   '/_app/expenses/my': typeof AppExpensesMyRoute
+  '/_app/expenses/register': typeof AppExpensesRegisterRoute
+  '/_app/expenses/reports': typeof AppExpensesReportsRoute
+  '/_app/expenses/review': typeof AppExpensesReviewRoute
   '/_app/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/_app/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/_app/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -468,7 +522,13 @@ export interface FileRouteTypes {
     | '/ems/requests'
     | '/expenses/$id'
     | '/expenses/create'
+    | '/expenses/director'
+    | '/expenses/finance'
+    | '/expenses/mapping'
     | '/expenses/my'
+    | '/expenses/register'
+    | '/expenses/reports'
+    | '/expenses/review'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
     | '/leave-wfh/approvals'
@@ -511,7 +571,13 @@ export interface FileRouteTypes {
     | '/ems/requests'
     | '/expenses/$id'
     | '/expenses/create'
+    | '/expenses/director'
+    | '/expenses/finance'
+    | '/expenses/mapping'
     | '/expenses/my'
+    | '/expenses/register'
+    | '/expenses/reports'
+    | '/expenses/review'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
     | '/leave-wfh/approvals'
@@ -560,7 +626,13 @@ export interface FileRouteTypes {
     | '/_app/ems/requests'
     | '/_app/expenses/$id'
     | '/_app/expenses/create'
+    | '/_app/expenses/director'
+    | '/_app/expenses/finance'
+    | '/_app/expenses/mapping'
     | '/_app/expenses/my'
+    | '/_app/expenses/register'
+    | '/_app/expenses/reports'
+    | '/_app/expenses/review'
     | '/_app/leave-wfh/apply-leave'
     | '/_app/leave-wfh/apply-wfh'
     | '/_app/leave-wfh/approvals'
@@ -828,11 +900,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLeaveWfhApplyLeaveRouteImport
       parentRoute: typeof AppLeaveWfhRoute
     }
+    '/_app/expenses/review': {
+      id: '/_app/expenses/review'
+      path: '/review'
+      fullPath: '/expenses/review'
+      preLoaderRoute: typeof AppExpensesReviewRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/reports': {
+      id: '/_app/expenses/reports'
+      path: '/reports'
+      fullPath: '/expenses/reports'
+      preLoaderRoute: typeof AppExpensesReportsRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/register': {
+      id: '/_app/expenses/register'
+      path: '/register'
+      fullPath: '/expenses/register'
+      preLoaderRoute: typeof AppExpensesRegisterRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
     '/_app/expenses/my': {
       id: '/_app/expenses/my'
       path: '/my'
       fullPath: '/expenses/my'
       preLoaderRoute: typeof AppExpensesMyRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/mapping': {
+      id: '/_app/expenses/mapping'
+      path: '/mapping'
+      fullPath: '/expenses/mapping'
+      preLoaderRoute: typeof AppExpensesMappingRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/finance': {
+      id: '/_app/expenses/finance'
+      path: '/finance'
+      fullPath: '/expenses/finance'
+      preLoaderRoute: typeof AppExpensesFinanceRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/director': {
+      id: '/_app/expenses/director'
+      path: '/director'
+      fullPath: '/expenses/director'
+      preLoaderRoute: typeof AppExpensesDirectorRouteImport
       parentRoute: typeof AppExpensesRoute
     }
     '/_app/expenses/create': {
@@ -978,14 +1092,26 @@ const AppEmsRouteWithChildren =
 interface AppExpensesRouteChildren {
   AppExpensesIdRoute: typeof AppExpensesIdRoute
   AppExpensesCreateRoute: typeof AppExpensesCreateRoute
+  AppExpensesDirectorRoute: typeof AppExpensesDirectorRoute
+  AppExpensesFinanceRoute: typeof AppExpensesFinanceRoute
+  AppExpensesMappingRoute: typeof AppExpensesMappingRoute
   AppExpensesMyRoute: typeof AppExpensesMyRoute
+  AppExpensesRegisterRoute: typeof AppExpensesRegisterRoute
+  AppExpensesReportsRoute: typeof AppExpensesReportsRoute
+  AppExpensesReviewRoute: typeof AppExpensesReviewRoute
   AppExpensesIndexRoute: typeof AppExpensesIndexRoute
 }
 
 const AppExpensesRouteChildren: AppExpensesRouteChildren = {
   AppExpensesIdRoute: AppExpensesIdRoute,
   AppExpensesCreateRoute: AppExpensesCreateRoute,
+  AppExpensesDirectorRoute: AppExpensesDirectorRoute,
+  AppExpensesFinanceRoute: AppExpensesFinanceRoute,
+  AppExpensesMappingRoute: AppExpensesMappingRoute,
   AppExpensesMyRoute: AppExpensesMyRoute,
+  AppExpensesRegisterRoute: AppExpensesRegisterRoute,
+  AppExpensesReportsRoute: AppExpensesReportsRoute,
+  AppExpensesReviewRoute: AppExpensesReviewRoute,
   AppExpensesIndexRoute: AppExpensesIndexRoute,
 }
 
