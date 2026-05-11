@@ -19,6 +19,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppTimesheetRouteImport } from './routes/_app/timesheet'
+import { Route as AppTeamUtilizationRouteImport } from './routes/_app/team-utilization'
 import { Route as AppReportsRouteImport } from './routes/_app/reports'
 import { Route as AppProjectsRouteImport } from './routes/_app/projects'
 import { Route as AppLeaveWfhRouteImport } from './routes/_app/leave-wfh'
@@ -29,9 +30,12 @@ import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
 import { Route as AppAssetsRouteImport } from './routes/_app/assets'
+import { Route as AppTimesheetIndexRouteImport } from './routes/_app/timesheet.index'
 import { Route as AppLeaveWfhIndexRouteImport } from './routes/_app/leave-wfh.index'
 import { Route as AppEmsIndexRouteImport } from './routes/_app/ems.index'
 import { Route as AppAttendanceIndexRouteImport } from './routes/_app/attendance.index'
+import { Route as AppTimesheetProjectsRouteImport } from './routes/_app/timesheet.projects'
+import { Route as AppTimesheetApprovalsRouteImport } from './routes/_app/timesheet.approvals'
 import { Route as AppProjectsIdRouteImport } from './routes/_app/projects.$id'
 import { Route as AppLeaveWfhMonitorRouteImport } from './routes/_app/leave-wfh.monitor'
 import { Route as AppLeaveWfhHolidaysRouteImport } from './routes/_app/leave-wfh.holidays'
@@ -98,6 +102,11 @@ const AppTimesheetRoute = AppTimesheetRouteImport.update({
   path: '/timesheet',
   getParentRoute: () => AppRoute,
 } as any)
+const AppTeamUtilizationRoute = AppTeamUtilizationRouteImport.update({
+  id: '/team-utilization',
+  path: '/team-utilization',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppReportsRoute = AppReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
@@ -148,6 +157,11 @@ const AppAssetsRoute = AppAssetsRouteImport.update({
   path: '/assets',
   getParentRoute: () => AppRoute,
 } as any)
+const AppTimesheetIndexRoute = AppTimesheetIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppTimesheetRoute,
+} as any)
 const AppLeaveWfhIndexRoute = AppLeaveWfhIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -162,6 +176,16 @@ const AppAttendanceIndexRoute = AppAttendanceIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppAttendanceRoute,
+} as any)
+const AppTimesheetProjectsRoute = AppTimesheetProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AppTimesheetRoute,
+} as any)
+const AppTimesheetApprovalsRoute = AppTimesheetApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => AppTimesheetRoute,
 } as any)
 const AppProjectsIdRoute = AppProjectsIdRouteImport.update({
   id: '/$id',
@@ -263,7 +287,8 @@ export interface FileRoutesByFullPath {
   '/leave-wfh': typeof AppLeaveWfhRouteWithChildren
   '/projects': typeof AppProjectsRouteWithChildren
   '/reports': typeof AppReportsRoute
-  '/timesheet': typeof AppTimesheetRoute
+  '/team-utilization': typeof AppTeamUtilizationRoute
+  '/timesheet': typeof AppTimesheetRouteWithChildren
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
   '/employees/$id': typeof AppEmployeesIdRoute
@@ -280,9 +305,12 @@ export interface FileRoutesByFullPath {
   '/leave-wfh/holidays': typeof AppLeaveWfhHolidaysRoute
   '/leave-wfh/monitor': typeof AppLeaveWfhMonitorRoute
   '/projects/$id': typeof AppProjectsIdRoute
+  '/timesheet/approvals': typeof AppTimesheetApprovalsRoute
+  '/timesheet/projects': typeof AppTimesheetProjectsRoute
   '/attendance/': typeof AppAttendanceIndexRoute
   '/ems/': typeof AppEmsIndexRoute
   '/leave-wfh/': typeof AppLeaveWfhIndexRoute
+  '/timesheet/': typeof AppTimesheetIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -300,7 +328,7 @@ export interface FileRoutesByTo {
   '/helpdesk': typeof AppHelpdeskRoute
   '/projects': typeof AppProjectsRouteWithChildren
   '/reports': typeof AppReportsRoute
-  '/timesheet': typeof AppTimesheetRoute
+  '/team-utilization': typeof AppTeamUtilizationRoute
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
   '/employees/$id': typeof AppEmployeesIdRoute
@@ -317,9 +345,12 @@ export interface FileRoutesByTo {
   '/leave-wfh/holidays': typeof AppLeaveWfhHolidaysRoute
   '/leave-wfh/monitor': typeof AppLeaveWfhMonitorRoute
   '/projects/$id': typeof AppProjectsIdRoute
+  '/timesheet/approvals': typeof AppTimesheetApprovalsRoute
+  '/timesheet/projects': typeof AppTimesheetProjectsRoute
   '/attendance': typeof AppAttendanceIndexRoute
   '/ems': typeof AppEmsIndexRoute
   '/leave-wfh': typeof AppLeaveWfhIndexRoute
+  '/timesheet': typeof AppTimesheetIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -342,7 +373,8 @@ export interface FileRoutesById {
   '/_app/leave-wfh': typeof AppLeaveWfhRouteWithChildren
   '/_app/projects': typeof AppProjectsRouteWithChildren
   '/_app/reports': typeof AppReportsRoute
-  '/_app/timesheet': typeof AppTimesheetRoute
+  '/_app/team-utilization': typeof AppTeamUtilizationRoute
+  '/_app/timesheet': typeof AppTimesheetRouteWithChildren
   '/_app/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/_app/attendance/exceptions': typeof AppAttendanceExceptionsRoute
   '/_app/employees/$id': typeof AppEmployeesIdRoute
@@ -359,9 +391,12 @@ export interface FileRoutesById {
   '/_app/leave-wfh/holidays': typeof AppLeaveWfhHolidaysRoute
   '/_app/leave-wfh/monitor': typeof AppLeaveWfhMonitorRoute
   '/_app/projects/$id': typeof AppProjectsIdRoute
+  '/_app/timesheet/approvals': typeof AppTimesheetApprovalsRoute
+  '/_app/timesheet/projects': typeof AppTimesheetProjectsRoute
   '/_app/attendance/': typeof AppAttendanceIndexRoute
   '/_app/ems/': typeof AppEmsIndexRoute
   '/_app/leave-wfh/': typeof AppLeaveWfhIndexRoute
+  '/_app/timesheet/': typeof AppTimesheetIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -384,6 +419,7 @@ export interface FileRouteTypes {
     | '/leave-wfh'
     | '/projects'
     | '/reports'
+    | '/team-utilization'
     | '/timesheet'
     | '/attendance/calendar'
     | '/attendance/exceptions'
@@ -401,9 +437,12 @@ export interface FileRouteTypes {
     | '/leave-wfh/holidays'
     | '/leave-wfh/monitor'
     | '/projects/$id'
+    | '/timesheet/approvals'
+    | '/timesheet/projects'
     | '/attendance/'
     | '/ems/'
     | '/leave-wfh/'
+    | '/timesheet/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -421,7 +460,7 @@ export interface FileRouteTypes {
     | '/helpdesk'
     | '/projects'
     | '/reports'
-    | '/timesheet'
+    | '/team-utilization'
     | '/attendance/calendar'
     | '/attendance/exceptions'
     | '/employees/$id'
@@ -438,9 +477,12 @@ export interface FileRouteTypes {
     | '/leave-wfh/holidays'
     | '/leave-wfh/monitor'
     | '/projects/$id'
+    | '/timesheet/approvals'
+    | '/timesheet/projects'
     | '/attendance'
     | '/ems'
     | '/leave-wfh'
+    | '/timesheet'
   id:
     | '__root__'
     | '/'
@@ -462,6 +504,7 @@ export interface FileRouteTypes {
     | '/_app/leave-wfh'
     | '/_app/projects'
     | '/_app/reports'
+    | '/_app/team-utilization'
     | '/_app/timesheet'
     | '/_app/attendance/calendar'
     | '/_app/attendance/exceptions'
@@ -479,9 +522,12 @@ export interface FileRouteTypes {
     | '/_app/leave-wfh/holidays'
     | '/_app/leave-wfh/monitor'
     | '/_app/projects/$id'
+    | '/_app/timesheet/approvals'
+    | '/_app/timesheet/projects'
     | '/_app/attendance/'
     | '/_app/ems/'
     | '/_app/leave-wfh/'
+    | '/_app/timesheet/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -568,6 +614,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTimesheetRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/team-utilization': {
+      id: '/_app/team-utilization'
+      path: '/team-utilization'
+      fullPath: '/team-utilization'
+      preLoaderRoute: typeof AppTeamUtilizationRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/reports': {
       id: '/_app/reports'
       path: '/reports'
@@ -638,6 +691,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAssetsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/timesheet/': {
+      id: '/_app/timesheet/'
+      path: '/'
+      fullPath: '/timesheet/'
+      preLoaderRoute: typeof AppTimesheetIndexRouteImport
+      parentRoute: typeof AppTimesheetRoute
+    }
     '/_app/leave-wfh/': {
       id: '/_app/leave-wfh/'
       path: '/'
@@ -658,6 +718,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/attendance/'
       preLoaderRoute: typeof AppAttendanceIndexRouteImport
       parentRoute: typeof AppAttendanceRoute
+    }
+    '/_app/timesheet/projects': {
+      id: '/_app/timesheet/projects'
+      path: '/projects'
+      fullPath: '/timesheet/projects'
+      preLoaderRoute: typeof AppTimesheetProjectsRouteImport
+      parentRoute: typeof AppTimesheetRoute
+    }
+    '/_app/timesheet/approvals': {
+      id: '/_app/timesheet/approvals'
+      path: '/approvals'
+      fullPath: '/timesheet/approvals'
+      preLoaderRoute: typeof AppTimesheetApprovalsRouteImport
+      parentRoute: typeof AppTimesheetRoute
     }
     '/_app/projects/$id': {
       id: '/_app/projects/$id'
@@ -861,6 +935,22 @@ const AppProjectsRouteWithChildren = AppProjectsRoute._addFileChildren(
   AppProjectsRouteChildren,
 )
 
+interface AppTimesheetRouteChildren {
+  AppTimesheetApprovalsRoute: typeof AppTimesheetApprovalsRoute
+  AppTimesheetProjectsRoute: typeof AppTimesheetProjectsRoute
+  AppTimesheetIndexRoute: typeof AppTimesheetIndexRoute
+}
+
+const AppTimesheetRouteChildren: AppTimesheetRouteChildren = {
+  AppTimesheetApprovalsRoute: AppTimesheetApprovalsRoute,
+  AppTimesheetProjectsRoute: AppTimesheetProjectsRoute,
+  AppTimesheetIndexRoute: AppTimesheetIndexRoute,
+}
+
+const AppTimesheetRouteWithChildren = AppTimesheetRoute._addFileChildren(
+  AppTimesheetRouteChildren,
+)
+
 interface AppRouteChildren {
   AppAssetsRoute: typeof AppAssetsRoute
   AppAttendanceRoute: typeof AppAttendanceRouteWithChildren
@@ -872,7 +962,8 @@ interface AppRouteChildren {
   AppLeaveWfhRoute: typeof AppLeaveWfhRouteWithChildren
   AppProjectsRoute: typeof AppProjectsRouteWithChildren
   AppReportsRoute: typeof AppReportsRoute
-  AppTimesheetRoute: typeof AppTimesheetRoute
+  AppTeamUtilizationRoute: typeof AppTeamUtilizationRoute
+  AppTimesheetRoute: typeof AppTimesheetRouteWithChildren
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -886,7 +977,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppLeaveWfhRoute: AppLeaveWfhRouteWithChildren,
   AppProjectsRoute: AppProjectsRouteWithChildren,
   AppReportsRoute: AppReportsRoute,
-  AppTimesheetRoute: AppTimesheetRoute,
+  AppTeamUtilizationRoute: AppTeamUtilizationRoute,
+  AppTimesheetRoute: AppTimesheetRouteWithChildren,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
