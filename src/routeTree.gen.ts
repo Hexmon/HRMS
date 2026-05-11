@@ -32,6 +32,7 @@ import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
 import { Route as AppAssetsRouteImport } from './routes/_app/assets'
 import { Route as AppTimesheetIndexRouteImport } from './routes/_app/timesheet.index'
 import { Route as AppLeaveWfhIndexRouteImport } from './routes/_app/leave-wfh.index'
+import { Route as AppExpensesIndexRouteImport } from './routes/_app/expenses.index'
 import { Route as AppEmsIndexRouteImport } from './routes/_app/ems.index'
 import { Route as AppAttendanceIndexRouteImport } from './routes/_app/attendance.index'
 import { Route as AppTimesheetProjectsRouteImport } from './routes/_app/timesheet.projects'
@@ -42,6 +43,7 @@ import { Route as AppLeaveWfhHolidaysRouteImport } from './routes/_app/leave-wfh
 import { Route as AppLeaveWfhApprovalsRouteImport } from './routes/_app/leave-wfh.approvals'
 import { Route as AppLeaveWfhApplyWfhRouteImport } from './routes/_app/leave-wfh.apply-wfh'
 import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-wfh.apply-leave'
+import { Route as AppExpensesMyRouteImport } from './routes/_app/expenses.my'
 import { Route as AppEmsRequestsRouteImport } from './routes/_app/ems.requests'
 import { Route as AppEmsProfileRouteImport } from './routes/_app/ems.profile'
 import { Route as AppEmsPoliciesRouteImport } from './routes/_app/ems.policies'
@@ -167,6 +169,11 @@ const AppLeaveWfhIndexRoute = AppLeaveWfhIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppLeaveWfhRoute,
 } as any)
+const AppExpensesIndexRoute = AppExpensesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
 const AppEmsIndexRoute = AppEmsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -216,6 +223,11 @@ const AppLeaveWfhApplyLeaveRoute = AppLeaveWfhApplyLeaveRouteImport.update({
   id: '/apply-leave',
   path: '/apply-leave',
   getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppExpensesMyRoute = AppExpensesMyRouteImport.update({
+  id: '/my',
+  path: '/my',
+  getParentRoute: () => AppExpensesRoute,
 } as any)
 const AppEmsRequestsRoute = AppEmsRequestsRouteImport.update({
   id: '/requests',
@@ -282,7 +294,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
   '/ems': typeof AppEmsRouteWithChildren
-  '/expenses': typeof AppExpensesRoute
+  '/expenses': typeof AppExpensesRouteWithChildren
   '/helpdesk': typeof AppHelpdeskRoute
   '/leave-wfh': typeof AppLeaveWfhRouteWithChildren
   '/projects': typeof AppProjectsRouteWithChildren
@@ -299,6 +311,7 @@ export interface FileRoutesByFullPath {
   '/ems/policies': typeof AppEmsPoliciesRoute
   '/ems/profile': typeof AppEmsProfileRoute
   '/ems/requests': typeof AppEmsRequestsRoute
+  '/expenses/my': typeof AppExpensesMyRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -309,6 +322,7 @@ export interface FileRoutesByFullPath {
   '/timesheet/projects': typeof AppTimesheetProjectsRoute
   '/attendance/': typeof AppAttendanceIndexRoute
   '/ems/': typeof AppEmsIndexRoute
+  '/expenses/': typeof AppExpensesIndexRoute
   '/leave-wfh/': typeof AppLeaveWfhIndexRoute
   '/timesheet/': typeof AppTimesheetIndexRoute
 }
@@ -324,7 +338,6 @@ export interface FileRoutesByTo {
   '/assets': typeof AppAssetsRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
-  '/expenses': typeof AppExpensesRoute
   '/helpdesk': typeof AppHelpdeskRoute
   '/projects': typeof AppProjectsRouteWithChildren
   '/reports': typeof AppReportsRoute
@@ -339,6 +352,7 @@ export interface FileRoutesByTo {
   '/ems/policies': typeof AppEmsPoliciesRoute
   '/ems/profile': typeof AppEmsProfileRoute
   '/ems/requests': typeof AppEmsRequestsRoute
+  '/expenses/my': typeof AppExpensesMyRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -349,6 +363,7 @@ export interface FileRoutesByTo {
   '/timesheet/projects': typeof AppTimesheetProjectsRoute
   '/attendance': typeof AppAttendanceIndexRoute
   '/ems': typeof AppEmsIndexRoute
+  '/expenses': typeof AppExpensesIndexRoute
   '/leave-wfh': typeof AppLeaveWfhIndexRoute
   '/timesheet': typeof AppTimesheetIndexRoute
 }
@@ -368,7 +383,7 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/employees': typeof AppEmployeesRouteWithChildren
   '/_app/ems': typeof AppEmsRouteWithChildren
-  '/_app/expenses': typeof AppExpensesRoute
+  '/_app/expenses': typeof AppExpensesRouteWithChildren
   '/_app/helpdesk': typeof AppHelpdeskRoute
   '/_app/leave-wfh': typeof AppLeaveWfhRouteWithChildren
   '/_app/projects': typeof AppProjectsRouteWithChildren
@@ -385,6 +400,7 @@ export interface FileRoutesById {
   '/_app/ems/policies': typeof AppEmsPoliciesRoute
   '/_app/ems/profile': typeof AppEmsProfileRoute
   '/_app/ems/requests': typeof AppEmsRequestsRoute
+  '/_app/expenses/my': typeof AppExpensesMyRoute
   '/_app/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/_app/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
   '/_app/leave-wfh/approvals': typeof AppLeaveWfhApprovalsRoute
@@ -395,6 +411,7 @@ export interface FileRoutesById {
   '/_app/timesheet/projects': typeof AppTimesheetProjectsRoute
   '/_app/attendance/': typeof AppAttendanceIndexRoute
   '/_app/ems/': typeof AppEmsIndexRoute
+  '/_app/expenses/': typeof AppExpensesIndexRoute
   '/_app/leave-wfh/': typeof AppLeaveWfhIndexRoute
   '/_app/timesheet/': typeof AppTimesheetIndexRoute
 }
@@ -431,6 +448,7 @@ export interface FileRouteTypes {
     | '/ems/policies'
     | '/ems/profile'
     | '/ems/requests'
+    | '/expenses/my'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
     | '/leave-wfh/approvals'
@@ -441,6 +459,7 @@ export interface FileRouteTypes {
     | '/timesheet/projects'
     | '/attendance/'
     | '/ems/'
+    | '/expenses/'
     | '/leave-wfh/'
     | '/timesheet/'
   fileRoutesByTo: FileRoutesByTo
@@ -456,7 +475,6 @@ export interface FileRouteTypes {
     | '/assets'
     | '/dashboard'
     | '/employees'
-    | '/expenses'
     | '/helpdesk'
     | '/projects'
     | '/reports'
@@ -471,6 +489,7 @@ export interface FileRouteTypes {
     | '/ems/policies'
     | '/ems/profile'
     | '/ems/requests'
+    | '/expenses/my'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
     | '/leave-wfh/approvals'
@@ -481,6 +500,7 @@ export interface FileRouteTypes {
     | '/timesheet/projects'
     | '/attendance'
     | '/ems'
+    | '/expenses'
     | '/leave-wfh'
     | '/timesheet'
   id:
@@ -516,6 +536,7 @@ export interface FileRouteTypes {
     | '/_app/ems/policies'
     | '/_app/ems/profile'
     | '/_app/ems/requests'
+    | '/_app/expenses/my'
     | '/_app/leave-wfh/apply-leave'
     | '/_app/leave-wfh/apply-wfh'
     | '/_app/leave-wfh/approvals'
@@ -526,6 +547,7 @@ export interface FileRouteTypes {
     | '/_app/timesheet/projects'
     | '/_app/attendance/'
     | '/_app/ems/'
+    | '/_app/expenses/'
     | '/_app/leave-wfh/'
     | '/_app/timesheet/'
   fileRoutesById: FileRoutesById
@@ -705,6 +727,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLeaveWfhIndexRouteImport
       parentRoute: typeof AppLeaveWfhRoute
     }
+    '/_app/expenses/': {
+      id: '/_app/expenses/'
+      path: '/'
+      fullPath: '/expenses/'
+      preLoaderRoute: typeof AppExpensesIndexRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
     '/_app/ems/': {
       id: '/_app/ems/'
       path: '/'
@@ -774,6 +803,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/leave-wfh/apply-leave'
       preLoaderRoute: typeof AppLeaveWfhApplyLeaveRouteImport
       parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/expenses/my': {
+      id: '/_app/expenses/my'
+      path: '/my'
+      fullPath: '/expenses/my'
+      preLoaderRoute: typeof AppExpensesMyRouteImport
+      parentRoute: typeof AppExpensesRoute
     }
     '/_app/ems/requests': {
       id: '/_app/ems/requests'
@@ -901,6 +937,20 @@ const AppEmsRouteChildren: AppEmsRouteChildren = {
 const AppEmsRouteWithChildren =
   AppEmsRoute._addFileChildren(AppEmsRouteChildren)
 
+interface AppExpensesRouteChildren {
+  AppExpensesMyRoute: typeof AppExpensesMyRoute
+  AppExpensesIndexRoute: typeof AppExpensesIndexRoute
+}
+
+const AppExpensesRouteChildren: AppExpensesRouteChildren = {
+  AppExpensesMyRoute: AppExpensesMyRoute,
+  AppExpensesIndexRoute: AppExpensesIndexRoute,
+}
+
+const AppExpensesRouteWithChildren = AppExpensesRoute._addFileChildren(
+  AppExpensesRouteChildren,
+)
+
 interface AppLeaveWfhRouteChildren {
   AppLeaveWfhApplyLeaveRoute: typeof AppLeaveWfhApplyLeaveRoute
   AppLeaveWfhApplyWfhRoute: typeof AppLeaveWfhApplyWfhRoute
@@ -957,7 +1007,7 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
   AppEmployeesRoute: typeof AppEmployeesRouteWithChildren
   AppEmsRoute: typeof AppEmsRouteWithChildren
-  AppExpensesRoute: typeof AppExpensesRoute
+  AppExpensesRoute: typeof AppExpensesRouteWithChildren
   AppHelpdeskRoute: typeof AppHelpdeskRoute
   AppLeaveWfhRoute: typeof AppLeaveWfhRouteWithChildren
   AppProjectsRoute: typeof AppProjectsRouteWithChildren
@@ -972,7 +1022,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
   AppEmployeesRoute: AppEmployeesRouteWithChildren,
   AppEmsRoute: AppEmsRouteWithChildren,
-  AppExpensesRoute: AppExpensesRoute,
+  AppExpensesRoute: AppExpensesRouteWithChildren,
   AppHelpdeskRoute: AppHelpdeskRoute,
   AppLeaveWfhRoute: AppLeaveWfhRouteWithChildren,
   AppProjectsRoute: AppProjectsRouteWithChildren,
@@ -997,3 +1047,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
