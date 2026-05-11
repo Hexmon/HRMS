@@ -46,6 +46,7 @@ import { Route as AppLeaveWfhApprovalsRouteImport } from './routes/_app/leave-wf
 import { Route as AppLeaveWfhApplyWfhRouteImport } from './routes/_app/leave-wfh.apply-wfh'
 import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-wfh.apply-leave'
 import { Route as AppHelpdeskSlaRouteImport } from './routes/_app/helpdesk.sla'
+import { Route as AppHelpdeskReportsRouteImport } from './routes/_app/helpdesk.reports'
 import { Route as AppHelpdeskQueueRouteImport } from './routes/_app/helpdesk.queue'
 import { Route as AppHelpdeskMyRouteImport } from './routes/_app/helpdesk.my'
 import { Route as AppHelpdeskCategoriesRouteImport } from './routes/_app/helpdesk.categories'
@@ -259,6 +260,11 @@ const AppHelpdeskSlaRoute = AppHelpdeskSlaRouteImport.update({
   path: '/sla',
   getParentRoute: () => AppHelpdeskRoute,
 } as any)
+const AppHelpdeskReportsRoute = AppHelpdeskReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
 const AppHelpdeskQueueRoute = AppHelpdeskQueueRouteImport.update({
   id: '/queue',
   path: '/queue',
@@ -449,6 +455,7 @@ export interface FileRoutesByFullPath {
   '/helpdesk/categories': typeof AppHelpdeskCategoriesRoute
   '/helpdesk/my': typeof AppHelpdeskMyRoute
   '/helpdesk/queue': typeof AppHelpdeskQueueRoute
+  '/helpdesk/reports': typeof AppHelpdeskReportsRoute
   '/helpdesk/sla': typeof AppHelpdeskSlaRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
@@ -508,6 +515,7 @@ export interface FileRoutesByTo {
   '/helpdesk/categories': typeof AppHelpdeskCategoriesRoute
   '/helpdesk/my': typeof AppHelpdeskMyRoute
   '/helpdesk/queue': typeof AppHelpdeskQueueRoute
+  '/helpdesk/reports': typeof AppHelpdeskReportsRoute
   '/helpdesk/sla': typeof AppHelpdeskSlaRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
@@ -576,6 +584,7 @@ export interface FileRoutesById {
   '/_app/helpdesk/categories': typeof AppHelpdeskCategoriesRoute
   '/_app/helpdesk/my': typeof AppHelpdeskMyRoute
   '/_app/helpdesk/queue': typeof AppHelpdeskQueueRoute
+  '/_app/helpdesk/reports': typeof AppHelpdeskReportsRoute
   '/_app/helpdesk/sla': typeof AppHelpdeskSlaRoute
   '/_app/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/_app/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
@@ -644,6 +653,7 @@ export interface FileRouteTypes {
     | '/helpdesk/categories'
     | '/helpdesk/my'
     | '/helpdesk/queue'
+    | '/helpdesk/reports'
     | '/helpdesk/sla'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
@@ -703,6 +713,7 @@ export interface FileRouteTypes {
     | '/helpdesk/categories'
     | '/helpdesk/my'
     | '/helpdesk/queue'
+    | '/helpdesk/reports'
     | '/helpdesk/sla'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
@@ -770,6 +781,7 @@ export interface FileRouteTypes {
     | '/_app/helpdesk/categories'
     | '/_app/helpdesk/my'
     | '/_app/helpdesk/queue'
+    | '/_app/helpdesk/reports'
     | '/_app/helpdesk/sla'
     | '/_app/leave-wfh/apply-leave'
     | '/_app/leave-wfh/apply-wfh'
@@ -1059,6 +1071,13 @@ declare module '@tanstack/react-router' {
       path: '/sla'
       fullPath: '/helpdesk/sla'
       preLoaderRoute: typeof AppHelpdeskSlaRouteImport
+      parentRoute: typeof AppHelpdeskRoute
+    }
+    '/_app/helpdesk/reports': {
+      id: '/_app/helpdesk/reports'
+      path: '/reports'
+      fullPath: '/helpdesk/reports'
+      preLoaderRoute: typeof AppHelpdeskReportsRouteImport
       parentRoute: typeof AppHelpdeskRoute
     }
     '/_app/helpdesk/queue': {
@@ -1371,6 +1390,7 @@ interface AppHelpdeskRouteChildren {
   AppHelpdeskCategoriesRoute: typeof AppHelpdeskCategoriesRoute
   AppHelpdeskMyRoute: typeof AppHelpdeskMyRoute
   AppHelpdeskQueueRoute: typeof AppHelpdeskQueueRoute
+  AppHelpdeskReportsRoute: typeof AppHelpdeskReportsRoute
   AppHelpdeskSlaRoute: typeof AppHelpdeskSlaRoute
   AppHelpdeskIndexRoute: typeof AppHelpdeskIndexRoute
 }
@@ -1379,6 +1399,7 @@ const AppHelpdeskRouteChildren: AppHelpdeskRouteChildren = {
   AppHelpdeskCategoriesRoute: AppHelpdeskCategoriesRoute,
   AppHelpdeskMyRoute: AppHelpdeskMyRoute,
   AppHelpdeskQueueRoute: AppHelpdeskQueueRoute,
+  AppHelpdeskReportsRoute: AppHelpdeskReportsRoute,
   AppHelpdeskSlaRoute: AppHelpdeskSlaRoute,
   AppHelpdeskIndexRoute: AppHelpdeskIndexRoute,
 }
