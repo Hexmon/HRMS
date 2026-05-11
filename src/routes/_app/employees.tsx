@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   PageHeader,
@@ -9,13 +9,24 @@ import {
   type Column,
   ActionButton,
 } from "@/components/ui-kit";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useEmployees } from "@/lib/employees-store";
 import { useAuth } from "@/lib/auth";
-import { DEPARTMENTS } from "@/lib/mock/departments";
-import { type Employee } from "@/lib/mock/employees";
+import {
+  EMPLOYEE_STATUS_LABEL,
+  EMPLOYMENT_TYPE_LABEL,
+  type Employee,
+  type EmployeeStatus,
+  type EmploymentType,
+} from "@/lib/mock/employees";
 import { EmployeeFormDrawer } from "@/components/employees/employee-form-drawer";
-import { EmployeeProfileDrawer } from "@/components/employees/employee-profile-drawer";
 import {
   Users,
   UserCheck,
@@ -23,6 +34,13 @@ import {
   Sparkles,
   Plus,
   Download,
+  Upload,
+  ShieldOff,
+  ShieldCheck,
+  Eye,
+  Pencil,
+  KeyRound,
+  Hourglass,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,54 +50,69 @@ export const Route = createFileRoute("/_app/employees")({
 });
 
 function EmployeesPage() {
-  const { employees, setStatus } = useEmployees();
-  const { activeRole } = useAuth();
-  const canEdit = activeRole === "main_admin" || activeRole === "hr_admin";
+  const { employees, departments, designations, setStatus, setLogin } = useEmployees();
+  const { activeRole, user } = useAuth();
+  const navigate = useNavigate();
+
+  const isMain = activeRole === "main_admin";
+  const isHr = activeRole === "hr_admin";
+  const isManager = activeRole === "manager";
+  const canEdit = isMain || isHr;
+
+  // Manager sees only direct reports (mocked by user.name match);
+  // Employee sees only own profile.
+  const visible = useMemo(() => {
+    if (isMain || isHr) return employees;
+    if (isManager) return employees.filter((e) => e.manager === user?.name);
+    if (activeRole === "employee") return employees.filter((e) => e.email === user?.email);
+    return [];
+  }, [employees, activeRole, isMain, isHr, isManager, user]);
 
   const [dept, setDept] = useState<string>("all");
+  const [desg, setDesg] = useState<string>("all");
   const [status, setStatusFilter] = useState<string>("all");
+  const [empType, setEmpType] = useState<string>("all");
+  const [login, setLoginFilter] = useState<string>("all");
+
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [selected, setSelected] = useState<Employee | null>(null);
 
   const filtered = useMemo(() => {
-    return employees.filter((e) => {
+    return visible.filter((e) => {
       if (dept !== "all" && e.department !== dept) return false;
+      if (desg !== "all" && e.designation !== desg) return false;
       if (status !== "all" && e.status !== status) return false;
+      if (empType !== "all" && e.employmentType !== empType) return false;
+      if (login !== "all" && String(e.loginEnabled) !== login) return false;
       return true;
     });
-  }, [employees, dept, status]);
+  }, [visible, dept, desg, status, empType, login]);
 
   const stats = useMemo(() => {
-    const total = employees.length;
-    const active = employees.filter((e) => e.status === "active").length;
-    const onLeave = employees.filter((e) => e.status === "on_leave").length;
-    const newJoiners = employees.filter((e) => {
+    const total = visible.length;
+    const active = visible.filter((e) => e.status === "active" || e.status === "confirmed").length;
+    const onProbation = visible.filter((e) => e.status === "probation").length;
+    const newJoiners = visible.filter((e) => {
       const d = new Date(e.joinedAt);
       return Date.now() - d.getTime() < 1000 * 60 * 60 * 24 * 90;
     }).length;
-    return { total, active, onLeave, newJoiners };
-  }, [employees]);
+    return { total, active, onProbation, newJoiners };
+  }, [visible]);
 
-  const openProfile = (e: Employee) => {
-    setSelected(e);
-    setProfileOpen(true);
-  };
   const openAdd = () => {
     setEditing(null);
     setFormOpen(true);
   };
   const openEdit = (e: Employee) => {
     setEditing(e);
-    setProfileOpen(false);
     setFormOpen(true);
   };
+  const goProfile = (id: string) => navigate({ to: "/employees/$id", params: { id } });
 
   const handleExport = () => {
-    const headers = ["ID", "Name", "Email", "Department", "Designation", "Manager", "Location", "Status", "Joined"];
+    const headers = ["ID", "Name", "Email", "Department", "Designation", "Manager", "Type", "Status", "Login", "Joined"];
     const rows = filtered.map((e) =>
-      [e.id, e.name, e.email, e.department, e.designation, e.manager, e.location, e.status, e.joinedAt]
+      [e.id, e.name, e.email, e.department, e.designation, e.manager, e.employmentType, e.status, e.loginEnabled ? "Enabled" : "Disabled", e.joinedAt]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(","),
     );
@@ -99,7 +132,7 @@ function EmployeesPage() {
       key: "name",
       header: "Employee",
       render: (e) => (
-        <button onClick={() => openProfile(e)} className="text-left">
+        <button onClick={() => goProfile(e.id)} className="text-left">
           <UserAvatar
             name={e.name}
             email={e.email}
@@ -110,6 +143,7 @@ function EmployeesPage() {
         </button>
       ),
     },
+    { key: "id", header: "ID", render: (e) => <span className="text-xs font-medium text-muted-foreground">{e.id}</span> },
     {
       key: "designation",
       header: "Job",
@@ -120,10 +154,47 @@ function EmployeesPage() {
         </div>
       ),
     },
-    { key: "manager", header: "Manager", render: (e) => <span className="text-sm text-muted-foreground">{e.manager}</span> },
-    { key: "location", header: "Location", render: (e) => <span className="text-sm text-muted-foreground">{e.location}</span> },
-    { key: "status", header: "Status", render: (e) => <StatusBadge status={e.status === "on_leave" ? "on_hold" : e.status} label={e.status === "on_leave" ? "On leave" : undefined} /> },
-    { key: "id", header: "ID", className: "text-muted-foreground", render: (e) => <span className="text-xs">{e.id}</span> },
+    { key: "manager", header: "Reporting to", render: (e) => <span className="text-sm text-muted-foreground">{e.manager}</span> },
+    {
+      key: "type",
+      header: "Type",
+      render: (e) => (
+        <span className="text-xs text-muted-foreground">{EMPLOYMENT_TYPE_LABEL[e.employmentType]}</span>
+      ),
+    },
+    {
+      key: "joined",
+      header: "Joined",
+      render: (e) => (
+        <span className="text-xs text-muted-foreground">
+          {new Date(e.joinedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (e) => <StatusBadge status={e.status} label={EMPLOYEE_STATUS_LABEL[e.status]} />,
+    },
+    {
+      key: "login",
+      header: "Login",
+      render: (e) =>
+        canEdit ? (
+          <Switch
+            checked={e.loginEnabled}
+            onCheckedChange={(c) => {
+              setLogin(e.id, c);
+              toast.success(c ? "Login enabled" : "Login disabled", { description: e.name });
+            }}
+          />
+        ) : (
+          <StatusBadge
+            status={e.loginEnabled ? "active" : "inactive"}
+            label={e.loginEnabled ? "Enabled" : "Disabled"}
+          />
+        ),
+    },
   ];
 
   return (
@@ -131,12 +202,22 @@ function EmployeesPage() {
       <PageHeader
         eyebrow="People"
         title="Employees"
-        description="The single source of truth for everyone in your workspace."
+        description={`${visible.length} ${visible.length === 1 ? "person" : "people"} in your workspace.`}
         actions={
           <>
             <ActionButton variant="secondary" size="sm" icon={<Download className="h-4 w-4" />} onClick={handleExport}>
               Export
             </ActionButton>
+            {canEdit && (
+              <ActionButton
+                variant="secondary"
+                size="sm"
+                icon={<Upload className="h-4 w-4" />}
+                onClick={() => toast.message("Bulk import", { description: "CSV import wizard coming soon." })}
+              >
+                Bulk import
+              </ActionButton>
+            )}
             {canEdit && (
               <ActionButton size="sm" icon={<Plus className="h-4 w-4" />} onClick={openAdd}>
                 Add employee
@@ -147,81 +228,113 @@ function EmployeesPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Total employees" value={stats.total} icon={Users} tone="primary" hint="Across the workspace" />
-        <StatCard label="Active" value={stats.active} icon={UserCheck} tone="success" hint="Currently working" />
-        <StatCard label="On leave" value={stats.onLeave} icon={UserMinus} tone="warning" hint="Out today" />
-        <StatCard label="New joiners" value={stats.newJoiners} icon={Sparkles} tone="info" hint="Joined in last 90 days" />
+        <StatCard label="Total employees" value={stats.total} icon={Users} tone="primary" hint="In your view" />
+        <StatCard label="Active" value={stats.active} icon={UserCheck} tone="success" hint="Active + Confirmed" />
+        <StatCard label="On probation" value={stats.onProbation} icon={Hourglass} tone="warning" hint="Within probation period" />
+        <StatCard label="New joiners" value={stats.newJoiners} icon={Sparkles} tone="info" hint="Last 90 days" />
       </div>
 
       <DataTable
         columns={columns}
         rows={filtered}
-        searchKeys={["name", "email", "designation", "department", "location", "id"]}
+        searchKeys={["name", "email", "id", "designation", "department", "location"]}
         emptyTitle="No employees match these filters"
         emptyDescription="Try adjusting your search or clearing filters."
         toolbarRight={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Select value={dept} onValueChange={setDept}>
-              <SelectTrigger className="h-9 w-[160px] rounded-full">
-                <SelectValue placeholder="Department" />
-              </SelectTrigger>
+              <SelectTrigger className="h-9 w-[150px] rounded-full"><SelectValue placeholder="Department" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All departments</SelectItem>
-                {DEPARTMENTS.map((d) => (
+                {departments.map((d) => (
                   <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <Select value={desg} onValueChange={setDesg}>
+              <SelectTrigger className="h-9 w-[160px] rounded-full"><SelectValue placeholder="Designation" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All designations</SelectItem>
+                {Array.from(new Set(designations.map((d) => d.title))).map((t) => (
+                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={status} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 w-[140px] rounded-full">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
+              <SelectTrigger className="h-9 w-[140px] rounded-full"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="on_leave">On leave</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+                {(Object.keys(EMPLOYEE_STATUS_LABEL) as EmployeeStatus[]).map((s) => (
+                  <SelectItem key={s} value={s}>{EMPLOYEE_STATUS_LABEL[s]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={empType} onValueChange={setEmpType}>
+              <SelectTrigger className="h-9 w-[130px] rounded-full"><SelectValue placeholder="Type" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                {(Object.keys(EMPLOYMENT_TYPE_LABEL) as EmploymentType[]).map((t) => (
+                  <SelectItem key={t} value={t}>{EMPLOYMENT_TYPE_LABEL[t]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={login} onValueChange={setLoginFilter}>
+              <SelectTrigger className="h-9 w-[130px] rounded-full"><SelectValue placeholder="Login" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any login</SelectItem>
+                <SelectItem value="true">Login enabled</SelectItem>
+                <SelectItem value="false">Login disabled</SelectItem>
               </SelectContent>
             </Select>
           </div>
         }
         rowActions={(e) => {
           const actions: { label: string; onClick?: () => void; tone?: "default" | "destructive" }[] = [
-            { label: "View profile", onClick: () => openProfile(e) },
+            { label: "View profile", onClick: () => goProfile(e.id) },
           ];
           if (canEdit) {
-            actions.push({ label: "Edit details", onClick: () => openEdit(e) });
-            if (e.status === "active") {
+            actions.push({ label: "Edit", onClick: () => openEdit(e) });
+            actions.push({ label: "Manage roles", onClick: () => goProfile(e.id) });
+            actions.push({
+              label: e.loginEnabled ? "Disable login" : "Enable login",
+              onClick: () => {
+                setLogin(e.id, !e.loginEnabled);
+                toast.success(!e.loginEnabled ? "Login enabled" : "Login disabled", { description: e.name });
+              },
+            });
+            if (e.status !== "notice_period" && e.status !== "exited") {
               actions.push({
-                label: "Deactivate",
-                tone: "destructive",
+                label: "Mark notice period",
                 onClick: () => {
-                  setStatus(e.id, "inactive");
-                  toast.success("Employee deactivated", { description: e.name });
-                },
-              });
-            } else {
-              actions.push({
-                label: "Reactivate",
-                onClick: () => {
-                  setStatus(e.id, "active");
-                  toast.success("Employee reactivated", { description: e.name });
+                  setStatus(e.id, "notice_period");
+                  toast.success("Marked notice period", { description: e.name });
                 },
               });
             }
+            actions.push({
+              label: "Deactivate",
+              tone: "destructive",
+              onClick: () => {
+                setStatus(e.id, "inactive");
+                toast.success("Employee deactivated", { description: e.name });
+              },
+            });
           }
           return actions;
         }}
       />
 
       <EmployeeFormDrawer open={formOpen} onOpenChange={setFormOpen} initial={editing} />
-      <EmployeeProfileDrawer
-        open={profileOpen}
-        onOpenChange={setProfileOpen}
-        employee={selected}
-        canEdit={canEdit}
-        onEdit={() => selected && openEdit(selected)}
-      />
+
+      {/* tiny legend so action icons feel intentional */}
+      <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" /> View</span>
+        <span className="inline-flex items-center gap-1"><Pencil className="h-3 w-3" /> Edit</span>
+        <span className="inline-flex items-center gap-1"><KeyRound className="h-3 w-3" /> Roles</span>
+        <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Enable</span>
+        <span className="inline-flex items-center gap-1"><ShieldOff className="h-3 w-3" /> Disable</span>
+        <span className="inline-flex items-center gap-1"><UserMinus className="h-3 w-3" /> Deactivate</span>
+      </div>
     </>
   );
 }
