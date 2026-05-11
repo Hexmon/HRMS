@@ -35,6 +35,7 @@ import { Route as AppLeaveWfhIndexRouteImport } from './routes/_app/leave-wfh.in
 import { Route as AppExpensesIndexRouteImport } from './routes/_app/expenses.index'
 import { Route as AppEmsIndexRouteImport } from './routes/_app/ems.index'
 import { Route as AppAttendanceIndexRouteImport } from './routes/_app/attendance.index'
+import { Route as AppAssetsIndexRouteImport } from './routes/_app/assets.index'
 import { Route as AppTimesheetProjectsRouteImport } from './routes/_app/timesheet.projects'
 import { Route as AppTimesheetApprovalsRouteImport } from './routes/_app/timesheet.approvals'
 import { Route as AppProjectsIdRouteImport } from './routes/_app/projects.$id'
@@ -62,6 +63,12 @@ import { Route as AppEmsAdminRouteImport } from './routes/_app/ems.admin'
 import { Route as AppEmployeesIdRouteImport } from './routes/_app/employees.$id'
 import { Route as AppAttendanceExceptionsRouteImport } from './routes/_app/attendance.exceptions'
 import { Route as AppAttendanceCalendarRouteImport } from './routes/_app/attendance.calendar'
+import { Route as AppAssetsWarrantyRouteImport } from './routes/_app/assets.warranty'
+import { Route as AppAssetsReturnsRouteImport } from './routes/_app/assets.returns'
+import { Route as AppAssetsRequestsRouteImport } from './routes/_app/assets.requests'
+import { Route as AppAssetsMyRouteImport } from './routes/_app/assets.my'
+import { Route as AppAssetsInventoryRouteImport } from './routes/_app/assets.inventory'
+import { Route as AppAssetsIdRouteImport } from './routes/_app/assets.$id'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
@@ -191,6 +198,11 @@ const AppAttendanceIndexRoute = AppAttendanceIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppAttendanceRoute,
+} as any)
+const AppAssetsIndexRoute = AppAssetsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppAssetsRoute,
 } as any)
 const AppTimesheetProjectsRoute = AppTimesheetProjectsRouteImport.update({
   id: '/projects',
@@ -327,6 +339,36 @@ const AppAttendanceCalendarRoute = AppAttendanceCalendarRouteImport.update({
   path: '/calendar',
   getParentRoute: () => AppAttendanceRoute,
 } as any)
+const AppAssetsWarrantyRoute = AppAssetsWarrantyRouteImport.update({
+  id: '/warranty',
+  path: '/warranty',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsReturnsRoute = AppAssetsReturnsRouteImport.update({
+  id: '/returns',
+  path: '/returns',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsRequestsRoute = AppAssetsRequestsRouteImport.update({
+  id: '/requests',
+  path: '/requests',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsMyRoute = AppAssetsMyRouteImport.update({
+  id: '/my',
+  path: '/my',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsInventoryRoute = AppAssetsInventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsIdRoute = AppAssetsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -337,7 +379,7 @@ export interface FileRoutesByFullPath {
   '/set-password': typeof SetPasswordRoute
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
-  '/assets': typeof AppAssetsRoute
+  '/assets': typeof AppAssetsRouteWithChildren
   '/attendance': typeof AppAttendanceRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
@@ -349,6 +391,12 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AppReportsRoute
   '/team-utilization': typeof AppTeamUtilizationRoute
   '/timesheet': typeof AppTimesheetRouteWithChildren
+  '/assets/$id': typeof AppAssetsIdRoute
+  '/assets/inventory': typeof AppAssetsInventoryRoute
+  '/assets/my': typeof AppAssetsMyRoute
+  '/assets/requests': typeof AppAssetsRequestsRoute
+  '/assets/returns': typeof AppAssetsReturnsRoute
+  '/assets/warranty': typeof AppAssetsWarrantyRoute
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
   '/employees/$id': typeof AppEmployeesIdRoute
@@ -376,6 +424,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id': typeof AppProjectsIdRoute
   '/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/timesheet/projects': typeof AppTimesheetProjectsRoute
+  '/assets/': typeof AppAssetsIndexRoute
   '/attendance/': typeof AppAttendanceIndexRoute
   '/ems/': typeof AppEmsIndexRoute
   '/expenses/': typeof AppExpensesIndexRoute
@@ -391,13 +440,18 @@ export interface FileRoutesByTo {
   '/set-password': typeof SetPasswordRoute
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
-  '/assets': typeof AppAssetsRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
   '/helpdesk': typeof AppHelpdeskRoute
   '/projects': typeof AppProjectsRouteWithChildren
   '/reports': typeof AppReportsRoute
   '/team-utilization': typeof AppTeamUtilizationRoute
+  '/assets/$id': typeof AppAssetsIdRoute
+  '/assets/inventory': typeof AppAssetsInventoryRoute
+  '/assets/my': typeof AppAssetsMyRoute
+  '/assets/requests': typeof AppAssetsRequestsRoute
+  '/assets/returns': typeof AppAssetsReturnsRoute
+  '/assets/warranty': typeof AppAssetsWarrantyRoute
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
   '/employees/$id': typeof AppEmployeesIdRoute
@@ -425,6 +479,7 @@ export interface FileRoutesByTo {
   '/projects/$id': typeof AppProjectsIdRoute
   '/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/timesheet/projects': typeof AppTimesheetProjectsRoute
+  '/assets': typeof AppAssetsIndexRoute
   '/attendance': typeof AppAttendanceIndexRoute
   '/ems': typeof AppEmsIndexRoute
   '/expenses': typeof AppExpensesIndexRoute
@@ -442,7 +497,7 @@ export interface FileRoutesById {
   '/set-password': typeof SetPasswordRoute
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
-  '/_app/assets': typeof AppAssetsRoute
+  '/_app/assets': typeof AppAssetsRouteWithChildren
   '/_app/attendance': typeof AppAttendanceRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/employees': typeof AppEmployeesRouteWithChildren
@@ -454,6 +509,12 @@ export interface FileRoutesById {
   '/_app/reports': typeof AppReportsRoute
   '/_app/team-utilization': typeof AppTeamUtilizationRoute
   '/_app/timesheet': typeof AppTimesheetRouteWithChildren
+  '/_app/assets/$id': typeof AppAssetsIdRoute
+  '/_app/assets/inventory': typeof AppAssetsInventoryRoute
+  '/_app/assets/my': typeof AppAssetsMyRoute
+  '/_app/assets/requests': typeof AppAssetsRequestsRoute
+  '/_app/assets/returns': typeof AppAssetsReturnsRoute
+  '/_app/assets/warranty': typeof AppAssetsWarrantyRoute
   '/_app/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/_app/attendance/exceptions': typeof AppAttendanceExceptionsRoute
   '/_app/employees/$id': typeof AppEmployeesIdRoute
@@ -481,6 +542,7 @@ export interface FileRoutesById {
   '/_app/projects/$id': typeof AppProjectsIdRoute
   '/_app/timesheet/approvals': typeof AppTimesheetApprovalsRoute
   '/_app/timesheet/projects': typeof AppTimesheetProjectsRoute
+  '/_app/assets/': typeof AppAssetsIndexRoute
   '/_app/attendance/': typeof AppAttendanceIndexRoute
   '/_app/ems/': typeof AppEmsIndexRoute
   '/_app/expenses/': typeof AppExpensesIndexRoute
@@ -510,6 +572,12 @@ export interface FileRouteTypes {
     | '/reports'
     | '/team-utilization'
     | '/timesheet'
+    | '/assets/$id'
+    | '/assets/inventory'
+    | '/assets/my'
+    | '/assets/requests'
+    | '/assets/returns'
+    | '/assets/warranty'
     | '/attendance/calendar'
     | '/attendance/exceptions'
     | '/employees/$id'
@@ -537,6 +605,7 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/timesheet/approvals'
     | '/timesheet/projects'
+    | '/assets/'
     | '/attendance/'
     | '/ems/'
     | '/expenses/'
@@ -552,13 +621,18 @@ export interface FileRouteTypes {
     | '/set-password'
     | '/signup'
     | '/verify-email'
-    | '/assets'
     | '/dashboard'
     | '/employees'
     | '/helpdesk'
     | '/projects'
     | '/reports'
     | '/team-utilization'
+    | '/assets/$id'
+    | '/assets/inventory'
+    | '/assets/my'
+    | '/assets/requests'
+    | '/assets/returns'
+    | '/assets/warranty'
     | '/attendance/calendar'
     | '/attendance/exceptions'
     | '/employees/$id'
@@ -586,6 +660,7 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/timesheet/approvals'
     | '/timesheet/projects'
+    | '/assets'
     | '/attendance'
     | '/ems'
     | '/expenses'
@@ -614,6 +689,12 @@ export interface FileRouteTypes {
     | '/_app/reports'
     | '/_app/team-utilization'
     | '/_app/timesheet'
+    | '/_app/assets/$id'
+    | '/_app/assets/inventory'
+    | '/_app/assets/my'
+    | '/_app/assets/requests'
+    | '/_app/assets/returns'
+    | '/_app/assets/warranty'
     | '/_app/attendance/calendar'
     | '/_app/attendance/exceptions'
     | '/_app/employees/$id'
@@ -641,6 +722,7 @@ export interface FileRouteTypes {
     | '/_app/projects/$id'
     | '/_app/timesheet/approvals'
     | '/_app/timesheet/projects'
+    | '/_app/assets/'
     | '/_app/attendance/'
     | '/_app/ems/'
     | '/_app/expenses/'
@@ -844,6 +926,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAttendanceIndexRouteImport
       parentRoute: typeof AppAttendanceRoute
     }
+    '/_app/assets/': {
+      id: '/_app/assets/'
+      path: '/'
+      fullPath: '/assets/'
+      preLoaderRoute: typeof AppAssetsIndexRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
     '/_app/timesheet/projects': {
       id: '/_app/timesheet/projects'
       path: '/projects'
@@ -1033,8 +1122,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAttendanceCalendarRouteImport
       parentRoute: typeof AppAttendanceRoute
     }
+    '/_app/assets/warranty': {
+      id: '/_app/assets/warranty'
+      path: '/warranty'
+      fullPath: '/assets/warranty'
+      preLoaderRoute: typeof AppAssetsWarrantyRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/returns': {
+      id: '/_app/assets/returns'
+      path: '/returns'
+      fullPath: '/assets/returns'
+      preLoaderRoute: typeof AppAssetsReturnsRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/requests': {
+      id: '/_app/assets/requests'
+      path: '/requests'
+      fullPath: '/assets/requests'
+      preLoaderRoute: typeof AppAssetsRequestsRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/my': {
+      id: '/_app/assets/my'
+      path: '/my'
+      fullPath: '/assets/my'
+      preLoaderRoute: typeof AppAssetsMyRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/inventory': {
+      id: '/_app/assets/inventory'
+      path: '/inventory'
+      fullPath: '/assets/inventory'
+      preLoaderRoute: typeof AppAssetsInventoryRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/$id': {
+      id: '/_app/assets/$id'
+      path: '/$id'
+      fullPath: '/assets/$id'
+      preLoaderRoute: typeof AppAssetsIdRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
   }
 }
+
+interface AppAssetsRouteChildren {
+  AppAssetsIdRoute: typeof AppAssetsIdRoute
+  AppAssetsInventoryRoute: typeof AppAssetsInventoryRoute
+  AppAssetsMyRoute: typeof AppAssetsMyRoute
+  AppAssetsRequestsRoute: typeof AppAssetsRequestsRoute
+  AppAssetsReturnsRoute: typeof AppAssetsReturnsRoute
+  AppAssetsWarrantyRoute: typeof AppAssetsWarrantyRoute
+  AppAssetsIndexRoute: typeof AppAssetsIndexRoute
+}
+
+const AppAssetsRouteChildren: AppAssetsRouteChildren = {
+  AppAssetsIdRoute: AppAssetsIdRoute,
+  AppAssetsInventoryRoute: AppAssetsInventoryRoute,
+  AppAssetsMyRoute: AppAssetsMyRoute,
+  AppAssetsRequestsRoute: AppAssetsRequestsRoute,
+  AppAssetsReturnsRoute: AppAssetsReturnsRoute,
+  AppAssetsWarrantyRoute: AppAssetsWarrantyRoute,
+  AppAssetsIndexRoute: AppAssetsIndexRoute,
+}
+
+const AppAssetsRouteWithChildren = AppAssetsRoute._addFileChildren(
+  AppAssetsRouteChildren,
+)
 
 interface AppAttendanceRouteChildren {
   AppAttendanceCalendarRoute: typeof AppAttendanceCalendarRoute
@@ -1170,7 +1325,7 @@ const AppTimesheetRouteWithChildren = AppTimesheetRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
-  AppAssetsRoute: typeof AppAssetsRoute
+  AppAssetsRoute: typeof AppAssetsRouteWithChildren
   AppAttendanceRoute: typeof AppAttendanceRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
   AppEmployeesRoute: typeof AppEmployeesRouteWithChildren
@@ -1185,7 +1340,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppAssetsRoute: AppAssetsRoute,
+  AppAssetsRoute: AppAssetsRouteWithChildren,
   AppAttendanceRoute: AppAttendanceRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppEmployeesRoute: AppEmployeesRouteWithChildren,

@@ -557,7 +557,7 @@ function AssetsTab({ employeeName }: { employeeName: string }) {
               <Laptop className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-medium">{a.name}</p>
+              <p className="text-sm font-medium">{a.brand} {a.model}</p>
               <p className="text-xs text-muted-foreground">{a.id} • {a.serial}</p>
             </div>
           </div>
