@@ -10,6 +10,7 @@ import {
 import { AuthProvider } from "@/lib/auth";
 import { EmployeesProvider } from "@/lib/employees-store";
 import { LeaveProvider } from "@/lib/leave-store";
+import { ProjectsProvider } from "@/lib/projects-store";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -94,10 +95,12 @@ function RootComponent() {
       <AuthProvider>
         <EmployeesProvider>
           <LeaveProvider>
-            <TooltipProvider delayDuration={150}>
-              <Outlet />
-              <Toaster />
-            </TooltipProvider>
+            <ProjectsProvider>
+              <TooltipProvider delayDuration={150}>
+                <Outlet />
+                <Toaster />
+              </TooltipProvider>
+            </ProjectsProvider>
           </LeaveProvider>
         </EmployeesProvider>
       </AuthProvider>
