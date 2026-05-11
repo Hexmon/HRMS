@@ -44,6 +44,7 @@ import { Route as AppLeaveWfhApprovalsRouteImport } from './routes/_app/leave-wf
 import { Route as AppLeaveWfhApplyWfhRouteImport } from './routes/_app/leave-wfh.apply-wfh'
 import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-wfh.apply-leave'
 import { Route as AppExpensesMyRouteImport } from './routes/_app/expenses.my'
+import { Route as AppExpensesCreateRouteImport } from './routes/_app/expenses.create'
 import { Route as AppEmsRequestsRouteImport } from './routes/_app/ems.requests'
 import { Route as AppEmsProfileRouteImport } from './routes/_app/ems.profile'
 import { Route as AppEmsPoliciesRouteImport } from './routes/_app/ems.policies'
@@ -229,6 +230,11 @@ const AppExpensesMyRoute = AppExpensesMyRouteImport.update({
   path: '/my',
   getParentRoute: () => AppExpensesRoute,
 } as any)
+const AppExpensesCreateRoute = AppExpensesCreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
 const AppEmsRequestsRoute = AppEmsRequestsRouteImport.update({
   id: '/requests',
   path: '/requests',
@@ -311,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/ems/policies': typeof AppEmsPoliciesRoute
   '/ems/profile': typeof AppEmsProfileRoute
   '/ems/requests': typeof AppEmsRequestsRoute
+  '/expenses/create': typeof AppExpensesCreateRoute
   '/expenses/my': typeof AppExpensesMyRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
@@ -352,6 +359,7 @@ export interface FileRoutesByTo {
   '/ems/policies': typeof AppEmsPoliciesRoute
   '/ems/profile': typeof AppEmsProfileRoute
   '/ems/requests': typeof AppEmsRequestsRoute
+  '/expenses/create': typeof AppExpensesCreateRoute
   '/expenses/my': typeof AppExpensesMyRoute
   '/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
@@ -400,6 +408,7 @@ export interface FileRoutesById {
   '/_app/ems/policies': typeof AppEmsPoliciesRoute
   '/_app/ems/profile': typeof AppEmsProfileRoute
   '/_app/ems/requests': typeof AppEmsRequestsRoute
+  '/_app/expenses/create': typeof AppExpensesCreateRoute
   '/_app/expenses/my': typeof AppExpensesMyRoute
   '/_app/leave-wfh/apply-leave': typeof AppLeaveWfhApplyLeaveRoute
   '/_app/leave-wfh/apply-wfh': typeof AppLeaveWfhApplyWfhRoute
@@ -448,6 +457,7 @@ export interface FileRouteTypes {
     | '/ems/policies'
     | '/ems/profile'
     | '/ems/requests'
+    | '/expenses/create'
     | '/expenses/my'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
@@ -489,6 +499,7 @@ export interface FileRouteTypes {
     | '/ems/policies'
     | '/ems/profile'
     | '/ems/requests'
+    | '/expenses/create'
     | '/expenses/my'
     | '/leave-wfh/apply-leave'
     | '/leave-wfh/apply-wfh'
@@ -536,6 +547,7 @@ export interface FileRouteTypes {
     | '/_app/ems/policies'
     | '/_app/ems/profile'
     | '/_app/ems/requests'
+    | '/_app/expenses/create'
     | '/_app/expenses/my'
     | '/_app/leave-wfh/apply-leave'
     | '/_app/leave-wfh/apply-wfh'
@@ -811,6 +823,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppExpensesMyRouteImport
       parentRoute: typeof AppExpensesRoute
     }
+    '/_app/expenses/create': {
+      id: '/_app/expenses/create'
+      path: '/create'
+      fullPath: '/expenses/create'
+      preLoaderRoute: typeof AppExpensesCreateRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
     '/_app/ems/requests': {
       id: '/_app/ems/requests'
       path: '/requests'
@@ -938,11 +957,13 @@ const AppEmsRouteWithChildren =
   AppEmsRoute._addFileChildren(AppEmsRouteChildren)
 
 interface AppExpensesRouteChildren {
+  AppExpensesCreateRoute: typeof AppExpensesCreateRoute
   AppExpensesMyRoute: typeof AppExpensesMyRoute
   AppExpensesIndexRoute: typeof AppExpensesIndexRoute
 }
 
 const AppExpensesRouteChildren: AppExpensesRouteChildren = {
+  AppExpensesCreateRoute: AppExpensesCreateRoute,
   AppExpensesMyRoute: AppExpensesMyRoute,
   AppExpensesIndexRoute: AppExpensesIndexRoute,
 }
