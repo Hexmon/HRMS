@@ -86,7 +86,7 @@ function ProjectReports() {
       </TabsContent>
 
       <TabsContent value="alloc" className="mt-4">
-        <ReportShell
+        <ReportShell<AllocRow>
           title="Project Allocation"
           description="Member allocations across projects."
           facets={{ showEmployee: true, employeePool: Array.from(new Set(allocations.map((a) => a.employee))) }}
