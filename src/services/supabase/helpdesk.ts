@@ -53,7 +53,7 @@ export async function assignTicket(ticketId: string, assigneeId: string) {
 }
 
 export async function changeStatus(ticketId: string, status: string) {
-  const patch: Record<string, unknown> = { status };
+  const patch: Database["public"]["Tables"]["helpdesk_tickets"]["Update"] = { status };
   if (status === "resolved") patch.resolved_at = new Date().toISOString();
   const { data, error } = await supabase
     .from("helpdesk_tickets").update(patch).eq("id", ticketId).select("*").single();

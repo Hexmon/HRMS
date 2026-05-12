@@ -40,8 +40,8 @@ export async function createEmployee(input: EmployeeInsert) {
     action: "employee.created",
     entityType: "employee",
     entityId: data.id,
-    new_value: data as never,
-  } as never);
+    newValue: data as never,
+  });
   return data;
 }
 
