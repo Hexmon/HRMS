@@ -206,7 +206,9 @@ function EmployeesPage() {
       <PageHeader
         eyebrow="People"
         title="Employees"
-        description={`${visible.length} ${visible.length === 1 ? "person" : "people"} in your workspace.`}
+        description={`${visible.length} ${visible.length === 1 ? "person" : "people"} in your workspace.${
+          remote && remote.length ? " · Live data" : remoteLoading ? " · Loading…" : ""
+        }`}
         actions={
           <>
             <ActionButton variant="secondary" size="sm" icon={<Download className="h-4 w-4" />} onClick={handleExport}>
