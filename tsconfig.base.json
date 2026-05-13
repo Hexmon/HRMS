@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "#shared": ["src/shared/index.ts"],
+      "#shared/*": ["src/shared/*"],
+      "#auth": ["src/auth/index.ts"],
+      "#db": ["src/db/index.ts"],
+      "#testing": ["src/testing/index.ts"]
+    }
+  }
+}

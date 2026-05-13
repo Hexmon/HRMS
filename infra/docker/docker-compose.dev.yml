@@ -1,0 +1,114 @@
+x-backend-build: &backend-build
+  context: ../..
+  dockerfile: infra/docker/Dockerfile
+
+x-backend-environment: &backend-environment
+  NODE_ENV: development
+  PORT: "3001"
+  DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform
+  TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform_test
+  VALKEY_URL: redis://valkey:6379
+  OBJECT_STORAGE_ENDPOINT: http://minio:9000
+  OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+  OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+  OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-hrms-documents}
+  OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local-dev-access-secret-change-me}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-local-dev-refresh-secret-change-me}
+  SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-hrms_session}
+  COOKIE_SECURE: "false"
+  API_BASE_URL: http://api:3001
+  HRMS_DATA_STORE: postgres
+  OUTBOX_WORKER_INTERVAL_MS: ${OUTBOX_WORKER_INTERVAL_MS:-2000}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hrms_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-hrms_platform_test}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-hrms_platform}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+
+  valkey:
+    image: valkey/valkey:9.0.3-alpine
+    ports:
+      - "${VALKEY_HOST_PORT:-6379}:6379"
+    command: ["valkey-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - valkey-data:/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+
+  migrate:
+    build: *backend-build
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    command: ["sh", "-lc", "pnpm db:migrate && pnpm release:seed"]
+    restart: "no"
+
+  api:
+    build: *backend-build
+    environment: *backend-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "${API_HOST_PORT:-3001}:3001"
+    command: ["pnpm", "start"]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  outbox-worker:
+    build: *backend-build
+    environment: *backend-environment
+    depends_on:
+      api:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    command: ["pnpm", "worker:start"]
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  valkey-data:
+  minio-data:

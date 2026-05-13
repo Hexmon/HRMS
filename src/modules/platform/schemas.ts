@@ -1,0 +1,11 @@
+import { z } from "zod";
+
+export const financeGovernanceUpdateSchema = z.object({
+  primary_finance_manager_user_id: z.uuid(),
+  manager_backup_user_id: z.uuid().nullable(),
+  finance_approval_backup_user_id: z.uuid().nullable(),
+  effective_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+  effective_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).nullable().optional(),
+  status: z.enum(["active", "inactive"]).default("active"),
+  expected_version: z.number().int().min(1)
+});

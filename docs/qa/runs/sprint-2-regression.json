@@ -1,0 +1,32 @@
+{
+  "run_id": "sprint-2-regression",
+  "timestamp": "2026-05-13T10:00:04.858Z",
+  "scope": [
+    "core",
+    "expenses",
+    "documents",
+    "platform"
+  ],
+  "gates": {
+    "business_logic": "pass",
+    "code_quality": "pass",
+    "whole_implementation": "pass",
+    "scalability": "pass",
+    "regression": "pass"
+  },
+  "commands": [],
+  "failed_tests": [],
+  "fixed_issues": [],
+  "open_production_dependencies": [
+    "HIR-001 identity provider",
+    "HIR-002 cloud/hosting target",
+    "HIR-003 object storage provider",
+    "HIR-004 finance export target",
+    "HIR-005 notification provider",
+    "HIR-006 RPO/RTO",
+    "HIR-007 legal retention",
+    "HIR-008 virus scanning",
+    "HIR-009 cookie domain/TLS",
+    "HIR-010 tenant model"
+  ]
+}

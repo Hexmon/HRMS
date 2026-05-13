@@ -1,0 +1,104 @@
+postgres-1       | The files belonging to this database system will be owned by user "postgres".
+postgres-1       | This user must also own the server process.
+postgres-1       | 
+outbox-worker-1  | 
+outbox-worker-1  | > hrms-backend-standalone@0.1.0 worker:start /app
+migrate-1        | 
+outbox-worker-1  | > NODE_OPTIONS=--conditions=production node dist/src/workers/run-outbox-worker.js
+postgres-1       | The database cluster will be initialized with locale "en_US.utf8".
+postgres-1       | The default database encoding has accordingly been set to "UTF8".
+postgres-1       | The default text search configuration will be set to "english".
+api-1            | 
+api-1            | > hrms-backend-standalone@0.1.0 start /app
+valkey-1         | 1:M 13 May 2026 09:57:06.090 * oO0OoO0OoO0Oo Valkey is starting oO0OoO0OoO0Oo
+valkey-1         | 1:M 13 May 2026 09:57:06.090 * Valkey version=9.0.3, bits=64, commit=00000000, modified=0, pid=1, just started
+migrate-1        | > hrms-backend-standalone@0.1.0 db:migrate /app
+migrate-1        | > tsx scripts/db-migrate.ts
+migrate-1        | 
+migrate-1        | Migration applied successfully.
+migrate-1        | 
+migrate-1        | > hrms-backend-standalone@0.1.0 release:seed /app
+api-1            | > NODE_OPTIONS=--conditions=production node dist/src/server.js
+migrate-1        | > tsx scripts/seed-release-data.ts
+outbox-worker-1  | 
+valkey-1         | 1:M 13 May 2026 09:57:06.090 * Configuration loaded
+outbox-worker-1  | Outbox worker started with Valkey Streams publisher.
+migrate-1        | 
+migrate-1        | Release seed data inserted or already present.
+valkey-1         | 1:M 13 May 2026 09:57:06.090 * monotonic clock: POSIX clock_gettime
+valkey-1         | 1:M 13 May 2026 09:57:06.091 * Running mode=standalone, port=6379.
+valkey-1         | 1:M 13 May 2026 09:57:06.091 * Server initialized
+valkey-1         | 1:M 13 May 2026 09:57:06.093 * Creating AOF base file appendonly.aof.1.base.rdb on server start
+valkey-1         | 1:M 13 May 2026 09:57:06.095 * Creating AOF incr file appendonly.aof.1.incr.aof on server start
+valkey-1         | 1:M 13 May 2026 09:57:06.095 * Ready to accept connections tcp
+api-1            | 
+api-1            | {"level":30,"time":1778666535067,"pid":19,"hostname":"a8e20d3e8699","msg":"Server listening at http://127.0.0.1:3001"}
+api-1            | {"level":30,"time":1778666535067,"pid":19,"hostname":"a8e20d3e8699","msg":"Server listening at http://172.22.0.5:3001"}
+api-1            | {"level":30,"time":1778666543604,"pid":19,"hostname":"a8e20d3e8699","reqId":"0d1a30c1-4881-4d10-b91f-da62cb93295c","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":58154},"msg":"incoming request"}
+api-1            | {"level":30,"time":1778666543611,"pid":19,"hostname":"a8e20d3e8699","reqId":"0d1a30c1-4881-4d10-b91f-da62cb93295c","res":{"statusCode":200},"responseTime":5.752624999731779,"msg":"request completed"}
+minio-1          | INFO: Formatting 1st pool, 1 set(s), 1 drives per set.
+minio-1          | INFO: WARNING: Host local has more than 0 drives of set. A host failure will result in data becoming unavailable.
+minio-1          | MinIO Object Storage Server
+minio-1          | Copyright: 2015-2026 MinIO, Inc.
+minio-1          | License: GNU AGPLv3 - https://www.gnu.org/licenses/agpl-3.0.html
+minio-1          | Version: RELEASE.2025-09-07T16-13-09Z (go1.24.6 linux/arm64)
+minio-1          | 
+minio-1          | API: http://172.22.0.3:9000  http://127.0.0.1:9000 
+minio-1          | WebUI: http://172.22.0.3:9001 http://127.0.0.1:9001  
+minio-1          | 
+minio-1          | Docs: https://docs.min.io
+postgres-1       | 
+postgres-1       | Data page checksums are disabled.
+postgres-1       | 
+postgres-1       | fixing permissions on existing directory /var/lib/postgresql/data ... ok
+postgres-1       | creating subdirectories ... ok
+postgres-1       | selecting dynamic shared memory implementation ... posix
+postgres-1       | selecting default max_connections ... 100
+postgres-1       | selecting default shared_buffers ... 128MB
+postgres-1       | selecting default time zone ... UTC
+postgres-1       | creating configuration files ... ok
+postgres-1       | running bootstrap script ... ok
+postgres-1       | sh: locale: not found
+postgres-1       | 2026-05-13 09:57:06.499 UTC [35] WARNING:  no usable system locales were found
+postgres-1       | performing post-bootstrap initialization ... ok
+postgres-1       | initdb: warning: enabling "trust" authentication for local connections
+postgres-1       | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+postgres-1       | syncing data to disk ... ok
+postgres-1       | 
+postgres-1       | 
+postgres-1       | Success. You can now start the database server using:
+postgres-1       | 
+postgres-1       |     pg_ctl -D /var/lib/postgresql/data -l logfile start
+minio-1          | WARN: Detected default credentials 'minioadmin:minioadmin', we recommend that you change these values with 'MINIO_ROOT_USER' and 'MINIO_ROOT_PASSWORD' environment variables
+postgres-1       | 
+postgres-1       | waiting for server to start....2026-05-13 09:57:06.880 UTC [41] LOG:  starting PostgreSQL 16.13 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres-1       | 2026-05-13 09:57:06.881 UTC [41] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1       | 2026-05-13 09:57:06.883 UTC [44] LOG:  database system was shut down at 2026-05-13 09:57:06 UTC
+postgres-1       | 2026-05-13 09:57:06.886 UTC [41] LOG:  database system is ready to accept connections
+postgres-1       |  done
+postgres-1       | server started
+postgres-1       | CREATE DATABASE
+postgres-1       | 
+postgres-1       | 
+postgres-1       | /usr/local/bin/docker-entrypoint.sh: running /docker-entrypoint-initdb.d/001-create-test-db.sh
+postgres-1       | CREATE DATABASE
+postgres-1       | 
+postgres-1       | waiting for server to shut down....2026-05-13 09:57:07.062 UTC [41] LOG:  received fast shutdown request
+postgres-1       | 2026-05-13 09:57:07.063 UTC [41] LOG:  aborting any active transactions
+postgres-1       | 2026-05-13 09:57:07.064 UTC [41] LOG:  background worker "logical replication launcher" (PID 47) exited with exit code 1
+postgres-1       | 2026-05-13 09:57:07.065 UTC [42] LOG:  shutting down
+postgres-1       | 2026-05-13 09:57:07.065 UTC [42] LOG:  checkpoint starting: shutdown immediate
+postgres-1       | 2026-05-13 09:57:07.122 UTC [42] LOG:  checkpoint complete: wrote 1846 buffers (11.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.020 s, sync=0.036 s, total=0.058 s; sync files=597, longest=0.013 s, average=0.001 s; distance=8544 kB, estimate=8544 kB; lsn=0/1D4A848, redo lsn=0/1D4A848
+postgres-1       | 2026-05-13 09:57:07.126 UTC [41] LOG:  database system is shut down
+postgres-1       |  done
+postgres-1       | server stopped
+postgres-1       | 
+postgres-1       | PostgreSQL init process complete; ready for start up.
+postgres-1       | 
+postgres-1       | 2026-05-13 09:57:07.179 UTC [1] LOG:  starting PostgreSQL 16.13 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres-1       | 2026-05-13 09:57:07.179 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1       | 2026-05-13 09:57:07.179 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1       | 2026-05-13 09:57:07.180 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1       | 2026-05-13 09:57:07.182 UTC [60] LOG:  database system was shut down at 2026-05-13 09:57:07 UTC
+postgres-1       | 2026-05-13 09:57:07.207 UTC [1] LOG:  database system is ready to accept connections
+postgres-1       | 2026-05-13 10:02:07.194 UTC [58] LOG:  checkpoint starting: time
