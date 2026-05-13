@@ -89,7 +89,8 @@
     "docker:prod:down": "docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml -p hrms_backend_prod down",
     "docker:prod:config": "docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml config",
     "test:infra:up": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hrms_backend_test up -d postgres valkey minio",
-    "test:infra:down": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hrms_backend_test down"
+    "test:infra:down": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hrms_backend_test down",
+    "qa:human": "HRMS_REPORT_DIR=docs/qa/runs/standalone-full-human-qa tsx scripts/run-standalone-full-human-qa.ts"
   },
   "dependencies": {
     "@fastify/compress": "^8.1.0",

@@ -35,15 +35,102 @@ const protectedExceptions = new Set([
   "POST /api/v1/assets/scan/{qr_hash}"
 ]);
 
+const expectedOperations = [
+  "DELETE /api/v1/manager-backups/{id}",
+  "GET /api/v1/assets/",
+  "GET /api/v1/assets/{id}",
+  "GET /api/v1/auth/me",
+  "GET /api/v1/core/users",
+  "GET /api/v1/core/users/{id}",
+  "GET /api/v1/core/users/{id}/subtree",
+  "GET /api/v1/documents",
+  "GET /api/v1/documents/{id}",
+  "GET /api/v1/documents/{id}/access-log",
+  "GET /api/v1/expenses/my",
+  "GET /api/v1/expenses/queue/finance",
+  "GET /api/v1/expenses/queue/manager",
+  "GET /api/v1/expenses/{id}",
+  "GET /api/v1/expenses/{id}/audit",
+  "GET /api/v1/expenses/{id}/finance-detail",
+  "GET /api/v1/expenses/{id}/timeline",
+  "GET /api/v1/health/live",
+  "GET /api/v1/health/ready",
+  "GET /api/v1/manager-backups",
+  "GET /api/v1/openapi.json",
+  "GET /api/v1/platform/finance-governance",
+  "GET /api/v1/reports/expenses/advance-aging",
+  "GET /api/v1/reports/expenses/audit",
+  "GET /api/v1/reports/expenses/finance-analytics",
+  "GET /api/v1/reports/expenses/finance-dashboard",
+  "GET /api/v1/reports/expenses/finance-history",
+  "GET /api/v1/reports/expenses/manager-history",
+  "GET /api/v1/reports/expenses/manager-queue",
+  "GET /api/v1/reports/expenses/my",
+  "GET /api/v1/reports/expenses/payments",
+  "GET /api/v1/reports/expenses/register",
+  "GET /api/v1/timesheets/queue/approver",
+  "GET /api/v1/timesheets/submissions/my",
+  "GET /api/v1/timesheets/work-segments",
+  "GET /api/v1/timesheets/workflow-definitions",
+  "GET /health/live",
+  "GET /health/ready",
+  "PATCH /api/v1/expenses/{id}",
+  "POST /api/v1/assets/",
+  "POST /api/v1/assets/events/employee-terminated",
+  "POST /api/v1/assets/licenses/activate",
+  "POST /api/v1/assets/licenses/revoke",
+  "POST /api/v1/assets/licenses/validate",
+  "POST /api/v1/assets/scan/{qr_hash}",
+  "POST /api/v1/assets/{id}/assign",
+  "POST /api/v1/assets/{id}/return",
+  "POST /api/v1/auth/login",
+  "POST /api/v1/auth/logout",
+  "POST /api/v1/documents",
+  "POST /api/v1/documents/{id}/download-url",
+  "POST /api/v1/documents/{id}/verify",
+  "POST /api/v1/expenses",
+  "POST /api/v1/expenses/{id}/bills",
+  "POST /api/v1/expenses/{id}/documents",
+  "POST /api/v1/expenses/{id}/documents/{documentId}/verify",
+  "POST /api/v1/expenses/{id}/finance/approve",
+  "POST /api/v1/expenses/{id}/finance/payment",
+  "POST /api/v1/expenses/{id}/manager/verify",
+  "POST /api/v1/expenses/{id}/settlement",
+  "POST /api/v1/expenses/{id}/submit",
+  "POST /api/v1/manager-backups",
+  "POST /api/v1/reports/exports",
+  "POST /api/v1/timesheets/submissions",
+  "POST /api/v1/timesheets/submissions/{id}/approve",
+  "POST /api/v1/timesheets/work-segments",
+  "POST /api/v1/timesheets/workflow-definitions",
+  "PUT /api/v1/platform/finance-governance"
+] as const;
+
 const bodyRequiredOperations = [
   "POST /api/v1/auth/login",
   "POST /api/v1/expenses",
+  "POST /api/v1/expenses/{id}/submit",
+  "POST /api/v1/expenses/{id}/manager/verify",
   "POST /api/v1/expenses/{id}/finance/approve",
   "POST /api/v1/expenses/{id}/finance/payment",
+  "POST /api/v1/expenses/{id}/bills",
+  "POST /api/v1/expenses/{id}/documents",
   "POST /api/v1/expenses/{id}/settlement",
   "POST /api/v1/documents",
+  "POST /api/v1/assets/",
   "POST /api/v1/assets/{id}/assign",
-  "POST /api/v1/timesheets/submissions/{id}/approve"
+  "POST /api/v1/assets/{id}/return",
+  "POST /api/v1/assets/events/employee-terminated",
+  "POST /api/v1/assets/licenses/activate",
+  "POST /api/v1/assets/licenses/revoke",
+  "POST /api/v1/assets/licenses/validate",
+  "POST /api/v1/timesheets/work-segments",
+  "POST /api/v1/timesheets/submissions",
+  "POST /api/v1/timesheets/submissions/{id}/approve",
+  "POST /api/v1/timesheets/workflow-definitions",
+  "POST /api/v1/manager-backups",
+  "POST /api/v1/reports/exports",
+  "PUT /api/v1/platform/finance-governance"
 ];
 
 const occOperations = [
@@ -54,16 +141,31 @@ const occOperations = [
   "POST /api/v1/expenses/{id}/settlement",
   "POST /api/v1/assets/{id}/assign",
   "POST /api/v1/assets/{id}/return",
-  "POST /api/v1/timesheets/submissions/{id}/approve"
+  "POST /api/v1/timesheets/submissions/{id}/approve",
+  "DELETE /api/v1/manager-backups/{id}"
 ];
 
 const listOperations = [
+  "GET /api/v1/core/users",
   "GET /api/v1/expenses/my",
+  "GET /api/v1/expenses/queue/manager",
   "GET /api/v1/expenses/queue/finance",
+  "GET /api/v1/manager-backups",
   "GET /api/v1/documents",
+  "GET /api/v1/documents/{id}/access-log",
+  "GET /api/v1/reports/expenses/my",
+  "GET /api/v1/reports/expenses/manager-queue",
+  "GET /api/v1/reports/expenses/manager-history",
+  "GET /api/v1/reports/expenses/finance-history",
   "GET /api/v1/reports/expenses/register",
+  "GET /api/v1/reports/expenses/advance-aging",
+  "GET /api/v1/reports/expenses/payments",
+  "GET /api/v1/reports/expenses/audit",
   "GET /api/v1/assets/",
-  "GET /api/v1/timesheets/work-segments"
+  "GET /api/v1/timesheets/work-segments",
+  "GET /api/v1/timesheets/submissions/my",
+  "GET /api/v1/timesheets/queue/approver",
+  "GET /api/v1/timesheets/workflow-definitions"
 ];
 
 describe("API contracts", () => {
@@ -253,7 +355,8 @@ describe("API contracts", () => {
     const rows = operations(spec);
 
     expect(spec.openapi).toBe("3.0.3");
-    expect(rows.length).toBeGreaterThanOrEqual(60);
+    expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
+    expect(rows.length).toBe(68);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);
@@ -273,6 +376,21 @@ describe("API contracts", () => {
     for (const key of listOperations) {
       const documented = operation(spec, key).parameters?.some((parameter) => parameter.in === "query" && parameter.name === "page");
       expect(documented, `${key} pagination query`).toBe(true);
+    }
+  });
+
+  it("omits removed reviewer/director expense surfaces from OpenAPI", async () => {
+    const spec = await openApiSpec(app);
+    const serializedPaths = JSON.stringify(spec.paths ?? {});
+
+    for (const removedPath of [
+      "/api/v1/expenses/queue/reviewer",
+      "/api/v1/expenses/queue/director",
+      "/api/v1/expenses/{id}/review",
+      "/api/v1/expenses/{id}/approve",
+      "/api/v1/reports/expenses/director-dashboard"
+    ]) {
+      expect(serializedPaths).not.toContain(removedPath);
     }
   });
 

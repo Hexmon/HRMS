@@ -3,15 +3,51 @@ import { spawnSync } from "node:child_process";
 import { walkFiles, read, fail, relativePath } from "./lib.js";
 
 const violations: string[] = [];
+const oldExpenseFlowRules = [
+  { name: "old reviewer queue route", pattern: /\/api\/v1\/expenses\/queue\/reviewer|queue\/reviewer/u },
+  { name: "old director queue route", pattern: /\/api\/v1\/expenses\/queue\/director|queue\/director/u },
+  { name: "old finance reviewer frontend route", pattern: /\/finance\/reviewer/u },
+  { name: "old finance director frontend route", pattern: /\/finance\/director/u },
+  { name: "old reviewer action route", pattern: /\/api\/v1\/expenses\/(?:\{id\}|:[\w-]+|\$\{[^}]+\}|[^/]+)\/review|\/expenses\/\$\{[^}]+\}\/review/u },
+  { name: "old director approval route", pattern: /\/api\/v1\/expenses\/(?:\{id\}|:[\w-]+|\$\{[^}]+\}|[^/]+)\/approve|\/expenses\/\$\{[^}]+\}\/approve/u },
+  { name: "old open workflow status", pattern: /Pending Reviewer|Pending Director|Reviewer Returned|Director Returned|Reviewer Rejected|Director Rejected|Director Approved|Finance Verified|Admin Finance Exception/u },
+  { name: "old reviewer mapping API", pattern: /expense-reviewers|reviewerMapping|Reviewer Mapping/u }
+] as const;
 
-for (const file of walkFiles("src", (path) => /\.(ts|tsx)$/u.test(path))) {
+function isTestFile(path: string): boolean {
+  return path.includes("/__tests__/") || /\.(test|unit|integration|contract|e2e)\.ts$/u.test(path);
+}
+
+function isFrontendReferenceGuardFile(path: string): boolean {
+  const rel = relativePath(path);
+  return rel === "scripts/lint.ts" || rel === "scripts/verify-quality.ts" || rel === "scripts/api-docs-verify.ts";
+}
+
+function isOldFlowGuardSurface(path: string): boolean {
+  const rel = relativePath(path);
+  if (
+    isTestFile(rel) ||
+    rel.startsWith("src/db/migrations/") ||
+    rel === "scripts/lint.ts" ||
+    rel === "scripts/verify-quality.ts" ||
+    rel === "scripts/standalone-human-qa.ts"
+  ) {
+    return false;
+  }
+  return rel.startsWith("src/") || rel.startsWith("scripts/") || rel.startsWith("docs/api/");
+}
+
+for (const file of [
+  ...walkFiles("src", (path) => /\.(ts|tsx)$/u.test(path)),
+  ...walkFiles("scripts", (path) => /\.(ts|tsx|js)$/u.test(path)),
+  ...walkFiles("docs/api", (path) => /\.(json|md|yml|yaml)$/u.test(path))
+]) {
   const content = read(file);
   const rel = relativePath(file);
   if (/\bfrom\s+["'](?:next|react|react-dom)(?:\/[^"']*)?["']/u.test(content)) {
     violations.push(`${rel}: backend must not import frontend libraries`);
   }
-  const isTestFile = rel.includes("/__tests__/") || /\.(test|unit|integration|contract|e2e)\.ts$/u.test(rel);
-  if (!isTestFile && /apps\/(?:web|finance-web|documents-web|assets-web)|NEXT_PUBLIC_/u.test(content)) {
+  if (!isFrontendReferenceGuardFile(file) && !isTestFile(rel) && /apps\/(?:web|finance-web|documents-web|assets-web)|NEXT_PUBLIC_/u.test(content) && !rel.startsWith("docs/api/")) {
     violations.push(`${rel}: backend must not depend on frontend monorepo paths or browser env variables`);
   }
   if (rel.endsWith("/routes.ts") && /UPDATE\s+|INSERT\s+|DELETE\s+|SELECT\s+/iu.test(content)) {
@@ -19,6 +55,13 @@ for (const file of walkFiles("src", (path) => /\.(ts|tsx)$/u.test(path))) {
   }
   if (rel.endsWith("/routes.ts") && /\.get\(".*(?:my|queue|reports?|documents|assets|users|work-segments|submissions)/u.test(content) && !content.includes("paginationQuerySchema")) {
     violations.push(`${rel}: list route must use paginationQuerySchema`);
+  }
+  if (isOldFlowGuardSurface(file)) {
+    for (const rule of oldExpenseFlowRules) {
+      if (rule.pattern.test(content)) {
+        violations.push(`${rel}: active surface reintroduces ${rule.name}`);
+      }
+    }
   }
 }
 

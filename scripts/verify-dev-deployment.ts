@@ -28,11 +28,21 @@ function record(name: string, status: Status, evidence: string): void {
   checks.push({ name, status, evidence });
 }
 
+function redactText(text: string): string {
+  return text
+    .replace(/minioadmin(?::minioadmin)?/giu, "[REDACTED]")
+    .replace(/postgres:\/\/postgres:postgres/giu, "postgres://[REDACTED]")
+    .replace(/(JWT_(?:ACCESS|REFRESH)_SECRET=)[^\s]+/giu, "$1[REDACTED]")
+    .replace(/(OBJECT_STORAGE_SECRET_KEY=)[^\s]+/giu, "$1[REDACTED]")
+    .replace(/(MINIO_ROOT_PASSWORD=)[^\s]+/giu, "$1[REDACTED]")
+    .replace(/MINIO_ROOT_(?:USER|PASSWORD)/giu, "[REDACTED_ENV]");
+}
+
 function command(args: string[]): { status: number | null; output: string } {
   const result = spawnSync("docker", args, { encoding: "utf8" });
   return {
     status: result.status,
-    output: `${result.stdout}${result.stderr}`.trim()
+    output: redactText(`${result.stdout}${result.stderr}`.trim())
   };
 }
 
@@ -77,7 +87,7 @@ function redact(value: unknown): unknown {
 }
 
 function summarize(value: unknown): string {
-  const text = typeof value === "string" ? value : JSON.stringify(redact(value));
+  const text = typeof value === "string" ? redactText(value) : JSON.stringify(redact(value));
   return text.length > 800 ? `${text.slice(0, 800)}... [truncated]` : text;
 }
 

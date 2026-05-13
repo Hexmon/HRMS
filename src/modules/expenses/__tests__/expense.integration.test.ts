@@ -219,6 +219,82 @@ describe("expense manager-finance workflow integration", () => {
     });
     expect(rejectWithoutRemarks.statusCode).toBe(400);
 
+    const returned = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${pendingTicket.id}/manager/verify`,
+      headers: authHeader(manager.token),
+      payload: { decision: "return", remarks: "Attach itinerary", expected_version: 1 }
+    });
+    expect(returned.statusCode).toBe(200);
+    expect(returned.json().status).toBe("Manager Returned");
+
+    const resubmitted = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${pendingTicket.id}/submit`,
+      headers: authHeader(employee.token),
+      payload: { expected_version: returned.json().version }
+    });
+    expect(resubmitted.statusCode).toBe(200);
+    expect(resubmitted.json().status).toBe("Pending Manager Verification");
+
+    const rejectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/expenses",
+      headers: authHeader(employee.token),
+      payload: { ...projectTravelPayload, project_code: "GATE-REJECT" }
+    });
+    expect(rejectResponse.statusCode).toBe(200);
+    const rejectTicket = rejectResponse.json();
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${rejectTicket.id}/manager/verify`,
+      headers: authHeader(manager.token),
+      payload: { decision: "reject", remarks: "Out of policy", expected_version: 1 }
+    });
+    expect(rejected.statusCode).toBe(200);
+    expect(rejected.json().status).toBe("Manager Rejected");
+
+    const holdResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/expenses",
+      headers: authHeader(employee.token),
+      payload: { ...projectTravelPayload, project_code: "GATE-HOLD" }
+    });
+    expect(holdResponse.statusCode).toBe(200);
+    const holdTicket = holdResponse.json();
+    const holdManagerVerify = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${holdTicket.id}/manager/verify`,
+      headers: authHeader(manager.token),
+      payload: { decision: "approve", expected_version: 1 }
+    });
+    expect(holdManagerVerify.statusCode).toBe(200);
+
+    const holdWithoutRemarks = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${holdTicket.id}/finance/approve`,
+      headers: authHeader(finance.token),
+      payload: { decision: "hold", expected_version: 2 }
+    });
+    expect(holdWithoutRemarks.statusCode).toBe(400);
+
+    const clarificationWithoutRemarks = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${holdTicket.id}/finance/approve`,
+      headers: authHeader(finance.token),
+      payload: { decision: "clarification", expected_version: 2 }
+    });
+    expect(clarificationWithoutRemarks.statusCode).toBe(400);
+
+    const financeHold = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${holdTicket.id}/finance/approve`,
+      headers: authHeader(finance.token),
+      payload: { decision: "hold", remarks: "Need vendor GST details", expected_version: 2 }
+    });
+    expect(financeHold.statusCode).toBe(200);
+    expect(financeHold.json().status).toBe("Finance Hold");
+
     const oldReviewerEndpoint = await app.inject({
       method: "GET",
       url: "/api/v1/expenses/queue/reviewer?page=1&page_size=10",
@@ -232,6 +308,22 @@ describe("expense manager-finance workflow integration", () => {
       headers: authHeader(manager.token)
     });
     expect(oldDirectorEndpoint.statusCode).toBe(404);
+
+    const oldReviewAction = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${pendingTicket.id}/review`,
+      headers: authHeader(manager.token),
+      payload: { decision: "approve", expected_version: 1 }
+    });
+    expect(oldReviewAction.statusCode).toBe(404);
+
+    const oldApproveAction = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${pendingTicket.id}/approve`,
+      headers: authHeader(finance.token),
+      payload: { decision: "approve", expected_version: 1 }
+    });
+    expect(oldApproveAction.statusCode).toBe(404);
   });
 
   it("uses configured finance governance for finance-manager self-request backup", async () => {

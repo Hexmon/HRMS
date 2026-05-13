@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-05-13T11:08:29.675Z",
+  "timestamp": "2026-05-13T11:08:30.617Z",
   "status": "pass",
   "checks": [
     {
@@ -30,7 +30,7 @@
     {
       "name": "auth login",
       "status": "pass",
-      "evidence": "{\"user\":{\"id\":\"20370ddf-0208-4e7f-9eaa-828673551c3e\",\"employee_code\":\"E1\",\"email\":\"e1@example.test\",\"full_name\":\"Employee E1\",\"department_id\":\"7e14ff37-94b0-4561-98e3-f3c72f0345d2\",\"designation_id\":\"a02f5db2-288c-4c51-8cbb-7beb4fbeaf1a\",\"manager_user_id\":\"3bbda5f8-e717-4598-bc73-11cac0bee411\",\"hierarchy_path\":\"CEO.SALES.S1.D1.E1\",\"employment_status\":\"active\",\"timezone\":\"Asia/Kolkata\",\"joined_on\":\"2026-01-01\",\"terminated_on\":null,\"deleted_at\":null,\"version\":1,\"roles\":[\"Employee\"]},\"access_token\":\"[REDACTED]\",\"expires_at\":\"2026-05-13T12:08:29.000Z\"}"
+      "evidence": "{\"user\":{\"id\":\"20370ddf-0208-4e7f-9eaa-828673551c3e\",\"employee_code\":\"E1\",\"email\":\"e1@example.test\",\"full_name\":\"Employee E1\",\"department_id\":\"7e14ff37-94b0-4561-98e3-f3c72f0345d2\",\"designation_id\":\"a02f5db2-288c-4c51-8cbb-7beb4fbeaf1a\",\"manager_user_id\":\"3bbda5f8-e717-4598-bc73-11cac0bee411\",\"hierarchy_path\":\"CEO.SALES.S1.D1.E1\",\"employment_status\":\"active\",\"timezone\":\"Asia/Kolkata\",\"joined_on\":\"2026-01-01\",\"terminated_on\":null,\"deleted_at\":null,\"version\":1,\"roles\":[\"Employee\"]},\"access_token\":\"[REDACTED]\",\"expires_at\":\"2026-05-13T12:08:30.000Z\"}"
     },
     {
       "name": "core users endpoint",
@@ -40,7 +40,7 @@
     {
       "name": "timesheet endpoint",
       "status": "pass",
-      "evidence": "{\"items\":[{\"id\":\"f0b319dd-fc46-47b9-9d69-a526e2e3549c\",\"employee_user_id\":\"20370ddf-0208-4e7f-9eaa-828673551c3e\",\"work_date\":\"2026-07-01\",\"project_code\":\"TS-1778669647967-b7yowx\",\"task_code\":null,\"hours\":\"8.00\",\"description\":\"QA implementation\",\"billable\":false,\"created_at\":\"2026-05-13T10:54:13.506Z\",\"updated_at\":\"2026-05-13T10:54:13.506Z\",\"deleted_at\":null},{\"id\":\"68b09dd2-6802-4de9-8786-0aaad8c0da0a\",\"employee_user_id\":\"20370ddf-0208-4e7f-9eaa-828673551c3e\",\"work_date\":\"2026-07-01\",\"project_code\":\"TS-1778669676129-nl3v02\",\"task_code\":null,\"hours\":\"8.00\",\"description\":\"QA implementation\",\"billable\":false,\"created_at\":\"2026-05-13T10:54:42.427Z\",\"updated_at\":\"2026-05-13T10:54:42.427Z\",\"deleted_at\":null},{\"id\":\"27cc40f6-70a7-4b22-9eed-f739f95d3ce4\",\"created_at\":\"2026-05-13T10:55:54.606Z\",\"up... [truncated]"
+      "evidence": "{\"items\":[{\"id\":\"e6b218aa-6b04-4ac8-97be-d8496946f9b8\",\"employee_user_id\":\"20370ddf-0208-4e7f-9eaa-828673551c3e\",\"work_date\":\"2026-06-01\",\"project_code\":\"QA-PRJ-001\",\"task_code\":\"QA-TASK-001\",\"hours\":\"8.00\",\"description\":\"QA seed work segment\",\"billable\":true,\"created_at\":\"2026-05-13T11:02:49.914Z\",\"updated_at\":\"2026-05-13T11:02:49.914Z\",\"deleted_at\":null},{\"id\":\"7dc63e01-9802-4067-a8be-2bf0c22a63f6\",\"created_at\":\"2026-05-13T11:03:30.766Z\",\"updated_at\":\"2026-05-13T11:03:30.766Z\",\"deleted_at\":null,\"employee_user_id\":\"20370ddf-0208-4e7f-9eaa-828673551c3e\",\"work_date\":\"2028-07-01\",\"project_code\":\"TS-1778670209282-ja7u7i\",\"task_code\":null,\"hours\":\"8.00\",\"description\":\"QA implementation\",\"billable\":false},{\"id\":\"eda24758-4803-4e56-964e-a4d7b8bbb454\",\"created_at\":\"2026-05-13T11:04:32.845Z\",\"upda... [truncated]"
     },
     {
       "name": "asset QR endpoint safe payload",

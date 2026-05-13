@@ -7,15 +7,22 @@ const oldExpenseFlowRules = [
   { name: "old director queue route", pattern: /\/api\/v1\/expenses\/queue\/director|queue\/director/u },
   { name: "old finance reviewer frontend route", pattern: /\/finance\/reviewer/u },
   { name: "old finance director frontend route", pattern: /\/finance\/director/u },
-  { name: "old reviewer action route", pattern: /\/api\/v1\/expenses\/(?:\{id\}|:[\w-]+|\$\{[^}]+\}|[^/"'`]+)\/review|\/expenses\/\$\{[^}]+\}\/review/u },
-  { name: "old director approval route", pattern: /\/api\/v1\/expenses\/(?:\{id\}|:[\w-]+|\$\{[^}]+\}|[^/"'`]+)\/approve|\/expenses\/\$\{[^}]+\}\/approve/u },
+  { name: "old reviewer action route", pattern: /\/api\/v1\/expenses\/(?:\{id\}|:[\w-]+|\$\{[^}]+\}|[^/]+)\/review|\/expenses\/\$\{[^}]+\}\/review/u },
+  { name: "old director approval route", pattern: /\/api\/v1\/expenses\/(?:\{id\}|:[\w-]+|\$\{[^}]+\}|[^/]+)\/approve|\/expenses\/\$\{[^}]+\}\/approve/u },
   { name: "old open workflow status", pattern: /Pending Reviewer|Pending Director|Reviewer Returned|Director Returned|Reviewer Rejected|Director Rejected|Director Approved|Finance Verified|Admin Finance Exception/u },
   { name: "old reviewer mapping API", pattern: /expense-reviewers|reviewerMapping|Reviewer Mapping/u }
 ] as const;
 
 function isActiveExpenseSurface(path: string): boolean {
   const normalized = relativePath(path);
-  if (normalized.includes("/__tests__/") || /\.(test|unit|integration|contract|e2e)\.ts$/u.test(normalized)) {
+  if (
+    normalized.includes("/__tests__/") ||
+    /\.(test|unit|integration|contract|e2e)\.ts$/u.test(normalized) ||
+    normalized.startsWith("src/db/migrations/") ||
+    normalized === "scripts/lint.ts" ||
+    normalized === "scripts/verify-quality.ts" ||
+    normalized === "scripts/standalone-human-qa.ts"
+  ) {
     return false;
   }
   return (
@@ -24,7 +31,9 @@ function isActiveExpenseSurface(path: string): boolean {
     normalized.startsWith("src/modules/reports/") ||
     normalized === "src/platform/openapi.ts" ||
     normalized.startsWith("src/shared/") ||
-    normalized.startsWith("src/auth/")
+    normalized.startsWith("src/auth/") ||
+    normalized.startsWith("scripts/") ||
+    normalized.startsWith("docs/api/")
   );
 }
 
