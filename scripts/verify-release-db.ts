@@ -36,6 +36,7 @@ const requiredTables = [
   "assets.asset_assignments",
   "assets.asset_state_events",
   "assets.asset_recovery_tickets",
+  "assets.software_products",
   "assets.license_entitlements",
   "assets.license_activations",
   "assets.compromised_keys",
@@ -143,6 +144,14 @@ try {
   if (crossSchemaFks.rows.length > 0) {
     failures.push(`cross-schema foreign keys found: ${JSON.stringify(crossSchemaFks.rows)}`);
   }
+
+  const licenseSeed = await client.query<{ product_count: number; entitlement_count: number }>(`
+    SELECT
+      (SELECT count(*)::int FROM assets.software_products) AS product_count,
+      (SELECT count(*)::int FROM assets.license_entitlements WHERE status = 'active') AS entitlement_count
+  `);
+  if ((licenseSeed.rows[0]?.product_count ?? 0) < 1) failures.push("assets.software_products has no seeded products");
+  if ((licenseSeed.rows[0]?.entitlement_count ?? 0) < 1) failures.push("assets.license_entitlements has no active seeded entitlements");
 
   const outboxColumns = new Set(
     (

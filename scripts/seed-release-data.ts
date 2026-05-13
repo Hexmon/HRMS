@@ -153,6 +153,15 @@ try {
   );
 
   await client.query(
+    `INSERT INTO assets.software_products (id, vendor_id, name)
+     VALUES ($1, $2, 'Office Productivity Suite')
+     ON CONFLICT (id) DO UPDATE
+     SET vendor_id = EXCLUDED.vendor_id,
+         name = EXCLUDED.name`,
+    [seedIds.licenseProduct, seedIds.assetManager]
+  );
+
+  await client.query(
     `INSERT INTO assets.license_entitlements (id, product_id, seat_count, status)
      VALUES ($1, $2, 1, 'active')
      ON CONFLICT DO NOTHING`,
