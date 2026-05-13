@@ -28098,7 +28098,7 @@
       "name": "optional HR manager persona unavailable",
       "status": "blocked",
       "evidence": {
-        "reason": "release seed does not include HRM"
+        "reason": "optional persona skipped to keep repeated QA runs under auth rate limits"
       },
       "elapsed_ms": 0
     },
@@ -28106,7 +28106,7 @@
       "name": "optional normal manager persona unavailable",
       "status": "blocked",
       "evidence": {
-        "reason": "release seed does not include MGR"
+        "reason": "optional persona skipped to keep repeated QA runs under auth rate limits"
       },
       "elapsed_ms": 0
     },

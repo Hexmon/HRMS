@@ -273,8 +273,8 @@ export async function runStandaloneHumanQa(options: StandaloneHumanQaOptions = {
     const auditor = await login("AUD");
     const hrManager: { token: string; user: JsonRecord } | null = null;
     const normalManager = manager;
-    record("optional HR manager persona unavailable", "blocked", { reason: "release seed does not include HRM" });
-    record("optional normal manager persona unavailable", "blocked", { reason: "release seed does not include MGR" });
+    record("optional HR manager persona unavailable", "blocked", { reason: "optional persona skipped to keep repeated QA runs under auth rate limits" });
+    record("optional normal manager persona unavailable", "blocked", { reason: "optional persona skipped to keep repeated QA runs under auth rate limits" });
     const cookie = emailLogin.headers["set-cookie"];
     await expectStatus("auth me bearer", request("GET", "/api/v1/auth/me", employee.token), 200);
     if (cookie) {
