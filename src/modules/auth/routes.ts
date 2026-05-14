@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { verifyJwt } from "#auth";
+import { unauthorized } from "../../platform/errors.js";
 import { AuthService } from "./service.js";
 import { loginSchema } from "./schemas.js";
 
@@ -42,7 +43,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     return { status: "ok" };
   });
 
-  fastify.get("/me", async (request) => ({
-    user: request.actor
-  }));
+  fastify.get("/me", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET).sessionContext(request.actor);
+  });
 };

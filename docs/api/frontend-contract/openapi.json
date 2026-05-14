@@ -1864,7 +1864,7 @@
         "tags": [
           "Auth & Sessions"
         ],
-        "description": "Returns the authenticated actor resolved from bearer token or session cookie.",
+        "description": "Returns the authenticated actor resolved from bearer token or session cookie, including active role, available roles, permissions, navigation hints, company context, preferences, and low-bandwidth client defaults.",
         "security": [
           {
             "sessionCookie": []
@@ -1881,7 +1881,14 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "user"
+                    "user",
+                    "active_role",
+                    "available_roles",
+                    "permissions",
+                    "navigation",
+                    "company",
+                    "preferences",
+                    "session_metadata"
                   ],
                   "properties": {
                     "user": {
@@ -1955,8 +1962,208 @@
                         }
                       },
                       "additionalProperties": true
+                    },
+                    "active_role": {
+                      "type": "object",
+                      "required": [
+                        "key",
+                        "label",
+                        "is_active",
+                        "permissions"
+                      ],
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "example": "Finance Manager"
+                        },
+                        "label": {
+                          "type": "string",
+                          "example": "Finance Manager"
+                        },
+                        "is_active": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "permissions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "expense:finance"
+                          ]
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "available_roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "is_active",
+                          "permissions"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "example": "Finance Manager"
+                          },
+                          "label": {
+                            "type": "string",
+                            "example": "Finance Manager"
+                          },
+                          "is_active": {
+                            "type": "boolean",
+                            "example": true
+                          },
+                          "permissions": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "expense:finance"
+                            ]
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "permissions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "expense:finance",
+                        "report:read"
+                      ]
+                    },
+                    "navigation": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "path",
+                          "permission"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "example": "finance"
+                          },
+                          "label": {
+                            "type": "string",
+                            "example": "Finance"
+                          },
+                          "path": {
+                            "type": "string",
+                            "example": "/expenses/finance"
+                          },
+                          "permission": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "expense:finance"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "company": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "name",
+                        "timezone"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "example": "local-hrms"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "HRMS"
+                        },
+                        "timezone": {
+                          "type": "string",
+                          "example": "Asia/Kolkata"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "preferences": {
+                      "type": "object",
+                      "required": [
+                        "active_role",
+                        "landing_page",
+                        "locale",
+                        "timezone"
+                      ],
+                      "properties": {
+                        "active_role": {
+                          "type": "string",
+                          "example": "Finance Manager"
+                        },
+                        "landing_page": {
+                          "type": "string",
+                          "example": "/dashboard"
+                        },
+                        "locale": {
+                          "type": "string",
+                          "example": "en-IN"
+                        },
+                        "timezone": {
+                          "type": "string",
+                          "example": "Asia/Kolkata"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "session_metadata": {
+                      "type": "object",
+                      "required": [
+                        "auth_mode",
+                        "low_bandwidth_defaults"
+                      ],
+                      "properties": {
+                        "auth_mode": {
+                          "type": "string",
+                          "example": "cookie_or_bearer"
+                        },
+                        "low_bandwidth_defaults": {
+                          "type": "object",
+                          "required": [
+                            "page_size",
+                            "max_page_size",
+                            "use_include_for_nested_data"
+                          ],
+                          "properties": {
+                            "page_size": {
+                              "type": "integer",
+                              "example": 25
+                            },
+                            "max_page_size": {
+                              "type": "integer",
+                              "example": 100
+                            },
+                            "use_include_for_nested_data": {
+                              "type": "boolean",
+                              "example": true
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      },
+                      "additionalProperties": false
                     }
-                  }
+                  },
+                  "additionalProperties": false
                 }
               }
             }
@@ -2243,7 +2450,7 @@
         "tags": [
           "Core / Employees & Hierarchy"
         ],
-        "description": "Paginated employee/user search for authorized modules and admins.",
+        "description": "Paginated employee/user search for authorized modules and admins. Supports frontend table filters, manager scoping, login-state filters, sorting, compact org references, and summary counts.",
         "parameters": [
           {
             "schema": {
@@ -2287,6 +2494,77 @@
             "name": "q",
             "required": false,
             "description": "Optional employee code/name/email search."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "department_id",
+            "required": false,
+            "description": "Filter by department UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "designation_id",
+            "required": false,
+            "description": "Filter by designation UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Employee"
+            },
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "description": "Filter by assigned role label."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive",
+                "terminated",
+                "suspended"
+              ],
+              "example": "active"
+            },
+            "in": "query",
+            "name": "employment_status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "manager_user_id",
+            "required": false,
+            "description": "Filter by direct manager UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "enabled",
+                "disabled"
+              ],
+              "example": "enabled"
+            },
+            "in": "query",
+            "name": "login_state",
+            "required": false
           }
         ],
         "security": [
@@ -2308,7 +2586,8 @@
                     "items",
                     "page",
                     "page_size",
-                    "total"
+                    "total",
+                    "summary"
                   ],
                   "properties": {
                     "items": {
@@ -2320,7 +2599,14 @@
                           "employee_code",
                           "email",
                           "full_name",
-                          "roles"
+                          "roles",
+                          "department",
+                          "designation",
+                          "manager",
+                          "display_label",
+                          "status",
+                          "login_state",
+                          "role_labels"
                         ],
                         "properties": {
                           "id": {
@@ -2381,6 +2667,115 @@
                             "example": [
                               "Finance Manager"
                             ]
+                          },
+                          "department": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "department_code",
+                              "name"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Department UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "department_code": {
+                                "type": "string",
+                                "example": "SALES"
+                              },
+                              "name": {
+                                "type": "string",
+                                "example": "Sales"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "nullable": true
+                          },
+                          "designation": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "designation_code",
+                              "title",
+                              "level"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Designation UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "designation_code": {
+                                "type": "string",
+                                "example": "EMPLOYEE"
+                              },
+                              "title": {
+                                "type": "string",
+                                "example": "Employee"
+                              },
+                              "level": {
+                                "type": "integer",
+                                "nullable": true,
+                                "example": 1
+                              }
+                            },
+                            "additionalProperties": false,
+                            "nullable": true
+                          },
+                          "manager": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "employee_code",
+                              "full_name"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "User UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "employee_code": {
+                                "type": "string",
+                                "example": "E1"
+                              },
+                              "full_name": {
+                                "type": "string",
+                                "example": "Employee E1"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "nullable": true
+                          },
+                          "display_label": {
+                            "type": "string",
+                            "example": "E1 - Employee E1"
+                          },
+                          "status": {
+                            "type": "string",
+                            "example": "active"
+                          },
+                          "login_state": {
+                            "type": "string",
+                            "enum": [
+                              "enabled",
+                              "disabled"
+                            ],
+                            "example": "enabled"
+                          },
+                          "role_labels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "Employee"
+                            ]
                           }
                         },
                         "additionalProperties": true
@@ -2399,7 +2794,61 @@
                     "total": {
                       "type": "integer",
                       "minimum": 0,
-                      "example": 1
+                      "example": 3
+                    },
+                    "summary": {
+                      "type": "object",
+                      "required": [
+                        "total_visible",
+                        "total_active",
+                        "total_inactive",
+                        "total_suspended",
+                        "total_terminated",
+                        "filters_applied",
+                        "sort"
+                      ],
+                      "properties": {
+                        "total_visible": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 10
+                        },
+                        "total_active": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 10
+                        },
+                        "total_inactive": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        },
+                        "total_suspended": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        },
+                        "total_terminated": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        },
+                        "filters_applied": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "department_id",
+                            "role"
+                          ]
+                        },
+                        "sort": {
+                          "type": "string",
+                          "example": "employee_code"
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": false
@@ -2689,7 +3138,7 @@
         "tags": [
           "Core / Employees & Hierarchy"
         ],
-        "description": "Returns one Core employee/user record.",
+        "description": "Returns one Core employee/user record with reporting line, role assignments, login state, and compact cross-module summaries for employee detail tabs.",
         "parameters": [
           {
             "schema": {
@@ -2723,7 +3172,24 @@
                     "employee_code",
                     "email",
                     "full_name",
-                    "roles"
+                    "roles",
+                    "department",
+                    "designation",
+                    "manager",
+                    "display_label",
+                    "status",
+                    "login_state",
+                    "role_labels",
+                    "reporting_line",
+                    "role_assignments",
+                    "direct_reports_summary",
+                    "documents_summary",
+                    "assets_summary",
+                    "attendance_summary",
+                    "leave_summary",
+                    "timesheet_summary",
+                    "expense_summary",
+                    "profile_tabs_available"
                   ],
                   "properties": {
                     "id": {
@@ -2783,6 +3249,209 @@
                       },
                       "example": [
                         "Finance Manager"
+                      ]
+                    },
+                    "department": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "department_code",
+                        "name"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Department UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "department_code": {
+                          "type": "string",
+                          "example": "SALES"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Sales"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "designation": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "designation_code",
+                        "title",
+                        "level"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Designation UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "designation_code": {
+                          "type": "string",
+                          "example": "EMPLOYEE"
+                        },
+                        "title": {
+                          "type": "string",
+                          "example": "Employee"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "nullable": true,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "manager": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "employee_code",
+                        "full_name"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "User UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "employee_code": {
+                          "type": "string",
+                          "example": "E1"
+                        },
+                        "full_name": {
+                          "type": "string",
+                          "example": "Employee E1"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "display_label": {
+                      "type": "string",
+                      "example": "E1 - Employee E1"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "login_state": {
+                      "type": "string",
+                      "enum": [
+                        "enabled",
+                        "disabled"
+                      ],
+                      "example": "enabled"
+                    },
+                    "role_labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "Employee"
+                      ]
+                    },
+                    "reporting_line": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "employee_code",
+                          "full_name"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "User UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "full_name": {
+                            "type": "string",
+                            "example": "Employee E1"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "role_assignments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "role",
+                          "status"
+                        ],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "example": "Employee"
+                          },
+                          "status": {
+                            "type": "string",
+                            "example": "active"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "direct_reports_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "documents_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "assets_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "attendance_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "leave_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "timesheet_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "expense_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "profile_tabs_available": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "profile",
+                        "reporting",
+                        "roles",
+                        "documents",
+                        "assets",
+                        "attendance",
+                        "leave",
+                        "timesheets",
+                        "expenses"
                       ]
                     }
                   },

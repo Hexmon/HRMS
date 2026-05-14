@@ -353,6 +353,13 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `user` | object | required | - |
+| `active_role` | object | required | - |
+| `available_roles` | array of object | required | - |
+| `permissions` | array of string | required | - |
+| `navigation` | array of object | required | - |
+| `company` | object | required | - |
+| `preferences` | object | required | - |
+| `session_metadata` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -380,6 +387,12 @@ Core APIs expose active employee identity and hierarchy context for role-aware f
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `q` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `designation_id` | query | no | string<uuid> | - |
+| `role` | query | no | string | - |
+| `employment_status` | query | no | string enum("active", "inactive", "terminated", "suspended") | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `login_state` | query | no | string enum("enabled", "disabled") | - |
 
 **Request body**
 
@@ -405,6 +418,7 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -458,6 +472,23 @@ Success body highlights:
 | `employment_status` | string | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled") | required | - |
+| `role_labels` | array of string | required | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+| `expense_summary` | object | required | - |
+| `profile_tabs_available` | array of string | required | - |
 
 **Frontend behavior notes**
 

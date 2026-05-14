@@ -442,6 +442,23 @@ describe("API contracts", () => {
     }
   });
 
+  it("documents expanded auth/core session and employee detail contracts", async () => {
+    const spec = await openApiSpec(app);
+    const sessionSerialized = JSON.stringify(operation(spec, "GET /api/v1/auth/me"));
+    const usersSerialized = JSON.stringify(operation(spec, "GET /api/v1/core/users"));
+    const userDetailSerialized = JSON.stringify(operation(spec, "GET /api/v1/core/users/{id}"));
+
+    for (const field of ["active_role", "available_roles", "permissions", "navigation", "company", "preferences", "session_metadata", "low_bandwidth_defaults"]) {
+      expect(sessionSerialized).toContain(field);
+    }
+    for (const field of ["department_id", "designation_id", "manager_user_id", "login_state", "filters_applied", "total_visible"]) {
+      expect(usersSerialized).toContain(field);
+    }
+    for (const field of ["reporting_line", "role_assignments", "documents_summary", "assets_summary", "attendance_summary", "leave_summary", "timesheet_summary", "expense_summary", "profile_tabs_available"]) {
+      expect(userDetailSerialized).toContain(field);
+    }
+  });
+
   it("keeps OpenAPI examples secret-free and standalone backend-free of frontend imports", async () => {
     const spec = await openApiSpec(app);
     const serialized = JSON.stringify(spec);

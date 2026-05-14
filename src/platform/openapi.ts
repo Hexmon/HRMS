@@ -157,6 +157,188 @@ const authUserSchema = {
   additionalProperties: true
 };
 
+const sessionRoleSchema = {
+  type: "object",
+  required: ["key", "label", "is_active", "permissions"],
+  properties: {
+    key: { type: "string", example: "Finance Manager" },
+    label: { type: "string", example: "Finance Manager" },
+    is_active: { type: "boolean", example: true },
+    permissions: { type: "array", items: { type: "string" }, example: ["expense:finance"] }
+  },
+  additionalProperties: false
+};
+
+const navigationItemSchema = {
+  type: "object",
+  required: ["key", "label", "path", "permission"],
+  properties: {
+    key: { type: "string", example: "finance" },
+    label: { type: "string", example: "Finance" },
+    path: { type: "string", example: "/expenses/finance" },
+    permission: { type: "string", nullable: true, example: "expense:finance" }
+  },
+  additionalProperties: false
+};
+
+const authSessionContextSchema = {
+  type: "object",
+  required: ["user", "active_role", "available_roles", "permissions", "navigation", "company", "preferences", "session_metadata"],
+  properties: {
+    user: authUserSchema,
+    active_role: sessionRoleSchema,
+    available_roles: { type: "array", items: sessionRoleSchema },
+    permissions: { type: "array", items: { type: "string" }, example: ["expense:finance", "report:read"] },
+    navigation: { type: "array", items: navigationItemSchema },
+    company: {
+      type: "object",
+      required: ["id", "name", "timezone"],
+      properties: {
+        id: { type: "string", example: "local-hrms" },
+        name: { type: "string", example: "HRMS" },
+        timezone: { type: "string", example: "Asia/Kolkata" }
+      },
+      additionalProperties: false
+    },
+    preferences: {
+      type: "object",
+      required: ["active_role", "landing_page", "locale", "timezone"],
+      properties: {
+        active_role: { type: "string", example: "Finance Manager" },
+        landing_page: { type: "string", example: "/dashboard" },
+        locale: { type: "string", example: "en-IN" },
+        timezone: { type: "string", example: "Asia/Kolkata" }
+      },
+      additionalProperties: false
+    },
+    session_metadata: {
+      type: "object",
+      required: ["auth_mode", "low_bandwidth_defaults"],
+      properties: {
+        auth_mode: { type: "string", example: "cookie_or_bearer" },
+        low_bandwidth_defaults: {
+          type: "object",
+          required: ["page_size", "max_page_size", "use_include_for_nested_data"],
+          properties: {
+            page_size: { type: "integer", example: 25 },
+            max_page_size: { type: "integer", example: 100 },
+            use_include_for_nested_data: { type: "boolean", example: true }
+          },
+          additionalProperties: false
+        }
+      },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+};
+
+const userReferenceSchema = {
+  type: "object",
+  required: ["id", "employee_code", "full_name"],
+  properties: {
+    id: uuid("User UUID"),
+    employee_code: { type: "string", example: "E1" },
+    full_name: { type: "string", example: "Employee E1" }
+  },
+  additionalProperties: false
+};
+
+const departmentReferenceSchema = {
+  type: "object",
+  required: ["id", "department_code", "name"],
+  properties: {
+    id: uuid("Department UUID"),
+    department_code: { type: "string", example: "SALES" },
+    name: { type: "string", example: "Sales" }
+  },
+  additionalProperties: false
+};
+
+const designationReferenceSchema = {
+  type: "object",
+  required: ["id", "designation_code", "title", "level"],
+  properties: {
+    id: uuid("Designation UUID"),
+    designation_code: { type: "string", example: "EMPLOYEE" },
+    title: { type: "string", example: "Employee" },
+    level: { type: "integer", nullable: true, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const coreUserListItemSchema = {
+  ...authUserSchema,
+  required: ["id", "employee_code", "email", "full_name", "roles", "department", "designation", "manager", "display_label", "status", "login_state", "role_labels"],
+  properties: {
+    ...authUserSchema.properties,
+    department: { ...departmentReferenceSchema, nullable: true },
+    designation: { ...designationReferenceSchema, nullable: true },
+    manager: { ...userReferenceSchema, nullable: true },
+    display_label: { type: "string", example: "E1 - Employee E1" },
+    status: { type: "string", example: "active" },
+    login_state: { type: "string", enum: ["enabled", "disabled"], example: "enabled" },
+    role_labels: { type: "array", items: { type: "string" }, example: ["Employee"] }
+  },
+  additionalProperties: true
+};
+
+const coreUserListResponseSchema = {
+  type: "object",
+  required: ["items", "page", "page_size", "total", "summary"],
+  properties: {
+    items: { type: "array", items: coreUserListItemSchema },
+    page: { type: "integer", minimum: 1, example: 1 },
+    page_size: { type: "integer", minimum: 1, example: 25 },
+    total: { type: "integer", minimum: 0, example: 3 },
+    summary: {
+      type: "object",
+      required: ["total_visible", "total_active", "total_inactive", "total_suspended", "total_terminated", "filters_applied", "sort"],
+      properties: {
+        total_visible: { type: "integer", minimum: 0, example: 10 },
+        total_active: { type: "integer", minimum: 0, example: 10 },
+        total_inactive: { type: "integer", minimum: 0, example: 0 },
+        total_suspended: { type: "integer", minimum: 0, example: 0 },
+        total_terminated: { type: "integer", minimum: 0, example: 0 },
+        filters_applied: { type: "array", items: { type: "string" }, example: ["department_id", "role"] },
+        sort: { type: "string", example: "employee_code" }
+      },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+};
+
+const coreUserDetailSchema = {
+  ...coreUserListItemSchema,
+  required: [...coreUserListItemSchema.required, "reporting_line", "role_assignments", "direct_reports_summary", "documents_summary", "assets_summary", "attendance_summary", "leave_summary", "timesheet_summary", "expense_summary", "profile_tabs_available"],
+  properties: {
+    ...coreUserListItemSchema.properties,
+    reporting_line: { type: "array", items: userReferenceSchema },
+    role_assignments: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["role", "status"],
+        properties: {
+          role: { type: "string", example: "Employee" },
+          status: { type: "string", example: "active" }
+        },
+        additionalProperties: false
+      }
+    },
+    direct_reports_summary: { type: "object", additionalProperties: true },
+    documents_summary: { type: "object", additionalProperties: true },
+    assets_summary: { type: "object", additionalProperties: true },
+    attendance_summary: { type: "object", additionalProperties: true },
+    leave_summary: { type: "object", additionalProperties: true },
+    timesheet_summary: { type: "object", additionalProperties: true },
+    expense_summary: { type: "object", additionalProperties: true },
+    profile_tabs_available: { type: "array", items: { type: "string" }, example: ["profile", "reporting", "roles", "documents", "assets", "attendance", "leave", "timesheets", "expenses"] }
+  },
+  additionalProperties: true
+};
+
 const subtreeUserSchema = {
   ...authUserSchema,
   required: [...authUserSchema.required, "depth"],
@@ -607,10 +789,10 @@ const routeDocs: Record<string, RouteSchema> = {
     false
   ),
   "POST /api/v1/auth/logout": operation("Auth & Sessions", "Logout", "Revokes the current Valkey-backed session when a valid cookie is present and always clears the browser session cookie. Safe to call when no session is present.", { response200: statusResponseSchema }, false),
-  "GET /api/v1/auth/me": operation("Auth & Sessions", "Current session", "Returns the authenticated actor resolved from bearer token or session cookie.", { response200: { type: "object", required: ["user"], properties: { user: authUserSchema } } }),
+  "GET /api/v1/auth/me": operation("Auth & Sessions", "Current session", "Returns the authenticated actor resolved from bearer token or session cookie, including active role, available roles, permissions, navigation hints, company context, preferences, and low-bandwidth client defaults.", { response200: authSessionContextSchema }),
 
-  "GET /api/v1/core/users": operation("Core / Employees & Hierarchy", "List users", "Paginated employee/user search for authorized modules and admins.", { querystring: { ...paginationQuerySchema, properties: { ...paginationQuerySchema.properties, q: { type: "string", description: "Optional employee code/name/email search.", example: "E1" } } }, response200: paginated(authUserSchema) }),
-  "GET /api/v1/core/users/{id}": operation("Core / Employees & Hierarchy", "Get user", "Returns one Core employee/user record.", { params: idParamSchema, response200: authUserSchema }),
+  "GET /api/v1/core/users": operation("Core / Employees & Hierarchy", "List users", "Paginated employee/user search for authorized modules and admins. Supports frontend table filters, manager scoping, login-state filters, sorting, compact org references, and summary counts.", { querystring: { ...paginationQuerySchema, properties: { ...paginationQuerySchema.properties, q: { type: "string", description: "Optional employee code/name/email search.", example: "E1" }, department_id: uuid("Filter by department UUID"), designation_id: uuid("Filter by designation UUID"), role: { type: "string", description: "Filter by assigned role label.", example: "Employee" }, employment_status: { type: "string", enum: ["active", "inactive", "terminated", "suspended"], example: "active" }, manager_user_id: uuid("Filter by direct manager UUID"), login_state: { type: "string", enum: ["enabled", "disabled"], example: "enabled" } } }, response200: coreUserListResponseSchema }),
+  "GET /api/v1/core/users/{id}": operation("Core / Employees & Hierarchy", "Get user", "Returns one Core employee/user record with reporting line, role assignments, login state, and compact cross-module summaries for employee detail tabs.", { params: idParamSchema, response200: coreUserDetailSchema }),
   "GET /api/v1/core/users/{id}/subtree": operation(
     "Core / Employees & Hierarchy",
     "Hierarchy subordinate subtree",
