@@ -17201,7 +17201,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Paginated report of the authenticated requester's expenses.",
+        "description": "Paginated requester-owned expense report with filters, dashboard cards, totals, document summary, payment summary, and workflow action hints for compact frontend list/cards.",
         "parameters": [
           {
             "schema": {
@@ -17235,6 +17235,129 @@
             "name": "sort",
             "required": false,
             "description": "Optional sort key supported by the endpoint."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Manager Verified"
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Expense status filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project"
+            },
+            "in": "query",
+            "name": "expense_type",
+            "required": false,
+            "description": "Expense type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project Travel"
+            },
+            "in": "query",
+            "name": "expense_sub_type",
+            "required": false,
+            "description": "Expense subtype filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Advance"
+            },
+            "in": "query",
+            "name": "payment_type",
+            "required": false,
+            "description": "Payment type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "department_id",
+            "required": false,
+            "description": "Department filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "requester_user_id",
+            "required": false,
+            "description": "Requester filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "manager_user_id",
+            "required": false,
+            "description": "Manager/backup filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "finance_user_id",
+            "required": false,
+            "description": "Finance actor filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "description": "Created-at lower date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "description": "Created-at upper date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "any",
+                "complete",
+                "missing",
+                "pending",
+                "not_required"
+              ],
+              "default": "any",
+              "example": "missing"
+            },
+            "in": "query",
+            "name": "document_status",
+            "required": false
           }
         ],
         "security": [
@@ -17256,7 +17379,10 @@
                     "items",
                     "page",
                     "page_size",
-                    "total"
+                    "total",
+                    "summary",
+                    "cards",
+                    "filters"
                   ],
                   "properties": {
                     "items": {
@@ -17477,6 +17603,246 @@
                             "description": "Closure timestamp",
                             "example": "2026-05-04T10:00:00.000Z",
                             "nullable": true
+                          },
+                          "requester_employee_code": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "E1"
+                          },
+                          "requester_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Employee E1"
+                          },
+                          "requester_label": {
+                            "type": "string",
+                            "example": "E1 - Employee E1"
+                          },
+                          "department_code": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "SALES"
+                          },
+                          "department_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Sales"
+                          },
+                          "document_summary": {
+                            "type": "object",
+                            "required": [
+                              "status",
+                              "required_document_types",
+                              "missing_document_types",
+                              "uploaded_document_count",
+                              "verified_document_count"
+                            ],
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "complete",
+                                  "missing",
+                                  "pending",
+                                  "not_required"
+                                ],
+                                "example": "missing"
+                              },
+                              "required_document_types": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "receipt"
+                                ]
+                              },
+                              "missing_document_types": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "receipt"
+                                ]
+                              },
+                              "uploaded_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 1
+                              },
+                              "verified_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 0
+                              },
+                              "pending_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 1
+                              },
+                              "rejected_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 0
+                              },
+                              "total_required_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 1
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "payment_summary": {
+                            "type": "object",
+                            "nullable": true,
+                            "additionalProperties": true,
+                            "properties": {
+                              "payment_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Payment UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "approved_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Approved amount",
+                                "example": "500.00"
+                              },
+                              "paid_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Paid amount",
+                                "example": "500.00"
+                              },
+                              "reference_no": {
+                                "type": "string",
+                                "example": "PAY-001"
+                              },
+                              "settlement_status": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "pending"
+                              },
+                              "settlement_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Settlement amount",
+                                "example": "0.00"
+                              }
+                            }
+                          },
+                          "workflow_summary": {
+                            "type": "object",
+                            "required": [
+                              "current_status",
+                              "action_required_by",
+                              "age_hours",
+                              "aging_bucket"
+                            ],
+                            "properties": {
+                              "current_status": {
+                                "type": "string",
+                                "example": "Manager Verified"
+                              },
+                              "action_required_by": {
+                                "type": "string",
+                                "enum": [
+                                  "requester",
+                                  "manager",
+                                  "finance",
+                                  "none"
+                                ],
+                                "example": "finance"
+                              },
+                              "current_actor_user_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Current actor UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                                "nullable": true
+                              },
+                              "current_actor_label": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "N1 - Finance Manager"
+                              },
+                              "age_hours": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 4
+                              },
+                              "aging_bucket": {
+                                "type": "string",
+                                "example": "0-24h"
+                              },
+                              "manager_action_required": {
+                                "type": "boolean",
+                                "example": false
+                              },
+                              "finance_action_required": {
+                                "type": "boolean",
+                                "example": true
+                              },
+                              "document_action_required": {
+                                "type": "boolean",
+                                "example": false
+                              },
+                              "settlement_action_required": {
+                                "type": "boolean",
+                                "example": false
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "amount_summary": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "estimated_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Estimated amount",
+                                "example": "1000.00"
+                              },
+                              "advance_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Advance amount",
+                                "example": "500.00",
+                                "nullable": true
+                              },
+                              "actual_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Actual amount",
+                                "example": "500.00",
+                                "nullable": true
+                              },
+                              "variance_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Variance amount",
+                                "example": "0.00",
+                                "nullable": true
+                              },
+                              "approved_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Approved amount",
+                                "example": "500.00",
+                                "nullable": true
+                              },
+                              "paid_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Paid amount",
+                                "example": "500.00",
+                                "nullable": true
+                              }
+                            }
                           }
                         },
                         "additionalProperties": true
@@ -17495,10 +17861,51 @@
                     "total": {
                       "type": "integer",
                       "minimum": 0,
-                      "example": 1
+                      "example": 3
+                    },
+                    "summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "cards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "count"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "example": "pending_finance_approval"
+                          },
+                          "label": {
+                            "type": "string",
+                            "example": "Pending Finance Approval"
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "example": 3
+                          },
+                          "amount": {
+                            "type": "string",
+                            "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                            "description": "Optional card amount",
+                            "example": "25000.00"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "filters": {
+                      "type": "object",
+                      "additionalProperties": true
                     }
                   },
-                  "additionalProperties": false
+                  "additionalProperties": true
                 }
               }
             }
@@ -17785,7 +18192,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Manager-scoped queue report.",
+        "description": "Manager-scoped queue report with direct/backup assignment counts, aging, amount cards, missing-document indicators, and manager_action_required flags.",
         "parameters": [
           {
             "schema": {
@@ -17819,6 +18226,129 @@
             "name": "sort",
             "required": false,
             "description": "Optional sort key supported by the endpoint."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Manager Verified"
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Expense status filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project"
+            },
+            "in": "query",
+            "name": "expense_type",
+            "required": false,
+            "description": "Expense type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project Travel"
+            },
+            "in": "query",
+            "name": "expense_sub_type",
+            "required": false,
+            "description": "Expense subtype filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Advance"
+            },
+            "in": "query",
+            "name": "payment_type",
+            "required": false,
+            "description": "Payment type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "department_id",
+            "required": false,
+            "description": "Department filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "requester_user_id",
+            "required": false,
+            "description": "Requester filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "manager_user_id",
+            "required": false,
+            "description": "Manager/backup filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "finance_user_id",
+            "required": false,
+            "description": "Finance actor filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "description": "Created-at lower date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "description": "Created-at upper date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "any",
+                "complete",
+                "missing",
+                "pending",
+                "not_required"
+              ],
+              "default": "any",
+              "example": "missing"
+            },
+            "in": "query",
+            "name": "document_status",
+            "required": false
           }
         ],
         "security": [
@@ -17840,7 +18370,10 @@
                     "items",
                     "page",
                     "page_size",
-                    "total"
+                    "total",
+                    "queue_counts",
+                    "cards",
+                    "filters"
                   ],
                   "properties": {
                     "items": {
@@ -18061,6 +18594,246 @@
                             "description": "Closure timestamp",
                             "example": "2026-05-04T10:00:00.000Z",
                             "nullable": true
+                          },
+                          "requester_employee_code": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "E1"
+                          },
+                          "requester_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Employee E1"
+                          },
+                          "requester_label": {
+                            "type": "string",
+                            "example": "E1 - Employee E1"
+                          },
+                          "department_code": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "SALES"
+                          },
+                          "department_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Sales"
+                          },
+                          "document_summary": {
+                            "type": "object",
+                            "required": [
+                              "status",
+                              "required_document_types",
+                              "missing_document_types",
+                              "uploaded_document_count",
+                              "verified_document_count"
+                            ],
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "complete",
+                                  "missing",
+                                  "pending",
+                                  "not_required"
+                                ],
+                                "example": "missing"
+                              },
+                              "required_document_types": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "receipt"
+                                ]
+                              },
+                              "missing_document_types": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "receipt"
+                                ]
+                              },
+                              "uploaded_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 1
+                              },
+                              "verified_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 0
+                              },
+                              "pending_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 1
+                              },
+                              "rejected_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 0
+                              },
+                              "total_required_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 1
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "payment_summary": {
+                            "type": "object",
+                            "nullable": true,
+                            "additionalProperties": true,
+                            "properties": {
+                              "payment_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Payment UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "approved_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Approved amount",
+                                "example": "500.00"
+                              },
+                              "paid_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Paid amount",
+                                "example": "500.00"
+                              },
+                              "reference_no": {
+                                "type": "string",
+                                "example": "PAY-001"
+                              },
+                              "settlement_status": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "pending"
+                              },
+                              "settlement_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Settlement amount",
+                                "example": "0.00"
+                              }
+                            }
+                          },
+                          "workflow_summary": {
+                            "type": "object",
+                            "required": [
+                              "current_status",
+                              "action_required_by",
+                              "age_hours",
+                              "aging_bucket"
+                            ],
+                            "properties": {
+                              "current_status": {
+                                "type": "string",
+                                "example": "Manager Verified"
+                              },
+                              "action_required_by": {
+                                "type": "string",
+                                "enum": [
+                                  "requester",
+                                  "manager",
+                                  "finance",
+                                  "none"
+                                ],
+                                "example": "finance"
+                              },
+                              "current_actor_user_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Current actor UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                                "nullable": true
+                              },
+                              "current_actor_label": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "N1 - Finance Manager"
+                              },
+                              "age_hours": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 4
+                              },
+                              "aging_bucket": {
+                                "type": "string",
+                                "example": "0-24h"
+                              },
+                              "manager_action_required": {
+                                "type": "boolean",
+                                "example": false
+                              },
+                              "finance_action_required": {
+                                "type": "boolean",
+                                "example": true
+                              },
+                              "document_action_required": {
+                                "type": "boolean",
+                                "example": false
+                              },
+                              "settlement_action_required": {
+                                "type": "boolean",
+                                "example": false
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "amount_summary": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "estimated_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Estimated amount",
+                                "example": "1000.00"
+                              },
+                              "advance_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Advance amount",
+                                "example": "500.00",
+                                "nullable": true
+                              },
+                              "actual_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Actual amount",
+                                "example": "500.00",
+                                "nullable": true
+                              },
+                              "variance_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Variance amount",
+                                "example": "0.00",
+                                "nullable": true
+                              },
+                              "approved_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Approved amount",
+                                "example": "500.00",
+                                "nullable": true
+                              },
+                              "paid_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Paid amount",
+                                "example": "500.00",
+                                "nullable": true
+                              }
+                            }
                           }
                         },
                         "additionalProperties": true
@@ -18079,10 +18852,55 @@
                     "total": {
                       "type": "integer",
                       "minimum": 0,
-                      "example": 1
+                      "example": 3
+                    },
+                    "summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "cards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "count"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "example": "pending_finance_approval"
+                          },
+                          "label": {
+                            "type": "string",
+                            "example": "Pending Finance Approval"
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "example": 3
+                          },
+                          "amount": {
+                            "type": "string",
+                            "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                            "description": "Optional card amount",
+                            "example": "25000.00"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "filters": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "queue_counts": {
+                      "type": "object",
+                      "additionalProperties": true
                     }
                   },
-                  "additionalProperties": false
+                  "additionalProperties": true
                 }
               }
             }
@@ -18369,7 +19187,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Manager-scoped history of requests already verified by the signed-in manager.",
+        "description": "Manager-scoped history of verified, returned, and rejected requests with remarks, deciding actor, previous/next status, and audit route metadata.",
         "parameters": [
           {
             "schema": {
@@ -18403,6 +19221,129 @@
             "name": "sort",
             "required": false,
             "description": "Optional sort key supported by the endpoint."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Manager Verified"
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Expense status filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project"
+            },
+            "in": "query",
+            "name": "expense_type",
+            "required": false,
+            "description": "Expense type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project Travel"
+            },
+            "in": "query",
+            "name": "expense_sub_type",
+            "required": false,
+            "description": "Expense subtype filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Advance"
+            },
+            "in": "query",
+            "name": "payment_type",
+            "required": false,
+            "description": "Payment type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "department_id",
+            "required": false,
+            "description": "Department filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "requester_user_id",
+            "required": false,
+            "description": "Requester filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "manager_user_id",
+            "required": false,
+            "description": "Manager/backup filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "finance_user_id",
+            "required": false,
+            "description": "Finance actor filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "description": "Created-at lower date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "description": "Created-at upper date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "any",
+                "complete",
+                "missing",
+                "pending",
+                "not_required"
+              ],
+              "default": "any",
+              "example": "missing"
+            },
+            "in": "query",
+            "name": "document_status",
+            "required": false
           }
         ],
         "security": [
@@ -18424,7 +19365,9 @@
                     "items",
                     "page",
                     "page_size",
-                    "total"
+                    "total",
+                    "summary",
+                    "filters"
                   ],
                   "properties": {
                     "items": {
@@ -18447,10 +19390,18 @@
                     "total": {
                       "type": "integer",
                       "minimum": 0,
-                      "example": 1
+                      "example": 3
+                    },
+                    "summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "filters": {
+                      "type": "object",
+                      "additionalProperties": true
                     }
                   },
-                  "additionalProperties": false
+                  "additionalProperties": true
                 }
               }
             }
@@ -18737,7 +19688,7 @@
         "tags": [
           "Finance Management"
         ],
-        "description": "Finance Manager scoped dashboard dataset for operational review.",
+        "description": "Finance dashboard dataset with cards, aging buckets, payable/recoverable totals, exception counts, document risks, and compact ticket rows.",
         "parameters": [
           {
             "schema": {
@@ -18771,6 +19722,129 @@
             "name": "sort",
             "required": false,
             "description": "Optional sort key supported by the endpoint."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Manager Verified"
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Expense status filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project"
+            },
+            "in": "query",
+            "name": "expense_type",
+            "required": false,
+            "description": "Expense type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project Travel"
+            },
+            "in": "query",
+            "name": "expense_sub_type",
+            "required": false,
+            "description": "Expense subtype filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Advance"
+            },
+            "in": "query",
+            "name": "payment_type",
+            "required": false,
+            "description": "Payment type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "department_id",
+            "required": false,
+            "description": "Department filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "requester_user_id",
+            "required": false,
+            "description": "Requester filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "manager_user_id",
+            "required": false,
+            "description": "Manager/backup filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "finance_user_id",
+            "required": false,
+            "description": "Finance actor filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "description": "Created-at lower date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "description": "Created-at upper date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "any",
+                "complete",
+                "missing",
+                "pending",
+                "not_required"
+              ],
+              "default": "any",
+              "example": "missing"
+            },
+            "in": "query",
+            "name": "document_status",
+            "required": false
           }
         ],
         "security": [
@@ -18792,7 +19866,12 @@
                     "items",
                     "page",
                     "page_size",
-                    "total"
+                    "total",
+                    "cards",
+                    "aging_buckets",
+                    "payable_totals",
+                    "exception_counts",
+                    "filters"
                   ],
                   "properties": {
                     "items": {
@@ -19013,6 +20092,246 @@
                             "description": "Closure timestamp",
                             "example": "2026-05-04T10:00:00.000Z",
                             "nullable": true
+                          },
+                          "requester_employee_code": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "E1"
+                          },
+                          "requester_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Employee E1"
+                          },
+                          "requester_label": {
+                            "type": "string",
+                            "example": "E1 - Employee E1"
+                          },
+                          "department_code": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "SALES"
+                          },
+                          "department_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Sales"
+                          },
+                          "document_summary": {
+                            "type": "object",
+                            "required": [
+                              "status",
+                              "required_document_types",
+                              "missing_document_types",
+                              "uploaded_document_count",
+                              "verified_document_count"
+                            ],
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "complete",
+                                  "missing",
+                                  "pending",
+                                  "not_required"
+                                ],
+                                "example": "missing"
+                              },
+                              "required_document_types": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "receipt"
+                                ]
+                              },
+                              "missing_document_types": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "receipt"
+                                ]
+                              },
+                              "uploaded_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 1
+                              },
+                              "verified_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 0
+                              },
+                              "pending_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 1
+                              },
+                              "rejected_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 0
+                              },
+                              "total_required_document_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 1
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "payment_summary": {
+                            "type": "object",
+                            "nullable": true,
+                            "additionalProperties": true,
+                            "properties": {
+                              "payment_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Payment UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "approved_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Approved amount",
+                                "example": "500.00"
+                              },
+                              "paid_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Paid amount",
+                                "example": "500.00"
+                              },
+                              "reference_no": {
+                                "type": "string",
+                                "example": "PAY-001"
+                              },
+                              "settlement_status": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "pending"
+                              },
+                              "settlement_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Settlement amount",
+                                "example": "0.00"
+                              }
+                            }
+                          },
+                          "workflow_summary": {
+                            "type": "object",
+                            "required": [
+                              "current_status",
+                              "action_required_by",
+                              "age_hours",
+                              "aging_bucket"
+                            ],
+                            "properties": {
+                              "current_status": {
+                                "type": "string",
+                                "example": "Manager Verified"
+                              },
+                              "action_required_by": {
+                                "type": "string",
+                                "enum": [
+                                  "requester",
+                                  "manager",
+                                  "finance",
+                                  "none"
+                                ],
+                                "example": "finance"
+                              },
+                              "current_actor_user_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Current actor UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                                "nullable": true
+                              },
+                              "current_actor_label": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "N1 - Finance Manager"
+                              },
+                              "age_hours": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 4
+                              },
+                              "aging_bucket": {
+                                "type": "string",
+                                "example": "0-24h"
+                              },
+                              "manager_action_required": {
+                                "type": "boolean",
+                                "example": false
+                              },
+                              "finance_action_required": {
+                                "type": "boolean",
+                                "example": true
+                              },
+                              "document_action_required": {
+                                "type": "boolean",
+                                "example": false
+                              },
+                              "settlement_action_required": {
+                                "type": "boolean",
+                                "example": false
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "amount_summary": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "estimated_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Estimated amount",
+                                "example": "1000.00"
+                              },
+                              "advance_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Advance amount",
+                                "example": "500.00",
+                                "nullable": true
+                              },
+                              "actual_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Actual amount",
+                                "example": "500.00",
+                                "nullable": true
+                              },
+                              "variance_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Variance amount",
+                                "example": "0.00",
+                                "nullable": true
+                              },
+                              "approved_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Approved amount",
+                                "example": "500.00",
+                                "nullable": true
+                              },
+                              "paid_amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Paid amount",
+                                "example": "500.00",
+                                "nullable": true
+                              }
+                            }
                           }
                         },
                         "additionalProperties": true
@@ -19031,10 +20350,66 @@
                     "total": {
                       "type": "integer",
                       "minimum": 0,
-                      "example": 1
+                      "example": 3
+                    },
+                    "summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "cards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "count"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "example": "pending_finance_approval"
+                          },
+                          "label": {
+                            "type": "string",
+                            "example": "Pending Finance Approval"
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "example": 3
+                          },
+                          "amount": {
+                            "type": "string",
+                            "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                            "description": "Optional card amount",
+                            "example": "25000.00"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "filters": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "aging_buckets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "payable_totals": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "exception_counts": {
+                      "type": "object",
+                      "additionalProperties": true
                     }
                   },
-                  "additionalProperties": false
+                  "additionalProperties": true
                 }
               }
             }
@@ -19321,7 +20696,7 @@
         "tags": [
           "Finance Management"
         ],
-        "description": "Finance user-scoped history of verification, payment, and settlement actions completed by the signed-in finance actor.",
+        "description": "Finance history of approval, hold, payment, and settlement actions with actor labels, payment metadata, remarks, and audit event information.",
         "parameters": [
           {
             "schema": {
@@ -19355,6 +20730,129 @@
             "name": "sort",
             "required": false,
             "description": "Optional sort key supported by the endpoint."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Manager Verified"
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Expense status filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project"
+            },
+            "in": "query",
+            "name": "expense_type",
+            "required": false,
+            "description": "Expense type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project Travel"
+            },
+            "in": "query",
+            "name": "expense_sub_type",
+            "required": false,
+            "description": "Expense subtype filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Advance"
+            },
+            "in": "query",
+            "name": "payment_type",
+            "required": false,
+            "description": "Payment type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "department_id",
+            "required": false,
+            "description": "Department filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "requester_user_id",
+            "required": false,
+            "description": "Requester filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "manager_user_id",
+            "required": false,
+            "description": "Manager/backup filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "finance_user_id",
+            "required": false,
+            "description": "Finance actor filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "description": "Created-at lower date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "description": "Created-at upper date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "any",
+                "complete",
+                "missing",
+                "pending",
+                "not_required"
+              ],
+              "default": "any",
+              "example": "missing"
+            },
+            "in": "query",
+            "name": "document_status",
+            "required": false
           }
         ],
         "security": [
@@ -19376,7 +20874,9 @@
                     "items",
                     "page",
                     "page_size",
-                    "total"
+                    "total",
+                    "summary",
+                    "filters"
                   ],
                   "properties": {
                     "items": {
@@ -19399,10 +20899,18 @@
                     "total": {
                       "type": "integer",
                       "minimum": 0,
-                      "example": 1
+                      "example": 3
+                    },
+                    "summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "filters": {
+                      "type": "object",
+                      "additionalProperties": true
                     }
                   },
-                  "additionalProperties": false
+                  "additionalProperties": true
                 }
               }
             }
@@ -19689,7 +21197,7 @@
         "tags": [
           "Finance Management"
         ],
-        "description": "Finance cockpit analytics: summary counts, status distribution, spend trend, department/type spend, advance aging, settlement variance, policy risks, and high-value watchlists.",
+        "description": "Finance cockpit analytics: cards, aging buckets, payable totals, exception counts, status distribution, spend trend, department/type spend, settlement variance, policy risks, and high-value watchlists.",
         "security": [
           {
             "sessionCookie": []
@@ -19705,6 +21213,74 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": [
+                    "generated_at",
+                    "cards",
+                    "aging_buckets",
+                    "payable_totals",
+                    "exception_counts",
+                    "summary"
+                  ],
+                  "properties": {
+                    "generated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Report generation timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "cards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "count"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "example": "pending_finance_approval"
+                          },
+                          "label": {
+                            "type": "string",
+                            "example": "Pending Finance Approval"
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "example": 3
+                          },
+                          "amount": {
+                            "type": "string",
+                            "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                            "description": "Optional card amount",
+                            "example": "25000.00"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "aging_buckets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "payable_totals": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "exception_counts": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -19992,7 +21568,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Role-scoped expense register. Finance users see finance fields; other roles receive scoped fields.",
+        "description": "Role-scoped expense register with accounting columns, totals, export column hints, document status, payment reference, settlement delta, filters, and compact rows.",
         "parameters": [
           {
             "schema": {
@@ -20026,6 +21602,129 @@
             "name": "sort",
             "required": false,
             "description": "Optional sort key supported by the endpoint."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Manager Verified"
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Expense status filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project"
+            },
+            "in": "query",
+            "name": "expense_type",
+            "required": false,
+            "description": "Expense type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Project Travel"
+            },
+            "in": "query",
+            "name": "expense_sub_type",
+            "required": false,
+            "description": "Expense subtype filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Advance"
+            },
+            "in": "query",
+            "name": "payment_type",
+            "required": false,
+            "description": "Payment type filter."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "department_id",
+            "required": false,
+            "description": "Department filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "requester_user_id",
+            "required": false,
+            "description": "Requester filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "manager_user_id",
+            "required": false,
+            "description": "Manager/backup filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "finance_user_id",
+            "required": false,
+            "description": "Finance actor filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "description": "Created-at lower date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "description": "Created-at upper date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "any",
+                "complete",
+                "missing",
+                "pending",
+                "not_required"
+              ],
+              "default": "any",
+              "example": "missing"
+            },
+            "in": "query",
+            "name": "document_status",
+            "required": false
           }
         ],
         "security": [
@@ -20047,229 +21746,16 @@
                     "items",
                     "page",
                     "page_size",
-                    "total"
+                    "total",
+                    "totals",
+                    "filters",
+                    "export_columns"
                   ],
                   "properties": {
                     "items": {
                       "type": "array",
                       "items": {
                         "type": "object",
-                        "required": [
-                          "id",
-                          "ticket_no",
-                          "requester_user_id",
-                          "status",
-                          "version"
-                        ],
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "Expense ticket UUID",
-                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                          },
-                          "ticket_no": {
-                            "type": "string",
-                            "example": "EXP-2026-1042"
-                          },
-                          "requester_user_id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "Requester user UUID",
-                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                          },
-                          "requester_role_snapshot": {
-                            "type": "string",
-                            "example": "Employee / Software Engineer"
-                          },
-                          "department_id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "Department UUID",
-                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                          },
-                          "expense_type": {
-                            "type": "string",
-                            "enum": [
-                              "Project",
-                              "SalesPreSales"
-                            ],
-                            "example": "Project"
-                          },
-                          "expense_sub_type": {
-                            "type": "string",
-                            "enum": [
-                              "Project Travel",
-                              "Material Consumables",
-                              "Lodging & Boarding",
-                              "Client Meeting",
-                              "Demo / Presentation",
-                              "Marketing Event",
-                              "Sales Travel",
-                              "Misc Sales Expense"
-                            ],
-                            "example": "Project Travel"
-                          },
-                          "project_code": {
-                            "type": "string",
-                            "nullable": true,
-                            "example": "PRJ-100"
-                          },
-                          "client_name": {
-                            "type": "string",
-                            "nullable": true,
-                            "example": null
-                          },
-                          "task_title": {
-                            "type": "string",
-                            "example": "Client implementation travel"
-                          },
-                          "estimated_amount": {
-                            "type": "string",
-                            "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                            "description": "Estimated amount",
-                            "example": "12500.00"
-                          },
-                          "payment_type": {
-                            "type": "string",
-                            "enum": [
-                              "Advance",
-                              "ReimbursementAccrued"
-                            ],
-                            "example": "Advance"
-                          },
-                          "advance_amount": {
-                            "type": "string",
-                            "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                            "description": "Advance amount",
-                            "example": "12500.00",
-                            "nullable": true
-                          },
-                          "actual_amount": {
-                            "type": "string",
-                            "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                            "description": "Actual amount",
-                            "example": "12500.00",
-                            "nullable": true
-                          },
-                          "variance_amount": {
-                            "type": "string",
-                            "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                            "description": "Settlement variance amount",
-                            "example": "12500.00",
-                            "nullable": true
-                          },
-                          "payment_reference_no": {
-                            "type": "string",
-                            "nullable": true,
-                            "example": "NEFT-9931"
-                          },
-                          "assigned_finance_actor_user_id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "Assigned finance-stage actor UUID",
-                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                            "nullable": true
-                          },
-                          "manager_verifier_id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "Assigned manager verifier UUID",
-                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                            "nullable": true
-                          },
-                          "manager_verifier_label": {
-                            "type": "string",
-                            "nullable": true,
-                            "example": "D1 - Manager D1"
-                          },
-                          "finance_approver_id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "Assigned finance approver UUID",
-                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                            "nullable": true
-                          },
-                          "finance_approver_label": {
-                            "type": "string",
-                            "nullable": true,
-                            "example": "N1 - Finance Manager N1"
-                          },
-                          "assigned_finance_actor_label": {
-                            "type": "string",
-                            "nullable": true,
-                            "example": "N1 - Finance Manager N1"
-                          },
-                          "primary_finance_manager_user_id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "Configured primary finance manager UUID",
-                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                            "nullable": true
-                          },
-                          "primary_finance_manager_label": {
-                            "type": "string",
-                            "nullable": true,
-                            "example": "N1 - Finance Manager N1"
-                          },
-                          "finance_approval_backup_user_id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "Configured fallback finance approver UUID",
-                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                            "nullable": true
-                          },
-                          "finance_backup_applied": {
-                            "type": "boolean",
-                            "description": "True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup.",
-                            "example": false
-                          },
-                          "governance_warning_codes": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            },
-                            "description": "Route/governance warning markers preserved from the ticket route snapshot.",
-                            "example": [
-                              "primary_finance_manager_assigned"
-                            ]
-                          },
-                          "status": {
-                            "type": "string",
-                            "example": "Manager Verified"
-                          },
-                          "version": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "example": 4
-                          },
-                          "created_at": {
-                            "type": "string",
-                            "format": "date-time",
-                            "description": "Creation timestamp",
-                            "example": "2026-05-04T10:00:00.000Z"
-                          },
-                          "updated_at": {
-                            "type": "string",
-                            "format": "date-time",
-                            "description": "Last update timestamp",
-                            "example": "2026-05-04T10:00:00.000Z"
-                          },
-                          "submitted_at": {
-                            "type": "string",
-                            "format": "date-time",
-                            "description": "Submission timestamp",
-                            "example": "2026-05-04T10:00:00.000Z",
-                            "nullable": true
-                          },
-                          "closed_at": {
-                            "type": "string",
-                            "format": "date-time",
-                            "description": "Closure timestamp",
-                            "example": "2026-05-04T10:00:00.000Z",
-                            "nullable": true
-                          }
-                        },
                         "additionalProperties": true
                       }
                     },
@@ -20286,10 +21772,28 @@
                     "total": {
                       "type": "integer",
                       "minimum": 0,
-                      "example": 1
+                      "example": 3
+                    },
+                    "totals": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "filters": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "export_columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "ticket_no",
+                        "payment_reference_no"
+                      ]
                     }
                   },
-                  "additionalProperties": false
+                  "additionalProperties": true
                 }
               }
             }

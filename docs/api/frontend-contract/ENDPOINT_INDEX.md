@@ -1991,6 +1991,17 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2016,6 +2027,12 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | optional | - |
+| `cards` | array of object | required | - |
+| `filters` | object | required | - |
+| `aging_buckets` | array of object | required | - |
+| `payable_totals` | object | required | - |
+| `exception_counts` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2041,6 +2058,17 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2066,6 +2094,8 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | required | - |
+| `filters` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2107,7 +2137,14 @@ No request body.
 
 Success body highlights:
 
-Schema: `object`.
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `generated_at` | string<date-time> | required | Report generation timestamp |
+| `cards` | array of object | required | - |
+| `aging_buckets` | array of object | required | - |
+| `payable_totals` | object | required | - |
+| `exception_counts` | object | required | - |
+| `summary` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2669,6 +2706,17 @@ Reports are role-scoped API-backed datasets and export requests.
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2694,6 +2742,9 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | required | - |
+| `cards` | array of object | required | - |
+| `filters` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2719,6 +2770,17 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2744,6 +2806,10 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | optional | - |
+| `cards` | array of object | required | - |
+| `filters` | object | required | - |
+| `queue_counts` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2769,6 +2835,17 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2794,6 +2871,8 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | required | - |
+| `filters` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2819,6 +2898,17 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2844,6 +2934,9 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `totals` | object | required | - |
+| `filters` | object | required | - |
+| `export_columns` | array of string | required | - |
 
 **Frontend behavior notes**
 

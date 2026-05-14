@@ -613,6 +613,195 @@ function without(input: RouteSchema, keys: readonly string[]): RouteSchema {
   return Object.fromEntries(Object.entries(input).filter(([key]) => !keys.includes(key)));
 }
 
+
+const expenseReportQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    status: { type: "string", description: "Expense status filter.", example: "Manager Verified" },
+    expense_type: { type: "string", description: "Expense type filter.", example: "Project" },
+    expense_sub_type: { type: "string", description: "Expense subtype filter.", example: "Project Travel" },
+    payment_type: { type: "string", description: "Payment type filter.", example: "Advance" },
+    department_id: uuid("Department filter UUID"),
+    requester_user_id: uuid("Requester filter UUID"),
+    manager_user_id: uuid("Manager/backup filter UUID"),
+    finance_user_id: uuid("Finance actor filter UUID"),
+    date_from: date("Created-at lower date filter"),
+    date_to: date("Created-at upper date filter"),
+    document_status: { type: "string", enum: ["any", "complete", "missing", "pending", "not_required"], default: "any", example: "missing" }
+  }
+};
+
+const reportCardSchema = {
+  type: "object",
+  required: ["key", "label", "count"],
+  properties: {
+    key: { type: "string", example: "pending_finance_approval" },
+    label: { type: "string", example: "Pending Finance Approval" },
+    count: { type: "integer", minimum: 0, example: 3 },
+    amount: money("Optional card amount", "25000.00")
+  },
+  additionalProperties: true
+};
+
+const documentSummarySchema = {
+  type: "object",
+  required: ["status", "required_document_types", "missing_document_types", "uploaded_document_count", "verified_document_count"],
+  properties: {
+    status: { type: "string", enum: ["complete", "missing", "pending", "not_required"], example: "missing" },
+    required_document_types: { type: "array", items: { type: "string" }, example: ["receipt"] },
+    missing_document_types: { type: "array", items: { type: "string" }, example: ["receipt"] },
+    uploaded_document_count: { type: "integer", minimum: 0, example: 1 },
+    verified_document_count: { type: "integer", minimum: 0, example: 0 },
+    pending_document_count: { type: "integer", minimum: 0, example: 1 },
+    rejected_document_count: { type: "integer", minimum: 0, example: 0 },
+    total_required_document_count: { type: "integer", minimum: 0, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const paymentSummarySchema = {
+  type: "object",
+  nullable: true,
+  additionalProperties: true,
+  properties: {
+    payment_id: uuid("Payment UUID"),
+    approved_amount: money("Approved amount", "500.00"),
+    paid_amount: money("Paid amount", "500.00"),
+    reference_no: { type: "string", example: "PAY-001" },
+    settlement_status: { type: "string", nullable: true, example: "pending" },
+    settlement_amount: money("Settlement amount", "0.00")
+  }
+};
+
+const workflowSummarySchema = {
+  type: "object",
+  required: ["current_status", "action_required_by", "age_hours", "aging_bucket"],
+  properties: {
+    current_status: { type: "string", example: "Manager Verified" },
+    action_required_by: { type: "string", enum: ["requester", "manager", "finance", "none"], example: "finance" },
+    current_actor_user_id: { ...uuid("Current actor UUID"), nullable: true },
+    current_actor_label: { type: "string", nullable: true, example: "N1 - Finance Manager" },
+    age_hours: { type: "integer", minimum: 0, example: 4 },
+    aging_bucket: { type: "string", example: "0-24h" },
+    manager_action_required: { type: "boolean", example: false },
+    finance_action_required: { type: "boolean", example: true },
+    document_action_required: { type: "boolean", example: false },
+    settlement_action_required: { type: "boolean", example: false }
+  },
+  additionalProperties: false
+};
+
+const amountSummarySchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    estimated_amount: money("Estimated amount", "1000.00"),
+    advance_amount: { ...money("Advance amount", "500.00"), nullable: true },
+    actual_amount: { ...money("Actual amount", "500.00"), nullable: true },
+    variance_amount: { ...money("Variance amount", "0.00"), nullable: true },
+    approved_amount: { ...money("Approved amount", "500.00"), nullable: true },
+    paid_amount: { ...money("Paid amount", "500.00"), nullable: true }
+  }
+};
+
+const expenseReportTicketSchema = {
+  ...ticketSchema,
+  properties: {
+    ...ticketSchema.properties,
+    requester_employee_code: { type: "string", nullable: true, example: "E1" },
+    requester_name: { type: "string", nullable: true, example: "Employee E1" },
+    requester_label: { type: "string", example: "E1 - Employee E1" },
+    department_code: { type: "string", nullable: true, example: "SALES" },
+    department_name: { type: "string", nullable: true, example: "Sales" },
+    manager_verifier_label: { type: "string", nullable: true, example: "D1 - Manager D1" },
+    assigned_finance_actor_label: { type: "string", nullable: true, example: "N1 - Finance Manager N1" },
+    document_summary: documentSummarySchema,
+    payment_summary: paymentSummarySchema,
+    workflow_summary: workflowSummarySchema,
+    amount_summary: amountSummarySchema
+  },
+  additionalProperties: true
+};
+
+const expenseReportListSchema = {
+  type: "object",
+  required: ["items", "page", "page_size", "total", "summary", "cards", "filters"],
+  properties: {
+    items: { type: "array", items: expenseReportTicketSchema },
+    page: { type: "integer", minimum: 1, example: 1 },
+    page_size: { type: "integer", minimum: 1, example: 25 },
+    total: { type: "integer", minimum: 0, example: 3 },
+    summary: { type: "object", additionalProperties: true },
+    cards: { type: "array", items: reportCardSchema },
+    filters: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const managerQueueReportSchema = {
+  ...expenseReportListSchema,
+  required: ["items", "page", "page_size", "total", "queue_counts", "cards", "filters"],
+  properties: {
+    ...expenseReportListSchema.properties,
+    queue_counts: { type: "object", additionalProperties: true }
+  }
+};
+
+const historyReportSchema = {
+  type: "object",
+  required: ["items", "page", "page_size", "total", "summary", "filters"],
+  properties: {
+    items: { type: "array", items: { type: "object", additionalProperties: true } },
+    page: { type: "integer", minimum: 1, example: 1 },
+    page_size: { type: "integer", minimum: 1, example: 25 },
+    total: { type: "integer", minimum: 0, example: 3 },
+    summary: { type: "object", additionalProperties: true },
+    filters: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const financeDashboardReportSchema = {
+  ...expenseReportListSchema,
+  required: ["items", "page", "page_size", "total", "cards", "aging_buckets", "payable_totals", "exception_counts", "filters"],
+  properties: {
+    ...expenseReportListSchema.properties,
+    aging_buckets: { type: "array", items: { type: "object", additionalProperties: true } },
+    payable_totals: { type: "object", additionalProperties: true },
+    exception_counts: { type: "object", additionalProperties: true }
+  }
+};
+
+const registerReportSchema = {
+  type: "object",
+  required: ["items", "page", "page_size", "total", "totals", "filters", "export_columns"],
+  properties: {
+    items: { type: "array", items: { type: "object", additionalProperties: true } },
+    page: { type: "integer", minimum: 1, example: 1 },
+    page_size: { type: "integer", minimum: 1, example: 25 },
+    total: { type: "integer", minimum: 0, example: 3 },
+    totals: { type: "object", additionalProperties: true },
+    filters: { type: "object", additionalProperties: true },
+    export_columns: { type: "array", items: { type: "string" }, example: ["ticket_no", "payment_reference_no"] }
+  },
+  additionalProperties: true
+};
+
+const financeAnalyticsSchema = {
+  type: "object",
+  required: ["generated_at", "cards", "aging_buckets", "payable_totals", "exception_counts", "summary"],
+  properties: {
+    generated_at: dateTime("Report generation timestamp"),
+    cards: { type: "array", items: reportCardSchema },
+    aging_buckets: { type: "array", items: { type: "object", additionalProperties: true } },
+    payable_totals: { type: "object", additionalProperties: true },
+    exception_counts: { type: "object", additionalProperties: true },
+    summary: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
 const expenseCreateBody = {
   type: "object",
   required: ["expense_type", "expense_sub_type", "task_title", "task_description", "start_date", "end_date", "estimated_amount", "payment_type", "line_items"],
@@ -890,13 +1079,13 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/documents/{id}/verify": operation("Documents", "Verify document", "Marks a document as verified when actor has Finance/HR/Admin classification authority.", { params: idParamSchema, response200: documentSchema }),
   "GET /api/v1/documents/{id}/access-log": operation("Documents", "Document access log", "Paginated immutable document access log for auditors/admins.", { params: idParamSchema, querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
 
-  "GET /api/v1/reports/expenses/my": operation("Reports & Analytics", "My expense report", "Paginated report of the authenticated requester's expenses.", { querystring: paginationQuerySchema, response200: paginated(ticketSchema) }),
-  "GET /api/v1/reports/expenses/manager-queue": operation("Reports & Analytics", "Manager queue report", "Manager-scoped queue report.", { querystring: paginationQuerySchema, response200: paginated(ticketSchema) }),
-  "GET /api/v1/reports/expenses/manager-history": operation("Reports & Analytics", "Manager action history", "Manager-scoped history of requests already verified by the signed-in manager.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
-  "GET /api/v1/reports/expenses/finance-dashboard": operation("Finance Management", "Finance dashboard dataset", "Finance Manager scoped dashboard dataset for operational review.", { querystring: paginationQuerySchema, response200: paginated(ticketSchema) }),
-  "GET /api/v1/reports/expenses/finance-history": operation("Finance Management", "Finance action history", "Finance user-scoped history of verification, payment, and settlement actions completed by the signed-in finance actor.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
-  "GET /api/v1/reports/expenses/finance-analytics": operation("Finance Management", "Finance analytics", "Finance cockpit analytics: summary counts, status distribution, spend trend, department/type spend, advance aging, settlement variance, policy risks, and high-value watchlists.", { response200: { type: "object", additionalProperties: true } }),
-  "GET /api/v1/reports/expenses/register": operation("Reports & Analytics", "Expense register", "Role-scoped expense register. Finance users see finance fields; other roles receive scoped fields.", { querystring: paginationQuerySchema, response200: paginated(ticketSchema) }),
+  "GET /api/v1/reports/expenses/my": operation("Reports & Analytics", "My expense report", "Paginated requester-owned expense report with filters, dashboard cards, totals, document summary, payment summary, and workflow action hints for compact frontend list/cards.", { querystring: expenseReportQuerySchema, response200: expenseReportListSchema }),
+  "GET /api/v1/reports/expenses/manager-queue": operation("Reports & Analytics", "Manager queue report", "Manager-scoped queue report with direct/backup assignment counts, aging, amount cards, missing-document indicators, and manager_action_required flags.", { querystring: expenseReportQuerySchema, response200: managerQueueReportSchema }),
+  "GET /api/v1/reports/expenses/manager-history": operation("Reports & Analytics", "Manager action history", "Manager-scoped history of verified, returned, and rejected requests with remarks, deciding actor, previous/next status, and audit route metadata.", { querystring: expenseReportQuerySchema, response200: historyReportSchema }),
+  "GET /api/v1/reports/expenses/finance-dashboard": operation("Finance Management", "Finance dashboard dataset", "Finance dashboard dataset with cards, aging buckets, payable/recoverable totals, exception counts, document risks, and compact ticket rows.", { querystring: expenseReportQuerySchema, response200: financeDashboardReportSchema }),
+  "GET /api/v1/reports/expenses/finance-history": operation("Finance Management", "Finance action history", "Finance history of approval, hold, payment, and settlement actions with actor labels, payment metadata, remarks, and audit event information.", { querystring: expenseReportQuerySchema, response200: historyReportSchema }),
+  "GET /api/v1/reports/expenses/finance-analytics": operation("Finance Management", "Finance analytics", "Finance cockpit analytics: cards, aging buckets, payable totals, exception counts, status distribution, spend trend, department/type spend, settlement variance, policy risks, and high-value watchlists.", { response200: financeAnalyticsSchema }),
+  "GET /api/v1/reports/expenses/register": operation("Reports & Analytics", "Expense register", "Role-scoped expense register with accounting columns, totals, export column hints, document status, payment reference, settlement delta, filters, and compact rows.", { querystring: expenseReportQuerySchema, response200: registerReportSchema }),
   "GET /api/v1/reports/expenses/advance-aging": operation("Finance Management", "Advance aging report", "Finance report of open advances awaiting bills, settlement, adjustment, or closure.", { querystring: paginationQuerySchema, response200: paginated(ticketSchema) }),
   "GET /api/v1/reports/expenses/payments": operation("Finance Management", "Payment register", "Finance payment release register with ticket context.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
   "GET /api/v1/reports/expenses/audit": operation("Finance Management", "Finance audit report", "Read-only audit report for Finance/Auditor/Admin roles.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
