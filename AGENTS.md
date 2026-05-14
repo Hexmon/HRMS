@@ -69,3 +69,11 @@ pnpm verify:regression
 ```
 
 Write QA artifacts under `docs/qa/runs/` for completed implementation work.
+
+## Work Tracking
+
+- Maintain the project work tracker at `/Users/anuragkumar/Desktop/Tasks/HRMS-Server.xlsx` after meaningful HRMS-Server work.
+- Use project name `HRMS-Server`, the columns `Task`, `Project`, `Priority`, `Story Points`, `Status`, `Start date`, `End date`, `Deliverable`, `Notes`, `Remarks`, and the sprint-sheet pattern (`HRMS`, `Sprint N <date-range>`).
+- Record the work date, story-point estimate, deliverable, verification notes, and related commit or QA artifact references when available.
+- Story points must use Fibonacci-style values `1`, `2`, `3`, `5`, `8`, or `13`; split work larger than `13` into smaller tracker rows.
+- Keep one workbook per project; add sprint sheets inside the same workbook instead of creating duplicate files.
