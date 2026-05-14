@@ -49,7 +49,7 @@
     "test:integration": "vitest run --project integration",
     "test:contracts": "vitest run --project contracts",
     "test:e2e": "vitest run --project e2e --passWithNoTests",
-    "api:docs:generate": "tsx scripts/api-docs-generate.ts",
+    "api:docs:generate": "tsx scripts/api-docs-generate.ts && pnpm api:frontend-contract:generate",
     "api:docs:verify": "tsx scripts/api-docs-verify.ts",
     "api:consumer:verify": "tsx scripts/api-consumer-verify.ts",
     "db:generate": "tsx scripts/db-generate.ts",
@@ -90,7 +90,8 @@
     "docker:prod:config": "docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml config",
     "test:infra:up": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hrms_backend_test up -d postgres valkey minio",
     "test:infra:down": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hrms_backend_test down",
-    "qa:human": "HRMS_REPORT_DIR=docs/qa/runs/standalone-full-human-qa tsx scripts/run-standalone-full-human-qa.ts"
+    "qa:human": "HRMS_REPORT_DIR=docs/qa/runs/standalone-full-human-qa tsx scripts/run-standalone-full-human-qa.ts",
+    "api:frontend-contract:generate": "tsx scripts/api-frontend-contract-generate.ts"
   },
   "dependencies": {
     "@fastify/compress": "^8.1.0",

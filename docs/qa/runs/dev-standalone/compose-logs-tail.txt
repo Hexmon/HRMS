@@ -1,78 +1,106 @@
-valkey-1  | 1:M 13 May 2026 09:57:06.090 * oO0OoO0OoO0Oo Valkey is starting oO0OoO0OoO0Oo
-valkey-1  | 1:M 13 May 2026 09:57:06.090 * Valkey version=9.0.3, bits=64, commit=00000000, modified=0, pid=1, just started
-valkey-1  | 1:M 13 May 2026 09:57:06.090 * Configuration loaded
-valkey-1  | 1:M 13 May 2026 09:57:06.090 * monotonic clock: POSIX clock_gettime
-valkey-1  | 1:M 13 May 2026 09:57:06.091 * Running mode=standalone, port=6379.
-valkey-1  | 1:M 13 May 2026 09:57:06.091 * Server initialized
-valkey-1  | 1:M 13 May 2026 09:57:06.093 * Creating AOF base file appendonly.aof.1.base.rdb on server start
-valkey-1  | 1:M 13 May 2026 09:57:06.095 * Creating AOF incr file appendonly.aof.1.incr.aof on server start
-valkey-1  | 1:M 13 May 2026 09:57:06.095 * Ready to accept connections tcp
-valkey-1  | 1:M 13 May 2026 10:49:14.142 * 100 changes in 300 seconds. Saving...
-valkey-1  | 1:M 13 May 2026 10:49:14.142 * Background saving started by pid 3758
-valkey-1  | 3758:C 13 May 2026 10:49:14.144 * DB saved on disk
-valkey-1  | 3758:C 13 May 2026 10:49:14.145 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
-valkey-1  | 1:M 13 May 2026 10:49:14.243 * Background saving terminated with success
-valkey-1  | 1:M 13 May 2026 10:54:15.090 * 100 changes in 300 seconds. Saving...
-valkey-1  | 1:M 13 May 2026 10:54:15.091 * Background saving started by pid 4156
-valkey-1  | 4156:C 13 May 2026 10:54:15.096 * DB saved on disk
-valkey-1  | 4156:C 13 May 2026 10:54:15.096 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
-valkey-1  | 1:M 13 May 2026 10:54:15.200 * Background saving terminated with success
-valkey-1  | 1:M 13 May 2026 10:59:16.037 * 100 changes in 300 seconds. Saving...
-valkey-1  | 1:M 13 May 2026 10:59:16.037 * Background saving started by pid 4536
-valkey-1  | 4536:C 13 May 2026 10:59:16.040 * DB saved on disk
-valkey-1  | 4536:C 13 May 2026 10:59:16.040 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
-valkey-1  | 1:M 13 May 2026 10:59:16.139 * Background saving terminated with success
-valkey-1  | 1:M 13 May 2026 11:04:17.090 * 100 changes in 300 seconds. Saving...
-valkey-1  | 1:M 13 May 2026 11:04:17.091 * Background saving started by pid 4901
-valkey-1  | 4901:C 13 May 2026 11:04:17.096 * DB saved on disk
-valkey-1  | 4901:C 13 May 2026 11:04:17.096 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
-valkey-1  | 1:M 13 May 2026 11:04:17.199 * Background saving terminated with success
+api-1  | 
+api-1  | > hrms-backend-standalone@0.1.0 start /app
+api-1  | > NODE_OPTIONS=--conditions=production node dist/src/server.js
+api-1  | 
+api-1  | {"level":30,"time":1778758450431,"pid":19,"hostname":"f560acf6c3ab","msg":"Server listening at http://127.0.0.1:3001"}
+api-1  | {"level":30,"time":1778758450431,"pid":19,"hostname":"f560acf6c3ab","msg":"Server listening at http://172.22.0.5:3001"}
+api-1  | {"level":30,"time":1778758458833,"pid":19,"hostname":"f560acf6c3ab","reqId":"9cd7e002-9419-44dd-9fb4-7c6136ecd4a5","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":41368},"msg":"incoming request"}
+api-1  | {"level":30,"time":1778758458838,"pid":19,"hostname":"f560acf6c3ab","reqId":"9cd7e002-9419-44dd-9fb4-7c6136ecd4a5","res":{"statusCode":200},"responseTime":4.195500001311302,"msg":"request completed"}
+migrate-1  | 
+migrate-1  | > hrms-backend-standalone@0.1.0 db:migrate /app
+migrate-1  | > tsx scripts/db-migrate.ts
+migrate-1  | 
+migrate-1  | Migration applied successfully.
+migrate-1  | 
+migrate-1  | > hrms-backend-standalone@0.1.0 release:seed /app
+migrate-1  | > tsx scripts/seed-release-data.ts
+migrate-1  | 
+migrate-1  | Release seed data inserted or already present.
 outbox-worker-1  | 
 outbox-worker-1  | > hrms-backend-standalone@0.1.0 worker:start /app
 outbox-worker-1  | > NODE_OPTIONS=--conditions=production node dist/src/workers/run-outbox-worker.js
 outbox-worker-1  | 
-outbox-worker-1  | Outbox worker started with Valkey Streams publisher.
-outbox-worker-1  | {"worker":"outbox","published":11,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":25,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":44,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":48,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":66,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":80,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":89,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":89,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":100,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":11,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":100,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":33,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":24,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":100,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":55,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":22,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":22,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":36,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":44,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":44,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":66,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":66,"dead_lettered":0}
-outbox-worker-1  | {"worker":"outbox","published":66,"dead_lettered":0}
-postgres-1       | The default text search configuration will be set to "english".
-postgres-1       | 
-postgres-1       | Data page checksums are disabled.
-postgres-1       | 
-postgres-1       | fixing permissions on existing directory /var/lib/postgresql/data ... ok
-postgres-1       | creating subdirectories ... ok
-postgres-1       | selecting dynamic shared memory implementation ... posix
-postgres-1       | selecting default max_connections ... 100
-postgres-1       | selecting default shared_buffers ... 128MB
-postgres-1       | selecting default time zone ... UTC
-postgres-1       | creating configuration files ... ok
-postgres-1       | running bootstrap script ... ok
-postgres-1       | sh: locale: not found
-postgres-1       | 2026-05-13 09:57:06.499 UTC [35] WARNING:  no usable system locales were found
-postgres-1       | performing post-bootstrap initialization ... ok
-postgres-1       | initdb: warning: enabling "trust" authentication for local connections
-postgres-1       | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
-postgres-1       | syncing data to disk ... ok
+minio-1          | INFO: Formatting 1st pool, 1 set(s), 1 drives per set.
+minio-1          | INFO: WARNING: Host local has more than 0 drives of set. A host failure will result in data becoming unavailable.
+minio-1          | MinIO Object Storage Server
+minio-1          | Copyright: 2015-2026 MinIO, Inc.
+minio-1          | License: GNU AGPLv3 - https://www.gnu.org/licenses/agpl-3.0.html
+minio-1          | Version: RELEASE.2025-09-07T16-13-09Z (go1.24.6 linux/arm64)
+minio-1          | 
+minio-1          | API: http://172.22.0.3:9000  http://127.0.0.1:9000 
+minio-1          | WebUI: http://172.22.0.3:9001 http://127.0.0.1:9001  
+minio-1          | 
+minio-1          | Docs: https://docs.min.io
+minio-1          | WARN: Detected default credentials '[REDACTED]', we recommend that you change these values with '[REDACTED_ENV]' and '[REDACTED_ENV]' environment variables
+minio-1          | INFO: Exiting on signal: TERMINATED
+minio-1          | MinIO Object Storage Server
+minio-1          | Copyright: 2015-2026 MinIO, Inc.
+minio-1          | License: GNU AGPLv3 - https://www.gnu.org/licenses/agpl-3.0.html
+minio-1          | Version: RELEASE.2025-09-07T16-13-09Z (go1.24.6 linux/arm64)
+minio-1          | 
+minio-1          | API: http://172.22.0.3:9000  http://127.0.0.1:9000 
+minio-1          | WebUI: http://172.22.0.3:9001 http://127.0.0.1:9001  
+minio-1          | 
+minio-1          | Docs: https://docs.min.io
+minio-1          | WARN: Detected default credentials '[REDACTED]', we recommend that you change these values with '[REDACTED_ENV]' and '[REDACTED_ENV]' environment variables
+valkey-1         | 1:M 13 May 2026 09:57:06.090 * oO0OoO0OoO0Oo Valkey is starting oO0OoO0OoO0Oo
+valkey-1         | 1:M 13 May 2026 09:57:06.090 * Valkey version=9.0.3, bits=64, commit=00000000, modified=0, pid=1, just started
+valkey-1         | 1:M 13 May 2026 09:57:06.090 * Configuration loaded
+valkey-1         | 1:M 13 May 2026 09:57:06.090 * monotonic clock: POSIX clock_gettime
+valkey-1         | 1:M 13 May 2026 09:57:06.091 * Running mode=standalone, port=6379.
+valkey-1         | 1:M 13 May 2026 09:57:06.091 * Server initialized
+valkey-1         | 1:M 13 May 2026 09:57:06.093 * Creating AOF base file appendonly.aof.1.base.rdb on server start
+valkey-1         | 1:M 13 May 2026 09:57:06.095 * Creating AOF incr file appendonly.aof.1.incr.aof on server start
+valkey-1         | 1:M 13 May 2026 09:57:06.095 * Ready to accept connections tcp
+valkey-1         | 1:M 13 May 2026 10:49:14.142 * 100 changes in 300 seconds. Saving...
+valkey-1         | 1:M 13 May 2026 10:49:14.142 * Background saving started by pid 3758
+valkey-1         | 3758:C 13 May 2026 10:49:14.144 * DB saved on disk
+valkey-1         | 3758:C 13 May 2026 10:49:14.145 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+valkey-1         | 1:M 13 May 2026 10:49:14.243 * Background saving terminated with success
+valkey-1         | 1:M 13 May 2026 10:54:15.090 * 100 changes in 300 seconds. Saving...
+valkey-1         | 1:M 13 May 2026 10:54:15.091 * Background saving started by pid 4156
+valkey-1         | 4156:C 13 May 2026 10:54:15.096 * DB saved on disk
+valkey-1         | 4156:C 13 May 2026 10:54:15.096 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+valkey-1         | 1:M 13 May 2026 10:54:15.200 * Background saving terminated with success
+valkey-1         | 1:M 13 May 2026 10:59:16.037 * 100 changes in 300 seconds. Saving...
+valkey-1         | 1:M 13 May 2026 10:59:16.037 * Background saving started by pid 4536
+valkey-1         | 4536:C 13 May 2026 10:59:16.040 * DB saved on disk
+valkey-1         | 4536:C 13 May 2026 10:59:16.040 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+valkey-1         | 1:M 13 May 2026 10:59:16.139 * Background saving terminated with success
+valkey-1         | 1:M 13 May 2026 11:04:17.090 * 100 changes in 300 seconds. Saving...
+valkey-1         | 1:M 13 May 2026 11:04:17.091 * Background saving started by pid 4901
+valkey-1         | 4901:C 13 May 2026 11:04:17.096 * DB saved on disk
+valkey-1         | 4901:C 13 May 2026 11:04:17.096 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+valkey-1         | 1:M 13 May 2026 11:04:17.199 * Background saving terminated with success
+valkey-1         | 1:M 13 May 2026 11:09:18.038 * 100 changes in 300 seconds. Saving...
+valkey-1         | 1:M 13 May 2026 11:09:18.039 * Background saving started by pid 5258
+valkey-1         | 5258:C 13 May 2026 11:09:18.046 * DB saved on disk
+valkey-1         | 5258:C 13 May 2026 11:09:18.046 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+valkey-1         | 1:M 13 May 2026 11:09:18.149 * Background saving terminated with success
+valkey-1         | 1:signal-handler (1778701642) Received SIGTERM scheduling shutdown...
+valkey-1         | 1:M 13 May 2026 19:47:22.135 * User requested shutdown...
+valkey-1         | 1:M 13 May 2026 19:47:22.135 * Calling fsync() on the AOF file.
+valkey-1         | 1:M 13 May 2026 19:47:22.135 * Saving the final RDB snapshot before exiting.
+valkey-1         | 1:M 13 May 2026 19:47:22.140 * DB saved on disk
+valkey-1         | 1:M 13 May 2026 19:47:22.141 # Valkey is now ready to exit, bye bye...
+valkey-1         | 1:M 14 May 2026 11:33:13.888 * oO0OoO0OoO0Oo Valkey is starting oO0OoO0OoO0Oo
+valkey-1         | 1:M 14 May 2026 11:33:13.889 * Valkey version=9.0.3, bits=64, commit=00000000, modified=0, pid=1, just started
+valkey-1         | 1:M 14 May 2026 11:33:13.889 * Configuration loaded
+valkey-1         | 1:M 14 May 2026 11:33:13.890 * monotonic clock: POSIX clock_gettime
+valkey-1         | 1:M 14 May 2026 11:33:13.892 * Running mode=standalone, port=6379.
+valkey-1         | 1:M 14 May 2026 11:33:13.892 * Server initialized
+valkey-1         | 1:M 14 May 2026 11:33:13.894 * Cleaning slot migration log in anticipation of a load operation.
+valkey-1         | 1:M 14 May 2026 11:33:13.894 * Reading RDB base file on AOF loading...
+valkey-1         | 1:M 14 May 2026 11:33:13.895 * Loading RDB produced by Valkey version 9.0.3
+valkey-1         | 1:M 14 May 2026 11:33:13.895 * RDB age 92167 seconds
+valkey-1         | 1:M 14 May 2026 11:33:13.895 * RDB memory usage when created 0.87 Mb
+valkey-1         | 1:M 14 May 2026 11:33:13.895 * RDB is base AOF
+valkey-1         | 1:M 14 May 2026 11:33:13.895 * Done loading RDB, keys loaded: 0, keys expired: 0.
+valkey-1         | 1:M 14 May 2026 11:33:13.895 * DB loaded from base file appendonly.aof.1.base.rdb: 0.001 seconds
+valkey-1         | 1:M 14 May 2026 11:33:13.904 * DB loaded from incr file appendonly.aof.1.incr.aof: 0.010 seconds
+valkey-1         | 1:M 14 May 2026 11:33:13.904 * DB loaded from append only file: 0.011 seconds
+valkey-1         | 1:M 14 May 2026 11:33:13.904 * Opening AOF incr file appendonly.aof.1.incr.aof on server start
+valkey-1         | 1:M 14 May 2026 11:33:13.904 * Ready to accept connections tcp
 postgres-1       | 
 postgres-1       | 
 postgres-1       | Success. You can now start the database server using:
@@ -175,145 +203,21 @@ postgres-1       | 2026-05-13 11:02:08.518 UTC [58] LOG:  checkpoint starting: t
 postgres-1       | 2026-05-13 11:02:38.554 UTC [58] LOG:  checkpoint complete: wrote 291 buffers (1.8%); 0 WAL file(s) added, 0 removed, 1 recycled; write=30.009 s, sync=0.020 s, total=30.036 s; sync files=133, longest=0.008 s, average=0.001 s; distance=6133 kB, estimate=23564 kB; lsn=0/41BF230, redo lsn=0/41BF1C0
 postgres-1       | 2026-05-13 11:07:08.613 UTC [58] LOG:  checkpoint starting: time
 postgres-1       | 2026-05-13 11:07:12.355 UTC [58] LOG:  checkpoint complete: wrote 36 buffers (0.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=3.733 s, sync=0.004 s, total=3.742 s; sync files=19, longest=0.002 s, average=0.001 s; distance=129 kB, estimate=21221 kB; lsn=0/41DF7D8, redo lsn=0/41DF7A0
-minio-1          | INFO: Formatting 1st pool, 1 set(s), 1 drives per set.
-minio-1          | INFO: WARNING: Host local has more than 0 drives of set. A host failure will result in data becoming unavailable.
-minio-1          | MinIO Object Storage Server
-minio-1          | Copyright: 2015-2026 MinIO, Inc.
-minio-1          | License: GNU AGPLv3 - https://www.gnu.org/licenses/agpl-3.0.html
-minio-1          | Version: RELEASE.2025-09-07T16-13-09Z (go1.24.6 linux/arm64)
-minio-1          | 
-minio-1          | API: http://172.22.0.3:9000  http://127.0.0.1:9000 
-minio-1          | WebUI: http://172.22.0.3:9001 http://127.0.0.1:9001  
-minio-1          | 
-minio-1          | Docs: https://docs.min.io
-minio-1          | WARN: Detected default credentials '[REDACTED]', we recommend that you change these values with '[REDACTED_ENV]' and '[REDACTED_ENV]' environment variables
-migrate-1        | 
-migrate-1        | > hrms-backend-standalone@0.1.0 db:migrate /app
-migrate-1        | > tsx scripts/db-migrate.ts
-migrate-1        | 
-migrate-1        | Migration applied successfully.
-migrate-1        | 
-migrate-1        | > hrms-backend-standalone@0.1.0 release:seed /app
-migrate-1        | > tsx scripts/seed-release-data.ts
-migrate-1        | 
-migrate-1        | Release seed data inserted or already present.
-api-1            | {"level":30,"time":1778670099882,"pid":19,"hostname":"a8e20d3e8699","reqId":"72c87c5b-64c4-490e-a987-582ad68eb7a9","req":{"method":"GET","url":"/api/v1/timesheets/submissions/my?page=1&limit=10","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670099884,"pid":19,"hostname":"a8e20d3e8699","reqId":"72c87c5b-64c4-490e-a987-582ad68eb7a9","res":{"statusCode":200},"responseTime":1.6962090004235506,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670099887,"pid":19,"hostname":"a8e20d3e8699","reqId":"e01d2e4c-2ec1-4605-9b81-e3f328a05a52","req":{"method":"POST","url":"/api/v1/timesheets/workflow-definitions","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100040,"pid":19,"hostname":"a8e20d3e8699","reqId":"e01d2e4c-2ec1-4605-9b81-e3f328a05a52","res":{"statusCode":400},"responseTime":152.42412499990314,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100041,"pid":19,"hostname":"a8e20d3e8699","reqId":"e12b5f23-1a72-44b2-9403-ccf5f1e9137b","req":{"method":"GET","url":"/api/v1/reports/expenses/my?page=1&limit=10","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":39535},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100043,"pid":19,"hostname":"a8e20d3e8699","reqId":"e12b5f23-1a72-44b2-9403-ccf5f1e9137b","res":{"statusCode":200},"responseTime":1.9666249994188547,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100045,"pid":19,"hostname":"a8e20d3e8699","reqId":"308455b6-69df-4955-8241-9facf418b6c8","req":{"method":"GET","url":"/api/v1/reports/expenses/manager-queue?page=1&limit=10","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100047,"pid":19,"hostname":"a8e20d3e8699","reqId":"308455b6-69df-4955-8241-9facf418b6c8","res":{"statusCode":200},"responseTime":1.9700419995933771,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100049,"pid":19,"hostname":"a8e20d3e8699","reqId":"e57e56b3-f6bb-45eb-8ad2-d15ca86c16cb","req":{"method":"GET","url":"/api/v1/reports/expenses/manager-history?page=1&limit=10","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100051,"pid":19,"hostname":"a8e20d3e8699","reqId":"e57e56b3-f6bb-45eb-8ad2-d15ca86c16cb","res":{"statusCode":200},"responseTime":2.4416669998317957,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100053,"pid":19,"hostname":"a8e20d3e8699","reqId":"fba77b95-fe79-4139-8cc9-6558ba0be6d9","req":{"method":"GET","url":"/api/v1/reports/expenses/finance-dashboard","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100055,"pid":19,"hostname":"a8e20d3e8699","reqId":"fba77b95-fe79-4139-8cc9-6558ba0be6d9","res":{"statusCode":200},"responseTime":2.0022499999031425,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100057,"pid":19,"hostname":"a8e20d3e8699","reqId":"511ffe74-9143-47f2-8c38-96c7d018aaed","req":{"method":"GET","url":"/api/v1/reports/expenses/finance-history?page=1&limit=10","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100059,"pid":19,"hostname":"a8e20d3e8699","reqId":"511ffe74-9143-47f2-8c38-96c7d018aaed","res":{"statusCode":200},"responseTime":1.9053340004757047,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100060,"pid":19,"hostname":"a8e20d3e8699","reqId":"0538eb2f-1588-401f-8348-aea2dc866e42","req":{"method":"GET","url":"/api/v1/reports/expenses/finance-analytics","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100063,"pid":19,"hostname":"a8e20d3e8699","reqId":"0538eb2f-1588-401f-8348-aea2dc866e42","res":{"statusCode":200},"responseTime":2.8838750002905726,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100064,"pid":19,"hostname":"a8e20d3e8699","reqId":"2815b326-c63c-4f76-993b-a330280e080d","req":{"method":"GET","url":"/api/v1/reports/expenses/register?page=1&limit=10","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100066,"pid":19,"hostname":"a8e20d3e8699","reqId":"2815b326-c63c-4f76-993b-a330280e080d","res":{"statusCode":200},"responseTime":1.64179200027138,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100068,"pid":19,"hostname":"a8e20d3e8699","reqId":"3d2fbda8-1c65-4e7c-9cbb-2f2ff689f5f9","req":{"method":"GET","url":"/api/v1/reports/expenses/advance-aging?page=1&limit=10","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100069,"pid":19,"hostname":"a8e20d3e8699","reqId":"3d2fbda8-1c65-4e7c-9cbb-2f2ff689f5f9","res":{"statusCode":200},"responseTime":1.2934170002117753,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100070,"pid":19,"hostname":"a8e20d3e8699","reqId":"c83ad27b-82db-464d-b907-d8888fc28d4d","req":{"method":"GET","url":"/api/v1/reports/expenses/payments?page=1&limit=10","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100072,"pid":19,"hostname":"a8e20d3e8699","reqId":"c83ad27b-82db-464d-b907-d8888fc28d4d","res":{"statusCode":200},"responseTime":1.8643330000340939,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100073,"pid":19,"hostname":"a8e20d3e8699","reqId":"d798fe36-f4c4-49ac-bfd8-b39ba60b6ebd","req":{"method":"GET","url":"/api/v1/reports/expenses/audit?page=1&limit=10","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100075,"pid":19,"hostname":"a8e20d3e8699","reqId":"d798fe36-f4c4-49ac-bfd8-b39ba60b6ebd","res":{"statusCode":200},"responseTime":2.082791999913752,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670100076,"pid":19,"hostname":"a8e20d3e8699","reqId":"6402de9c-66d8-4e18-b820-bd321c987da5","req":{"method":"POST","url":"/api/v1/reports/exports","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":17787},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670100235,"pid":19,"hostname":"a8e20d3e8699","reqId":"6402de9c-66d8-4e18-b820-bd321c987da5","res":{"statusCode":200},"responseTime":158.5380830001086,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670106449,"pid":19,"hostname":"a8e20d3e8699","reqId":"7469d17d-a275-48ad-bb22-bf9b9152a6dc","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":43664},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670106449,"pid":19,"hostname":"a8e20d3e8699","reqId":"7469d17d-a275-48ad-bb22-bf9b9152a6dc","res":{"statusCode":200},"responseTime":0.2716670008376241,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670116626,"pid":19,"hostname":"a8e20d3e8699","reqId":"c0b02a84-fb7f-47a0-a987-2f6952552628","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":57876},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670116626,"pid":19,"hostname":"a8e20d3e8699","reqId":"c0b02a84-fb7f-47a0-a987-2f6952552628","res":{"statusCode":200},"responseTime":0.20995800010859966,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670126800,"pid":19,"hostname":"a8e20d3e8699","reqId":"4432d125-bd89-4671-8a7a-1001eeca9a73","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":45688},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670126800,"pid":19,"hostname":"a8e20d3e8699","reqId":"4432d125-bd89-4671-8a7a-1001eeca9a73","res":{"statusCode":200},"responseTime":0.20162499975413084,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670136977,"pid":19,"hostname":"a8e20d3e8699","reqId":"04aa0bdb-84d6-4aad-ae5e-cfdb707fba36","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":37268},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670136978,"pid":19,"hostname":"a8e20d3e8699","reqId":"04aa0bdb-84d6-4aad-ae5e-cfdb707fba36","res":{"statusCode":200},"responseTime":0.20429200027137995,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670147160,"pid":19,"hostname":"a8e20d3e8699","reqId":"ce1623a2-a61c-4fb9-a96b-974375d63da1","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":39134},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670147160,"pid":19,"hostname":"a8e20d3e8699","reqId":"ce1623a2-a61c-4fb9-a96b-974375d63da1","res":{"statusCode":200},"responseTime":0.24874999932944775,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670157329,"pid":19,"hostname":"a8e20d3e8699","reqId":"99364908-c316-4672-ae26-890a944073a8","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":35402},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670157330,"pid":19,"hostname":"a8e20d3e8699","reqId":"99364908-c316-4672-ae26-890a944073a8","res":{"statusCode":200},"responseTime":0.36391699966043234,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670167512,"pid":19,"hostname":"a8e20d3e8699","reqId":"1e1298c7-c704-4d28-9e26-97ebe7663c5f","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":59122},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670167513,"pid":19,"hostname":"a8e20d3e8699","reqId":"1e1298c7-c704-4d28-9e26-97ebe7663c5f","res":{"statusCode":200},"responseTime":0.36983300000429153,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670177695,"pid":19,"hostname":"a8e20d3e8699","reqId":"d1a44312-0f6d-460a-8a90-d738255e7bf5","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":36398},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670177696,"pid":19,"hostname":"a8e20d3e8699","reqId":"d1a44312-0f6d-460a-8a90-d738255e7bf5","res":{"statusCode":200},"responseTime":0.2326669991016388,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670187862,"pid":19,"hostname":"a8e20d3e8699","reqId":"8ec31f3d-2996-40ec-876d-c8dd7cd378bc","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":35786},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670187862,"pid":19,"hostname":"a8e20d3e8699","reqId":"8ec31f3d-2996-40ec-876d-c8dd7cd378bc","res":{"statusCode":200},"responseTime":0.22470800019800663,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670198040,"pid":19,"hostname":"a8e20d3e8699","reqId":"aed69271-3495-4b8b-8c00-240e8677483e","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":49412},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670198040,"pid":19,"hostname":"a8e20d3e8699","reqId":"aed69271-3495-4b8b-8c00-240e8677483e","res":{"statusCode":200},"responseTime":0.263582999818027,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670208221,"pid":19,"hostname":"a8e20d3e8699","reqId":"948c53e6-e428-4ea6-bf74-b9e790ffb7a9","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":41250},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670208222,"pid":19,"hostname":"a8e20d3e8699","reqId":"948c53e6-e428-4ea6-bf74-b9e790ffb7a9","res":{"statusCode":200},"responseTime":0.28816600050777197,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670218402,"pid":19,"hostname":"a8e20d3e8699","reqId":"ae4080a7-de80-4f94-b155-885a12603d13","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":57148},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670218402,"pid":19,"hostname":"a8e20d3e8699","reqId":"ae4080a7-de80-4f94-b155-885a12603d13","res":{"statusCode":200},"responseTime":0.28195800073444843,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670228579,"pid":19,"hostname":"a8e20d3e8699","reqId":"65fdc0e7-6b61-4434-b87d-c96ebe8710fb","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":38928},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670228579,"pid":19,"hostname":"a8e20d3e8699","reqId":"65fdc0e7-6b61-4434-b87d-c96ebe8710fb","res":{"statusCode":200},"responseTime":0.23212500009685755,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670238741,"pid":19,"hostname":"a8e20d3e8699","reqId":"f5f9272a-48db-4457-93dd-62e0d5794488","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":43100},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670238741,"pid":19,"hostname":"a8e20d3e8699","reqId":"f5f9272a-48db-4457-93dd-62e0d5794488","res":{"statusCode":200},"responseTime":0.21399999968707561,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670248930,"pid":19,"hostname":"a8e20d3e8699","reqId":"b8a5a4ab-f859-446f-bb05-3e8cf19ef331","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":60340},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670248931,"pid":19,"hostname":"a8e20d3e8699","reqId":"b8a5a4ab-f859-446f-bb05-3e8cf19ef331","res":{"statusCode":200},"responseTime":0.20579199958592653,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670259092,"pid":19,"hostname":"a8e20d3e8699","reqId":"424236e4-4e6c-4d76-9519-d974b0732865","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":47106},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670259092,"pid":19,"hostname":"a8e20d3e8699","reqId":"424236e4-4e6c-4d76-9519-d974b0732865","res":{"statusCode":200},"responseTime":0.21487499959766865,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670269271,"pid":19,"hostname":"a8e20d3e8699","reqId":"8d27e8cd-4509-4e00-a622-d6ac9f3acf4d","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":56746},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670269271,"pid":19,"hostname":"a8e20d3e8699","reqId":"8d27e8cd-4509-4e00-a622-d6ac9f3acf4d","res":{"statusCode":200},"responseTime":0.22837499994784594,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670279445,"pid":19,"hostname":"a8e20d3e8699","reqId":"2f685b6b-b051-42aa-b28a-d0622c314123","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":51814},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670279445,"pid":19,"hostname":"a8e20d3e8699","reqId":"2f685b6b-b051-42aa-b28a-d0622c314123","res":{"statusCode":200},"responseTime":0.19912500027567148,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670289624,"pid":19,"hostname":"a8e20d3e8699","reqId":"4f7f73ae-348a-4c7e-9c98-d155177d9fe7","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":40350},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670289624,"pid":19,"hostname":"a8e20d3e8699","reqId":"4f7f73ae-348a-4c7e-9c98-d155177d9fe7","res":{"statusCode":200},"responseTime":0.25862499978393316,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670299811,"pid":19,"hostname":"a8e20d3e8699","reqId":"38875869-6a14-487b-bb9f-8240bb85603b","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":33844},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670299812,"pid":19,"hostname":"a8e20d3e8699","reqId":"38875869-6a14-487b-bb9f-8240bb85603b","res":{"statusCode":200},"responseTime":0.6805829992517829,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670309977,"pid":19,"hostname":"a8e20d3e8699","reqId":"a3f1564b-de0b-4a67-84ed-2716330b17e9","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":59136},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670309977,"pid":19,"hostname":"a8e20d3e8699","reqId":"a3f1564b-de0b-4a67-84ed-2716330b17e9","res":{"statusCode":200},"responseTime":0.2250419994816184,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670320154,"pid":19,"hostname":"a8e20d3e8699","reqId":"00212d34-e91f-48b6-8c87-d8971da32442","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":36858},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670320154,"pid":19,"hostname":"a8e20d3e8699","reqId":"00212d34-e91f-48b6-8c87-d8971da32442","res":{"statusCode":200},"responseTime":0.20283299963921309,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670330329,"pid":19,"hostname":"a8e20d3e8699","reqId":"b3e7fb76-6afb-401b-b52e-eec45541e4f4","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":49198},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670330330,"pid":19,"hostname":"a8e20d3e8699","reqId":"b3e7fb76-6afb-401b-b52e-eec45541e4f4","res":{"statusCode":200},"responseTime":0.2317909998819232,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670340506,"pid":19,"hostname":"a8e20d3e8699","reqId":"4dcf7ad7-4984-418d-97a7-df445ca54bcb","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":38456},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670340507,"pid":19,"hostname":"a8e20d3e8699","reqId":"4dcf7ad7-4984-418d-97a7-df445ca54bcb","res":{"statusCode":200},"responseTime":0.5044579999521375,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670350684,"pid":19,"hostname":"a8e20d3e8699","reqId":"b9cec076-ad3b-42ad-a984-324cb30a04f8","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":39702},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670350684,"pid":19,"hostname":"a8e20d3e8699","reqId":"b9cec076-ad3b-42ad-a984-324cb30a04f8","res":{"statusCode":200},"responseTime":0.21933299954980612,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670360864,"pid":19,"hostname":"a8e20d3e8699","reqId":"5c28282f-0ab1-4f8b-98f8-c160291832e4","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":47926},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670360864,"pid":19,"hostname":"a8e20d3e8699","reqId":"5c28282f-0ab1-4f8b-98f8-c160291832e4","res":{"statusCode":200},"responseTime":0.6512500001117587,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670371041,"pid":19,"hostname":"a8e20d3e8699","reqId":"74701ed0-6c5f-4953-a530-531ec7eb1f85","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":43306},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670371041,"pid":19,"hostname":"a8e20d3e8699","reqId":"74701ed0-6c5f-4953-a530-531ec7eb1f85","res":{"statusCode":200},"responseTime":0.31516600027680397,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670381220,"pid":19,"hostname":"a8e20d3e8699","reqId":"98392008-94cd-476c-ae90-1bd605281a2d","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":41870},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670381221,"pid":19,"hostname":"a8e20d3e8699","reqId":"98392008-94cd-476c-ae90-1bd605281a2d","res":{"statusCode":200},"responseTime":0.2459999993443489,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670391401,"pid":19,"hostname":"a8e20d3e8699","reqId":"411cfc9e-acbe-4c1e-9f08-833b451a267a","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":32976},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670391401,"pid":19,"hostname":"a8e20d3e8699","reqId":"411cfc9e-acbe-4c1e-9f08-833b451a267a","res":{"statusCode":200},"responseTime":0.3873749999329448,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670401574,"pid":19,"hostname":"a8e20d3e8699","reqId":"0c47f587-02fe-4893-ba8b-a1d555c8c1cd","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":47288},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670401575,"pid":19,"hostname":"a8e20d3e8699","reqId":"0c47f587-02fe-4893-ba8b-a1d555c8c1cd","res":{"statusCode":200},"responseTime":0.2546669999137521,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670411745,"pid":19,"hostname":"a8e20d3e8699","reqId":"709e176f-80f0-4d33-a7cd-2a1b4ba034e0","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":52078},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670411745,"pid":19,"hostname":"a8e20d3e8699","reqId":"709e176f-80f0-4d33-a7cd-2a1b4ba034e0","res":{"statusCode":200},"responseTime":0.32770799938589334,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670421932,"pid":19,"hostname":"a8e20d3e8699","reqId":"0dc414b9-74d1-4bb8-a7e0-5a7ea548ab49","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":49130},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670421933,"pid":19,"hostname":"a8e20d3e8699","reqId":"0dc414b9-74d1-4bb8-a7e0-5a7ea548ab49","res":{"statusCode":200},"responseTime":0.23337499983608723,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670432117,"pid":19,"hostname":"a8e20d3e8699","reqId":"4a0136e3-2ab4-4597-bea6-17d48f69a02a","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":59694},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670432118,"pid":19,"hostname":"a8e20d3e8699","reqId":"4a0136e3-2ab4-4597-bea6-17d48f69a02a","res":{"statusCode":200},"responseTime":0.26525000017136335,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670442274,"pid":19,"hostname":"a8e20d3e8699","reqId":"f336dd0f-f060-48a4-a3da-734c1c4d2eb7","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":39224},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670442275,"pid":19,"hostname":"a8e20d3e8699","reqId":"f336dd0f-f060-48a4-a3da-734c1c4d2eb7","res":{"statusCode":200},"responseTime":0.2992920000106096,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670452446,"pid":19,"hostname":"a8e20d3e8699","reqId":"97162af8-88c0-4f6b-89c3-2298db451e16","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":58112},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670452446,"pid":19,"hostname":"a8e20d3e8699","reqId":"97162af8-88c0-4f6b-89c3-2298db451e16","res":{"statusCode":200},"responseTime":0.24758299998939037,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670462627,"pid":19,"hostname":"a8e20d3e8699","reqId":"3c630496-86e9-4cdc-a45b-dab9a8c3cc1a","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":48742},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670462627,"pid":19,"hostname":"a8e20d3e8699","reqId":"3c630496-86e9-4cdc-a45b-dab9a8c3cc1a","res":{"statusCode":200},"responseTime":0.2054169997572899,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670472806,"pid":19,"hostname":"a8e20d3e8699","reqId":"a07f09d1-ca42-4031-8761-ecde2a732dfb","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":40996},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670472806,"pid":19,"hostname":"a8e20d3e8699","reqId":"a07f09d1-ca42-4031-8761-ecde2a732dfb","res":{"statusCode":200},"responseTime":0.22241599950939417,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670482039,"pid":19,"hostname":"a8e20d3e8699","reqId":"19d08d0b-b7eb-4fdc-be7f-c4b61ff5274d","req":{"method":"GET","url":"/health/live","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":36249},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670482040,"pid":19,"hostname":"a8e20d3e8699","reqId":"19d08d0b-b7eb-4fdc-be7f-c4b61ff5274d","res":{"statusCode":200},"responseTime":0.3440000005066395,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670482046,"pid":19,"hostname":"a8e20d3e8699","reqId":"87b59b56-40a3-432d-b795-23ce5def9677","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":20821},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670482047,"pid":19,"hostname":"a8e20d3e8699","reqId":"87b59b56-40a3-432d-b795-23ce5def9677","res":{"statusCode":200},"responseTime":0.1994580002501607,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670482048,"pid":19,"hostname":"a8e20d3e8699","reqId":"ed23a671-9b67-48c6-8794-a0052a62cbf9","req":{"method":"GET","url":"/api/v1/openapi.json","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":36249},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670482055,"pid":19,"hostname":"a8e20d3e8699","reqId":"ed23a671-9b67-48c6-8794-a0052a62cbf9","res":{"statusCode":200},"responseTime":7.187125000171363,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670482065,"pid":19,"hostname":"a8e20d3e8699","reqId":"02e51cc6-413e-44b4-8971-7e5606cba768","req":{"method":"POST","url":"/api/v1/auth/login","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":36249},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670482313,"pid":19,"hostname":"a8e20d3e8699","reqId":"02e51cc6-413e-44b4-8971-7e5606cba768","res":{"statusCode":200},"responseTime":247.4147499995306,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670482315,"pid":19,"hostname":"a8e20d3e8699","reqId":"5be28bda-c71c-4edd-8689-74507178c3ef","req":{"method":"GET","url":"/api/v1/core/users?page=1&page_size=5","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":20821},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670482317,"pid":19,"hostname":"a8e20d3e8699","reqId":"5be28bda-c71c-4edd-8689-74507178c3ef","res":{"statusCode":200},"responseTime":2.331666000187397,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670482319,"pid":19,"hostname":"a8e20d3e8699","reqId":"b26a5132-9e11-4d14-bdd3-1a674207ae3b","req":{"method":"GET","url":"/api/v1/timesheets/work-segments?page=1&page_size=5","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":36249},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670482321,"pid":19,"hostname":"a8e20d3e8699","reqId":"b26a5132-9e11-4d14-bdd3-1a674207ae3b","res":{"statusCode":200},"responseTime":1.714499999769032,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670482322,"pid":19,"hostname":"a8e20d3e8699","reqId":"681ff435-2177-41bb-a15f-b6fb23b4f5cd","req":{"method":"POST","url":"/api/v1/assets/scan/release-qr-hash-lap-available","host":"localhost:3001","remoteAddress":"192.168.65.1","remotePort":36249},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670482490,"pid":19,"hostname":"a8e20d3e8699","reqId":"681ff435-2177-41bb-a15f-b6fb23b4f5cd","res":{"statusCode":200},"responseTime":167.48175000026822,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670482985,"pid":19,"hostname":"a8e20d3e8699","reqId":"9c42bfa0-56d3-404f-9a8f-8d83c9ff3f91","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":34248},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670482986,"pid":19,"hostname":"a8e20d3e8699","reqId":"9c42bfa0-56d3-404f-9a8f-8d83c9ff3f91","res":{"statusCode":200},"responseTime":0.35379199963063,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670493154,"pid":19,"hostname":"a8e20d3e8699","reqId":"f8d4be6c-a2c5-4c28-8033-9baa6504273e","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":55082},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670493154,"pid":19,"hostname":"a8e20d3e8699","reqId":"f8d4be6c-a2c5-4c28-8033-9baa6504273e","res":{"statusCode":200},"responseTime":0.22195799928158522,"msg":"request completed"}
-api-1            | {"level":30,"time":1778670503326,"pid":19,"hostname":"a8e20d3e8699","reqId":"76d46586-78cf-4bf2-8a13-97bc5dbfaf61","req":{"method":"GET","url":"/health/ready","host":"localhost:3001","remoteAddress":"127.0.0.1","remotePort":40740},"msg":"incoming request"}
-api-1            | {"level":30,"time":1778670503327,"pid":19,"hostname":"a8e20d3e8699","reqId":"76d46586-78cf-4bf2-8a13-97bc5dbfaf61","res":{"statusCode":200},"responseTime":0.22354200016707182,"msg":"request completed"}
+postgres-1       | 2026-05-13 11:12:08.358 UTC [58] LOG:  checkpoint starting: time
+postgres-1       | 2026-05-13 11:12:29.311 UTC [58] LOG:  checkpoint complete: wrote 200 buffers (1.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=20.941 s, sync=0.007 s, total=20.954 s; sync files=66, longest=0.002 s, average=0.001 s; distance=1019 kB, estimate=19200 kB; lsn=0/42DE610, redo lsn=0/42DE5D8
+postgres-1       | 2026-05-13 19:47:22.059 UTC [1] LOG:  received fast shutdown request
+postgres-1       | 2026-05-13 19:47:22.066 UTC [1] LOG:  aborting any active transactions
+postgres-1       | 2026-05-13 19:47:22.071 UTC [1] LOG:  background worker "logical replication launcher" (PID 63) exited with exit code 1
+postgres-1       | 2026-05-13 19:47:22.074 UTC [58] LOG:  shutting down
+postgres-1       | 2026-05-13 19:47:22.077 UTC [58] LOG:  checkpoint starting: shutdown immediate
+postgres-1       | 2026-05-13 19:47:22.088 UTC [58] LOG:  checkpoint complete: wrote 0 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.015 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=17280 kB; lsn=0/42DE6C0, redo lsn=0/42DE6C0
+postgres-1       | 2026-05-13 19:47:22.098 UTC [1] LOG:  database system is shut down
+postgres-1       | 
+postgres-1       | PostgreSQL Database directory appears to contain a database; Skipping initialization
+postgres-1       | 
+postgres-1       | 2026-05-14 11:33:13.976 UTC [1] LOG:  starting PostgreSQL 16.13 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres-1       | 2026-05-14 11:33:13.976 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1       | 2026-05-14 11:33:13.976 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1       | 2026-05-14 11:33:13.979 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1       | 2026-05-14 11:33:13.985 UTC [29] LOG:  database system was shut down at 2026-05-13 19:47:22 UTC
+postgres-1       | 2026-05-14 11:33:13.998 UTC [1] LOG:  database system is ready to accept connections
