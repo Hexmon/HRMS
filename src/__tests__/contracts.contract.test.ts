@@ -30,6 +30,13 @@ const protectedExceptions = new Set([
   "GET /api/v1/health/live",
   "GET /api/v1/health/ready",
   "GET /api/v1/openapi.json",
+  "POST /api/v1/auth/signup",
+  "POST /api/v1/auth/verify-email",
+  "POST /api/v1/auth/email-verifications/resend",
+  "POST /api/v1/auth/set-password",
+  "POST /api/v1/auth/password-reset/request",
+  "POST /api/v1/auth/password-reset/confirm",
+  "POST /api/v1/onboarding/company-bootstrap",
   "POST /api/v1/auth/login",
   "POST /api/v1/auth/logout",
   "POST /api/v1/assets/scan/{qr_hash}"
@@ -74,6 +81,7 @@ const expectedOperations = [
   "GET /api/v1/timesheets/workflow-definitions",
   "GET /health/live",
   "GET /health/ready",
+  "PATCH /api/v1/auth/session/preference",
   "PATCH /api/v1/expenses/{id}",
   "POST /api/v1/assets/",
   "POST /api/v1/assets/events/employee-terminated",
@@ -83,6 +91,12 @@ const expectedOperations = [
   "POST /api/v1/assets/scan/{qr_hash}",
   "POST /api/v1/assets/{id}/assign",
   "POST /api/v1/assets/{id}/return",
+  "POST /api/v1/auth/email-verifications/resend",
+  "POST /api/v1/auth/password-reset/confirm",
+  "POST /api/v1/auth/password-reset/request",
+  "POST /api/v1/auth/set-password",
+  "POST /api/v1/auth/signup",
+  "POST /api/v1/auth/verify-email",
   "POST /api/v1/auth/login",
   "POST /api/v1/auth/logout",
   "POST /api/v1/documents",
@@ -98,6 +112,7 @@ const expectedOperations = [
   "POST /api/v1/expenses/{id}/settlement",
   "POST /api/v1/expenses/{id}/submit",
   "POST /api/v1/manager-backups",
+  "POST /api/v1/onboarding/company-bootstrap",
   "POST /api/v1/reports/exports",
   "POST /api/v1/timesheets/submissions",
   "POST /api/v1/timesheets/submissions/{id}/approve",
@@ -107,6 +122,14 @@ const expectedOperations = [
 ] as const;
 
 const bodyRequiredOperations = [
+  "POST /api/v1/onboarding/company-bootstrap",
+  "POST /api/v1/auth/password-reset/confirm",
+  "POST /api/v1/auth/password-reset/request",
+  "POST /api/v1/auth/set-password",
+  "POST /api/v1/auth/email-verifications/resend",
+  "POST /api/v1/auth/verify-email",
+  "POST /api/v1/auth/signup",
+  "PATCH /api/v1/auth/session/preference",
   "POST /api/v1/auth/login",
   "POST /api/v1/expenses",
   "POST /api/v1/expenses/{id}/submit",
@@ -356,7 +379,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(68);
+    expect(rows.length).toBe(76);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

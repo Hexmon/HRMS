@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { Pool, type PoolClient } from "pg";
 import { ValkeySessionStore } from "#auth";
 import type { RoleKey } from "#shared";
@@ -21,6 +21,8 @@ import type {
 import {
   type AssetAssignmentRecord,
   type AssetStateEventRecord,
+  type AuthTokenRecord,
+  type CompanyProfileRecord,
   type DataStore,
   type DocumentAccessLogRecord,
   type DocumentVersionRecord,
@@ -28,6 +30,7 @@ import {
   type LicenseActivation,
   type LicenseEntitlement,
   type NotificationRecord,
+  type UserSessionPreferenceRecord,
   type WorkSegment,
   type WorkflowDefinitionRecord,
   createMemoryDataStore
@@ -75,6 +78,9 @@ const resetTables = [
   "platform.outbox_events",
   "platform.idempotency_keys",
   "platform.user_sessions",
+  "platform.auth_tokens",
+  "platform.user_session_preferences",
+  "platform.company_profiles",
   "platform.user_credentials",
   "platform.finance_governance_config",
   "core.user_roles",
@@ -119,6 +125,9 @@ function copyData(target: DataStore, source: DataStore): void {
   target.designations = source.designations;
   target.users = source.users;
   target.userCredentials = source.userCredentials;
+  target.authTokens = source.authTokens;
+  target.companyProfiles = source.companyProfiles;
+  target.userSessionPreferences = source.userSessionPreferences;
   target.financeGovernanceConfig = source.financeGovernanceConfig;
   target.managerBackupAssignments = source.managerBackupAssignments;
   target.tickets = source.tickets;
@@ -147,21 +156,27 @@ function copyData(target: DataStore, source: DataStore): void {
   target.nextOutboxId = source.nextOutboxId;
 }
 
-function migrationPath(): string {
-  for (const candidate of ["src/db/migrations/0001_initial.sql", "dist/src/db/migrations/0001_initial.sql"]) {
-    if (existsSync(candidate)) {
-      return candidate;
+function migrationSql(): string {
+  const directories = ["src/db/migrations", "dist/src/db/migrations"];
+  for (const directory of directories) {
+    if (!existsSync(directory)) {
+      continue;
+    }
+    const files = readdirSync(directory)
+      .filter((file) => file.endsWith(".sql"))
+      .sort();
+    if (files.length > 0) {
+      return files.map((file) => readFileSync(`${directory}/${file}`, "utf8")).join("\n");
     }
   }
-  throw new Error("Initial migration is missing from src/db/migrations or dist/src/db/migrations");
+  throw new Error("SQL migrations are missing from src/db/migrations or dist/src/db/migrations");
 }
 
 export async function resetPostgresDatabase(databaseUrl: string): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl });
   const client = await pool.connect();
   try {
-    const migration = readFileSync(migrationPath(), "utf8");
-    await client.query(migration);
+    await client.query(migrationSql());
     await client.query("BEGIN");
     await client.query(`TRUNCATE ${resetTables.join(", ")} RESTART IDENTITY`);
     await client.query("COMMIT");
@@ -217,6 +232,9 @@ class PostgresPersistence {
       loaded.designations = await this.loadDesignations(client);
       loaded.users = await this.loadUsers(client);
       loaded.userCredentials = await this.loadUserCredentials(client);
+      loaded.authTokens = await this.loadAuthTokens(client);
+      loaded.companyProfiles = await this.loadCompanyProfiles(client);
+      loaded.userSessionPreferences = await this.loadUserSessionPreferences(client);
       loaded.financeGovernanceConfig = await this.loadFinanceGovernanceConfig(client);
       loaded.managerBackupAssignments = await this.loadManagerBackupAssignments(client);
       loaded.tickets = await this.loadTickets(client);
@@ -328,6 +346,69 @@ class PostgresPersistence {
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
       deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+
+  private async loadAuthTokens(client: PoolClient): Promise<AuthTokenRecord[]> {
+    const { rows } = await client.query(`
+      SELECT id, token_hash, token_type, user_id, email, company_id, status, expires_at, used_at, created_at, metadata
+      FROM platform.auth_tokens
+      ORDER BY created_at, id
+    `);
+    return rows.map((row) => ({
+      id: row.id,
+      token_hash: row.token_hash,
+      token_type: row.token_type,
+      user_id: row.user_id,
+      email: row.email,
+      company_id: row.company_id,
+      status: row.status,
+      expires_at: asIso(row.expires_at),
+      used_at: asIsoOrNull(row.used_at),
+      created_at: asIso(row.created_at),
+      metadata: json(row.metadata)
+    }));
+  }
+
+  private async loadCompanyProfiles(client: PoolClient): Promise<CompanyProfileRecord[]> {
+    const { rows } = await client.query(`
+      SELECT id, company_name, company_slug, timezone, locale, fiscal_year_start_month, status, bootstrap_completed_at, created_at, updated_at, version
+      FROM platform.company_profiles
+      ORDER BY created_at, id
+    `);
+    return rows.map((row) => ({
+      id: row.id,
+      company_name: row.company_name,
+      company_slug: row.company_slug,
+      timezone: row.timezone,
+      locale: row.locale,
+      fiscal_year_start_month: row.fiscal_year_start_month,
+      status: row.status,
+      bootstrap_completed_at: asIsoOrNull(row.bootstrap_completed_at),
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      version: row.version
+    }));
+  }
+
+  private async loadUserSessionPreferences(client: PoolClient): Promise<UserSessionPreferenceRecord[]> {
+    const { rows } = await client.query(`
+      SELECT id, user_id, active_role, company_id, landing_page, locale, timezone, created_at, updated_at, version
+      FROM platform.user_session_preferences
+      ORDER BY updated_at, id
+    `);
+    return rows.map((row) => ({
+      id: row.id,
+      user_id: row.user_id,
+      active_role: row.active_role,
+      company_id: row.company_id,
+      landing_page: row.landing_page,
+      locale: row.locale,
+      timezone: row.timezone,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      version: row.version
     }));
   }
 
@@ -815,6 +896,80 @@ class PostgresPersistence {
   }
 
   private async flushPlatform(client: PoolClient): Promise<void> {
+    for (const company of this.store.companyProfiles) {
+      await client.query(
+        `INSERT INTO platform.company_profiles (
+          id, company_name, company_slug, timezone, locale, fiscal_year_start_month,
+          status, bootstrap_completed_at, created_at, updated_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT (id) DO UPDATE
+        SET company_name = EXCLUDED.company_name, timezone = EXCLUDED.timezone,
+            locale = EXCLUDED.locale, fiscal_year_start_month = EXCLUDED.fiscal_year_start_month,
+            status = EXCLUDED.status, bootstrap_completed_at = EXCLUDED.bootstrap_completed_at,
+            updated_at = EXCLUDED.updated_at, version = EXCLUDED.version`,
+        [
+          company.id,
+          company.company_name,
+          company.company_slug,
+          company.timezone,
+          company.locale,
+          company.fiscal_year_start_month,
+          company.status,
+          company.bootstrap_completed_at,
+          company.created_at,
+          company.updated_at,
+          company.version
+        ]
+      );
+    }
+    for (const preference of this.store.userSessionPreferences) {
+      await client.query(
+        `INSERT INTO platform.user_session_preferences (
+          id, user_id, active_role, company_id, landing_page, locale, timezone, created_at, updated_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ON CONFLICT (user_id) DO UPDATE
+        SET active_role = EXCLUDED.active_role, company_id = EXCLUDED.company_id,
+            landing_page = EXCLUDED.landing_page, locale = EXCLUDED.locale,
+            timezone = EXCLUDED.timezone, updated_at = EXCLUDED.updated_at, version = EXCLUDED.version`,
+        [
+          preference.id,
+          preference.user_id,
+          preference.active_role,
+          preference.company_id,
+          preference.landing_page,
+          preference.locale,
+          preference.timezone,
+          preference.created_at,
+          preference.updated_at,
+          preference.version
+        ]
+      );
+    }
+    for (const token of this.store.authTokens) {
+      await client.query(
+        `INSERT INTO platform.auth_tokens (
+          id, token_hash, token_type, user_id, email, company_id, status, expires_at, used_at, created_at, metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+        ON CONFLICT (id) DO UPDATE
+        SET status = EXCLUDED.status, used_at = EXCLUDED.used_at, metadata = EXCLUDED.metadata`,
+        [
+          token.id,
+          token.token_hash,
+          token.token_type,
+          token.user_id,
+          token.email,
+          token.company_id,
+          token.status,
+          token.expires_at,
+          token.used_at,
+          token.created_at,
+          JSON.stringify(token.metadata)
+        ]
+      );
+    }
     if (this.store.financeGovernanceConfig) {
       const config = this.store.financeGovernanceConfig;
       await client.query(

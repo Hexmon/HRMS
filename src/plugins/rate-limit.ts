@@ -90,7 +90,7 @@ function policyFor(path: string, method: string, config: {
   RATE_LIMIT_READ_MAX: number;
   RATE_LIMIT_WRITE_MAX: number;
 }): { name: string; limit: number } | null {
-  if (path === "/api/v1/auth/login") {
+  if (path === "/api/v1/auth/login" || path.startsWith("/api/v1/auth/password-reset") || path.startsWith("/api/v1/auth/email-verifications") || path === "/api/v1/auth/signup" || path === "/api/v1/auth/verify-email" || path === "/api/v1/auth/set-password" || path === "/api/v1/onboarding/company-bootstrap") {
     return { name: "auth", limit: config.RATE_LIMIT_AUTH_MAX };
   }
   if (path.startsWith("/api/v1/assets/scan/")) {

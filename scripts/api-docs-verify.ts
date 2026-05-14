@@ -41,6 +41,14 @@ const allowedTags = new Set([
 ]);
 
 const bodyRequiredOperations = new Set([
+  "PATCH /api/v1/auth/session/preference",
+  "POST /api/v1/onboarding/company-bootstrap",
+  "POST /api/v1/auth/password-reset/confirm",
+  "POST /api/v1/auth/password-reset/request",
+  "POST /api/v1/auth/set-password",
+  "POST /api/v1/auth/email-verifications/resend",
+  "POST /api/v1/auth/verify-email",
+  "POST /api/v1/auth/signup",
   "POST /api/v1/auth/login",
   "POST /api/v1/expenses",
   "PATCH /api/v1/expenses/{id}",
@@ -279,7 +287,10 @@ function isProtected(method: string, path: string): boolean {
   if (path.startsWith("/health/") || path.startsWith("/api/v1/health/") || path === "/api/v1/openapi.json") {
     return false;
   }
-  if (method === "POST" && path === "/api/v1/auth/login") {
+  if (method === "POST" && path.startsWith("/api/v1/auth/") && path !== "/api/v1/auth/session/preference") {
+    return false;
+  }
+  if (method === "POST" && path === "/api/v1/onboarding/company-bootstrap") {
     return false;
   }
   if (method === "POST" && path === "/api/v1/auth/logout") {

@@ -1,16 +1,16 @@
 # Backend API Completion Report
 
-This report is a planning handoff for backend completion after the frontend gap audit. It is intentionally **docs-only**: planned APIs below are **not implemented**, are **not present in OpenAPI**, and must not be used for generated clients until backend routes, tests, and OpenAPI generation are complete.
+This report is a planning handoff for backend completion after the frontend gap audit. Generated `openapi.json` remains the source of truth for implemented APIs. Rows marked **Planned / Not Implemented** below are not available to generated clients until backend routes, tests, and OpenAPI generation are complete.
 
 ## Contract Status
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 57 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
-| Implemented APIs needing expansion | 11 | Integrate carefully or keep adapter tolerant of missing fields. | Expand response/request contract in place, then regenerate OpenAPI. |
+| Implemented APIs ready to integrate | 76 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 146 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 214 | Regenerate frontend client only after each backend phase lands. | `68 current + 146 new`; the 11 updates stay part of the original 68. |
+| Planned new APIs | 138 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 214 | Regenerate frontend client only after each backend phase lands. | `76 current + 138 remaining`; the 11 P1 updates stayed part of the original API surface. |
 
 ## Development Phases
 
@@ -28,7 +28,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | --- | ---: | --- |
 | Admin / Configuration | 6 | Finance governance, manager backups, and timesheet workflow definition upsert. |
 | Assets | 9 | Inventory, detail, assignment/return, QR scan, license lifecycle, and employee termination event. |
-| Auth & Sessions | 3 | Login, logout, and current session bootstrap. |
+| Auth & Sessions | 11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
 | Core / Employees & Hierarchy | 3 | User list/detail and hierarchy subtree. |
 | Documents | 7 | Metadata upload/list/detail, expense document link, download URL, verification, access log. |
 | Expenses / Manager | 3 | Manager queue, manager verify action, manager document verification. |
@@ -43,7 +43,7 @@ P0 frontend integration can start with these operations only. The authoritative 
 
 ## Existing APIs To Update In Place
 
-These 11 operations already exist. Keep their paths stable and add fields or behavior backward-compatibly unless a later migration plan explicitly says otherwise.
+These 11 operations already existed and were expanded in Phase 1A-1C. Their paths stayed stable and the generated OpenAPI now includes the expanded response/request behavior.
 
 | Phase | API | Module | Frontend screen/use case | Missing behavior | Contract update | RBAC and tests |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -61,7 +61,7 @@ These 11 operations already exist. Keep their paths stable and add fields or beh
 
 ## Shared Rules For Planned APIs
 
-- Every planned API below is **Planned / Not Implemented** until it appears in generated OpenAPI.
+- Every API still marked **Planned / Not Implemented** below is unavailable until it appears in generated OpenAPI.
 - All business APIs use `/api/v1` and the shared error shape with `code`, `message`, `details`, and `request_id`.
 - List APIs must support backend pagination with `page` and `page_size`; add filters/sort where listed.
 - Workflow mutations use `expected_version` when they update state; the frontend must handle `409` by refetching.
@@ -72,20 +72,20 @@ These 11 operations already exist. Keep their paths stable and add fields or beh
 
 ## Planned New API Backlog
 
-Total planned new operations: **146**.
+Total remaining planned new operations: **138**.
 
-### Auth, Onboarding, Password, Role Activation (8 planned APIs)
+### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/api/v1/auth/signup` | `/signup` | Create a workspace signup request for the first user or invited employee. | Public with rate limit; blocks duplicate verified email/company. | company_name, full_name, email, password or invite_token, timezone | signup_id, verification_required, masked_email, next_step | Shared 400/401/403/404/429/500; no 409 unless duplicate state conflicts. | Planned / Not Implemented |
-| POST | `/api/v1/auth/verify-email` | `/verify-email` | Verify an email token and activate the pending login identity. | Public token action with rate limit. | token, email optional for UX correlation | verified, user_id, company_id, next_step | 400 invalid/expired token, 409 already verified, 429 retry later. | Planned / Not Implemented |
-| POST | `/api/v1/auth/email-verifications/resend` | `/verify-email` | Resend verification email for pending signup or invited user. | Public with aggressive rate limit. | email, company_slug optional | sent, masked_email, retry_after_seconds | 404 can be normalized to sent=false only if product wants account enumeration protection. | Planned / Not Implemented |
-| POST | `/api/v1/auth/set-password` | `/set-password` | Set password for invited or reset-required account. | Public token action with rate limit. | token, password, confirm_password | password_set, login_allowed, next_step | 400 validation, 409 already completed, 429 retry later. | Planned / Not Implemented |
-| POST | `/api/v1/auth/password-reset/request` | `/forgot-password` | Request password reset email. | Public with rate limit and account enumeration protection. | email, company_slug optional | accepted, masked_email optional, retry_after_seconds | Always frontend-safe accepted response; 429 uses Retry-After. | Planned / Not Implemented |
-| POST | `/api/v1/auth/password-reset/confirm` | `/reset-password` | Complete password reset using token. | Public token action with rate limit. | token, password, confirm_password | password_reset, session_revoked_count, next_step | 400 invalid token, 409 token already used, 429 retry later. | Planned / Not Implemented |
-| POST | `/api/v1/onboarding/company-bootstrap` | `/onboarding` | Create initial company settings and first admin context after signup. | Authenticated bootstrap actor or one-time bootstrap token. | company profile, locale, fiscal settings, first_admin_profile | company, admin_user, setup_progress, next_steps | 409 if company bootstrap already completed; audit event required. | Planned / Not Implemented |
-| PATCH | `/api/v1/auth/session/preference` | `topbar role/company switcher` | Persist active role, company, and session preference for multi-role users. | Authenticated user; only roles assigned to same user. | active_role_id, company_id optional, landing_page optional | active_role, permissions, navigation, preferences | 400 invalid preference, 403 unassigned role, 409 role inactive. | Planned / Not Implemented |
+| POST | `/api/v1/auth/signup` | `/signup` | Create a workspace signup request for the first user or invited employee. | Public with rate limit; blocks duplicate verified email/company. | company_name, full_name, email, password or invite_token, timezone | signup_id, verification_required, masked_email, next_step | Shared 400/401/403/404/429/500; no 409 unless duplicate state conflicts. | Implemented in Phase 2 |
+| POST | `/api/v1/auth/verify-email` | `/verify-email` | Verify an email token and activate the pending login identity. | Public token action with rate limit. | token, email optional for UX correlation | verified, user_id, company_id, next_step | 400 invalid/expired token, 409 already verified, 429 retry later. | Implemented in Phase 2 |
+| POST | `/api/v1/auth/email-verifications/resend` | `/verify-email` | Resend verification email for pending signup or invited user. | Public with aggressive rate limit. | email, company_slug optional | sent, masked_email, retry_after_seconds | 404 can be normalized to sent=false only if product wants account enumeration protection. | Implemented in Phase 2 |
+| POST | `/api/v1/auth/set-password` | `/set-password` | Set password for invited or reset-required account. | Public token action with rate limit. | token, password, confirm_password | password_set, login_allowed, next_step | 400 validation, 409 already completed, 429 retry later. | Implemented in Phase 2 |
+| POST | `/api/v1/auth/password-reset/request` | `/forgot-password` | Request password reset email. | Public with rate limit and account enumeration protection. | email, company_slug optional | accepted, masked_email optional, retry_after_seconds | Always frontend-safe accepted response; 429 uses Retry-After. | Implemented in Phase 2 |
+| POST | `/api/v1/auth/password-reset/confirm` | `/reset-password` | Complete password reset using token. | Public token action with rate limit. | token, password, confirm_password | password_reset, session_revoked_count, next_step | 400 invalid token, 409 token already used, 429 retry later. | Implemented in Phase 2 |
+| POST | `/api/v1/onboarding/company-bootstrap` | `/onboarding` | Create initial company settings and first admin context after signup. | Authenticated bootstrap actor or one-time bootstrap token. | company profile, locale, fiscal settings, first_admin_profile | company, admin_user, setup_progress, next_steps | 409 if company bootstrap already completed; audit event required. | Implemented in Phase 2 |
+| PATCH | `/api/v1/auth/session/preference` | `topbar role/company switcher` | Persist active role, company, and session preference for multi-role users. | Authenticated user; only roles assigned to same user. | active_role_id, company_id optional, landing_page optional | active_role, permissions, navigation, preferences | 400 invalid preference, 403 unassigned role, 409 role inactive. | Implemented in Phase 2 |
 
 ### Dashboard (1 planned APIs)
 

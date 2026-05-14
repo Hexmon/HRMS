@@ -1,20 +1,24 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { Client } from "pg";
 import { fail } from "./lib.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 
-function migrationPath(): string {
-  for (const candidate of ["src/db/migrations/0001_initial.sql", "dist/src/db/migrations/0001_initial.sql"]) {
-    if (existsSync(candidate)) {
-      return candidate;
+function migrationSql(): string {
+  for (const directory of ["src/db/migrations", "dist/src/db/migrations"]) {
+    if (!existsSync(directory)) {
+      continue;
+    }
+    const files = readdirSync(directory).filter((file) => file.endsWith(".sql")).sort();
+    if (files.length > 0) {
+      return files.map((file) => readFileSync(`${directory}/${file}`, "utf8")).join("\n");
     }
   }
-  fail("Initial migration is missing from src/db/migrations or dist/src/db/migrations");
+  fail("SQL migrations are missing from src/db/migrations or dist/src/db/migrations");
 }
 
 loadRuntimeEnv();
 
-const migration = readFileSync(migrationPath(), "utf8");
+const migration = migrationSql();
 const client = new Client({ connectionString: requireEnv("DATABASE_URL") });
 await client.connect();
 try {

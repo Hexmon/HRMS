@@ -102,6 +102,47 @@ export interface UserCredentialRecord {
   deleted_at: string | null;
 }
 
+export interface AuthTokenRecord {
+  id: UUID;
+  token_hash: string;
+  token_type: "email_verification" | "password_setup" | "password_reset" | "company_bootstrap";
+  user_id: UUID | null;
+  email: string | null;
+  company_id: UUID | null;
+  status: "active" | "used" | "revoked" | "expired";
+  expires_at: string;
+  used_at: string | null;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface CompanyProfileRecord {
+  id: UUID;
+  company_name: string;
+  company_slug: string;
+  timezone: string;
+  locale: string;
+  fiscal_year_start_month: number;
+  status: "pending" | "active" | "inactive";
+  bootstrap_completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  version: number;
+}
+
+export interface UserSessionPreferenceRecord {
+  id: UUID;
+  user_id: UUID;
+  active_role: AuthUser["roles"][number];
+  company_id: UUID | null;
+  landing_page: string;
+  locale: string;
+  timezone: string;
+  created_at: string;
+  updated_at: string;
+  version: number;
+}
+
 export interface AssetStateEventRecord {
   id: UUID;
   asset_id: UUID;
@@ -176,6 +217,9 @@ export interface DataStore {
   designations: Designation[];
   users: CoreUser[];
   userCredentials: UserCredentialRecord[];
+  authTokens: AuthTokenRecord[];
+  companyProfiles: CompanyProfileRecord[];
+  userSessionPreferences: UserSessionPreferenceRecord[];
   financeGovernanceConfig: FinanceGovernanceConfig | null;
   managerBackupAssignments: ManagerBackupAssignment[];
   tickets: ExpenseTicket[];
@@ -537,6 +581,9 @@ export function createMemoryDataStore(): MemoryDataStore {
     designations,
     users,
     userCredentials,
+    authTokens: [],
+    companyProfiles: [],
+    userSessionPreferences: [],
     financeGovernanceConfig,
     managerBackupAssignments,
     tickets: [],

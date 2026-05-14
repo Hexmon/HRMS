@@ -11,8 +11,15 @@ export const authPlugin = fp(async (fastify) => {
       "/health/ready",
       "/api/v1/health/live",
       "/api/v1/health/ready",
+      "/api/v1/auth/signup",
+      "/api/v1/auth/verify-email",
+      "/api/v1/auth/email-verifications/resend",
+      "/api/v1/auth/set-password",
+      "/api/v1/auth/password-reset/request",
+      "/api/v1/auth/password-reset/confirm",
       "/api/v1/auth/login",
       "/api/v1/auth/logout",
+      "/api/v1/onboarding/company-bootstrap",
       "/api/v1/openapi.json"
     ]);
     const path = request.url.split("?")[0] ?? request.url;

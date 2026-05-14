@@ -22,7 +22,7 @@ Production base URLs must come from environment/config. Do not hard-code localho
 | `BUSINESS_RULES.md` | Cross-cutting auth, RBAC, pagination, OCC, rate-limit, document, audit, finance, asset, timesheet, and report rules. |
 | `EXPENSE_FINANCE_FLOW.md` | Manager -> Finance expense workflow, statuses, actors, blocked actions, and document gates. |
 | `FRONTEND_BACKEND_GAP_AUDIT.md` | Feature-wise frontend route coverage, backend gaps, and keep/change/add/remove decisions. |
-| `BACKEND_API_COMPLETION_REPORT.md` | Docs-only backend completion plan for the 11 existing API updates and 146 planned new APIs. |
+| `BACKEND_API_COMPLETION_REPORT.md` | Docs-only backend completion plan for the completed P1 updates, 8 implemented auth APIs, and 138 remaining planned APIs. |
 | `FRONTEND_CODEX_NOTES.md` | Direct notes for frontend engineers using Codex. |
 | `FRONTEND_QA_CHECKLIST.md` | Manual frontend integration scenarios by persona/module. |
 

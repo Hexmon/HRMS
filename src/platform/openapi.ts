@@ -138,6 +138,190 @@ const statusResponseSchema = {
   additionalProperties: true
 };
 
+
+const authDevOnlySchema = {
+  type: "object",
+  nullable: true,
+  description: "Local/QA only token echo for automated testing. Production responses omit this object.",
+  additionalProperties: true
+};
+
+const signupBodySchema = {
+  type: "object",
+  required: ["company_name", "full_name", "email"],
+  properties: {
+    company_name: { type: "string", minLength: 2, maxLength: 120, example: "Acme HRMS" },
+    company_slug: { type: "string", minLength: 2, maxLength: 80, example: "acme-hrms" },
+    full_name: { type: "string", minLength: 2, maxLength: 160, example: "Asha Founder" },
+    email: { type: "string", format: "email", example: "asha.founder@example.test" },
+    password: { type: "string", format: "password", minLength: 10, maxLength: 128, description: "Optional. If omitted, verify-email returns a password setup token/action." },
+    timezone: { type: "string", default: "Asia/Kolkata", example: "Asia/Kolkata" },
+    locale: { type: "string", default: "en-IN", example: "en-IN" },
+    invite_token: { type: "string", description: "Reserved for invited employee onboarding.", example: "invite-token-from-email" }
+  },
+  additionalProperties: false
+};
+
+const signupResponseSchema = {
+  type: "object",
+  required: ["signup_id", "verification_required", "masked_email", "next_step", "retry_after_seconds"],
+  properties: {
+    signup_id: uuid("Signup/user context UUID"),
+    verification_required: { type: "boolean", example: true },
+    masked_email: { type: "string", example: "as**********@example.test" },
+    next_step: { type: "string", enum: ["verify_email"], example: "verify_email" },
+    retry_after_seconds: { type: "integer", minimum: 1, example: 60 },
+    dev_only: authDevOnlySchema
+  },
+  additionalProperties: true
+};
+
+const verifyEmailBodySchema = {
+  type: "object",
+  required: ["token"],
+  properties: {
+    token: { type: "string", minLength: 16, description: "Email verification token from backend-delivered email link." },
+    email: { type: "string", format: "email", description: "Optional UX correlation check.", example: "asha.founder@example.test" }
+  },
+  additionalProperties: false
+};
+
+const verifyEmailResponseSchema = {
+  type: "object",
+  required: ["verified", "user_id", "company_id", "login_allowed", "next_step"],
+  properties: {
+    verified: { type: "boolean", example: true },
+    user_id: uuid("Verified user UUID"),
+    company_id: { ...uuid("Company UUID"), nullable: true },
+    login_allowed: { type: "boolean", example: true },
+    next_step: { type: "string", enum: ["login", "set_password", "company_bootstrap"], example: "company_bootstrap" },
+    dev_only: authDevOnlySchema
+  },
+  additionalProperties: true
+};
+
+const resendEmailVerificationBodySchema = {
+  type: "object",
+  required: ["email"],
+  properties: {
+    email: { type: "string", format: "email", example: "asha.founder@example.test" },
+    company_slug: { type: "string", example: "acme-hrms" }
+  },
+  additionalProperties: false
+};
+
+const resendEmailVerificationResponseSchema = {
+  type: "object",
+  required: ["accepted", "sent", "masked_email", "retry_after_seconds"],
+  properties: {
+    accepted: { type: "boolean", example: true },
+    sent: { type: "boolean", description: "False can be returned for already verified/unknown emails without exposing sensitive account state.", example: true },
+    masked_email: { type: "string", example: "as**********@example.test" },
+    retry_after_seconds: { type: "integer", minimum: 1, example: 60 },
+    dev_only: authDevOnlySchema
+  },
+  additionalProperties: true
+};
+
+const passwordSetBodySchema = {
+  type: "object",
+  required: ["token", "password", "confirm_password"],
+  properties: {
+    token: { type: "string", minLength: 16, description: "Password setup/reset token from email." },
+    password: { type: "string", format: "password", minLength: 10, maxLength: 128, example: "ResetPass123" },
+    confirm_password: { type: "string", format: "password", example: "ResetPass123" }
+  },
+  additionalProperties: false
+};
+
+const setPasswordResponseSchema = {
+  type: "object",
+  required: ["password_set", "login_allowed", "user_id", "next_step"],
+  properties: {
+    password_set: { type: "boolean", example: true },
+    login_allowed: { type: "boolean", example: true },
+    user_id: uuid("User UUID"),
+    next_step: { type: "string", enum: ["login"], example: "login" }
+  },
+  additionalProperties: true
+};
+
+const passwordResetRequestResponseSchema = {
+  type: "object",
+  required: ["accepted", "masked_email", "retry_after_seconds"],
+  properties: {
+    accepted: { type: "boolean", example: true },
+    masked_email: { type: "string", example: "e*@example.test" },
+    retry_after_seconds: { type: "integer", minimum: 1, example: 60 },
+    dev_only: authDevOnlySchema
+  },
+  additionalProperties: true
+};
+
+const passwordResetConfirmResponseSchema = {
+  type: "object",
+  required: ["password_reset", "session_revoked_count", "next_step"],
+  properties: {
+    password_reset: { type: "boolean", example: true },
+    session_revoked_count: { type: "integer", minimum: 0, example: 1 },
+    next_step: { type: "string", enum: ["login"], example: "login" }
+  },
+  additionalProperties: true
+};
+
+const companyBootstrapBodySchema = {
+  type: "object",
+  required: ["bootstrap_token"],
+  properties: {
+    bootstrap_token: { type: "string", minLength: 16, description: "One-time company bootstrap token issued after email verification." },
+    company_profile: {
+      type: "object",
+      properties: {
+        company_name: { type: "string", example: "Acme HRMS India" },
+        timezone: { type: "string", example: "Asia/Kolkata" },
+        locale: { type: "string", example: "en-IN" },
+        fiscal_year_start_month: { type: "integer", minimum: 1, maximum: 12, example: 4 }
+      },
+      additionalProperties: false
+    },
+    first_admin_profile: {
+      type: "object",
+      properties: {
+        full_name: { type: "string", example: "Asha Admin" },
+        landing_page: { type: "string", example: "/admin-settings" }
+      },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+};
+
+const companyBootstrapResponseSchema = {
+  type: "object",
+  required: ["company", "admin_user", "setup_progress", "next_steps", "preferences"],
+  properties: {
+    company: { type: "object", additionalProperties: true },
+    admin_user: { type: "object", additionalProperties: true },
+    setup_progress: { type: "object", additionalProperties: true },
+    next_steps: { type: "array", items: { type: "string" }, example: ["login", "configure_core_master_data"] },
+    preferences: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const sessionPreferenceBodySchema = {
+  type: "object",
+  properties: {
+    active_role_id: { type: "string", description: "Role key/label assigned to the current user.", example: "Admin" },
+    active_role: { type: "string", description: "Alias for active_role_id.", example: "Finance Manager" },
+    company_id: { ...uuid("Company UUID"), nullable: true },
+    landing_page: { type: "string", example: "/dashboard" },
+    locale: { type: "string", example: "en-IN" },
+    timezone: { type: "string", example: "Asia/Kolkata" }
+  },
+  additionalProperties: false
+};
+
 const authUserSchema = {
   type: "object",
   required: ["id", "employee_code", "email", "full_name", "roles"],
@@ -1104,6 +1288,14 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/health/ready": operation("Platform / Health", "Versioned readiness check", "Versioned readiness probe for API clients.", { response200: statusResponseSchema, rateLimited: false }, false),
   "GET /api/v1/openapi.json": operation("Platform / Health", "OpenAPI JSON", "Returns the generated OpenAPI 3.0 contract used by Swagger UI.", { response200: { type: "object", additionalProperties: true }, rateLimited: false }, false),
 
+  "POST /api/v1/auth/signup": operation("Auth & Sessions", "Signup", "Creates a pending workspace signup identity with hashed token-based email verification. Duplicate verified emails and bootstrapped company slugs return 409. Password is optional; if omitted, verify-email leads to set-password. Local/QA responses include dev_only tokens for automation; production omits them.", { body: signupBodySchema, response200: signupResponseSchema }, false),
+  "POST /api/v1/auth/verify-email": operation("Auth & Sessions", "Verify email", "Consumes a one-time email verification token, activates the pending identity when a password exists, or issues a password setup action when no password was supplied. Reused tokens return 409 and expired/invalid tokens return 400.", { body: verifyEmailBodySchema, response200: verifyEmailResponseSchema }, false),
+  "POST /api/v1/auth/email-verifications/resend": operation("Auth & Sessions", "Resend email verification", "Enumeration-safe resend endpoint for pending signups. The response is accepted for unknown or already-verified emails and includes retry guidance; Local/QA may include a dev_only token when a pending identity exists.", { body: resendEmailVerificationBodySchema, response200: resendEmailVerificationResponseSchema }, false),
+  "POST /api/v1/auth/set-password": operation("Auth & Sessions", "Set password", "Sets the initial password for an invited or verified account using a one-time password_setup token. Password confirmation is required, reused tokens return 409, and successful setup enables login.", { body: passwordSetBodySchema, response200: setPasswordResponseSchema }, false),
+  "POST /api/v1/auth/password-reset/request": operation("Auth & Sessions", "Request password reset", "Enumeration-safe password reset request. The response shape is the same for existing and unknown emails; Local/QA may include a dev_only token only for automation.", { body: resendEmailVerificationBodySchema, response200: passwordResetRequestResponseSchema }, false),
+  "POST /api/v1/auth/password-reset/confirm": operation("Auth & Sessions", "Confirm password reset", "Consumes a one-time password_reset token, replaces the active password hash, and revokes active sessions for the user. Reused tokens return 409 and invalid/expired tokens return 400.", { body: passwordSetBodySchema, response200: passwordResetConfirmResponseSchema }, false),
+  "POST /api/v1/onboarding/company-bootstrap": operation("Auth & Sessions", "Company bootstrap", "Completes first-company setup using the one-time company bootstrap token issued after email verification. The bootstrap user is promoted to Admin, company preferences are saved, and duplicate bootstrap attempts return 409.", { body: companyBootstrapBodySchema, response200: companyBootstrapResponseSchema }, false),
+  "PATCH /api/v1/auth/session/preference": operation("Auth & Sessions", "Update session preference", "Persists active role, optional company context, landing page, locale, and timezone for the current authenticated user. The selected role must already be assigned to the user; otherwise the backend returns 403.", { body: sessionPreferenceBodySchema, response200: authSessionContextSchema }),
   "POST /api/v1/auth/login": operation(
     "Auth & Sessions",
     "Login",

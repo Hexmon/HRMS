@@ -11,7 +11,7 @@ This audit maps the current Hawkaii HRMS frontend to the custom backend contract
 
 ## API Count Summary
 
-Current documented backend contract: **68 operations** in `openapi.json`.
+Current documented backend contract: **76 operations** in `openapi.json` after Phase 2 auth onboarding completion.
 
 - **66** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
@@ -24,8 +24,8 @@ Disjoint implementation counts for backend planning:
 | Existing APIs ready to integrate as-is | 57 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
 | Existing APIs to update in place | 11 | Keep the same endpoint, but expand response/request shape or behavior for full visible frontend parity. |
 | Existing APIs to delete | 0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
-| New APIs to add | 146 | Minimum first-pass count needed to cover every visible frontend module currently backed by mock/localStorage/Supabase helpers. |
-| Target contract size after additions | 214 | `68 current + 146 new`; the 11 updated APIs remain part of the existing 68. |
+| New APIs remaining to add | 138 | Remaining first-pass count needed after Phase 2 auth onboarding APIs landed. |
+| Target contract size after additions | 214 | `76 current + 138 remaining`; the 11 updated APIs remain part of the original API surface. |
 
 Existing APIs that need shape or behavior updates:
 
@@ -61,7 +61,7 @@ Minimum new API operation count by frontend area:
 | Reports | 10 | HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, export list/detail beyond existing expense exports. |
 | Admin settings | 20 | Company profile, master data, RBAC, workflows, policies, email templates, notification channels, security settings, audit logs. |
 | Notifications | 4 | Feed, unread count, mark read, mark all read/preferences integration. |
-| **Total** | **146** | Minimum operation count for full visible frontend coverage. |
+| **Total remaining** | **138** | Remaining operation count for full visible frontend coverage after Phase 2. |
 
 ## Expense Flow Alignment
 

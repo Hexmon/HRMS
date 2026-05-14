@@ -14,6 +14,7 @@ export interface SessionStore {
   create(session: SessionRecord): Promise<void>;
   get(jti: string): Promise<SessionRecord | null>;
   revoke(jti: string, reason: string): Promise<void>;
+  revokeUser?(userId: UUID, reason: string): Promise<number>;
 }
 
 export const LOCAL_DEMO_PASSWORD = "LocalDev@123";
@@ -53,6 +54,18 @@ export class MemorySessionStore implements SessionStore {
     if (session) {
       this.sessions.set(jti, { ...session, revoked_at: new Date().toISOString() });
     }
+  }
+
+  async revokeUser(userId: UUID, _reason: string): Promise<number> {
+    let revoked = 0;
+    const revokedAt = new Date().toISOString();
+    for (const [jti, session] of this.sessions.entries()) {
+      if (session.user_id === userId && !session.revoked_at) {
+        this.sessions.set(jti, { ...session, revoked_at: revokedAt });
+        revoked += 1;
+      }
+    }
+    return revoked;
   }
 }
 
@@ -98,6 +111,33 @@ export class ValkeySessionStore implements SessionStore {
       JSON.stringify({ ...session, revoked_at: new Date().toISOString(), revoked_reason: reason }),
       "KEEPTTL"
     );
+  }
+
+  async revokeUser(userId: UUID, reason: string): Promise<number> {
+    await this.valkey.connect().catch((error: unknown) => {
+      if (error instanceof Error && /already connecting|already connected/iu.test(error.message)) {
+        return;
+      }
+      throw error;
+    });
+    const keys = await this.valkey.keys(`${this.keyPrefix}:*`);
+    let revoked = 0;
+    for (const key of keys) {
+      const value = await this.valkey.get(key);
+      if (!value) {
+        continue;
+      }
+      const session = JSON.parse(value) as SessionRecord;
+      if (session.user_id === userId && !session.revoked_at) {
+        await this.valkey.set(
+          key,
+          JSON.stringify({ ...session, revoked_at: new Date().toISOString(), revoked_reason: reason }),
+          "KEEPTTL"
+        );
+        revoked += 1;
+      }
+    }
+    return revoked;
   }
 
   async close(): Promise<void> {
