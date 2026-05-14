@@ -28778,7 +28778,7 @@
         "tags": [
           "Timesheets"
         ],
-        "description": "Timesheet approval queue for the authenticated approver.",
+        "description": "Timesheet approval queue for the authenticated approver with compact project/member metadata, cycle hours, expected-hours context, decision history, and admin override visibility. Omit status for active pending approvals; Admin can use status to inspect returned/rejected history.",
         "parameters": [
           {
             "schema": {
@@ -28812,6 +28812,76 @@
             "name": "sort",
             "required": false,
             "description": "Optional sort key supported by the endpoint."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Pending Approval",
+                "Approved",
+                "Returned",
+                "Rejected"
+              ],
+              "example": "Pending Approval"
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Optional queue status filter. Omit for active pending approvals."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "employee_user_id",
+            "required": false,
+            "description": "Employee/member UUID filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "cycle_start",
+            "required": false,
+            "description": "Only cycles starting on or after this date"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-08"
+            },
+            "in": "query",
+            "name": "cycle_end",
+            "required": false,
+            "description": "Only cycles ending on or before this date"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "example": "PRJ-100"
+            },
+            "in": "query",
+            "name": "project_code",
+            "required": false,
+            "description": "Project code present in at least one submitted work segment."
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "in": "query",
+            "name": "billable",
+            "required": false,
+            "description": "When set, requires at least one matching billable/non-billable segment."
           }
         ],
         "security": [
@@ -28833,13 +28903,693 @@
                     "items",
                     "page",
                     "page_size",
-                    "total"
+                    "total",
+                    "summary"
                   ],
                   "properties": {
                     "items": {
                       "type": "array",
                       "items": {
                         "type": "object",
+                        "required": [
+                          "id",
+                          "employee_user_id",
+                          "cycle_start",
+                          "cycle_end",
+                          "status",
+                          "total_hours",
+                          "version",
+                          "employee",
+                          "member",
+                          "cycle",
+                          "project_summary",
+                          "hours_summary",
+                          "workflow_metadata",
+                          "queue_context",
+                          "decision_history",
+                          "last_decision"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Timesheet submission UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Employee/member UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "cycle_start": {
+                            "type": "string",
+                            "format": "date",
+                            "description": "Cycle start",
+                            "example": "2026-05-04"
+                          },
+                          "cycle_end": {
+                            "type": "string",
+                            "format": "date",
+                            "description": "Cycle end",
+                            "example": "2026-05-08"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "Draft",
+                              "Submitted",
+                              "Pending Approval",
+                              "Approved",
+                              "Returned",
+                              "Rejected"
+                            ],
+                            "example": "Pending Approval"
+                          },
+                          "total_hours": {
+                            "type": "string",
+                            "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                            "description": "Submitted total hours",
+                            "example": "10.00"
+                          },
+                          "workflow_definition_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Workflow definition UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "workflow_snapshot": {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          "current_approver_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Current approver UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                            "nullable": true
+                          },
+                          "version": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                          },
+                          "employee": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "employee_code",
+                              "full_name"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "User UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "employee_code": {
+                                "type": "string",
+                                "example": "E1"
+                              },
+                              "full_name": {
+                                "type": "string",
+                                "example": "Employee E1"
+                              },
+                              "email": {
+                                "type": "string",
+                                "format": "email",
+                                "example": "e1@example.test"
+                              },
+                              "department_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Department UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "department": {
+                                "type": "object",
+                                "nullable": true,
+                                "additionalProperties": true
+                              },
+                              "designation_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Designation UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "designation": {
+                                "type": "object",
+                                "nullable": true,
+                                "additionalProperties": true
+                              },
+                              "roles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "Employee"
+                                ]
+                              }
+                            },
+                            "additionalProperties": true,
+                            "nullable": true
+                          },
+                          "member": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "description": "Employee/member profile, department/designation, member_role, and manager reference."
+                          },
+                          "cycle": {
+                            "type": "object",
+                            "required": [
+                              "start",
+                              "end",
+                              "total_days",
+                              "expected_work_days"
+                            ],
+                            "properties": {
+                              "start": {
+                                "type": "string",
+                                "format": "date",
+                                "description": "Cycle start",
+                                "example": "2026-05-04"
+                              },
+                              "end": {
+                                "type": "string",
+                                "format": "date",
+                                "description": "Cycle end",
+                                "example": "2026-05-08"
+                              },
+                              "total_days": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "example": 5
+                              },
+                              "expected_work_days": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 5
+                              }
+                            }
+                          },
+                          "project_summary": {
+                            "type": "object",
+                            "required": [
+                              "project_codes",
+                              "task_codes",
+                              "project_breakdown"
+                            ],
+                            "properties": {
+                              "project_codes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "PRJ-100"
+                                ]
+                              },
+                              "task_codes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "DEV"
+                                ]
+                              },
+                              "primary_project_code": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "PRJ-100"
+                              },
+                              "client_name": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": null
+                              },
+                              "project_breakdown": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                }
+                              }
+                            },
+                            "additionalProperties": true
+                          },
+                          "hours_summary": {
+                            "type": "object",
+                            "required": [
+                              "submitted_hours",
+                              "expected_hours",
+                              "missing_hours",
+                              "variance_hours",
+                              "billable_hours",
+                              "non_billable_hours",
+                              "segment_count"
+                            ],
+                            "properties": {
+                              "submitted_hours": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Submitted hours",
+                                "example": "10.00"
+                              },
+                              "expected_hours": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Expected cycle hours",
+                                "example": "40.00"
+                              },
+                              "missing_hours": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Expected minus submitted when positive",
+                                "example": "30.00"
+                              },
+                              "variance_hours": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Submitted minus expected",
+                                "example": "-30.00"
+                              },
+                              "billable_hours": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Billable submitted hours",
+                                "example": "8.00"
+                              },
+                              "non_billable_hours": {
+                                "type": "string",
+                                "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                                "description": "Non-billable submitted hours",
+                                "example": "2.00"
+                              },
+                              "segment_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 2
+                              }
+                            }
+                          },
+                          "workflow_metadata": {
+                            "type": "object",
+                            "required": [
+                              "workflow_definition_id",
+                              "workflow_snapshot",
+                              "can_actor_decide",
+                              "expected_version",
+                              "allowed_decisions",
+                              "remarks_required_for"
+                            ],
+                            "properties": {
+                              "workflow_definition_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Workflow definition UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "workflow_snapshot": {
+                                "type": "object",
+                                "additionalProperties": true
+                              },
+                              "current_approver": {
+                                "type": "object",
+                                "required": [
+                                  "id",
+                                  "employee_code",
+                                  "full_name"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "User UUID",
+                                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                  },
+                                  "employee_code": {
+                                    "type": "string",
+                                    "example": "E1"
+                                  },
+                                  "full_name": {
+                                    "type": "string",
+                                    "example": "Employee E1"
+                                  },
+                                  "email": {
+                                    "type": "string",
+                                    "format": "email",
+                                    "example": "e1@example.test"
+                                  },
+                                  "department_id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "Department UUID",
+                                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                  },
+                                  "department": {
+                                    "type": "object",
+                                    "nullable": true,
+                                    "additionalProperties": true
+                                  },
+                                  "designation_id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "Designation UUID",
+                                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                  },
+                                  "designation": {
+                                    "type": "object",
+                                    "nullable": true,
+                                    "additionalProperties": true
+                                  },
+                                  "roles": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "example": [
+                                      "Employee"
+                                    ]
+                                  }
+                                },
+                                "additionalProperties": true,
+                                "nullable": true
+                              },
+                              "can_actor_decide": {
+                                "type": "boolean",
+                                "example": true
+                              },
+                              "expected_version": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "example": 1
+                              },
+                              "allowed_decisions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "approve",
+                                    "return",
+                                    "reject"
+                                  ]
+                                },
+                                "example": [
+                                  "approve",
+                                  "return",
+                                  "reject"
+                                ]
+                              },
+                              "remarks_required_for": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "return",
+                                  "reject"
+                                ]
+                              }
+                            },
+                            "additionalProperties": true
+                          },
+                          "queue_context": {
+                            "type": "object",
+                            "required": [
+                              "action_required",
+                              "current_actor_is_admin_override",
+                              "expected_version",
+                              "missing_submission_context"
+                            ],
+                            "properties": {
+                              "action_required": {
+                                "type": "boolean",
+                                "example": true
+                              },
+                              "current_actor_is_admin_override": {
+                                "type": "boolean",
+                                "example": false
+                              },
+                              "expected_version": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "example": 1
+                              },
+                              "missing_submission_context": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            "additionalProperties": true
+                          },
+                          "decision_history": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "id",
+                                "submission_id",
+                                "actor_user_id",
+                                "actor_label",
+                                "decision",
+                                "created_at"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "description": "Timesheet workflow action UUID",
+                                  "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                },
+                                "submission_id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "description": "Timesheet submission UUID",
+                                  "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                },
+                                "actor_user_id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "description": "Actor UUID",
+                                  "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                },
+                                "actor_label": {
+                                  "type": "string",
+                                  "example": "D1 - Manager D1"
+                                },
+                                "actor": {
+                                  "type": "object",
+                                  "required": [
+                                    "id",
+                                    "employee_code",
+                                    "full_name"
+                                  ],
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "description": "User UUID",
+                                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                    },
+                                    "employee_code": {
+                                      "type": "string",
+                                      "example": "E1"
+                                    },
+                                    "full_name": {
+                                      "type": "string",
+                                      "example": "Employee E1"
+                                    },
+                                    "email": {
+                                      "type": "string",
+                                      "format": "email",
+                                      "example": "e1@example.test"
+                                    },
+                                    "department_id": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "description": "Department UUID",
+                                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                    },
+                                    "department": {
+                                      "type": "object",
+                                      "nullable": true,
+                                      "additionalProperties": true
+                                    },
+                                    "designation_id": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "description": "Designation UUID",
+                                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                    },
+                                    "designation": {
+                                      "type": "object",
+                                      "nullable": true,
+                                      "additionalProperties": true
+                                    },
+                                    "roles": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "example": [
+                                        "Employee"
+                                      ]
+                                    }
+                                  },
+                                  "additionalProperties": true,
+                                  "nullable": true
+                                },
+                                "decision": {
+                                  "type": "string",
+                                  "enum": [
+                                    "submitted",
+                                    "approve",
+                                    "return",
+                                    "reject",
+                                    "workflow_definition_created"
+                                  ],
+                                  "example": "approve"
+                                },
+                                "remarks": {
+                                  "type": "string",
+                                  "nullable": true,
+                                  "example": "Approved."
+                                },
+                                "created_at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "Action timestamp",
+                                  "example": "2026-05-04T10:00:00.000Z"
+                                }
+                              },
+                              "additionalProperties": true
+                            }
+                          },
+                          "last_decision": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "submission_id",
+                              "actor_user_id",
+                              "actor_label",
+                              "decision",
+                              "created_at"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Timesheet workflow action UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "submission_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Timesheet submission UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "actor_user_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Actor UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "actor_label": {
+                                "type": "string",
+                                "example": "D1 - Manager D1"
+                              },
+                              "actor": {
+                                "type": "object",
+                                "required": [
+                                  "id",
+                                  "employee_code",
+                                  "full_name"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "User UUID",
+                                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                  },
+                                  "employee_code": {
+                                    "type": "string",
+                                    "example": "E1"
+                                  },
+                                  "full_name": {
+                                    "type": "string",
+                                    "example": "Employee E1"
+                                  },
+                                  "email": {
+                                    "type": "string",
+                                    "format": "email",
+                                    "example": "e1@example.test"
+                                  },
+                                  "department_id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "Department UUID",
+                                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                  },
+                                  "department": {
+                                    "type": "object",
+                                    "nullable": true,
+                                    "additionalProperties": true
+                                  },
+                                  "designation_id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "Designation UUID",
+                                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                                  },
+                                  "designation": {
+                                    "type": "object",
+                                    "nullable": true,
+                                    "additionalProperties": true
+                                  },
+                                  "roles": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "example": [
+                                      "Employee"
+                                    ]
+                                  }
+                                },
+                                "additionalProperties": true,
+                                "nullable": true
+                              },
+                              "decision": {
+                                "type": "string",
+                                "enum": [
+                                  "submitted",
+                                  "approve",
+                                  "return",
+                                  "reject",
+                                  "workflow_definition_created"
+                                ],
+                                "example": "approve"
+                              },
+                              "remarks": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "Approved."
+                              },
+                              "created_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Action timestamp",
+                                "example": "2026-05-04T10:00:00.000Z"
+                              }
+                            },
+                            "additionalProperties": true,
+                            "nullable": true
+                          }
+                        },
                         "additionalProperties": true
                       }
                     },
@@ -28857,6 +29607,53 @@
                       "type": "integer",
                       "minimum": 0,
                       "example": 1
+                    },
+                    "summary": {
+                      "type": "object",
+                      "required": [
+                        "total_pending",
+                        "total_returned",
+                        "total_rejected",
+                        "admin_override_view",
+                        "filters_applied",
+                        "sort"
+                      ],
+                      "properties": {
+                        "total_pending": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 1
+                        },
+                        "total_returned": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        },
+                        "total_rejected": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        },
+                        "admin_override_view": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "filters_applied": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "project_code",
+                            "billable"
+                          ]
+                        },
+                        "sort": {
+                          "type": "string",
+                          "example": "employee_code"
+                        }
+                      },
+                      "additionalProperties": true
                     }
                   },
                   "additionalProperties": false
@@ -29146,7 +29943,7 @@
         "tags": [
           "Timesheets"
         ],
-        "description": "Approves, rejects, or returns a timesheet submission with OCC expected_version. Reject/return require remarks.",
+        "description": "Approves, rejects, or returns a timesheet submission with OCC expected_version. Reject/return require remarks. The response preserves top-level submission fields and adds previous_status, next_status, audit_event, workflow_history, member/project/hour metadata, and allowed next actions.",
         "requestBody": {
           "required": true,
           "content": {
@@ -29169,6 +29966,7 @@
                   },
                   "remarks": {
                     "type": "string",
+                    "description": "Required for reject/return decisions. Trimmed before storage.",
                     "example": "Approved."
                   },
                   "expected_version": {
@@ -29209,6 +30007,674 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": [
+                    "id",
+                    "employee_user_id",
+                    "cycle_start",
+                    "cycle_end",
+                    "status",
+                    "total_hours",
+                    "version",
+                    "employee",
+                    "member",
+                    "cycle",
+                    "project_summary",
+                    "hours_summary",
+                    "workflow_metadata",
+                    "previous_status",
+                    "next_status",
+                    "decision",
+                    "audit_event",
+                    "workflow_history"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Timesheet submission UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "employee_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Employee/member UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "cycle_start": {
+                      "type": "string",
+                      "format": "date",
+                      "description": "Cycle start",
+                      "example": "2026-05-04"
+                    },
+                    "cycle_end": {
+                      "type": "string",
+                      "format": "date",
+                      "description": "Cycle end",
+                      "example": "2026-05-08"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "Draft",
+                        "Submitted",
+                        "Pending Approval",
+                        "Approved",
+                        "Returned",
+                        "Rejected"
+                      ],
+                      "example": "Pending Approval"
+                    },
+                    "total_hours": {
+                      "type": "string",
+                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                      "description": "Submitted total hours",
+                      "example": "10.00"
+                    },
+                    "workflow_definition_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Workflow definition UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "workflow_snapshot": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "current_approver_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Current approver UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    },
+                    "employee": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "employee_code",
+                        "full_name"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "User UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "employee_code": {
+                          "type": "string",
+                          "example": "E1"
+                        },
+                        "full_name": {
+                          "type": "string",
+                          "example": "Employee E1"
+                        },
+                        "email": {
+                          "type": "string",
+                          "format": "email",
+                          "example": "e1@example.test"
+                        },
+                        "department_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Department UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "department": {
+                          "type": "object",
+                          "nullable": true,
+                          "additionalProperties": true
+                        },
+                        "designation_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Designation UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "designation": {
+                          "type": "object",
+                          "nullable": true,
+                          "additionalProperties": true
+                        },
+                        "roles": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "Employee"
+                          ]
+                        }
+                      },
+                      "additionalProperties": true,
+                      "nullable": true
+                    },
+                    "member": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Employee/member profile, department/designation, member_role, and manager reference."
+                    },
+                    "cycle": {
+                      "type": "object",
+                      "required": [
+                        "start",
+                        "end",
+                        "total_days",
+                        "expected_work_days"
+                      ],
+                      "properties": {
+                        "start": {
+                          "type": "string",
+                          "format": "date",
+                          "description": "Cycle start",
+                          "example": "2026-05-04"
+                        },
+                        "end": {
+                          "type": "string",
+                          "format": "date",
+                          "description": "Cycle end",
+                          "example": "2026-05-08"
+                        },
+                        "total_days": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 5
+                        },
+                        "expected_work_days": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 5
+                        }
+                      }
+                    },
+                    "project_summary": {
+                      "type": "object",
+                      "required": [
+                        "project_codes",
+                        "task_codes",
+                        "project_breakdown"
+                      ],
+                      "properties": {
+                        "project_codes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "PRJ-100"
+                          ]
+                        },
+                        "task_codes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "DEV"
+                          ]
+                        },
+                        "primary_project_code": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "PRJ-100"
+                        },
+                        "client_name": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": null
+                        },
+                        "project_breakdown": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "hours_summary": {
+                      "type": "object",
+                      "required": [
+                        "submitted_hours",
+                        "expected_hours",
+                        "missing_hours",
+                        "variance_hours",
+                        "billable_hours",
+                        "non_billable_hours",
+                        "segment_count"
+                      ],
+                      "properties": {
+                        "submitted_hours": {
+                          "type": "string",
+                          "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                          "description": "Submitted hours",
+                          "example": "10.00"
+                        },
+                        "expected_hours": {
+                          "type": "string",
+                          "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                          "description": "Expected cycle hours",
+                          "example": "40.00"
+                        },
+                        "missing_hours": {
+                          "type": "string",
+                          "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                          "description": "Expected minus submitted when positive",
+                          "example": "30.00"
+                        },
+                        "variance_hours": {
+                          "type": "string",
+                          "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                          "description": "Submitted minus expected",
+                          "example": "-30.00"
+                        },
+                        "billable_hours": {
+                          "type": "string",
+                          "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                          "description": "Billable submitted hours",
+                          "example": "8.00"
+                        },
+                        "non_billable_hours": {
+                          "type": "string",
+                          "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
+                          "description": "Non-billable submitted hours",
+                          "example": "2.00"
+                        },
+                        "segment_count": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 2
+                        }
+                      }
+                    },
+                    "workflow_metadata": {
+                      "type": "object",
+                      "required": [
+                        "workflow_definition_id",
+                        "workflow_snapshot",
+                        "can_actor_decide",
+                        "expected_version",
+                        "allowed_decisions",
+                        "remarks_required_for"
+                      ],
+                      "properties": {
+                        "workflow_definition_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Workflow definition UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "workflow_snapshot": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "current_approver": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "employee_code",
+                            "full_name"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "User UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                            },
+                            "employee_code": {
+                              "type": "string",
+                              "example": "E1"
+                            },
+                            "full_name": {
+                              "type": "string",
+                              "example": "Employee E1"
+                            },
+                            "email": {
+                              "type": "string",
+                              "format": "email",
+                              "example": "e1@example.test"
+                            },
+                            "department_id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Department UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                            },
+                            "department": {
+                              "type": "object",
+                              "nullable": true,
+                              "additionalProperties": true
+                            },
+                            "designation_id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Designation UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                            },
+                            "designation": {
+                              "type": "object",
+                              "nullable": true,
+                              "additionalProperties": true
+                            },
+                            "roles": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "example": [
+                                "Employee"
+                              ]
+                            }
+                          },
+                          "additionalProperties": true,
+                          "nullable": true
+                        },
+                        "can_actor_decide": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "expected_version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        },
+                        "allowed_decisions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "approve",
+                              "return",
+                              "reject"
+                            ]
+                          },
+                          "example": [
+                            "approve",
+                            "return",
+                            "reject"
+                          ]
+                        },
+                        "remarks_required_for": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "return",
+                            "reject"
+                          ]
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "previous_status": {
+                      "type": "string",
+                      "example": "Pending Approval"
+                    },
+                    "next_status": {
+                      "type": "string",
+                      "example": "Approved"
+                    },
+                    "decision": {
+                      "type": "string",
+                      "enum": [
+                        "approve",
+                        "return",
+                        "reject"
+                      ],
+                      "example": "approve"
+                    },
+                    "audit_event": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "submission_id",
+                        "actor_user_id",
+                        "actor_label",
+                        "decision",
+                        "created_at"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Timesheet workflow action UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "submission_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Timesheet submission UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "actor_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Actor UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "actor_label": {
+                          "type": "string",
+                          "example": "D1 - Manager D1"
+                        },
+                        "actor": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "employee_code",
+                            "full_name"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "User UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                            },
+                            "employee_code": {
+                              "type": "string",
+                              "example": "E1"
+                            },
+                            "full_name": {
+                              "type": "string",
+                              "example": "Employee E1"
+                            },
+                            "email": {
+                              "type": "string",
+                              "format": "email",
+                              "example": "e1@example.test"
+                            },
+                            "department_id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Department UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                            },
+                            "department": {
+                              "type": "object",
+                              "nullable": true,
+                              "additionalProperties": true
+                            },
+                            "designation_id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Designation UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                            },
+                            "designation": {
+                              "type": "object",
+                              "nullable": true,
+                              "additionalProperties": true
+                            },
+                            "roles": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "example": [
+                                "Employee"
+                              ]
+                            }
+                          },
+                          "additionalProperties": true,
+                          "nullable": true
+                        },
+                        "decision": {
+                          "type": "string",
+                          "enum": [
+                            "submitted",
+                            "approve",
+                            "return",
+                            "reject",
+                            "workflow_definition_created"
+                          ],
+                          "example": "approve"
+                        },
+                        "remarks": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "Approved."
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Action timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "workflow_history": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "submission_id",
+                          "actor_user_id",
+                          "actor_label",
+                          "decision",
+                          "created_at"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Timesheet workflow action UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "submission_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Timesheet submission UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "actor_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Actor UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "actor_label": {
+                            "type": "string",
+                            "example": "D1 - Manager D1"
+                          },
+                          "actor": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "employee_code",
+                              "full_name"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "User UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "employee_code": {
+                                "type": "string",
+                                "example": "E1"
+                              },
+                              "full_name": {
+                                "type": "string",
+                                "example": "Employee E1"
+                              },
+                              "email": {
+                                "type": "string",
+                                "format": "email",
+                                "example": "e1@example.test"
+                              },
+                              "department_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Department UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "department": {
+                                "type": "object",
+                                "nullable": true,
+                                "additionalProperties": true
+                              },
+                              "designation_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Designation UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "designation": {
+                                "type": "object",
+                                "nullable": true,
+                                "additionalProperties": true
+                              },
+                              "roles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "Employee"
+                                ]
+                              }
+                            },
+                            "additionalProperties": true,
+                            "nullable": true
+                          },
+                          "decision": {
+                            "type": "string",
+                            "enum": [
+                              "submitted",
+                              "approve",
+                              "return",
+                              "reject",
+                              "workflow_definition_created"
+                            ],
+                            "example": "approve"
+                          },
+                          "remarks": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Approved."
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Action timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  },
                   "additionalProperties": true
                 }
               }

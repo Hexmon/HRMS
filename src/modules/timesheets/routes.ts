@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
   paginationQuerySchema,
+  TimesheetStatuses,
   timesheetDecisionSchema,
   timesheetSubmissionSchema,
   workSegmentSchema,
@@ -11,6 +12,30 @@ import { unauthorized } from "../../platform/errors.js";
 import { TimesheetService } from "./service.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
+
+const booleanQuerySchema = z.preprocess((value) => {
+  if (value === "true" || value === true) {
+    return true;
+  }
+  if (value === "false" || value === false) {
+    return false;
+  }
+  return value;
+}, z.boolean());
+
+const timesheetApproverQueueQuerySchema = paginationQuerySchema.extend({
+  status: z.enum([
+    TimesheetStatuses.PendingApproval,
+    TimesheetStatuses.Approved,
+    TimesheetStatuses.Returned,
+    TimesheetStatuses.Rejected
+  ]).optional(),
+  employee_user_id: z.uuid().optional(),
+  cycle_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
+  cycle_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
+  project_code: z.string().min(1).optional(),
+  billable: booleanQuerySchema.optional()
+});
 
 export const timesheetRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/work-segments", async (request) => {
@@ -47,8 +72,8 @@ export const timesheetRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    const query = paginationQuerySchema.parse(request.query);
-    return new TimesheetService(fastify.store).approverQueue(request.actor, query.page, query.page_size);
+    const query = timesheetApproverQueueQuerySchema.parse(request.query);
+    return new TimesheetService(fastify.store).approverQueue(request.actor, query);
   });
 
   fastify.post("/submissions/:id/approve", async (request) => {

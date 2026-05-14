@@ -3718,6 +3718,12 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string enum("Pending Approval", "Approved", "Returned", "Rejected") | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `cycle_start` | query | no | string<date> | - |
+| `cycle_end` | query | no | string<date> | - |
+| `project_code` | query | no | string | minLength 1 |
+| `billable` | query | no | boolean | - |
 
 **Request body**
 
@@ -3743,6 +3749,7 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -3774,7 +3781,7 @@ Required: yes
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `decision` | string enum("approve", "reject", "return") | required | - |
-| `remarks` | string | optional | - |
+| `remarks` | string | optional | Required for reject/return decisions. Trimmed before storage. |
 | `expected_version` | integer | required | minimum 1 |
 
 **Responses**
@@ -3791,7 +3798,29 @@ Required: yes
 
 Success body highlights:
 
-Schema: `object`.
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Timesheet submission UUID |
+| `employee_user_id` | string<uuid> | required | Employee/member UUID |
+| `cycle_start` | string<date> | required | Cycle start |
+| `cycle_end` | string<date> | required | Cycle end |
+| `status` | string enum("Draft", "Submitted", "Pending Approval", "Approved", "Returned", "Rejected") | required | - |
+| `total_hours` | string | required | Submitted total hours; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
+| `workflow_definition_id` | string<uuid> | optional | Workflow definition UUID |
+| `workflow_snapshot` | object | optional | - |
+| `current_approver_user_id` | string<uuid> | optional, nullable | Current approver UUID |
+| `version` | integer | required | minimum 1 |
+| `employee` | object | required, nullable | - |
+| `member` | object | required | Employee/member profile, department/designation, member_role, and manager reference. |
+| `cycle` | object | required | - |
+| `project_summary` | object | required | - |
+| `hours_summary` | object | required | - |
+| `workflow_metadata` | object | required | - |
+| `previous_status` | string | required | - |
+| `next_status` | string | required | - |
+| `decision` | string enum("approve", "return", "reject") | required | - |
+| `audit_event` | object | required | - |
+| `workflow_history` | array of object | required | - |
 
 **Frontend behavior notes**
 

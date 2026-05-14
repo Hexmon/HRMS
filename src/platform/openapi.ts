@@ -802,6 +802,181 @@ const financeAnalyticsSchema = {
   additionalProperties: true
 };
 
+
+const timesheetApproverQueueQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    status: { type: "string", enum: ["Pending Approval", "Approved", "Returned", "Rejected"], description: "Optional queue status filter. Omit for active pending approvals.", example: "Pending Approval" },
+    employee_user_id: uuid("Employee/member UUID filter"),
+    cycle_start: date("Only cycles starting on or after this date", "2026-05-04"),
+    cycle_end: date("Only cycles ending on or before this date", "2026-05-08"),
+    project_code: { type: "string", minLength: 1, description: "Project code present in at least one submitted work segment.", example: "PRJ-100" },
+    billable: { type: "boolean", description: "When set, requires at least one matching billable/non-billable segment.", example: true }
+  }
+};
+
+const timesheetUserSummarySchema = {
+  type: "object",
+  required: ["id", "employee_code", "full_name"],
+  properties: {
+    id: uuid("User UUID"),
+    employee_code: { type: "string", example: "E1" },
+    full_name: { type: "string", example: "Employee E1" },
+    email: { type: "string", format: "email", example: "e1@example.test" },
+    department_id: uuid("Department UUID"),
+    department: { type: "object", nullable: true, additionalProperties: true },
+    designation_id: uuid("Designation UUID"),
+    designation: { type: "object", nullable: true, additionalProperties: true },
+    roles: { type: "array", items: { type: "string" }, example: ["Employee"] }
+  },
+  additionalProperties: true
+};
+
+const timesheetActionSchema = {
+  type: "object",
+  required: ["id", "submission_id", "actor_user_id", "actor_label", "decision", "created_at"],
+  properties: {
+    id: uuid("Timesheet workflow action UUID"),
+    submission_id: uuid("Timesheet submission UUID"),
+    actor_user_id: uuid("Actor UUID"),
+    actor_label: { type: "string", example: "D1 - Manager D1" },
+    actor: { ...timesheetUserSummarySchema, nullable: true },
+    decision: { type: "string", enum: ["submitted", "approve", "return", "reject", "workflow_definition_created"], example: "approve" },
+    remarks: { type: "string", nullable: true, example: "Approved." },
+    created_at: dateTime("Action timestamp")
+  },
+  additionalProperties: true
+};
+
+const timesheetSubmissionResponseSchema = {
+  type: "object",
+  required: ["id", "employee_user_id", "cycle_start", "cycle_end", "status", "total_hours", "version", "employee", "member", "cycle", "project_summary", "hours_summary", "workflow_metadata"],
+  properties: {
+    id: uuid("Timesheet submission UUID"),
+    employee_user_id: uuid("Employee/member UUID"),
+    cycle_start: date("Cycle start", "2026-05-04"),
+    cycle_end: date("Cycle end", "2026-05-08"),
+    status: { type: "string", enum: ["Draft", "Submitted", "Pending Approval", "Approved", "Returned", "Rejected"], example: "Pending Approval" },
+    total_hours: money("Submitted total hours", "10.00"),
+    workflow_definition_id: uuid("Workflow definition UUID"),
+    workflow_snapshot: { type: "object", additionalProperties: true },
+    current_approver_user_id: { ...uuid("Current approver UUID"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 },
+    employee: { ...timesheetUserSummarySchema, nullable: true },
+    member: { type: "object", additionalProperties: true, description: "Employee/member profile, department/designation, member_role, and manager reference." },
+    cycle: {
+      type: "object",
+      required: ["start", "end", "total_days", "expected_work_days"],
+      properties: {
+        start: date("Cycle start", "2026-05-04"),
+        end: date("Cycle end", "2026-05-08"),
+        total_days: { type: "integer", minimum: 1, example: 5 },
+        expected_work_days: { type: "integer", minimum: 0, example: 5 }
+      }
+    },
+    project_summary: {
+      type: "object",
+      required: ["project_codes", "task_codes", "project_breakdown"],
+      properties: {
+        project_codes: { type: "array", items: { type: "string" }, example: ["PRJ-100"] },
+        task_codes: { type: "array", items: { type: "string" }, example: ["DEV"] },
+        primary_project_code: { type: "string", nullable: true, example: "PRJ-100" },
+        client_name: { type: "string", nullable: true, example: null },
+        project_breakdown: { type: "array", items: { type: "object", additionalProperties: true } }
+      },
+      additionalProperties: true
+    },
+    hours_summary: {
+      type: "object",
+      required: ["submitted_hours", "expected_hours", "missing_hours", "variance_hours", "billable_hours", "non_billable_hours", "segment_count"],
+      properties: {
+        submitted_hours: money("Submitted hours", "10.00"),
+        expected_hours: money("Expected cycle hours", "40.00"),
+        missing_hours: money("Expected minus submitted when positive", "30.00"),
+        variance_hours: money("Submitted minus expected", "-30.00"),
+        billable_hours: money("Billable submitted hours", "8.00"),
+        non_billable_hours: money("Non-billable submitted hours", "2.00"),
+        segment_count: { type: "integer", minimum: 0, example: 2 }
+      }
+    },
+    workflow_metadata: {
+      type: "object",
+      required: ["workflow_definition_id", "workflow_snapshot", "can_actor_decide", "expected_version", "allowed_decisions", "remarks_required_for"],
+      properties: {
+        workflow_definition_id: uuid("Workflow definition UUID"),
+        workflow_snapshot: { type: "object", additionalProperties: true },
+        current_approver: { ...timesheetUserSummarySchema, nullable: true },
+        can_actor_decide: { type: "boolean", example: true },
+        expected_version: { type: "integer", minimum: 1, example: 1 },
+        allowed_decisions: { type: "array", items: { type: "string", enum: ["approve", "return", "reject"] }, example: ["approve", "return", "reject"] },
+        remarks_required_for: { type: "array", items: { type: "string" }, example: ["return", "reject"] }
+      },
+      additionalProperties: true
+    }
+  },
+  additionalProperties: true
+};
+
+const timesheetApproverQueueResponseSchema = {
+  ...paginated(timesheetSubmissionResponseSchema),
+  required: ["items", "page", "page_size", "total", "summary"],
+  properties: {
+    ...paginated(timesheetSubmissionResponseSchema).properties,
+    items: {
+      type: "array",
+      items: {
+        ...timesheetSubmissionResponseSchema,
+        required: [...(timesheetSubmissionResponseSchema.required as string[]), "queue_context", "decision_history", "last_decision"],
+        properties: {
+          ...timesheetSubmissionResponseSchema.properties,
+          queue_context: {
+            type: "object",
+            required: ["action_required", "current_actor_is_admin_override", "expected_version", "missing_submission_context"],
+            properties: {
+              action_required: { type: "boolean", example: true },
+              current_actor_is_admin_override: { type: "boolean", example: false },
+              expected_version: { type: "integer", minimum: 1, example: 1 },
+              missing_submission_context: { type: "object", additionalProperties: true }
+            },
+            additionalProperties: true
+          },
+          decision_history: { type: "array", items: timesheetActionSchema },
+          last_decision: { ...timesheetActionSchema, nullable: true }
+        }
+      }
+    },
+    summary: {
+      type: "object",
+      required: ["total_pending", "total_returned", "total_rejected", "admin_override_view", "filters_applied", "sort"],
+      properties: {
+        total_pending: { type: "integer", minimum: 0, example: 1 },
+        total_returned: { type: "integer", minimum: 0, example: 0 },
+        total_rejected: { type: "integer", minimum: 0, example: 0 },
+        admin_override_view: { type: "boolean", example: false },
+        filters_applied: { type: "array", items: { type: "string" }, example: ["project_code", "billable"] },
+        sort: { type: "string", example: "employee_code" }
+      },
+      additionalProperties: true
+    }
+  },
+  additionalProperties: false
+};
+
+const timesheetDecisionResponseSchema = {
+  ...timesheetSubmissionResponseSchema,
+  required: [...(timesheetSubmissionResponseSchema.required as string[]), "previous_status", "next_status", "decision", "audit_event", "workflow_history"],
+  properties: {
+    ...timesheetSubmissionResponseSchema.properties,
+    previous_status: { type: "string", example: "Pending Approval" },
+    next_status: { type: "string", example: "Approved" },
+    decision: { type: "string", enum: ["approve", "return", "reject"], example: "approve" },
+    audit_event: timesheetActionSchema,
+    workflow_history: { type: "array", items: timesheetActionSchema }
+  },
+  additionalProperties: true
+};
+
 const expenseCreateBody = {
   type: "object",
   required: ["expense_type", "expense_sub_type", "task_title", "task_description", "start_date", "end_date", "estimated_amount", "payment_type", "line_items"],
@@ -1106,8 +1281,8 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/timesheets/work-segments": operation("Timesheets", "List work segments", "Paginated work segment list scoped by actor.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
   "POST /api/v1/timesheets/submissions": operation("Timesheets", "Submit timesheet cycle", "Submits a timesheet cycle for approval.", { body: { type: "object", required: ["cycle_start", "cycle_end"], properties: { cycle_start: date("Cycle start", "2026-06-01"), cycle_end: date("Cycle end", "2026-06-07") } }, response200: { type: "object", additionalProperties: true } }),
   "GET /api/v1/timesheets/submissions/my": operation("Timesheets", "My timesheet submissions", "Lists authenticated employee timesheet submissions.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
-  "GET /api/v1/timesheets/queue/approver": operation("Timesheets", "Approver queue", "Timesheet approval queue for the authenticated approver.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
-  "POST /api/v1/timesheets/submissions/{id}/approve": operation("Timesheets", "Timesheet decision", "Approves, rejects, or returns a timesheet submission with OCC expected_version. Reject/return require remarks.", { params: idParamSchema, body: { type: "object", required: ["decision", "expected_version"], properties: { decision: { type: "string", enum: ["approve", "reject", "return"], example: "approve" }, remarks: { type: "string", example: "Approved." }, expected_version: { type: "integer", minimum: 1, example: 1 } } }, response200: { type: "object", additionalProperties: true } }),
+  "GET /api/v1/timesheets/queue/approver": operation("Timesheets", "Approver queue", "Timesheet approval queue for the authenticated approver with compact project/member metadata, cycle hours, expected-hours context, decision history, and admin override visibility. Omit status for active pending approvals; Admin can use status to inspect returned/rejected history.", { querystring: timesheetApproverQueueQuerySchema, response200: timesheetApproverQueueResponseSchema }),
+  "POST /api/v1/timesheets/submissions/{id}/approve": operation("Timesheets", "Timesheet decision", "Approves, rejects, or returns a timesheet submission with OCC expected_version. Reject/return require remarks. The response preserves top-level submission fields and adds previous_status, next_status, audit_event, workflow_history, member/project/hour metadata, and allowed next actions.", { params: idParamSchema, body: { type: "object", required: ["decision", "expected_version"], properties: { decision: { type: "string", enum: ["approve", "reject", "return"], example: "approve" }, remarks: { type: "string", description: "Required for reject/return decisions. Trimmed before storage.", example: "Approved." }, expected_version: { type: "integer", minimum: 1, example: 1 } } }, response200: timesheetDecisionResponseSchema }),
   "GET /api/v1/timesheets/workflow-definitions": operation("Timesheets", "List workflow definitions", "Lists timesheet workflow definitions.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
   "POST /api/v1/timesheets/workflow-definitions": operation("Admin / Configuration", "Upsert workflow definition", "Creates or updates a timesheet workflow definition. Admin role required by backend policy.", { body: { type: "object", required: ["name", "definition"], properties: { name: { type: "string", example: "Default Manager Approval" }, definition: { type: "object", required: ["approver_strategy"], properties: { approver_strategy: { type: "string", enum: ["ltree_manager", "project_manager", "hr_manager"], example: "ltree_manager" }, require_billable_review: { type: "boolean", default: false } } } } }, response200: { type: "object", additionalProperties: true } })
 };
