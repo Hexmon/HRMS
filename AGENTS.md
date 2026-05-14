@@ -72,8 +72,15 @@ Write QA artifacts under `docs/qa/runs/` for completed implementation work.
 
 ## Work Tracking
 
-- Maintain the project work tracker at `/Users/anuragkumar/Desktop/Tasks/HRMS-Server.xlsx` after meaningful HRMS-Server work.
-- Use project name `HRMS-Server`, the columns `Task`, `Project`, `Priority`, `Story Points`, `Status`, `Start date`, `End date`, `Deliverable`, `Notes`, `Remarks`, and the sprint-sheet pattern (`HRMS`, `Sprint N <date-range>`).
-- Record the work date, story-point estimate, deliverable, verification notes, and related commit or QA artifact references when available.
+- Maintain the project work tracker at `/Users/anuragkumar/Desktop/Tasks/HRMS.xlsx` after meaningful HRMS-Server work.
+- Use project name `HRMS-Server`, the columns `Task`, `Project`, `Domain`, `Priority`, `Story Points`, `Status`, `Start date`, `End date`, `Deliverable`, `Notes`, `Remarks`, `Commit / QA Artifact`, and the sprint-sheet pattern (`HRMS`, `Sprint N <date-range>`).
+- Record the work date, backend domain, story-point estimate, deliverable, verification notes, and related commit or QA artifact references when available.
 - Story points must use Fibonacci-style values `1`, `2`, `3`, `5`, `8`, or `13`; split work larger than `13` into smaller tracker rows.
 - Keep one workbook per project; add sprint sheets inside the same workbook instead of creating duplicate files.
+
+## Backend API Completion Phases
+
+- For remaining backend API completion phases, update `/Users/anuragkumar/Desktop/Tasks/HRMS.xlsx` before coding, keep pending rows truthful, and move each row through `Pending` -> `In Progress` -> `Completed`.
+- Planned APIs must remain out of OpenAPI until the route, schema, service behavior, tests, and docs generation are complete.
+- Follow `docs/qa/BACKEND_API_COMPLETION_CHECKLIST.md` for per-phase verification, QA artifact, and commit evidence.
+- Keep responses compact for low-network usage: paginated lists, bounded `page_size`, optional `include=`, and async export jobs for large datasets.
