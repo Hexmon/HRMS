@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-05-13T11:08:29.675Z",
+  "status": "pass",
+  "checks": [
+    {
+      "name": "docker compose backend services",
+      "status": "pass",
+      "evidence": "missing=none not_running=none migrate_exit_0=true"
+    },
+    {
+      "name": "docker compose logs readable",
+      "status": "pass",
+      "evidence": "tail captured"
+    },
+    {
+      "name": "api liveness",
+      "status": "pass",
+      "evidence": "{\"status\":\"ok\",\"service\":\"hrms-api\"}"
+    },
+    {
+      "name": "api readiness real adapters",
+      "status": "pass",
+      "evidence": "{\"status\":\"ok\",\"data_store\":\"postgres\",\"database\":\"configured\",\"valkey\":\"configured\",\"object_storage\":\"minio\"}"
+    },
+    {
+      "name": "openapi available",
+      "status": "pass",
+      "evidence": "status=200"
+    },
+    {
+      "name": "auth login",
+      "status": "pass",
+      "evidence": "{\"user\":{\"id\":\"20370ddf-0208-4e7f-9eaa-828673551c3e\",\"employee_code\":\"E1\",\"email\":\"e1@example.test\",\"full_name\":\"Employee E1\",\"department_id\":\"7e14ff37-94b0-4561-98e3-f3c72f0345d2\",\"designation_id\":\"a02f5db2-288c-4c51-8cbb-7beb4fbeaf1a\",\"manager_user_id\":\"3bbda5f8-e717-4598-bc73-11cac0bee411\",\"hierarchy_path\":\"CEO.SALES.S1.D1.E1\",\"employment_status\":\"active\",\"timezone\":\"Asia/Kolkata\",\"joined_on\":\"2026-01-01\",\"terminated_on\":null,\"deleted_at\":null,\"version\":1,\"roles\":[\"Employee\"]},\"access_token\":\"[REDACTED]\",\"expires_at\":\"2026-05-13T12:08:29.000Z\"}"
+    },
+    {
+      "name": "core users endpoint",
+      "status": "pass",
+      "evidence": "{\"items\":[{\"id\":\"4031a610-59f9-4b68-8e4d-5dfbdbfc9157\",\"employee_code\":\"ADM\",\"email\":\"admin@example.test\",\"full_name\":\"HR Admin\",\"department_id\":\"148b27ae-3f41-487e-93a9-72f3be90132a\",\"designation_id\":\"bc9ab8d1-a244-4b37-a3b7-df38bb42b5eb\",\"manager_user_id\":null,\"hierarchy_path\":\"CEO.ADM\",\"employment_status\":\"active\",\"timezone\":\"Asia/Kolkata\",\"joined_on\":\"2026-01-01\",\"terminated_on\":null,\"deleted_at\":null,\"version\":1,\"roles\":[\"Admin\"]},{\"id\":\"e6fb0a91-faf4-4b72-a17d-54f3f9e6dfdc\",\"employee_code\":\"AST\",\"email\":\"assets@example.test\",\"full_name\":\"Asset Manager\",\"department_id\":\"148b27ae-3f41-487e-93a9-72f3be90132a\",\"designation_id\":\"bc9ab8d1-a244-4b37-a3b7-df38bb42b5eb\",\"manager_user_id\":null,\"hierarchy_path\":\"CEO.AST\",\"employment_status\":\"active\",\"timezone\":\"Asia/Kolkata\",\"joined_on\":\"2026-0... [truncated]"
+    },
+    {
+      "name": "timesheet endpoint",
+      "status": "pass",
+      "evidence": "{\"items\":[{\"id\":\"f0b319dd-fc46-47b9-9d69-a526e2e3549c\",\"employee_user_id\":\"20370ddf-0208-4e7f-9eaa-828673551c3e\",\"work_date\":\"2026-07-01\",\"project_code\":\"TS-1778669647967-b7yowx\",\"task_code\":null,\"hours\":\"8.00\",\"description\":\"QA implementation\",\"billable\":false,\"created_at\":\"2026-05-13T10:54:13.506Z\",\"updated_at\":\"2026-05-13T10:54:13.506Z\",\"deleted_at\":null},{\"id\":\"68b09dd2-6802-4de9-8786-0aaad8c0da0a\",\"employee_user_id\":\"20370ddf-0208-4e7f-9eaa-828673551c3e\",\"work_date\":\"2026-07-01\",\"project_code\":\"TS-1778669676129-nl3v02\",\"task_code\":null,\"hours\":\"8.00\",\"description\":\"QA implementation\",\"billable\":false,\"created_at\":\"2026-05-13T10:54:42.427Z\",\"updated_at\":\"2026-05-13T10:54:42.427Z\",\"deleted_at\":null},{\"id\":\"27cc40f6-70a7-4b22-9eed-f739f95d3ce4\",\"created_at\":\"2026-05-13T10:55:54.606Z\",\"up... [truncated]"
+    },
+    {
+      "name": "asset QR endpoint safe payload",
+      "status": "pass",
+      "evidence": "{\"qr_hash\":\"release-qr-hash-lap-available\",\"asset_code\":\"LAP-001\",\"asset_type\":\"Laptop\",\"name\":\"ThinkPad T-Series\",\"status\":\"In Stock\",\"assigned\":\"unassigned\"}"
+    }
+  ],
+  "artifacts": {
+    "compose_ps": true,
+    "compose_logs_tail": true
+  }
+}

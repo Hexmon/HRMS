@@ -1,7 +1,8 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Search, SlidersHorizontal, Download } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 
 interface Props {
   value: string;
@@ -22,13 +23,24 @@ export function SearchFilterBar({
   showExport = true,
   onExport,
 }: Props) {
+  const [draft, setDraft] = useState(value);
+  const debouncedDraft = useDebouncedValue(draft);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (debouncedDraft !== value) onValueChange(debouncedDraft);
+  }, [debouncedDraft, onValueChange, value]);
+
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="relative w-full max-w-sm">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
           placeholder={placeholder}
           className="h-9 rounded-full pl-9"
         />

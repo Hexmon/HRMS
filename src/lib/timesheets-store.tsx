@@ -1,4 +1,8 @@
 import * as React from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { mapApiSubmissions, mapApiWorkSegments, timesheetsApi } from "@/domains/timesheets";
+import { isUuid, pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
+import { queryKeys, queryTimings } from "@/shared/query";
 import {
   TIMESHEET_ENTRIES,
   TIMESHEET_WEEKS,
@@ -16,7 +20,12 @@ interface Ctx {
   addEntry: (e: Omit<TimesheetEntry, "id">) => TimesheetEntry;
   updateEntry: (id: string, patch: Partial<TimesheetEntry>) => void;
   removeEntry: (id: string) => void;
-  ensureWeek: (employeeId: string, employeeName: string, department: string, weekStart: string) => TimesheetWeek;
+  ensureWeek: (
+    employeeId: string,
+    employeeName: string,
+    department: string,
+    weekStart: string,
+  ) => TimesheetWeek;
   setWeekStatus: (
     weekId: string,
     status: TimesheetEntryStatus,
@@ -42,7 +51,26 @@ function save(k: string, v: unknown) {
   window.localStorage.setItem(k, JSON.stringify(v));
 }
 
+function cycleEnd(weekStart: string): string {
+  const date = new Date(weekStart);
+  date.setDate(date.getDate() + 6);
+  return date.toISOString().slice(0, 10);
+}
+
+function workSegmentBody(entry: TimesheetEntry) {
+  return {
+    work_date: entry.date,
+    project_code: entry.projectCode,
+    task_code: entry.task,
+    hours: entry.hours.toFixed(2),
+    description: entry.description,
+    billable: entry.billable,
+  };
+}
+
 export function TimesheetsProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
+  const apiEnabled = useApiRouteEnabled(["/dashboard", "/timesheet", "/reports"]);
   const [entries, setEntries] = React.useState<TimesheetEntry[]>(TIMESHEET_ENTRIES);
   const [weeks, setWeeks] = React.useState<TimesheetWeek[]>(TIMESHEET_WEEKS);
 
@@ -60,10 +88,74 @@ export function TimesheetsProvider({ children }: { children: React.ReactNode }) 
     save(WK_KEY, next);
   };
 
+  const apiEntriesQuery = useQuery({
+    queryKey: queryKeys.list("timesheets", "work-segments", { page_size: 100 }),
+    queryFn: () =>
+      withApiFallback(
+        async () => {
+          const response = await timesheetsApi.listWorkSegments({ page_size: 100 });
+          return mapApiWorkSegments(pageItems(response), entries);
+        },
+        () => entries,
+      ),
+    enabled: apiEnabled,
+    staleTime: queryTimings.listStaleMs,
+  });
+
+  const apiWeeksQuery = useQuery({
+    queryKey: queryKeys.list("timesheets", "my-submissions", { page_size: 100 }),
+    queryFn: () =>
+      withApiFallback(
+        async () => {
+          const response = await timesheetsApi.listMySubmissions({ page_size: 100 });
+          return mapApiSubmissions(pageItems(response), weeks);
+        },
+        () => weeks,
+      ),
+    enabled: apiEnabled,
+    staleTime: queryTimings.listStaleMs,
+  });
+
+  const createSegmentMutation = useMutation({
+    mutationFn: (entry: TimesheetEntry) => timesheetsApi.createWorkSegment(workSegmentBody(entry)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("timesheets") }),
+  });
+
+  const createSubmissionMutation = useMutation({
+    mutationFn: (week: TimesheetWeek) =>
+      timesheetsApi.createSubmission({
+        cycle_start: week.weekStart,
+        cycle_end: cycleEnd(week.weekStart),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("timesheets") }),
+  });
+
+  const decisionMutation = useMutation({
+    mutationFn: ({
+      weekId,
+      status,
+      remarks,
+    }: {
+      weekId: string;
+      status: TimesheetEntryStatus;
+      remarks?: string;
+    }) =>
+      timesheetsApi.approveSubmissionPartial(weekId, {
+        decision: status === "returned" ? "return" : status === "rejected" ? "reject" : "approve",
+        remarks,
+        expected_version: 1,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("timesheets") }),
+  });
+
+  const visibleEntries = apiEntriesQuery.data ?? entries;
+  const visibleWeeks = apiWeeksQuery.data ?? weeks;
+
   const addEntry: Ctx["addEntry"] = (e) => {
     const id = "te_" + Math.random().toString(36).slice(2, 10);
     const created: TimesheetEntry = { ...e, id };
     persistEntries([created, ...entries]);
+    if (apiEnabled) createSegmentMutation.mutate(created);
     return created;
   };
   const updateEntry: Ctx["updateEntry"] = (id, patch) =>
@@ -103,6 +195,13 @@ export function TimesheetsProvider({ children }: { children: React.ReactNode }) 
           : w,
       ),
     );
+    const week = visibleWeeks.find((item) => item.id === weekId);
+    if (apiEnabled && week && (status === "submitted" || status === "pending")) {
+      createSubmissionMutation.mutate(week);
+    }
+    if (apiEnabled && isUuid(weekId) && ["approved", "rejected", "returned"].includes(status)) {
+      decisionMutation.mutate({ weekId, status, remarks });
+    }
   };
 
   const reset = () => {
@@ -112,7 +211,16 @@ export function TimesheetsProvider({ children }: { children: React.ReactNode }) 
 
   return (
     <Ctx.Provider
-      value={{ entries, weeks, addEntry, updateEntry, removeEntry, ensureWeek, setWeekStatus, reset }}
+      value={{
+        entries: visibleEntries,
+        weeks: visibleWeeks,
+        addEntry,
+        updateEntry,
+        removeEntry,
+        ensureWeek,
+        setWeekStatus,
+        reset,
+      }}
     >
       {children}
     </Ctx.Provider>

@@ -1,4 +1,16 @@
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
+import { authApi } from "@/domains/auth";
+import {
+  ApiError,
+  clearApiAccessToken,
+  isApiEnabled,
+  isMockFallbackEnabled,
+  setApiAccessToken,
+  shouldUseMockFallback,
+  type ApiRecord,
+} from "@/shared/api";
+import { queryKeys, queryTimings } from "@/shared/query";
 import { USERS as SEED_USERS, type User } from "./mock/users";
 import { ROLES, ROLE_MAP, ROLE_LABELS, type Role } from "./mock/roles";
 
@@ -23,15 +35,23 @@ interface AuthState {
   user: User | null;
   activeRole: Role | null;
   // session
-  login: (email: string, password?: string) => { ok: boolean; error?: string };
+  login: (email: string, password?: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   setActiveRole: (role: Role) => void;
   canAccess: (path: string) => boolean;
   // signup flow
-  signup: (input: Omit<PendingSignup, "id" | "token" | "isFirstAdmin" | "verified" | "passwordSet" | "createdAt" | "expiresAt">) => PendingSignup;
+  signup: (
+    input: Omit<
+      PendingSignup,
+      "id" | "token" | "isFirstAdmin" | "verified" | "passwordSet" | "createdAt" | "expiresAt"
+    >,
+  ) => PendingSignup;
   resendVerification: (email: string) => PendingSignup | null;
   verifyToken: (token: string) => { status: "ok" | "expired" | "invalid"; pending?: PendingSignup };
-  setPasswordForToken: (token: string, password: string) => { ok: boolean; user?: User; isFirstAdmin?: boolean; error?: string };
+  setPasswordForToken: (
+    token: string,
+    password: string,
+  ) => { ok: boolean; user?: User; isFirstAdmin?: boolean; error?: string };
   // password reset
   requestPasswordReset: (email: string) => { ok: boolean; token?: string };
   resetPasswordWithToken: (token: string, password: string) => { ok: boolean; error?: string };
@@ -72,7 +92,44 @@ const ls = {
 };
 
 const randomToken = () =>
-  Math.random().toString(36).slice(2) + Date.now().toString(36) + Math.random().toString(36).slice(2);
+  Math.random().toString(36).slice(2) +
+  Date.now().toString(36) +
+  Math.random().toString(36).slice(2);
+
+const ROLE_BY_LABEL = new Map(ROLES.map((role) => [role.label.toLowerCase(), role.key]));
+const ROLE_BY_KEY = new Map(ROLES.map((role) => [role.key, role.key]));
+
+function mapApiRole(value: unknown): Role | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, "_");
+  return (
+    ROLE_BY_KEY.get(normalized as Role) ?? ROLE_BY_LABEL.get(value.trim().toLowerCase()) ?? null
+  );
+}
+
+function apiUserToLocalUser(apiUser: ApiRecord): User {
+  const roles = Array.isArray(apiUser.roles)
+    ? apiUser.roles.map(mapApiRole).filter((role): role is Role => Boolean(role))
+    : [];
+  const fallbackRole: Role = roles[0] ?? "employee";
+
+  return {
+    id: String(apiUser.id ?? apiUser.user_id ?? randomToken()),
+    name: String(apiUser.full_name ?? apiUser.name ?? apiUser.email ?? "API User"),
+    email: String(apiUser.email ?? ""),
+    roles: roles.length ? roles : [fallbackRole],
+    department: String(
+      apiUser.department_name ?? apiUser.department ?? apiUser.department_id ?? "General",
+    ),
+    designation: String(
+      apiUser.designation_name ??
+        apiUser.designation ??
+        apiUser.designation_id ??
+        ROLE_LABELS[fallbackRole],
+    ),
+    avatarColor: ROLE_MAP[fallbackRole].color,
+  };
+}
 
 export function dashboardPathForRole(_role: Role | null): string {
   // Single dashboard route adapts to active role, satisfying role-based redirect.
@@ -84,6 +141,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [activeRole, setActiveRoleState] = React.useState<Role | null>(null);
   const [users, setUsers] = React.useState<User[]>(SEED_USERS);
   const [setupDone, setSetupDone] = React.useState(true);
+
+  const apiSessionQuery = useQuery({
+    queryKey: queryKeys.detail("auth", "session", "me"),
+    queryFn: () => authApi.getSessionPartial(),
+    enabled: isApiEnabled() && user === null,
+    retry: false,
+    staleTime: queryTimings.realtimeStaleMs,
+  });
 
   // hydrate
   React.useEffect(() => {
@@ -105,6 +170,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  React.useEffect(() => {
+    if (!apiSessionQuery.data) return;
+    const record = apiSessionQuery.data.user
+      ? (apiSessionQuery.data.user as ApiRecord)
+      : apiSessionQuery.data;
+    const apiUser = apiUserToLocalUser(record);
+    setUsers((current) => {
+      const nextUsers = [...current.filter((u) => u.id !== apiUser.id), apiUser];
+      ls.set(USERS_KEY, nextUsers);
+      return nextUsers;
+    });
+    setUser(apiUser);
+    setActiveRoleState(apiUser.roles[0]);
+    persistSession(apiUser, apiUser.roles[0]);
+  }, [apiSessionQuery.data]);
+
+  React.useEffect(() => {
+    if (apiSessionQuery.error instanceof ApiError && apiSessionQuery.error.status === 401) {
+      clearApiAccessToken();
+      persistSession(null, null);
+    }
+  }, [apiSessionQuery.error]);
+
   const persistSession = (u: User | null, role: Role | null) => {
     if (u && role) ls.set(SESSION_KEY, { userId: u.id, role });
     else ls.del(SESSION_KEY);
@@ -116,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // -------- Sessions --------
-  const login: AuthState["login"] = (email, password) => {
+  const loginFromMock = (email: string, password?: string) => {
     const normalized = email.trim().toLowerCase();
     const u = users.find((m) => m.email.toLowerCase() === normalized);
     if (!u) return { ok: false, error: "No account found for this email." };
@@ -132,7 +220,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { ok: true };
   };
 
+  const login: AuthState["login"] = async (email, password) => {
+    if (isApiEnabled()) {
+      try {
+        const response = await authApi.login({ email, password: password ?? "" });
+        setApiAccessToken(response.access_token);
+        const apiUser = apiUserToLocalUser(response.user);
+        const nextUsers = [...users.filter((u) => u.id !== apiUser.id), apiUser];
+        persistUsers(nextUsers);
+        setUser(apiUser);
+        setActiveRoleState(apiUser.roles[0]);
+        persistSession(apiUser, apiUser.roles[0]);
+        return { ok: true };
+      } catch (error) {
+        clearApiAccessToken();
+        if (isMockFallbackEnabled() && shouldUseMockFallback(error)) {
+          return loginFromMock(email, password);
+        }
+        const message = error instanceof Error ? error.message : "Sign in failed.";
+        return { ok: false, error: message };
+      }
+    }
+
+    return loginFromMock(email, password);
+  };
+
   const logout = () => {
+    if (isApiEnabled()) void authApi.logout().catch(() => undefined);
+    clearApiAccessToken();
     setUser(null);
     setActiveRoleState(null);
     persistSession(null, null);

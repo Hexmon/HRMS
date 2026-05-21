@@ -1,12 +1,25 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { useExpenses, fmtCurrency, type LineItem, type ExpenseType, type PaymentType, type Priority } from "@/lib/expenses-store";
+import {
+  useExpenses,
+  fmtCurrency,
+  type LineItem,
+  type ExpenseType,
+  type PaymentType,
+  type Priority,
+} from "@/lib/expenses-store";
 import { StepperForm, DataCard } from "@/components/ui-kit";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus, Trash2, Upload, FileText } from "lucide-react";
@@ -39,16 +52,46 @@ interface FormState {
   salesOwner: string;
   expectedOutcome: string;
   lineItems: LineItem[];
-  documents: { id: string; name: string; kind: "bill" | "receipt" | "ticket" | "hotel" | "vendor" | "other" }[];
+  documents: {
+    id: string;
+    name: string;
+    kind: "bill" | "receipt" | "ticket" | "hotel" | "vendor" | "other";
+  }[];
 }
 
 const initial: FormState = {
-  expenseType: "project", subType: "", taskTitle: "", taskDescription: "",
-  startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10),
-  location: "", estimatedAmount: 0, paymentType: "reimbursement", priority: "normal", remarks: "",
-  projectCode: "", projectName: "", projectManager: "", costCenter: "", projectExpenseType: "travel",
-  client: "", opportunity: "", meetingType: "Discovery", salesOwner: "", expectedOutcome: "",
-  lineItems: [{ id: "li1", category: "", description: "", quantity: 1, unitCost: 0, taxAmount: 0, vendor: "" }],
+  expenseType: "project",
+  subType: "",
+  taskTitle: "",
+  taskDescription: "",
+  startDate: new Date().toISOString().slice(0, 10),
+  endDate: new Date().toISOString().slice(0, 10),
+  location: "",
+  estimatedAmount: 0,
+  paymentType: "reimbursement",
+  priority: "normal",
+  remarks: "",
+  projectCode: "",
+  projectName: "",
+  projectManager: "",
+  costCenter: "",
+  projectExpenseType: "travel",
+  client: "",
+  opportunity: "",
+  meetingType: "Discovery",
+  salesOwner: "",
+  expectedOutcome: "",
+  lineItems: [
+    {
+      id: "li1",
+      category: "",
+      description: "",
+      quantity: 1,
+      unitCost: 0,
+      taxAmount: 0,
+      vendor: "",
+    },
+  ],
   documents: [],
 };
 
@@ -62,10 +105,28 @@ function CreateExpense() {
   const total = f.lineItems.reduce((s, li) => s + li.quantity * li.unitCost + li.taxAmount, 0);
 
   const updateLi = (id: string, patch: Partial<LineItem>) =>
-    set("lineItems", f.lineItems.map((li) => (li.id === id ? { ...li, ...patch } : li)));
+    set(
+      "lineItems",
+      f.lineItems.map((li) => (li.id === id ? { ...li, ...patch } : li)),
+    );
   const addLi = () =>
-    set("lineItems", [...f.lineItems, { id: `li${Date.now()}`, category: "", description: "", quantity: 1, unitCost: 0, taxAmount: 0, vendor: "" }]);
-  const delLi = (id: string) => set("lineItems", f.lineItems.filter((li) => li.id !== id));
+    set("lineItems", [
+      ...f.lineItems,
+      {
+        id: `li${Date.now()}`,
+        category: "",
+        description: "",
+        quantity: 1,
+        unitCost: 0,
+        taxAmount: 0,
+        vendor: "",
+      },
+    ]);
+  const delLi = (id: string) =>
+    set(
+      "lineItems",
+      f.lineItems.filter((li) => li.id !== id),
+    );
 
   const submit = (asDraft: boolean) => {
     if (!asDraft && (!f.taskTitle || !f.subType)) {
@@ -73,188 +134,490 @@ function CreateExpense() {
       return;
     }
     add({
-      employee: user?.name ?? "You", employeeId: "self", department: user?.department ?? "General",
-      reviewer: "Sara Iqbal", director: "Aanya Mehta",
-      expenseType: f.expenseType, subType: f.subType, taskTitle: f.taskTitle, taskDescription: f.taskDescription,
-      startDate: f.startDate, endDate: f.endDate, location: f.location, estimatedAmount: f.estimatedAmount,
-      paymentType: f.paymentType, priority: f.priority, remarks: f.remarks,
-      project: f.expenseType === "project" ? { projectCode: f.projectCode || "PRJ-GEN", projectName: f.projectName || "General", projectManager: f.projectManager || "Sara Iqbal", costCenter: f.costCenter || "CC-GEN", projectExpenseType: f.projectExpenseType } : undefined,
-      sales: f.expenseType === "sales_presales" ? { client: f.client, opportunity: f.opportunity, meetingType: f.meetingType, salesOwner: f.salesOwner || (user?.name ?? "You"), expectedOutcome: f.expectedOutcome } : undefined,
+      employee: user?.name ?? "You",
+      employeeId: "self",
+      department: user?.department ?? "General",
+      manager: "Sara Iqbal",
+      expenseType: f.expenseType,
+      subType: f.subType,
+      taskTitle: f.taskTitle,
+      taskDescription: f.taskDescription,
+      startDate: f.startDate,
+      endDate: f.endDate,
+      location: f.location,
+      estimatedAmount: f.estimatedAmount,
+      paymentType: f.paymentType,
+      priority: f.priority,
+      remarks: f.remarks,
+      project:
+        f.expenseType === "project"
+          ? {
+              projectCode: f.projectCode || "PRJ-GEN",
+              projectName: f.projectName || "General",
+              projectManager: f.projectManager || "Sara Iqbal",
+              costCenter: f.costCenter || "CC-GEN",
+              projectExpenseType: f.projectExpenseType,
+            }
+          : undefined,
+      sales:
+        f.expenseType === "sales_presales"
+          ? {
+              client: f.client,
+              opportunity: f.opportunity,
+              meetingType: f.meetingType,
+              salesOwner: f.salesOwner || (user?.name ?? "You"),
+              expectedOutcome: f.expectedOutcome,
+            }
+          : undefined,
       lineItems: f.lineItems,
       documents: f.documents.map((d) => ({ ...d, uploadedAt: new Date().toISOString() })),
-      status: asDraft ? "draft" : "pending_reviewer",
+      status: asDraft ? "draft" : "pending_manager",
       submittedAt: asDraft ? undefined : new Date().toISOString(),
     });
-    toast.success(asDraft ? "Saved as draft" : "Ticket submitted for review");
+    toast.success(asDraft ? "Saved as draft" : "Ticket submitted for manager verification");
     nav({ to: "/expenses/my" });
   };
 
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border bg-info/10 p-3 text-xs text-info">
-        <strong>No self-approval policy:</strong> Once submitted, your reviewer (
-        <span className="font-medium">Sara Iqbal</span>) and director will action this ticket.
+        <strong>No self-processing policy:</strong> Once submitted, your manager (
+        <span className="font-medium">Sara Iqbal</span>) verifies it before finance can approve or
+        pay.
       </div>
       <StepperForm
         completeLabel="Submit ticket"
         onComplete={() => submit(false)}
         steps={[
-          { title: "Basic Details", description: "Title, dates, amount", content: (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="Expense Type">
-                <Select value={f.expenseType} onValueChange={(v) => set("expenseType", v as ExpenseType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="project">Project</SelectItem>
-                    <SelectItem value="sales_presales">Sales / Pre-Sales</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Expense Sub-Type"><Input value={f.subType} onChange={(e) => set("subType", e.target.value)} placeholder="e.g. Travel, Software" /></Field>
-              <Field label="Task Title" className="md:col-span-2"><Input value={f.taskTitle} onChange={(e) => set("taskTitle", e.target.value)} placeholder="Short summary" /></Field>
-              <Field label="Task Description" className="md:col-span-2"><Textarea rows={3} value={f.taskDescription} onChange={(e) => set("taskDescription", e.target.value)} /></Field>
-              <Field label="Start Date"><Input type="date" value={f.startDate} onChange={(e) => set("startDate", e.target.value)} /></Field>
-              <Field label="End Date"><Input type="date" value={f.endDate} onChange={(e) => set("endDate", e.target.value)} /></Field>
-              <Field label="Location"><Input value={f.location} onChange={(e) => set("location", e.target.value)} placeholder="City, Country" /></Field>
-              <Field label="Estimated Amount"><Input type="number" value={f.estimatedAmount || ""} onChange={(e) => set("estimatedAmount", Number(e.target.value))} /></Field>
-              <Field label="Payment Type">
-                <Select value={f.paymentType} onValueChange={(v) => set("paymentType", v as PaymentType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="reimbursement">Reimbursement</SelectItem>
-                    <SelectItem value="advance">Advance</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Priority">
-                <Select value={f.priority} onValueChange={(v) => set("priority", v as Priority)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["low", "normal", "high", "urgent"].map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Remarks" className="md:col-span-2"><Textarea rows={2} value={f.remarks} onChange={(e) => set("remarks", e.target.value)} /></Field>
-            </div>
-          ) },
-          { title: "Conditional Details", description: f.expenseType === "project" ? "Project info" : "Sales context", content: f.expenseType === "project" ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="Project Code"><Input value={f.projectCode} onChange={(e) => set("projectCode", e.target.value)} placeholder="PRJ-XXXX" /></Field>
-              <Field label="Project Name"><Input value={f.projectName} onChange={(e) => set("projectName", e.target.value)} /></Field>
-              <Field label="Project Manager"><Input value={f.projectManager} onChange={(e) => set("projectManager", e.target.value)} /></Field>
-              <Field label="Cost Center"><Input value={f.costCenter} onChange={(e) => set("costCenter", e.target.value)} placeholder="CC-XXX" /></Field>
-              <Field label="Project Expense Type" className="md:col-span-2">
-                <Select value={f.projectExpenseType} onValueChange={(v) => set("projectExpenseType", v as FormState["projectExpenseType"])}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["travel", "material", "lodging", "misc"].map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="Client / Prospect"><Input value={f.client} onChange={(e) => set("client", e.target.value)} /></Field>
-              <Field label="Opportunity / Campaign"><Input value={f.opportunity} onChange={(e) => set("opportunity", e.target.value)} /></Field>
-              <Field label="Meeting Type">
-                <Select value={f.meetingType} onValueChange={(v) => set("meetingType", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["Discovery", "Demo", "Pitch", "Negotiation", "Event", "Workshop"].map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Sales Owner"><Input value={f.salesOwner} onChange={(e) => set("salesOwner", e.target.value)} /></Field>
-              <Field label="Expected Outcome" className="md:col-span-2"><Textarea rows={2} value={f.expectedOutcome} onChange={(e) => set("expectedOutcome", e.target.value)} /></Field>
-            </div>
-          ) },
-          { title: "Line Items", description: "Categories & vendors", content: (
-            <div className="space-y-3">
-              <div className="overflow-x-auto rounded-xl border">
-                <table className="w-full text-sm">
-                  <thead className="bg-secondary/40 text-xs">
-                    <tr><th className="p-2 text-left">Category</th><th className="p-2 text-left">Description</th><th className="p-2 text-left">Vendor</th><th className="p-2 text-right">Qty</th><th className="p-2 text-right">Unit Cost</th><th className="p-2 text-right">Tax</th><th className="p-2 text-right">Total</th><th /></tr>
-                  </thead>
-                  <tbody>
-                    {f.lineItems.map((li) => (
-                      <tr key={li.id} className="border-t">
-                        <td className="p-1.5"><Input value={li.category} onChange={(e) => updateLi(li.id, { category: e.target.value })} className="h-8" /></td>
-                        <td className="p-1.5"><Input value={li.description} onChange={(e) => updateLi(li.id, { description: e.target.value })} className="h-8" /></td>
-                        <td className="p-1.5"><Input value={li.vendor} onChange={(e) => updateLi(li.id, { vendor: e.target.value })} className="h-8" /></td>
-                        <td className="p-1.5"><Input type="number" value={li.quantity} onChange={(e) => updateLi(li.id, { quantity: Number(e.target.value) })} className="h-8 w-20 text-right" /></td>
-                        <td className="p-1.5"><Input type="number" value={li.unitCost || ""} onChange={(e) => updateLi(li.id, { unitCost: Number(e.target.value) })} className="h-8 w-28 text-right" /></td>
-                        <td className="p-1.5"><Input type="number" value={li.taxAmount || ""} onChange={(e) => updateLi(li.id, { taxAmount: Number(e.target.value) })} className="h-8 w-24 text-right" /></td>
-                        <td className="p-2 text-right font-medium">{fmtCurrency(li.quantity * li.unitCost + li.taxAmount)}</td>
-                        <td className="p-1"><Button variant="ghost" size="icon" onClick={() => delLi(li.id)} className="h-8 w-8 text-destructive"><Trash2 className="h-4 w-4" /></Button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot><tr className="border-t bg-secondary/30"><td colSpan={6} className="p-2 text-right text-xs text-muted-foreground">Total</td><td className="p-2 text-right font-semibold">{fmtCurrency(total)}</td><td /></tr></tfoot>
-                </table>
+          {
+            title: "Basic Details",
+            description: "Title, dates, amount",
+            content: (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Field label="Expense Type">
+                  <Select
+                    value={f.expenseType}
+                    onValueChange={(v) => set("expenseType", v as ExpenseType)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="project">Project</SelectItem>
+                      <SelectItem value="sales_presales">Sales / Pre-Sales</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Expense Sub-Type">
+                  <Input
+                    value={f.subType}
+                    onChange={(e) => set("subType", e.target.value)}
+                    placeholder="e.g. Travel, Software"
+                  />
+                </Field>
+                <Field label="Task Title" className="md:col-span-2">
+                  <Input
+                    value={f.taskTitle}
+                    onChange={(e) => set("taskTitle", e.target.value)}
+                    placeholder="Short summary"
+                  />
+                </Field>
+                <Field label="Task Description" className="md:col-span-2">
+                  <Textarea
+                    rows={3}
+                    value={f.taskDescription}
+                    onChange={(e) => set("taskDescription", e.target.value)}
+                  />
+                </Field>
+                <Field label="Start Date">
+                  <Input
+                    type="date"
+                    value={f.startDate}
+                    onChange={(e) => set("startDate", e.target.value)}
+                  />
+                </Field>
+                <Field label="End Date">
+                  <Input
+                    type="date"
+                    value={f.endDate}
+                    onChange={(e) => set("endDate", e.target.value)}
+                  />
+                </Field>
+                <Field label="Location">
+                  <Input
+                    value={f.location}
+                    onChange={(e) => set("location", e.target.value)}
+                    placeholder="City, Country"
+                  />
+                </Field>
+                <Field label="Estimated Amount">
+                  <Input
+                    type="number"
+                    value={f.estimatedAmount || ""}
+                    onChange={(e) => set("estimatedAmount", Number(e.target.value))}
+                  />
+                </Field>
+                <Field label="Payment Type">
+                  <Select
+                    value={f.paymentType}
+                    onValueChange={(v) => set("paymentType", v as PaymentType)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="reimbursement">Reimbursement</SelectItem>
+                      <SelectItem value="advance">Advance</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Priority">
+                  <Select value={f.priority} onValueChange={(v) => set("priority", v as Priority)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["low", "normal", "high", "urgent"].map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {p}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Remarks" className="md:col-span-2">
+                  <Textarea
+                    rows={2}
+                    value={f.remarks}
+                    onChange={(e) => set("remarks", e.target.value)}
+                  />
+                </Field>
               </div>
-              <Button variant="outline" size="sm" onClick={addLi} className="rounded-full"><Plus className="mr-1 h-4 w-4" /> Add line item</Button>
-            </div>
-          ) },
-          { title: "Documents", description: "Attach proofs", content: (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-              {[
-                { kind: "bill" as const, label: "Bills" },
-                { kind: "receipt" as const, label: "Receipts" },
-                { kind: "ticket" as const, label: "Tickets" },
-                { kind: "hotel" as const, label: "Hotel invoice" },
-                { kind: "vendor" as const, label: "Vendor invoice" },
-                { kind: "other" as const, label: "Supporting docs" },
-              ].map((u) => (
-                <Card key={u.kind} className="rounded-xl border-dashed p-4 text-center">
-                  <div className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-primary-soft text-primary"><Upload className="h-4 w-4" /></div>
-                  <p className="mt-2 text-sm font-medium">{u.label}</p>
-                  <p className="text-xs text-muted-foreground">Click to upload (mock)</p>
-                  <Button variant="outline" size="sm" className="mt-2 rounded-full" onClick={() => set("documents", [...f.documents, { id: `d${Date.now()}`, name: `${u.label}-${f.documents.length + 1}.pdf`, kind: u.kind }])}>Add file</Button>
-                </Card>
-              ))}
-              {f.documents.length > 0 && (
-                <div className="col-span-full">
-                  <p className="mb-2 text-xs font-semibold text-muted-foreground">Attached</p>
-                  <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    {f.documents.map((d) => (
-                      <li key={d.id} className="flex items-center gap-2 rounded-lg border p-2 text-sm">
-                        <FileText className="h-4 w-4 text-primary" /> <span className="flex-1 truncate">{d.name}</span>
-                        <Button variant="ghost" size="icon" onClick={() => set("documents", f.documents.filter((x) => x.id !== d.id))} className="h-7 w-7 text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
-                      </li>
-                    ))}
-                  </ul>
+            ),
+          },
+          {
+            title: "Conditional Details",
+            description: f.expenseType === "project" ? "Project info" : "Sales context",
+            content:
+              f.expenseType === "project" ? (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Field label="Project Code">
+                    <Input
+                      value={f.projectCode}
+                      onChange={(e) => set("projectCode", e.target.value)}
+                      placeholder="PRJ-XXXX"
+                    />
+                  </Field>
+                  <Field label="Project Name">
+                    <Input
+                      value={f.projectName}
+                      onChange={(e) => set("projectName", e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Project Manager">
+                    <Input
+                      value={f.projectManager}
+                      onChange={(e) => set("projectManager", e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Cost Center">
+                    <Input
+                      value={f.costCenter}
+                      onChange={(e) => set("costCenter", e.target.value)}
+                      placeholder="CC-XXX"
+                    />
+                  </Field>
+                  <Field label="Project Expense Type" className="md:col-span-2">
+                    <Select
+                      value={f.projectExpenseType}
+                      onValueChange={(v) =>
+                        set("projectExpenseType", v as FormState["projectExpenseType"])
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {["travel", "material", "lodging", "misc"].map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {p}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
                 </div>
-              )}
-            </div>
-          ) },
-          { title: "Review & Submit", description: "Confirm details", content: (
-            <div className="space-y-3">
-              <DataCard title="Summary" padded>
-                <dl className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
-                  <Info k="Type" v={f.expenseType === "project" ? "Project" : "Sales / Pre-Sales"} />
-                  <Info k="Sub-Type" v={f.subType || "—"} />
-                  <Info k="Title" v={f.taskTitle || "—"} />
-                  <Info k="Dates" v={`${f.startDate} → ${f.endDate}`} />
-                  <Info k="Payment" v={f.paymentType} />
-                  <Info k="Priority" v={f.priority} />
-                  <Info k="Line items" v={String(f.lineItems.length)} />
-                  <Info k="Documents" v={String(f.documents.length)} />
-                  <Info k="Total" v={<span className="font-semibold text-foreground">{fmtCurrency(total)}</span>} />
-                </dl>
-              </DataCard>
-              <Button variant="outline" onClick={() => submit(true)} className="rounded-full">Save as draft</Button>
-            </div>
-          ) },
+              ) : (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Field label="Client / Prospect">
+                    <Input value={f.client} onChange={(e) => set("client", e.target.value)} />
+                  </Field>
+                  <Field label="Opportunity / Campaign">
+                    <Input
+                      value={f.opportunity}
+                      onChange={(e) => set("opportunity", e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Meeting Type">
+                    <Select value={f.meetingType} onValueChange={(v) => set("meetingType", v)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {["Discovery", "Demo", "Pitch", "Negotiation", "Event", "Workshop"].map(
+                          (p) => (
+                            <SelectItem key={p} value={p}>
+                              {p}
+                            </SelectItem>
+                          ),
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Sales Owner">
+                    <Input
+                      value={f.salesOwner}
+                      onChange={(e) => set("salesOwner", e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Expected Outcome" className="md:col-span-2">
+                    <Textarea
+                      rows={2}
+                      value={f.expectedOutcome}
+                      onChange={(e) => set("expectedOutcome", e.target.value)}
+                    />
+                  </Field>
+                </div>
+              ),
+          },
+          {
+            title: "Line Items",
+            description: "Categories & vendors",
+            content: (
+              <div className="space-y-3">
+                <div className="overflow-x-auto rounded-xl border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-secondary/40 text-xs">
+                      <tr>
+                        <th className="p-2 text-left">Category</th>
+                        <th className="p-2 text-left">Description</th>
+                        <th className="p-2 text-left">Vendor</th>
+                        <th className="p-2 text-right">Qty</th>
+                        <th className="p-2 text-right">Unit Cost</th>
+                        <th className="p-2 text-right">Tax</th>
+                        <th className="p-2 text-right">Total</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {f.lineItems.map((li) => (
+                        <tr key={li.id} className="border-t">
+                          <td className="p-1.5">
+                            <Input
+                              value={li.category}
+                              onChange={(e) => updateLi(li.id, { category: e.target.value })}
+                              className="h-8"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <Input
+                              value={li.description}
+                              onChange={(e) => updateLi(li.id, { description: e.target.value })}
+                              className="h-8"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <Input
+                              value={li.vendor}
+                              onChange={(e) => updateLi(li.id, { vendor: e.target.value })}
+                              className="h-8"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <Input
+                              type="number"
+                              value={li.quantity}
+                              onChange={(e) =>
+                                updateLi(li.id, { quantity: Number(e.target.value) })
+                              }
+                              className="h-8 w-20 text-right"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <Input
+                              type="number"
+                              value={li.unitCost || ""}
+                              onChange={(e) =>
+                                updateLi(li.id, { unitCost: Number(e.target.value) })
+                              }
+                              className="h-8 w-28 text-right"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <Input
+                              type="number"
+                              value={li.taxAmount || ""}
+                              onChange={(e) =>
+                                updateLi(li.id, { taxAmount: Number(e.target.value) })
+                              }
+                              className="h-8 w-24 text-right"
+                            />
+                          </td>
+                          <td className="p-2 text-right font-medium">
+                            {fmtCurrency(li.quantity * li.unitCost + li.taxAmount)}
+                          </td>
+                          <td className="p-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => delLi(li.id)}
+                              className="h-8 w-8 text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t bg-secondary/30">
+                        <td colSpan={6} className="p-2 text-right text-xs text-muted-foreground">
+                          Total
+                        </td>
+                        <td className="p-2 text-right font-semibold">{fmtCurrency(total)}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                <Button variant="outline" size="sm" onClick={addLi} className="rounded-full">
+                  <Plus className="mr-1 h-4 w-4" /> Add line item
+                </Button>
+              </div>
+            ),
+          },
+          {
+            title: "Documents",
+            description: "Attach proofs",
+            content: (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                {[
+                  { kind: "bill" as const, label: "Bills" },
+                  { kind: "receipt" as const, label: "Receipts" },
+                  { kind: "ticket" as const, label: "Tickets" },
+                  { kind: "hotel" as const, label: "Hotel invoice" },
+                  { kind: "vendor" as const, label: "Vendor invoice" },
+                  { kind: "other" as const, label: "Supporting docs" },
+                ].map((u) => (
+                  <Card key={u.kind} className="rounded-xl border-dashed p-4 text-center">
+                    <div className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-primary-soft text-primary">
+                      <Upload className="h-4 w-4" />
+                    </div>
+                    <p className="mt-2 text-sm font-medium">{u.label}</p>
+                    <p className="text-xs text-muted-foreground">Click to upload (mock)</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 rounded-full"
+                      onClick={() =>
+                        set("documents", [
+                          ...f.documents,
+                          {
+                            id: `d${Date.now()}`,
+                            name: `${u.label}-${f.documents.length + 1}.pdf`,
+                            kind: u.kind,
+                          },
+                        ])
+                      }
+                    >
+                      Add file
+                    </Button>
+                  </Card>
+                ))}
+                {f.documents.length > 0 && (
+                  <div className="col-span-full">
+                    <p className="mb-2 text-xs font-semibold text-muted-foreground">Attached</p>
+                    <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      {f.documents.map((d) => (
+                        <li
+                          key={d.id}
+                          className="flex items-center gap-2 rounded-lg border p-2 text-sm"
+                        >
+                          <FileText className="h-4 w-4 text-primary" />{" "}
+                          <span className="flex-1 truncate">{d.name}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() =>
+                              set(
+                                "documents",
+                                f.documents.filter((x) => x.id !== d.id),
+                              )
+                            }
+                            className="h-7 w-7 text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ),
+          },
+          {
+            title: "Review & Submit",
+            description: "Confirm details",
+            content: (
+              <div className="space-y-3">
+                <DataCard title="Summary" padded>
+                  <dl className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
+                    <Info
+                      k="Type"
+                      v={f.expenseType === "project" ? "Project" : "Sales / Pre-Sales"}
+                    />
+                    <Info k="Sub-Type" v={f.subType || "—"} />
+                    <Info k="Title" v={f.taskTitle || "—"} />
+                    <Info k="Dates" v={`${f.startDate} → ${f.endDate}`} />
+                    <Info k="Payment" v={f.paymentType} />
+                    <Info k="Priority" v={f.priority} />
+                    <Info k="Line items" v={String(f.lineItems.length)} />
+                    <Info k="Documents" v={String(f.documents.length)} />
+                    <Info
+                      k="Total"
+                      v={
+                        <span className="font-semibold text-foreground">{fmtCurrency(total)}</span>
+                      }
+                    />
+                  </dl>
+                </DataCard>
+                <Button variant="outline" onClick={() => submit(true)} className="rounded-full">
+                  Save as draft
+                </Button>
+              </div>
+            ),
+          },
         ]}
       />
     </div>
   );
 }
 
-function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
+function Field({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div className={`space-y-1.5 ${className}`}>
-      <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>
+      <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </Label>
       {children}
     </div>
   );

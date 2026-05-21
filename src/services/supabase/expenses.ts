@@ -13,33 +13,46 @@ export async function createTicket(input: Omit<TicketInsert, "company_id">) {
   const { data, error } = await supabase
     .from("expense_tickets")
     .insert({ ...input, company_id: cid as string })
-    .select("*").single();
+    .select("*")
+    .single();
   if (error) throw error;
-  await writeAuditLog({ action: "expense.created", entityType: "expense_ticket", entityId: data.id });
+  await writeAuditLog({
+    action: "expense.created",
+    entityType: "expense_ticket",
+    entityId: data.id,
+  });
   return data;
 }
 
 export async function addLineItem(line: LineInsert) {
   const { data, error } = await supabase
-    .from("expense_line_items").insert(line).select("*").single();
+    .from("expense_line_items")
+    .insert(line)
+    .select("*")
+    .single();
   if (error) throw error;
   return data;
 }
 
 export async function listMyTickets(employeeId: string): Promise<ExpenseTicket[]> {
   const { data, error } = await supabase
-    .from("expense_tickets").select("*").eq("employee_id", employeeId)
+    .from("expense_tickets")
+    .select("*")
+    .eq("employee_id", employeeId)
     .order("created_at", { ascending: false });
   if (error) return [];
   return data ?? [];
 }
 
-export async function listQueue(stage: "reviewer" | "director" | "finance") {
+export async function listQueue(stage: "manager" | "finance") {
   const map: Record<string, string> = {
-    reviewer: "submitted", director: "reviewer_approved", finance: "director_approved",
+    manager: "submitted",
+    finance: "manager_approved",
   };
   const { data, error } = await supabase
-    .from("expense_tickets").select("*").eq("status", map[stage])
+    .from("expense_tickets")
+    .select("*")
+    .eq("status", map[stage])
     .order("submitted_at", { ascending: false });
   if (error) return [];
   return data ?? [];
@@ -47,19 +60,26 @@ export async function listQueue(stage: "reviewer" | "director" | "finance") {
 
 export async function decideTicket(
   id: string,
-  stage: "reviewer" | "director" | "finance",
+  stage: "manager" | "finance",
   status: "approved" | "rejected",
   remarks?: string,
 ) {
-  const next = status === "approved"
-    ? stage === "reviewer" ? "reviewer_approved"
-      : stage === "director" ? "director_approved" : "paid"
-    : "rejected";
+  const next =
+    status === "approved" ? (stage === "manager" ? "manager_approved" : "paid") : "rejected";
   const { data, error } = await supabase
-    .from("expense_tickets").update({ status: next }).eq("id", id).select("*").single();
+    .from("expense_tickets")
+    .update({ status: next })
+    .eq("id", id)
+    .select("*")
+    .single();
   if (error) throw error;
   await supabase.from("expense_approvals").insert({ ticket_id: id, stage, status, remarks });
-  await writeAuditLog({ action: `expense.${stage}_${status}`, entityType: "expense_ticket", entityId: id, remarks });
+  await writeAuditLog({
+    action: `expense.${stage}_${status}`,
+    entityType: "expense_ticket",
+    entityId: id,
+    remarks,
+  });
   return data;
 }
 
@@ -67,7 +87,8 @@ export async function recordPayment(ticketId: string, amount: number, reference?
   const { data, error } = await supabase
     .from("expense_payments")
     .insert({ ticket_id: ticketId, amount, reference })
-    .select("*").single();
+    .select("*")
+    .single();
   if (error) throw error;
   await writeAuditLog({ action: "expense.paid", entityType: "expense_ticket", entityId: ticketId });
   return data;

@@ -1,10 +1,9 @@
 import * as React from "react";
-import {
-  EMPLOYEES,
-  type Employee,
-  type AuditEntry,
-  type RoleHistoryEntry,
-} from "./mock/employees";
+import { useQuery } from "@tanstack/react-query";
+import { coreApi, mapApiUsersToEmployees } from "@/domains/core";
+import { pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
+import { queryKeys, queryTimings } from "@/shared/query";
+import { EMPLOYEES, type Employee, type AuditEntry, type RoleHistoryEntry } from "./mock/employees";
 import { DEPARTMENTS as SEED_DEPTS, type Department } from "./mock/departments";
 import { DESIGNATIONS as SEED_DESIGS, type Designation } from "./mock/designations";
 
@@ -54,6 +53,14 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
   const [employees, setEmployees] = React.useState<Employee[]>(EMPLOYEES);
   const [departments, setDepartments] = React.useState<Department[]>(SEED_DEPTS);
   const [designations, setDesignations] = React.useState<Designation[]>(SEED_DESIGS);
+  const apiEnabled = useApiRouteEnabled([
+    "/dashboard",
+    "/employees",
+    "/projects",
+    "/team-utilization",
+    "/timesheet",
+    "/assets",
+  ]);
 
   React.useEffect(() => {
     setEmployees(loadLs(EMP_KEY, EMPLOYEES));
@@ -154,10 +161,26 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
     persistG(SEED_DESIGS);
   };
 
+  const apiEmployeesQuery = useQuery({
+    queryKey: queryKeys.list("core", "users", { page_size: 100 }),
+    queryFn: () =>
+      withApiFallback(
+        async () => {
+          const response = await coreApi.listUsersPartial({ page_size: 100 });
+          return mapApiUsersToEmployees(pageItems(response), employees);
+        },
+        () => employees,
+      ),
+    enabled: apiEnabled,
+    staleTime: queryTimings.listStaleMs,
+  });
+
+  const visibleEmployees = apiEmployeesQuery.data ?? employees;
+
   return (
     <Ctx.Provider
       value={{
-        employees,
+        employees: visibleEmployees,
         departments,
         designations,
         upsert,
