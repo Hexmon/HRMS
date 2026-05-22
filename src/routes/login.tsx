@@ -13,7 +13,7 @@ export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
       { title: "Sign in — Hawkaii HRMS" },
-      { name: "description", content: "Sign in to your Hawkaii workspace." },
+      { name: "description", content: "Sign in to your Hawkaii HRMS workspace." },
     ],
   }),
   component: LoginPage,
@@ -60,7 +60,7 @@ function LoginPage() {
       subtitle="Sign in to continue to your workspace."
       footer={
         <>
-          New to Hawkaii?{" "}
+          New to Hawkaii HRMS?{" "}
           <Link to="/signup" className="font-medium text-primary hover:underline">
             Create a workspace
           </Link>

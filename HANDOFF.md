@@ -158,7 +158,7 @@ Expected API groups:
 
 - **Framework:** TanStack Start v1 (React 19 + Vite 7), file-based routing under `src/routes/`
 - **Styling:** Tailwind CSS v4 via `src/styles.css` with semantic OKLCH design tokens
-- **UI Kit:** shadcn/ui primitives in `src/components/ui/` + Hawkaii primitives in `src/components/ui-kit/` (`PageHeader`, `ModuleTabs`, `DataTable`, `StatCard`, `EmptyState`, `StatusBadge`, `DrawerForm`, `StepperForm`, `ApprovalTimeline`, `ConfirmDialog`, `Skeletons`…)
+- **UI Kit:** shadcn/ui primitives in `src/components/ui/` + Hawkaii HRMS primitives in `src/components/ui-kit/` (`PageHeader`, `ModuleTabs`, `DataTable`, `StatCard`, `EmptyState`, `StatusBadge`, `DrawerForm`, `StepperForm`, `ApprovalTimeline`, `ConfirmDialog`, `Skeletons`…)
 - **Icons:** lucide-react
 - **Toasts:** sonner
 - **State:** React Context + `localStorage` (one store per module)
@@ -178,7 +178,7 @@ src/
 │   ├── topbar.tsx              // Search, quick actions, profile, role switcher
 │   ├── dashboards/             // Per-role dashboards
 │   ├── ui/                     // shadcn primitives
-│   └── ui-kit/                 // Hawkaii shared primitives
+│   └── ui-kit/                 // Hawkaii HRMS shared primitives
 ├── lib/
 │   ├── auth.tsx                // Mock auth + role map
 │   ├── *-store.tsx             // Per-module stateful stores (replace with API later)

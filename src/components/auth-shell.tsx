@@ -52,7 +52,7 @@ export function AuthShell({ title, subtitle, children, footer, highlight }: Auth
             <p className="max-w-md text-base text-muted-foreground">{hl.body}</p>
           </div>
 
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Hawkaii Labs · All rights reserved</p>
+          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Hawkaii HRMS · All rights reserved</p>
         </div>
 
         <div className="mx-auto w-full max-w-md">

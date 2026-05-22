@@ -123,8 +123,8 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="flex flex-col leading-tight">
-              <span className="text-base font-semibold tracking-tight">Hawkaii</span>
-              <span className="text-[11px] text-muted-foreground">HRMS · Workforce OS</span>
+              <span className="text-base font-semibold tracking-tight">Hawkaii HRMS</span>
+              <span className="text-[11px] text-muted-foreground">Workforce OS</span>
             </div>
           )}
         </Link>

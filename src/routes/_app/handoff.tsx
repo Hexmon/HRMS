@@ -136,7 +136,7 @@ function HandoffPage() {
 │   ├── topbar.tsx            search · quick actions · role switcher
 │   ├── dashboards/           per-role dashboards
 │   ├── ui/                   shadcn primitives
-│   └── ui-kit/               Hawkaii shared primitives
+│   └── ui-kit/               Hawkaii HRMS shared primitives
 ├── lib/
 │   ├── auth.tsx              mock auth + ROLE_MAP
 │   ├── *-store.tsx           per-module stateful stores

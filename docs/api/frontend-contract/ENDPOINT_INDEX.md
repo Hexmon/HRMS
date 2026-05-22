@@ -2,11 +2,11 @@
 
 This file is generated from `docs/api/openapi.json` by `pnpm api:frontend-contract:generate`.
 
-OpenAPI title: HRMS/ERP API
+OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 68
+Documented operations: 76
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -216,6 +216,324 @@ Schema: `object`.
 
 Authentication uses one platform session. Browser clients may rely on the HttpOnly cookie; API clients should use bearer tokens.
 
+### POST /api/v1/auth/signup
+
+| Field | Contract |
+|---|---|
+| Purpose | Signup |
+| Frontend use | Signup |
+| Auth | Public. No bearer token or session cookie required. |
+| Roles/scope | Authenticated current user only. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `company_name` | string | required | minLength 2 |
+| `company_slug` | string | optional | minLength 2 |
+| `full_name` | string | required | minLength 2 |
+| `email` | string<email> | required | - |
+| `password` | string<password> | optional | Optional. If omitted, verify-email returns a password setup token/action.; minLength 10 |
+| `timezone` | string | optional | default "Asia/Kolkata" |
+| `locale` | string | optional | default "en-IN" |
+| `invite_token` | string | optional | Reserved for invited employee onboarding. |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `signup_id` | string<uuid> | required | Signup/user context UUID |
+| `verification_required` | boolean | required | - |
+| `masked_email` | string | required | - |
+| `next_step` | string enum("verify_email") | required | - |
+| `retry_after_seconds` | integer | required | minimum 1 |
+| `dev_only` | object | optional, nullable | Local/QA only token echo for automated testing. Production responses omit this object. |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/auth/verify-email
+
+| Field | Contract |
+|---|---|
+| Purpose | Verify email |
+| Frontend use | Verify email |
+| Auth | Public. No bearer token or session cookie required. |
+| Roles/scope | Authenticated current user only. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `token` | string | required | Email verification token from backend-delivered email link.; minLength 16 |
+| `email` | string<email> | optional | Optional UX correlation check. |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `verified` | boolean | required | - |
+| `user_id` | string<uuid> | required | Verified user UUID |
+| `company_id` | string<uuid> | required, nullable | Company UUID |
+| `login_allowed` | boolean | required | - |
+| `next_step` | string enum("login", "set_password", "company_bootstrap") | required | - |
+| `dev_only` | object | optional, nullable | Local/QA only token echo for automated testing. Production responses omit this object. |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/auth/email-verifications/resend
+
+| Field | Contract |
+|---|---|
+| Purpose | Resend email verification |
+| Frontend use | Resend email verification |
+| Auth | Public. No bearer token or session cookie required. |
+| Roles/scope | Authenticated current user only. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `email` | string<email> | required | - |
+| `company_slug` | string | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `accepted` | boolean | required | - |
+| `sent` | boolean | required | False can be returned for already verified/unknown emails without exposing sensitive account state. |
+| `masked_email` | string | required | - |
+| `retry_after_seconds` | integer | required | minimum 1 |
+| `dev_only` | object | optional, nullable | Local/QA only token echo for automated testing. Production responses omit this object. |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/auth/set-password
+
+| Field | Contract |
+|---|---|
+| Purpose | Set password |
+| Frontend use | Set password |
+| Auth | Public. No bearer token or session cookie required. |
+| Roles/scope | Authenticated current user only. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `token` | string | required | Password setup/reset token from email.; minLength 16 |
+| `password` | string<password> | required | minLength 10 |
+| `confirm_password` | string<password> | required | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `password_set` | boolean | required | - |
+| `login_allowed` | boolean | required | - |
+| `user_id` | string<uuid> | required | User UUID |
+| `next_step` | string enum("login") | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/auth/password-reset/request
+
+| Field | Contract |
+|---|---|
+| Purpose | Request password reset |
+| Frontend use | Request password reset |
+| Auth | Public. No bearer token or session cookie required. |
+| Roles/scope | Authenticated current user only. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `email` | string<email> | required | - |
+| `company_slug` | string | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `accepted` | boolean | required | - |
+| `masked_email` | string | required | - |
+| `retry_after_seconds` | integer | required | minimum 1 |
+| `dev_only` | object | optional, nullable | Local/QA only token echo for automated testing. Production responses omit this object. |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/auth/password-reset/confirm
+
+| Field | Contract |
+|---|---|
+| Purpose | Confirm password reset |
+| Frontend use | Confirm password reset |
+| Auth | Public. No bearer token or session cookie required. |
+| Roles/scope | Authenticated current user only. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `token` | string | required | Password setup/reset token from email.; minLength 16 |
+| `password` | string<password> | required | minLength 10 |
+| `confirm_password` | string<password> | required | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `password_reset` | boolean | required | - |
+| `session_revoked_count` | integer | required | minimum 0 |
+| `next_step` | string enum("login") | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
 ### POST /api/v1/auth/login
 
 | Field | Contract |
@@ -353,6 +671,125 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `user` | object | required | - |
+| `active_role` | object | required | - |
+| `available_roles` | array of object | required | - |
+| `permissions` | array of string | required | - |
+| `navigation` | array of object | required | - |
+| `company` | object | required | - |
+| `preferences` | object | required | - |
+| `session_metadata` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PATCH /api/v1/auth/session/preference
+
+| Field | Contract |
+|---|---|
+| Purpose | Update session preference |
+| Frontend use | Update session preference |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Authenticated current user only. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `active_role_id` | string | optional | Role key/label assigned to the current user. |
+| `active_role` | string | optional | Alias for active_role_id. |
+| `company_id` | string<uuid> | optional, nullable | Company UUID |
+| `landing_page` | string | optional | - |
+| `locale` | string | optional | - |
+| `timezone` | string | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `user` | object | required | - |
+| `active_role` | object | required | - |
+| `available_roles` | array of object | required | - |
+| `permissions` | array of string | required | - |
+| `navigation` | array of object | required | - |
+| `company` | object | required | - |
+| `preferences` | object | required | - |
+| `session_metadata` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/onboarding/company-bootstrap
+
+| Field | Contract |
+|---|---|
+| Purpose | Company bootstrap |
+| Frontend use | Company bootstrap |
+| Auth | Public. No bearer token or session cookie required. |
+| Roles/scope | Authenticated current user only. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `bootstrap_token` | string | required | One-time company bootstrap token issued after email verification.; minLength 16 |
+| `company_profile` | object | optional | - |
+| `first_admin_profile` | object | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `company` | object | required | - |
+| `admin_user` | object | required | - |
+| `setup_progress` | object | required | - |
+| `next_steps` | array of string | required | - |
+| `preferences` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -380,6 +817,12 @@ Core APIs expose active employee identity and hierarchy context for role-aware f
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `q` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `designation_id` | query | no | string<uuid> | - |
+| `role` | query | no | string | - |
+| `employment_status` | query | no | string enum("active", "inactive", "terminated", "suspended") | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `login_state` | query | no | string enum("enabled", "disabled") | - |
 
 **Request body**
 
@@ -405,6 +848,7 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -458,6 +902,23 @@ Success body highlights:
 | `employment_status` | string | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled") | required | - |
+| `role_labels` | array of string | required | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+| `expense_summary` | object | required | - |
+| `profile_tabs_available` | array of string | required | - |
 
 **Frontend behavior notes**
 
@@ -1960,6 +2421,17 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -1985,6 +2457,12 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | optional | - |
+| `cards` | array of object | required | - |
+| `filters` | object | required | - |
+| `aging_buckets` | array of object | required | - |
+| `payable_totals` | object | required | - |
+| `exception_counts` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2010,6 +2488,17 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2035,6 +2524,8 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | required | - |
+| `filters` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2076,7 +2567,14 @@ No request body.
 
 Success body highlights:
 
-Schema: `object`.
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `generated_at` | string<date-time> | required | Report generation timestamp |
+| `cards` | array of object | required | - |
+| `aging_buckets` | array of object | required | - |
+| `payable_totals` | object | required | - |
+| `exception_counts` | object | required | - |
+| `summary` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2638,6 +3136,17 @@ Reports are role-scoped API-backed datasets and export requests.
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2663,6 +3172,9 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | required | - |
+| `cards` | array of object | required | - |
+| `filters` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2688,6 +3200,17 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2713,6 +3236,10 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | optional | - |
+| `cards` | array of object | required | - |
+| `filters` | object | required | - |
+| `queue_counts` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2738,6 +3265,17 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2763,6 +3301,8 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | required | - |
+| `filters` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -2788,6 +3328,17 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `expense_type` | query | no | string | - |
+| `expense_sub_type` | query | no | string | - |
+| `payment_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `requester_user_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `finance_user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_status` | query | no | string enum("any", "complete", "missing", "pending", "not_required") | default "any" |
 
 **Request body**
 
@@ -2813,6 +3364,9 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `totals` | object | required | - |
+| `filters` | object | required | - |
+| `export_columns` | array of string | required | - |
 
 **Frontend behavior notes**
 
@@ -3594,6 +4148,12 @@ Success body highlights:
 | `page` | query | no | integer | default 1; minimum 1 |
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
+| `status` | query | no | string enum("Pending Approval", "Approved", "Returned", "Rejected") | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `cycle_start` | query | no | string<date> | - |
+| `cycle_end` | query | no | string<date> | - |
+| `project_code` | query | no | string | minLength 1 |
+| `billable` | query | no | boolean | - |
 
 **Request body**
 
@@ -3619,6 +4179,7 @@ Success body highlights:
 | `page` | integer | required | minimum 1 |
 | `page_size` | integer | required | minimum 1 |
 | `total` | integer | required | minimum 0 |
+| `summary` | object | required | - |
 
 **Frontend behavior notes**
 
@@ -3650,7 +4211,7 @@ Required: yes
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `decision` | string enum("approve", "reject", "return") | required | - |
-| `remarks` | string | optional | - |
+| `remarks` | string | optional | Required for reject/return decisions. Trimmed before storage. |
 | `expected_version` | integer | required | minimum 1 |
 
 **Responses**
@@ -3667,7 +4228,29 @@ Required: yes
 
 Success body highlights:
 
-Schema: `object`.
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Timesheet submission UUID |
+| `employee_user_id` | string<uuid> | required | Employee/member UUID |
+| `cycle_start` | string<date> | required | Cycle start |
+| `cycle_end` | string<date> | required | Cycle end |
+| `status` | string enum("Draft", "Submitted", "Pending Approval", "Approved", "Returned", "Rejected") | required | - |
+| `total_hours` | string | required | Submitted total hours; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
+| `workflow_definition_id` | string<uuid> | optional | Workflow definition UUID |
+| `workflow_snapshot` | object | optional | - |
+| `current_approver_user_id` | string<uuid> | optional, nullable | Current approver UUID |
+| `version` | integer | required | minimum 1 |
+| `employee` | object | required, nullable | - |
+| `member` | object | required | Employee/member profile, department/designation, member_role, and manager reference. |
+| `cycle` | object | required | - |
+| `project_summary` | object | required | - |
+| `hours_summary` | object | required | - |
+| `workflow_metadata` | object | required | - |
+| `previous_status` | string | required | - |
+| `next_status` | string | required | - |
+| `decision` | string enum("approve", "return", "reject") | required | - |
+| `audit_event` | object | required | - |
+| `workflow_history` | array of object | required | - |
 
 **Frontend behavior notes**
 

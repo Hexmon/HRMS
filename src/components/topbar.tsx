@@ -74,7 +74,7 @@ export function Topbar() {
   const title =
     PAGE_TITLES[path] ??
     Object.entries(PAGE_TITLES).find(([k]) => path.startsWith(k + "/"))?.[1] ??
-    "Hawkaii";
+    "Hawkaii HRMS";
 
   if (!user || !activeRole) return null;
 
@@ -85,7 +85,7 @@ export function Topbar() {
       {/* Page title */}
       <div className="ml-1 hidden min-w-0 sm:block">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80">
-          Hawkaii
+          Hawkaii HRMS
         </p>
         <h1 className="-mt-0.5 truncate text-sm font-semibold">{title}</h1>
       </div>

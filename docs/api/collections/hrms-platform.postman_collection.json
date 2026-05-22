@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "HRMS Platform API Consumer Smoke",
+    "name": "Hawkaii HRMS API Consumer Smoke",
     "description": "Safe local Docker QA collection. Uses seeded email/password values; employee_code remains a DEV fallback for legacy scripts. No production credentials.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },

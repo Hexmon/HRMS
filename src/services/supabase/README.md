@@ -1,4 +1,4 @@
-# Hawkaii Supabase service layer
+# Hawkaii HRMS Supabase service layer
 
 Modular helpers around the generated Supabase client. The existing mock UI
 (`src/lib/auth.tsx`, `src/lib/employees-store.tsx`, etc.) is **untouched** —

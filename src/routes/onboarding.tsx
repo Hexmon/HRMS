@@ -108,7 +108,7 @@ function OnboardingPage() {
           </div>
           <h1 className="mt-4 text-2xl font-semibold">You're all set</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Your Hawkaii workspace is ready. You can fine-tune everything from Admin Settings any time.
+            Your Hawkaii HRMS workspace is ready. You can fine-tune everything from Admin Settings any time.
           </p>
           <Button asChild className="mt-6 h-11 w-full rounded-xl text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
             <Link to={dashboardPathForRole(activeRole)}>Open dashboard</Link>

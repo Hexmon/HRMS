@@ -555,7 +555,7 @@ const DEFAULT_TEMPLATES: EmailTemplate[] = [
     key: "invite",
     name: "Employee Invite",
     subject: "Welcome to {{company}} — set up your account",
-    body: "Hi {{name}},\n\nYou've been invited to join {{company}} on Hawkaii. Click the link below to set your password and complete onboarding.\n\n{{link}}\n\n— People Ops",
+    body: "Hi {{name}},\n\nYou've been invited to join {{company}} on Hawkaii HRMS. Click the link below to set your password and complete onboarding.\n\n{{link}}\n\n— People Ops",
     active: true,
   },
   {

@@ -12,7 +12,7 @@ export const Route = createFileRoute("/signup")({
   head: () => ({
     meta: [
       { title: "Create your workspace — Hawkaii HRMS" },
-      { name: "description", content: "Create your Hawkaii workspace in minutes." },
+      { name: "description", content: "Create your Hawkaii HRMS workspace in minutes." },
     ],
   }),
   component: SignupPage,
@@ -101,7 +101,7 @@ function SignupPage() {
         <label className="flex items-start gap-2 rounded-xl border bg-secondary/40 p-3">
           <Checkbox checked={agree} onCheckedChange={(c) => setAgree(c === true)} className="mt-0.5" />
           <span className="text-xs text-muted-foreground">
-            I agree to Hawkaii's{" "}
+            I agree to the Hawkaii HRMS{" "}
             <a href="#" className="font-medium text-primary hover:underline">Terms of Service</a> and{" "}
             <a href="#" className="font-medium text-primary hover:underline">Privacy Policy</a>.
           </span>
