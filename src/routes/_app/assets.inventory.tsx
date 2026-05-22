@@ -17,7 +17,7 @@ import { AssetFormDrawer } from "@/components/assets/asset-form-drawer";
 export const Route = createFileRoute("/_app/assets/inventory")({ component: Inventory });
 
 function Inventory() {
-  const { assets } = useAssets();
+  const { assets, loading, error } = useAssets();
   const [type, setType] = useState("all");
   const [status, setStatus] = useState<AssetStatus | "all">("all");
   const [assignedFilter, setAssignedFilter] = useState<"all" | "assigned" | "unassigned">("all");
@@ -221,7 +221,12 @@ function Inventory() {
         rows={rows}
         searchKeys={["id", "brand", "model", "serial", "assignedTo", "location"]}
         emptyTitle="No assets match"
-        emptyDescription="Adjust the filters or add a new asset."
+        emptyDescription={
+          error
+            ? "Asset inventory could not be loaded from the backend."
+            : "Adjust the filters or add a new asset."
+        }
+        loading={loading}
       />
 
       <AssetFormDrawer open={open} onOpenChange={setOpen} />

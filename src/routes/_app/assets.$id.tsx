@@ -1,8 +1,12 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useEmployees } from "@/lib/employees-store";
 import { useAssets, warrantyDaysLeft, fmtMoney, ASSET_ADMIN_ROLES } from "@/lib/assets-store";
+import { assetsApi, mapApiAsset } from "@/domains/assets";
+import { isUuid, withApiFallback } from "@/shared/api";
+import { queryKeys, queryTimings } from "@/shared/query";
 import { DataCard, StatusBadge } from "@/components/ui-kit";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -43,15 +47,34 @@ export const Route = createFileRoute("/_app/assets/$id")({ component: AssetDetai
 function AssetDetail() {
   const { id } = useParams({ from: "/_app/assets/$id" });
   const { activeRole } = useAuth();
-  const { assets, assignAsset, returnAsset, setStatus, addMaintenance } = useAssets();
+  const { assets, assignAsset, returnAsset, setStatus, addMaintenance, loading, error } =
+    useAssets();
   const { employees } = useEmployees();
-  const asset = assets.find((a) => a.id === id);
+  const listAsset = assets.find((a) => a.id === id);
+  const detailQuery = useQuery({
+    queryKey: queryKeys.detail("assets", "asset", id),
+    queryFn: () =>
+      withApiFallback(
+        async () => mapApiAsset(await assetsApi.get(id), listAsset),
+        () => listAsset as NonNullable<typeof listAsset>,
+      ),
+    enabled: isUuid(id),
+    staleTime: queryTimings.detailStaleMs,
+  });
+  const asset = detailQuery.data ?? listAsset;
   const isAdmin = !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
 
   if (!asset) {
     return (
       <div className="rounded-2xl border bg-card p-10 text-center">
-        <h2 className="text-lg font-semibold">Asset not found</h2>
+        <h2 className="text-lg font-semibold">
+          {loading || detailQuery.isLoading ? "Loading asset" : "Asset not found"}
+        </h2>
+        {(error || detailQuery.error) && (
+          <p className="mt-3 text-sm text-destructive">
+            Asset data could not be loaded from the backend.
+          </p>
+        )}
         <Button asChild className="mt-4">
           <Link to="/assets/inventory">Back to inventory</Link>
         </Button>

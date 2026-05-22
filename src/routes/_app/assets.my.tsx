@@ -11,7 +11,7 @@ export const Route = createFileRoute("/_app/assets/my")({ component: MyAssets })
 
 function MyAssets() {
   const { user } = useAuth();
-  const { assets, acknowledgeAssignment } = useAssets();
+  const { assets, acknowledgeAssignment, loading, error } = useAssets();
   const mine = assets.filter((a) => a.assignedTo === user?.name);
 
   return (
@@ -20,8 +20,12 @@ function MyAssets() {
         <DataCard title="My assets">
           <EmptyState
             icon={Laptop}
-            title="Nothing assigned yet"
-            description="When IT hands you a device, it will show up here."
+            title={loading ? "Loading assigned assets" : "Nothing assigned yet"}
+            description={
+              error
+                ? "Assigned asset data could not be loaded from the backend."
+                : "When IT hands you a device, it will show up here."
+            }
           />
         </DataCard>
       ) : (

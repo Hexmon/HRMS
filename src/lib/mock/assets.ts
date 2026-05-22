@@ -40,6 +40,7 @@ export interface AssetAuditEntry {
 
 export interface Asset {
   id: string;
+  version?: number;
   type: string; // Laptop, Monitor, Phone, Accessory, Software License...
   category: string; // Hardware / Software / Accessory
   brand: string;

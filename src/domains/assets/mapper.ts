@@ -3,10 +3,14 @@ import type { Asset } from "@/lib/mock/assets";
 
 function mapAssetStatus(value: unknown, fallback: Asset["status"] = "available"): Asset["status"] {
   const normalized = text(value).toLowerCase().replace(/\s+/g, "_");
-  if (["in_stock", "available"].includes(normalized)) return "available";
+  if (["in_stock", "available", "returned"].includes(normalized)) return "available";
   if (["assigned", "allocated"].includes(normalized)) return "assigned";
-  if (["repair", "under_repair", "maintenance"].includes(normalized)) return "repair";
-  if (["lost", "damaged", "retired"].includes(normalized)) return normalized as Asset["status"];
+  if (["repair", "under_repair", "maintenance", "in_maintenance"].includes(normalized))
+    return "repair";
+  if (["lost", "lost_stolen"].includes(normalized)) return "lost";
+  if (["return_pending"].includes(normalized)) return "assigned";
+  if (["damaged"].includes(normalized)) return "damaged";
+  if (["retired"].includes(normalized)) return "retired";
   return fallback;
 }
 
@@ -17,6 +21,7 @@ export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
 
   return {
     id: text(row.id ?? row.asset_code, fallback?.id ?? "AST-API"),
+    version: numberValue(row.version, fallback?.version ?? 1),
     type: assetType,
     category: text(row.category, fallback?.category ?? "Hardware"),
     brand: text(row.brand, fallback?.brand ?? name.split(" ")[0] ?? assetType),

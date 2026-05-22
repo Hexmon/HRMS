@@ -22,6 +22,9 @@ const R_KEY = "hawkaii_asset_requests_v1";
 interface Ctx {
   assets: Asset[];
   requests: AssetRequest[];
+  loading: boolean;
+  error: Error | null;
+  isApiBacked: boolean;
   addAsset: (a: Asset, actor?: string) => void;
   updateAsset: (id: string, patch: Partial<Asset>, actor?: string, action?: string) => void;
   deleteAsset: (id: string) => void;
@@ -127,8 +130,16 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
   });
 
   const assignAssetMutation = useMutation({
-    mutationFn: ({ id, employeeId }: { id: string; employeeId: string }) =>
-      assetsApi.assign(id, { assigned_to_user_id: employeeId, expected_version: 1 }),
+    mutationFn: ({
+      id,
+      employeeId,
+      expectedVersion,
+    }: {
+      id: string;
+      employeeId: string;
+      expectedVersion: number;
+    }) =>
+      assetsApi.assign(id, { assigned_to_user_id: employeeId, expected_version: expectedVersion }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") });
       queryClient.invalidateQueries({
@@ -138,14 +149,27 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
   });
 
   const returnAssetMutation = useMutation({
-    mutationFn: (id: string) => assetsApi.returnAsset(id, { expected_version: 1 }),
-    onSuccess: (_data, id) => {
+    mutationFn: ({ id, expectedVersion }: { id: string; expectedVersion: number }) =>
+      assetsApi.returnAsset(id, { expected_version: expectedVersion }),
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") });
-      queryClient.invalidateQueries({ queryKey: queryKeys.detail("assets", "asset", id) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.detail("assets", "asset", variables.id),
+      });
     },
   });
 
-  const visibleAssets = apiAssetsQuery.data ?? assets;
+  const hasApiResult = apiAssetsQuery.data !== undefined;
+  const visibleAssets = React.useMemo(() => {
+    if (!apiEnabled) return assets;
+    if (!hasApiResult) return [];
+    return apiAssetsQuery.data ?? [];
+  }, [apiAssetsQuery.data, apiEnabled, assets, hasApiResult]);
+  const apiError =
+    apiEnabled && !hasApiResult && apiAssetsQuery.error instanceof Error
+      ? apiAssetsQuery.error
+      : null;
+  const loading = apiEnabled && !hasApiResult && apiAssetsQuery.isLoading;
 
   const addAsset: Ctx["addAsset"] = (a, actor = "Marco Rossi") => {
     const next = { ...a, audit: [audit(actor, "Asset registered"), ...(a.audit ?? [])] };
@@ -203,7 +227,8 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
       }),
     );
     if (apiEnabled && isUuid(id) && employeeId && isUuid(employeeId)) {
-      assignAssetMutation.mutate({ id, employeeId });
+      const current = visibleAssets.find((asset) => asset.id === id);
+      assignAssetMutation.mutate({ id, employeeId, expectedVersion: current?.version ?? 1 });
     }
   };
 
@@ -249,7 +274,10 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         };
       }),
     );
-    if (apiEnabled && isUuid(id)) returnAssetMutation.mutate(id);
+    if (apiEnabled && isUuid(id)) {
+      const current = visibleAssets.find((asset) => asset.id === id);
+      returnAssetMutation.mutate({ id, expectedVersion: current?.version ?? 1 });
+    }
   };
 
   const setStatus: Ctx["setStatus"] = (id, status, actor = "Marco Rossi", remarks) => {
@@ -310,6 +338,9 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
       value={{
         assets: visibleAssets,
         requests,
+        loading,
+        error: apiError,
+        isApiBacked: apiEnabled && hasApiResult,
         addAsset,
         updateAsset,
         deleteAsset,
