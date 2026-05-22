@@ -35,6 +35,7 @@ const allowedTags = new Set([
   "Documents",
   "Assets",
   "Timesheets",
+  "Attendance",
   "Reports & Analytics",
   "Notifications",
   "Outbox / Platform Events",
@@ -86,7 +87,10 @@ const bodyRequiredOperations = new Set([
   "POST /api/v1/timesheets/work-segments",
   "POST /api/v1/timesheets/submissions",
   "POST /api/v1/timesheets/submissions/{id}/approve",
-  "POST /api/v1/timesheets/workflow-definitions"
+  "POST /api/v1/timesheets/workflow-definitions",
+  "POST /api/v1/attendance/punches",
+  "POST /api/v1/attendance/regularizations",
+  "POST /api/v1/attendance/regularizations/{id}/decision"
 ]);
 
 const occOperations = new Set([
@@ -99,7 +103,8 @@ const occOperations = new Set([
   "DELETE /api/v1/manager-backups/{id}",
   "POST /api/v1/assets/{id}/assign",
   "POST /api/v1/assets/{id}/return",
-  "POST /api/v1/timesheets/submissions/{id}/approve"
+  "POST /api/v1/timesheets/submissions/{id}/approve",
+  "POST /api/v1/attendance/regularizations/{id}/decision"
 ]);
 
 const listOperations = new Set([
@@ -123,7 +128,13 @@ const listOperations = new Set([
   "GET /api/v1/timesheets/work-segments",
   "GET /api/v1/timesheets/submissions/my",
   "GET /api/v1/timesheets/queue/approver",
-  "GET /api/v1/timesheets/workflow-definitions"
+  "GET /api/v1/timesheets/workflow-definitions",
+  "GET /api/v1/attendance/punches/my",
+  "GET /api/v1/attendance/summary/my",
+  "GET /api/v1/attendance/summary/team",
+  "GET /api/v1/attendance/calendar/monthly",
+  "GET /api/v1/attendance/regularizations/my",
+  "GET /api/v1/attendance/exceptions"
 ]);
 
 process.env.HRMS_ALLOW_MEMORY_STORE ??= "true";

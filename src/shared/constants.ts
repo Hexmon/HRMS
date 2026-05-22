@@ -167,6 +167,40 @@ export const TimesheetStatuses = {
 
 export type TimesheetStatus = (typeof TimesheetStatuses)[keyof typeof TimesheetStatuses];
 
+export const AttendancePunchEventTypes = {
+  CheckIn: "check_in",
+  BreakStart: "break_start",
+  BreakEnd: "break_end",
+  CheckOut: "check_out"
+} as const;
+
+export type AttendancePunchEventType =
+  (typeof AttendancePunchEventTypes)[keyof typeof AttendancePunchEventTypes];
+
+export const AttendanceDayStatuses = {
+  Present: "present",
+  Late: "late",
+  Absent: "absent",
+  Wfh: "wfh",
+  Leave: "leave",
+  Weekend: "weekend",
+  Holiday: "holiday",
+  Future: "future"
+} as const;
+
+export type AttendanceDayStatus =
+  (typeof AttendanceDayStatuses)[keyof typeof AttendanceDayStatuses];
+
+export const AttendanceRegularizationStatuses = {
+  Pending: "pending",
+  Approved: "approved",
+  Returned: "returned",
+  Rejected: "rejected"
+} as const;
+
+export type AttendanceRegularizationStatus =
+  (typeof AttendanceRegularizationStatuses)[keyof typeof AttendanceRegularizationStatuses];
+
 export const ErrorCodes = {
   BadRequest: "BAD_REQUEST",
   Unauthorized: "UNAUTHORIZED",
@@ -201,5 +235,6 @@ export const RetryableMutationScopes = {
   ExpenseSettlement: "expense-settlement",
   DocumentUpload: "document-upload",
   AssetAssignment: "asset-assignment",
-  TimesheetApproval: "timesheet-approval"
+  TimesheetApproval: "timesheet-approval",
+  AttendanceRegularizationDecision: "attendance-regularization-decision"
 } as const;

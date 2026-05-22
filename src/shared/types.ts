@@ -1,5 +1,8 @@
 import type {
   AssetStatus,
+  AttendanceDayStatus,
+  AttendancePunchEventType,
+  AttendanceRegularizationStatus,
   DocumentClassification,
   EmploymentStatus,
   ExpenseStatus,
@@ -217,6 +220,59 @@ export interface TimesheetSubmission {
   workflow_definition_id: UUID;
   workflow_snapshot: Record<string, unknown>;
   current_approver_user_id: UUID | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface AttendancePunch {
+  id: UUID;
+  employee_user_id: UUID;
+  event_type: AttendancePunchEventType;
+  occurred_at: ISODateTime;
+  work_mode: "office" | "remote" | "wfh" | "field";
+  source: "web" | "mobile" | "kiosk" | "admin";
+  metadata: Record<string, unknown>;
+  created_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface AttendanceDayRecord {
+  id: UUID;
+  employee_user_id: UUID;
+  work_date: ISODate;
+  status: AttendanceDayStatus;
+  first_check_in: ISODateTime | null;
+  last_check_out: ISODateTime | null;
+  work_minutes: number;
+  break_minutes: number;
+  late_minutes: number;
+  early_out_minutes: number;
+  work_mode: "office" | "remote" | "wfh" | "field" | null;
+  note: string | null;
+  exception_type: "late" | "missing_punch" | "absent" | "early_out" | null;
+  regularization_status: AttendanceRegularizationStatus | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface AttendanceRegularizationRequest {
+  id: UUID;
+  employee_user_id: UUID;
+  work_date: ISODate;
+  reason: string;
+  requested_punches: Array<{
+    event_type: AttendancePunchEventType;
+    occurred_at: ISODateTime;
+  }>;
+  status: AttendanceRegularizationStatus;
+  current_approver_user_id: UUID | null;
+  decision_remarks: string | null;
+  decided_by_user_id: UUID | null;
+  decided_at: ISODateTime | null;
   version: number;
   created_at: ISODateTime;
   updated_at: ISODateTime;

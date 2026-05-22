@@ -48,6 +48,12 @@ const expectedOperations = [
   "DELETE /api/v1/manager-backups/{id}",
   "GET /api/v1/assets/",
   "GET /api/v1/assets/{id}",
+  "GET /api/v1/attendance/calendar/monthly",
+  "GET /api/v1/attendance/exceptions",
+  "GET /api/v1/attendance/punches/my",
+  "GET /api/v1/attendance/regularizations/my",
+  "GET /api/v1/attendance/summary/my",
+  "GET /api/v1/attendance/summary/team",
   "GET /api/v1/auth/me",
   "GET /api/v1/core/master-data/org-selectors",
   "GET /api/v1/core/users",
@@ -96,6 +102,9 @@ const expectedOperations = [
   "POST /api/v1/assets/scan/{qr_hash}",
   "POST /api/v1/assets/{id}/assign",
   "POST /api/v1/assets/{id}/return",
+  "POST /api/v1/attendance/punches",
+  "POST /api/v1/attendance/regularizations",
+  "POST /api/v1/attendance/regularizations/{id}/decision",
   "POST /api/v1/auth/email-verifications/resend",
   "POST /api/v1/auth/password-reset/confirm",
   "POST /api/v1/auth/password-reset/request",
@@ -175,6 +184,9 @@ const bodyRequiredOperations = [
   "POST /api/v1/timesheets/submissions",
   "POST /api/v1/timesheets/submissions/{id}/approve",
   "POST /api/v1/timesheets/workflow-definitions",
+  "POST /api/v1/attendance/punches",
+  "POST /api/v1/attendance/regularizations",
+  "POST /api/v1/attendance/regularizations/{id}/decision",
   "POST /api/v1/manager-backups",
   "POST /api/v1/reports/exports",
   "PUT /api/v1/platform/finance-governance"
@@ -189,6 +201,7 @@ const occOperations = [
   "POST /api/v1/assets/{id}/assign",
   "POST /api/v1/assets/{id}/return",
   "POST /api/v1/timesheets/submissions/{id}/approve",
+  "POST /api/v1/attendance/regularizations/{id}/decision",
   "DELETE /api/v1/manager-backups/{id}"
 ];
 
@@ -212,7 +225,13 @@ const listOperations = [
   "GET /api/v1/timesheets/work-segments",
   "GET /api/v1/timesheets/submissions/my",
   "GET /api/v1/timesheets/queue/approver",
-  "GET /api/v1/timesheets/workflow-definitions"
+  "GET /api/v1/timesheets/workflow-definitions",
+  "GET /api/v1/attendance/punches/my",
+  "GET /api/v1/attendance/summary/my",
+  "GET /api/v1/attendance/summary/team",
+  "GET /api/v1/attendance/calendar/monthly",
+  "GET /api/v1/attendance/regularizations/my",
+  "GET /api/v1/attendance/exceptions"
 ];
 
 describe("API contracts", () => {
@@ -403,7 +422,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(85);
+    expect(rows.length).toBe(94);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

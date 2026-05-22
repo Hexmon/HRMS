@@ -1,19 +1,19 @@
 # Frontend Backend Gap Audit
 
-This audit maps the current Hawkaii HRMS frontend to the custom backend contract work still needed. It is the feature-wise source for what to keep, remove, change, and add before replacing mock/localStorage and legacy Supabase access with `/api/v1` calls.
+This audit maps the current Hawkaii HRMS frontend to the custom backend contract work still needed. It is the feature-wise source for what to keep, remove, change, and add before replacing mock/localStorage access with `/api/v1` calls.
 
 ## Current Frontend State
 
 - The app is a mock-first HRMS frontend. Most business state is in `src/lib/*-store.tsx` and `src/lib/mock/`.
 - The visible product surface includes auth/onboarding, dashboard, employees, EMS, attendance, leave/WFH, timesheets, projects, utilization, expenses, assets, helpdesk, reports, admin settings, and developer handoff.
-- Existing backend handoff coverage is strongest for auth/session, core user hierarchy, expenses, finance, documents, assets, timesheets, expense reports, health, and OpenAPI tooling.
-- Full frontend coverage requires additional API groups for EMS, attendance, leave/WFH, projects, helpdesk, admin settings, notifications, dashboard aggregates, and non-expense reports.
+- Existing backend handoff coverage is strongest for auth/session, core user hierarchy, expenses, finance, documents, assets, timesheets, attendance basics, expense reports, health, and OpenAPI tooling.
+- Full frontend coverage requires additional API groups for EMS, attendance reports/exports, leave/WFH, projects, helpdesk, admin settings, notifications, dashboard role widgets, and non-expense reports.
 
 ## API Count Summary
 
-Current documented backend contract: **76 operations** in `openapi.json` after Phase 2 auth onboarding completion.
+Current documented backend contract: **94 operations** in `openapi.json` after Phase 3 attendance API completion.
 
-- **66** operations are under `/api/v1/**`.
+- **92** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
 - **0** documented backend operations currently need deletion from the OpenAPI pack because Reviewer/Director APIs are not present there.
 
@@ -21,13 +21,13 @@ Disjoint implementation counts for backend planning:
 
 | Category | Count | Meaning |
 | --- | ---: | --- |
-| Existing APIs ready to integrate as-is | 57 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
-| Existing APIs to update in place | 11 | Keep the same endpoint, but expand response/request shape or behavior for full visible frontend parity. |
+| Existing APIs ready to integrate as-is | 94 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
+| Existing APIs to update in place | 0 | Phase 1A-1C existing API expansions have landed; new gaps should be added as explicit new endpoints. |
 | Existing APIs to delete | 0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
-| New APIs remaining to add | 138 | Remaining first-pass count needed after Phase 2 auth onboarding APIs landed. |
-| Target contract size after additions | 214 | `76 current + 138 remaining`; the 11 updated APIs remain part of the original API surface. |
+| New APIs remaining to add | 120 | Remaining first-pass count needed after Phase 3 attendance API completion. |
+| Target contract size after additions | 214 | `94 current + 120 remaining`; the 11 updated APIs remain part of the original API surface. |
 
-Existing APIs that need shape or behavior updates:
+Existing APIs updated in place during earlier phases:
 
 | API | Required update |
 | --- | --- |
@@ -51,7 +51,7 @@ Minimum new API operation count by frontend area:
 | Dashboard | 1 | Role-scoped dashboard summary for cards, queues, announcements, birthdays, audit snippets, and shortcuts. |
 | Employees/Core | 13 | Employee CRUD/status/login, role assignment/history, profile audit, import/export jobs, department/designation selectors, org hierarchy. |
 | EMS | 14 | My profile, profile update requests, employee documents, letters, policies, acknowledgements, generic requests, HR approval/admin queues. |
-| Attendance | 12 | Punches, daily/monthly calendar, summaries, regularization, exceptions, HR decisions, reports, exports. |
+| Attendance | 3 | Daily calendar endpoint, manager queue alias if needed by UI, reports/exports. Punches, monthly calendar, summaries, regularization submit/list/decision, and exceptions are implemented. |
 | Leave/WFH | 15 | Balances, leave apply, WFH apply, cancellation, manager approvals, HR monitor, holiday CRUD, reports, exports. |
 | Timesheets | 5 | Project aggregations, missing submissions, productivity summaries, submission detail, selector metadata. |
 | Projects/utilization | 15 | Project CRUD, members, allocations, modules/milestones, project documents, project summaries, utilization/bench/overload analytics. |
@@ -61,7 +61,7 @@ Minimum new API operation count by frontend area:
 | Reports | 10 | HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, export list/detail beyond existing expense exports. |
 | Admin settings | 20 | Company profile, master data, RBAC, workflows, policies, email templates, notification channels, security settings, audit logs. |
 | Notifications | 4 | Feed, unread count, mark read, mark all read/preferences integration. |
-| **Total remaining** | **138** | Remaining operation count for full visible frontend coverage after Phase 2. |
+| **Total remaining** | **120** | Remaining operation count for full visible frontend coverage after Phase 3 attendance. |
 
 ## Expense Flow Alignment
 
@@ -95,7 +95,7 @@ Remove:
 | Dashboard                  | `/dashboard`                                                                                                | No dedicated dashboard contract.                                             | Role-scoped dashboard summary endpoint returning cards, queues, announcements, birthdays, audit snippets, and module shortcuts.                                                   |
 | Employees/Core             | `/employees`, `/employees/:id`                                                                              | User list/detail/subtree.                                                    | Employee CRUD, status changes, login enable/disable, role assignment history, profile audit, department/designation selectors, import/export jobs.                                |
 | EMS                        | `/ems/*`                                                                                                    | Documents APIs partially reusable.                                           | My profile, profile update requests, employee documents, HR letters, policies, generic employee requests, HR approval queues, EMS admin queues.                                   |
-| Attendance                 | `/attendance/*`                                                                                             | None in frontend contract pack.                                              | Punch/clock events, daily calendar, monthly summaries, exception/regularization requests, HR exception decisions, attendance reports.                                             |
+| Attendance                 | `/attendance/*`                                                                                             | Punches, my punch list, my/team summaries, monthly calendar, regularization submit/list/decision, and exceptions. | Daily calendar alias if required, manager queue alias if required, attendance reports/exports.                                                                                    |
 | Leave/WFH                  | `/leave-wfh/*`                                                                                              | None in frontend contract pack.                                              | Leave balances, apply leave, apply WFH, cancel request, manager decisions, HR monitor list, holiday calendar CRUD, leave/WFH reports.                                             |
 | Timesheets                 | `/timesheet/*`                                                                                              | Work segments, submissions, approver queue, workflow definitions.            | Project view aggregations, missing submissions, productivity summaries, richer rejection/return remarks, project-selector metadata.                                               |
 | Projects/utilization       | `/projects`, `/projects/:id`, `/team-utilization`                                                           | None in frontend contract pack.                                              | Project CRUD, members, allocation history, modules/milestones, project documents, project timesheets/expenses summaries, utilization/bench/overload analytics.                    |
@@ -111,7 +111,7 @@ Remove:
 - Add a generated `/api/v1` client from `docs/api/frontend-contract/openapi.json`.
 - Wrap generated calls in feature adapters so current Context providers can migrate without rewriting screens at once.
 - Replace `src/lib/mock/*` reads module-by-module with React Query queries/mutations.
-- Remove direct Supabase imports from active UI paths after replacement; Supabase schema/client files should not be used by browser screens.
+- Remove direct legacy data-client imports from active UI paths after replacement; browser screens should use feature adapters backed by `/api/v1`.
 - Persist filters, pagination, sort, and selected tabs in URL/state for backend-backed list views.
 - Standardize API errors in UI: field errors from `details.fieldErrors`, support-visible `request_id`, `403` access denied, `409` refresh-and-retry, `429` retry after `Retry-After`.
 

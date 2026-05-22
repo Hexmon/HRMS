@@ -2,6 +2,9 @@ import { randomBytes, randomUUID, createHash } from "node:crypto";
 import type { Pool } from "pg";
 import type {
   AssetRecord,
+  AttendanceDayRecord,
+  AttendancePunch,
+  AttendanceRegularizationRequest,
   AuthUser,
   CoreUser,
   Department,
@@ -258,6 +261,9 @@ export interface DataStore {
     remarks: string | null;
     created_at: string;
   }>;
+  attendancePunches: AttendancePunch[];
+  attendanceDayRecords: AttendanceDayRecord[];
+  attendanceRegularizations: AttendanceRegularizationRequest[];
   processedEvents: Set<string>;
   sessionStore: SessionStore;
   objectStorage: ObjectStoragePort | null;
@@ -645,6 +651,9 @@ export function createMemoryDataStore(): MemoryDataStore {
     ],
     timesheetSubmissions: [],
     timesheetActions: [],
+    attendancePunches: [],
+    attendanceDayRecords: [],
+    attendanceRegularizations: [],
     processedEvents: new Set<string>(),
     sessionStore: new MemorySessionStore(),
     objectStorage: null,

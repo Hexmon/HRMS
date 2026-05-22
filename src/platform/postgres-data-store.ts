@@ -4,6 +4,9 @@ import { ValkeySessionStore } from "#auth";
 import type { RoleKey } from "#shared";
 import type {
   AssetRecord,
+  AttendanceDayRecord,
+  AttendancePunch,
+  AttendanceRegularizationRequest,
   CoreUser,
   Department,
   Designation,
@@ -51,6 +54,9 @@ export interface PostgresDataStoreOptions {
 }
 
 const resetTables = [
+  "attendance.regularization_requests",
+  "attendance.daily_records",
+  "attendance.punch_events",
   "timesheets.timesheet_approval_actions",
   "timesheets.timesheet_submissions",
   "timesheets.workflow_definitions",
@@ -152,6 +158,9 @@ function copyData(target: DataStore, source: DataStore): void {
   target.workflowDefinitions = source.workflowDefinitions;
   target.timesheetSubmissions = source.timesheetSubmissions;
   target.timesheetActions = source.timesheetActions;
+  target.attendancePunches = source.attendancePunches;
+  target.attendanceDayRecords = source.attendanceDayRecords;
+  target.attendanceRegularizations = source.attendanceRegularizations;
   target.nextTicketNo = source.nextTicketNo;
   target.nextOutboxId = source.nextOutboxId;
 }
@@ -258,6 +267,9 @@ class PostgresPersistence {
       loaded.workflowDefinitions = await this.loadWorkflowDefinitions(client);
       loaded.timesheetSubmissions = await this.loadTimesheetSubmissions(client);
       loaded.timesheetActions = await this.loadTimesheetActions(client);
+      loaded.attendancePunches = await this.loadAttendancePunches(client);
+      loaded.attendanceDayRecords = await this.loadAttendanceDayRecords(client);
+      loaded.attendanceRegularizations = await this.loadAttendanceRegularizations(client);
       loaded.nextOutboxId = Math.max(1, ...loaded.outbox.map((event) => event.id + 1));
       loaded.nextTicketNo = this.nextTicketNumber(loaded.tickets);
       copyData(this.store, loaded);
@@ -276,6 +288,7 @@ class PostgresPersistence {
       await this.flushDocuments(client);
       await this.flushAssets(client);
       await this.flushTimesheets(client);
+      await this.flushAttendance(client);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -806,6 +819,65 @@ class PostgresPersistence {
       decision: row.decision,
       remarks: row.remarks,
       created_at: asIso(row.created_at)
+    }));
+  }
+
+  private async loadAttendancePunches(client: PoolClient): Promise<AttendancePunch[]> {
+    const { rows } = await client.query("SELECT * FROM attendance.punch_events ORDER BY occurred_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      employee_user_id: row.employee_user_id,
+      event_type: row.event_type,
+      occurred_at: asIso(row.occurred_at),
+      work_mode: row.work_mode,
+      source: row.source,
+      metadata: json(row.metadata),
+      created_at: asIso(row.created_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadAttendanceDayRecords(client: PoolClient): Promise<AttendanceDayRecord[]> {
+    const { rows } = await client.query("SELECT * FROM attendance.daily_records ORDER BY work_date, employee_user_id");
+    return rows.map((row) => ({
+      id: row.id,
+      employee_user_id: row.employee_user_id,
+      work_date: asDate(row.work_date),
+      status: row.status,
+      first_check_in: asIsoOrNull(row.first_check_in),
+      last_check_out: asIsoOrNull(row.last_check_out),
+      work_minutes: row.work_minutes,
+      break_minutes: row.break_minutes,
+      late_minutes: row.late_minutes,
+      early_out_minutes: row.early_out_minutes,
+      work_mode: row.work_mode,
+      note: row.note,
+      exception_type: row.exception_type,
+      regularization_status: row.regularization_status,
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadAttendanceRegularizations(client: PoolClient): Promise<AttendanceRegularizationRequest[]> {
+    const { rows } = await client.query("SELECT * FROM attendance.regularization_requests ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      employee_user_id: row.employee_user_id,
+      work_date: asDate(row.work_date),
+      reason: row.reason,
+      requested_punches: Array.isArray(row.requested_punches) ? row.requested_punches : [],
+      status: row.status,
+      current_approver_user_id: row.current_approver_user_id,
+      decision_remarks: row.decision_remarks,
+      decided_by_user_id: row.decided_by_user_id,
+      decided_at: asIsoOrNull(row.decided_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
     }));
   }
 
@@ -1538,6 +1610,118 @@ class PostgresPersistence {
           action.decision,
           action.remarks,
           action.created_at
+        ]
+      );
+    }
+  }
+
+  private async flushAttendance(client: PoolClient): Promise<void> {
+    for (const punch of this.store.attendancePunches) {
+      await client.query(
+        `INSERT INTO attendance.punch_events (
+          id, employee_user_id, event_type, occurred_at, work_mode, source,
+          metadata, created_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
+        ON CONFLICT (id) DO UPDATE
+        SET event_type = EXCLUDED.event_type,
+            occurred_at = EXCLUDED.occurred_at,
+            work_mode = EXCLUDED.work_mode,
+            source = EXCLUDED.source,
+            metadata = EXCLUDED.metadata,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          punch.id,
+          punch.employee_user_id,
+          punch.event_type,
+          punch.occurred_at,
+          punch.work_mode,
+          punch.source,
+          JSON.stringify(punch.metadata),
+          punch.created_at,
+          punch.deleted_at
+        ]
+      );
+    }
+    for (const day of this.store.attendanceDayRecords) {
+      await client.query(
+        `INSERT INTO attendance.daily_records (
+          id, employee_user_id, work_date, status, first_check_in, last_check_out,
+          work_minutes, break_minutes, late_minutes, early_out_minutes, work_mode,
+          note, exception_type, regularization_status, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        ON CONFLICT (employee_user_id, work_date) DO UPDATE
+        SET status = EXCLUDED.status,
+            first_check_in = EXCLUDED.first_check_in,
+            last_check_out = EXCLUDED.last_check_out,
+            work_minutes = EXCLUDED.work_minutes,
+            break_minutes = EXCLUDED.break_minutes,
+            late_minutes = EXCLUDED.late_minutes,
+            early_out_minutes = EXCLUDED.early_out_minutes,
+            work_mode = EXCLUDED.work_mode,
+            note = EXCLUDED.note,
+            exception_type = EXCLUDED.exception_type,
+            regularization_status = EXCLUDED.regularization_status,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          day.id,
+          day.employee_user_id,
+          day.work_date,
+          day.status,
+          day.first_check_in,
+          day.last_check_out,
+          day.work_minutes,
+          day.break_minutes,
+          day.late_minutes,
+          day.early_out_minutes,
+          day.work_mode,
+          day.note,
+          day.exception_type,
+          day.regularization_status,
+          day.version,
+          day.created_at,
+          day.updated_at,
+          day.deleted_at
+        ]
+      );
+    }
+    for (const request of this.store.attendanceRegularizations) {
+      await client.query(
+        `INSERT INTO attendance.regularization_requests (
+          id, employee_user_id, work_date, reason, requested_punches, status,
+          current_approver_user_id, decision_remarks, decided_by_user_id,
+          decided_at, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (id) DO UPDATE
+        SET reason = EXCLUDED.reason,
+            requested_punches = EXCLUDED.requested_punches,
+            status = EXCLUDED.status,
+            current_approver_user_id = EXCLUDED.current_approver_user_id,
+            decision_remarks = EXCLUDED.decision_remarks,
+            decided_by_user_id = EXCLUDED.decided_by_user_id,
+            decided_at = EXCLUDED.decided_at,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          request.id,
+          request.employee_user_id,
+          request.work_date,
+          request.reason,
+          JSON.stringify(request.requested_punches),
+          request.status,
+          request.current_approver_user_id,
+          request.decision_remarks,
+          request.decided_by_user_id,
+          request.decided_at,
+          request.version,
+          request.created_at,
+          request.updated_at,
+          request.deleted_at
         ]
       );
     }

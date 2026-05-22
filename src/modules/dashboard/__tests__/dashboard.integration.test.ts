@@ -75,10 +75,11 @@ describe("dashboard summary API", () => {
     expect(body.approvals.timesheet_pending).toBeGreaterThanOrEqual(1);
     expect(body.workload.submitted_hours_total).toBe("8.00");
     expect(body.cards.map((card: { key: string }) => card.key)).toEqual(
-      expect.arrayContaining(["active_employees", "pending_expense_approvals", "pending_timesheet_approvals"])
+      expect.arrayContaining(["active_employees", "pending_expense_approvals", "pending_timesheet_approvals", "attendance_exceptions"])
     );
     expect(body.unavailable_features.map((feature: { key: string }) => feature.key)).toEqual(
-      expect.arrayContaining(["attendance", "leave_wfh_holidays", "helpdesk", "projects_utilization"])
+      expect.arrayContaining(["leave_wfh_holidays", "helpdesk", "projects_utilization"])
     );
+    expect(body.unavailable_features.map((feature: { key: string }) => feature.key)).not.toContain("attendance");
   });
 });

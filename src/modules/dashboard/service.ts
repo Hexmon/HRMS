@@ -1,5 +1,5 @@
 import type { AuthUser, CoreUser, ExpenseTicket, TimesheetSubmission, UUID } from "#shared";
-import { AssetStatuses, EmploymentStatuses, ExpenseStatuses, Roles, TimesheetStatuses } from "#shared";
+import { AssetStatuses, AttendanceDayStatuses, EmploymentStatuses, ExpenseStatuses, Roles, TimesheetStatuses } from "#shared";
 import type { MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 
@@ -14,6 +14,7 @@ export interface DashboardMetric {
     | "documents"
     | "assets"
     | "timesheets"
+    | "attendance"
     | "notifications"
     | "outbox"
     | "system";
@@ -80,6 +81,7 @@ export class DashboardService {
     const visibleTickets = this.visibleTickets(actor, visibleUserIds);
     const visibleSubmissions = this.visibleTimesheetSubmissions(actor, visibleUserIds);
     const visibleSegments = this.visibleWorkSegments(actor, visibleUserIds);
+    const visibleAttendance = this.visibleAttendanceDays(actor, visibleUserIds);
     const visibleAssets = this.visibleAssets(actor, visibleUserIds);
     const pendingManagerExpenses = visibleTickets.filter((ticket) => this.isManagerPendingFor(actor, ticket)).length;
     const pendingFinanceExpenses = visibleTickets.filter((ticket) => this.isFinancePendingFor(actor, ticket)).length;
@@ -116,6 +118,7 @@ export class DashboardService {
         metric("active_employees", "Active employees", activeEmployees, "count", "core"),
         metric("pending_expense_approvals", "Pending expense approvals", expensePending, "count", "expenses"),
         metric("pending_timesheet_approvals", "Pending timesheet approvals", pendingTimesheets, "count", "timesheets"),
+        metric("attendance_exceptions", "Attendance exceptions", this.attendanceExceptionCount(visibleAttendance), "count", "attendance"),
         metric("assigned_assets", "Assigned assets", operations.assets_assigned, "count", "assets"),
         metric("documents_pending_verification", "Documents pending verification", pendingDocuments, "count", "documents"),
         metric("submitted_hours", "Submitted hours", workload.submitted_hours_total, "hours", "timesheets")
@@ -139,16 +142,11 @@ export class DashboardService {
       attention: [
         metric("pending_expense_approvals", "Expense approvals waiting", expensePending, "count", "expenses"),
         metric("pending_timesheet_approvals", "Timesheets waiting", pendingTimesheets, "count", "timesheets"),
+        metric("attendance_exceptions", "Attendance exceptions", this.attendanceExceptionCount(visibleAttendance), "count", "attendance"),
         metric("asset_recovery_pending", "Asset recoveries pending", operations.assets_recovery_pending, "count", "assets"),
         metric("outbox_pending", "Integration events pending", operations.outbox_pending, "count", "outbox")
       ].filter((item) => Number(item.value) > 0),
       unavailable_features: [
-        {
-          key: "attendance",
-          label: "Attendance",
-          status: "not_implemented",
-          notes: "Attendance module is scheduled for Phase 3 and is not counted in this dashboard yet."
-        },
         {
           key: "leave_wfh_holidays",
           label: "Leave, WFH, and holidays",
@@ -217,6 +215,23 @@ export class DashboardService {
       return segments;
     }
     return segments.filter((segment) => visibleUserIds.has(segment.employee_user_id));
+  }
+
+  private visibleAttendanceDays(actor: AuthUser, visibleUserIds: Set<UUID>) {
+    const days = this.store.attendanceDayRecords.filter((record) => !record.deleted_at);
+    if (this.canSeeSystemWide(actor)) {
+      return days;
+    }
+    return days.filter((record) => visibleUserIds.has(record.employee_user_id));
+  }
+
+  private attendanceExceptionCount(records: Array<{ exception_type: string | null; status: string }>): number {
+    return records.filter(
+      (record) =>
+        record.exception_type ||
+        record.status === AttendanceDayStatuses.Absent ||
+        record.status === AttendanceDayStatuses.Late
+    ).length;
   }
 
   private visibleAssets(actor: AuthUser, visibleUserIds: Set<UUID>) {

@@ -858,7 +858,7 @@ const dashboardMetricSchema = {
     unit: { type: "string", enum: ["count", "money", "hours", "status"], example: "count" },
     source: {
       type: "string",
-      enum: ["core", "expenses", "documents", "assets", "timesheets", "notifications", "outbox", "system"],
+      enum: ["core", "expenses", "documents", "assets", "timesheets", "attendance", "notifications", "outbox", "system"],
       example: "expenses"
     }
   },
@@ -951,10 +951,10 @@ const dashboardSummarySchema = {
         type: "object",
         required: ["key", "label", "status", "notes"],
         properties: {
-          key: { type: "string", example: "attendance" },
-          label: { type: "string", example: "Attendance" },
+          key: { type: "string", example: "leave_wfh_holidays" },
+          label: { type: "string", example: "Leave, WFH, and holidays" },
           status: { type: "string", enum: ["not_implemented"], example: "not_implemented" },
-          notes: { type: "string", example: "Attendance module is scheduled for Phase 3 and is not counted in this dashboard yet." }
+          notes: { type: "string", example: "Leave/WFH/holiday workflows are scheduled for Phase 3 and are not counted in this dashboard yet." }
         },
         additionalProperties: false
       }
@@ -974,6 +974,167 @@ const paginated = (itemSchema: JsonSchema) => ({
   },
   additionalProperties: false
 });
+
+const attendanceQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    date_from: date("Start date filter", "2026-05-01"),
+    date_to: date("End date filter", "2026-05-31"),
+    month: { type: "string", pattern: "^\\d{4}-\\d{2}$", example: "2026-05" },
+    user_id: uuid("Optional employee user UUID"),
+    department_id: uuid("Optional department UUID"),
+    status: { type: "string", example: "pending" },
+    exception_type: {
+      type: "string",
+      enum: ["late", "missing_punch", "absent", "early_out", "correction"],
+      example: "missing_punch"
+    }
+  }
+};
+
+const attendancePunchBody = {
+  type: "object",
+  required: ["event_type"],
+  properties: {
+    event_type: { type: "string", enum: ["check_in", "break_start", "break_end", "check_out"], example: "check_in" },
+    occurred_at: dateTime("Punch timestamp"),
+    work_mode: { type: "string", enum: ["office", "remote", "wfh", "field"], default: "office", example: "office" },
+    source: { type: "string", enum: ["web", "mobile", "kiosk", "admin"], default: "web", example: "web" },
+    metadata: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: false
+};
+
+const attendancePunchSchema = {
+  type: "object",
+  required: ["id", "employee_user_id", "event_type", "occurred_at", "work_date", "time"],
+  properties: {
+    id: uuid("Attendance punch UUID"),
+    employee_user_id: uuid("Employee user UUID"),
+    event_type: { type: "string", enum: ["check_in", "break_start", "break_end", "check_out"], example: "check_in" },
+    occurred_at: dateTime("Punch timestamp"),
+    work_date: date("Work date"),
+    time: { type: "string", nullable: true, example: "09:10" },
+    work_mode: { type: "string", example: "office" },
+    source: { type: "string", example: "web" }
+  },
+  additionalProperties: true
+};
+
+const attendanceDaySchema = {
+  type: "object",
+  required: ["id", "employee_user_id", "work_date", "status", "work_minutes", "version"],
+  properties: {
+    id: uuid("Attendance day UUID"),
+    employee_user_id: uuid("Employee user UUID"),
+    work_date: date("Work date"),
+    status: { type: "string", enum: ["present", "late", "absent", "wfh", "leave", "weekend", "holiday", "future"], example: "present" },
+    first_check_in: { ...dateTime("First check-in"), nullable: true },
+    last_check_out: { ...dateTime("Last check-out"), nullable: true },
+    in_time: { type: "string", nullable: true, example: "09:10" },
+    out_time: { type: "string", nullable: true, example: "18:20" },
+    hours: { type: "string", example: "9h 10m" },
+    work_minutes: { type: "integer", minimum: 0, example: 550 },
+    break_minutes: { type: "integer", minimum: 0, example: 30 },
+    late_minutes: { type: "integer", minimum: 0, example: 0 },
+    early_out_minutes: { type: "integer", minimum: 0, example: 0 },
+    exception_type: { type: "string", nullable: true, example: "late" },
+    regularization_status: { type: "string", nullable: true, example: "pending" },
+    detail: { type: "string", example: "9h 10m" },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const attendanceSummarySchema = {
+  type: "object",
+  required: ["generated_at", "range", "today", "summary", "week_records", "exception_history"],
+  properties: {
+    generated_at: dateTime("Summary generation timestamp"),
+    range: { type: "object", additionalProperties: true },
+    today: attendanceDaySchema,
+    summary: { type: "object", additionalProperties: true },
+    week_records: { type: "array", items: attendanceDaySchema },
+    exception_history: { type: "array", items: { type: "object", additionalProperties: true } }
+  },
+  additionalProperties: true
+};
+
+const attendanceTeamSummarySchema = {
+  type: "object",
+  required: ["generated_at", "date", "totals", "department_summary", "exceptions"],
+  properties: {
+    generated_at: dateTime("Summary generation timestamp"),
+    date: date("Attendance date"),
+    totals: { type: "object", additionalProperties: true },
+    department_summary: { type: "array", items: { type: "object", additionalProperties: true } },
+    exceptions: { type: "array", items: { type: "object", additionalProperties: true } }
+  },
+  additionalProperties: true
+};
+
+const attendanceCalendarSchema = {
+  type: "object",
+  required: ["generated_at", "month", "user", "calendar_days", "summary"],
+  properties: {
+    generated_at: dateTime("Calendar generation timestamp"),
+    month: { type: "string", example: "2026-05" },
+    user: { type: "object", additionalProperties: true },
+    calendar_days: { type: "array", items: attendanceDaySchema },
+    summary: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const attendanceRegularizationCreateBody = {
+  type: "object",
+  required: ["work_date", "reason"],
+  properties: {
+    work_date: date("Regularization work date"),
+    reason: { type: "string", minLength: 3, maxLength: 1000, example: "Forgot to punch out." },
+    requested_punches: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["event_type", "occurred_at"],
+        properties: {
+          event_type: { type: "string", enum: ["check_in", "break_start", "break_end", "check_out"], example: "check_out" },
+          occurred_at: dateTime("Requested punch timestamp")
+        }
+      }
+    }
+  },
+  additionalProperties: false
+};
+
+const attendanceRegularizationDecisionBody = {
+  type: "object",
+  required: ["decision", "expected_version"],
+  properties: {
+    decision: { type: "string", enum: ["approve", "reject", "return"], example: "approve" },
+    remarks: { type: "string", description: "Required for reject/return decisions.", example: "Approved." },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const attendanceRegularizationSchema = {
+  type: "object",
+  required: ["id", "employee_user_id", "work_date", "reason", "status", "version"],
+  properties: {
+    id: uuid("Regularization request UUID"),
+    employee_user_id: uuid("Employee user UUID"),
+    work_date: date("Work date"),
+    reason: { type: "string", example: "Forgot to punch out." },
+    requested_punches: { type: "array", items: { type: "object", additionalProperties: true } },
+    status: { type: "string", enum: ["pending", "approved", "returned", "rejected"], example: "pending" },
+    current_approver_user_id: { ...uuid("Current approver user UUID"), nullable: true },
+    decision_remarks: { type: "string", nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
 
 const validationErrorExample = {
   code: "VALIDATION_FAILED",
@@ -1607,8 +1768,62 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/dashboard/summary": operation(
     "Dashboard",
     "Dashboard summary",
-    "Returns a role-scoped dashboard summary assembled from implemented backend modules only: Core users, Expenses, Documents, Assets, Timesheets, Notifications, and Outbox. Missing modules such as Attendance, Leave/WFH/Holidays, Helpdesk, and Projects are explicitly marked not_implemented instead of returning mock counts.",
+    "Returns a role-scoped dashboard summary assembled from implemented backend modules only: Core users, Expenses, Documents, Assets, Timesheets, Attendance, Notifications, and Outbox. Missing modules such as Leave/WFH/Holidays, Helpdesk, and Projects are explicitly marked not_implemented instead of returning mock counts.",
     { response200: dashboardSummarySchema }
+  ),
+  "POST /api/v1/attendance/punches": operation(
+    "Attendance",
+    "Record punch",
+    "Records a check-in, break, resume, or check-out punch for the authenticated employee. Duplicate or out-of-sequence punches return 409 with next allowed actions.",
+    { body: attendancePunchBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/attendance/punches/my": operation(
+    "Attendance",
+    "My punch events",
+    "Lists authenticated employee punch events with date range pagination.",
+    { querystring: attendanceQuerySchema, response200: paginated(attendancePunchSchema) }
+  ),
+  "GET /api/v1/attendance/summary/my": operation(
+    "Attendance",
+    "My attendance summary",
+    "Returns authenticated employee attendance summary cards, today's day status, week records, and exception history for a date range or month.",
+    { querystring: attendanceQuerySchema, response200: attendanceSummarySchema }
+  ),
+  "GET /api/v1/attendance/summary/team": operation(
+    "Attendance",
+    "Team attendance summary",
+    "Returns manager/HR/Admin scoped attendance totals, department mix, and compact exceptions for a selected date.",
+    { querystring: attendanceQuerySchema, response200: attendanceTeamSummarySchema }
+  ),
+  "GET /api/v1/attendance/calendar/monthly": operation(
+    "Attendance",
+    "Monthly attendance calendar",
+    "Returns a monthly attendance calendar for self or an in-scope employee. HR, Admin, and Auditor can view all employees; managers can view their hierarchy.",
+    { querystring: attendanceQuerySchema, response200: attendanceCalendarSchema }
+  ),
+  "POST /api/v1/attendance/regularizations": operation(
+    "Attendance",
+    "Submit attendance regularization",
+    "Submits a missing or incorrect punch regularization request for the authenticated employee and routes it to the immediate manager or Admin fallback.",
+    { body: attendanceRegularizationCreateBody, response200: attendanceRegularizationSchema }
+  ),
+  "GET /api/v1/attendance/regularizations/my": operation(
+    "Attendance",
+    "My regularization requests",
+    "Lists authenticated employee regularization requests with status and date filters.",
+    { querystring: attendanceQuerySchema, response200: paginated(attendanceRegularizationSchema) }
+  ),
+  "POST /api/v1/attendance/regularizations/{id}/decision": operation(
+    "Attendance",
+    "Decide attendance regularization",
+    "Approves, returns, or rejects an attendance regularization request with optimistic concurrency. Reject/return require remarks and self-processing is blocked.",
+    { params: idParamSchema, body: attendanceRegularizationDecisionBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/attendance/exceptions": operation(
+    "Attendance",
+    "Attendance exceptions",
+    "Lists late, missing punch, absent, early-out, and correction exceptions visible to HR/Admin/Auditor or a reporting manager.",
+    { querystring: attendanceQuerySchema, response200: { ...paginated({ type: "object", additionalProperties: true }), additionalProperties: true } }
   ),
   "GET /api/v1/platform/finance-governance": operation(
     "Admin / Configuration",
@@ -1745,6 +1960,7 @@ export const openApiTags = [
   { name: "Documents", description: "Secure document metadata, object-storage-backed file access, verification, and access logs." },
   { name: "Assets", description: "Asset inventory, QR scan, assignment, recovery, and license workflows." },
   { name: "Timesheets", description: "Work segments, submissions, approval queues, and workflow definitions." },
+  { name: "Attendance", description: "Punches, summaries, calendars, exceptions, and regularization workflows." },
   { name: "Reports & Analytics", description: "Role-scoped expense registers and export readiness." },
   { name: "Notifications", description: "Notification contracts are emitted by backend workflows; no public endpoint is exposed in this delivery." },
   { name: "Outbox / Platform Events", description: "Transactional outbox and protected local event consumer contracts." },

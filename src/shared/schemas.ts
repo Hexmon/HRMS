@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  AttendancePunchEventTypes,
   AssetStatuses,
   DocumentClassifications,
   ExpenseDecisions,
@@ -169,6 +170,43 @@ export const timesheetSubmissionSchema = z.object({
 });
 
 export const timesheetDecisionSchema = z.object({
+  decision: z.enum(["approve", "reject", "return"]),
+  remarks: z.string().optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export const attendancePunchSchema = z.object({
+  event_type: z.enum([
+    AttendancePunchEventTypes.CheckIn,
+    AttendancePunchEventTypes.BreakStart,
+    AttendancePunchEventTypes.BreakEnd,
+    AttendancePunchEventTypes.CheckOut
+  ]),
+  occurred_at: isoDateTimeSchema.optional(),
+  work_mode: z.enum(["office", "remote", "wfh", "field"]).default("office"),
+  source: z.enum(["web", "mobile", "kiosk", "admin"]).default("web"),
+  metadata: z.record(z.string(), z.unknown()).default({})
+});
+
+export const attendanceRegularizationCreateSchema = z.object({
+  work_date: isoDateSchema,
+  reason: z.string().min(3).max(1000),
+  requested_punches: z
+    .array(
+      z.object({
+        event_type: z.enum([
+          AttendancePunchEventTypes.CheckIn,
+          AttendancePunchEventTypes.BreakStart,
+          AttendancePunchEventTypes.BreakEnd,
+          AttendancePunchEventTypes.CheckOut
+        ]),
+        occurred_at: isoDateTimeSchema
+      })
+    )
+    .default([])
+});
+
+export const attendanceRegularizationDecisionSchema = z.object({
   decision: z.enum(["approve", "reject", "return"]),
   remarks: z.string().optional(),
   expected_version: z.number().int().min(1)

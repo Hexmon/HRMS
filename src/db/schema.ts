@@ -18,6 +18,7 @@ export const expenses = pgSchema("expenses");
 export const documents = pgSchema("documents");
 export const assets = pgSchema("assets");
 export const timesheets = pgSchema("timesheets");
+export const attendance = pgSchema("attendance");
 export const platform = pgSchema("platform");
 
 const uuidPk = uuid("id").primaryKey();
@@ -204,6 +205,78 @@ export const processedEvents = platform.table("processed_events", {
   eventId: uuid("event_id").notNull(),
   processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow()
 });
+
+export const attendancePunchEvents = attendance.table(
+  "punch_events",
+  {
+    id: uuidPk.defaultRandom(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    eventType: text("event_type").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    workMode: text("work_mode").notNull().default("office"),
+    source: text("source").notNull().default("web"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt,
+    deletedAt
+  },
+  (table) => [
+    index("attendance_punch_employee_occurred_idx").on(table.employeeUserId, table.occurredAt),
+    index("attendance_punch_event_type_idx").on(table.eventType, table.occurredAt)
+  ]
+);
+
+export const attendanceDailyRecords = attendance.table(
+  "daily_records",
+  {
+    id: uuidPk.defaultRandom(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    workDate: date("work_date").notNull(),
+    status: text("status").notNull(),
+    firstCheckIn: timestamp("first_check_in", { withTimezone: true }),
+    lastCheckOut: timestamp("last_check_out", { withTimezone: true }),
+    workMinutes: integer("work_minutes").notNull().default(0),
+    breakMinutes: integer("break_minutes").notNull().default(0),
+    lateMinutes: integer("late_minutes").notNull().default(0),
+    earlyOutMinutes: integer("early_out_minutes").notNull().default(0),
+    workMode: text("work_mode"),
+    note: text("note"),
+    exceptionType: text("exception_type"),
+    regularizationStatus: text("regularization_status"),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("attendance_daily_employee_date_uq").on(table.employeeUserId, table.workDate),
+    index("attendance_daily_status_date_idx").on(table.status, table.workDate),
+    index("attendance_daily_exception_idx").on(table.exceptionType, table.workDate)
+  ]
+);
+
+export const attendanceRegularizationRequests = attendance.table(
+  "regularization_requests",
+  {
+    id: uuidPk.defaultRandom(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    workDate: date("work_date").notNull(),
+    reason: text("reason").notNull(),
+    requestedPunches: jsonb("requested_punches").notNull().default([]),
+    status: text("status").notNull(),
+    currentApproverUserId: uuid("current_approver_user_id"),
+    decisionRemarks: text("decision_remarks"),
+    decidedByUserId: uuid("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    index("attendance_regularizations_employee_date_idx").on(table.employeeUserId, table.workDate),
+    index("attendance_regularizations_queue_idx").on(table.status, table.currentApproverUserId, table.createdAt)
+  ]
+);
 
 export const expenseTickets = expenses.table(
   "expense_tickets",

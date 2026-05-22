@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 85 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 94 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 129 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 214 | Regenerate frontend client only after each backend phase lands. | `85 current + 129 remaining`; the 11 P1 updates stayed part of the original API surface. |
+| Planned new APIs | 120 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 214 | Regenerate frontend client only after each backend phase lands. | `94 current + 120 remaining`; the 11 P1 updates stayed part of the original API surface. |
 
 ## Development Phases
 
@@ -18,7 +18,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | --- | --- | --- | --- |
 | P0 ready | Existing implemented APIs | No planned changes required for initial integration. | Integrate directly from `openapi.json` and `ENDPOINT_INDEX.md`. |
 | P1 update existing | Existing APIs need fuller shapes | Add backward-compatible fields/filters/actions, update tests, regenerate OpenAPI. | Keep adapters tolerant until expanded fields are available. |
-| P2 core missing | Auth, core, EMS, attendance, leave/WFH | Build daily HR workflows after the Phase 3 employee lifecycle APIs. | Keep modules mocked until implemented. Employee CRUD/admin APIs are now available from OpenAPI. |
+| P2 core missing | Auth, core, EMS, leave/WFH | Build daily HR workflows after the Phase 3 attendance slice. | Keep modules mocked until implemented. Employee CRUD/admin APIs and attendance slice APIs are now available from OpenAPI. |
 | P3 module completion | Projects, assets additions, helpdesk, notifications | Build operational modules after P2 data foundations exist. | Integrate route-by-route as OpenAPI grows. |
 | P4 admin/report hardening | Admin settings and non-expense reports | Add policy/config/report/export breadth with audit and RBAC. | Do not bypass backend scope with client-side aggregation. |
 
@@ -30,7 +30,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Assets | 9 | Inventory, detail, assignment/return, QR scan, license lifecycle, and employee termination event. |
 | Auth & Sessions | 11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
 | Core / Employees & Hierarchy | 11 | User list/detail/subtree, org selectors, employee create/update, lifecycle activation/deactivation, login setup/disable, and role replacement. |
-| Dashboard | 1 | Role-scoped summary derived from implemented Core, Expenses, Documents, Assets, Timesheets, Notifications, and Outbox data. |
+| Dashboard | 1 | Role-scoped summary derived from implemented Core, Expenses, Documents, Assets, Timesheets, Attendance, Notifications, and Outbox data. |
 | Documents | 7 | Metadata upload/list/detail, expense document link, download URL, verification, access log. |
 | Expenses / Manager | 3 | Manager queue, manager verify action, manager document verification. |
 | Expenses / Requester | 6 | Create/list/detail/update placeholder/submit/timeline. |
@@ -39,6 +39,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Platform / Health | 5 | Unversioned/versioned health plus OpenAPI JSON. |
 | Reports & Analytics | 5 | Expense requester/manager/register reports and export creation. |
 | Timesheets | 7 | Work segments, submissions, approver queue, decisions, workflow definitions. |
+| Attendance | 9 | Punches, my punch list, my/team summaries, monthly calendar, regularization submit/list/decision, and exception queue. |
 
 P0 frontend integration can start with these operations only. The authoritative machine-readable list remains `docs/api/frontend-contract/openapi.json`.
 
@@ -73,7 +74,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **129**.
+Total remaining planned new operations: **120**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -131,21 +132,21 @@ Total remaining planned new operations: **129**.
 | POST | `/api/v1/ems/requests` | `/ems/requests` | Create generic employee service request. | Authenticated employee. | request_type, subject, description, document_ids[] | request_id, status, submitted_at | 400 invalid type; route to HR queue. | Planned / Not Implemented |
 | GET | `/api/v1/ems/requests/queue/hr` | `/ems/hr/requests` | HR queue for generic employee requests. | HR/Admin only. | page, page_size, type, status, assignee_id | items[], pagination, queue_counts | 403 non-HR; supports assignment later if needed. | Planned / Not Implemented |
 
-### Attendance (12 planned APIs)
+### Attendance (9 implemented APIs, 3 planned APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/api/v1/attendance/punches` | `/attendance/punch` | Record check-in/check-out punch event. | Authenticated employee; kiosk token if later enabled. | event_type, occurred_at, location/device metadata | punch_id, day_status, next_allowed_action | 409 duplicate/out-of-order punch; 429 rapid retry. | Planned / Not Implemented |
-| GET | `/api/v1/attendance/punches/my` | `/attendance` | List own punch events. | Authenticated employee. | page, page_size, date_from, date_to | items[], pagination | Shared errors; use backend timezone. | Planned / Not Implemented |
+| POST | `/api/v1/attendance/punches` | `/attendance/punch` | Record check-in/check-out punch event. | Authenticated employee; kiosk token if later enabled. | event_type, occurred_at, location/device metadata | punch_id, day_status, next_allowed_action | 409 duplicate/out-of-order punch; 429 rapid retry. | Implemented in Phase 3 attendance |
+| GET | `/api/v1/attendance/punches/my` | `/attendance` | List own punch events. | Authenticated employee. | page, page_size, date_from, date_to | items[], pagination | Shared errors; use backend timezone. | Implemented in Phase 3 attendance |
 | GET | `/api/v1/attendance/calendar/daily` | `/attendance/daily` | Return day-level attendance status for selected users. | Employee self, manager team, HR/Admin. | date, user_id optional, team_id optional | day records, exceptions, regularization flags | 403 out-of-scope team/user. | Planned / Not Implemented |
-| GET | `/api/v1/attendance/calendar/monthly` | `/attendance/calendar` | Return monthly attendance calendar. | Employee self, manager team, HR/Admin. | month, user_id optional, department_id optional | calendar_days[], summary | Shared errors; paginated only for team views. | Planned / Not Implemented |
-| GET | `/api/v1/attendance/summary/my` | `/attendance/summary` | Return own attendance summary cards. | Authenticated employee. | month or date_range | present, absent, late, missing_punch, regularized counts | Shared errors; cache per user/month. | Planned / Not Implemented |
-| GET | `/api/v1/attendance/summary/team` | `/attendance/team` | Return manager/HR team attendance summary. | Manager scoped team, HR/Admin broader scope. | date_range, department_id, manager_user_id, page, page_size | items[], totals, pagination | 403 out-of-scope; paginated. | Planned / Not Implemented |
-| POST | `/api/v1/attendance/regularizations` | `/attendance/regularize` | Submit regularization request for missing/incorrect punch. | Authenticated employee. | date, reason, requested_punches[], document_ids[] | request_id, status, version | 409 duplicate pending request for same date. | Planned / Not Implemented |
-| GET | `/api/v1/attendance/regularizations/my` | `/attendance/regularize` | List own regularization requests. | Authenticated employee. | page, page_size, status, date_range | items[], pagination | Shared errors. | Planned / Not Implemented |
+| GET | `/api/v1/attendance/calendar/monthly` | `/attendance/calendar` | Return monthly attendance calendar. | Employee self, manager team, HR/Admin. | month, user_id optional, department_id optional | calendar_days[], summary | Shared errors; paginated only for team views. | Implemented in Phase 3 attendance |
+| GET | `/api/v1/attendance/summary/my` | `/attendance/summary` | Return own attendance summary cards. | Authenticated employee. | month or date_range | present, absent, late, missing_punch, regularized counts | Shared errors; cache per user/month. | Implemented in Phase 3 attendance |
+| GET | `/api/v1/attendance/summary/team` | `/attendance/team` | Return manager/HR team attendance summary. | Manager scoped team, HR/Admin broader scope. | date_range, department_id, manager_user_id, page, page_size | items[], totals, pagination | 403 out-of-scope; paginated. | Implemented in Phase 3 attendance |
+| POST | `/api/v1/attendance/regularizations` | `/attendance/regularize` | Submit regularization request for missing/incorrect punch. | Authenticated employee. | date, reason, requested_punches[], document_ids[] | request_id, status, version | 409 duplicate pending request for same date. | Implemented in Phase 3 attendance |
+| GET | `/api/v1/attendance/regularizations/my` | `/attendance/regularize` | List own regularization requests. | Authenticated employee. | page, page_size, status, date_range | items[], pagination | Shared errors. | Implemented in Phase 3 attendance |
 | GET | `/api/v1/attendance/regularizations/queue/manager` | `/attendance/approvals` | Manager queue for regularization decisions. | Manager or configured backup; HR/Admin monitor. | page, page_size, status, department_id | items[], pagination, queue_counts | Self-processing blocked; 403 if not manager. | Planned / Not Implemented |
-| POST | `/api/v1/attendance/regularizations/{id}/decision` | `/attendance/approvals/:id` | Approve, return, or reject regularization. | Manager/backup/HR as configured; self-processing blocked. | decision, remarks, expected_version | request, updated_day_status, version | remarks required for return/reject; 409 stale version. | Planned / Not Implemented |
-| GET | `/api/v1/attendance/exceptions` | `/attendance/exceptions` | List attendance exceptions for HR follow-up. | HR/Admin/auditor; manager scoped if enabled. | page, page_size, exception_type, date_range, user_id | items[], pagination, totals | 403 out-of-scope; export through reports/exports later. | Planned / Not Implemented |
+| POST | `/api/v1/attendance/regularizations/{id}/decision` | `/attendance/approvals/:id` | Approve, return, or reject regularization. | Manager/backup/HR as configured; self-processing blocked. | decision, remarks, expected_version | request, updated_day_status, version | remarks required for return/reject; 409 stale version. | Implemented in Phase 3 attendance |
+| GET | `/api/v1/attendance/exceptions` | `/attendance/exceptions` | List attendance exceptions for HR follow-up. | HR/Admin/auditor; manager scoped if enabled. | page, page_size, exception_type, date_range, user_id | items[], pagination, totals | 403 out-of-scope; export through reports/exports later. | Implemented in Phase 3 attendance |
 | POST | `/api/v1/attendance/exports` | `/attendance/reports` | Create attendance export job. | HR/Admin/auditor. | filters, columns, format | job_id, status | 403 forbidden columns; 429 export throttle. | Planned / Not Implemented |
 
 ### Leave / WFH (15 planned APIs)
