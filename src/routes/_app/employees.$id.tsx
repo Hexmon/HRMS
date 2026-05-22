@@ -5,12 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  StatusBadge,
-  UserAvatar,
-  EmptyState,
-  ActionButton,
-} from "@/components/ui-kit";
+import { StatusBadge, UserAvatar, EmptyState, ActionButton } from "@/components/ui-kit";
 import { useEmployees } from "@/lib/employees-store";
 import { useAuth } from "@/lib/auth";
 import { ROLES, ROLE_LABELS, type Role } from "@/lib/mock/roles";
@@ -96,7 +91,7 @@ function EmployeeProfilePage() {
       <Card className="rounded-2xl border-border/60 p-12">
         <EmptyState
           title="You don't have access"
-          description="Your current role can't view this profile. Switch roles from the topbar to test."
+          description="Your current role does not include permission to view this employee profile."
           action={
             <Button asChild variant="outline" className="rounded-full">
               <Link to="/employees">Back to employees</Link>
@@ -124,23 +119,41 @@ function EmployeeProfilePage() {
               <UserAvatar name={employee.name} size="lg" tone={employee.avatarTone ?? "primary"} />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="truncate text-2xl font-semibold tracking-tight">{employee.name}</h1>
-                  <StatusBadge status={employee.status} label={EMPLOYEE_STATUS_LABEL[employee.status]} />
+                  <h1 className="truncate text-2xl font-semibold tracking-tight">
+                    {employee.name}
+                  </h1>
+                  <StatusBadge
+                    status={employee.status}
+                    label={EMPLOYEE_STATUS_LABEL[employee.status]}
+                  />
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {employee.designation} • {employee.department}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1"><span className="font-medium text-foreground">{employee.id}</span></span>
-                  <span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" /> {employee.email}</span>
-                  <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> {employee.location}</span>
-                  <span className="inline-flex items-center gap-1"><UserCheck className="h-3 w-3" /> Reports to {employee.manager}</span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="font-medium text-foreground">{employee.id}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Mail className="h-3 w-3" /> {employee.email}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="h-3 w-3" /> {employee.location}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <UserCheck className="h-3 w-3" /> Reports to {employee.manager}
+                  </span>
                 </div>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {canEdit && (
-                <ActionButton size="sm" variant="secondary" icon={<Pencil className="h-4 w-4" />} onClick={() => setEditOpen(true)}>
+                <ActionButton
+                  size="sm"
+                  variant="secondary"
+                  icon={<Pencil className="h-4 w-4" />}
+                  onClick={() => setEditOpen(true)}
+                >
                   Edit
                 </ActionButton>
               )}
@@ -150,8 +163,15 @@ function EmployeeProfilePage() {
                   variant="secondary"
                   icon={<History className="h-4 w-4" />}
                   onClick={() => {
-                    setStatus(employee.id, employee.status === "notice_period" ? "active" : "notice_period");
-                    toast.success(employee.status === "notice_period" ? "Notice cleared" : "Marked notice period");
+                    setStatus(
+                      employee.id,
+                      employee.status === "notice_period" ? "active" : "notice_period",
+                    );
+                    toast.success(
+                      employee.status === "notice_period"
+                        ? "Notice cleared"
+                        : "Marked notice period",
+                    );
                   }}
                 >
                   {employee.status === "notice_period" ? "Clear notice" : "Notice period"}
@@ -178,7 +198,11 @@ function EmployeeProfilePage() {
         <div className="overflow-x-auto">
           <TabsList className="inline-flex h-auto flex-nowrap rounded-full bg-secondary p-1">
             {TABS.map((t) => (
-              <TabsTrigger key={t.value} value={t.value} className="rounded-full px-3 py-1.5 text-xs">
+              <TabsTrigger
+                key={t.value}
+                value={t.value}
+                className="rounded-full px-3 py-1.5 text-xs"
+              >
                 {t.label}
               </TabsTrigger>
             ))}
@@ -288,22 +312,20 @@ function OverviewTab({
           <Field icon={Briefcase} label="Designation" value={employee.designation} />
           <Field icon={UserCheck} label="Reporting manager" value={employee.manager} />
           <Field icon={Calendar} label="Joined" value={formatDate(employee.joinedAt)} />
-          <Field icon={MapPin} label="Work location" value={`${employee.location} • ${WORK_MODE_LABEL[employee.workMode]}`} />
+          <Field
+            icon={MapPin}
+            label="Work location"
+            value={`${employee.location} • ${WORK_MODE_LABEL[employee.workMode]}`}
+          />
           <Field icon={Mail} label="Company email" value={employee.email} />
           <Field icon={Phone} label="Phone" value={employee.phone || "—"} />
           <Field icon={Clock} label="Shift" value={employee.shift} />
         </div>
       </Card>
       <Card className="rounded-2xl border-border/60 p-5">
-        <h3 className="text-sm font-semibold">Quick actions</h3>
-        <div className="mt-3 space-y-2">
-          <ActionRow icon={Mail} label="Send message" />
-          <ActionRow icon={CalendarDays} label="Apply leave on behalf" disabled={!canEdit} />
-          <ActionRow icon={Wallet} label="Approve pending expenses" disabled={!canEdit} />
-          <ActionRow icon={LifeBuoy} label="Raise ticket on behalf" />
-        </div>
+        <h3 className="text-sm font-semibold">Account access</h3>
         {canEdit && (
-          <div className="mt-4 flex items-center justify-between rounded-xl border bg-secondary/30 p-3">
+          <div className="mt-3 flex items-center justify-between rounded-xl border bg-secondary/30 p-3">
             <div>
               <p className="text-sm font-medium">Login access</p>
               <p className="text-xs text-muted-foreground">Toggle to disable sign-in.</p>
@@ -317,6 +339,14 @@ function OverviewTab({
             />
           </div>
         )}
+        {!canEdit && (
+          <div className="mt-3 rounded-xl border bg-secondary/30 p-3">
+            <p className="text-sm font-medium">
+              {employee.loginEnabled ? "Login enabled" : "Login disabled"}
+            </p>
+            <p className="text-xs text-muted-foreground">Contact HR to request access changes.</p>
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -327,8 +357,16 @@ function PersonalTab({ employee }: { employee: Employee }) {
     <Card className="rounded-2xl border-border/60 p-5">
       <h3 className="text-sm font-semibold">Personal details</h3>
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field icon={UserCheck} label="Gender" value={employee.gender ? GENDER_LABEL[employee.gender] : "—"} />
-        <Field icon={Cake} label="Date of birth" value={employee.dob ? formatDate(employee.dob) : "—"} />
+        <Field
+          icon={UserCheck}
+          label="Gender"
+          value={employee.gender ? GENDER_LABEL[employee.gender] : "—"}
+        />
+        <Field
+          icon={Cake}
+          label="Date of birth"
+          value={employee.dob ? formatDate(employee.dob) : "—"}
+        />
         <Field icon={Mail} label="Personal email" value={employee.personalEmail || "—"} />
         <Field icon={Phone} label="Contact number" value={employee.phone || "—"} />
         <Field icon={MapPin} label="Location" value={employee.location} />
@@ -343,13 +381,21 @@ function JobTab({ employee }: { employee: Employee }) {
       <h3 className="text-sm font-semibold">Employment</h3>
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field icon={Calendar} label="Date of joining" value={formatDate(employee.joinedAt)} />
-        <Field icon={Briefcase} label="Employment type" value={EMPLOYMENT_TYPE_LABEL[employee.employmentType]} />
+        <Field
+          icon={Briefcase}
+          label="Employment type"
+          value={EMPLOYMENT_TYPE_LABEL[employee.employmentType]}
+        />
         <Field icon={Building2} label="Department" value={employee.department} />
         <Field icon={Briefcase} label="Designation" value={employee.designation} />
         <Field icon={UserCheck} label="Reporting to" value={employee.manager} />
         <Field icon={MapPin} label="Work mode" value={WORK_MODE_LABEL[employee.workMode]} />
         <Field icon={Clock} label="Shift" value={employee.shift} />
-        <Field icon={Hourglass} label="Probation end" value={employee.probationEndDate ? formatDate(employee.probationEndDate) : "—"} />
+        <Field
+          icon={Hourglass}
+          label="Probation end"
+          value={employee.probationEndDate ? formatDate(employee.probationEndDate) : "—"}
+        />
         <Field icon={Activity} label="Notice period" value={`${employee.noticeDays} days`} />
         <Field icon={History} label="Lifecycle" value={EMPLOYEE_STATUS_LABEL[employee.status]} />
       </div>
@@ -405,14 +451,18 @@ function AccessTab({
                 onClick={() => toggle(r.key)}
                 className={cn(
                   "rounded-xl border p-3 text-left transition",
-                  checked ? "border-primary bg-primary-soft/60" : "border-border bg-card hover:bg-accent/40",
+                  checked
+                    ? "border-primary bg-primary-soft/60"
+                    : "border-border bg-card hover:bg-accent/40",
                   !canEdit && "cursor-not-allowed opacity-80 hover:bg-card",
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold">{r.label}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{r.description}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                      {r.description}
+                    </p>
                   </div>
                   <Checkbox checked={checked} className="mt-0.5" disabled={!canEdit} />
                 </div>
@@ -427,7 +477,10 @@ function AccessTab({
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {previewModules.map((m) => (
-              <span key={m} className="rounded-full border bg-card px-2.5 py-0.5 text-[11px] font-medium">
+              <span
+                key={m}
+                className="rounded-full border bg-card px-2.5 py-0.5 text-[11px] font-medium"
+              >
                 {m}
               </span>
             ))}
@@ -444,9 +497,7 @@ function AccessTab({
               Last login: {employee.lastLoginAt ? formatDateTime(employee.lastLoginAt) : "Never"}
             </p>
           </div>
-          {canEdit && (
-            <Switch checked={employee.loginEnabled} onCheckedChange={onToggleLogin} />
-          )}
+          {canEdit && <Switch checked={employee.loginEnabled} onCheckedChange={onToggleLogin} />}
         </div>
 
         <h3 className="mt-5 text-sm font-semibold">Role change history</h3>
@@ -458,7 +509,10 @@ function AccessTab({
               </div>
               <div className="flex-1 text-xs">
                 <p className="font-medium">
-                  {h.from.length === 0 ? "Initial" : h.from.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")} → {h.to.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")}
+                  {h.from.length === 0
+                    ? "Initial"
+                    : h.from.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")}{" "}
+                  → {h.to.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")}
                 </p>
                 <p className="text-muted-foreground">
                   {h.actor} • {formatDateTime(h.at)}
@@ -495,21 +549,28 @@ function DocumentsTab({ documents }: { documents: EmployeeDocument[] }) {
           <Card key={c.key} className="rounded-2xl border-border/60 p-4">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold">{c.label}</p>
-              <span className="text-xs text-muted-foreground">{docs.length} file{docs.length === 1 ? "" : "s"}</span>
+              <span className="text-xs text-muted-foreground">
+                {docs.length} file{docs.length === 1 ? "" : "s"}
+              </span>
             </div>
             {docs.length === 0 ? (
               <p className="mt-2 text-xs text-muted-foreground">No documents uploaded.</p>
             ) : (
               <ul className="mt-3 space-y-2">
                 {docs.map((d) => (
-                  <li key={d.id} className="flex items-center justify-between rounded-xl border bg-card p-3">
+                  <li
+                    key={d.id}
+                    className="flex items-center justify-between rounded-xl border bg-card p-3"
+                  >
                     <div className="flex items-center gap-3">
                       <div className="grid h-9 w-9 place-items-center rounded-xl bg-primary-soft text-primary">
                         <FileText className="h-4 w-4" />
                       </div>
                       <div>
                         <p className="text-sm font-medium">{d.name}</p>
-                        <p className="text-xs text-muted-foreground">{d.size} • {formatDate(d.uploadedAt)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {d.size} • {formatDate(d.uploadedAt)}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -521,7 +582,11 @@ function DocumentsTab({ documents }: { documents: EmployeeDocument[] }) {
                             : "border-warning/40 bg-warning/15 text-warning-foreground",
                         )}
                       >
-                        {d.verified ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                        {d.verified ? (
+                          <CheckCircle2 className="h-3 w-3" />
+                        ) : (
+                          <XCircle className="h-3 w-3" />
+                        )}
                         {d.verified ? "Verified" : "Pending"}
                       </span>
                       <Button variant="ghost" size="sm" className="rounded-full">
@@ -544,21 +609,32 @@ function AssetsTab({ employeeName }: { employeeName: string }) {
   if (assets.length === 0) {
     return (
       <Card className="rounded-2xl border-border/60 p-12">
-        <EmptyState icon={Laptop} title="No assets assigned" description="Assigned hardware and peripherals will appear here." />
+        <EmptyState
+          icon={Laptop}
+          title="No assets assigned"
+          description="Assigned hardware and peripherals will appear here."
+        />
       </Card>
     );
   }
   return (
     <div className="space-y-2">
       {assets.map((a) => (
-        <Card key={a.id} className="flex items-center justify-between rounded-2xl border-border/60 p-4">
+        <Card
+          key={a.id}
+          className="flex items-center justify-between rounded-2xl border-border/60 p-4"
+        >
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary">
               <Laptop className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-medium">{a.brand} {a.model}</p>
-              <p className="text-xs text-muted-foreground">{a.id} • {a.serial}</p>
+              <p className="text-sm font-medium">
+                {a.brand} {a.model}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {a.id} • {a.serial}
+              </p>
             </div>
           </div>
           <StatusBadge status={a.status} />
@@ -584,11 +660,14 @@ function ModulePreview({
       </div>
       <h3 className="mt-3 text-base font-semibold">{title}</h3>
       <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-        Personal {title.toLowerCase()} data for this employee will live here once the {title} module is wired up.
+        Personal {title.toLowerCase()} data for this employee will live here once the {title} module
+        is wired up.
       </p>
       <div className="mt-4">
         <Button asChild variant="outline" className="rounded-full">
-          <Link to={path}>Open {title} <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link>
+          <Link to={path}>
+            Open {title} <ChevronRight className="ml-1 h-3.5 w-3.5" />
+          </Link>
         </Button>
       </div>
     </Card>
@@ -641,26 +720,6 @@ function Field({
   );
 }
 
-function ActionRow({ icon: Icon, label, disabled }: { icon: React.ComponentType<{ className?: string }>; label: string; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={() => toast.message(label, { description: "Coming soon." })}
-      className={cn(
-        "flex w-full items-center justify-between rounded-xl border bg-card px-3 py-2.5 text-sm transition hover:bg-accent/40",
-        disabled && "cursor-not-allowed opacity-50 hover:bg-card",
-      )}
-    >
-      <span className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-        {label}
-      </span>
-      <ChevronRight className="h-4 w-4 text-muted-foreground" />
-    </button>
-  );
-}
-
 function QuickStat({
   label,
   value,
@@ -672,7 +731,9 @@ function QuickStat({
 }) {
   return (
     <div className="bg-card p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
       <p
         className={cn(
           "mt-1 text-sm font-semibold",
@@ -702,9 +763,19 @@ function tenure(iso: string) {
   return m ? `${y}y ${m}m` : `${y}y`;
 }
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 function formatDateTime(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

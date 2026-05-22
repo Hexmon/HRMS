@@ -27,7 +27,6 @@ const coverage = [
   { prefix: "/helpdesk", group: "Helpdesk" },
   { prefix: "/reports", group: "Reports & Analytics" },
   { prefix: "/admin-settings", group: "Admin / Configuration" },
-  { prefix: "/handoff", group: "Developer Handoff" },
 ];
 
 const forbiddenExpenseRoutes = new Set([

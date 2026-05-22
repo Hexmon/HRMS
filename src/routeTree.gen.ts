@@ -24,7 +24,6 @@ import { Route as AppReportsRouteImport } from './routes/_app/reports'
 import { Route as AppProjectsRouteImport } from './routes/_app/projects'
 import { Route as AppLeaveWfhRouteImport } from './routes/_app/leave-wfh'
 import { Route as AppHelpdeskRouteImport } from './routes/_app/helpdesk'
-import { Route as AppHandoffRouteImport } from './routes/_app/handoff'
 import { Route as AppExpensesRouteImport } from './routes/_app/expenses'
 import { Route as AppEmsRouteImport } from './routes/_app/ems'
 import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
@@ -169,11 +168,6 @@ const AppLeaveWfhRoute = AppLeaveWfhRouteImport.update({
 const AppHelpdeskRoute = AppHelpdeskRouteImport.update({
   id: '/helpdesk',
   path: '/helpdesk',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppHandoffRoute = AppHandoffRouteImport.update({
-  id: '/handoff',
-  path: '/handoff',
   getParentRoute: () => AppRoute,
 } as any)
 const AppExpensesRoute = AppExpensesRouteImport.update({
@@ -554,7 +548,6 @@ export interface FileRoutesByFullPath {
   '/employees': typeof AppEmployeesRouteWithChildren
   '/ems': typeof AppEmsRouteWithChildren
   '/expenses': typeof AppExpensesRouteWithChildren
-  '/handoff': typeof AppHandoffRoute
   '/helpdesk': typeof AppHelpdeskRouteWithChildren
   '/leave-wfh': typeof AppLeaveWfhRouteWithChildren
   '/projects': typeof AppProjectsRouteWithChildren
@@ -637,7 +630,6 @@ export interface FileRoutesByTo {
   '/verify-email': typeof VerifyEmailRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
-  '/handoff': typeof AppHandoffRoute
   '/projects': typeof AppProjectsRouteWithChildren
   '/team-utilization': typeof AppTeamUtilizationRoute
   '/admin-settings/audit': typeof AppAdminSettingsAuditRoute
@@ -723,7 +715,6 @@ export interface FileRoutesById {
   '/_app/employees': typeof AppEmployeesRouteWithChildren
   '/_app/ems': typeof AppEmsRouteWithChildren
   '/_app/expenses': typeof AppExpensesRouteWithChildren
-  '/_app/handoff': typeof AppHandoffRoute
   '/_app/helpdesk': typeof AppHelpdeskRouteWithChildren
   '/_app/leave-wfh': typeof AppLeaveWfhRouteWithChildren
   '/_app/projects': typeof AppProjectsRouteWithChildren
@@ -813,7 +804,6 @@ export interface FileRouteTypes {
     | '/employees'
     | '/ems'
     | '/expenses'
-    | '/handoff'
     | '/helpdesk'
     | '/leave-wfh'
     | '/projects'
@@ -896,7 +886,6 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/dashboard'
     | '/employees'
-    | '/handoff'
     | '/projects'
     | '/team-utilization'
     | '/admin-settings/audit'
@@ -981,7 +970,6 @@ export interface FileRouteTypes {
     | '/_app/employees'
     | '/_app/ems'
     | '/_app/expenses'
-    | '/_app/handoff'
     | '/_app/helpdesk'
     | '/_app/leave-wfh'
     | '/_app/projects'
@@ -1171,13 +1159,6 @@ declare module '@tanstack/react-router' {
       path: '/helpdesk'
       fullPath: '/helpdesk'
       preLoaderRoute: typeof AppHelpdeskRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/handoff': {
-      id: '/_app/handoff'
-      path: '/handoff'
-      fullPath: '/handoff'
-      preLoaderRoute: typeof AppHandoffRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/expenses': {
@@ -1924,7 +1905,6 @@ interface AppRouteChildren {
   AppEmployeesRoute: typeof AppEmployeesRouteWithChildren
   AppEmsRoute: typeof AppEmsRouteWithChildren
   AppExpensesRoute: typeof AppExpensesRouteWithChildren
-  AppHandoffRoute: typeof AppHandoffRoute
   AppHelpdeskRoute: typeof AppHelpdeskRouteWithChildren
   AppLeaveWfhRoute: typeof AppLeaveWfhRouteWithChildren
   AppProjectsRoute: typeof AppProjectsRouteWithChildren
@@ -1941,7 +1921,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppEmployeesRoute: AppEmployeesRouteWithChildren,
   AppEmsRoute: AppEmsRouteWithChildren,
   AppExpensesRoute: AppExpensesRouteWithChildren,
-  AppHandoffRoute: AppHandoffRoute,
   AppHelpdeskRoute: AppHelpdeskRouteWithChildren,
   AppLeaveWfhRoute: AppLeaveWfhRouteWithChildren,
   AppProjectsRoute: AppProjectsRouteWithChildren,

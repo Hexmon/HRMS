@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { AuthShell } from "@/components/auth-shell";
@@ -14,9 +14,8 @@ export const Route = createFileRoute("/forgot-password")({
 
 function ForgotPasswordPage() {
   const { requestPasswordReset } = useAuth();
-  const navigate = useNavigate();
   const [email, setEmail] = useState("");
-  const [sent, setSent] = useState<{ email: string; token?: string } | null>(null);
+  const [sent, setSent] = useState<{ email: string } | null>(null);
   const [error, setError] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -26,14 +25,16 @@ function ForgotPasswordPage() {
       setError("Enter a valid email address.");
       return;
     }
-    const res = requestPasswordReset(email);
-    // For privacy we always show success, but pass demo token in UI
-    setSent({ email, token: res.token });
+    requestPasswordReset(email);
+    setSent({ email });
   };
 
   if (sent) {
     return (
-      <AuthShell title="Check your inbox" subtitle="If an account exists for that email, we've sent a reset link.">
+      <AuthShell
+        title="Check your inbox"
+        subtitle="If an account exists for that email, we've sent a reset link."
+      >
         <div className="space-y-5">
           <div className="grid place-items-center rounded-2xl border bg-secondary/40 py-8">
             <MailCheck className="h-12 w-12 text-primary" />
@@ -42,24 +43,10 @@ function ForgotPasswordPage() {
             <p className="text-muted-foreground">Reset link sent to</p>
             <p className="mt-0.5 font-medium">{sent.email}</p>
           </div>
-          {sent.token && (
-            <div className="rounded-xl border border-info/30 bg-info/10 px-3 py-2 text-xs">
-              <p className="font-medium text-info">Demo mode</p>
-              <p className="mt-0.5 text-foreground/70">
-                Click{" "}
-                <button
-                  type="button"
-                  className="font-semibold text-primary hover:underline"
-                  onClick={() => navigate({ to: "/reset-password", search: { token: sent.token! } })}
-                >
-                  this link
-                </button>{" "}
-                to simulate the email link.
-              </p>
-            </div>
-          )}
           <Button asChild variant="outline" className="h-11 w-full rounded-xl">
-            <Link to="/login"><ArrowLeft className="mr-1.5 h-4 w-4" /> Back to sign in</Link>
+            <Link to="/login">
+              <ArrowLeft className="mr-1.5 h-4 w-4" /> Back to sign in
+            </Link>
           </Button>
         </div>
       </AuthShell>
@@ -67,14 +54,25 @@ function ForgotPasswordPage() {
   }
 
   return (
-    <AuthShell title="Forgot your password?" subtitle="Enter your work email and we'll send you a reset link.">
+    <AuthShell
+      title="Forgot your password?"
+      subtitle="Enter your work email and we'll send you a reset link."
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="email">Company email</Label>
-          <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@company.com"
+          />
         </div>
         {error && (
-          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {error}
+          </p>
         )}
         <Button
           type="submit"
@@ -84,7 +82,9 @@ function ForgotPasswordPage() {
           Send reset link
         </Button>
         <Button asChild variant="ghost" className="h-10 w-full rounded-xl">
-          <Link to="/login"><ArrowLeft className="mr-1.5 h-4 w-4" /> Back to sign in</Link>
+          <Link to="/login">
+            <ArrowLeft className="mr-1.5 h-4 w-4" /> Back to sign in
+          </Link>
         </Button>
       </form>
     </AuthShell>

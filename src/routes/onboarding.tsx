@@ -32,21 +32,77 @@ export const Route = createFileRoute("/onboarding")({
 });
 
 const DEFAULT_DEPARTMENTS = [
-  "Management", "HR", "Engineering", "QA", "Design", "Sales", "Finance", "IT Support", "Operations",
+  "Management",
+  "HR",
+  "Engineering",
+  "QA",
+  "Design",
+  "Sales",
+  "Finance",
+  "IT Support",
+  "Operations",
 ];
 
 const DEFAULT_DESIGNATIONS = [
-  "Intern", "Junior Developer", "Software Developer", "Senior Developer", "Team Lead",
-  "Module Lead", "Project Manager", "HR Executive", "Finance Executive", "Director",
+  "Intern",
+  "Junior Developer",
+  "Software Developer",
+  "Senior Developer",
+  "Team Lead",
+  "Module Lead",
+  "Project Manager",
+  "HR Executive",
+  "Finance Executive",
+  "Director",
 ];
 
+type CompanyProfile = {
+  companyName: string;
+  website: string;
+  industry: string;
+  size: string;
+  address: string;
+  timezone: string;
+  currency: string;
+};
+
 const POLICIES = [
-  { key: "attendance", title: "Attendance Policy", icon: Clock, body: "Geo-tag, IP-locked or open clock-in. Configure grace period and break rules." },
-  { key: "leave", title: "Leave Policy", icon: CalendarDays, body: "Define leave types, accrual cadence, carry-forward and blackout dates." },
-  { key: "timesheet", title: "Timesheet Policy", icon: Briefcase, body: "Daily/weekly cadence, billable rules, approval routing." },
-  { key: "expense", title: "Expense Policy", icon: Receipt, body: "Per-category limits, receipts threshold, multi-currency settlement." },
-  { key: "asset", title: "Asset Policy", icon: ShieldCheck, body: "Issuance flow, depreciation method, return-on-exit checklist." },
-  { key: "helpdesk", title: "Helpdesk SLA", icon: LifeBuoy, body: "Priority tiers, response and resolution targets, escalation matrix." },
+  {
+    key: "attendance",
+    title: "Attendance Policy",
+    icon: Clock,
+    body: "Geo-tag, IP-locked or open clock-in. Configure grace period and break rules.",
+  },
+  {
+    key: "leave",
+    title: "Leave Policy",
+    icon: CalendarDays,
+    body: "Define leave types, accrual cadence, carry-forward and blackout dates.",
+  },
+  {
+    key: "timesheet",
+    title: "Timesheet Policy",
+    icon: Briefcase,
+    body: "Daily/weekly cadence, billable rules, approval routing.",
+  },
+  {
+    key: "expense",
+    title: "Expense Policy",
+    icon: Receipt,
+    body: "Per-category limits, receipts threshold, multi-currency settlement.",
+  },
+  {
+    key: "asset",
+    title: "Asset Policy",
+    icon: ShieldCheck,
+    body: "Issuance flow, depreciation method, return-on-exit checklist.",
+  },
+  {
+    key: "helpdesk",
+    title: "Helpdesk SLA",
+    icon: LifeBuoy,
+    body: "Priority tiers, response and resolution targets, escalation matrix.",
+  },
 ];
 
 const STEPS = [
@@ -63,7 +119,7 @@ function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [done, setDone] = useState(false);
 
-  const [profile, setProfile] = useState({
+  const [profile, setProfile] = useState<CompanyProfile>({
     companyName: "",
     website: "",
     industry: "Software",
@@ -101,16 +157,24 @@ function OnboardingPage() {
 
   if (done) {
     return (
-      <div className="grid min-h-screen place-items-center px-6" style={{ background: "var(--gradient-hero)" }}>
+      <div
+        className="grid min-h-screen place-items-center px-6"
+        style={{ background: "var(--gradient-hero)" }}
+      >
         <Card className="w-full max-w-md rounded-3xl p-8 text-center shadow-xl">
           <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-success/10">
             <CheckCircle2 className="h-9 w-9 text-success" />
           </div>
           <h1 className="mt-4 text-2xl font-semibold">You're all set</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Your Hawkaii HRMS workspace is ready. You can fine-tune everything from Admin Settings any time.
+            Your Hawkaii HRMS workspace is ready. You can fine-tune everything from Admin Settings
+            any time.
           </p>
-          <Button asChild className="mt-6 h-11 w-full rounded-xl text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
+          <Button
+            asChild
+            className="mt-6 h-11 w-full rounded-xl text-primary-foreground"
+            style={{ background: "var(--gradient-primary)" }}
+          >
             <Link to={dashboardPathForRole(activeRole)}>Open dashboard</Link>
           </Button>
         </Card>
@@ -125,7 +189,10 @@ function OnboardingPage() {
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <Link to="/" className="flex items-center gap-2.5">
-              <div className="grid h-10 w-10 place-items-center rounded-2xl text-primary-foreground shadow-lg" style={{ background: "var(--gradient-primary)" }}>
+              <div
+                className="grid h-10 w-10 place-items-center rounded-2xl text-primary-foreground shadow-lg"
+                style={{ background: "var(--gradient-primary)" }}
+              >
                 <span className="font-bold">H</span>
               </div>
               <div>
@@ -134,7 +201,9 @@ function OnboardingPage() {
               </div>
             </Link>
           </div>
-          <Badge variant="outline" className="self-start sm:self-auto">Step {step} of {totalSteps}</Badge>
+          <Badge variant="outline" className="self-start sm:self-auto">
+            Step {step} of {totalSteps}
+          </Badge>
         </div>
 
         {/* Stepper */}
@@ -157,13 +226,20 @@ function OnboardingPage() {
                     >
                       {completed ? <Check className="h-4 w-4" /> : <s.icon className="h-4 w-4" />}
                     </div>
-                    <p className={`text-[11px] sm:text-xs ${active ? "font-medium text-foreground" : "text-muted-foreground"}`}>{s.title}</p>
+                    <p
+                      className={`text-[11px] sm:text-xs ${active ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                    >
+                      {s.title}
+                    </p>
                   </div>
                 );
               })}
             </div>
             <div className="mt-4 h-1 w-full overflow-hidden rounded-full bg-border">
-              <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: "var(--gradient-primary)" }} />
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${progress}%`, background: "var(--gradient-primary)" }}
+              />
             </div>
           </div>
 
@@ -196,11 +272,19 @@ function OnboardingPage() {
               <ArrowLeft className="mr-1.5 h-4 w-4" /> Back
             </Button>
             {step < totalSteps ? (
-              <Button onClick={next} className="rounded-xl text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
+              <Button
+                onClick={next}
+                className="rounded-xl text-primary-foreground"
+                style={{ background: "var(--gradient-primary)" }}
+              >
                 Continue <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
             ) : (
-              <Button onClick={finish} className="rounded-xl text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
+              <Button
+                onClick={finish}
+                className="rounded-xl text-primary-foreground"
+                style={{ background: "var(--gradient-primary)" }}
+              >
                 Finish setup <CheckCircle2 className="ml-1.5 h-4 w-4" />
               </Button>
             )}
@@ -216,26 +300,71 @@ function StepProfile({
   profile,
   setProfile,
 }: {
-  profile: any;
-  setProfile: React.Dispatch<React.SetStateAction<any>>;
+  profile: CompanyProfile;
+  setProfile: React.Dispatch<React.SetStateAction<CompanyProfile>>;
 }) {
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setProfile((p: any) => ({ ...p, [k]: e.target.value }));
+  const set =
+    (k: keyof CompanyProfile) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setProfile((p) => ({ ...p, [k]: e.target.value }));
   return (
     <div className="space-y-5">
-      <Header title="Tell us about your company" subtitle="This information appears on documents and the employee directory." />
+      <Header
+        title="Tell us about your company"
+        subtitle="This information appears on documents and the employee directory."
+      />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Company name" value={profile.companyName} onChange={set("companyName")} />
-        <Field label="Website" placeholder="https://" value={profile.website} onChange={set("website")} />
-        <SelectField label="Industry" value={profile.industry} onChange={set("industry")}
-          options={["Software", "Consulting", "Finance", "Healthcare", "Education", "Manufacturing", "Other"]} />
-        <SelectField label="Company size" value={profile.size} onChange={set("size")}
-          options={["1–10", "11–50", "51–200", "201–500", "501–1000", "1000+"]} />
-        <Field label="Address" value={profile.address} onChange={set("address")} className="sm:col-span-2" />
-        <SelectField label="Timezone" value={profile.timezone} onChange={set("timezone")}
-          options={["Asia/Kolkata", "Asia/Singapore", "Europe/London", "America/New_York", "America/Los_Angeles", "Australia/Sydney"]} />
-        <SelectField label="Currency" value={profile.currency} onChange={set("currency")}
-          options={["USD", "EUR", "GBP", "INR", "SGD", "AUD"]} />
+        <Field
+          label="Website"
+          placeholder="https://"
+          value={profile.website}
+          onChange={set("website")}
+        />
+        <SelectField
+          label="Industry"
+          value={profile.industry}
+          onChange={set("industry")}
+          options={[
+            "Software",
+            "Consulting",
+            "Finance",
+            "Healthcare",
+            "Education",
+            "Manufacturing",
+            "Other",
+          ]}
+        />
+        <SelectField
+          label="Company size"
+          value={profile.size}
+          onChange={set("size")}
+          options={["1–10", "11–50", "51–200", "201–500", "501–1000", "1000+"]}
+        />
+        <Field
+          label="Address"
+          value={profile.address}
+          onChange={set("address")}
+          className="sm:col-span-2"
+        />
+        <SelectField
+          label="Timezone"
+          value={profile.timezone}
+          onChange={set("timezone")}
+          options={[
+            "Asia/Kolkata",
+            "Asia/Singapore",
+            "Europe/London",
+            "America/New_York",
+            "America/Los_Angeles",
+            "Australia/Sydney",
+          ]}
+        />
+        <SelectField
+          label="Currency"
+          value={profile.currency}
+          onChange={set("currency")}
+          options={["USD", "EUR", "GBP", "INR", "SGD", "AUD"]}
+        />
       </div>
       <div className="rounded-2xl border border-dashed bg-secondary/40 p-6">
         <div className="flex items-center gap-3">
@@ -244,9 +373,13 @@ function StepProfile({
           </div>
           <div className="flex-1">
             <p className="text-sm font-medium">Company logo</p>
-            <p className="text-xs text-muted-foreground">PNG or SVG, up to 2 MB. Drop here or click to upload.</p>
+            <p className="text-xs text-muted-foreground">
+              PNG or SVG, up to 2 MB. Drop here or click to upload.
+            </p>
           </div>
-          <Button variant="outline" type="button" className="rounded-xl">Upload</Button>
+          <Button variant="outline" type="button" className="rounded-xl">
+            Upload
+          </Button>
         </div>
       </div>
     </div>
@@ -324,21 +457,38 @@ function StepRoles({
   enabled: string[];
   setEnabled: React.Dispatch<React.SetStateAction<string[]>>;
 }) {
-  // Add the prototype-only roles requested in the spec
   const extra = [
-    { key: "admin", label: "Admin", description: "Workspace administration without people-ops scope." },
+    {
+      key: "admin",
+      label: "Admin",
+      description: "Workspace administration without people-ops scope.",
+    },
     { key: "team_lead", label: "Team Lead", description: "Lead a small team within a department." },
-    { key: "module_lead", label: "Module Lead", description: "Own a delivery module within a project." },
-    { key: "auditor", label: "Auditor", description: "Read-only access for compliance and audits." },
+    {
+      key: "module_lead",
+      label: "Module Lead",
+      description: "Own a delivery module within a project.",
+    },
+    {
+      key: "auditor",
+      label: "Auditor",
+      description: "Read-only access for compliance and audits.",
+    },
   ];
-  const all = [...ROLES.map((r) => ({ key: r.key, label: r.label, description: r.description })), ...extra];
+  const all = [
+    ...ROLES.map((r) => ({ key: r.key, label: r.label, description: r.description })),
+    ...extra,
+  ];
 
   const toggle = (k: string) =>
     setEnabled((arr) => (arr.includes(k) ? arr.filter((x) => x !== k) : [...arr, k]));
 
   return (
     <div className="space-y-5">
-      <Header title="Roles & permissions" subtitle="Toggle the roles you'd like available in your workspace. You can edit permissions later." />
+      <Header
+        title="Roles & permissions"
+        subtitle="Toggle the roles you'd like available in your workspace. You can edit permissions later."
+      />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {all.map((r) => {
           const on = enabled.includes(r.key);
@@ -388,7 +538,9 @@ function StepPolicies() {
               <p className="text-sm font-semibold">{p.title}</p>
               <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{p.body}</p>
             </div>
-            <Badge variant="outline" className="shrink-0">Default</Badge>
+            <Badge variant="outline" className="shrink-0">
+              Default
+            </Badge>
           </Card>
         ))}
       </div>
@@ -432,7 +584,9 @@ function SelectField({
         className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         {options.map((o) => (
-          <option key={o} value={o}>{o}</option>
+          <option key={o} value={o}>
+            {o}
+          </option>
         ))}
       </select>
     </div>

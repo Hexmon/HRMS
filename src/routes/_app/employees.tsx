@@ -35,7 +35,6 @@ import {
   Sparkles,
   Plus,
   Download,
-  Upload,
   ShieldOff,
   ShieldCheck,
   Eye,
@@ -51,7 +50,13 @@ export const Route = createFileRoute("/_app/employees")({
 });
 
 function EmployeesPage() {
-  const { employees: mockEmployees, departments, designations, setStatus, setLogin } = useEmployees();
+  const {
+    employees: mockEmployees,
+    departments,
+    designations,
+    setStatus,
+    setLogin,
+  } = useEmployees();
   const { data: remote, loading: remoteLoading } = useSupabaseEmployees();
   // Prefer real backend data when a Supabase session is active; otherwise fall back to mock.
   const employees = remote && remote.length > 0 ? remote : mockEmployees;
@@ -114,9 +119,31 @@ function EmployeesPage() {
   const goProfile = (id: string) => navigate({ to: "/employees/$id", params: { id } });
 
   const handleExport = () => {
-    const headers = ["ID", "Name", "Email", "Department", "Designation", "Manager", "Type", "Status", "Login", "Joined"];
+    const headers = [
+      "ID",
+      "Name",
+      "Email",
+      "Department",
+      "Designation",
+      "Manager",
+      "Type",
+      "Status",
+      "Login",
+      "Joined",
+    ];
     const rows = filtered.map((e) =>
-      [e.id, e.name, e.email, e.department, e.designation, e.manager, e.employmentType, e.status, e.loginEnabled ? "Enabled" : "Disabled", e.joinedAt]
+      [
+        e.id,
+        e.name,
+        e.email,
+        e.department,
+        e.designation,
+        e.manager,
+        e.employmentType,
+        e.status,
+        e.loginEnabled ? "Enabled" : "Disabled",
+        e.joinedAt,
+      ]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(","),
     );
@@ -147,7 +174,11 @@ function EmployeesPage() {
         </button>
       ),
     },
-    { key: "id", header: "ID", render: (e) => <span className="text-xs font-medium text-muted-foreground">{e.id}</span> },
+    {
+      key: "id",
+      header: "ID",
+      render: (e) => <span className="text-xs font-medium text-muted-foreground">{e.id}</span>,
+    },
     {
       key: "designation",
       header: "Job",
@@ -158,12 +189,18 @@ function EmployeesPage() {
         </div>
       ),
     },
-    { key: "manager", header: "Reporting to", render: (e) => <span className="text-sm text-muted-foreground">{e.manager}</span> },
+    {
+      key: "manager",
+      header: "Reporting to",
+      render: (e) => <span className="text-sm text-muted-foreground">{e.manager}</span>,
+    },
     {
       key: "type",
       header: "Type",
       render: (e) => (
-        <span className="text-xs text-muted-foreground">{EMPLOYMENT_TYPE_LABEL[e.employmentType]}</span>
+        <span className="text-xs text-muted-foreground">
+          {EMPLOYMENT_TYPE_LABEL[e.employmentType]}
+        </span>
       ),
     },
     {
@@ -171,7 +208,11 @@ function EmployeesPage() {
       header: "Joined",
       render: (e) => (
         <span className="text-xs text-muted-foreground">
-          {new Date(e.joinedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+          {new Date(e.joinedAt).toLocaleDateString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          })}
         </span>
       ),
     },
@@ -211,19 +252,14 @@ function EmployeesPage() {
         }`}
         actions={
           <>
-            <ActionButton variant="secondary" size="sm" icon={<Download className="h-4 w-4" />} onClick={handleExport}>
+            <ActionButton
+              variant="secondary"
+              size="sm"
+              icon={<Download className="h-4 w-4" />}
+              onClick={handleExport}
+            >
               Export
             </ActionButton>
-            {canEdit && (
-              <ActionButton
-                variant="secondary"
-                size="sm"
-                icon={<Upload className="h-4 w-4" />}
-                onClick={() => toast.message("Bulk import", { description: "CSV import wizard coming soon." })}
-              >
-                Bulk import
-              </ActionButton>
-            )}
             {canEdit && (
               <ActionButton size="sm" icon={<Plus className="h-4 w-4" />} onClick={openAdd}>
                 Add employee
@@ -234,10 +270,34 @@ function EmployeesPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Total employees" value={stats.total} icon={Users} tone="primary" hint="In your view" />
-        <StatCard label="Active" value={stats.active} icon={UserCheck} tone="success" hint="Active + Confirmed" />
-        <StatCard label="On probation" value={stats.onProbation} icon={Hourglass} tone="warning" hint="Within probation period" />
-        <StatCard label="New joiners" value={stats.newJoiners} icon={Sparkles} tone="info" hint="Last 90 days" />
+        <StatCard
+          label="Total employees"
+          value={stats.total}
+          icon={Users}
+          tone="primary"
+          hint="In your view"
+        />
+        <StatCard
+          label="Active"
+          value={stats.active}
+          icon={UserCheck}
+          tone="success"
+          hint="Active + Confirmed"
+        />
+        <StatCard
+          label="On probation"
+          value={stats.onProbation}
+          icon={Hourglass}
+          tone="warning"
+          hint="Within probation period"
+        />
+        <StatCard
+          label="New joiners"
+          value={stats.newJoiners}
+          icon={Sparkles}
+          tone="info"
+          hint="Last 90 days"
+        />
       </div>
 
       <DataTable
@@ -249,43 +309,61 @@ function EmployeesPage() {
         toolbarRight={
           <div className="flex flex-wrap items-center gap-2">
             <Select value={dept} onValueChange={setDept}>
-              <SelectTrigger className="h-9 w-[150px] rounded-full"><SelectValue placeholder="Department" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[150px] rounded-full">
+                <SelectValue placeholder="Department" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All departments</SelectItem>
                 {departments.map((d) => (
-                  <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                  <SelectItem key={d.id} value={d.name}>
+                    {d.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select value={desg} onValueChange={setDesg}>
-              <SelectTrigger className="h-9 w-[160px] rounded-full"><SelectValue placeholder="Designation" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[160px] rounded-full">
+                <SelectValue placeholder="Designation" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All designations</SelectItem>
                 {Array.from(new Set(designations.map((d) => d.title))).map((t) => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select value={status} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 w-[140px] rounded-full"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[140px] rounded-full">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 {(Object.keys(EMPLOYEE_STATUS_LABEL) as EmployeeStatus[]).map((s) => (
-                  <SelectItem key={s} value={s}>{EMPLOYEE_STATUS_LABEL[s]}</SelectItem>
+                  <SelectItem key={s} value={s}>
+                    {EMPLOYEE_STATUS_LABEL[s]}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select value={empType} onValueChange={setEmpType}>
-              <SelectTrigger className="h-9 w-[130px] rounded-full"><SelectValue placeholder="Type" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[130px] rounded-full">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All types</SelectItem>
                 {(Object.keys(EMPLOYMENT_TYPE_LABEL) as EmploymentType[]).map((t) => (
-                  <SelectItem key={t} value={t}>{EMPLOYMENT_TYPE_LABEL[t]}</SelectItem>
+                  <SelectItem key={t} value={t}>
+                    {EMPLOYMENT_TYPE_LABEL[t]}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select value={login} onValueChange={setLoginFilter}>
-              <SelectTrigger className="h-9 w-[130px] rounded-full"><SelectValue placeholder="Login" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[130px] rounded-full">
+                <SelectValue placeholder="Login" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Any login</SelectItem>
                 <SelectItem value="true">Login enabled</SelectItem>
@@ -295,9 +373,11 @@ function EmployeesPage() {
           </div>
         }
         rowActions={(e) => {
-          const actions: { label: string; onClick?: () => void; tone?: "default" | "destructive" }[] = [
-            { label: "View profile", onClick: () => goProfile(e.id) },
-          ];
+          const actions: {
+            label: string;
+            onClick?: () => void;
+            tone?: "default" | "destructive";
+          }[] = [{ label: "View profile", onClick: () => goProfile(e.id) }];
           if (canEdit) {
             actions.push({ label: "Edit", onClick: () => openEdit(e) });
             actions.push({ label: "Manage roles", onClick: () => goProfile(e.id) });
@@ -305,7 +385,9 @@ function EmployeesPage() {
               label: e.loginEnabled ? "Disable login" : "Enable login",
               onClick: () => {
                 setLogin(e.id, !e.loginEnabled);
-                toast.success(!e.loginEnabled ? "Login enabled" : "Login disabled", { description: e.name });
+                toast.success(!e.loginEnabled ? "Login enabled" : "Login disabled", {
+                  description: e.name,
+                });
               },
             });
             if (e.status !== "notice_period" && e.status !== "exited") {
@@ -334,12 +416,24 @@ function EmployeesPage() {
 
       {/* tiny legend so action icons feel intentional */}
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" /> View</span>
-        <span className="inline-flex items-center gap-1"><Pencil className="h-3 w-3" /> Edit</span>
-        <span className="inline-flex items-center gap-1"><KeyRound className="h-3 w-3" /> Roles</span>
-        <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Enable</span>
-        <span className="inline-flex items-center gap-1"><ShieldOff className="h-3 w-3" /> Disable</span>
-        <span className="inline-flex items-center gap-1"><UserMinus className="h-3 w-3" /> Deactivate</span>
+        <span className="inline-flex items-center gap-1">
+          <Eye className="h-3 w-3" /> View
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Pencil className="h-3 w-3" /> Edit
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <KeyRound className="h-3 w-3" /> Roles
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <ShieldCheck className="h-3 w-3" /> Enable
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <ShieldOff className="h-3 w-3" /> Disable
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <UserMinus className="h-3 w-3" /> Deactivate
+        </span>
       </div>
     </>
   );

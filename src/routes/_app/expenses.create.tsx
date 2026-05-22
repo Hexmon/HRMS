@@ -514,7 +514,7 @@ function CreateExpense() {
                       <Upload className="h-4 w-4" />
                     </div>
                     <p className="mt-2 text-sm font-medium">{u.label}</p>
-                    <p className="text-xs text-muted-foreground">Click to upload (mock)</p>
+                    <p className="text-xs text-muted-foreground">Click to upload</p>
                     <Button
                       variant="outline"
                       size="sm"

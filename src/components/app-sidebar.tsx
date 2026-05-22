@@ -13,7 +13,6 @@ import {
   LifeBuoy,
   BarChart3,
   Settings,
-  BookOpen,
 } from "lucide-react";
 import {
   Sidebar,
@@ -64,8 +63,6 @@ const ALL_GROUPS: { label: string; items: Item[] }[] = [
   { label: "Operations", items: OPERATIONS },
   { label: "Insights", items: INSIGHTS },
 ];
-
-const ALL_MODULES = WORKSPACE.length + OPERATIONS.length + INSIGHTS.length;
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -132,30 +129,6 @@ export function AppSidebar() {
 
       <SidebarContent className="px-2 py-2">
         {ALL_GROUPS.map((g) => renderGroup(g.label, g.items))}
-        <SidebarGroup>
-          {!collapsed && (
-            <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
-              Help
-            </SidebarGroupLabel>
-          )}
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={isActive("/handoff")}
-                  className="rounded-xl transition data-[active=true]:bg-primary-soft data-[active=true]:text-primary data-[active=true]:font-semibold data-[active=true]:shadow-[inset_3px_0_0_var(--color-primary)]"
-                  tooltip="Developer handoff"
-                >
-                  <Link to="/handoff" className="flex items-center gap-3">
-                    <BookOpen className="h-4 w-4 shrink-0" />
-                    {!collapsed && <span className="flex-1 truncate">Developer Handoff</span>}
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
       </SidebarContent>
 
       {!collapsed && activeRole && (
@@ -164,9 +137,8 @@ export function AppSidebar() {
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary/80">
               Active role
             </p>
-            <p className="mt-0.5 text-sm font-semibold text-primary">{ROLE_MAP[activeRole].label}</p>
-            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-              {accessible.length} of {ALL_MODULES} modules visible
+            <p className="mt-0.5 text-sm font-semibold text-primary">
+              {ROLE_MAP[activeRole].label}
             </p>
           </div>
         </SidebarFooter>

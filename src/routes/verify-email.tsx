@@ -15,7 +15,9 @@ export const Route = createFileRoute("/verify-email")({
   validateSearch: (s: Record<string, unknown>): SearchParams => ({
     email: typeof s.email === "string" ? s.email : undefined,
     token: typeof s.token === "string" ? s.token : undefined,
-    state: (["sent", "verified", "expired", "invalid"] as const).find((x) => x === s.state) as SearchParams["state"],
+    state: (["sent", "verified", "expired", "invalid"] as const).find(
+      (x) => x === s.state,
+    ) as SearchParams["state"],
   }),
   head: () => ({ meta: [{ title: "Verify your email — Hawkaii HRMS" }] }),
   component: VerifyEmailPage,
@@ -54,7 +56,7 @@ function VerifyEmailPage() {
     const rec = resendVerification(email);
     if (rec) {
       setResentAt(Date.now());
-      navigate({ to: "/verify-email", search: { email, token: rec.token } });
+      navigate({ to: "/verify-email", search: { email, state: "sent" } });
     }
   };
 
@@ -107,23 +109,6 @@ function VerifyEmailPage() {
           </div>
         )}
 
-        {state === "sent" && token && (
-          <div className="rounded-xl border border-info/30 bg-info/10 px-3 py-2 text-xs text-info-foreground/80">
-            <p className="font-medium text-info">Demo mode</p>
-            <p className="mt-0.5 text-foreground/70">
-              Click{" "}
-              <Link
-                to="/verify-email"
-                search={{ token }}
-                className="font-semibold text-primary hover:underline"
-              >
-                this link
-              </Link>{" "}
-              to simulate clicking the verification email.
-            </p>
-          </div>
-        )}
-
         {(state === "sent" || state === "expired") && (
           <Button
             onClick={handleResend}
@@ -137,11 +122,17 @@ function VerifyEmailPage() {
         )}
 
         {resentAt && (
-          <p className="text-center text-xs text-success">A new verification email has been sent.</p>
+          <p className="text-center text-xs text-success">
+            A new verification email has been sent.
+          </p>
         )}
 
         {state === "invalid" && (
-          <Button asChild className="h-11 w-full rounded-xl text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
+          <Button
+            asChild
+            className="h-11 w-full rounded-xl text-primary-foreground"
+            style={{ background: "var(--gradient-primary)" }}
+          >
             <Link to="/signup">Create a new workspace</Link>
           </Button>
         )}

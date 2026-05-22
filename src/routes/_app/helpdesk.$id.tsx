@@ -8,19 +8,46 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { StatusBadge, EmptyState } from "@/components/ui-kit";
 import { SlaBadge, PriorityBadge } from "@/components/helpdesk/badges";
 import {
-  computeSla, fmtDateTime, fmtRelative, SLA_MATRIX,
+  computeSla,
+  fmtDateTime,
+  fmtRelative,
+  SLA_MATRIX,
   type TicketPriority,
 } from "@/lib/mock/helpdesk";
 import {
-  ArrowLeft, MessageSquare, Paperclip, AlertOctagon, CheckCircle2,
-  RefreshCcw, UserCog, Flame, Lock, Send, Upload, Download, Activity, Clock,
+  ArrowLeft,
+  MessageSquare,
+  Paperclip,
+  AlertOctagon,
+  CheckCircle2,
+  RefreshCcw,
+  UserCog,
+  Flame,
+  Lock,
+  Send,
+  Upload,
+  Download,
+  Activity,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -30,7 +57,18 @@ export const Route = createFileRoute("/_app/helpdesk/$id")({ component: TicketDe
 function TicketDetailScreen() {
   const { id } = Route.useParams();
   const { user, activeRole } = useAuth();
-  const { tickets, addComment, addAttachment, changePriority, assign, setStatus, resolve, close, reopen, escalate } = useHelpdesk();
+  const {
+    tickets,
+    addComment,
+    addAttachment,
+    changePriority,
+    assign,
+    setStatus,
+    resolve,
+    close,
+    reopen,
+    escalate,
+  } = useHelpdesk();
   const { employees } = useEmployees();
   const navigate = useNavigate();
   const t = tickets.find((x) => x.id === id);
@@ -47,9 +85,15 @@ function TicketDetailScreen() {
   if (!t) {
     return (
       <Card className="p-6">
-        <EmptyState icon={MessageSquare} title="Ticket not found" description="It may have been deleted or the link is incorrect." />
+        <EmptyState
+          icon={MessageSquare}
+          title="Ticket not found"
+          description="It may have been deleted or the link is incorrect."
+        />
         <div className="mt-4 flex justify-center">
-          <Button asChild variant="outline"><Link to="/helpdesk">Back to helpdesk</Link></Button>
+          <Button asChild variant="outline">
+            <Link to="/helpdesk">Back to helpdesk</Link>
+          </Button>
         </div>
       </Card>
     );
@@ -104,8 +148,18 @@ function TicketDetailScreen() {
 
             {(t.relatedAssetId || t.relatedProjectId) && (
               <div className="mt-4 flex flex-wrap gap-2 border-t pt-3 text-xs text-muted-foreground">
-                {t.relatedAssetId && <span>Related asset: <span className="font-mono text-foreground">{t.relatedAssetId}</span></span>}
-                {t.relatedProjectId && <span>Related project: <span className="font-mono text-foreground">{t.relatedProjectId}</span></span>}
+                {t.relatedAssetId && (
+                  <span>
+                    Related asset:{" "}
+                    <span className="font-mono text-foreground">{t.relatedAssetId}</span>
+                  </span>
+                )}
+                {t.relatedProjectId && (
+                  <span>
+                    Related project:{" "}
+                    <span className="font-mono text-foreground">{t.relatedProjectId}</span>
+                  </span>
+                )}
               </div>
             )}
           </Card>
@@ -118,25 +172,42 @@ function TicketDetailScreen() {
             </div>
             <div className="space-y-4 p-5">
               {t.comments.length === 0 && (
-                <p className="text-sm text-muted-foreground">No messages yet — start the conversation below.</p>
+                <p className="text-sm text-muted-foreground">
+                  No messages yet — start the conversation below.
+                </p>
               )}
               {t.comments.map((c) => {
                 const mine = c.author === user?.name;
                 return (
                   <div key={c.id} className={cn("flex gap-3", mine && "flex-row-reverse")}>
-                    <div className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold",
-                      mine ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}>
-                      {c.author.split(" ").map((s) => s[0]).slice(0, 2).join("")}
+                    <div
+                      className={cn(
+                        "grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold",
+                        mine ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
+                      )}
+                    >
+                      {c.author
+                        .split(" ")
+                        .map((s) => s[0])
+                        .slice(0, 2)
+                        .join("")}
                     </div>
-                    <div className={cn("max-w-[80%] rounded-2xl border px-3.5 py-2.5",
-                      mine ? "bg-primary/10 border-primary/20" : "bg-card",
-                      c.internal && "border-warning/40 bg-warning/10")}
+                    <div
+                      className={cn(
+                        "max-w-[80%] rounded-2xl border px-3.5 py-2.5",
+                        mine ? "bg-primary/10 border-primary/20" : "bg-card",
+                        c.internal && "border-warning/40 bg-warning/10",
+                      )}
                     >
                       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                         <span className="font-semibold text-foreground">{c.author}</span>
                         {c.authorRole && <span>· {c.authorRole}</span>}
                         <span>· {fmtRelative(c.at)}</span>
-                        {c.internal && <span className="inline-flex items-center gap-1 rounded-full bg-warning/30 px-1.5 py-0.5 text-warning-foreground"><Lock className="h-3 w-3" /> Internal</span>}
+                        {c.internal && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-warning/30 px-1.5 py-0.5 text-warning-foreground">
+                            <Lock className="h-3 w-3" /> Internal
+                          </span>
+                        )}
                       </div>
                       <p className="mt-1 whitespace-pre-wrap text-sm">{c.body}</p>
                     </div>
@@ -146,15 +217,27 @@ function TicketDetailScreen() {
             </div>
             <div className="border-t bg-muted/30 p-4">
               {isClosed ? (
-                <p className="text-center text-xs text-muted-foreground">This ticket is closed. Reopen to add new messages.</p>
+                <p className="text-center text-xs text-muted-foreground">
+                  This ticket is closed. Reopen to add new messages.
+                </p>
               ) : (
                 <div className="space-y-2">
-                  <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write a reply…" rows={3} />
+                  <Textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    placeholder="Write a reply…"
+                    rows={3}
+                  />
                   <div className="flex items-center justify-between">
                     <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                       {canManage && (
                         <>
-                          <input type="checkbox" checked={internal} onChange={(e) => setInternal(e.target.checked)} className="h-3.5 w-3.5 rounded border" />
+                          <input
+                            type="checkbox"
+                            checked={internal}
+                            onChange={(e) => setInternal(e.target.checked)}
+                            className="h-3.5 w-3.5 rounded border"
+                          />
                           Internal note (hidden from requester)
                         </>
                       )}
@@ -176,7 +259,9 @@ function TicketDetailScreen() {
             </div>
             <ul className="divide-y">
               {t.attachments.length === 0 && (
-                <li className="px-5 py-6 text-center text-sm text-muted-foreground">No files attached yet.</li>
+                <li className="px-5 py-6 text-center text-sm text-muted-foreground">
+                  No files attached yet.
+                </li>
               )}
               {t.attachments.map((f) => (
                 <li key={f.id} className="flex items-center justify-between gap-3 px-5 py-3">
@@ -184,17 +269,28 @@ function TicketDetailScreen() {
                     <Paperclip className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="font-medium">{f.name}</p>
-                      <p className="text-[11px] text-muted-foreground">{f.by} · {fmtRelative(f.at)} · {f.size}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {f.by} · {fmtRelative(f.at)} · {f.size}
+                      </p>
                     </div>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => toast.info("Mock download")}><Download className="mr-1 h-3.5 w-3.5" /> Download</Button>
+                  <Button variant="ghost" size="sm" onClick={() => toast.info("Download started")}>
+                    <Download className="mr-1 h-3.5 w-3.5" /> Download
+                  </Button>
                 </li>
               ))}
             </ul>
             {!isClosed && (
               <div className="flex items-center gap-2 border-t bg-muted/30 px-5 py-3">
-                <Input value={attachName} onChange={(e) => setAttachName(e.target.value)} placeholder="filename.pdf" className="h-9" />
-                <Button size="sm" variant="outline" onClick={submitAttachment}><Upload className="mr-1 h-3.5 w-3.5" /> Add</Button>
+                <Input
+                  value={attachName}
+                  onChange={(e) => setAttachName(e.target.value)}
+                  placeholder="filename.pdf"
+                  className="h-9"
+                />
+                <Button size="sm" variant="outline" onClick={submitAttachment}>
+                  <Upload className="mr-1 h-3.5 w-3.5" /> Add
+                </Button>
               </div>
             )}
           </Card>
@@ -224,16 +320,30 @@ function TicketDetailScreen() {
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="rounded-lg border bg-muted/40 p-3">
                 <p className="text-muted-foreground">Response target</p>
-                <p className="mt-1 text-base font-semibold">{SLA_MATRIX[t.priority].responseHours}h</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">Due {fmtDateTime(sla!.responseDueAt)}</p>
-                <p className={cn("mt-1 text-[11px] font-medium", sla!.responseState === "breached" && "text-destructive", sla!.responseState === "near_breach" && "text-warning-foreground")}>
+                <p className="mt-1 text-base font-semibold">
+                  {SLA_MATRIX[t.priority].responseHours}h
+                </p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Due {fmtDateTime(sla!.responseDueAt)}
+                </p>
+                <p
+                  className={cn(
+                    "mt-1 text-[11px] font-medium",
+                    sla!.responseState === "breached" && "text-destructive",
+                    sla!.responseState === "near_breach" && "text-warning-foreground",
+                  )}
+                >
                   {t.firstResponseAt ? "Sent " + fmtDateTime(t.firstResponseAt) : "Pending"}
                 </p>
               </div>
               <div className="rounded-lg border bg-muted/40 p-3">
                 <p className="text-muted-foreground">Resolution target</p>
-                <p className="mt-1 text-base font-semibold">{SLA_MATRIX[t.priority].resolutionHours}h</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">Due {fmtDateTime(sla!.resolutionDueAt)}</p>
+                <p className="mt-1 text-base font-semibold">
+                  {SLA_MATRIX[t.priority].resolutionHours}h
+                </p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Due {fmtDateTime(sla!.resolutionDueAt)}
+                </p>
                 <SlaBadge ticket={t} />
               </div>
             </div>
@@ -245,44 +355,93 @@ function TicketDetailScreen() {
               <>
                 <PriorityChanger
                   current={t.priority}
-                  onChange={(p) => { changePriority(t.id, p, actor); toast.success("Priority updated"); }}
+                  onChange={(p) => {
+                    changePriority(t.id, p, actor);
+                    toast.success("Priority updated");
+                  }}
                 />
                 <AssignDialog
                   current={t.assignee}
                   options={employees.map((e) => ({ name: e.name, role: e.designation }))}
-                  onAssign={(name, role) => { assign(t.id, name, role, actor); toast.success("Assigned to " + name); }}
+                  onAssign={(name, role) => {
+                    assign(t.id, name, role, actor);
+                    toast.success("Assigned to " + name);
+                  }}
                 />
                 {t.status !== "in_progress" && t.status !== "resolved" && (
-                  <Button variant="outline" className="w-full justify-start" size="sm" onClick={() => { setStatus(t.id, "in_progress", actor); toast.success("Marked in progress"); }}>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    size="sm"
+                    onClick={() => {
+                      setStatus(t.id, "in_progress", actor);
+                      toast.success("Marked in progress");
+                    }}
+                  >
                     <Activity className="mr-2 h-3.5 w-3.5" /> Mark in progress
                   </Button>
                 )}
                 {t.status !== "on_hold" && t.status !== "resolved" && (
-                  <Button variant="outline" className="w-full justify-start" size="sm" onClick={() => { setStatus(t.id, "on_hold", actor); toast.success("Put on hold"); }}>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    size="sm"
+                    onClick={() => {
+                      setStatus(t.id, "on_hold", actor);
+                      toast.success("Put on hold");
+                    }}
+                  >
                     <Clock className="mr-2 h-3.5 w-3.5" /> Put on hold
                   </Button>
                 )}
-                <ResolveDialog onResolve={(r) => { resolve(t.id, r, actor); toast.success("Ticket resolved"); }} />
-                <EscalateDialog onEscalate={(r) => { escalate(t.id, r, actor); toast.success("Ticket escalated"); }} />
+                <ResolveDialog
+                  onResolve={(r) => {
+                    resolve(t.id, r, actor);
+                    toast.success("Ticket resolved");
+                  }}
+                />
+                <EscalateDialog
+                  onEscalate={(r) => {
+                    escalate(t.id, r, actor);
+                    toast.success("Ticket escalated");
+                  }}
+                />
               </>
             )}
             {(isOwner || canManage) && t.status === "resolved" && (
-              <Button variant="outline" className="w-full justify-start" size="sm" onClick={() => { close(t.id, actor); toast.success("Ticket closed"); }}>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                size="sm"
+                onClick={() => {
+                  close(t.id, actor);
+                  toast.success("Ticket closed");
+                }}
+              >
                 <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Close ticket
               </Button>
             )}
             {(isOwner || canManage) && (t.status === "resolved" || t.status === "closed") && (
-              <ReopenDialog onReopen={(r) => { reopen(t.id, r, actor); toast.success("Ticket reopened"); }} />
+              <ReopenDialog
+                onReopen={(r) => {
+                  reopen(t.id, r, actor);
+                  toast.success("Ticket reopened");
+                }}
+              />
             )}
             {!canManage && !isOwner && (
-              <p className="text-xs text-muted-foreground">You don't have permissions to act on this ticket.</p>
+              <p className="text-xs text-muted-foreground">
+                You don't have permissions to act on this ticket.
+              </p>
             )}
           </Card>
 
           {t.resolution && (
             <Card className="space-y-2 p-5">
               <p className="text-sm font-semibold">Resolution</p>
-              <p className="rounded-md bg-success/10 px-3 py-2 text-xs text-success">{t.resolution}</p>
+              <p className="rounded-md bg-success/10 px-3 py-2 text-xs text-success">
+                {t.resolution}
+              </p>
             </Card>
           )}
 
@@ -291,16 +450,21 @@ function TicketDetailScreen() {
               <p className="text-sm font-semibold">Activity timeline</p>
             </div>
             <ol className="space-y-3 p-5">
-              {t.events.slice().reverse().map((e) => (
-                <li key={e.id} className="flex gap-3">
-                  <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{e.action}</p>
-                    {e.detail && <p className="text-xs text-muted-foreground">{e.detail}</p>}
-                    <p className="text-[11px] text-muted-foreground">{e.actor} · {fmtRelative(e.at)}</p>
-                  </div>
-                </li>
-              ))}
+              {t.events
+                .slice()
+                .reverse()
+                .map((e) => (
+                  <li key={e.id} className="flex gap-3">
+                    <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{e.action}</p>
+                      {e.detail && <p className="text-xs text-muted-foreground">{e.detail}</p>}
+                      <p className="text-[11px] text-muted-foreground">
+                        {e.actor} · {fmtRelative(e.at)}
+                      </p>
+                    </div>
+                  </li>
+                ))}
             </ol>
           </Card>
         </div>
@@ -321,15 +485,25 @@ function Detail({ label, value, sub }: { label: string; value: React.ReactNode; 
   );
 }
 
-function PriorityChanger({ current, onChange }: { current: TicketPriority; onChange: (p: TicketPriority) => void }) {
+function PriorityChanger({
+  current,
+  onChange,
+}: {
+  current: TicketPriority;
+  onChange: (p: TicketPriority) => void;
+}) {
   return (
     <div className="space-y-1">
       <Label className="text-xs text-muted-foreground">Change priority</Label>
       <Select value={current} onValueChange={(v) => onChange(v as TicketPriority)}>
-        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+        <SelectTrigger className="h-9">
+          <SelectValue />
+        </SelectTrigger>
         <SelectContent>
           {(["Low", "Medium", "High", "Urgent"] as TicketPriority[]).map((p) => (
-            <SelectItem key={p} value={p}>{p}</SelectItem>
+            <SelectItem key={p} value={p}>
+              {p}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -337,7 +511,15 @@ function PriorityChanger({ current, onChange }: { current: TicketPriority; onCha
   );
 }
 
-function AssignDialog({ current, options, onAssign }: { current?: string; options: { name: string; role: string }[]; onAssign: (n: string, r: string) => void }) {
+function AssignDialog({
+  current,
+  options,
+  onAssign,
+}: {
+  current?: string;
+  options: { name: string; role: string }[];
+  onAssign: (n: string, r: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(current ?? "");
   const role = options.find((o) => o.name === name)?.role ?? "";
@@ -351,20 +533,39 @@ function AssignDialog({ current, options, onAssign }: { current?: string; option
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Assign ticket</DialogTitle>
-          <DialogDescription>Pick the agent or specialist who'll own this ticket.</DialogDescription>
+          <DialogDescription>
+            Pick the agent or specialist who'll own this ticket.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           <Label>Assignee</Label>
           <Select value={name} onValueChange={setName}>
-            <SelectTrigger><SelectValue placeholder="Pick one" /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue placeholder="Pick one" />
+            </SelectTrigger>
             <SelectContent className="max-h-72">
-              {options.map((o) => <SelectItem key={o.name} value={o.name}>{o.name} · {o.role}</SelectItem>)}
+              {options.map((o) => (
+                <SelectItem key={o.name} value={o.name}>
+                  {o.name} · {o.role}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => { if (name) { onAssign(name, role); setOpen(false); } }}>Assign</Button>
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (name) {
+                onAssign(name, role);
+                setOpen(false);
+              }
+            }}
+          >
+            Assign
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -386,10 +587,27 @@ function ResolveDialog({ onResolve }: { onResolve: (r: string) => void }) {
           <DialogTitle>Resolve ticket</DialogTitle>
           <DialogDescription>Add a brief resolution note for the requester.</DialogDescription>
         </DialogHeader>
-        <Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="What was the fix?" rows={4} />
+        <Textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="What was the fix?"
+          rows={4}
+        />
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => { if (text.trim()) { onResolve(text.trim()); setText(""); setOpen(false); } }}>Resolve</Button>
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (text.trim()) {
+                onResolve(text.trim());
+                setText("");
+                setOpen(false);
+              }
+            }}
+          >
+            Resolve
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -411,10 +629,27 @@ function ReopenDialog({ onReopen }: { onReopen: (r: string) => void }) {
           <DialogTitle>Reopen ticket</DialogTitle>
           <DialogDescription>Tell the agent why this needs another look.</DialogDescription>
         </DialogHeader>
-        <Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Reason for reopening" rows={3} />
+        <Textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Reason for reopening"
+          rows={3}
+        />
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => { if (text.trim()) { onReopen(text.trim()); setText(""); setOpen(false); } }}>Reopen</Button>
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (text.trim()) {
+                onReopen(text.trim());
+                setText("");
+                setOpen(false);
+              }
+            }}
+          >
+            Reopen
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -427,7 +662,11 @@ function EscalateDialog({ onEscalate }: { onEscalate: (r: string) => void }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="w-full justify-start text-destructive hover:text-destructive" size="sm">
+        <Button
+          variant="outline"
+          className="w-full justify-start text-destructive hover:text-destructive"
+          size="sm"
+        >
           <AlertOctagon className="mr-2 h-3.5 w-3.5" /> Escalate
         </Button>
       </DialogTrigger>
@@ -436,10 +675,27 @@ function EscalateDialog({ onEscalate }: { onEscalate: (r: string) => void }) {
           <DialogTitle>Escalate ticket</DialogTitle>
           <DialogDescription>Escalation also bumps priority by one level.</DialogDescription>
         </DialogHeader>
-        <Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Why are you escalating?" rows={3} />
+        <Textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Why are you escalating?"
+          rows={3}
+        />
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => { if (text.trim()) { onEscalate(text.trim()); setText(""); setOpen(false); } }}>Escalate</Button>
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (text.trim()) {
+                onEscalate(text.trim());
+                setText("");
+                setOpen(false);
+              }
+            }}
+          >
+            Escalate
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -4,7 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useHelpdesk } from "@/lib/helpdesk-store";
 import { useAuth } from "@/lib/auth";
 import { useAssets } from "@/lib/assets-store";
@@ -28,7 +34,9 @@ export function RaiseTicketDrawer({ open, onOpenChange, defaultCategory }: Props
   const navigate = useNavigate();
 
   const activeCats = categories.filter((c) => c.active);
-  const [category, setCategory] = useState<TicketCategory>(defaultCategory ?? activeCats[0]?.key ?? "IT");
+  const [category, setCategory] = useState<TicketCategory>(
+    defaultCategory ?? activeCats[0]?.key ?? "IT",
+  );
   const cfg = activeCats.find((c) => c.key === category);
   const [subCategory, setSubCategory] = useState<string>(cfg?.subCategories[0]?.key ?? "");
   const [subject, setSubject] = useState("");
@@ -39,8 +47,12 @@ export function RaiseTicketDrawer({ open, onOpenChange, defaultCategory }: Props
   const [attachmentName, setAttachmentName] = useState<string>("");
 
   const reset = () => {
-    setSubject(""); setDescription(""); setPriority("Medium");
-    setRelatedAssetId(""); setRelatedProjectId(""); setAttachmentName("");
+    setSubject("");
+    setDescription("");
+    setPriority("Medium");
+    setRelatedAssetId("");
+    setRelatedProjectId("");
+    setAttachmentName("");
   };
 
   const submit = () => {
@@ -75,7 +87,9 @@ export function RaiseTicketDrawer({ open, onOpenChange, defaultCategory }: Props
       description="Pick the right team and we'll route it for you."
       footer={
         <div className="flex w-full items-center justify-end gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
           <Button onClick={submit}>Submit ticket</Button>
         </div>
       }
@@ -84,24 +98,39 @@ export function RaiseTicketDrawer({ open, onOpenChange, defaultCategory }: Props
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label>Category</Label>
-            <Select value={category} onValueChange={(v) => {
-              const next = v as TicketCategory;
-              setCategory(next);
-              const nc = activeCats.find((c) => c.key === next);
-              setSubCategory(nc?.subCategories[0]?.key ?? "");
-            }}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+            <Select
+              value={category}
+              onValueChange={(v) => {
+                const next = v as TicketCategory;
+                setCategory(next);
+                const nc = activeCats.find((c) => c.key === next);
+                setSubCategory(nc?.subCategories[0]?.key ?? "");
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {activeCats.map((c) => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}
+                {activeCats.map((c) => (
+                  <SelectItem key={c.key} value={c.key}>
+                    {c.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
             <Label>Sub-category</Label>
             <Select value={subCategory} onValueChange={setSubCategory}>
-              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder="Select" />
+              </SelectTrigger>
               <SelectContent>
-                {cfg?.subCategories.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
+                {cfg?.subCategories.map((s) => (
+                  <SelectItem key={s.key} value={s.key}>
+                    {s.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -109,7 +138,11 @@ export function RaiseTicketDrawer({ open, onOpenChange, defaultCategory }: Props
 
         <div className="space-y-2">
           <Label>Subject</Label>
-          <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Short summary" />
+          <Input
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="Short summary"
+          />
         </div>
 
         <div className="space-y-2">
@@ -126,10 +159,14 @@ export function RaiseTicketDrawer({ open, onOpenChange, defaultCategory }: Props
           <div className="space-y-2">
             <Label>Priority</Label>
             <Select value={priority} onValueChange={(v) => setPriority(v as TicketPriority)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {(["Low", "Medium", "High", "Urgent"] as TicketPriority[]).map((p) => (
-                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -145,24 +182,38 @@ export function RaiseTicketDrawer({ open, onOpenChange, defaultCategory }: Props
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label>Related asset (optional)</Label>
-            <Select value={relatedAssetId || "none"} onValueChange={(v) => setRelatedAssetId(v === "none" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+            <Select
+              value={relatedAssetId || "none"}
+              onValueChange={(v) => setRelatedAssetId(v === "none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">None</SelectItem>
                 {assets.slice(0, 25).map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.id} · {a.brand} {a.model}</SelectItem>
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.id} · {a.brand} {a.model}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
             <Label>Related project (optional)</Label>
-            <Select value={relatedProjectId || "none"} onValueChange={(v) => setRelatedProjectId(v === "none" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+            <Select
+              value={relatedProjectId || "none"}
+              onValueChange={(v) => setRelatedProjectId(v === "none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">None</SelectItem>
                 {projects.slice(0, 25).map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.code} · {p.name}</SelectItem>
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.code} · {p.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -170,14 +221,27 @@ export function RaiseTicketDrawer({ open, onOpenChange, defaultCategory }: Props
         </div>
 
         <div className="space-y-2">
-          <Label>Attachment (placeholder)</Label>
+          <Label>Attachment</Label>
           <div className="flex items-center gap-2">
-            <Input value={attachmentName} onChange={(e) => setAttachmentName(e.target.value)} placeholder="screenshot.png" />
-            <Button variant="outline" size="icon" type="button" onClick={() => setAttachmentName("evidence-" + Math.floor(Math.random() * 999) + ".png")}>
+            <Input
+              value={attachmentName}
+              onChange={(e) => setAttachmentName(e.target.value)}
+              placeholder="screenshot.png"
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              type="button"
+              onClick={() =>
+                setAttachmentName("evidence-" + Math.floor(Math.random() * 999) + ".png")
+              }
+            >
               <Upload className="h-4 w-4" />
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">File upload is a mock — type a filename to attach a placeholder.</p>
+          <p className="text-[11px] text-muted-foreground">
+            Attach a supporting screenshot or document.
+          </p>
         </div>
       </div>
     </DrawerForm>

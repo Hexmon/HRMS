@@ -51,7 +51,7 @@ function SignupPage() {
       return;
     }
     const rec = signup(form);
-    navigate({ to: "/verify-email", search: { email: rec.email, token: rec.token } });
+    navigate({ to: "/verify-email", search: { email: rec.email, state: "sent" } });
   };
 
   return (
@@ -63,7 +63,10 @@ function SignupPage() {
         heading: (
           <>
             Bring your team into a{" "}
-            <span className="bg-clip-text text-transparent" style={{ backgroundImage: "var(--gradient-primary)" }}>
+            <span
+              className="bg-clip-text text-transparent"
+              style={{ backgroundImage: "var(--gradient-primary)" }}
+            >
               calmer, faster HR.
             </span>
           </>
@@ -81,11 +84,36 @@ function SignupPage() {
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="First name" id="fn" value={form.firstName} onChange={update("firstName")} required />
-          <Field label="Middle name" id="mn" value={form.middleName} onChange={update("middleName")} />
+          <Field
+            label="First name"
+            id="fn"
+            value={form.firstName}
+            onChange={update("firstName")}
+            required
+          />
+          <Field
+            label="Middle name"
+            id="mn"
+            value={form.middleName}
+            onChange={update("middleName")}
+          />
         </div>
-        <Field label="Last name" id="ln" value={form.lastName} onChange={update("lastName")} required />
-        <Field label="Company email" id="email" type="email" value={form.email} onChange={update("email")} required placeholder="you@company.com" />
+        <Field
+          label="Last name"
+          id="ln"
+          value={form.lastName}
+          onChange={update("lastName")}
+          required
+        />
+        <Field
+          label="Company email"
+          id="email"
+          type="email"
+          value={form.email}
+          onChange={update("email")}
+          required
+          placeholder="you@company.com"
+        />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field
             label="Company name"
@@ -95,20 +123,39 @@ function SignupPage() {
             required
             icon={<Building2 className="h-4 w-4 text-muted-foreground" />}
           />
-          <Field label="Contact number" id="contact" value={form.contact} onChange={update("contact")} required placeholder="+1 555 0100" />
+          <Field
+            label="Contact number"
+            id="contact"
+            value={form.contact}
+            onChange={update("contact")}
+            required
+            placeholder="+1 555 0100"
+          />
         </div>
 
         <label className="flex items-start gap-2 rounded-xl border bg-secondary/40 p-3">
-          <Checkbox checked={agree} onCheckedChange={(c) => setAgree(c === true)} className="mt-0.5" />
+          <Checkbox
+            checked={agree}
+            onCheckedChange={(c) => setAgree(c === true)}
+            className="mt-0.5"
+          />
           <span className="text-xs text-muted-foreground">
             I agree to the Hawkaii HRMS{" "}
-            <a href="#" className="font-medium text-primary hover:underline">Terms of Service</a> and{" "}
-            <a href="#" className="font-medium text-primary hover:underline">Privacy Policy</a>.
+            <a href="#" className="font-medium text-primary hover:underline">
+              Terms of Service
+            </a>{" "}
+            and{" "}
+            <a href="#" className="font-medium text-primary hover:underline">
+              Privacy Policy
+            </a>
+            .
           </span>
         </label>
 
         {error && (
-          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {error}
+          </p>
         )}
 
         <Button
@@ -128,7 +175,11 @@ function Field({
   id,
   icon,
   ...props
-}: { label: string; id: string; icon?: React.ReactNode } & React.InputHTMLAttributes<HTMLInputElement>) {
+}: {
+  label: string;
+  id: string;
+  icon?: React.ReactNode;
+} & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className="space-y-1.5">
       <Label htmlFor={id}>

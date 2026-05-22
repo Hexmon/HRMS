@@ -39,7 +39,6 @@ import {
   Activity,
   AlertTriangle,
   FileText,
-  Upload,
   Pencil,
   TrendingUp,
   Building2,
@@ -78,7 +77,11 @@ function ProjectDetailPage() {
           title="Project not found"
           description="It may have been removed or you don't have access."
           action={
-            <ActionButton variant="secondary" size="sm" onClick={() => navigate({ to: "/projects" })}>
+            <ActionButton
+              variant="secondary"
+              size="sm"
+              onClick={() => navigate({ to: "/projects" })}
+            >
               Back to projects
             </ActionButton>
           }
@@ -101,7 +104,15 @@ function ProjectDetailPage() {
     {
       key: "name",
       header: "Member",
-      render: (m) => <UserAvatar name={m.name} email={m.employeeId} tone="primary" showMeta subtitle={m.employeeId} />,
+      render: (m) => (
+        <UserAvatar
+          name={m.name}
+          email={m.employeeId}
+          tone="primary"
+          showMeta
+          subtitle={m.employeeId}
+        />
+      ),
     },
     { key: "role", header: "Role", render: (m) => <span className="text-sm">{m.role}</span> },
     {
@@ -122,16 +133,33 @@ function ProjectDetailPage() {
       header: "Billable",
       render: (m) => <StatusBadge status={m.billable ? "billable" : "non_billable"} />,
     },
-    { key: "lead", header: "Reporting lead", render: (m) => <span className="text-sm text-muted-foreground">{m.reportingLead ?? "—"}</span> },
+    {
+      key: "lead",
+      header: "Reporting lead",
+      render: (m) => (
+        <span className="text-sm text-muted-foreground">{m.reportingLead ?? "—"}</span>
+      ),
+    },
     {
       key: "dates",
       header: "Assignment",
       render: (m) => (
         <div className="text-xs">
-          <p>{new Date(m.startDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
+          <p>
+            {new Date(m.startDate).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </p>
           {m.endDate && (
             <p className="text-muted-foreground">
-              → {new Date(m.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+              →{" "}
+              {new Date(m.endDate).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
             </p>
           )}
         </div>
@@ -140,7 +168,11 @@ function ProjectDetailPage() {
   ];
 
   const moduleColumns: Column<ProjectModule>[] = [
-    { key: "name", header: "Module", render: (m) => <span className="text-sm font-medium">{m.name}</span> },
+    {
+      key: "name",
+      header: "Module",
+      render: (m) => <span className="text-sm font-medium">{m.name}</span>,
+    },
     { key: "lead", header: "Lead", render: (m) => <span className="text-sm">{m.lead}</span> },
     {
       key: "status",
@@ -152,8 +184,13 @@ function ProjectDetailPage() {
       header: "Timeline",
       render: (m) => (
         <span className="text-xs text-muted-foreground">
-          {new Date(m.startDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })} →{" "}
-          {new Date(m.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+          {new Date(m.startDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
+          →{" "}
+          {new Date(m.endDate).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
         </span>
       ),
     },
@@ -190,16 +227,26 @@ function ProjectDetailPage() {
     {
       key: "category",
       header: "Category",
-      render: (d) => <span className="text-xs uppercase tracking-wide text-muted-foreground">{d.category}</span>,
+      render: (d) => (
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">{d.category}</span>
+      ),
     },
     { key: "size", header: "Size", render: (d) => <span className="text-xs">{d.size}</span> },
-    { key: "by", header: "Uploaded by", render: (d) => <span className="text-xs text-muted-foreground">{d.uploadedBy}</span> },
+    {
+      key: "by",
+      header: "Uploaded by",
+      render: (d) => <span className="text-xs text-muted-foreground">{d.uploadedBy}</span>,
+    },
     {
       key: "at",
       header: "Uploaded",
       render: (d) => (
         <span className="text-xs text-muted-foreground">
-          {new Date(d.uploadedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+          {new Date(d.uploadedAt).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
         </span>
       ),
     },
@@ -225,7 +272,12 @@ function ProjectDetailPage() {
             <StatusBadge status={project.status} label={PROJECT_STATUS_LABEL[project.status]} />
             <StatusBadge status={project.health} label={PROJECT_HEALTH_LABEL[project.health]} />
             {canEdit && (
-              <ActionButton size="sm" variant="secondary" icon={<Pencil className="h-4 w-4" />} onClick={() => setEditOpen(true)}>
+              <ActionButton
+                size="sm"
+                variant="secondary"
+                icon={<Pencil className="h-4 w-4" />}
+                onClick={() => setEditOpen(true)}
+              >
                 Edit
               </ActionButton>
             )}
@@ -235,17 +287,35 @@ function ProjectDetailPage() {
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="flex w-full flex-wrap gap-1 rounded-full bg-secondary/50 p-1">
-          <TabsTrigger value="overview" className="rounded-full">Overview</TabsTrigger>
-          <TabsTrigger value="team" className="rounded-full">Team</TabsTrigger>
-          <TabsTrigger value="allocation" className="rounded-full">Allocation</TabsTrigger>
-          <TabsTrigger value="modules" className="rounded-full">Modules</TabsTrigger>
-          <TabsTrigger value="timesheets" className="rounded-full">Timesheets</TabsTrigger>
+          <TabsTrigger value="overview" className="rounded-full">
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="team" className="rounded-full">
+            Team
+          </TabsTrigger>
+          <TabsTrigger value="allocation" className="rounded-full">
+            Allocation
+          </TabsTrigger>
+          <TabsTrigger value="modules" className="rounded-full">
+            Modules
+          </TabsTrigger>
+          <TabsTrigger value="timesheets" className="rounded-full">
+            Timesheets
+          </TabsTrigger>
           {(isMain || isPM || isFinance) && (
-            <TabsTrigger value="expenses" className="rounded-full">Expenses</TabsTrigger>
+            <TabsTrigger value="expenses" className="rounded-full">
+              Expenses
+            </TabsTrigger>
           )}
-          <TabsTrigger value="documents" className="rounded-full">Documents</TabsTrigger>
-          <TabsTrigger value="reports" className="rounded-full">Reports</TabsTrigger>
-          <TabsTrigger value="audit" className="rounded-full">Audit Trail</TabsTrigger>
+          <TabsTrigger value="documents" className="rounded-full">
+            Documents
+          </TabsTrigger>
+          <TabsTrigger value="reports" className="rounded-full">
+            Reports
+          </TabsTrigger>
+          <TabsTrigger value="audit" className="rounded-full">
+            Audit Trail
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview */}
@@ -255,10 +325,22 @@ function ProjectDetailPage() {
               <div className="grid gap-5 sm:grid-cols-2">
                 <SummaryRow icon={Building2} label="Client" value={project.client} />
                 <SummaryRow icon={Briefcase} label="Project manager" value={project.manager} />
-                <SummaryRow icon={Calendar} label="Timeline" value={`${fmt(project.startDate)} → ${fmt(project.endDate)}`} />
-                <SummaryRow icon={Wallet} label="Billing type" value={BILLING_TYPE_LABEL[project.billingType]} />
+                <SummaryRow
+                  icon={Calendar}
+                  label="Timeline"
+                  value={`${fmt(project.startDate)} → ${fmt(project.endDate)}`}
+                />
+                <SummaryRow
+                  icon={Wallet}
+                  label="Billing type"
+                  value={BILLING_TYPE_LABEL[project.billingType]}
+                />
                 <SummaryRow icon={Users} label="Department" value={project.department} />
-                <SummaryRow icon={DollarSign} label="Cost center" value={project.costCenter || "—"} />
+                <SummaryRow
+                  icon={DollarSign}
+                  label="Cost center"
+                  value={project.costCenter || "—"}
+                />
               </div>
 
               <div className="mt-6 space-y-4">
@@ -266,7 +348,8 @@ function ProjectDetailPage() {
                   <div className="mb-1.5 flex items-center justify-between text-xs">
                     <span className="font-medium">Effort</span>
                     <span className="text-muted-foreground">
-                      {project.actualHours.toLocaleString()} / {project.estimatedHours.toLocaleString()} hrs
+                      {project.actualHours.toLocaleString()} /{" "}
+                      {project.estimatedHours.toLocaleString()} hrs
                     </span>
                   </div>
                   <Progress value={progress} className="h-2" />
@@ -275,7 +358,8 @@ function ProjectDetailPage() {
                   <div className="mb-1.5 flex items-center justify-between text-xs">
                     <span className="font-medium">Budget vs actual</span>
                     <span className="text-muted-foreground">
-                      ${project.actualSpend.toLocaleString()} / ${project.estimatedBudget.toLocaleString()}
+                      ${project.actualSpend.toLocaleString()} / $
+                      {project.estimatedBudget.toLocaleString()}
                     </span>
                   </div>
                   <Progress value={budgetUsed} className="h-2" />
@@ -284,10 +368,17 @@ function ProjectDetailPage() {
 
               {project.techStack.length > 0 && (
                 <div className="mt-6">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tech stack</p>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Tech stack
+                  </p>
                   <div className="flex flex-wrap gap-1.5">
                     {project.techStack.map((t) => (
-                      <span key={t} className="rounded-full border bg-secondary/40 px-2.5 py-0.5 text-xs">{t}</span>
+                      <span
+                        key={t}
+                        className="rounded-full border bg-secondary/40 px-2.5 py-0.5 text-xs"
+                      >
+                        {t}
+                      </span>
                     ))}
                   </div>
                 </div>
@@ -295,25 +386,66 @@ function ProjectDetailPage() {
             </Card>
 
             <div className="space-y-4">
-              <StatCard label="Team size" value={project.members.length} icon={Users} tone="info" hint={`${totalAllocation}% total allocation`} />
-              <StatCard label="Effort progress" value={`${progress}%`} icon={Activity} tone="primary" hint="Hours consumed" />
-              <StatCard label="Budget used" value={`${budgetUsed}%`} icon={TrendingUp} tone={budgetUsed > 90 ? "destructive" : "success"} hint="Of estimated" />
+              <StatCard
+                label="Team size"
+                value={project.members.length}
+                icon={Users}
+                tone="info"
+                hint={`${totalAllocation}% total allocation`}
+              />
+              <StatCard
+                label="Effort progress"
+                value={`${progress}%`}
+                icon={Activity}
+                tone="primary"
+                hint="Hours consumed"
+              />
+              <StatCard
+                label="Budget used"
+                value={`${budgetUsed}%`}
+                icon={TrendingUp}
+                tone={budgetUsed > 90 ? "destructive" : "success"}
+                hint="Of estimated"
+              />
               {canEdit && (
                 <Card className="rounded-2xl border-border/60 p-4">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quick actions</p>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Quick actions
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     {project.status !== "active" && (
-                      <Button size="sm" variant="outline" onClick={() => { setStatus(project.id, "active", user?.name); toast.success("Project active"); }}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setStatus(project.id, "active", user?.name);
+                          toast.success("Project active");
+                        }}
+                      >
                         Mark active
                       </Button>
                     )}
                     {project.status !== "on_hold" && (
-                      <Button size="sm" variant="outline" onClick={() => { setStatus(project.id, "on_hold", user?.name); toast.success("On hold"); }}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setStatus(project.id, "on_hold", user?.name);
+                          toast.success("On hold");
+                        }}
+                      >
                         Put on hold
                       </Button>
                     )}
                     {project.status !== "completed" && (
-                      <Button size="sm" variant="outline" onClick={() => { setStatus(project.id, "completed", user?.name); toast.success("Completed"); }}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setStatus(project.id, "completed", user?.name);
+                          toast.success("Completed");
+                        }}
+                      >
                         Close out
                       </Button>
                     )}
@@ -330,10 +462,17 @@ function ProjectDetailPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold">Project team</p>
-                <p className="text-xs text-muted-foreground">{project.members.length} members assigned</p>
+                <p className="text-xs text-muted-foreground">
+                  {project.members.length} members assigned
+                </p>
               </div>
               {canEdit && (
-                <ActionButton size="sm" variant="secondary" icon={<Pencil className="h-4 w-4" />} onClick={() => setEditOpen(true)}>
+                <ActionButton
+                  size="sm"
+                  variant="secondary"
+                  icon={<Pencil className="h-4 w-4" />}
+                  onClick={() => setEditOpen(true)}
+                >
                   Manage team
                 </ActionButton>
               )}
@@ -342,7 +481,11 @@ function ProjectDetailPage() {
 
           {project.members.length === 0 ? (
             <Card className="rounded-2xl border-border/60 p-10">
-              <EmptyState icon={Users} title="No members yet" description="Add team members to start tracking allocation and timesheets." />
+              <EmptyState
+                icon={Users}
+                title="No members yet"
+                description="Add team members to start tracking allocation and timesheets."
+              />
             </Card>
           ) : (
             <DataTable
@@ -370,21 +513,50 @@ function ProjectDetailPage() {
         {/* Allocation */}
         <TabsContent value="allocation" className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
-            <StatCard label="Total allocation" value={`${totalAllocation}%`} icon={Activity} tone="primary" hint={`${project.members.length} members`} />
-            <StatCard label="Over-allocated" value={overAllocated.length} icon={AlertTriangle} tone={overAllocated.length ? "destructive" : "success"} hint=">100% allocation" />
-            <StatCard label="Bench opportunity" value={benchOpportunity.length} icon={Users} tone="info" hint="<50% allocation" />
+            <StatCard
+              label="Total allocation"
+              value={`${totalAllocation}%`}
+              icon={Activity}
+              tone="primary"
+              hint={`${project.members.length} members`}
+            />
+            <StatCard
+              label="Over-allocated"
+              value={overAllocated.length}
+              icon={AlertTriangle}
+              tone={overAllocated.length ? "destructive" : "success"}
+              hint=">100% allocation"
+            />
+            <StatCard
+              label="Bench opportunity"
+              value={benchOpportunity.length}
+              icon={Users}
+              tone="info"
+              hint="<50% allocation"
+            />
           </div>
 
           <Card className="rounded-2xl border-border/60 p-5">
             <p className="mb-4 text-sm font-semibold">Capacity by member</p>
             <div className="space-y-4">
               {project.members.map((m) => {
-                const tone = m.allocation > 100 ? "bg-destructive" : m.allocation < 50 ? "bg-info" : "bg-primary";
+                const tone =
+                  m.allocation > 100
+                    ? "bg-destructive"
+                    : m.allocation < 50
+                      ? "bg-info"
+                      : "bg-primary";
                 return (
                   <div key={m.id}>
                     <div className="mb-1 flex items-center justify-between text-xs">
                       <span className="font-medium">{m.name}</span>
-                      <span className={cn("font-semibold", m.allocation > 100 && "text-destructive", m.allocation < 50 && "text-info")}>
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          m.allocation > 100 && "text-destructive",
+                          m.allocation < 50 && "text-info",
+                        )}
+                      >
                         {m.allocation}%
                       </span>
                     </div>
@@ -397,7 +569,9 @@ function ProjectDetailPage() {
                   </div>
                 );
               })}
-              {project.members.length === 0 && <p className="text-xs text-muted-foreground">No allocation to chart yet.</p>}
+              {project.members.length === 0 && (
+                <p className="text-xs text-muted-foreground">No allocation to chart yet.</p>
+              )}
             </div>
           </Card>
 
@@ -408,7 +582,8 @@ function ProjectDetailPage() {
                 <div>
                   <p className="text-sm font-semibold text-destructive">Over-allocation warning</p>
                   <p className="text-xs text-muted-foreground">
-                    {overAllocated.map((m) => m.name).join(", ")} {overAllocated.length === 1 ? "is" : "are"} allocated above 100%.
+                    {overAllocated.map((m) => m.name).join(", ")}{" "}
+                    {overAllocated.length === 1 ? "is" : "are"} allocated above 100%.
                   </p>
                 </div>
               </div>
@@ -420,10 +595,18 @@ function ProjectDetailPage() {
         <TabsContent value="modules">
           {project.modules.length === 0 ? (
             <Card className="rounded-2xl border-border/60 p-10">
-              <EmptyState icon={CheckCircle2} title="No modules yet" description="Break the project into delivery modules to track progress." />
+              <EmptyState
+                icon={CheckCircle2}
+                title="No modules yet"
+                description="Break the project into delivery modules to track progress."
+              />
             </Card>
           ) : (
-            <DataTable columns={moduleColumns} rows={project.modules} searchKeys={["name", "lead"]} />
+            <DataTable
+              columns={moduleColumns}
+              rows={project.modules}
+              searchKeys={["name", "lead"]}
+            />
           )}
         </TabsContent>
 
@@ -435,7 +618,11 @@ function ProjectDetailPage() {
               title="Project timesheets"
               description="Submitted hours from the timesheet module appear here once team members log time against this project."
               action={
-                <ActionButton size="sm" variant="secondary" onClick={() => navigate({ to: "/timesheet" })}>
+                <ActionButton
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => navigate({ to: "/timesheet" })}
+                >
                   Open timesheet
                 </ActionButton>
               }
@@ -452,7 +639,11 @@ function ProjectDetailPage() {
                 title="Project expenses"
                 description="Reimbursements and direct project spend will be summarised here."
                 action={
-                  <ActionButton size="sm" variant="secondary" onClick={() => navigate({ to: "/expenses" })}>
+                  <ActionButton
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => navigate({ to: "/expenses" })}
+                  >
                     Open expenses
                   </ActionButton>
                 }
@@ -463,42 +654,33 @@ function ProjectDetailPage() {
 
         {/* Documents */}
         <TabsContent value="documents" className="space-y-3">
-          {canEdit && (
-            <Card className="rounded-2xl border-dashed border-border/60 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-primary-soft text-primary">
-                    <Upload className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">Upload SOW, BRD, contracts or client files</p>
-                    <p className="text-xs text-muted-foreground">PDF, DOCX up to 25 MB. Drag & drop coming soon.</p>
-                  </div>
-                </div>
-                <ActionButton
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => toast.message("Upload coming soon", { description: "Document uploads will be wired up in the next release." })}
-                >
-                  Choose file
-                </ActionButton>
-              </div>
-            </Card>
-          )}
-
           {project.documents.length === 0 ? (
             <Card className="rounded-2xl border-border/60 p-10">
-              <EmptyState icon={FileText} title="No documents yet" description="Upload SOW, BRD, contract and client files." />
+              <EmptyState
+                icon={FileText}
+                title="No documents yet"
+                description="Project documents will appear here once they are attached."
+              />
             </Card>
           ) : (
-            <DataTable columns={docColumns} rows={project.documents} searchKeys={["name", "category", "uploadedBy"]} />
+            <DataTable
+              columns={docColumns}
+              rows={project.documents}
+              searchKeys={["name", "category", "uploadedBy"]}
+            />
           )}
         </TabsContent>
 
         {/* Reports */}
         <TabsContent value="reports" className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Project hours" value={project.actualHours.toLocaleString()} icon={Clock} tone="primary" hint={`Of ${project.estimatedHours.toLocaleString()} estimated`} />
+            <StatCard
+              label="Project hours"
+              value={project.actualHours.toLocaleString()}
+              icon={Clock}
+              tone="primary"
+              hint={`Of ${project.estimatedHours.toLocaleString()} estimated`}
+            />
             <StatCard
               label="Billable hours"
               value={Math.round(project.actualHours * 0.85).toLocaleString()}
@@ -525,9 +707,16 @@ function ProjectDetailPage() {
           <Card className="rounded-2xl border-border/60 p-5">
             <p className="mb-3 text-sm font-semibold">Expense summary</p>
             <div className="grid gap-4 sm:grid-cols-3">
-              <KPI label="Estimated budget" value={`$${project.estimatedBudget.toLocaleString()}`} />
+              <KPI
+                label="Estimated budget"
+                value={`$${project.estimatedBudget.toLocaleString()}`}
+              />
               <KPI label="Actual spend" value={`$${project.actualSpend.toLocaleString()}`} />
-              <KPI label="Variance" value={`$${(project.estimatedBudget - project.actualSpend).toLocaleString()}`} tone={project.actualSpend > project.estimatedBudget ? "down" : "up"} />
+              <KPI
+                label="Variance"
+                value={`$${(project.estimatedBudget - project.actualSpend).toLocaleString()}`}
+                tone={project.actualSpend > project.estimatedBudget ? "down" : "up"}
+              />
             </div>
           </Card>
         </TabsContent>
@@ -555,23 +744,42 @@ function ProjectDetailPage() {
         </TabsContent>
       </Tabs>
 
-      <ProjectFormDrawer open={editOpen} onOpenChange={setEditOpen} initial={project} actor={user?.name ?? "System"} />
+      <ProjectFormDrawer
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        initial={project}
+        actor={user?.name ?? "System"}
+      />
     </>
   );
 }
 
 function fmt(d: string) {
-  return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return new Date(d).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
-function SummaryRow({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string }) {
+function SummaryRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
   return (
     <div className="flex items-start gap-3">
       <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary">
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
         <p className="truncate text-sm font-medium">{value}</p>
       </div>
     </div>
