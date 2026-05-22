@@ -28,6 +28,7 @@ const allowedTags = new Set([
   "Platform / Health",
   "Auth & Sessions",
   "Core / Employees & Hierarchy",
+  "Dashboard",
   "Expenses / Requester",
   "Expenses / Manager",
   "Finance Management",

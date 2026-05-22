@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 76
+Documented operations: 77
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -976,6 +976,59 @@ Success body highlights:
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
 - Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+## Dashboard
+
+Backend-owned API group.
+
+### GET /api/v1/dashboard/summary
+
+| Field | Contract |
+|---|---|
+| Purpose | Dashboard summary |
+| Frontend use | Dashboard summary |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `generated_at` | string<date-time> | required | Dashboard summary generation timestamp |
+| `scope` | object | required | - |
+| `cards` | array of object | required | - |
+| `workforce` | object | required | - |
+| `approvals` | object | required | - |
+| `operations` | object | required | - |
+| `workload` | object | required | - |
+| `attention` | array of object | required | - |
+| `unavailable_features` | array of object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
 ## Admin / Configuration

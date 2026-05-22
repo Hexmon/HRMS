@@ -18,6 +18,7 @@ import { rateLimitPlugin } from "./plugins/rate-limit.js";
 import healthModule from "./modules/health/index.js";
 import authModule from "./modules/auth/index.js";
 import coreModule from "./modules/core/index.js";
+import dashboardModule from "./modules/dashboard/index.js";
 import platformModule from "./modules/platform/index.js";
 import expensesModule from "./modules/expenses/index.js";
 import documentsModule from "./modules/documents/index.js";
@@ -94,6 +95,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(healthModule);
   await app.register(authModule);
   await app.register(coreModule);
+  await app.register(dashboardModule);
   await app.register(platformModule);
   await app.register(expensesModule);
   await app.register(documentsModule);

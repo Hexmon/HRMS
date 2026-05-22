@@ -722,6 +722,126 @@ const documentSchema = {
   additionalProperties: true
 };
 
+const dashboardMetricSchema = {
+  type: "object",
+  required: ["key", "label", "value", "unit", "source"],
+  properties: {
+    key: { type: "string", example: "pending_expense_approvals" },
+    label: { type: "string", example: "Pending expense approvals" },
+    value: {
+      oneOf: [
+        { type: "integer", minimum: 0, example: 3 },
+        { type: "string", example: "42.00" }
+      ]
+    },
+    unit: { type: "string", enum: ["count", "money", "hours", "status"], example: "count" },
+    source: {
+      type: "string",
+      enum: ["core", "expenses", "documents", "assets", "timesheets", "notifications", "outbox", "system"],
+      example: "expenses"
+    }
+  },
+  additionalProperties: false
+};
+
+const dashboardSummarySchema = {
+  type: "object",
+  required: ["generated_at", "scope", "cards", "workforce", "approvals", "operations", "workload", "attention", "unavailable_features"],
+  properties: {
+    generated_at: dateTime("Dashboard summary generation timestamp"),
+    scope: {
+      type: "object",
+      required: ["actor_user_id", "employee_code", "primary_role", "roles", "visibility"],
+      properties: {
+        actor_user_id: uuid("Authenticated actor UUID"),
+        employee_code: { type: "string", example: "D1" },
+        primary_role: { type: "string", example: "Employee" },
+        roles: { type: "array", items: { type: "string" }, example: ["Employee"] },
+        visibility: { type: "string", enum: ["all", "self_and_descendants"], example: "self_and_descendants" }
+      },
+      additionalProperties: false
+    },
+    cards: { type: "array", items: dashboardMetricSchema },
+    workforce: {
+      type: "object",
+      required: ["visible_employees", "active_employees", "inactive_employees", "new_joiners_30d", "departments"],
+      properties: {
+        visible_employees: { type: "integer", minimum: 0, example: 4 },
+        active_employees: { type: "integer", minimum: 0, example: 4 },
+        inactive_employees: { type: "integer", minimum: 0, example: 0 },
+        new_joiners_30d: { type: "integer", minimum: 0, example: 1 },
+        departments: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["department_id", "department_code", "name", "active_employees"],
+            properties: {
+              department_id: uuid("Department UUID"),
+              department_code: { type: "string", example: "SALES" },
+              name: { type: "string", example: "Sales" },
+              active_employees: { type: "integer", minimum: 0, example: 4 }
+            },
+            additionalProperties: false
+          }
+        }
+      },
+      additionalProperties: false
+    },
+    approvals: {
+      type: "object",
+      required: ["expense_manager_pending", "expense_finance_pending", "expense_total_pending", "timesheet_pending", "document_verification_pending"],
+      properties: {
+        expense_manager_pending: { type: "integer", minimum: 0, example: 1 },
+        expense_finance_pending: { type: "integer", minimum: 0, example: 0 },
+        expense_total_pending: { type: "integer", minimum: 0, example: 1 },
+        timesheet_pending: { type: "integer", minimum: 0, example: 1 },
+        document_verification_pending: { type: "integer", minimum: 0, example: 0 }
+      },
+      additionalProperties: false
+    },
+    operations: {
+      type: "object",
+      required: ["assets_total", "assets_assigned", "assets_recovery_pending", "notifications_pending", "outbox_pending"],
+      properties: {
+        assets_total: { type: "integer", minimum: 0, example: 1 },
+        assets_assigned: { type: "integer", minimum: 0, example: 1 },
+        assets_recovery_pending: { type: "integer", minimum: 0, example: 0 },
+        notifications_pending: { type: "integer", minimum: 0, example: 1 },
+        outbox_pending: { type: "integer", minimum: 0, example: 1 }
+      },
+      additionalProperties: false
+    },
+    workload: {
+      type: "object",
+      required: ["work_segments_total", "submitted_hours_total", "timesheet_submissions_total", "timesheet_submissions_approved", "timesheet_submissions_returned"],
+      properties: {
+        work_segments_total: { type: "integer", minimum: 0, example: 2 },
+        submitted_hours_total: { type: "string", example: "10.00" },
+        timesheet_submissions_total: { type: "integer", minimum: 0, example: 1 },
+        timesheet_submissions_approved: { type: "integer", minimum: 0, example: 0 },
+        timesheet_submissions_returned: { type: "integer", minimum: 0, example: 0 }
+      },
+      additionalProperties: false
+    },
+    attention: { type: "array", items: dashboardMetricSchema },
+    unavailable_features: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["key", "label", "status", "notes"],
+        properties: {
+          key: { type: "string", example: "attendance" },
+          label: { type: "string", example: "Attendance" },
+          status: { type: "string", enum: ["not_implemented"], example: "not_implemented" },
+          notes: { type: "string", example: "Attendance module is scheduled for Phase 3 and is not counted in this dashboard yet." }
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  additionalProperties: false
+};
+
 const paginated = (itemSchema: JsonSchema) => ({
   type: "object",
   required: ["items", "page", "page_size", "total"],
@@ -1355,6 +1475,12 @@ const routeDocs: Record<string, RouteSchema> = {
     "Returns the active, non-deleted subordinate hierarchy below a user. Admin, HR Manager, and Auditor can inspect any active root; other actors can inspect only self or a root inside their own hierarchy path. The response is backed by the ltree-style hierarchy path and includes relative depth and summary counts.",
     { params: idParamSchema, querystring: paginationQuerySchema, response200: subtreeResponseSchema }
   ),
+  "GET /api/v1/dashboard/summary": operation(
+    "Dashboard",
+    "Dashboard summary",
+    "Returns a role-scoped dashboard summary assembled from implemented backend modules only: Core users, Expenses, Documents, Assets, Timesheets, Notifications, and Outbox. Missing modules such as Attendance, Leave/WFH/Holidays, Helpdesk, and Projects are explicitly marked not_implemented instead of returning mock counts.",
+    { response200: dashboardSummarySchema }
+  ),
   "GET /api/v1/platform/finance-governance": operation(
     "Admin / Configuration",
     "Read finance governance configuration",
@@ -1483,6 +1609,7 @@ export const openApiTags = [
   { name: "Platform / Health", description: "Liveness, readiness, and OpenAPI contract endpoints." },
   { name: "Auth & Sessions", description: "Login, logout, and current session context." },
   { name: "Core / Employees & Hierarchy", description: "Core employee identity and ltree hierarchy lookup." },
+  { name: "Dashboard", description: "Role-scoped dashboard summaries derived from implemented backend modules." },
   { name: "Expenses / Requester", description: "Requester-owned expense creation and read flows." },
   { name: "Expenses / Manager", description: "Manager verification queue, document checks, and decision workflow." },
   { name: "Finance Management", description: "Finance queue, approval, payment, settlement, analytics, audit, and finance reports." },
