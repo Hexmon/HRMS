@@ -46,6 +46,7 @@ export interface EmployeeDocument {
 
 export interface Employee {
   id: string;
+  apiId?: string;
   firstName: string;
   middleName?: string;
   lastName: string;

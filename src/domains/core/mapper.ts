@@ -9,16 +9,47 @@ function splitName(fullName: string) {
   };
 }
 
+function nestedText(row: ApiRecord, key: string, childKey: string): unknown {
+  const value = row[key];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return (value as ApiRecord)[childKey];
+}
+
+function mapRole(value: unknown): string {
+  const normalized = text(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
+  switch (normalized) {
+    case "admin":
+      return "main_admin";
+    case "hr_manager":
+      return "hr_admin";
+    case "finance_manager":
+      return "finance_manager";
+    case "asset_manager":
+      return "asset_admin";
+    case "reviewer":
+    case "director":
+      return "manager";
+    default:
+      return normalized || "employee";
+  }
+}
+
 export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee>): Employee {
   const row = asRecord(value);
   const name = text(row.full_name ?? row.name, fallback?.name ?? "Employee User");
   const split = splitName(name);
-  const roles = Array.isArray(row.roles)
-    ? row.roles.map((role) => text(role).toLowerCase().replace(/\s+/g, "_")).filter(Boolean)
+  const roleValues = Array.isArray(row.role_labels) ? row.role_labels : row.roles;
+  const roles = Array.isArray(roleValues)
+    ? roleValues.map(mapRole).filter(Boolean)
     : (fallback?.systemRoles ?? ["employee"]);
 
   return {
-    id: text(row.employee_code ?? row.id, fallback?.id ?? "EMP-API"),
+    id: text(row.employee_code, fallback?.id ?? text(row.id, "EMP-API")),
+    apiId: text(row.id, fallback?.apiId),
     firstName: text(row.first_name, fallback?.firstName ?? split.firstName),
     middleName: text(row.middle_name, fallback?.middleName),
     lastName: text(row.last_name, fallback?.lastName ?? split.lastName),
@@ -28,9 +59,18 @@ export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee
     email: text(row.email, fallback?.email ?? ""),
     personalEmail: text(row.personal_email, fallback?.personalEmail),
     phone: text(row.phone, fallback?.phone ?? "—"),
-    designation: text(row.designation_name ?? row.designation, fallback?.designation ?? "Employee"),
-    department: text(row.department_name ?? row.department, fallback?.department ?? "General"),
-    manager: text(row.manager_name ?? row.manager, fallback?.manager ?? "—"),
+    designation: text(
+      row.designation_name ?? nestedText(row, "designation", "title") ?? row.designation,
+      fallback?.designation ?? "Employee",
+    ),
+    department: text(
+      row.department_name ?? nestedText(row, "department", "name") ?? row.department,
+      fallback?.department ?? "General",
+    ),
+    manager: text(
+      row.manager_name ?? nestedText(row, "manager", "full_name") ?? row.manager,
+      fallback?.manager ?? "—",
+    ),
     location: text(row.location ?? row.work_location, fallback?.location ?? "—"),
     workMode: fallback?.workMode ?? "hybrid",
     status: text(row.employment_status, fallback?.status ?? "active") as Employee["status"],
@@ -42,7 +82,10 @@ export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee
     probationEndDate: text(row.probation_end_date, fallback?.probationEndDate),
     noticeDays: fallback?.noticeDays ?? 30,
     shift: text(row.shift, fallback?.shift ?? "General"),
-    loginEnabled: boolValue(row.login_enabled, fallback?.loginEnabled ?? true),
+    loginEnabled: boolValue(
+      row.login_enabled,
+      fallback?.loginEnabled ?? row.login_state !== "disabled",
+    ),
     systemRoles: roles.length ? roles : ["employee"],
     lastLoginAt: text(row.last_login_at, fallback?.lastLoginAt),
     avatarTone: fallback?.avatarTone ?? "primary",

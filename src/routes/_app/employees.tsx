@@ -49,7 +49,8 @@ export const Route = createFileRoute("/_app/employees")({
 });
 
 function EmployeesPage() {
-  const { employees, departments, designations, setStatus, setLogin } = useEmployees();
+  const { employees, departments, designations, setStatus, setLogin, loading, error } =
+    useEmployees();
   const { activeRole, user } = useAuth();
   const navigate = useNavigate();
 
@@ -293,7 +294,12 @@ function EmployeesPage() {
         rows={filtered}
         searchKeys={["name", "email", "id", "designation", "department", "location"]}
         emptyTitle="No employees match these filters"
-        emptyDescription="Try adjusting your search or clearing filters."
+        emptyDescription={
+          error
+            ? "Employee data could not be loaded from the backend."
+            : "Try adjusting your search or clearing filters."
+        }
+        loading={loading}
         toolbarRight={
           <div className="flex flex-wrap items-center gap-2">
             <Select value={dept} onValueChange={setDept}>

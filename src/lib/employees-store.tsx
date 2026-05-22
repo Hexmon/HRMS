@@ -15,6 +15,9 @@ interface Ctx {
   employees: Employee[];
   departments: Department[];
   designations: Designation[];
+  loading: boolean;
+  error: Error | null;
+  isApiBacked: boolean;
   upsert: (e: Employee, actor?: string) => void;
   remove: (id: string, actor?: string) => void;
   setStatus: (id: string, status: Employee["status"], actor?: string) => void;
@@ -175,7 +178,8 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
     staleTime: queryTimings.listStaleMs,
   });
 
-  const visibleEmployees = apiEmployeesQuery.data ?? employees;
+  const visibleEmployees = apiEnabled ? (apiEmployeesQuery.data ?? []) : employees;
+  const apiError = apiEmployeesQuery.error instanceof Error ? apiEmployeesQuery.error : null;
 
   return (
     <Ctx.Provider
@@ -183,6 +187,9 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
         employees: visibleEmployees,
         departments,
         designations,
+        loading: apiEnabled && apiEmployeesQuery.isLoading,
+        error: apiError,
+        isApiBacked: apiEnabled && Boolean(apiEmployeesQuery.data),
         upsert,
         remove,
         setStatus,

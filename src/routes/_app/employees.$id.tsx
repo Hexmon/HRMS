@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,8 @@ import {
   type EmployeeDocument,
 } from "@/lib/mock/employees";
 import { EmployeeFormDrawer } from "@/components/employees/employee-form-drawer";
+import { coreApi, mapApiUserToEmployee } from "@/domains/core";
+import { queryKeys, queryTimings } from "@/shared/query";
 import {
   ArrowLeft,
   Briefcase,
@@ -39,6 +42,7 @@ import {
   TrendingUp,
   Upload,
   UserCheck,
+  Users2,
   Wallet,
   CalendarDays,
   Activity,
@@ -58,9 +62,33 @@ export const Route = createFileRoute("/_app/employees/$id")({
 function EmployeeProfilePage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const { employees, setLogin, setRoles, setStatus } = useEmployees();
+  const { employees, setLogin, setRoles, setStatus, loading, error } = useEmployees();
   const { activeRole, user } = useAuth();
-  const employee = employees.find((e) => e.id === id);
+  const employeeFromList = employees.find((e) => e.id === id);
+  const detailQuery = useQuery({
+    queryKey: queryKeys.detail("core", "user", employeeFromList?.apiId ?? id),
+    queryFn: () => coreApi.getUserPartial(employeeFromList?.apiId as string),
+    enabled: Boolean(employeeFromList?.apiId),
+    staleTime: queryTimings.detailStaleMs,
+  });
+  const subtreeQuery = useQuery({
+    queryKey: queryKeys.list("core", "user-subtree", {
+      userId: employeeFromList?.apiId ?? id,
+      page_size: 1,
+    }),
+    queryFn: () => coreApi.getUserSubtree(employeeFromList?.apiId as string),
+    enabled: Boolean(employeeFromList?.apiId),
+    staleTime: queryTimings.detailStaleMs,
+  });
+  const employee = detailQuery.data
+    ? mapApiUserToEmployee(detailQuery.data, employeeFromList)
+    : employeeFromList;
+  const subtreeTotal =
+    typeof subtreeQuery.data?.total_active_descendants === "number"
+      ? subtreeQuery.data.total_active_descendants
+      : typeof subtreeQuery.data?.total === "number"
+        ? subtreeQuery.data.total
+        : undefined;
   const [editOpen, setEditOpen] = useState(false);
 
   const isMain = activeRole === "main_admin";
@@ -70,12 +98,27 @@ function EmployeeProfilePage() {
   const isManagerOf = activeRole === "manager" && employee?.manager === user?.name;
   const canView = canEdit || isOwner || isManagerOf;
 
+  if (!employee && loading) {
+    return (
+      <Card className="rounded-2xl border-border/60 p-12">
+        <EmptyState
+          title="Loading employee profile"
+          description="Fetching employee data from Hawkaii HRMS."
+        />
+      </Card>
+    );
+  }
+
   if (!employee) {
     return (
       <Card className="rounded-2xl border-border/60 p-12">
         <EmptyState
           title="Employee not found"
-          description={`No employee with ID ${id} exists in this workspace.`}
+          description={
+            error
+              ? "Employee data could not be loaded from the backend."
+              : `No employee with ID ${id} exists in this workspace.`
+          }
           action={
             <Button asChild variant="outline" className="rounded-full">
               <Link to="/employees">Back to employees</Link>
@@ -218,7 +261,7 @@ function EmployeeProfilePage() {
         </TabsContent>
 
         <TabsContent value="job" className="mt-5 space-y-4">
-          <JobTab employee={employee} />
+          <JobTab employee={employee} subtreeTotal={subtreeTotal} />
         </TabsContent>
 
         <TabsContent value="access" className="mt-5 space-y-4">
@@ -375,7 +418,7 @@ function PersonalTab({ employee }: { employee: Employee }) {
   );
 }
 
-function JobTab({ employee }: { employee: Employee }) {
+function JobTab({ employee, subtreeTotal }: { employee: Employee; subtreeTotal?: number }) {
   return (
     <Card className="rounded-2xl border-border/60 p-5">
       <h3 className="text-sm font-semibold">Employment</h3>
@@ -389,6 +432,11 @@ function JobTab({ employee }: { employee: Employee }) {
         <Field icon={Building2} label="Department" value={employee.department} />
         <Field icon={Briefcase} label="Designation" value={employee.designation} />
         <Field icon={UserCheck} label="Reporting to" value={employee.manager} />
+        <Field
+          icon={Users2}
+          label="Active descendants"
+          value={subtreeTotal == null ? "—" : String(subtreeTotal)}
+        />
         <Field icon={MapPin} label="Work mode" value={WORK_MODE_LABEL[employee.workMode]} />
         <Field icon={Clock} label="Shift" value={employee.shift} />
         <Field
