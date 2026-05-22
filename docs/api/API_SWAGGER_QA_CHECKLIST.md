@@ -15,7 +15,7 @@ Open `http://localhost:3101/docs`.
 - Auth & Sessions group is visible.
 - `POST /api/v1/auth/login` opens.
 - Try it out shows request body editor.
-- Default body contains `{ "email": "finance@example.test", "password": "LocalDev@123" }`.
+- Default body contains `{ "email": "finance@example.test", "password": "LocalDev@123" }`; if `LOCAL_DEMO_PASSWORD` differs, use that env value instead.
 - Execute valid Finance Manager login returns 200 and `access_token`.
 - Execute with no body returns `400 VALIDATION_FAILED`.
 - Execute with `{}` returns `email` and `password` field errors.

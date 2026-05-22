@@ -6,6 +6,7 @@
   },
   "variable": [
     { "key": "base_url", "value": "http://localhost:3101" },
+    { "key": "local_demo_password", "value": "LocalDev@123" },
     { "key": "access_token", "value": "" },
     { "key": "employee_token", "value": "" },
     { "key": "ticket_id", "value": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001" },
@@ -47,7 +48,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"finance@example.test\",\n  \"password\": \"LocalDev@123\"\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"finance@example.test\",\n  \"password\": \"{{local_demo_password}}\"\n}" },
             "url": "{{base_url}}/api/v1/auth/login"
           }
         },
@@ -67,7 +68,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"e1@example.test\",\n  \"password\": \"LocalDev@123\"\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"e1@example.test\",\n  \"password\": \"{{local_demo_password}}\"\n}" },
             "url": "{{base_url}}/api/v1/auth/login"
           }
         },

@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth, dashboardPathForRole } from "@/lib/auth";
-import { USERS, ROLES } from "@/lib/mock";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,8 +21,8 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const { user, activeRole, login, isCompanySetupComplete } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("aanya@hawkaii.com");
-  const [password, setPassword] = useState("demo");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState("");
@@ -140,31 +139,6 @@ function LoginPage() {
           right workspace.
         </p>
       </form>
-
-      <div className="mt-6 rounded-xl border bg-secondary/40 p-3">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Demo accounts
-        </p>
-        <div className="grid gap-1 text-xs">
-          {USERS.slice(0, 5).map((u) => {
-            const role = ROLES.find((r) => r.key === u.roles[0]);
-            return (
-              <button
-                type="button"
-                key={u.id}
-                className="flex items-center justify-between rounded-md px-2 py-1 text-left hover:bg-background"
-                onClick={() => {
-                  setEmail(u.email);
-                  setPassword("demo");
-                }}
-              >
-                <span className="font-medium">{u.email}</span>
-                <span className="text-muted-foreground">{role?.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
     </AuthShell>
   );
 }

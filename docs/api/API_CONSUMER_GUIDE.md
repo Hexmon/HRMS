@@ -37,7 +37,7 @@ Safe local QA personas:
 
 These are local QA seeds only. Do not use production credentials in examples or docs.
 
-The login model for this DEV/local Docker QA runtime uses seeded email/password credentials through one platform login. Password hashes are stored outside Core user read models. The legacy `employee_code` login remains a DEV-only fallback for older QA scripts. Production SSO/MFA/identity-provider selection and reset delivery remain HIR.
+The login model for this DEV/local Docker QA runtime uses seeded email/password credentials through one platform login. Seeded accounts use the `LOCAL_DEMO_PASSWORD` value from the selected env file. Password hashes are stored outside Core user read models. The legacy `employee_code` login remains a DEV-only fallback for older QA scripts. Production SSO/MFA/identity-provider selection and reset delivery remain HIR.
 
 ## Auth Pattern
 
@@ -46,7 +46,7 @@ Login:
 ```bash
 curl -sS -X POST http://localhost:3101/api/v1/auth/login \
   -H 'content-type: application/json' \
-  -d '{"email":"finance@example.test","password":"LocalDev@123"}'
+  -d "{\"email\":\"finance@example.test\",\"password\":\"${LOCAL_DEMO_PASSWORD:-LocalDev@123}\"}"
 ```
 
 The success response returns `access_token` and also sets the configured HttpOnly session cookie. API/mobile clients should send:
