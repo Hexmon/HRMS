@@ -32,7 +32,7 @@ import {
   Roles,
   TimesheetStatuses
 } from "#shared";
-import { LOCAL_DEMO_PASSWORD, MemorySessionStore, hashPasswordSync, type SessionStore } from "#auth";
+import { MemorySessionStore, getLocalDemoPassword, hashPasswordSync, type SessionStore } from "#auth";
 
 export interface NotificationRecord {
   id: UUID;
@@ -548,10 +548,11 @@ export function createMemoryDataStore(): MemoryDataStore {
     })
   );
 
+  const localDemoPassword = getLocalDemoPassword();
   const userCredentials: UserCredentialRecord[] = users.map((user) => ({
     id: uuidFromName(`credential-${user.employee_code}`),
     user_id: user.id,
-    password_hash: hashPasswordSync(LOCAL_DEMO_PASSWORD, `hrms-local-${user.employee_code.toLowerCase()}`),
+    password_hash: hashPasswordSync(localDemoPassword, `hrms-local-${user.employee_code.toLowerCase()}`),
     status: "active",
     created_at: created,
     updated_at: created,

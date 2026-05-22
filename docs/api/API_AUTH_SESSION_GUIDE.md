@@ -6,7 +6,7 @@ Date: 2026-05-01
 
 `POST /api/v1/auth/login`
 
-This DEV/local Docker QA login now uses one platform email/password flow for all web zones. It is backed by safe seeded users for QA and Swagger testing. Password hashes are stored separately from Core user records in `platform.user_credentials` and are never returned by Core APIs.
+This DEV/local Docker QA login now uses one platform email/password flow for all web zones. It is backed by safe seeded users for QA and Swagger testing. The seeded password is read from `LOCAL_DEMO_PASSWORD` in the selected env file. Password hashes are stored separately from Core user records in `platform.user_credentials` and are never returned by Core APIs.
 
 `employee_code` remains accepted as a DEV-only fallback for legacy local scripts. Production SSO, MFA, identity provider, password reset delivery, and lifecycle sync remain HIR-001.
 
@@ -101,7 +101,7 @@ Protected route without auth:
 ## Consumer Notes
 
 - Primary UI login uses `email` and `password`.
-- Local seeded password for Docker QA personas is `LocalDev@123`; do not reuse it outside local QA.
+- Local seeded password for Docker QA personas comes from `LOCAL_DEMO_PASSWORD`; the local example value is `LocalDev@123`.
 - `employee_code` is DEV-only fallback behavior for older scripts, not the preferred UI flow.
 - Forgot password is a safe UI placeholder in DEV; production reset policy/provider remains HIR.
 - Never place secrets in `NEXT_PUBLIC_` variables.

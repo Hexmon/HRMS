@@ -1,10 +1,11 @@
 import { Client } from "pg";
-import { LOCAL_DEMO_PASSWORD, hashPasswordSync } from "#auth";
+import { getLocalDemoPassword, hashPasswordSync } from "#auth";
 import { AssetStatuses, EmploymentStatuses, Roles } from "#shared";
 import { seedIds } from "../src/platform/data-store.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 
 loadRuntimeEnv();
+const localDemoPassword = getLocalDemoPassword();
 
 const client = new Client({ connectionString: requireEnv("DATABASE_URL") });
 await client.connect();
@@ -91,7 +92,7 @@ try {
            status = EXCLUDED.status,
            deleted_at = NULL,
            updated_at = now()`,
-      [id, hashPasswordSync(LOCAL_DEMO_PASSWORD, `hrms-local-${String(employeeCode).toLowerCase()}`)]
+      [id, hashPasswordSync(localDemoPassword, `hrms-local-${String(employeeCode).toLowerCase()}`)]
     );
   }
 

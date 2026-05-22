@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { getLocalDemoPassword } from "#auth";
 import { authHeader, loginAs } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
 
 describe("auth onboarding and password APIs", () => {
   let app: FastifyInstance;
+  const localDemoPassword = getLocalDemoPassword();
 
   beforeEach(async () => {
     app = await buildRealApp();
@@ -223,7 +225,7 @@ describe("auth onboarding and password APIs", () => {
     const oldPasswordLogin = await app.inject({
       method: "POST",
       url: "/api/v1/auth/login",
-      payload: { email: "e1@example.test", password: "LocalDev@123" }
+      payload: { email: "e1@example.test", password: localDemoPassword }
     });
     expect(oldPasswordLogin.statusCode).toBe(401);
 

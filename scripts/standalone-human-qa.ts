@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { getLocalDemoPassword } from "#auth";
 import { seedIds } from "../src/platform/data-store.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 
@@ -99,6 +100,7 @@ function items(value: unknown): JsonRecord[] {
 export async function runStandaloneHumanQa(options: StandaloneHumanQaOptions = {}): Promise<void> {
   loadRuntimeEnv();
   const apiBaseUrl = requireEnv("API_BASE_URL").replace(/\/$/, "");
+  const localDemoPassword = getLocalDemoPassword();
   const reportDir = options.reportDir ?? process.env.HRMS_REPORT_DIR ?? "docs/qa/runs/standalone-full-human-qa";
   const outputFile = options.outputFile ?? "standalone-full-human-qa-results.json";
   const steps: QaStep[] = [];
@@ -263,7 +265,7 @@ export async function runStandaloneHumanQa(options: StandaloneHumanQaOptions = {
     await expectStatus("missing bearer rejected", request("GET", "/api/v1/core/users"), 401);
     await expectStatus("invalid credentials rejected", request("POST", "/api/v1/auth/login", undefined, { email: "nobody@example.test", password: "bad" }), 401);
 
-    const emailLogin = await expectStatus<JsonRecord>("email password login", request("POST", "/api/v1/auth/login", undefined, { email: "finance@example.test", password: "LocalDev@123" }), 200);
+    const emailLogin = await expectStatus<JsonRecord>("email password login", request("POST", "/api/v1/auth/login", undefined, { email: "finance@example.test", password: localDemoPassword }), 200);
     const employee = await login("E1");
     const manager = await login("D1");
     const seniorManager = await login("S1");

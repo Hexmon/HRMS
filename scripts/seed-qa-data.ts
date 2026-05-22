@@ -2,12 +2,13 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "pg";
-import { LOCAL_DEMO_PASSWORD, hashPasswordSync } from "#auth";
+import { getLocalDemoPassword, hashPasswordSync } from "#auth";
 import { AssetStatuses, EmploymentStatuses, ExpenseSubTypes, Roles } from "#shared";
 import { seedIds } from "../src/platform/data-store.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 
 loadRuntimeEnv();
+const localDemoPassword = getLocalDemoPassword();
 
 const reportDir = process.env.HRMS_REPORT_DIR ?? "docs/qa/runs/qa-readiness";
 mkdirSync(reportDir, { recursive: true });
@@ -101,7 +102,7 @@ try {
       [
         uuidFromName(`qa-credential-${employeeCode}`),
         id,
-        hashPasswordSync(LOCAL_DEMO_PASSWORD, `hrms-local-${String(employeeCode).toLowerCase()}`)
+        hashPasswordSync(localDemoPassword, `hrms-local-${String(employeeCode).toLowerCase()}`)
       ]
     );
   }

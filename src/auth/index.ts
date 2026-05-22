@@ -17,7 +17,19 @@ export interface SessionStore {
   revokeUser?(userId: UUID, reason: string): Promise<number>;
 }
 
-export const LOCAL_DEMO_PASSWORD = "LocalDev@123";
+export const LOCAL_DEMO_PASSWORD_ENV_KEY = "LOCAL_DEMO_PASSWORD";
+export const DEFAULT_LOCAL_DEMO_PASSWORD = "LocalDev@123";
+
+export function getLocalDemoPassword(): string {
+  const value = process.env[LOCAL_DEMO_PASSWORD_ENV_KEY]?.trim();
+  if (value) {
+    return value;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(`Missing required environment variable ${LOCAL_DEMO_PASSWORD_ENV_KEY}`);
+  }
+  return DEFAULT_LOCAL_DEMO_PASSWORD;
+}
 
 const passwordHashPrefix = "scrypt$v1";
 const passwordKeyLength = 64;

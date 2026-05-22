@@ -11,7 +11,7 @@ json_post() {
 
 auth_login() {
   local email="$1"
-  local password="${2:-LocalDev@123}"
+  local password="${2:-${LOCAL_DEMO_PASSWORD:-LocalDev@123}}"
   json_post "$API_BASE_URL/api/v1/auth/login" "{\"email\":\"$email\",\"password\":\"$password\"}"
 }
 

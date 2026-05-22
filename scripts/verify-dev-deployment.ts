@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { getLocalDemoPassword } from "#auth";
 import { loadRuntimeEnv } from "./env.js";
 
 loadRuntimeEnv();
+const localDemoPassword = getLocalDemoPassword();
 
 const envFile = process.env.HRMS_ENV_FILE ?? ".env.local";
 const reportDir = process.env.HRMS_REPORT_DIR ?? "docs/qa/runs/dev-standalone";
@@ -130,7 +132,7 @@ record("openapi available", openapi.status === 200 && openapi.text.includes("Haw
 const login = await request("/api/v1/auth/login", {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ email: "e1@example.test", password: "LocalDev@123" })
+  body: JSON.stringify({ email: "e1@example.test", password: localDemoPassword })
 });
 const loginBody = login.json as { access_token?: string } | undefined;
 record("auth login", login.status === 200 && Boolean(loginBody?.access_token) ? "pass" : "fail", summarize(login.json ?? login.text));

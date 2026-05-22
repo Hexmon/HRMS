@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { getLocalDemoPassword } from "#auth";
 import { buildApp } from "../app.js";
 import { createMemoryDataStore } from "../platform/data-store.js";
 import { buildRealApp } from "./real-infra.js";
@@ -41,6 +42,7 @@ const protectedExceptions = new Set([
   "POST /api/v1/auth/logout",
   "POST /api/v1/assets/scan/{qr_hash}"
 ]);
+const localDemoPassword = getLocalDemoPassword();
 
 const expectedOperations = [
   "DELETE /api/v1/manager-backups/{id}",
@@ -263,7 +265,7 @@ describe("API contracts", () => {
       const login = await limitedApp.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { email: "finance@example.test", password: "LocalDev@123" }
+        payload: { email: "finance@example.test", password: localDemoPassword }
       });
       expect(login.statusCode).toBe(200);
       const token = login.json().access_token as string;
@@ -332,7 +334,7 @@ describe("API contracts", () => {
     const success = await app.inject({
       method: "POST",
       url: "/api/v1/auth/login",
-      payload: { email: "finance@example.test", password: "LocalDev@123" }
+      payload: { email: "finance@example.test", password: localDemoPassword }
     });
     expect(success.statusCode).toBe(200);
     expect(success.json().access_token).toBeTruthy();
@@ -346,7 +348,7 @@ describe("API contracts", () => {
     });
     expect(invalid.statusCode).toBe(401);
     expect(invalid.json().message).toBe("Invalid email or password");
-    expect(JSON.stringify(invalid.json())).not.toContain("LocalDev@123");
+    expect(JSON.stringify(invalid.json())).not.toContain(localDemoPassword);
   });
 
   it("keeps logout idempotent for stale or missing local sessions", async () => {
@@ -361,7 +363,7 @@ describe("API contracts", () => {
     const login = await app.inject({
       method: "POST",
       url: "/api/v1/auth/login",
-      payload: { email: "finance@example.test", password: "LocalDev@123" }
+      payload: { email: "finance@example.test", password: localDemoPassword }
     });
     const cookie = login.headers["set-cookie"];
     const logout = await app.inject({
