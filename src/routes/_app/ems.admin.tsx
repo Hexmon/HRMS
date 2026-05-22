@@ -8,6 +8,13 @@ import { DataTable, type Column, StatusBadge, EmptyState, StatCard } from "@/com
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
 import { documentsApi, mapApiDocuments } from "@/domains/documents";
+import {
+  mapProfileChange,
+  mapRequest,
+  useEmsProfileDecisionMutation,
+  useHrEmsRequestQueue,
+  useHrProfileChangeQueue,
+} from "@/domains/ems";
 import { isUuid, pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import { toast } from "sonner";
@@ -62,11 +69,14 @@ const DOC_QUEUE: DocRow[] = [
 
 interface ProfRow {
   id: string;
+  requestId?: string;
   employee: string;
   field: string;
   oldVal: string;
   newVal: string;
   raisedOn: string;
+  status?: string;
+  expectedVersion?: number;
 }
 const PROFILE_QUEUE: ProfRow[] = [
   {
@@ -145,10 +155,12 @@ const EXITS: ExitRow[] = [
 
 interface LetterRow {
   id: string;
+  requestId?: string;
   employee: string;
   type: string;
   raisedOn: string;
   status: string;
+  expectedVersion?: number;
 }
 const LETTERS: LetterRow[] = [
   {
@@ -269,6 +281,46 @@ function DocQueue() {
 }
 
 function ProfileQueue() {
+  const apiEnabled = useApiRouteEnabled(["/ems"]);
+  const queueQuery = useHrProfileChangeQueue({ page: 1, page_size: 50 }, apiEnabled);
+  const decisionMutation = useEmsProfileDecisionMutation();
+  const rows: ProfRow[] = apiEnabled
+    ? pageItems(queueQuery.data).map((item) => {
+        const request = mapProfileChange(item);
+        return {
+          id: request.requestCode,
+          requestId: request.id,
+          employee: request.employee,
+          field: request.field,
+          oldVal: request.oldValue,
+          newVal: request.newValue,
+          raisedOn: request.raisedOn,
+          status: request.status,
+          expectedVersion: request.expectedVersion,
+        };
+      })
+    : PROFILE_QUEUE;
+  const decide = (row: ProfRow, decision: "approved" | "rejected") => {
+    if (!apiEnabled || !row.requestId || !row.expectedVersion) {
+      toast.success(decision === "approved" ? "Update approved" : "Update rejected");
+      return;
+    }
+    decisionMutation.mutate(
+      {
+        id: row.requestId,
+        input: {
+          decision,
+          expected_version: row.expectedVersion,
+          remarks: decision === "rejected" ? "Rejected from EMS admin queue." : undefined,
+        },
+      },
+      {
+        onSuccess: () =>
+          toast.success(decision === "approved" ? "Update approved" : "Update rejected"),
+        onError: () => toast.error("Profile update decision could not be saved."),
+      },
+    );
+  };
   const cols: Column<ProfRow>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "employee", header: "Employee", render: (r) => <>{r.employee}</> },
@@ -285,14 +337,20 @@ function ProfileQueue() {
     },
     { key: "raisedOn", header: "Raised", render: (r) => <>{r.raisedOn}</> },
     {
+      key: "status",
+      header: "Status",
+      render: (r) => <StatusBadge status={r.status ?? "pending"} />,
+    },
+    {
       key: "a",
       header: "Actions",
-      render: () => (
+      render: (row) => (
         <div className="flex gap-2">
           <Button
             size="sm"
             className="h-7 rounded-full"
-            onClick={() => toast.success("Update approved")}
+            disabled={decisionMutation.isPending || (apiEnabled && row.status !== "pending")}
+            onClick={() => decide(row, "approved")}
           >
             <Check className="h-3.5 w-3.5" />
           </Button>
@@ -300,7 +358,8 @@ function ProfileQueue() {
             size="sm"
             variant="outline"
             className="h-7 rounded-full"
-            onClick={() => toast("Update rejected")}
+            disabled={decisionMutation.isPending || (apiEnabled && row.status !== "pending")}
+            onClick={() => decide(row, "rejected")}
           >
             <X className="h-3.5 w-3.5" />
           </Button>
@@ -308,7 +367,19 @@ function ProfileQueue() {
       ),
     },
   ];
-  return <DataTable rows={PROFILE_QUEUE} columns={cols} />;
+  return (
+    <DataTable
+      rows={rows}
+      columns={cols}
+      loading={apiEnabled && queueQuery.isLoading}
+      emptyTitle="No profile changes"
+      emptyDescription={
+        queueQuery.error
+          ? "EMS profile queue could not be loaded from the backend."
+          : "Submitted employee profile changes will appear here."
+      }
+    />
+  );
 }
 
 function OnboardingChecklist() {
@@ -456,6 +527,22 @@ function PolicyMgmt() {
 }
 
 function LetterQueue() {
+  const apiEnabled = useApiRouteEnabled(["/ems"]);
+  const queueQuery = useHrEmsRequestQueue({ page: 1, page_size: 50, type: "letter" }, apiEnabled);
+  const rows: LetterRow[] = apiEnabled
+    ? pageItems(queueQuery.data).map((item) => {
+        const request = mapRequest(item);
+        return {
+          id: request.requestCode,
+          requestId: request.id,
+          employee: request.requester,
+          type: request.subject,
+          raisedOn: request.raisedOn,
+          status: request.status,
+          expectedVersion: request.expectedVersion,
+        };
+      })
+    : LETTERS;
   const cols: Column<LetterRow>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "employee", header: "Employee", render: (r) => <>{r.employee}</> },
@@ -490,7 +577,19 @@ function LetterQueue() {
       ),
     },
   ];
-  return <DataTable rows={LETTERS} columns={cols} />;
+  return (
+    <DataTable
+      rows={rows}
+      columns={cols}
+      loading={apiEnabled && queueQuery.isLoading}
+      emptyTitle="No letters in queue"
+      emptyDescription={
+        queueQuery.error
+          ? "EMS letter request queue could not be loaded from the backend."
+          : "Employee letter requests will appear here."
+      }
+    />
+  );
 }
 
 function EmsAdmin() {

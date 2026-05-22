@@ -6,6 +6,15 @@ import { Progress } from "@/components/ui/progress";
 import { useAuth, ROLE_LABELS } from "@/lib/auth";
 import { StatCard, StatusBadge, DataCard, EmptyState } from "@/components/ui-kit";
 import {
+  mapLetter,
+  mapPolicy,
+  mapProfile,
+  useEmsLetters,
+  useEmsPolicies,
+  useEmsProfile,
+} from "@/domains/ems";
+import { pageItems, useApiRouteEnabled } from "@/shared/api";
+import {
   Briefcase,
   Mail,
   Phone,
@@ -55,7 +64,18 @@ const HOLIDAYS = [
 
 function EmsDashboard() {
   const { user, activeRole } = useAuth();
+  const apiEnabled = useApiRouteEnabled(["/ems"]);
+  const profileQuery = useEmsProfile(apiEnabled);
+  const policiesQuery = useEmsPolicies({ page: 1, page_size: 10 }, apiEnabled);
+  const lettersQuery = useEmsLetters({ page: 1, page_size: 10 }, apiEnabled);
   if (!user) return null;
+  const apiProfile = profileQuery.data ? mapProfile(profileQuery.data) : null;
+  const policyRows = apiEnabled ? pageItems(policiesQuery.data).map(mapPolicy) : [];
+  const letterRows = apiEnabled ? pageItems(lettersQuery.data).map(mapLetter) : [];
+  const pendingPolicies = policyRows.filter(
+    (policy) => policy.acknowledgementStatus === "pending",
+  ).length;
+  const availableLetters = letterRows.filter((letter) => letter.status === "available").length;
   const initials = user.name
     .split(" ")
     .map((n) => n[0])
@@ -72,27 +92,30 @@ function EmsDashboard() {
                 {initials}
               </AvatarFallback>
             </Avatar>
-            <h3 className="mt-3 text-lg font-semibold">{user.name}</h3>
-            <p className="text-xs text-muted-foreground">{user.designation}</p>
+            <h3 className="mt-3 text-lg font-semibold">{apiProfile?.user.fullName ?? user.name}</h3>
+            <p className="text-xs text-muted-foreground">
+              {apiProfile?.designation ?? user.designation}
+            </p>
             <span className="mt-3 inline-flex rounded-full bg-primary px-3 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground">
               {activeRole && ROLE_LABELS[activeRole]}
             </span>
           </div>
           <ul className="space-y-3 p-6 text-sm">
             <li className="flex items-center gap-2.5 text-muted-foreground">
-              <Mail className="h-4 w-4" /> {user.email}
+              <Mail className="h-4 w-4" /> {apiProfile?.user.email ?? user.email}
             </li>
             <li className="flex items-center gap-2.5 text-muted-foreground">
-              <Briefcase className="h-4 w-4" /> {user.department}
+              <Briefcase className="h-4 w-4" /> {apiProfile?.department ?? user.department}
             </li>
             <li className="flex items-center gap-2.5 text-muted-foreground">
-              <MapPin className="h-4 w-4" /> Bangalore, IN
+              <MapPin className="h-4 w-4" />{" "}
+              {apiProfile?.city ? `${apiProfile.city}, ${apiProfile.country}` : "Bangalore, IN"}
             </li>
             <li className="flex items-center gap-2.5 text-muted-foreground">
-              <Phone className="h-4 w-4" /> +91 98xxx xxxxx
+              <Phone className="h-4 w-4" /> {apiProfile?.phone ?? "+91 98xxx xxxxx"}
             </li>
             <li className="flex items-center gap-2.5 text-muted-foreground">
-              <Calendar className="h-4 w-4" /> Joined Mar 2022
+              <Calendar className="h-4 w-4" /> Joined {apiProfile?.joinedOn ?? "Mar 2022"}
             </li>
           </ul>
           <div className="border-t p-4">
@@ -113,16 +136,16 @@ function EmsDashboard() {
             />
             <StatCard label="Leave balance" value="12" hint="days remaining" tone="info" />
             <StatCard
-              label="Pending timesheet"
-              value="1"
-              hint="week to submit"
+              label="Pending policies"
+              value={apiEnabled ? pendingPolicies : "1"}
+              hint="to acknowledge"
               icon={Timer}
               tone="warning"
             />
             <StatCard
-              label="Pending expenses"
-              value="2"
-              hint="USD 184.00"
+              label="Available letters"
+              value={apiEnabled ? availableLetters : "2"}
+              hint="ready to review"
               icon={Receipt}
               tone="primary"
             />

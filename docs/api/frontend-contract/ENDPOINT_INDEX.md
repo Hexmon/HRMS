@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 108
+Documented operations: 121
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -6197,6 +6197,659 @@ Required: yes
 | `region`           | string       | optional | default "All" |
 | `optional`         | boolean      | optional | default false |
 | `expected_version` | integer      | optional | minimum 1     |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+## EMS
+
+Backend-owned API group.
+
+### GET /api/v1/ems/profile/me
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | My EMS profile                                                                                |
+| Frontend use | My EMS profile                                                                                |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field                | Type            | Required | Notes |
+| -------------------- | --------------- | -------- | ----- |
+| `profile`            | object          | required | -     |
+| `reporting_line`     | array of object | required | -     |
+| `emergency_contacts` | array of object | required | -     |
+| `summaries`          | object          | required | -     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PATCH /api/v1/ems/profile/me
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Update my EMS profile                                                                         |
+| Frontend use | Update my EMS profile                                                                         |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field               | Type          | Required | Notes     |
+| ------------------- | ------------- | -------- | --------- |
+| `personal_email`    | string<email> | optional | -         |
+| `phone`             | string        | optional | -         |
+| `alternate_phone`   | string        | optional | -         |
+| `current_address`   | string        | optional | -         |
+| `permanent_address` | string        | optional | -         |
+| `city`              | string        | optional | -         |
+| `country`           | string        | optional | -         |
+| `expected_version`  | integer       | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/ems/profile-change-requests
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Submit profile change request                                                                 |
+| Frontend use | Submit profile change request                                                                 |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field                     | Type                  | Required | Notes |
+| ------------------------- | --------------------- | -------- | ----- |
+| `field_key`               | string                | required | -     |
+| `field_label`             | string                | optional | -     |
+| `new_value`               | string                | required | -     |
+| `reason`                  | string                | optional | -     |
+| `supporting_document_ids` | array of string<uuid> | optional | -     |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/ems/profile-change-requests/my
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | My profile change requests                                                                    |
+| Frontend use | My profile change requests                                                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/ems/profile-change-requests/queue/hr
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | HR profile change queue                                                                       |
+| Frontend use | HR profile change queue                                                                       |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/ems/profile-change-requests/{id}/decision
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Decide profile change request                                                                 |
+| Frontend use | Decide profile change request                                                                 |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type                                            | Required | Notes     |
+| ------------------ | ----------------------------------------------- | -------- | --------- |
+| `decision`         | string enum("approved", "returned", "rejected") | required | -         |
+| `remarks`          | string                                          | optional | -         |
+| `expected_version` | integer                                         | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/ems/requests
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Submit EMS service request                                                                    |
+| Frontend use | Submit EMS service request                                                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field          | Type                                                                                    | Required | Notes |
+| -------------- | --------------------------------------------------------------------------------------- | -------- | ----- |
+| `request_type` | string enum("profile_update", "document_verification", "letter", "asset", "hr_support") | required | -     |
+| `subject`      | string                                                                                  | required | -     |
+| `description`  | string                                                                                  | required | -     |
+| `document_ids` | array of string<uuid>                                                                   | optional | -     |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/ems/requests/my
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | My EMS service requests                                                                       |
+| Frontend use | My EMS service requests                                                                       |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/ems/requests/queue/hr
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | HR EMS service request queue                                                                  |
+| Frontend use | HR EMS service request queue                                                                  |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/ems/letters
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | My EMS letters                                                                                |
+| Frontend use | My EMS letters                                                                                |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/ems/letters/{id}/acknowledge
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Acknowledge EMS letter                                                                        |
+| Frontend use | Acknowledge EMS letter                                                                        |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type    | Required | Notes                                                                     |
+| ------------------ | ------- | -------- | ------------------------------------------------------------------------- |
+| `expected_version` | integer | required | Optimistic concurrency version from the latest aggregate read.; minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/ems/policies
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | My EMS policies                                                                               |
+| Frontend use | My EMS policies                                                                               |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/ems/policies/{id}/acknowledge
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Acknowledge EMS policy                                                                        |
+| Frontend use | Acknowledge EMS policy                                                                        |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type    | Required | Notes                                                                     |
+| ------------------ | ------- | -------- | ------------------------------------------------------------------------- |
+| `expected_version` | integer | required | Optimistic concurrency version from the latest aggregate read.; minimum 1 |
 
 **Responses**
 | Status | Meaning |

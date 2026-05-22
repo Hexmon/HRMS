@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/select";
 import { DataTable, type Column, StatusBadge, EmptyState, Modal } from "@/components/ui-kit";
 import { toast } from "sonner";
+import { mapRequest, useEmsRequestMutation, useMyEmsRequests } from "@/domains/ems";
+import { pageItems, useApiRouteEnabled } from "@/shared/api";
 import { Plus, Inbox, Send } from "lucide-react";
 
 export const Route = createFileRoute("/_app/ems/requests")({
@@ -20,7 +22,7 @@ export const Route = createFileRoute("/_app/ems/requests")({
 });
 
 type ReqType = "profile_update" | "document_verification" | "letter" | "asset" | "hr_support";
-type ReqStatus = "pending" | "approved" | "rejected" | "in_progress";
+type ReqStatus = "pending" | "approved" | "rejected" | "returned" | "in_progress" | "closed";
 
 interface ReqRow {
   id: string;
@@ -75,34 +77,53 @@ const SEED: ReqRow[] = [
 ];
 
 function MyRequests() {
-  const [rows, setRows] = useState<ReqRow[]>(SEED);
+  const apiEnabled = useApiRouteEnabled(["/ems"]);
+  const requestsQuery = useMyEmsRequests({ page: 1, page_size: 25 }, apiEnabled);
+  const createMutation = useEmsRequestMutation();
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<ReqType>("hr_support");
   const [subject, setSubject] = useState("");
   const [details, setDetails] = useState("");
+  const rows: ReqRow[] = apiEnabled
+    ? pageItems(requestsQuery.data).map((item) => {
+        const request = mapRequest(item);
+        return {
+          id: request.requestCode,
+          type: request.type as ReqType,
+          subject: request.subject,
+          raisedOn: request.raisedOn,
+          status: request.status as ReqStatus,
+          approver: request.approver,
+        };
+      })
+    : SEED;
 
   const submit = () => {
     if (!subject.trim()) return toast.error("Subject is required");
-    const id = `REQ-${1000 + Math.floor(Math.random() * 9000)}`;
-    setRows([
+    if (!details.trim()) return toast.error("Details are required");
+    if (!apiEnabled) {
+      setOpen(false);
+      setSubject("");
+      setDetails("");
+      toast.success("Request submitted");
+      return;
+    }
+    createMutation.mutate(
       {
-        id,
-        type,
+        request_type: type,
         subject,
-        raisedOn: new Date().toLocaleDateString("en-IN", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
-        status: "pending",
-        approver: type === "asset" ? "IT Admin" : "HR Admin",
+        description: details,
       },
-      ...rows,
-    ]);
-    setOpen(false);
-    setSubject("");
-    setDetails("");
-    toast.success("Request submitted");
+      {
+        onSuccess: () => {
+          setOpen(false);
+          setSubject("");
+          setDetails("");
+          toast.success("Request submitted");
+        },
+        onError: () => toast.error("Request could not be submitted."),
+      },
+    );
   };
 
   const columns: Column<ReqRow>[] = [
@@ -135,11 +156,17 @@ function MyRequests() {
         </Button>
       </div>
 
-      {rows.length === 0 ? (
+      {apiEnabled && requestsQuery.isLoading ? (
+        <DataTable rows={[]} columns={columns} loading />
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={Inbox}
           title="No requests yet"
-          description="Click ‘New request’ to raise one."
+          description={
+            requestsQuery.error
+              ? "Requests could not be loaded from the backend."
+              : "Click ‘New request’ to raise one."
+          }
         />
       ) : (
         <DataTable rows={rows} columns={columns} />
@@ -155,7 +182,7 @@ function MyRequests() {
             <Button variant="outline" className="rounded-full" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button className="rounded-full" onClick={submit}>
+            <Button className="rounded-full" onClick={submit} disabled={createMutation.isPending}>
               <Send className="mr-1.5 h-4 w-4" /> Submit
             </Button>
           </>

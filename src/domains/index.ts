@@ -5,6 +5,7 @@ export * from "./auth";
 export * from "./core";
 export * from "./dashboard";
 export * from "./documents";
+export * from "./ems";
 export * from "./expenses";
 export * from "./leave-wfh";
 export * from "./platform";

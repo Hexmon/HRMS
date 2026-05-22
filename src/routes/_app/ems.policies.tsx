@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui-kit";
+import { EmptyState, StatusBadge } from "@/components/ui-kit";
 import { toast } from "sonner";
+import { mapPolicy, useEmsPolicies, useEmsPolicyAcknowledgeMutation } from "@/domains/ems";
+import { pageItems, useApiRouteEnabled } from "@/shared/api";
 import { BookOpen, Download, Eye } from "lucide-react";
 
 export const Route = createFileRoute("/_app/ems/policies")({
@@ -15,6 +17,8 @@ interface Policy {
   version: string;
   updatedOn: string;
   acknowledged: boolean;
+  acknowledgementVersion?: number;
+  documentId?: string;
 }
 
 const POLICIES: Policy[] = [
@@ -63,13 +67,49 @@ const POLICIES: Policy[] = [
 ];
 
 function MyPolicies() {
+  const apiEnabled = useApiRouteEnabled(["/ems"]);
+  const policiesQuery = useEmsPolicies({ page: 1, page_size: 25 }, apiEnabled);
+  const acknowledgeMutation = useEmsPolicyAcknowledgeMutation();
+  const rows: Policy[] = apiEnabled
+    ? pageItems(policiesQuery.data).map((item) => {
+        const policy = mapPolicy(item);
+        return {
+          id: policy.id,
+          name: policy.title,
+          version: policy.versionLabel,
+          updatedOn: policy.effectiveFrom,
+          acknowledged: policy.acknowledgementStatus === "acknowledged",
+          acknowledgementVersion: policy.acknowledgementVersion,
+          documentId: policy.documentId,
+        };
+      })
+    : POLICIES;
+  const acknowledge = (policy: Policy) => {
+    if (!apiEnabled || !policy.acknowledgementVersion) return toast.success("Policy acknowledged");
+    acknowledgeMutation.mutate(
+      { id: policy.id, expectedVersion: policy.acknowledgementVersion },
+      {
+        onSuccess: () => toast.success("Policy acknowledged"),
+        onError: () => toast.error("Policy could not be acknowledged."),
+      },
+    );
+  };
   return (
     <div className="space-y-4 pt-4">
       <p className="text-sm text-muted-foreground">
         Read and acknowledge company policies. New versions appear at the top.
       </p>
+      {apiEnabled && policiesQuery.error ? (
+        <EmptyState
+          title="Policies could not be loaded"
+          description="The backend EMS policies API returned an error."
+        />
+      ) : null}
+      {apiEnabled && policiesQuery.isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading policies from backend...</p>
+      ) : null}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {POLICIES.map((p) => (
+        {rows.map((p) => (
           <Card
             key={p.id}
             className="rounded-2xl border-border/60 p-5 transition hover:-translate-y-0.5 hover:shadow-md"
@@ -95,7 +135,11 @@ function MyPolicies() {
                     size="sm"
                     variant="outline"
                     className="rounded-full"
-                    onClick={() => toast("Opening policy...")}
+                    onClick={() =>
+                      toast(
+                        p.documentId ? "Opening policy..." : "Policy document is not attached yet.",
+                      )
+                    }
                   >
                     <Eye className="mr-1.5 h-3.5 w-3.5" /> Read
                   </Button>
@@ -103,7 +147,11 @@ function MyPolicies() {
                     size="sm"
                     variant="outline"
                     className="rounded-full"
-                    onClick={() => toast.success("Download started")}
+                    onClick={() =>
+                      toast(
+                        p.documentId ? "Download started" : "Policy document is not attached yet.",
+                      )
+                    }
                   >
                     <Download className="mr-1.5 h-3.5 w-3.5" /> Download
                   </Button>
@@ -111,7 +159,8 @@ function MyPolicies() {
                     <Button
                       size="sm"
                       className="rounded-full"
-                      onClick={() => toast.success("Policy acknowledged")}
+                      disabled={acknowledgeMutation.isPending}
+                      onClick={() => acknowledge(p)}
                     >
                       Acknowledge
                     </Button>
