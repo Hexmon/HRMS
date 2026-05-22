@@ -1295,6 +1295,143 @@ const holidaysResponseSchema = {
   additionalProperties: true
 };
 
+const emsQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    status: { type: "string", example: "pending" },
+    type: { type: "string", example: "hr_support" },
+    user_id: uuid("Employee user UUID filter"),
+    department_id: uuid("Department UUID filter")
+  }
+};
+
+const emsProfilePatchBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    personal_email: { type: "string", format: "email", example: "employee.personal@example.com" },
+    phone: { type: "string", example: "+91 98000 00000" },
+    alternate_phone: { type: "string", example: "+91 99000 00000" },
+    current_address: { type: "string", example: "12 Indiranagar, Bangalore" },
+    permanent_address: { type: "string", example: "12 Indiranagar, Bangalore" },
+    city: { type: "string", example: "Bangalore" },
+    country: { type: "string", example: "India" },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const emsProfileChangeCreateBody = {
+  type: "object",
+  required: ["field_key", "new_value"],
+  properties: {
+    field_key: { type: "string", example: "current_address" },
+    field_label: { type: "string", example: "Current address" },
+    new_value: { type: "string", example: "44 New Lane, Bangalore" },
+    reason: { type: "string", example: "Moved to a new residence." },
+    supporting_document_ids: { type: "array", items: uuid("Supporting document UUID") }
+  },
+  additionalProperties: false
+};
+
+const emsDecisionBody = {
+  type: "object",
+  required: ["decision", "expected_version"],
+  properties: {
+    decision: { type: "string", enum: ["approved", "returned", "rejected"], example: "approved" },
+    remarks: { type: "string", example: "Verified and approved." },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const emsRequestCreateBody = {
+  type: "object",
+  required: ["request_type", "subject", "description"],
+  properties: {
+    request_type: { type: "string", enum: ["profile_update", "document_verification", "letter", "asset", "hr_support"], example: "hr_support" },
+    subject: { type: "string", example: "Provident fund query" },
+    description: { type: "string", example: "Please help me verify my PF nomination status." },
+    document_ids: { type: "array", items: uuid("Supporting document UUID") }
+  },
+  additionalProperties: false
+};
+
+const emsProfileResponseSchema = {
+  type: "object",
+  required: ["profile", "reporting_line", "emergency_contacts", "summaries"],
+  properties: {
+    profile: { type: "object", additionalProperties: true },
+    reporting_line: { type: "array", items: { type: "object", additionalProperties: true } },
+    emergency_contacts: { type: "array", items: { type: "object", additionalProperties: true } },
+    summaries: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const emsProfileChangeSchema = {
+  type: "object",
+  required: ["id", "request_code", "employee_user_id", "field_key", "new_value", "status", "version"],
+  properties: {
+    id: uuid("EMS profile change UUID"),
+    request_code: { type: "string", example: "EMS-PC-2026-0001" },
+    employee_user_id: uuid("Employee user UUID"),
+    field_key: { type: "string", example: "current_address" },
+    field_label: { type: "string", example: "Current address" },
+    old_value: { type: "string", nullable: true },
+    new_value: { type: "string", example: "44 New Lane, Bangalore" },
+    status: { type: "string", enum: ["pending", "approved", "returned", "rejected"], example: "pending" },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const emsServiceRequestSchema = {
+  type: "object",
+  required: ["id", "request_code", "requester_user_id", "request_type", "subject", "status", "version"],
+  properties: {
+    id: uuid("EMS service request UUID"),
+    request_code: { type: "string", example: "EMS-REQ-2026-0001" },
+    requester_user_id: uuid("Requester user UUID"),
+    request_type: { type: "string", enum: ["profile_update", "document_verification", "letter", "asset", "hr_support"], example: "hr_support" },
+    subject: { type: "string", example: "Provident fund query" },
+    status: { type: "string", enum: ["pending", "in_progress", "approved", "returned", "rejected", "closed"], example: "pending" },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const emsLetterSchema = {
+  type: "object",
+  required: ["id", "letter_type", "title", "status", "version"],
+  properties: {
+    id: uuid("EMS letter UUID"),
+    letter_type: { type: "string", example: "offer_letter" },
+    title: { type: "string", example: "Offer Letter" },
+    description: { type: "string", example: "Initial offer from Hawkaii HRMS" },
+    status: { type: "string", enum: ["available", "requested", "in_progress", "acknowledged"], example: "available" },
+    issued_on: date("Letter issue date", "2026-01-01"),
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const emsPolicySchema = {
+  type: "object",
+  required: ["id", "policy_code", "title", "category", "version_label", "acknowledgement_status", "acknowledgement_version"],
+  properties: {
+    id: uuid("EMS policy UUID"),
+    policy_code: { type: "string", example: "LEAVE" },
+    title: { type: "string", example: "Leave policy" },
+    category: { type: "string", example: "Leave" },
+    version_label: { type: "string", example: "v4.0" },
+    acknowledgement_status: { type: "string", enum: ["pending", "acknowledged"], example: "pending" },
+    acknowledgement_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
 const validationErrorExample = {
   code: "VALIDATION_FAILED",
   message: "Request validation failed",
@@ -2068,6 +2205,84 @@ const routeDocs: Record<string, RouteSchema> = {
     "Creates or updates a holiday calendar entry. HR Manager or Admin role is required; expected_version enforces optimistic concurrency when updating.",
     { params: idParamSchema, body: holidayUpsertBody, response200: { type: "object", additionalProperties: true } }
   ),
+  "GET /api/v1/ems/profile/me": operation(
+    "EMS",
+    "My EMS profile",
+    "Returns the authenticated employee self-service profile assembled from Core identity plus EMS personal profile fields, reporting line, emergency contacts, and compact EMS summaries.",
+    { response200: emsProfileResponseSchema }
+  ),
+  "PATCH /api/v1/ems/profile/me": operation(
+    "EMS",
+    "Update my EMS profile",
+    "Updates fields that policy allows direct self-service edits for, guarded by expected_version. Restricted fields should use profile-change requests instead.",
+    { body: emsProfilePatchBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "POST /api/v1/ems/profile-change-requests": operation(
+    "EMS",
+    "Submit profile change request",
+    "Submits a profile change request for HR/Admin approval. Duplicate pending requests for the same field are rejected with 409.",
+    { body: emsProfileChangeCreateBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/ems/profile-change-requests/my": operation(
+    "EMS",
+    "My profile change requests",
+    "Lists authenticated employee profile change requests with status filters.",
+    { querystring: emsQuerySchema, response200: paginated(emsProfileChangeSchema) }
+  ),
+  "GET /api/v1/ems/profile-change-requests/queue/hr": operation(
+    "EMS",
+    "HR profile change queue",
+    "Lists HR/Admin-scoped profile change requests, defaulting to pending requests.",
+    { querystring: emsQuerySchema, response200: { ...paginated(emsProfileChangeSchema), additionalProperties: true } }
+  ),
+  "POST /api/v1/ems/profile-change-requests/{id}/decision": operation(
+    "EMS",
+    "Decide profile change request",
+    "Approves, returns, or rejects a pending profile change request with optimistic concurrency. Return/reject require remarks and self-processing is blocked.",
+    { params: idParamSchema, body: emsDecisionBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "POST /api/v1/ems/requests": operation(
+    "EMS",
+    "Submit EMS service request",
+    "Creates a generic EMS service request for HR or support follow-up.",
+    { body: emsRequestCreateBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/ems/requests/my": operation(
+    "EMS",
+    "My EMS service requests",
+    "Lists authenticated employee EMS service requests with type and status filters.",
+    { querystring: emsQuerySchema, response200: paginated(emsServiceRequestSchema) }
+  ),
+  "GET /api/v1/ems/requests/queue/hr": operation(
+    "EMS",
+    "HR EMS service request queue",
+    "Lists HR/Admin-scoped EMS service requests for operational follow-up.",
+    { querystring: emsQuerySchema, response200: { ...paginated(emsServiceRequestSchema), additionalProperties: true } }
+  ),
+  "GET /api/v1/ems/letters": operation(
+    "EMS",
+    "My EMS letters",
+    "Lists HR letters visible to the authenticated employee. HR/Admin can filter by user_id.",
+    { querystring: emsQuerySchema, response200: paginated(emsLetterSchema) }
+  ),
+  "POST /api/v1/ems/letters/{id}/acknowledge": operation(
+    "EMS",
+    "Acknowledge EMS letter",
+    "Acknowledges a letter assigned to the authenticated employee with optimistic concurrency.",
+    { params: idParamSchema, body: expectedVersionBodySchema, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/ems/policies": operation(
+    "EMS",
+    "My EMS policies",
+    "Lists active company policies assigned to the authenticated employee with acknowledgement status and acknowledgement summary.",
+    { querystring: emsQuerySchema, response200: { ...paginated(emsPolicySchema), additionalProperties: true } }
+  ),
+  "POST /api/v1/ems/policies/{id}/acknowledge": operation(
+    "EMS",
+    "Acknowledge EMS policy",
+    "Acknowledges the current active version of a policy for the authenticated employee with optimistic concurrency.",
+    { params: idParamSchema, body: expectedVersionBodySchema, response200: { type: "object", additionalProperties: true } }
+  ),
   "GET /api/v1/platform/finance-governance": operation(
     "Admin / Configuration",
     "Read finance governance configuration",
@@ -2205,6 +2420,7 @@ export const openApiTags = [
   { name: "Timesheets", description: "Work segments, submissions, approval queues, and workflow definitions." },
   { name: "Attendance", description: "Punches, summaries, calendars, exceptions, and regularization workflows." },
   { name: "Leave / WFH / Holidays", description: "Leave balances, leave/WFH request workflows, HR monitor, and holiday calendar contracts." },
+  { name: "EMS", description: "Employee self-service profile, requests, HR letters, and policy acknowledgement workflows." },
   { name: "Reports & Analytics", description: "Role-scoped expense registers and export readiness." },
   { name: "Notifications", description: "Notification contracts are emitted by backend workflows; no public endpoint is exposed in this delivery." },
   { name: "Outbox / Platform Events", description: "Transactional outbox and protected local event consumer contracts." },
@@ -2229,7 +2445,12 @@ export const openApiComponents = {
   schemas: {
     ErrorResponse: errorResponseSchema,
     ConflictResponse: conflictResponseSchema,
-    RateLimitResponse: rateLimitResponseSchema
+    RateLimitResponse: rateLimitResponseSchema,
+    EmsProfile: emsProfileResponseSchema,
+    EmsProfileChangeRequest: emsProfileChangeSchema,
+    EmsServiceRequest: emsServiceRequestSchema,
+    EmsLetter: emsLetterSchema,
+    EmsPolicy: emsPolicySchema
   }
 };
 

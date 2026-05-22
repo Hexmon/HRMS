@@ -4,6 +4,11 @@ import type {
   AttendancePunchEventType,
   AttendanceRegularizationStatus,
   DocumentClassification,
+  EmsLetterStatus,
+  EmsPolicyAcknowledgementStatus,
+  EmsProfileChangeStatus,
+  EmsServiceRequestStatus,
+  EmsServiceRequestType,
   EmploymentStatus,
   ExpenseStatus,
   ExpenseSubType,
@@ -336,6 +341,107 @@ export interface Holiday {
   created_at: ISODateTime;
   updated_at: ISODateTime;
   deleted_at: ISODateTime | null;
+}
+
+export interface EmsEmployeeProfile {
+  id: UUID;
+  employee_user_id: UUID;
+  personal_email: string | null;
+  phone: string | null;
+  alternate_phone: string | null;
+  current_address: string | null;
+  permanent_address: string | null;
+  city: string | null;
+  country: string | null;
+  emergency_contact: Record<string, unknown>;
+  personal_details: Record<string, unknown>;
+  work_preferences: Record<string, unknown>;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface EmsProfileChangeRequest {
+  id: UUID;
+  request_code: string;
+  employee_user_id: UUID;
+  field_key: string;
+  field_label: string;
+  old_value: string | null;
+  new_value: string;
+  reason: string | null;
+  supporting_document_ids: UUID[];
+  status: EmsProfileChangeStatus;
+  current_approver_user_id: UUID | null;
+  decision_remarks: string | null;
+  decided_by_user_id: UUID | null;
+  decided_at: ISODateTime | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface EmsServiceRequest {
+  id: UUID;
+  request_code: string;
+  requester_user_id: UUID;
+  request_type: EmsServiceRequestType;
+  subject: string;
+  description: string;
+  document_ids: UUID[];
+  status: EmsServiceRequestStatus;
+  assignee_user_id: UUID | null;
+  decision_remarks: string | null;
+  decided_by_user_id: UUID | null;
+  decided_at: ISODateTime | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface EmsLetter {
+  id: UUID;
+  employee_user_id: UUID;
+  letter_type: string;
+  title: string;
+  description: string;
+  status: EmsLetterStatus;
+  document_id: UUID | null;
+  issued_on: ISODate | null;
+  acknowledged_at: ISODateTime | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface EmsPolicy {
+  id: UUID;
+  policy_code: string;
+  title: string;
+  category: string;
+  version_label: string;
+  effective_from: ISODate;
+  document_id: UUID | null;
+  status: "active" | "inactive" | "superseded";
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface EmsPolicyAcknowledgement {
+  id: UUID;
+  policy_id: UUID;
+  employee_user_id: UUID;
+  status: EmsPolicyAcknowledgementStatus;
+  acknowledged_at: ISODateTime | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
 }
 
 export interface OutboxEvent {

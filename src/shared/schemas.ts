@@ -3,6 +3,8 @@ import {
   AttendancePunchEventTypes,
   AssetStatuses,
   DocumentClassifications,
+  EmsProfileChangeStatuses,
+  EmsServiceRequestTypes,
   ExpenseDecisions,
   ExpenseStatuses,
   ExpenseSubTypes,
@@ -44,6 +46,62 @@ export const errorResponseSchema = z.object({
 });
 
 export type ErrorResponse = z.infer<typeof errorResponseSchema>;
+
+export const emsProfilePatchSchema = z.object({
+  personal_email: z.email().optional(),
+  phone: z.string().min(4).max(32).optional(),
+  alternate_phone: z.string().min(4).max(32).optional(),
+  current_address: z.string().min(3).max(500).optional(),
+  permanent_address: z.string().min(3).max(500).optional(),
+  city: z.string().min(1).max(120).optional(),
+  country: z.string().min(1).max(120).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type EmsProfilePatchInput = z.infer<typeof emsProfilePatchSchema>;
+
+export const emsProfileChangeCreateSchema = z.object({
+  field_key: z.string().min(1).max(80),
+  field_label: z.string().min(1).max(120).optional(),
+  new_value: z.string().min(1).max(1000),
+  reason: z.string().max(1000).optional(),
+  supporting_document_ids: z.array(uuidSchema).default([])
+});
+
+export type EmsProfileChangeCreateInput = z.infer<typeof emsProfileChangeCreateSchema>;
+
+export const emsDecisionSchema = z.object({
+  decision: z.enum([
+    EmsProfileChangeStatuses.Approved,
+    EmsProfileChangeStatuses.Returned,
+    EmsProfileChangeStatuses.Rejected
+  ]),
+  remarks: z.string().optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type EmsDecisionInput = z.infer<typeof emsDecisionSchema>;
+
+export const emsRequestCreateSchema = z.object({
+  request_type: z.enum([
+    EmsServiceRequestTypes.ProfileUpdate,
+    EmsServiceRequestTypes.DocumentVerification,
+    EmsServiceRequestTypes.Letter,
+    EmsServiceRequestTypes.Asset,
+    EmsServiceRequestTypes.HrSupport
+  ]),
+  subject: z.string().min(1).max(180),
+  description: z.string().min(1).max(2000),
+  document_ids: z.array(uuidSchema).default([])
+});
+
+export type EmsRequestCreateInput = z.infer<typeof emsRequestCreateSchema>;
+
+export const emsPolicyAcknowledgeSchema = z.object({
+  expected_version: z.number().int().min(1)
+});
+
+export type EmsPolicyAcknowledgeInput = z.infer<typeof emsPolicyAcknowledgeSchema>;
 
 export const expenseLineItemInputSchema = z.object({
   line_category: z.string().min(1),

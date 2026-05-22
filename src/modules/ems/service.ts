@@ -1,0 +1,399 @@
+import type {
+  AuthUser,
+  CoreUser,
+  EmsDecisionInput,
+  EmsProfileChangeCreateInput,
+  EmsProfilePatchInput,
+  EmsRequestCreateInput,
+  UUID
+} from "#shared";
+import {
+  EmsLetterStatuses,
+  EmsPolicyAcknowledgementStatuses,
+  EmsProfileChangeStatuses,
+  EmsServiceRequestStatuses,
+  Roles
+} from "#shared";
+import type { MemoryDataStore } from "../../platform/data-store.js";
+import { nowIso } from "../../platform/data-store.js";
+import { badRequest, conflict, missingRemarks, notFound } from "../../platform/errors.js";
+import { appendEmsOutboxEvent, emsEvents } from "./events.js";
+import { assertCanDecideProfileChange, assertCanManageEms, assertCanSeeEmsUser, canManageEms } from "./policy.js";
+import { EmsRepository } from "./repository.js";
+
+export interface EmsQuery {
+  page: number;
+  page_size: number;
+  status?: string;
+  type?: string;
+  user_id?: UUID;
+  department_id?: UUID;
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  personal_email: "Personal email",
+  phone: "Phone",
+  alternate_phone: "Alternate phone",
+  current_address: "Current address",
+  permanent_address: "Permanent address",
+  city: "City",
+  country: "Country"
+};
+
+function page<T>(items: T[], pageNumber: number, pageSize: number) {
+  const start = (pageNumber - 1) * pageSize;
+  return { items: items.slice(start, start + pageSize), page: pageNumber, page_size: pageSize, total: items.length };
+}
+
+function userLabel(user: CoreUser | undefined) {
+  return {
+    id: user?.id ?? null,
+    employee_code: user?.employee_code ?? "UNKNOWN",
+    full_name: user?.full_name ?? "Unknown employee",
+    email: user?.email ?? null,
+    department_id: user?.department_id ?? null,
+    designation_id: user?.designation_id ?? null
+  };
+}
+
+export class EmsService {
+  private readonly repository: EmsRepository;
+
+  constructor(private readonly store: MemoryDataStore) {
+    this.repository = new EmsRepository(store);
+  }
+
+  getMyProfile(actor: AuthUser) {
+    return this.profileFor(actor, actor.id);
+  }
+
+  patchMyProfile(actor: AuthUser, input: EmsProfilePatchInput) {
+    const profile = this.repository.updateProfileVersioned(actor.id, input.expected_version, (target) => {
+      for (const key of Object.keys(FIELD_LABELS) as Array<keyof typeof FIELD_LABELS>) {
+        const value = input[key as keyof EmsProfilePatchInput];
+        if (typeof value === "string") {
+          (target as unknown as Record<string, string | null>)[key] = value;
+        }
+      }
+    });
+    return { profile: this.profileFor(actor, actor.id), version: profile.version, pending_approval: false };
+  }
+
+  createProfileChangeRequest(actor: AuthUser, input: EmsProfileChangeCreateInput) {
+    const fieldLabel = FIELD_LABELS[input.field_key];
+    if (!fieldLabel) {
+      throw badRequest("Unsupported EMS profile field.", { field_key: input.field_key });
+    }
+    const existingPending = this.repository
+      .listProfileChangeRequests({ userId: actor.id, status: EmsProfileChangeStatuses.Pending })
+      .find((request) => request.field_key === input.field_key);
+    if (existingPending) {
+      throw conflict("A profile change request is already pending for this field.", { request_id: existingPending.id });
+    }
+    const profile = this.repository.profileForUser(actor.id);
+    const approver = this.hrFallback();
+    const request = this.repository.addProfileChangeRequest({
+      request_code: this.repository.nextCode("EMS-PC"),
+      employee_user_id: actor.id,
+      field_key: input.field_key,
+      field_label: input.field_label ?? fieldLabel,
+      old_value: String((profile as unknown as Record<string, unknown>)[input.field_key] ?? ""),
+      new_value: input.new_value.trim(),
+      reason: input.reason?.trim() || null,
+      supporting_document_ids: input.supporting_document_ids,
+      status: EmsProfileChangeStatuses.Pending,
+      current_approver_user_id: approver?.id ?? null
+    });
+    appendEmsOutboxEvent(this.store, {
+      aggregateType: "ems_profile_change",
+      aggregateId: request.id,
+      eventType: emsEvents.ProfileChangeSubmitted,
+      payload: { request_id: request.id, request_code: request.request_code, employee_user_id: actor.id, approver_user_id: request.current_approver_user_id },
+      idempotencyKey: `ems.profile_change.submitted:${request.id}`
+    });
+    return { request_id: request.id, request: this.presentProfileChangeRequest(request), status: request.status, version: request.version };
+  }
+
+  listMyProfileChangeRequests(actor: AuthUser, query: EmsQuery) {
+    return page(
+      this.repository
+        .listProfileChangeRequests({ userId: actor.id, status: query.status })
+        .map((request) => this.presentProfileChangeRequest(request)),
+      query.page,
+      query.page_size
+    );
+  }
+
+  profileChangeQueue(actor: AuthUser, query: EmsQuery) {
+    assertCanManageEms(actor);
+    const requests = this.repository
+      .listProfileChangeRequests({ status: query.status ?? EmsProfileChangeStatuses.Pending })
+      .filter((request) => this.matchesUserFilters(request.employee_user_id, query));
+    return {
+      ...page(requests.map((request) => this.presentProfileChangeRequest(request, actor)), query.page, query.page_size),
+      queue_counts: this.queueCounts(requests.map((request) => request.status))
+    };
+  }
+
+  decideProfileChange(actor: AuthUser, id: UUID, input: EmsDecisionInput) {
+    const current = this.repository.findProfileChangeRequest(id);
+    assertCanDecideProfileChange(actor, current);
+    if (current.status !== EmsProfileChangeStatuses.Pending) {
+      throw conflict("Only pending EMS profile change requests can be decided.", { request_id: id, status: current.status });
+    }
+    if ((input.decision === EmsProfileChangeStatuses.Returned || input.decision === EmsProfileChangeStatuses.Rejected) && !input.remarks?.trim()) {
+      throw missingRemarks("EMS_PROFILE_CHANGE_DECISION");
+    }
+    const previousStatus = current.status;
+    const updated = this.repository.updateProfileChangeVersioned(id, input.expected_version, (request) => {
+      request.status = input.decision;
+      request.decision_remarks = input.remarks?.trim() || null;
+      request.decided_by_user_id = actor.id;
+      request.decided_at = nowIso();
+      request.current_approver_user_id = null;
+    });
+    if (updated.status === EmsProfileChangeStatuses.Approved) {
+      const profile = this.repository.profileForUser(updated.employee_user_id);
+      this.repository.updateProfileVersioned(updated.employee_user_id, profile.version, (target) => {
+        (target as unknown as Record<string, string | null>)[updated.field_key] = updated.new_value;
+      });
+    }
+    appendEmsOutboxEvent(this.store, {
+      aggregateType: "ems_profile_change",
+      aggregateId: updated.id,
+      eventType: emsEvents.ProfileChangeDecided,
+      payload: { request_id: updated.id, previous_status: previousStatus, next_status: updated.status, actor_user_id: actor.id },
+      idempotencyKey: `ems.profile_change.decided:${updated.id}:${updated.version}`
+    });
+    return {
+      request: this.presentProfileChangeRequest(updated, actor),
+      previous_status: previousStatus,
+      next_status: updated.status,
+      status: updated.status,
+      version: updated.version
+    };
+  }
+
+  createServiceRequest(actor: AuthUser, input: EmsRequestCreateInput) {
+    const assignee = this.hrFallback();
+    const request = this.repository.addServiceRequest({
+      request_code: this.repository.nextCode("EMS-REQ"),
+      requester_user_id: actor.id,
+      request_type: input.request_type,
+      subject: input.subject.trim(),
+      description: input.description.trim(),
+      document_ids: input.document_ids,
+      status: EmsServiceRequestStatuses.Pending,
+      assignee_user_id: assignee?.id ?? null
+    });
+    appendEmsOutboxEvent(this.store, {
+      aggregateType: "ems_service_request",
+      aggregateId: request.id,
+      eventType: emsEvents.ServiceRequestSubmitted,
+      payload: { request_id: request.id, request_code: request.request_code, requester_user_id: actor.id, assignee_user_id: request.assignee_user_id },
+      idempotencyKey: `ems.service_request.submitted:${request.id}`
+    });
+    return { request_id: request.id, request: this.presentServiceRequest(request), status: request.status, version: request.version };
+  }
+
+  listMyServiceRequests(actor: AuthUser, query: EmsQuery) {
+    return page(
+      this.repository
+        .listServiceRequests({ userId: actor.id, status: query.status, type: query.type })
+        .map((request) => this.presentServiceRequest(request)),
+      query.page,
+      query.page_size
+    );
+  }
+
+  serviceRequestQueue(actor: AuthUser, query: EmsQuery) {
+    assertCanManageEms(actor);
+    const requests = this.repository
+      .listServiceRequests({ status: query.status, type: query.type })
+      .filter((request) => this.matchesUserFilters(request.requester_user_id, query));
+    return {
+      ...page(requests.map((request) => this.presentServiceRequest(request)), query.page, query.page_size),
+      queue_counts: this.queueCounts(requests.map((request) => request.status))
+    };
+  }
+
+  listLetters(actor: AuthUser, query: EmsQuery) {
+    const userId = canManageEms(actor) && query.user_id ? query.user_id : actor.id;
+    const user = this.requireUser(userId);
+    assertCanSeeEmsUser(actor, user);
+    return page(this.repository.listLetters(userId, query.status).map((letter) => this.presentLetter(letter)), query.page, query.page_size);
+  }
+
+  acknowledgeLetter(actor: AuthUser, id: UUID, expectedVersion: number) {
+    const letter = this.repository.findLetter(id);
+    if (letter.employee_user_id !== actor.id && !canManageEms(actor)) {
+      throw notFound("EMS letter not found", { id });
+    }
+    if (letter.version !== expectedVersion) {
+      throw conflict("EMS letter was modified by another actor.", { aggregate: "ems_letter", id });
+    }
+    if (letter.status === EmsLetterStatuses.Acknowledged) {
+      throw conflict("EMS letter is already acknowledged.", { id });
+    }
+    letter.status = EmsLetterStatuses.Acknowledged;
+    letter.acknowledged_at = nowIso();
+    letter.version += 1;
+    letter.updated_at = nowIso();
+    appendEmsOutboxEvent(this.store, {
+      aggregateType: "ems_letter",
+      aggregateId: letter.id,
+      eventType: emsEvents.LetterAcknowledged,
+      payload: { letter_id: letter.id, employee_user_id: letter.employee_user_id },
+      idempotencyKey: `ems.letter.acknowledged:${letter.id}:${letter.version}`
+    });
+    return { letter: this.presentLetter(letter), status: letter.status, version: letter.version };
+  }
+
+  listPolicies(actor: AuthUser, query: EmsQuery) {
+    const policies = this.repository.listPolicies().map((policy) => this.presentPolicy(policy, actor.id));
+    return {
+      ...page(policies, query.page, query.page_size),
+      acknowledgement_summary: {
+        total: policies.length,
+        acknowledged: policies.filter((policy) => policy.acknowledgement_status === EmsPolicyAcknowledgementStatuses.Acknowledged).length,
+        pending: policies.filter((policy) => policy.acknowledgement_status === EmsPolicyAcknowledgementStatuses.Pending).length
+      }
+    };
+  }
+
+  acknowledgePolicy(actor: AuthUser, id: UUID, expectedVersion: number) {
+    const policy = this.repository.listPolicies().find((candidate) => candidate.id === id);
+    if (!policy) {
+      throw notFound("EMS policy not found", { id });
+    }
+    const acknowledgement = this.repository.acknowledgementFor(id, actor.id);
+    if (acknowledgement.version !== expectedVersion) {
+      throw conflict("EMS policy acknowledgement was modified by another actor.", { aggregate: "ems_policy_acknowledgement", id });
+    }
+    if (acknowledgement.status === EmsPolicyAcknowledgementStatuses.Acknowledged) {
+      throw conflict("EMS policy is already acknowledged.", { id });
+    }
+    acknowledgement.status = EmsPolicyAcknowledgementStatuses.Acknowledged;
+    acknowledgement.acknowledged_at = nowIso();
+    acknowledgement.version += 1;
+    acknowledgement.updated_at = nowIso();
+    appendEmsOutboxEvent(this.store, {
+      aggregateType: "ems_policy",
+      aggregateId: policy.id,
+      eventType: emsEvents.PolicyAcknowledged,
+      payload: { policy_id: policy.id, employee_user_id: actor.id },
+      idempotencyKey: `ems.policy.acknowledged:${policy.id}:${actor.id}:${acknowledgement.version}`
+    });
+    return { policy: this.presentPolicy(policy, actor.id), status: acknowledgement.status, version: acknowledgement.version };
+  }
+
+  private profileFor(actor: AuthUser, userId: UUID) {
+    const user = this.requireUser(userId);
+    assertCanSeeEmsUser(actor, user);
+    const profile = this.repository.profileForUser(userId);
+    const manager = user.manager_user_id ? this.store.users.find((candidate) => candidate.id === user.manager_user_id) : undefined;
+    const department = this.store.departments.find((candidate) => candidate.id === user.department_id);
+    const designation = this.store.designations.find((candidate) => candidate.id === user.designation_id);
+    return {
+      profile: {
+        user: userLabel(user),
+        department,
+        designation,
+        manager: userLabel(manager),
+        joined_on: user.joined_on,
+        employment_status: user.employment_status,
+        personal_email: profile.personal_email,
+        phone: profile.phone,
+        alternate_phone: profile.alternate_phone,
+        current_address: profile.current_address,
+        permanent_address: profile.permanent_address,
+        city: profile.city,
+        country: profile.country,
+        emergency_contact: profile.emergency_contact,
+        personal_details: profile.personal_details,
+        work_preferences: profile.work_preferences,
+        version: profile.version
+      },
+      reporting_line: manager ? [userLabel(manager)] : [],
+      emergency_contacts: [profile.emergency_contact].filter((contact) => Object.keys(contact).length > 0),
+      summaries: {
+        pending_profile_changes: this.repository.listProfileChangeRequests({ userId, status: EmsProfileChangeStatuses.Pending }).length,
+        open_service_requests: this.repository.listServiceRequests({ userId }).filter((request) => !["closed", "rejected"].includes(request.status)).length,
+        pending_policy_acknowledgements: this.repository
+          .listPolicies()
+          .filter((policy) => this.repository.acknowledgementFor(policy.id, userId).status === EmsPolicyAcknowledgementStatuses.Pending).length
+      }
+    };
+  }
+
+  private presentProfileChangeRequest(request: ReturnType<EmsRepository["findProfileChangeRequest"]>, actor?: AuthUser) {
+    const user = this.store.users.find((candidate) => candidate.id === request.employee_user_id);
+    return {
+      ...request,
+      employee: userLabel(user),
+      can_decide: actor ? canManageEms(actor) && actor.id !== request.employee_user_id && request.status === EmsProfileChangeStatuses.Pending : false
+    };
+  }
+
+  private presentServiceRequest(request: ReturnType<EmsRepository["addServiceRequest"]>) {
+    const user = this.store.users.find((candidate) => candidate.id === request.requester_user_id);
+    const assignee = request.assignee_user_id ? this.store.users.find((candidate) => candidate.id === request.assignee_user_id) : undefined;
+    return {
+      ...request,
+      requester: userLabel(user),
+      assignee: assignee ? userLabel(assignee) : null
+    };
+  }
+
+  private presentLetter(letter: ReturnType<EmsRepository["findLetter"]>) {
+    return {
+      ...letter,
+      issued_on: letter.issued_on,
+      download_document_id: letter.document_id,
+      acknowledgement_required: letter.status === EmsLetterStatuses.Available
+    };
+  }
+
+  private presentPolicy(policy: ReturnType<EmsRepository["listPolicies"]>[number], userId: UUID) {
+    const acknowledgement = this.repository.acknowledgementFor(policy.id, userId);
+    return {
+      ...policy,
+      acknowledgement_status: acknowledgement.status,
+      acknowledged_at: acknowledgement.acknowledged_at,
+      acknowledgement_version: acknowledgement.version,
+      document_download_id: policy.document_id
+    };
+  }
+
+  private matchesUserFilters(userId: UUID, query: EmsQuery): boolean {
+    const user = this.store.users.find((candidate) => candidate.id === userId);
+    if (!user) return false;
+    if (query.user_id && user.id !== query.user_id) return false;
+    if (query.department_id && user.department_id !== query.department_id) return false;
+    return true;
+  }
+
+  private queueCounts(statuses: string[]) {
+    return {
+      total: statuses.length,
+      pending: statuses.filter((status) => status === "pending").length,
+      in_progress: statuses.filter((status) => status === "in_progress").length,
+      approved: statuses.filter((status) => status === "approved").length,
+      returned: statuses.filter((status) => status === "returned").length,
+      rejected: statuses.filter((status) => status === "rejected").length,
+      closed: statuses.filter((status) => status === "closed").length
+    };
+  }
+
+  private requireUser(userId: UUID): CoreUser {
+    const user = this.store.users.find((candidate) => candidate.id === userId && !candidate.deleted_at);
+    if (!user) {
+      throw notFound("EMS employee not found", { user_id: userId });
+    }
+    return user;
+  }
+
+  private hrFallback(): CoreUser | null {
+    return this.store.users.find((user) => user.roles.includes(Roles.HRManager) || user.roles.includes(Roles.Admin)) ?? null;
+  }
+}

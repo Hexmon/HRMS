@@ -10,6 +10,12 @@ import type {
   Department,
   Designation,
   DocumentMetadata,
+  EmsEmployeeProfile,
+  EmsLetter,
+  EmsPolicy,
+  EmsPolicyAcknowledgement,
+  EmsProfileChangeRequest,
+  EmsServiceRequest,
   ExpenseAuditLog,
   ExpenseDocument,
   ExpenseLineItem,
@@ -36,6 +42,8 @@ import {
   PaymentTypes,
   RequiredDocumentsByExpenseSubType,
   Roles,
+  EmsLetterStatuses,
+  EmsPolicyAcknowledgementStatuses,
   TimesheetStatuses
 } from "#shared";
 import { MemorySessionStore, getLocalDemoPassword, hashPasswordSync, type SessionStore } from "#auth";
@@ -270,6 +278,12 @@ export interface DataStore {
   leaveRequests: LeaveRequest[];
   wfhRequests: WfhRequest[];
   holidays: Holiday[];
+  emsEmployeeProfiles: EmsEmployeeProfile[];
+  emsProfileChangeRequests: EmsProfileChangeRequest[];
+  emsServiceRequests: EmsServiceRequest[];
+  emsLetters: EmsLetter[];
+  emsPolicies: EmsPolicy[];
+  emsPolicyAcknowledgements: EmsPolicyAcknowledgement[];
   processedEvents: Set<string>;
   sessionStore: SessionStore;
   objectStorage: ObjectStoragePort | null;
@@ -588,6 +602,110 @@ export function createMemoryDataStore(): MemoryDataStore {
   };
 
   const firstAssetId = uuidFromName("asset-laptop-001");
+  const emsEmployeeProfiles: EmsEmployeeProfile[] = users.map((user) => ({
+    id: uuidFromName(`ems-profile-${user.employee_code}`),
+    employee_user_id: user.id,
+    personal_email: `${user.employee_code.toLowerCase()}-personal@example.test`,
+    phone: "+91 98000 00000",
+    alternate_phone: null,
+    current_address: "Bangalore, India",
+    permanent_address: "Bangalore, India",
+    city: "Bangalore",
+    country: "India",
+    emergency_contact: { name: "Emergency Contact", relation: "Family", phone: "+91 99000 00000" },
+    personal_details: { nationality: "Indian", marital_status: "Not specified" },
+    work_preferences: { work_mode: "Hybrid" },
+    version: 1,
+    created_at: created,
+    updated_at: created,
+    deleted_at: null
+  }));
+  const emsLetters: EmsLetter[] = [
+    {
+      id: uuidFromName("ems-letter-e1-offer"),
+      employee_user_id: seedIds.employee1,
+      letter_type: "offer_letter",
+      title: "Offer Letter",
+      description: "Initial offer from Hawkaii HRMS",
+      status: EmsLetterStatuses.Available,
+      document_id: null,
+      issued_on: "2026-01-01",
+      acknowledged_at: null,
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("ems-letter-e1-salary-certificate"),
+      employee_user_id: seedIds.employee1,
+      letter_type: "salary_certificate",
+      title: "Salary Certificate",
+      description: "For loans, visas, and account opening",
+      status: EmsLetterStatuses.InProgress,
+      document_id: null,
+      issued_on: null,
+      acknowledged_at: null,
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    }
+  ];
+  const emsPolicies: EmsPolicy[] = [
+    {
+      id: uuidFromName("ems-policy-attendance"),
+      policy_code: "ATTENDANCE",
+      title: "Attendance policy",
+      category: "Attendance",
+      version_label: "v3.1",
+      effective_from: "2026-01-12",
+      document_id: null,
+      status: "active",
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("ems-policy-leave"),
+      policy_code: "LEAVE",
+      title: "Leave policy",
+      category: "Leave",
+      version_label: "v4.0",
+      effective_from: "2026-06-01",
+      document_id: null,
+      status: "active",
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("ems-policy-wfh"),
+      policy_code: "WFH",
+      title: "Work from home policy",
+      category: "Workplace",
+      version_label: "v2.0",
+      effective_from: "2026-03-15",
+      document_id: null,
+      status: "active",
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    }
+  ];
+  const emsPolicyAcknowledgements: EmsPolicyAcknowledgement[] = emsPolicies.map((policy) => ({
+    id: uuidFromName(`ems-policy-ack-${policy.policy_code}-e1`),
+    policy_id: policy.id,
+    employee_user_id: seedIds.employee1,
+    status: policy.policy_code === "LEAVE" ? EmsPolicyAcknowledgementStatuses.Pending : EmsPolicyAcknowledgementStatuses.Acknowledged,
+    acknowledged_at: policy.policy_code === "LEAVE" ? null : created,
+    version: 1,
+    created_at: created,
+    updated_at: created
+  }));
   return {
     kind: "memory",
     departments,
@@ -708,6 +826,12 @@ export function createMemoryDataStore(): MemoryDataStore {
         deleted_at: null
       }
     ],
+    emsEmployeeProfiles,
+    emsProfileChangeRequests: [],
+    emsServiceRequests: [],
+    emsLetters,
+    emsPolicies,
+    emsPolicyAcknowledgements,
     processedEvents: new Set<string>(),
     sessionStore: new MemorySessionStore(),
     objectStorage: null,

@@ -20,6 +20,7 @@ export const assets = pgSchema("assets");
 export const timesheets = pgSchema("timesheets");
 export const attendance = pgSchema("attendance");
 export const leaveWfh = pgSchema("leave_wfh");
+export const ems = pgSchema("ems");
 export const platform = pgSchema("platform");
 
 const uuidPk = uuid("id").primaryKey();
@@ -756,6 +757,145 @@ export const timesheetApprovalActions = timesheets.table("timesheet_approval_act
   createdAt
 });
 
+export const emsEmployeeProfiles = ems.table(
+  "employee_profiles",
+  {
+    id: uuidPk.defaultRandom(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    personalEmail: text("personal_email"),
+    phone: text("phone"),
+    alternatePhone: text("alternate_phone"),
+    currentAddress: text("current_address"),
+    permanentAddress: text("permanent_address"),
+    city: text("city"),
+    country: text("country"),
+    emergencyContact: jsonb("emergency_contact").notNull(),
+    personalDetails: jsonb("personal_details").notNull(),
+    workPreferences: jsonb("work_preferences").notNull(),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("ems_employee_profiles_user_uq").on(table.employeeUserId),
+    index("ems_employee_profiles_user_idx").on(table.employeeUserId)
+  ]
+);
+
+export const emsProfileChangeRequests = ems.table(
+  "profile_change_requests",
+  {
+    id: uuidPk.defaultRandom(),
+    requestCode: text("request_code").notNull(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    fieldKey: text("field_key").notNull(),
+    fieldLabel: text("field_label").notNull(),
+    oldValue: text("old_value"),
+    newValue: text("new_value").notNull(),
+    reason: text("reason"),
+    supportingDocumentIds: jsonb("supporting_document_ids").notNull(),
+    status: text("status").notNull(),
+    currentApproverUserId: uuid("current_approver_user_id"),
+    decisionRemarks: text("decision_remarks"),
+    decidedByUserId: uuid("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("ems_profile_change_code_uq").on(table.requestCode),
+    index("ems_profile_change_employee_idx").on(table.employeeUserId, table.createdAt),
+    index("ems_profile_change_queue_idx").on(table.status, table.currentApproverUserId, table.createdAt)
+  ]
+);
+
+export const emsServiceRequests = ems.table(
+  "service_requests",
+  {
+    id: uuidPk.defaultRandom(),
+    requestCode: text("request_code").notNull(),
+    requesterUserId: uuid("requester_user_id").notNull(),
+    requestType: text("request_type").notNull(),
+    subject: text("subject").notNull(),
+    description: text("description").notNull(),
+    documentIds: jsonb("document_ids").notNull(),
+    status: text("status").notNull(),
+    assigneeUserId: uuid("assignee_user_id"),
+    decisionRemarks: text("decision_remarks"),
+    decidedByUserId: uuid("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("ems_service_requests_code_uq").on(table.requestCode),
+    index("ems_service_requests_requester_idx").on(table.requesterUserId, table.createdAt),
+    index("ems_service_requests_queue_idx").on(table.status, table.assigneeUserId, table.createdAt)
+  ]
+);
+
+export const emsLetters = ems.table(
+  "letters",
+  {
+    id: uuidPk.defaultRandom(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    letterType: text("letter_type").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    status: text("status").notNull(),
+    documentId: uuid("document_id"),
+    issuedOn: date("issued_on"),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [index("ems_letters_employee_idx").on(table.employeeUserId, table.createdAt)]
+);
+
+export const emsPolicies = ems.table(
+  "policies",
+  {
+    id: uuidPk.defaultRandom(),
+    policyCode: text("policy_code").notNull(),
+    title: text("title").notNull(),
+    category: text("category").notNull(),
+    versionLabel: text("version_label").notNull(),
+    effectiveFrom: date("effective_from").notNull(),
+    documentId: uuid("document_id"),
+    status: text("status").notNull(),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("ems_policies_code_uq").on(table.policyCode),
+    index("ems_policies_active_idx").on(table.status, table.effectiveFrom)
+  ]
+);
+
+export const emsPolicyAcknowledgements = ems.table(
+  "policy_acknowledgements",
+  {
+    id: uuidPk.defaultRandom(),
+    policyId: uuid("policy_id").notNull(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    status: text("status").notNull(),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt
+  },
+  (table) => [uniqueIndex("ems_policy_ack_user_uq").on(table.policyId, table.employeeUserId)]
+);
+
 export const schema = {
   departments,
   designations,
@@ -788,5 +928,11 @@ export const schema = {
   workSegments,
   workflowDefinitions,
   timesheetSubmissions,
-  timesheetApprovalActions
+  timesheetApprovalActions,
+  emsEmployeeProfiles,
+  emsProfileChangeRequests,
+  emsServiceRequests,
+  emsLetters,
+  emsPolicies,
+  emsPolicyAcknowledgements
 };

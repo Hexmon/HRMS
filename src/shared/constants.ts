@@ -120,7 +120,8 @@ export const WorkflowActions = {
   AssetAssign: "ASSET_ASSIGN",
   TimesheetApprove: "TIMESHEET_APPROVE",
   LeaveDecision: "LEAVE_DECISION",
-  WfhDecision: "WFH_DECISION"
+  WfhDecision: "WFH_DECISION",
+  EmsProfileChangeDecision: "EMS_PROFILE_CHANGE_DECISION"
 } as const;
 
 export type WorkflowAction = (typeof WorkflowActions)[keyof typeof WorkflowActions];
@@ -227,6 +228,56 @@ export type LeaveRequestStatus =
 export const WfhRequestStatuses = LeaveRequestStatuses;
 
 export type WfhRequestStatus = LeaveRequestStatus;
+
+export const EmsProfileChangeStatuses = {
+  Pending: "pending",
+  Approved: "approved",
+  Returned: "returned",
+  Rejected: "rejected"
+} as const;
+
+export type EmsProfileChangeStatus =
+  (typeof EmsProfileChangeStatuses)[keyof typeof EmsProfileChangeStatuses];
+
+export const EmsServiceRequestStatuses = {
+  Pending: "pending",
+  InProgress: "in_progress",
+  Approved: "approved",
+  Returned: "returned",
+  Rejected: "rejected",
+  Closed: "closed"
+} as const;
+
+export type EmsServiceRequestStatus =
+  (typeof EmsServiceRequestStatuses)[keyof typeof EmsServiceRequestStatuses];
+
+export const EmsServiceRequestTypes = {
+  ProfileUpdate: "profile_update",
+  DocumentVerification: "document_verification",
+  Letter: "letter",
+  Asset: "asset",
+  HrSupport: "hr_support"
+} as const;
+
+export type EmsServiceRequestType =
+  (typeof EmsServiceRequestTypes)[keyof typeof EmsServiceRequestTypes];
+
+export const EmsLetterStatuses = {
+  Available: "available",
+  Requested: "requested",
+  InProgress: "in_progress",
+  Acknowledged: "acknowledged"
+} as const;
+
+export type EmsLetterStatus = (typeof EmsLetterStatuses)[keyof typeof EmsLetterStatuses];
+
+export const EmsPolicyAcknowledgementStatuses = {
+  Pending: "pending",
+  Acknowledged: "acknowledged"
+} as const;
+
+export type EmsPolicyAcknowledgementStatus =
+  (typeof EmsPolicyAcknowledgementStatuses)[keyof typeof EmsPolicyAcknowledgementStatuses];
 
 export const ErrorCodes = {
   BadRequest: "BAD_REQUEST",

@@ -63,6 +63,13 @@ const expectedOperations = [
   "GET /api/v1/documents",
   "GET /api/v1/documents/{id}",
   "GET /api/v1/documents/{id}/access-log",
+  "GET /api/v1/ems/letters",
+  "GET /api/v1/ems/policies",
+  "GET /api/v1/ems/profile-change-requests/my",
+  "GET /api/v1/ems/profile-change-requests/queue/hr",
+  "GET /api/v1/ems/profile/me",
+  "GET /api/v1/ems/requests/my",
+  "GET /api/v1/ems/requests/queue/hr",
   "GET /api/v1/expenses/my",
   "GET /api/v1/expenses/queue/finance",
   "GET /api/v1/expenses/queue/manager",
@@ -129,6 +136,12 @@ const expectedOperations = [
   "POST /api/v1/documents",
   "POST /api/v1/documents/{id}/download-url",
   "POST /api/v1/documents/{id}/verify",
+  "PATCH /api/v1/ems/profile/me",
+  "POST /api/v1/ems/letters/{id}/acknowledge",
+  "POST /api/v1/ems/policies/{id}/acknowledge",
+  "POST /api/v1/ems/profile-change-requests",
+  "POST /api/v1/ems/profile-change-requests/{id}/decision",
+  "POST /api/v1/ems/requests",
   "POST /api/v1/expenses",
   "POST /api/v1/expenses/{id}/bills",
   "POST /api/v1/expenses/{id}/documents",
@@ -207,6 +220,12 @@ const bodyRequiredOperations = [
   "POST /api/v1/wfh/requests",
   "POST /api/v1/wfh/requests/{id}/decision",
   "PUT /api/v1/holidays/{id}",
+  "PATCH /api/v1/ems/profile/me",
+  "POST /api/v1/ems/profile-change-requests",
+  "POST /api/v1/ems/profile-change-requests/{id}/decision",
+  "POST /api/v1/ems/requests",
+  "POST /api/v1/ems/letters/{id}/acknowledge",
+  "POST /api/v1/ems/policies/{id}/acknowledge",
   "POST /api/v1/manager-backups",
   "POST /api/v1/reports/exports",
   "PUT /api/v1/platform/finance-governance"
@@ -226,6 +245,10 @@ const occOperations = [
   "POST /api/v1/leave/requests/{id}/cancel",
   "POST /api/v1/wfh/requests/{id}/decision",
   "PUT /api/v1/holidays/{id}",
+  "PATCH /api/v1/ems/profile/me",
+  "POST /api/v1/ems/profile-change-requests/{id}/decision",
+  "POST /api/v1/ems/letters/{id}/acknowledge",
+  "POST /api/v1/ems/policies/{id}/acknowledge",
   "DELETE /api/v1/manager-backups/{id}"
 ];
 
@@ -263,7 +286,13 @@ const listOperations = [
   "GET /api/v1/wfh/requests/my",
   "GET /api/v1/wfh/requests/queue/manager",
   "GET /api/v1/leave-wfh/hr-monitor",
-  "GET /api/v1/holidays"
+  "GET /api/v1/holidays",
+  "GET /api/v1/ems/profile-change-requests/my",
+  "GET /api/v1/ems/profile-change-requests/queue/hr",
+  "GET /api/v1/ems/requests/my",
+  "GET /api/v1/ems/requests/queue/hr",
+  "GET /api/v1/ems/letters",
+  "GET /api/v1/ems/policies"
 ];
 
 describe("API contracts", () => {
@@ -454,7 +483,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(108);
+    expect(rows.length).toBe(121);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

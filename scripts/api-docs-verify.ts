@@ -37,6 +37,7 @@ const allowedTags = new Set([
   "Timesheets",
   "Attendance",
   "Leave / WFH / Holidays",
+  "EMS",
   "Reports & Analytics",
   "Notifications",
   "Outbox / Platform Events",
@@ -97,7 +98,13 @@ const bodyRequiredOperations = new Set([
   "POST /api/v1/leave/requests/{id}/cancel",
   "POST /api/v1/wfh/requests",
   "POST /api/v1/wfh/requests/{id}/decision",
-  "PUT /api/v1/holidays/{id}"
+  "PUT /api/v1/holidays/{id}",
+  "PATCH /api/v1/ems/profile/me",
+  "POST /api/v1/ems/profile-change-requests",
+  "POST /api/v1/ems/profile-change-requests/{id}/decision",
+  "POST /api/v1/ems/requests",
+  "POST /api/v1/ems/letters/{id}/acknowledge",
+  "POST /api/v1/ems/policies/{id}/acknowledge"
 ]);
 
 const occOperations = new Set([
@@ -115,7 +122,11 @@ const occOperations = new Set([
   "POST /api/v1/leave/requests/{id}/decision",
   "POST /api/v1/leave/requests/{id}/cancel",
   "POST /api/v1/wfh/requests/{id}/decision",
-  "PUT /api/v1/holidays/{id}"
+  "PUT /api/v1/holidays/{id}",
+  "PATCH /api/v1/ems/profile/me",
+  "POST /api/v1/ems/profile-change-requests/{id}/decision",
+  "POST /api/v1/ems/letters/{id}/acknowledge",
+  "POST /api/v1/ems/policies/{id}/acknowledge"
 ]);
 
 const listOperations = new Set([
@@ -153,7 +164,13 @@ const listOperations = new Set([
   "GET /api/v1/wfh/requests/my",
   "GET /api/v1/wfh/requests/queue/manager",
   "GET /api/v1/leave-wfh/hr-monitor",
-  "GET /api/v1/holidays"
+  "GET /api/v1/holidays",
+  "GET /api/v1/ems/profile-change-requests/my",
+  "GET /api/v1/ems/profile-change-requests/queue/hr",
+  "GET /api/v1/ems/requests/my",
+  "GET /api/v1/ems/requests/queue/hr",
+  "GET /api/v1/ems/letters",
+  "GET /api/v1/ems/policies"
 ]);
 
 process.env.HRMS_ALLOW_MEMORY_STORE ??= "true";

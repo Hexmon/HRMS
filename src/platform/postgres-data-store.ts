@@ -11,6 +11,12 @@ import type {
   Department,
   Designation,
   DocumentMetadata,
+  EmsEmployeeProfile,
+  EmsLetter,
+  EmsPolicy,
+  EmsPolicyAcknowledgement,
+  EmsProfileChangeRequest,
+  EmsServiceRequest,
   ExpenseAuditLog,
   ExpenseDocument,
   ExpenseLineItem,
@@ -57,6 +63,12 @@ export interface PostgresDataStoreOptions {
 }
 
 const resetTables = [
+  "ems.policy_acknowledgements",
+  "ems.policies",
+  "ems.letters",
+  "ems.service_requests",
+  "ems.profile_change_requests",
+  "ems.employee_profiles",
   "leave_wfh.holidays",
   "leave_wfh.wfh_requests",
   "leave_wfh.leave_requests",
@@ -170,6 +182,12 @@ function copyData(target: DataStore, source: DataStore): void {
   target.leaveRequests = source.leaveRequests;
   target.wfhRequests = source.wfhRequests;
   target.holidays = source.holidays;
+  target.emsEmployeeProfiles = source.emsEmployeeProfiles;
+  target.emsProfileChangeRequests = source.emsProfileChangeRequests;
+  target.emsServiceRequests = source.emsServiceRequests;
+  target.emsLetters = source.emsLetters;
+  target.emsPolicies = source.emsPolicies;
+  target.emsPolicyAcknowledgements = source.emsPolicyAcknowledgements;
   target.nextTicketNo = source.nextTicketNo;
   target.nextOutboxId = source.nextOutboxId;
 }
@@ -282,6 +300,12 @@ class PostgresPersistence {
       loaded.leaveRequests = await this.loadLeaveRequests(client);
       loaded.wfhRequests = await this.loadWfhRequests(client);
       loaded.holidays = await this.loadHolidays(client);
+      loaded.emsEmployeeProfiles = await this.loadEmsEmployeeProfiles(client);
+      loaded.emsProfileChangeRequests = await this.loadEmsProfileChangeRequests(client);
+      loaded.emsServiceRequests = await this.loadEmsServiceRequests(client);
+      loaded.emsLetters = await this.loadEmsLetters(client);
+      loaded.emsPolicies = await this.loadEmsPolicies(client);
+      loaded.emsPolicyAcknowledgements = await this.loadEmsPolicyAcknowledgements(client);
       loaded.nextOutboxId = Math.max(1, ...loaded.outbox.map((event) => event.id + 1));
       loaded.nextTicketNo = this.nextTicketNumber(loaded.tickets);
       copyData(this.store, loaded);
@@ -302,6 +326,7 @@ class PostgresPersistence {
       await this.flushTimesheets(client);
       await this.flushAttendance(client);
       await this.flushLeaveWfh(client);
+      await this.flushEms(client);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -957,6 +982,125 @@ class PostgresPersistence {
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
       deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadEmsEmployeeProfiles(client: PoolClient): Promise<EmsEmployeeProfile[]> {
+    const { rows } = await client.query("SELECT * FROM ems.employee_profiles ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      employee_user_id: row.employee_user_id,
+      personal_email: row.personal_email,
+      phone: row.phone,
+      alternate_phone: row.alternate_phone,
+      current_address: row.current_address,
+      permanent_address: row.permanent_address,
+      city: row.city,
+      country: row.country,
+      emergency_contact: json(row.emergency_contact),
+      personal_details: json(row.personal_details),
+      work_preferences: json(row.work_preferences),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadEmsProfileChangeRequests(client: PoolClient): Promise<EmsProfileChangeRequest[]> {
+    const { rows } = await client.query("SELECT * FROM ems.profile_change_requests ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      request_code: row.request_code,
+      employee_user_id: row.employee_user_id,
+      field_key: row.field_key,
+      field_label: row.field_label,
+      old_value: row.old_value,
+      new_value: row.new_value,
+      reason: row.reason,
+      supporting_document_ids: Array.isArray(row.supporting_document_ids) ? row.supporting_document_ids : [],
+      status: row.status,
+      current_approver_user_id: row.current_approver_user_id,
+      decision_remarks: row.decision_remarks,
+      decided_by_user_id: row.decided_by_user_id,
+      decided_at: asIsoOrNull(row.decided_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadEmsServiceRequests(client: PoolClient): Promise<EmsServiceRequest[]> {
+    const { rows } = await client.query("SELECT * FROM ems.service_requests ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      request_code: row.request_code,
+      requester_user_id: row.requester_user_id,
+      request_type: row.request_type,
+      subject: row.subject,
+      description: row.description,
+      document_ids: Array.isArray(row.document_ids) ? row.document_ids : [],
+      status: row.status,
+      assignee_user_id: row.assignee_user_id,
+      decision_remarks: row.decision_remarks,
+      decided_by_user_id: row.decided_by_user_id,
+      decided_at: asIsoOrNull(row.decided_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadEmsLetters(client: PoolClient): Promise<EmsLetter[]> {
+    const { rows } = await client.query("SELECT * FROM ems.letters ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      employee_user_id: row.employee_user_id,
+      letter_type: row.letter_type,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      document_id: row.document_id,
+      issued_on: asDateOrNull(row.issued_on),
+      acknowledged_at: asIsoOrNull(row.acknowledged_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadEmsPolicies(client: PoolClient): Promise<EmsPolicy[]> {
+    const { rows } = await client.query("SELECT * FROM ems.policies ORDER BY effective_from DESC, title");
+    return rows.map((row) => ({
+      id: row.id,
+      policy_code: row.policy_code,
+      title: row.title,
+      category: row.category,
+      version_label: row.version_label,
+      effective_from: asDate(row.effective_from),
+      document_id: row.document_id,
+      status: row.status,
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadEmsPolicyAcknowledgements(client: PoolClient): Promise<EmsPolicyAcknowledgement[]> {
+    const { rows } = await client.query("SELECT * FROM ems.policy_acknowledgements ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      policy_id: row.policy_id,
+      employee_user_id: row.employee_user_id,
+      status: row.status,
+      acknowledged_at: asIsoOrNull(row.acknowledged_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at)
     }));
   }
 
@@ -1931,6 +2075,225 @@ class PostgresPersistence {
           holiday.created_at,
           holiday.updated_at,
           holiday.deleted_at
+        ]
+      );
+    }
+  }
+
+  private async flushEms(client: PoolClient): Promise<void> {
+    for (const profile of this.store.emsEmployeeProfiles) {
+      await client.query(
+        `INSERT INTO ems.employee_profiles (
+          id, employee_user_id, personal_email, phone, alternate_phone, current_address,
+          permanent_address, city, country, emergency_contact, personal_details,
+          work_preferences, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb, $13, $14, $15, $16)
+        ON CONFLICT (id) DO UPDATE
+        SET personal_email = EXCLUDED.personal_email,
+            phone = EXCLUDED.phone,
+            alternate_phone = EXCLUDED.alternate_phone,
+            current_address = EXCLUDED.current_address,
+            permanent_address = EXCLUDED.permanent_address,
+            city = EXCLUDED.city,
+            country = EXCLUDED.country,
+            emergency_contact = EXCLUDED.emergency_contact,
+            personal_details = EXCLUDED.personal_details,
+            work_preferences = EXCLUDED.work_preferences,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          profile.id,
+          profile.employee_user_id,
+          profile.personal_email,
+          profile.phone,
+          profile.alternate_phone,
+          profile.current_address,
+          profile.permanent_address,
+          profile.city,
+          profile.country,
+          JSON.stringify(profile.emergency_contact),
+          JSON.stringify(profile.personal_details),
+          JSON.stringify(profile.work_preferences),
+          profile.version,
+          profile.created_at,
+          profile.updated_at,
+          profile.deleted_at
+        ]
+      );
+    }
+    for (const request of this.store.emsProfileChangeRequests) {
+      await client.query(
+        `INSERT INTO ems.profile_change_requests (
+          id, request_code, employee_user_id, field_key, field_label, old_value,
+          new_value, reason, supporting_document_ids, status, current_approver_user_id,
+          decision_remarks, decided_by_user_id, decided_at, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        ON CONFLICT (id) DO UPDATE
+        SET field_label = EXCLUDED.field_label,
+            old_value = EXCLUDED.old_value,
+            new_value = EXCLUDED.new_value,
+            reason = EXCLUDED.reason,
+            supporting_document_ids = EXCLUDED.supporting_document_ids,
+            status = EXCLUDED.status,
+            current_approver_user_id = EXCLUDED.current_approver_user_id,
+            decision_remarks = EXCLUDED.decision_remarks,
+            decided_by_user_id = EXCLUDED.decided_by_user_id,
+            decided_at = EXCLUDED.decided_at,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          request.id,
+          request.request_code,
+          request.employee_user_id,
+          request.field_key,
+          request.field_label,
+          request.old_value,
+          request.new_value,
+          request.reason,
+          JSON.stringify(request.supporting_document_ids),
+          request.status,
+          request.current_approver_user_id,
+          request.decision_remarks,
+          request.decided_by_user_id,
+          request.decided_at,
+          request.version,
+          request.created_at,
+          request.updated_at,
+          request.deleted_at
+        ]
+      );
+    }
+    for (const request of this.store.emsServiceRequests) {
+      await client.query(
+        `INSERT INTO ems.service_requests (
+          id, request_code, requester_user_id, request_type, subject, description,
+          document_ids, status, assignee_user_id, decision_remarks, decided_by_user_id,
+          decided_at, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        ON CONFLICT (id) DO UPDATE
+        SET subject = EXCLUDED.subject,
+            description = EXCLUDED.description,
+            document_ids = EXCLUDED.document_ids,
+            status = EXCLUDED.status,
+            assignee_user_id = EXCLUDED.assignee_user_id,
+            decision_remarks = EXCLUDED.decision_remarks,
+            decided_by_user_id = EXCLUDED.decided_by_user_id,
+            decided_at = EXCLUDED.decided_at,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          request.id,
+          request.request_code,
+          request.requester_user_id,
+          request.request_type,
+          request.subject,
+          request.description,
+          JSON.stringify(request.document_ids),
+          request.status,
+          request.assignee_user_id,
+          request.decision_remarks,
+          request.decided_by_user_id,
+          request.decided_at,
+          request.version,
+          request.created_at,
+          request.updated_at,
+          request.deleted_at
+        ]
+      );
+    }
+    for (const letter of this.store.emsLetters) {
+      await client.query(
+        `INSERT INTO ems.letters (
+          id, employee_user_id, letter_type, title, description, status,
+          document_id, issued_on, acknowledged_at, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (id) DO UPDATE
+        SET title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            status = EXCLUDED.status,
+            document_id = EXCLUDED.document_id,
+            issued_on = EXCLUDED.issued_on,
+            acknowledged_at = EXCLUDED.acknowledged_at,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          letter.id,
+          letter.employee_user_id,
+          letter.letter_type,
+          letter.title,
+          letter.description,
+          letter.status,
+          letter.document_id,
+          letter.issued_on,
+          letter.acknowledged_at,
+          letter.version,
+          letter.created_at,
+          letter.updated_at,
+          letter.deleted_at
+        ]
+      );
+    }
+    for (const policy of this.store.emsPolicies) {
+      await client.query(
+        `INSERT INTO ems.policies (
+          id, policy_code, title, category, version_label, effective_from,
+          document_id, status, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (id) DO UPDATE
+        SET title = EXCLUDED.title,
+            category = EXCLUDED.category,
+            version_label = EXCLUDED.version_label,
+            effective_from = EXCLUDED.effective_from,
+            document_id = EXCLUDED.document_id,
+            status = EXCLUDED.status,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          policy.id,
+          policy.policy_code,
+          policy.title,
+          policy.category,
+          policy.version_label,
+          policy.effective_from,
+          policy.document_id,
+          policy.status,
+          policy.version,
+          policy.created_at,
+          policy.updated_at,
+          policy.deleted_at
+        ]
+      );
+    }
+    for (const acknowledgement of this.store.emsPolicyAcknowledgements) {
+      await client.query(
+        `INSERT INTO ems.policy_acknowledgements (
+          id, policy_id, employee_user_id, status, acknowledged_at, version, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (id) DO UPDATE
+        SET status = EXCLUDED.status,
+            acknowledged_at = EXCLUDED.acknowledged_at,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at`,
+        [
+          acknowledgement.id,
+          acknowledgement.policy_id,
+          acknowledgement.employee_user_id,
+          acknowledgement.status,
+          acknowledgement.acknowledged_at,
+          acknowledgement.version,
+          acknowledgement.created_at,
+          acknowledgement.updated_at
         ]
       );
     }
