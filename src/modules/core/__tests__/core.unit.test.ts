@@ -54,7 +54,12 @@ describe("core hierarchy", () => {
     expect(detail.reporting_line.map((user) => user.employee_code)).toEqual(["S1"]);
     expect(detail.profile_tabs_available).toContain("expenses");
     expect(detail.attendance_summary.status).toBe("not_available");
-    expect(detail.leave_summary.status).toBe("not_available");
+    expect(detail.leave_summary).toEqual({
+      pending_leave: 0,
+      approved_leave_ytd: 0,
+      pending_wfh: 0,
+      approved_wfh_ytd: 0
+    });
   });
 
 });

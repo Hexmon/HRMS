@@ -19,6 +19,7 @@ export const documents = pgSchema("documents");
 export const assets = pgSchema("assets");
 export const timesheets = pgSchema("timesheets");
 export const attendance = pgSchema("attendance");
+export const leaveWfh = pgSchema("leave_wfh");
 export const platform = pgSchema("platform");
 
 const uuidPk = uuid("id").primaryKey();
@@ -275,6 +276,86 @@ export const attendanceRegularizationRequests = attendance.table(
   (table) => [
     index("attendance_regularizations_employee_date_idx").on(table.employeeUserId, table.workDate),
     index("attendance_regularizations_queue_idx").on(table.status, table.currentApproverUserId, table.createdAt)
+  ]
+);
+
+export const leaveRequests = leaveWfh.table(
+  "leave_requests",
+  {
+    id: uuidPk.defaultRandom(),
+    requestCode: text("request_code").notNull(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    leaveType: text("leave_type").notNull(),
+    dateFrom: date("date_from").notNull(),
+    dateTo: date("date_to").notNull(),
+    halfDay: boolean("half_day").notNull().default(false),
+    duration: numeric("duration", { precision: 5, scale: 2 }).notNull(),
+    reason: text("reason").notNull(),
+    documentIds: jsonb("document_ids").notNull().default([]),
+    status: text("status").notNull(),
+    currentApproverUserId: uuid("current_approver_user_id"),
+    decisionRemarks: text("decision_remarks"),
+    decidedByUserId: uuid("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("leave_requests_code_uq").on(table.requestCode),
+    index("leave_requests_employee_date_idx").on(table.employeeUserId, table.dateFrom, table.dateTo),
+    index("leave_requests_queue_idx").on(table.status, table.currentApproverUserId, table.createdAt)
+  ]
+);
+
+export const wfhRequests = leaveWfh.table(
+  "wfh_requests",
+  {
+    id: uuidPk.defaultRandom(),
+    requestCode: text("request_code").notNull(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    dateFrom: date("date_from").notNull(),
+    dateTo: date("date_to").notNull(),
+    halfDay: boolean("half_day").notNull().default(false),
+    duration: numeric("duration", { precision: 5, scale: 2 }).notNull(),
+    reason: text("reason").notNull(),
+    projectRef: text("project_ref"),
+    status: text("status").notNull(),
+    currentApproverUserId: uuid("current_approver_user_id"),
+    decisionRemarks: text("decision_remarks"),
+    decidedByUserId: uuid("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("wfh_requests_code_uq").on(table.requestCode),
+    index("wfh_requests_employee_date_idx").on(table.employeeUserId, table.dateFrom, table.dateTo),
+    index("wfh_requests_queue_idx").on(table.status, table.currentApproverUserId, table.createdAt)
+  ]
+);
+
+export const holidays = leaveWfh.table(
+  "holidays",
+  {
+    id: uuidPk.defaultRandom(),
+    name: text("name").notNull(),
+    holidayDate: date("holiday_date").notNull(),
+    region: text("region").notNull().default("All"),
+    optional: boolean("optional").notNull().default(false),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("holidays_region_date_name_uq").on(table.region, table.holidayDate, table.name),
+    index("holidays_date_idx").on(table.holidayDate)
   ]
 );
 

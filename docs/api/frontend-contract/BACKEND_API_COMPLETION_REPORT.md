@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 94 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 108 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 120 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 214 | Regenerate frontend client only after each backend phase lands. | `94 current + 120 remaining`; the 11 P1 updates stayed part of the original API surface. |
+| Planned new APIs | 106 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 214 | Regenerate frontend client only after each backend phase lands. | `108 current + 106 remaining`; the 11 P1 updates stayed part of the original API surface. |
 
 ## Development Phases
 
@@ -18,7 +18,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | --- | --- | --- | --- |
 | P0 ready | Existing implemented APIs | No planned changes required for initial integration. | Integrate directly from `openapi.json` and `ENDPOINT_INDEX.md`. |
 | P1 update existing | Existing APIs need fuller shapes | Add backward-compatible fields/filters/actions, update tests, regenerate OpenAPI. | Keep adapters tolerant until expanded fields are available. |
-| P2 core missing | Auth, core, EMS, leave/WFH | Build daily HR workflows after the Phase 3 attendance slice. | Keep modules mocked until implemented. Employee CRUD/admin APIs and attendance slice APIs are now available from OpenAPI. |
+| P2 core missing | Auth, core, EMS, leave/WFH | Build daily HR workflows after the Phase 3 attendance and leave/WFH slices. | Keep modules mocked until implemented. Employee CRUD/admin, attendance, and primary leave/WFH APIs are now available from OpenAPI. |
 | P3 module completion | Projects, assets additions, helpdesk, notifications | Build operational modules after P2 data foundations exist. | Integrate route-by-route as OpenAPI grows. |
 | P4 admin/report hardening | Admin settings and non-expense reports | Add policy/config/report/export breadth with audit and RBAC. | Do not bypass backend scope with client-side aggregation. |
 
@@ -40,6 +40,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Reports & Analytics | 5 | Expense requester/manager/register reports and export creation. |
 | Timesheets | 7 | Work segments, submissions, approver queue, decisions, workflow definitions. |
 | Attendance | 9 | Punches, my punch list, my/team summaries, monthly calendar, regularization submit/list/decision, and exception queue. |
+| Leave / WFH / Holidays | 14 | Leave balances, leave apply/cancel/decision queues, WFH apply/decision queues, HR monitor, and holiday list/upsert. |
 
 P0 frontend integration can start with these operations only. The authoritative machine-readable list remains `docs/api/frontend-contract/openapi.json`.
 
@@ -74,7 +75,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **120**.
+Total remaining planned new operations: **106**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -149,24 +150,24 @@ Total remaining planned new operations: **120**.
 | GET | `/api/v1/attendance/exceptions` | `/attendance/exceptions` | List attendance exceptions for HR follow-up. | HR/Admin/auditor; manager scoped if enabled. | page, page_size, exception_type, date_range, user_id | items[], pagination, totals | 403 out-of-scope; export through reports/exports later. | Implemented in Phase 3 attendance |
 | POST | `/api/v1/attendance/exports` | `/attendance/reports` | Create attendance export job. | HR/Admin/auditor. | filters, columns, format | job_id, status | 403 forbidden columns; 429 export throttle. | Planned / Not Implemented |
 
-### Leave / WFH (15 planned APIs)
+### Leave / WFH (14 implemented APIs, 1 planned API)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GET | `/api/v1/leave/balances/my` | `/leave-wfh/balances` | Return own leave balances. | Authenticated employee. | year, leave_type optional | balances[], accruals[], pending_requests_summary | Shared errors; money rules not applicable. | Planned / Not Implemented |
-| GET | `/api/v1/leave/balances/{user_id}` | `/leave-wfh/admin/balances` | Return leave balances for another user. | HR/Admin or scoped manager. | Path user_id; year | balances[], audit_summary | 403 out-of-scope; 404 unknown user. | Planned / Not Implemented |
-| POST | `/api/v1/leave/requests` | `/leave-wfh/apply-leave` | Apply for leave. | Authenticated employee. | leave_type, date_from, date_to, half_day flags, reason, document_ids[] | request_id, status, balance_preview, version | 409 overlap/insufficient balance; 400 invalid dates. | Planned / Not Implemented |
-| GET | `/api/v1/leave/requests/my` | `/leave-wfh/my-requests` | List own leave requests. | Authenticated employee. | page, page_size, status, date_range | items[], pagination | Shared errors. | Planned / Not Implemented |
-| GET | `/api/v1/leave/requests/queue/manager` | `/leave-wfh/approvals` | Manager leave approval queue. | Manager/backup; HR monitor optional. | page, page_size, status, date_range, user_id | items[], pagination, queue_counts | Self-processing blocked; 403 if not scoped. | Planned / Not Implemented |
-| POST | `/api/v1/leave/requests/{id}/decision` | `/leave-wfh/approvals/:id` | Approve, return, or reject leave. | Manager/backup/HR per workflow. | decision, remarks, expected_version | request, balance_effect, version | remarks required for return/reject; 409 stale/invalid transition. | Planned / Not Implemented |
-| POST | `/api/v1/leave/requests/{id}/cancel` | `/leave-wfh/my-requests/:id` | Cancel own leave request where policy allows. | Requester only, HR override optional. | remarks, expected_version | request, balance_restore, version | 409 if already processed or cancellation window closed. | Planned / Not Implemented |
-| POST | `/api/v1/wfh/requests` | `/leave-wfh/apply-wfh` | Apply for work from home. | Authenticated employee. | date_from, date_to, reason, contact/location metadata | request_id, status, version | 409 overlap/blocked day; 400 invalid dates. | Planned / Not Implemented |
-| GET | `/api/v1/wfh/requests/my` | `/leave-wfh/wfh` | List own WFH requests. | Authenticated employee. | page, page_size, status, date_range | items[], pagination | Shared errors. | Planned / Not Implemented |
-| GET | `/api/v1/wfh/requests/queue/manager` | `/leave-wfh/wfh-approvals` | Manager WFH approval queue. | Manager/backup; HR monitor optional. | page, page_size, status, date_range | items[], pagination, queue_counts | Self-processing blocked; 403 if not scoped. | Planned / Not Implemented |
-| POST | `/api/v1/wfh/requests/{id}/decision` | `/leave-wfh/wfh-approvals/:id` | Approve, return, or reject WFH. | Manager/backup/HR per workflow. | decision, remarks, expected_version | request, version | remarks required for return/reject; 409 stale/invalid transition. | Planned / Not Implemented |
-| GET | `/api/v1/leave-wfh/hr-monitor` | `/leave-wfh/hr-monitor` | HR monitor list for leave and WFH. | HR/Admin/auditor. | page, page_size, request_kind, status, department_id, date_range | items[], totals, pagination | 403 non-HR; paginated. | Planned / Not Implemented |
-| GET | `/api/v1/holidays` | `/leave-wfh/holidays` | List holiday calendar. | Authenticated user. | year, location_id optional | holidays[], calendar_metadata | Shared errors; cacheable by year/location. | Planned / Not Implemented |
-| PUT | `/api/v1/holidays/{id}` | `/admin-settings/holidays` | Create or update a holiday. | HR/Admin. | Path id; name, date, location_ids, optional flag, expected_version | holiday, version | 409 stale version/date collision. | Planned / Not Implemented |
+| GET | `/api/v1/leave/balances/my` | `/leave-wfh/balances` | Return own leave balances. | Authenticated employee. | year, leave_type optional | balances[], accruals[], pending_requests_summary | Shared errors; money rules not applicable. | Implemented in Phase 3 leave/WFH |
+| GET | `/api/v1/leave/balances/{user_id}` | `/leave-wfh/admin/balances` | Return leave balances for another user. | HR/Admin or scoped manager. | Path user_id; year | balances[], audit_summary | 403 out-of-scope; 404 unknown user. | Implemented in Phase 3 leave/WFH |
+| POST | `/api/v1/leave/requests` | `/leave-wfh/apply-leave` | Apply for leave. | Authenticated employee. | leave_type, date_from, date_to, half_day flags, reason, document_ids[] | request_id, status, balance_preview, version | 409 overlap/insufficient balance; 400 invalid dates. | Implemented in Phase 3 leave/WFH |
+| GET | `/api/v1/leave/requests/my` | `/leave-wfh/my-requests` | List own leave requests. | Authenticated employee. | page, page_size, status, date_range | items[], pagination | Shared errors. | Implemented in Phase 3 leave/WFH |
+| GET | `/api/v1/leave/requests/queue/manager` | `/leave-wfh/approvals` | Manager leave approval queue. | Manager/backup; HR monitor optional. | page, page_size, status, date_range, user_id | items[], pagination, queue_counts | Self-processing blocked; 403 if not scoped. | Implemented in Phase 3 leave/WFH |
+| POST | `/api/v1/leave/requests/{id}/decision` | `/leave-wfh/approvals/:id` | Approve, return, or reject leave. | Manager/backup/HR per workflow. | decision, remarks, expected_version | request, balance_effect, version | remarks required for return/reject; 409 stale/invalid transition. | Implemented in Phase 3 leave/WFH |
+| POST | `/api/v1/leave/requests/{id}/cancel` | `/leave-wfh/my-requests/:id` | Cancel own leave request where policy allows. | Requester only, HR override optional. | remarks, expected_version | request, balance_restore, version | 409 if already processed or cancellation window closed. | Implemented in Phase 3 leave/WFH |
+| POST | `/api/v1/wfh/requests` | `/leave-wfh/apply-wfh` | Apply for work from home. | Authenticated employee. | date_from, date_to, reason, contact/location metadata | request_id, status, version | 409 overlap/blocked day; 400 invalid dates. | Implemented in Phase 3 leave/WFH |
+| GET | `/api/v1/wfh/requests/my` | `/leave-wfh/wfh` | List own WFH requests. | Authenticated employee. | page, page_size, status, date_range | items[], pagination | Shared errors. | Implemented in Phase 3 leave/WFH |
+| GET | `/api/v1/wfh/requests/queue/manager` | `/leave-wfh/wfh-approvals` | Manager WFH approval queue. | Manager/backup; HR monitor optional. | page, page_size, status, date_range | items[], pagination, queue_counts | Self-processing blocked; 403 if not scoped. | Implemented in Phase 3 leave/WFH |
+| POST | `/api/v1/wfh/requests/{id}/decision` | `/leave-wfh/wfh-approvals/:id` | Approve, return, or reject WFH. | Manager/backup/HR per workflow. | decision, remarks, expected_version | request, version | remarks required for return/reject; 409 stale/invalid transition. | Implemented in Phase 3 leave/WFH |
+| GET | `/api/v1/leave-wfh/hr-monitor` | `/leave-wfh/hr-monitor` | HR monitor list for leave and WFH. | HR/Admin/auditor. | page, page_size, request_kind, status, department_id, date_range | items[], totals, pagination | 403 non-HR; paginated. | Implemented in Phase 3 leave/WFH |
+| GET | `/api/v1/holidays` | `/leave-wfh/holidays` | List holiday calendar. | Authenticated user. | year, location_id optional | holidays[], calendar_metadata | Shared errors; cacheable by year/location. | Implemented in Phase 3 leave/WFH |
+| PUT | `/api/v1/holidays/{id}` | `/admin-settings/holidays` | Create or update a holiday. | HR/Admin. | Path id; name, date, location_ids, optional flag, expected_version | holiday, version | 409 stale version/date collision. | Implemented in Phase 3 leave/WFH |
 | POST | `/api/v1/leave-wfh/exports` | `/leave-wfh/reports` | Create leave/WFH export job. | HR/Admin/auditor. | filters, columns, format | job_id, status | 403 forbidden columns; 429 export throttle. | Planned / Not Implemented |
 
 ### Timesheets Enhancements (5 planned APIs)

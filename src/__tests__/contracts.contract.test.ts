@@ -72,6 +72,12 @@ const expectedOperations = [
   "GET /api/v1/expenses/{id}/timeline",
   "GET /api/v1/health/live",
   "GET /api/v1/health/ready",
+  "GET /api/v1/holidays",
+  "GET /api/v1/leave-wfh/hr-monitor",
+  "GET /api/v1/leave/balances/my",
+  "GET /api/v1/leave/balances/{user_id}",
+  "GET /api/v1/leave/requests/my",
+  "GET /api/v1/leave/requests/queue/manager",
   "GET /api/v1/manager-backups",
   "GET /api/v1/openapi.json",
   "GET /api/v1/platform/finance-governance",
@@ -89,6 +95,8 @@ const expectedOperations = [
   "GET /api/v1/timesheets/submissions/my",
   "GET /api/v1/timesheets/work-segments",
   "GET /api/v1/timesheets/workflow-definitions",
+  "GET /api/v1/wfh/requests/my",
+  "GET /api/v1/wfh/requests/queue/manager",
   "GET /health/live",
   "GET /health/ready",
   "PATCH /api/v1/auth/session/preference",
@@ -130,6 +138,9 @@ const expectedOperations = [
   "POST /api/v1/expenses/{id}/manager/verify",
   "POST /api/v1/expenses/{id}/settlement",
   "POST /api/v1/expenses/{id}/submit",
+  "POST /api/v1/leave/requests",
+  "POST /api/v1/leave/requests/{id}/cancel",
+  "POST /api/v1/leave/requests/{id}/decision",
   "POST /api/v1/manager-backups",
   "POST /api/v1/onboarding/company-bootstrap",
   "POST /api/v1/reports/exports",
@@ -137,6 +148,9 @@ const expectedOperations = [
   "POST /api/v1/timesheets/submissions/{id}/approve",
   "POST /api/v1/timesheets/work-segments",
   "POST /api/v1/timesheets/workflow-definitions",
+  "POST /api/v1/wfh/requests",
+  "POST /api/v1/wfh/requests/{id}/decision",
+  "PUT /api/v1/holidays/{id}",
   "PUT /api/v1/core/users/{id}/roles",
   "PUT /api/v1/platform/finance-governance"
 ] as const;
@@ -187,6 +201,12 @@ const bodyRequiredOperations = [
   "POST /api/v1/attendance/punches",
   "POST /api/v1/attendance/regularizations",
   "POST /api/v1/attendance/regularizations/{id}/decision",
+  "POST /api/v1/leave/requests",
+  "POST /api/v1/leave/requests/{id}/decision",
+  "POST /api/v1/leave/requests/{id}/cancel",
+  "POST /api/v1/wfh/requests",
+  "POST /api/v1/wfh/requests/{id}/decision",
+  "PUT /api/v1/holidays/{id}",
   "POST /api/v1/manager-backups",
   "POST /api/v1/reports/exports",
   "PUT /api/v1/platform/finance-governance"
@@ -202,6 +222,10 @@ const occOperations = [
   "POST /api/v1/assets/{id}/return",
   "POST /api/v1/timesheets/submissions/{id}/approve",
   "POST /api/v1/attendance/regularizations/{id}/decision",
+  "POST /api/v1/leave/requests/{id}/decision",
+  "POST /api/v1/leave/requests/{id}/cancel",
+  "POST /api/v1/wfh/requests/{id}/decision",
+  "PUT /api/v1/holidays/{id}",
   "DELETE /api/v1/manager-backups/{id}"
 ];
 
@@ -231,7 +255,15 @@ const listOperations = [
   "GET /api/v1/attendance/summary/team",
   "GET /api/v1/attendance/calendar/monthly",
   "GET /api/v1/attendance/regularizations/my",
-  "GET /api/v1/attendance/exceptions"
+  "GET /api/v1/attendance/exceptions",
+  "GET /api/v1/leave/balances/my",
+  "GET /api/v1/leave/balances/{user_id}",
+  "GET /api/v1/leave/requests/my",
+  "GET /api/v1/leave/requests/queue/manager",
+  "GET /api/v1/wfh/requests/my",
+  "GET /api/v1/wfh/requests/queue/manager",
+  "GET /api/v1/leave-wfh/hr-monitor",
+  "GET /api/v1/holidays"
 ];
 
 describe("API contracts", () => {
@@ -422,7 +454,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(94);
+    expect(rows.length).toBe(108);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

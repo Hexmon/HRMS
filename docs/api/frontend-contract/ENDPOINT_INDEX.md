@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 94
+Documented operations: 108
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -5472,4 +5472,755 @@ Success body highlights:
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
 - Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+## Leave / WFH / Holidays
+
+Backend-owned API group.
+
+### GET /api/v1/leave/balances/my
+
+| Field | Contract |
+|---|---|
+| Purpose | My leave balances |
+| Frontend use | My leave balances |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `year` | query | no | integer | minimum 2000 |
+| `leave_type` | query | no | string enum("casual", "sick", "earned", "unpaid", "comp_off") | - |
+| `status` | query | no | string enum("pending_manager", "approved", "returned", "rejected", "cancelled") | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `generated_at` | string<date-time> | required | Balance generation timestamp |
+| `year` | integer | required | - |
+| `user` | object | required | - |
+| `balances` | array of object | required | - |
+| `accruals` | array of object | optional | - |
+| `pending_requests_summary` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/leave/balances/{user_id}
+
+| Field | Contract |
+|---|---|
+| Purpose | Employee leave balances |
+| Frontend use | Employee leave balances |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `year` | query | no | integer | minimum 2000 |
+| `leave_type` | query | no | string enum("casual", "sick", "earned", "unpaid", "comp_off") | - |
+| `status` | query | no | string enum("pending_manager", "approved", "returned", "rejected", "cancelled") | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+| `user_id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `generated_at` | string<date-time> | required | Balance generation timestamp |
+| `year` | integer | required | - |
+| `user` | object | required | - |
+| `balances` | array of object | required | - |
+| `accruals` | array of object | optional | - |
+| `pending_requests_summary` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/leave/requests
+
+| Field | Contract |
+|---|---|
+| Purpose | Apply leave |
+| Frontend use | Apply leave |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `leave_type` | string enum("casual", "sick", "earned", "unpaid", "comp_off") | required | - |
+| `date_from` | string<date> | required | Leave start date |
+| `date_to` | string<date> | required | Leave end date |
+| `half_day` | boolean | optional | default false |
+| `reason` | string | required | minLength 3 |
+| `document_ids` | array of string<uuid> | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/leave/requests/my
+
+| Field | Contract |
+|---|---|
+| Purpose | My leave requests |
+| Frontend use | My leave requests |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `year` | query | no | integer | minimum 2000 |
+| `leave_type` | query | no | string enum("casual", "sick", "earned", "unpaid", "comp_off") | - |
+| `status` | query | no | string enum("pending_manager", "approved", "returned", "rejected", "cancelled") | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `items` | array of object | required | - |
+| `page` | integer | required | minimum 1 |
+| `page_size` | integer | required | minimum 1 |
+| `total` | integer | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/leave/requests/queue/manager
+
+| Field | Contract |
+|---|---|
+| Purpose | Manager leave approval queue |
+| Frontend use | `/finance/manager` verification workspace. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `year` | query | no | integer | minimum 2000 |
+| `leave_type` | query | no | string enum("casual", "sick", "earned", "unpaid", "comp_off") | - |
+| `status` | query | no | string enum("pending_manager", "approved", "returned", "rejected", "cancelled") | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `items` | array of object | required | - |
+| `page` | integer | required | minimum 1 |
+| `page_size` | integer | required | minimum 1 |
+| `total` | integer | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/leave/requests/{id}/decision
+
+| Field | Contract |
+|---|---|
+| Purpose | Decide leave request |
+| Frontend use | Decide leave request |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `decision` | string enum("approve", "reject", "return") | required | - |
+| `remarks` | string | optional | Required for reject/return decisions. |
+| `expected_version` | integer | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/leave/requests/{id}/cancel
+
+| Field | Contract |
+|---|---|
+| Purpose | Cancel leave request |
+| Frontend use | Cancel leave request |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `remarks` | string | optional | - |
+| `expected_version` | integer | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/wfh/requests
+
+| Field | Contract |
+|---|---|
+| Purpose | Apply WFH |
+| Frontend use | Apply WFH |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `date_from` | string<date> | required | WFH start date |
+| `date_to` | string<date> | required | WFH end date |
+| `half_day` | boolean | optional | default false |
+| `reason` | string | required | minLength 3 |
+| `project_ref` | string | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/wfh/requests/my
+
+| Field | Contract |
+|---|---|
+| Purpose | My WFH requests |
+| Frontend use | My WFH requests |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `year` | query | no | integer | minimum 2000 |
+| `leave_type` | query | no | string enum("casual", "sick", "earned", "unpaid", "comp_off") | - |
+| `status` | query | no | string enum("pending_manager", "approved", "returned", "rejected", "cancelled") | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `items` | array of object | required | - |
+| `page` | integer | required | minimum 1 |
+| `page_size` | integer | required | minimum 1 |
+| `total` | integer | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/wfh/requests/queue/manager
+
+| Field | Contract |
+|---|---|
+| Purpose | Manager WFH approval queue |
+| Frontend use | `/finance/manager` verification workspace. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `year` | query | no | integer | minimum 2000 |
+| `leave_type` | query | no | string enum("casual", "sick", "earned", "unpaid", "comp_off") | - |
+| `status` | query | no | string enum("pending_manager", "approved", "returned", "rejected", "cancelled") | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `items` | array of object | required | - |
+| `page` | integer | required | minimum 1 |
+| `page_size` | integer | required | minimum 1 |
+| `total` | integer | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/wfh/requests/{id}/decision
+
+| Field | Contract |
+|---|---|
+| Purpose | Decide WFH request |
+| Frontend use | Decide WFH request |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `decision` | string enum("approve", "reject", "return") | required | - |
+| `remarks` | string | optional | Required for reject/return decisions. |
+| `expected_version` | integer | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/leave-wfh/hr-monitor
+
+| Field | Contract |
+|---|---|
+| Purpose | HR Leave/WFH monitor |
+| Frontend use | HR Leave/WFH monitor |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `year` | query | no | integer | minimum 2000 |
+| `leave_type` | query | no | string enum("casual", "sick", "earned", "unpaid", "comp_off") | - |
+| `status` | query | no | string enum("pending_manager", "approved", "returned", "rejected", "cancelled") | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `items` | array of object | required | - |
+| `page` | integer | required | minimum 1 |
+| `page_size` | integer | required | minimum 1 |
+| `total` | integer | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/holidays
+
+| Field | Contract |
+|---|---|
+| Purpose | Holiday calendar |
+| Frontend use | Holiday calendar |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `year` | query | no | integer | minimum 2000 |
+| `leave_type` | query | no | string enum("casual", "sick", "earned", "unpaid", "comp_off") | - |
+| `status` | query | no | string enum("pending_manager", "approved", "returned", "rejected", "cancelled") | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `department_id` | query | no | string<uuid> | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `holidays` | array of object | required | - |
+| `calendar_metadata` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PUT /api/v1/holidays/{id}
+
+| Field | Contract |
+|---|---|
+| Purpose | Upsert holiday |
+| Frontend use | Upsert holiday |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | required | minLength 2 |
+| `date` | string<date> | required | Holiday date |
+| `region` | string | optional | default "All" |
+| `optional` | boolean | optional | default false |
+| `expected_version` | integer | optional | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
 - Respect `429` and `Retry-After`; never build tight retry loops.

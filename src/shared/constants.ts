@@ -118,7 +118,9 @@ export const WorkflowActions = {
   PaymentRelease: "PAYMENT_RELEASE",
   SettlementClose: "SETTLEMENT_CLOSE",
   AssetAssign: "ASSET_ASSIGN",
-  TimesheetApprove: "TIMESHEET_APPROVE"
+  TimesheetApprove: "TIMESHEET_APPROVE",
+  LeaveDecision: "LEAVE_DECISION",
+  WfhDecision: "WFH_DECISION"
 } as const;
 
 export type WorkflowAction = (typeof WorkflowActions)[keyof typeof WorkflowActions];
@@ -201,6 +203,31 @@ export const AttendanceRegularizationStatuses = {
 export type AttendanceRegularizationStatus =
   (typeof AttendanceRegularizationStatuses)[keyof typeof AttendanceRegularizationStatuses];
 
+export const LeaveTypes = {
+  Casual: "casual",
+  Sick: "sick",
+  Earned: "earned",
+  Unpaid: "unpaid",
+  CompOff: "comp_off"
+} as const;
+
+export type LeaveType = (typeof LeaveTypes)[keyof typeof LeaveTypes];
+
+export const LeaveRequestStatuses = {
+  PendingManager: "pending_manager",
+  Approved: "approved",
+  Returned: "returned",
+  Rejected: "rejected",
+  Cancelled: "cancelled"
+} as const;
+
+export type LeaveRequestStatus =
+  (typeof LeaveRequestStatuses)[keyof typeof LeaveRequestStatuses];
+
+export const WfhRequestStatuses = LeaveRequestStatuses;
+
+export type WfhRequestStatus = LeaveRequestStatus;
+
 export const ErrorCodes = {
   BadRequest: "BAD_REQUEST",
   Unauthorized: "UNAUTHORIZED",
@@ -236,5 +263,7 @@ export const RetryableMutationScopes = {
   DocumentUpload: "document-upload",
   AssetAssignment: "asset-assignment",
   TimesheetApproval: "timesheet-approval",
-  AttendanceRegularizationDecision: "attendance-regularization-decision"
+  AttendanceRegularizationDecision: "attendance-regularization-decision",
+  LeaveDecision: "leave-decision",
+  WfhDecision: "wfh-decision"
 } as const;

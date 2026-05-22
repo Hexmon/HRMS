@@ -26,6 +26,7 @@ import reportsModule from "./modules/reports/index.js";
 import assetsModule from "./modules/assets/index.js";
 import timesheetsModule from "./modules/timesheets/index.js";
 import attendanceModule from "./modules/attendance/index.js";
+import leaveWfhModule from "./modules/leave-wfh/index.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -104,6 +105,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(assetsModule);
   await app.register(timesheetsModule);
   await app.register(attendanceModule);
+  await app.register(leaveWfhModule);
 
   app.get("/api/v1/openapi.json", async () => app.swagger());
 

@@ -90,7 +90,10 @@ export interface CoreUserDetail extends CoreUserListItem {
     status: "not_available";
   };
   leave_summary: {
-    status: "not_available";
+    pending_leave: number;
+    approved_leave_ytd: number;
+    pending_wfh: number;
+    approved_wfh_ytd: number;
   };
   timesheet_summary: {
     total_submissions: number;
@@ -675,7 +678,12 @@ export class CoreService {
         recovery_pending: recoveryTickets.length
       },
       attendance_summary: { status: "not_available" },
-      leave_summary: { status: "not_available" },
+      leave_summary: {
+        pending_leave: this.store.leaveRequests.filter((request) => request.employee_user_id === user.id && request.status === "pending_manager" && !request.deleted_at).length,
+        approved_leave_ytd: this.store.leaveRequests.filter((request) => request.employee_user_id === user.id && request.status === "approved" && request.date_from.startsWith(new Date().getUTCFullYear().toString()) && !request.deleted_at).length,
+        pending_wfh: this.store.wfhRequests.filter((request) => request.employee_user_id === user.id && request.status === "pending_manager" && !request.deleted_at).length,
+        approved_wfh_ytd: this.store.wfhRequests.filter((request) => request.employee_user_id === user.id && request.status === "approved" && request.date_from.startsWith(new Date().getUTCFullYear().toString()) && !request.deleted_at).length
+      },
       timesheet_summary: {
         total_submissions: submissions.length,
         pending_approval: submissions.filter((submission) => submission.status === "Pending Approval").length,

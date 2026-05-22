@@ -17,10 +17,13 @@ import type {
   FinanceGovernanceConfig,
   ExpenseSubType,
   ExpenseTicket,
+  Holiday,
+  LeaveRequest,
   ManagerBackupAssignment,
   OutboxEvent,
   TimesheetSubmission,
-  UUID
+  UUID,
+  WfhRequest
 } from "#shared";
 import {
   AssetStatuses,
@@ -264,6 +267,9 @@ export interface DataStore {
   attendancePunches: AttendancePunch[];
   attendanceDayRecords: AttendanceDayRecord[];
   attendanceRegularizations: AttendanceRegularizationRequest[];
+  leaveRequests: LeaveRequest[];
+  wfhRequests: WfhRequest[];
+  holidays: Holiday[];
   processedEvents: Set<string>;
   sessionStore: SessionStore;
   objectStorage: ObjectStoragePort | null;
@@ -654,6 +660,54 @@ export function createMemoryDataStore(): MemoryDataStore {
     attendancePunches: [],
     attendanceDayRecords: [],
     attendanceRegularizations: [],
+    leaveRequests: [],
+    wfhRequests: [],
+    holidays: [
+      {
+        id: uuidFromName("holiday-2026-republic-day"),
+        name: "Republic Day",
+        holiday_date: "2026-01-26",
+        region: "All",
+        optional: false,
+        version: 1,
+        created_at: created,
+        updated_at: created,
+        deleted_at: null
+      },
+      {
+        id: uuidFromName("holiday-2026-holi"),
+        name: "Holi",
+        holiday_date: "2026-03-04",
+        region: "All",
+        optional: false,
+        version: 1,
+        created_at: created,
+        updated_at: created,
+        deleted_at: null
+      },
+      {
+        id: uuidFromName("holiday-2026-independence-day"),
+        name: "Independence Day",
+        holiday_date: "2026-08-15",
+        region: "All",
+        optional: false,
+        version: 1,
+        created_at: created,
+        updated_at: created,
+        deleted_at: null
+      },
+      {
+        id: uuidFromName("holiday-2026-diwali"),
+        name: "Diwali",
+        holiday_date: "2026-11-08",
+        region: "All",
+        optional: false,
+        version: 1,
+        created_at: created,
+        updated_at: created,
+        deleted_at: null
+      }
+    ],
     processedEvents: new Set<string>(),
     sessionStore: new MemorySessionStore(),
     objectStorage: null,

@@ -1,0 +1,631 @@
+import type {
+  AuthUser,
+  CoreUser,
+  Holiday,
+  HolidayUpsertInput,
+  LeaveRequest,
+  LeaveRequestCreateInput,
+  LeaveRequestStatus,
+  LeaveType,
+  LeaveWfhCancelInput,
+  LeaveWfhDecisionInput,
+  UUID,
+  WfhRequest,
+  WfhRequestCreateInput
+} from "#shared";
+import {
+  AttendanceDayStatuses,
+  EmploymentStatuses,
+  LeaveRequestStatuses,
+  LeaveTypes,
+  Roles,
+  WorkflowActions
+} from "#shared";
+import type { MemoryDataStore } from "../../platform/data-store.js";
+import { nowIso } from "../../platform/data-store.js";
+import { badRequest, conflict, missingRemarks, notFound } from "../../platform/errors.js";
+import { AttendanceRepository } from "../attendance/repository.js";
+import { CoreService } from "../core/service.js";
+import { appendLeaveWfhOutboxEvent, leaveWfhEvents } from "./events.js";
+import {
+  assertCanDecideLeaveWfh,
+  assertCanMutateHolidays,
+  assertCanSeeLeaveWfhUser,
+  canDecideAcrossLeaveWfh,
+  canMonitorLeaveWfh,
+  canSeeLeaveWfhUser
+} from "./policy.js";
+import { LeaveWfhRepository } from "./repository.js";
+
+export interface LeaveWfhQuery {
+  page: number;
+  page_size: number;
+  sort?: string;
+  year?: number;
+  leave_type?: LeaveType;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+  user_id?: UUID;
+  department_id?: UUID;
+  request_kind?: "leave" | "wfh";
+}
+
+const ENTITLEMENTS: Record<LeaveType, number> = {
+  [LeaveTypes.Casual]: 12,
+  [LeaveTypes.Sick]: 8,
+  [LeaveTypes.Earned]: 18,
+  [LeaveTypes.Unpaid]: 0,
+  [LeaveTypes.CompOff]: 5
+};
+
+const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
+  [LeaveTypes.Casual]: "Casual Leave",
+  [LeaveTypes.Sick]: "Sick Leave",
+  [LeaveTypes.Earned]: "Earned Leave",
+  [LeaveTypes.Unpaid]: "Unpaid Leave",
+  [LeaveTypes.CompOff]: "Comp Off"
+};
+
+function page<T>(items: T[], pageNumber: number, pageSize: number) {
+  const start = (pageNumber - 1) * pageSize;
+  return { items: items.slice(start, start + pageSize), page: pageNumber, page_size: pageSize, total: items.length };
+}
+
+function currentYear(): number {
+  return new Date().getUTCFullYear();
+}
+
+function dateRangeForYear(year: number): { from: string; to: string } {
+  return { from: `${year}-01-01`, to: `${year}-12-31` };
+}
+
+function datesInclusive(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const cursor = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  while (cursor <= end) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function durationDays(dateFrom: string, dateTo: string, halfDay: boolean): number {
+  if (dateTo < dateFrom) {
+    throw badRequest("End date cannot be before start date.");
+  }
+  if (halfDay && dateFrom !== dateTo) {
+    throw badRequest("Half-day leave or WFH can only be requested for a single date.");
+  }
+  if (halfDay) {
+    return 0.5;
+  }
+  const start = Date.parse(`${dateFrom}T00:00:00.000Z`);
+  const end = Date.parse(`${dateTo}T00:00:00.000Z`);
+  return Math.round((end - start) / 86_400_000) + 1;
+}
+
+function rangesOverlap(leftFrom: string, leftTo: string, rightFrom: string, rightTo: string): boolean {
+  return leftFrom <= rightTo && rightFrom <= leftTo;
+}
+
+function userLabel(user: CoreUser | undefined) {
+  return {
+    id: user?.id ?? null,
+    employee_code: user?.employee_code ?? "UNKNOWN",
+    full_name: user?.full_name ?? "Unknown employee",
+    department_id: user?.department_id ?? null
+  };
+}
+
+export class LeaveWfhService {
+  private readonly repository: LeaveWfhRepository;
+  private readonly attendance: AttendanceRepository;
+  private readonly core: CoreService;
+
+  constructor(private readonly store: MemoryDataStore) {
+    this.repository = new LeaveWfhRepository(store);
+    this.attendance = new AttendanceRepository(store);
+    this.core = new CoreService(store);
+  }
+
+  myLeaveBalances(actor: AuthUser, query: LeaveWfhQuery) {
+    return this.leaveBalancesForUser(actor, actor.id, query);
+  }
+
+  leaveBalancesForUser(actor: AuthUser, userId: UUID, query: LeaveWfhQuery) {
+    const user = this.requireUser(userId);
+    assertCanSeeLeaveWfhUser(actor, user);
+    const year = query.year ?? currentYear();
+    const range = dateRangeForYear(year);
+    const leaveRequests = this.repository.listLeaveRequests({
+      userIds: new Set([user.id]),
+      dateFrom: range.from,
+      dateTo: range.to
+    });
+    const wfhRequests = this.repository.listWfhRequests({
+      userIds: new Set([user.id]),
+      dateFrom: range.from,
+      dateTo: range.to
+    });
+    const balances = Object.values(LeaveTypes)
+      .filter((leaveType) => !query.leave_type || query.leave_type === leaveType)
+      .map((leaveType) => {
+        const total = ENTITLEMENTS[leaveType];
+        const used = sumDuration(leaveRequests.filter((request) => request.leave_type === leaveType && request.status === LeaveRequestStatuses.Approved));
+        const pending = sumDuration(leaveRequests.filter((request) => request.leave_type === leaveType && request.status === LeaveRequestStatuses.PendingManager));
+        return {
+          leave_type: leaveType,
+          label: LEAVE_TYPE_LABELS[leaveType],
+          total,
+          used,
+          pending,
+          available: leaveType === LeaveTypes.Unpaid ? null : Math.max(0, total - used - pending)
+        };
+      });
+    return {
+      generated_at: nowIso(),
+      year,
+      user: userLabel(user),
+      balances,
+      accruals: [],
+      pending_requests_summary: {
+        leave: leaveRequests.filter((request) => request.status === LeaveRequestStatuses.PendingManager).length,
+        wfh: wfhRequests.filter((request) => request.status === LeaveRequestStatuses.PendingManager).length
+      }
+    };
+  }
+
+  createLeaveRequest(actor: AuthUser, input: LeaveRequestCreateInput) {
+    this.requireActiveEmployee(actor.id);
+    const duration = durationDays(input.date_from, input.date_to, input.half_day);
+    this.assertNoOverlap(actor.id, input.date_from, input.date_to);
+    this.assertLeaveBalanceAvailable(actor, input.leave_type, duration, input.date_from);
+    const approver = this.core.resolveImmediateManager(actor.id) ?? this.adminFallback();
+    const request = this.repository.addLeaveRequest({
+      request_code: this.repository.nextRequestCode("LV"),
+      employee_user_id: actor.id,
+      leave_type: input.leave_type,
+      date_from: input.date_from,
+      date_to: input.date_to,
+      half_day: input.half_day,
+      duration,
+      reason: input.reason.trim(),
+      document_ids: input.document_ids,
+      status: LeaveRequestStatuses.PendingManager,
+      current_approver_user_id: approver?.id ?? null
+    });
+    appendLeaveWfhOutboxEvent(this.store, {
+      aggregateType: "leave_request",
+      aggregateId: request.id,
+      eventType: leaveWfhEvents.LeaveSubmitted,
+      payload: { request_id: request.id, request_code: request.request_code, employee_user_id: actor.id, approver_user_id: request.current_approver_user_id },
+      idempotencyKey: `leave.submitted:${request.id}`
+    });
+    return {
+      request_id: request.id,
+      request: this.presentLeaveRequest(request),
+      status: request.status,
+      balance_preview: this.leaveBalancesForUser(actor, actor.id, { page: 1, page_size: 25, year: Number(input.date_from.slice(0, 4)), leave_type: input.leave_type }).balances[0],
+      version: request.version
+    };
+  }
+
+  listMyLeaveRequests(actor: AuthUser, query: LeaveWfhQuery) {
+    const requests = this.repository.listLeaveRequests({
+      userIds: new Set([actor.id]),
+      status: query.status,
+      dateFrom: query.date_from,
+      dateTo: query.date_to
+    });
+    return page(requests.map((request) => this.presentLeaveRequest(request)), query.page, query.page_size);
+  }
+
+  managerLeaveQueue(actor: AuthUser, query: LeaveWfhQuery) {
+    const requests = this.repository
+      .listLeaveRequests({
+        status: query.status ?? LeaveRequestStatuses.PendingManager,
+        dateFrom: query.date_from,
+        dateTo: query.date_to
+      })
+      .filter((request) => this.isQueueVisible(actor, request, query));
+    return {
+      ...page(requests.map((request) => this.presentLeaveRequest(request, actor)), query.page, query.page_size),
+      queue_counts: this.queueCounts(requests)
+    };
+  }
+
+  decideLeaveRequest(actor: AuthUser, id: UUID, input: LeaveWfhDecisionInput) {
+    const current = this.repository.findLeaveRequest(id);
+    if (current.version !== input.expected_version) {
+      throw conflict("Leave request was modified by another actor.", { aggregate: "leave_request", id });
+    }
+    assertCanDecideLeaveWfh(actor, current, WorkflowActions.LeaveDecision);
+    if (["reject", "return"].includes(input.decision) && !input.remarks?.trim()) {
+      throw missingRemarks(input.decision);
+    }
+    if (current.status !== LeaveRequestStatuses.PendingManager) {
+      throw conflict("Only pending leave requests can be decided.", { request_id: id, status: current.status });
+    }
+    const previousStatus = current.status;
+    const nextStatus = decisionStatus(input.decision);
+    const request = this.repository.updateLeaveRequestVersioned(id, input.expected_version, (candidate) => {
+      candidate.status = nextStatus;
+      candidate.current_approver_user_id = null;
+      candidate.decision_remarks = input.remarks?.trim() ?? null;
+      candidate.decided_by_user_id = actor.id;
+      candidate.decided_at = nowIso();
+    });
+    if (nextStatus === LeaveRequestStatuses.Approved) {
+      this.applyAttendanceStatus(request.employee_user_id, request.date_from, request.date_to, AttendanceDayStatuses.Leave, "Approved leave");
+    }
+    appendLeaveWfhOutboxEvent(this.store, {
+      aggregateType: "leave_request",
+      aggregateId: request.id,
+      eventType: eventForLeaveDecision(input.decision),
+      payload: { request_id: request.id, actor_user_id: actor.id, previous_status: previousStatus, next_status: nextStatus, version: request.version },
+      idempotencyKey: `leave.${input.decision}:${request.id}:${request.version}`
+    });
+    return {
+      ...this.presentLeaveRequest(request, actor),
+      previous_status: previousStatus,
+      next_status: nextStatus,
+      balance_effect: this.leaveBalancesForUser(actor, request.employee_user_id, { page: 1, page_size: 25, year: Number(request.date_from.slice(0, 4)), leave_type: request.leave_type }).balances[0]
+    };
+  }
+
+  cancelLeaveRequest(actor: AuthUser, id: UUID, input: LeaveWfhCancelInput) {
+    const current = this.repository.findLeaveRequest(id);
+    if (current.employee_user_id !== actor.id && !canDecideAcrossLeaveWfh(actor)) {
+      throw conflict("Only the requester, HR, or Admin can cancel this leave request.", { request_id: id });
+    }
+    if (!new Set<string>([LeaveRequestStatuses.PendingManager, LeaveRequestStatuses.Returned]).has(current.status)) {
+      throw conflict("Only pending or returned leave requests can be cancelled.", { request_id: id, status: current.status });
+    }
+    const previousStatus = current.status;
+    const request = this.repository.updateLeaveRequestVersioned(id, input.expected_version, (candidate) => {
+      candidate.status = LeaveRequestStatuses.Cancelled;
+      candidate.current_approver_user_id = null;
+      candidate.decision_remarks = input.remarks?.trim() ?? candidate.decision_remarks;
+      candidate.cancelled_at = nowIso();
+    });
+    appendLeaveWfhOutboxEvent(this.store, {
+      aggregateType: "leave_request",
+      aggregateId: request.id,
+      eventType: leaveWfhEvents.LeaveCancelled,
+      payload: { request_id: request.id, actor_user_id: actor.id, previous_status: previousStatus, next_status: request.status },
+      idempotencyKey: `leave.cancelled:${request.id}:${request.version}`
+    });
+    return { ...this.presentLeaveRequest(request, actor), previous_status: previousStatus, next_status: request.status };
+  }
+
+  createWfhRequest(actor: AuthUser, input: WfhRequestCreateInput) {
+    this.requireActiveEmployee(actor.id);
+    const duration = durationDays(input.date_from, input.date_to, input.half_day);
+    this.assertNoOverlap(actor.id, input.date_from, input.date_to);
+    const approver = this.core.resolveImmediateManager(actor.id) ?? this.adminFallback();
+    const request = this.repository.addWfhRequest({
+      request_code: this.repository.nextRequestCode("WFH"),
+      employee_user_id: actor.id,
+      date_from: input.date_from,
+      date_to: input.date_to,
+      half_day: input.half_day,
+      duration,
+      reason: input.reason.trim(),
+      project_ref: input.project_ref?.trim() || null,
+      status: LeaveRequestStatuses.PendingManager,
+      current_approver_user_id: approver?.id ?? null
+    });
+    appendLeaveWfhOutboxEvent(this.store, {
+      aggregateType: "wfh_request",
+      aggregateId: request.id,
+      eventType: leaveWfhEvents.WfhSubmitted,
+      payload: { request_id: request.id, request_code: request.request_code, employee_user_id: actor.id, approver_user_id: request.current_approver_user_id },
+      idempotencyKey: `wfh.submitted:${request.id}`
+    });
+    return { request_id: request.id, request: this.presentWfhRequest(request), status: request.status, version: request.version };
+  }
+
+  listMyWfhRequests(actor: AuthUser, query: LeaveWfhQuery) {
+    const requests = this.repository.listWfhRequests({
+      userIds: new Set([actor.id]),
+      status: query.status,
+      dateFrom: query.date_from,
+      dateTo: query.date_to
+    });
+    return page(requests.map((request) => this.presentWfhRequest(request)), query.page, query.page_size);
+  }
+
+  managerWfhQueue(actor: AuthUser, query: LeaveWfhQuery) {
+    const requests = this.repository
+      .listWfhRequests({
+        status: query.status ?? LeaveRequestStatuses.PendingManager,
+        dateFrom: query.date_from,
+        dateTo: query.date_to
+      })
+      .filter((request) => this.isQueueVisible(actor, request, query));
+    return {
+      ...page(requests.map((request) => this.presentWfhRequest(request, actor)), query.page, query.page_size),
+      queue_counts: this.queueCounts(requests)
+    };
+  }
+
+  decideWfhRequest(actor: AuthUser, id: UUID, input: LeaveWfhDecisionInput) {
+    const current = this.repository.findWfhRequest(id);
+    if (current.version !== input.expected_version) {
+      throw conflict("WFH request was modified by another actor.", { aggregate: "wfh_request", id });
+    }
+    assertCanDecideLeaveWfh(actor, current, WorkflowActions.WfhDecision);
+    if (["reject", "return"].includes(input.decision) && !input.remarks?.trim()) {
+      throw missingRemarks(input.decision);
+    }
+    if (current.status !== LeaveRequestStatuses.PendingManager) {
+      throw conflict("Only pending WFH requests can be decided.", { request_id: id, status: current.status });
+    }
+    const previousStatus = current.status;
+    const nextStatus = decisionStatus(input.decision);
+    const request = this.repository.updateWfhRequestVersioned(id, input.expected_version, (candidate) => {
+      candidate.status = nextStatus;
+      candidate.current_approver_user_id = null;
+      candidate.decision_remarks = input.remarks?.trim() ?? null;
+      candidate.decided_by_user_id = actor.id;
+      candidate.decided_at = nowIso();
+    });
+    if (nextStatus === LeaveRequestStatuses.Approved) {
+      this.applyAttendanceStatus(request.employee_user_id, request.date_from, request.date_to, AttendanceDayStatuses.Wfh, "Approved WFH", "wfh");
+    }
+    appendLeaveWfhOutboxEvent(this.store, {
+      aggregateType: "wfh_request",
+      aggregateId: request.id,
+      eventType: eventForWfhDecision(input.decision),
+      payload: { request_id: request.id, actor_user_id: actor.id, previous_status: previousStatus, next_status: nextStatus, version: request.version },
+      idempotencyKey: `wfh.${input.decision}:${request.id}:${request.version}`
+    });
+    return { ...this.presentWfhRequest(request, actor), previous_status: previousStatus, next_status: nextStatus };
+  }
+
+  hrMonitor(actor: AuthUser, query: LeaveWfhQuery) {
+    if (!canMonitorLeaveWfh(actor)) {
+      throw badRequest("Only HR, Admin, or Auditor users can access the Leave/WFH monitor.");
+    }
+    const userIds = this.visibleUserIds(actor, query);
+    const leaveItems = query.request_kind === "wfh"
+      ? []
+      : this.repository
+        .listLeaveRequests({ userIds, status: query.status, dateFrom: query.date_from, dateTo: query.date_to })
+        .map((request) => this.presentLeaveRequest(request, actor));
+    const wfhItems = query.request_kind === "leave"
+      ? []
+      : this.repository
+        .listWfhRequests({ userIds, status: query.status, dateFrom: query.date_from, dateTo: query.date_to })
+        .map((request) => this.presentWfhRequest(request, actor));
+    const items = [...leaveItems, ...wfhItems].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    return {
+      ...page(items, query.page, query.page_size),
+      totals: {
+        leave: leaveItems.length,
+        wfh: wfhItems.length,
+        pending: items.filter((item) => item.status === LeaveRequestStatuses.PendingManager).length,
+        approved: items.filter((item) => item.status === LeaveRequestStatuses.Approved).length,
+        rejected: items.filter((item) => item.status === LeaveRequestStatuses.Rejected).length,
+        returned: items.filter((item) => item.status === LeaveRequestStatuses.Returned).length,
+        cancelled: items.filter((item) => item.status === LeaveRequestStatuses.Cancelled).length
+      }
+    };
+  }
+
+  listHolidays(_actor: AuthUser, query: LeaveWfhQuery) {
+    const year = query.year ?? currentYear();
+    const holidays = this.repository.listHolidays(year).map((holiday) => this.presentHoliday(holiday));
+    return {
+      holidays,
+      calendar_metadata: {
+        year,
+        total: holidays.length,
+        optional: holidays.filter((holiday) => holiday.optional).length
+      }
+    };
+  }
+
+  upsertHoliday(actor: AuthUser, id: UUID, input: HolidayUpsertInput) {
+    assertCanMutateHolidays(actor);
+    const holiday = this.repository.upsertHoliday(id, {
+      name: input.name.trim(),
+      holiday_date: input.date,
+      region: input.region.trim(),
+      optional: input.optional,
+      expected_version: input.expected_version
+    });
+    appendLeaveWfhOutboxEvent(this.store, {
+      aggregateType: "holiday",
+      aggregateId: holiday.id,
+      eventType: leaveWfhEvents.HolidayUpserted,
+      payload: { holiday_id: holiday.id, actor_user_id: actor.id, date: holiday.holiday_date, region: holiday.region },
+      idempotencyKey: `holiday.upserted:${holiday.id}:${holiday.version}`
+    });
+    return { holiday: this.presentHoliday(holiday), version: holiday.version };
+  }
+
+  private assertNoOverlap(userId: UUID, dateFrom: string, dateTo: string): void {
+    const duplicate = this.repository.activeRequestsForUser(userId, dateFrom, dateTo)[0];
+    if (duplicate) {
+      throw conflict("An active Leave/WFH request already overlaps this date range.", {
+        request_id: duplicate.id,
+        date_from: duplicate.date_from,
+        date_to: duplicate.date_to,
+        status: duplicate.status
+      });
+    }
+  }
+
+  private assertLeaveBalanceAvailable(actor: AuthUser, leaveType: LeaveType, duration: number, startDate: string): void {
+    if (leaveType === LeaveTypes.Unpaid) {
+      return;
+    }
+    const balance = this.leaveBalancesForUser(actor, actor.id, { page: 1, page_size: 25, year: Number(startDate.slice(0, 4)), leave_type: leaveType }).balances[0];
+    if (!balance) {
+      return;
+    }
+    if (typeof balance.available === "number" && duration > balance.available) {
+      throw conflict("Insufficient leave balance for this request.", {
+        leave_type: leaveType,
+        requested_duration: duration,
+        available: balance.available
+      });
+    }
+  }
+
+  private isQueueVisible(actor: AuthUser, request: LeaveRequest | WfhRequest, query: LeaveWfhQuery): boolean {
+    const user = this.requireUser(request.employee_user_id);
+    if (query.user_id && request.employee_user_id !== query.user_id) {
+      return false;
+    }
+    if (query.department_id && user.department_id !== query.department_id) {
+      return false;
+    }
+    return canDecideAcrossLeaveWfh(actor) || request.current_approver_user_id === actor.id;
+  }
+
+  private visibleUserIds(actor: AuthUser, query: LeaveWfhQuery): Set<UUID> {
+    const users = this.store.users.filter((user) => {
+      if (user.deleted_at || !canSeeLeaveWfhUser(actor, user)) {
+        return false;
+      }
+      if (query.user_id && user.id !== query.user_id) {
+        return false;
+      }
+      if (query.department_id && user.department_id !== query.department_id) {
+        return false;
+      }
+      return true;
+    });
+    return new Set(users.map((user) => user.id));
+  }
+
+  private queueCounts(requests: Array<LeaveRequest | WfhRequest>) {
+    return {
+      pending_manager: requests.filter((request) => request.status === LeaveRequestStatuses.PendingManager).length,
+      approved: requests.filter((request) => request.status === LeaveRequestStatuses.Approved).length,
+      rejected: requests.filter((request) => request.status === LeaveRequestStatuses.Rejected).length,
+      returned: requests.filter((request) => request.status === LeaveRequestStatuses.Returned).length
+    };
+  }
+
+  private applyAttendanceStatus(
+    employeeUserId: UUID,
+    dateFrom: string,
+    dateTo: string,
+    status: typeof AttendanceDayStatuses.Leave | typeof AttendanceDayStatuses.Wfh,
+    note: string,
+    workMode: "wfh" | null = null
+  ): void {
+    for (const workDate of datesInclusive(dateFrom, dateTo)) {
+      this.attendance.upsertDayRecord({
+        employee_user_id: employeeUserId,
+        work_date: workDate,
+        status,
+        first_check_in: null,
+        last_check_out: null,
+        work_minutes: 0,
+        break_minutes: 0,
+        late_minutes: 0,
+        early_out_minutes: 0,
+        work_mode: workMode,
+        note,
+        exception_type: null,
+        regularization_status: null
+      });
+    }
+  }
+
+  private requireUser(userId: UUID): CoreUser {
+    const user = this.store.users.find((candidate) => candidate.id === userId && !candidate.deleted_at);
+    if (!user) {
+      throw notFound("User not found", { id: userId });
+    }
+    return user;
+  }
+
+  private requireActiveEmployee(userId: UUID): CoreUser {
+    const user = this.requireUser(userId);
+    if (user.employment_status !== EmploymentStatuses.Active) {
+      throw badRequest("Inactive or soft-deleted users cannot submit Leave/WFH requests.");
+    }
+    return user;
+  }
+
+  private adminFallback(): CoreUser | null {
+    return this.store.users.find((user) => user.roles.includes(Roles.Admin) && user.employment_status === EmploymentStatuses.Active && !user.deleted_at) ?? null;
+  }
+
+  private presentLeaveRequest(request: LeaveRequest, actor?: AuthUser) {
+    const user = this.store.users.find((candidate) => candidate.id === request.employee_user_id);
+    const approver = request.current_approver_user_id
+      ? this.store.users.find((candidate) => candidate.id === request.current_approver_user_id)
+      : undefined;
+    return {
+      ...request,
+      kind: "leave",
+      leave_type_label: LEAVE_TYPE_LABELS[request.leave_type],
+      employee: userLabel(user),
+      approver: approver ? userLabel(approver) : null,
+      can_decide: actor ? request.status === LeaveRequestStatuses.PendingManager && actor.id !== request.employee_user_id && (canDecideAcrossLeaveWfh(actor) || request.current_approver_user_id === actor.id) : false
+    };
+  }
+
+  private presentWfhRequest(request: WfhRequest, actor?: AuthUser) {
+    const user = this.store.users.find((candidate) => candidate.id === request.employee_user_id);
+    const approver = request.current_approver_user_id
+      ? this.store.users.find((candidate) => candidate.id === request.current_approver_user_id)
+      : undefined;
+    return {
+      ...request,
+      kind: "wfh",
+      employee: userLabel(user),
+      approver: approver ? userLabel(approver) : null,
+      can_decide: actor ? request.status === LeaveRequestStatuses.PendingManager && actor.id !== request.employee_user_id && (canDecideAcrossLeaveWfh(actor) || request.current_approver_user_id === actor.id) : false
+    };
+  }
+
+  private presentHoliday(holiday: Holiday) {
+    return {
+      ...holiday,
+      date: holiday.holiday_date
+    };
+  }
+}
+
+function sumDuration(requests: LeaveRequest[]): number {
+  return requests.reduce((sum, request) => sum + request.duration, 0);
+}
+
+function decisionStatus(decision: LeaveWfhDecisionInput["decision"]): LeaveRequestStatus {
+  if (decision === "approve") {
+    return LeaveRequestStatuses.Approved;
+  }
+  if (decision === "reject") {
+    return LeaveRequestStatuses.Rejected;
+  }
+  return LeaveRequestStatuses.Returned;
+}
+
+function eventForLeaveDecision(decision: LeaveWfhDecisionInput["decision"]) {
+  if (decision === "approve") {
+    return leaveWfhEvents.LeaveApproved;
+  }
+  if (decision === "reject") {
+    return leaveWfhEvents.LeaveRejected;
+  }
+  return leaveWfhEvents.LeaveReturned;
+}
+
+function eventForWfhDecision(decision: LeaveWfhDecisionInput["decision"]) {
+  if (decision === "approve") {
+    return leaveWfhEvents.WfhApproved;
+  }
+  if (decision === "reject") {
+    return leaveWfhEvents.WfhRejected;
+  }
+  return leaveWfhEvents.WfhReturned;
+}

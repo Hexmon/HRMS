@@ -7,6 +7,8 @@ import {
   ExpenseStatuses,
   ExpenseSubTypes,
   ExpenseTypes,
+  LeaveRequestStatuses,
+  LeaveTypes,
   PaymentTypes,
   TimesheetStatuses
 } from "./constants.js";
@@ -212,6 +214,58 @@ export const attendanceRegularizationDecisionSchema = z.object({
   expected_version: z.number().int().min(1)
 });
 
+export const leaveRequestCreateSchema = z.object({
+  leave_type: z.enum([
+    LeaveTypes.Casual,
+    LeaveTypes.Sick,
+    LeaveTypes.Earned,
+    LeaveTypes.Unpaid,
+    LeaveTypes.CompOff
+  ]),
+  date_from: isoDateSchema,
+  date_to: isoDateSchema,
+  half_day: z.boolean().default(false),
+  reason: z.string().min(3).max(1000),
+  document_ids: z.array(uuidSchema).default([])
+});
+
+export type LeaveRequestCreateInput = z.infer<typeof leaveRequestCreateSchema>;
+
+export const wfhRequestCreateSchema = z.object({
+  date_from: isoDateSchema,
+  date_to: isoDateSchema,
+  half_day: z.boolean().default(false),
+  reason: z.string().min(3).max(1000),
+  project_ref: z.string().trim().max(120).optional()
+});
+
+export type WfhRequestCreateInput = z.infer<typeof wfhRequestCreateSchema>;
+
+export const leaveWfhDecisionSchema = z.object({
+  decision: z.enum(["approve", "reject", "return"]),
+  remarks: z.string().optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type LeaveWfhDecisionInput = z.infer<typeof leaveWfhDecisionSchema>;
+
+export const leaveWfhCancelSchema = z.object({
+  remarks: z.string().max(1000).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type LeaveWfhCancelInput = z.infer<typeof leaveWfhCancelSchema>;
+
+export const holidayUpsertSchema = z.object({
+  name: z.string().min(2).max(160),
+  date: isoDateSchema,
+  region: z.string().trim().min(1).max(80).default("All"),
+  optional: z.boolean().default(false),
+  expected_version: z.number().int().min(1).optional()
+});
+
+export type HolidayUpsertInput = z.infer<typeof holidayUpsertSchema>;
+
 export const workflowDefinitionSchema = z.object({
   name: z.string().min(1),
   definition: z.object({
@@ -255,5 +309,12 @@ export const statusContractSchemas = {
     TimesheetStatuses.Approved,
     TimesheetStatuses.Returned,
     TimesheetStatuses.Rejected
+  ]),
+  leave: z.enum([
+    LeaveRequestStatuses.PendingManager,
+    LeaveRequestStatuses.Approved,
+    LeaveRequestStatuses.Returned,
+    LeaveRequestStatuses.Rejected,
+    LeaveRequestStatuses.Cancelled
   ])
 };

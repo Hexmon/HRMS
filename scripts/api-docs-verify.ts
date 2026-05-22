@@ -36,6 +36,7 @@ const allowedTags = new Set([
   "Assets",
   "Timesheets",
   "Attendance",
+  "Leave / WFH / Holidays",
   "Reports & Analytics",
   "Notifications",
   "Outbox / Platform Events",
@@ -90,7 +91,13 @@ const bodyRequiredOperations = new Set([
   "POST /api/v1/timesheets/workflow-definitions",
   "POST /api/v1/attendance/punches",
   "POST /api/v1/attendance/regularizations",
-  "POST /api/v1/attendance/regularizations/{id}/decision"
+  "POST /api/v1/attendance/regularizations/{id}/decision",
+  "POST /api/v1/leave/requests",
+  "POST /api/v1/leave/requests/{id}/decision",
+  "POST /api/v1/leave/requests/{id}/cancel",
+  "POST /api/v1/wfh/requests",
+  "POST /api/v1/wfh/requests/{id}/decision",
+  "PUT /api/v1/holidays/{id}"
 ]);
 
 const occOperations = new Set([
@@ -104,7 +111,11 @@ const occOperations = new Set([
   "POST /api/v1/assets/{id}/assign",
   "POST /api/v1/assets/{id}/return",
   "POST /api/v1/timesheets/submissions/{id}/approve",
-  "POST /api/v1/attendance/regularizations/{id}/decision"
+  "POST /api/v1/attendance/regularizations/{id}/decision",
+  "POST /api/v1/leave/requests/{id}/decision",
+  "POST /api/v1/leave/requests/{id}/cancel",
+  "POST /api/v1/wfh/requests/{id}/decision",
+  "PUT /api/v1/holidays/{id}"
 ]);
 
 const listOperations = new Set([
@@ -134,7 +145,15 @@ const listOperations = new Set([
   "GET /api/v1/attendance/summary/team",
   "GET /api/v1/attendance/calendar/monthly",
   "GET /api/v1/attendance/regularizations/my",
-  "GET /api/v1/attendance/exceptions"
+  "GET /api/v1/attendance/exceptions",
+  "GET /api/v1/leave/balances/my",
+  "GET /api/v1/leave/balances/{user_id}",
+  "GET /api/v1/leave/requests/my",
+  "GET /api/v1/leave/requests/queue/manager",
+  "GET /api/v1/wfh/requests/my",
+  "GET /api/v1/wfh/requests/queue/manager",
+  "GET /api/v1/leave-wfh/hr-monitor",
+  "GET /api/v1/holidays"
 ]);
 
 process.env.HRMS_ALLOW_MEMORY_STORE ??= "true";

@@ -17,9 +17,12 @@ import type {
   ExpensePayment,
   ExpenseTicket,
   FinanceGovernanceConfig,
+  Holiday,
+  LeaveRequest,
   ManagerBackupAssignment,
   OutboxEvent,
-  TimesheetSubmission
+  TimesheetSubmission,
+  WfhRequest
 } from "#shared";
 import {
   type AssetAssignmentRecord,
@@ -54,6 +57,9 @@ export interface PostgresDataStoreOptions {
 }
 
 const resetTables = [
+  "leave_wfh.holidays",
+  "leave_wfh.wfh_requests",
+  "leave_wfh.leave_requests",
   "attendance.regularization_requests",
   "attendance.daily_records",
   "attendance.punch_events",
@@ -161,6 +167,9 @@ function copyData(target: DataStore, source: DataStore): void {
   target.attendancePunches = source.attendancePunches;
   target.attendanceDayRecords = source.attendanceDayRecords;
   target.attendanceRegularizations = source.attendanceRegularizations;
+  target.leaveRequests = source.leaveRequests;
+  target.wfhRequests = source.wfhRequests;
+  target.holidays = source.holidays;
   target.nextTicketNo = source.nextTicketNo;
   target.nextOutboxId = source.nextOutboxId;
 }
@@ -270,6 +279,9 @@ class PostgresPersistence {
       loaded.attendancePunches = await this.loadAttendancePunches(client);
       loaded.attendanceDayRecords = await this.loadAttendanceDayRecords(client);
       loaded.attendanceRegularizations = await this.loadAttendanceRegularizations(client);
+      loaded.leaveRequests = await this.loadLeaveRequests(client);
+      loaded.wfhRequests = await this.loadWfhRequests(client);
+      loaded.holidays = await this.loadHolidays(client);
       loaded.nextOutboxId = Math.max(1, ...loaded.outbox.map((event) => event.id + 1));
       loaded.nextTicketNo = this.nextTicketNumber(loaded.tickets);
       copyData(this.store, loaded);
@@ -289,6 +301,7 @@ class PostgresPersistence {
       await this.flushAssets(client);
       await this.flushTimesheets(client);
       await this.flushAttendance(client);
+      await this.flushLeaveWfh(client);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -874,6 +887,72 @@ class PostgresPersistence {
       decision_remarks: row.decision_remarks,
       decided_by_user_id: row.decided_by_user_id,
       decided_at: asIsoOrNull(row.decided_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadLeaveRequests(client: PoolClient): Promise<LeaveRequest[]> {
+    const { rows } = await client.query("SELECT * FROM leave_wfh.leave_requests ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      request_code: row.request_code,
+      employee_user_id: row.employee_user_id,
+      leave_type: row.leave_type,
+      date_from: asDate(row.date_from),
+      date_to: asDate(row.date_to),
+      half_day: Boolean(row.half_day),
+      duration: Number(row.duration),
+      reason: row.reason,
+      document_ids: Array.isArray(row.document_ids) ? row.document_ids : [],
+      status: row.status,
+      current_approver_user_id: row.current_approver_user_id,
+      decision_remarks: row.decision_remarks,
+      decided_by_user_id: row.decided_by_user_id,
+      decided_at: asIsoOrNull(row.decided_at),
+      cancelled_at: asIsoOrNull(row.cancelled_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadWfhRequests(client: PoolClient): Promise<WfhRequest[]> {
+    const { rows } = await client.query("SELECT * FROM leave_wfh.wfh_requests ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      request_code: row.request_code,
+      employee_user_id: row.employee_user_id,
+      date_from: asDate(row.date_from),
+      date_to: asDate(row.date_to),
+      half_day: Boolean(row.half_day),
+      duration: Number(row.duration),
+      reason: row.reason,
+      project_ref: row.project_ref,
+      status: row.status,
+      current_approver_user_id: row.current_approver_user_id,
+      decision_remarks: row.decision_remarks,
+      decided_by_user_id: row.decided_by_user_id,
+      decided_at: asIsoOrNull(row.decided_at),
+      cancelled_at: asIsoOrNull(row.cancelled_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadHolidays(client: PoolClient): Promise<Holiday[]> {
+    const { rows } = await client.query("SELECT * FROM leave_wfh.holidays ORDER BY holiday_date, name");
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      holiday_date: asDate(row.holiday_date),
+      region: row.region,
+      optional: Boolean(row.optional),
       version: row.version,
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
@@ -1722,6 +1801,136 @@ class PostgresPersistence {
           request.created_at,
           request.updated_at,
           request.deleted_at
+        ]
+      );
+    }
+  }
+
+  private async flushLeaveWfh(client: PoolClient): Promise<void> {
+    for (const request of this.store.leaveRequests) {
+      await client.query(
+        `INSERT INTO leave_wfh.leave_requests (
+          id, request_code, employee_user_id, leave_type, date_from, date_to,
+          half_day, duration, reason, document_ids, status, current_approver_user_id,
+          decision_remarks, decided_by_user_id, decided_at, cancelled_at,
+          version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        ON CONFLICT (id) DO UPDATE
+        SET request_code = EXCLUDED.request_code,
+            leave_type = EXCLUDED.leave_type,
+            date_from = EXCLUDED.date_from,
+            date_to = EXCLUDED.date_to,
+            half_day = EXCLUDED.half_day,
+            duration = EXCLUDED.duration,
+            reason = EXCLUDED.reason,
+            document_ids = EXCLUDED.document_ids,
+            status = EXCLUDED.status,
+            current_approver_user_id = EXCLUDED.current_approver_user_id,
+            decision_remarks = EXCLUDED.decision_remarks,
+            decided_by_user_id = EXCLUDED.decided_by_user_id,
+            decided_at = EXCLUDED.decided_at,
+            cancelled_at = EXCLUDED.cancelled_at,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          request.id,
+          request.request_code,
+          request.employee_user_id,
+          request.leave_type,
+          request.date_from,
+          request.date_to,
+          request.half_day,
+          request.duration,
+          request.reason,
+          JSON.stringify(request.document_ids),
+          request.status,
+          request.current_approver_user_id,
+          request.decision_remarks,
+          request.decided_by_user_id,
+          request.decided_at,
+          request.cancelled_at,
+          request.version,
+          request.created_at,
+          request.updated_at,
+          request.deleted_at
+        ]
+      );
+    }
+    for (const request of this.store.wfhRequests) {
+      await client.query(
+        `INSERT INTO leave_wfh.wfh_requests (
+          id, request_code, employee_user_id, date_from, date_to, half_day,
+          duration, reason, project_ref, status, current_approver_user_id,
+          decision_remarks, decided_by_user_id, decided_at, cancelled_at,
+          version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        ON CONFLICT (id) DO UPDATE
+        SET request_code = EXCLUDED.request_code,
+            date_from = EXCLUDED.date_from,
+            date_to = EXCLUDED.date_to,
+            half_day = EXCLUDED.half_day,
+            duration = EXCLUDED.duration,
+            reason = EXCLUDED.reason,
+            project_ref = EXCLUDED.project_ref,
+            status = EXCLUDED.status,
+            current_approver_user_id = EXCLUDED.current_approver_user_id,
+            decision_remarks = EXCLUDED.decision_remarks,
+            decided_by_user_id = EXCLUDED.decided_by_user_id,
+            decided_at = EXCLUDED.decided_at,
+            cancelled_at = EXCLUDED.cancelled_at,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          request.id,
+          request.request_code,
+          request.employee_user_id,
+          request.date_from,
+          request.date_to,
+          request.half_day,
+          request.duration,
+          request.reason,
+          request.project_ref,
+          request.status,
+          request.current_approver_user_id,
+          request.decision_remarks,
+          request.decided_by_user_id,
+          request.decided_at,
+          request.cancelled_at,
+          request.version,
+          request.created_at,
+          request.updated_at,
+          request.deleted_at
+        ]
+      );
+    }
+    for (const holiday of this.store.holidays) {
+      await client.query(
+        `INSERT INTO leave_wfh.holidays (
+          id, name, holiday_date, region, optional, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (id) DO UPDATE
+        SET name = EXCLUDED.name,
+            holiday_date = EXCLUDED.holiday_date,
+            region = EXCLUDED.region,
+            optional = EXCLUDED.optional,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          holiday.id,
+          holiday.name,
+          holiday.holiday_date,
+          holiday.region,
+          holiday.optional,
+          holiday.version,
+          holiday.created_at,
+          holiday.updated_at,
+          holiday.deleted_at
         ]
       );
     }

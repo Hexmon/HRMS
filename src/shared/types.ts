@@ -8,6 +8,8 @@ import type {
   ExpenseStatus,
   ExpenseSubType,
   ExpenseType,
+  LeaveRequestStatus,
+  LeaveType,
   PaymentType,
   RoleKey,
   TimesheetStatus
@@ -273,6 +275,63 @@ export interface AttendanceRegularizationRequest {
   decision_remarks: string | null;
   decided_by_user_id: UUID | null;
   decided_at: ISODateTime | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface LeaveRequest {
+  id: UUID;
+  request_code: string;
+  employee_user_id: UUID;
+  leave_type: LeaveType;
+  date_from: ISODate;
+  date_to: ISODate;
+  half_day: boolean;
+  duration: number;
+  reason: string;
+  document_ids: UUID[];
+  status: LeaveRequestStatus;
+  current_approver_user_id: UUID | null;
+  decision_remarks: string | null;
+  decided_by_user_id: UUID | null;
+  decided_at: ISODateTime | null;
+  cancelled_at: ISODateTime | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface WfhRequest {
+  id: UUID;
+  request_code: string;
+  employee_user_id: UUID;
+  date_from: ISODate;
+  date_to: ISODate;
+  half_day: boolean;
+  duration: number;
+  reason: string;
+  project_ref: string | null;
+  status: LeaveRequestStatus;
+  current_approver_user_id: UUID | null;
+  decision_remarks: string | null;
+  decided_by_user_id: UUID | null;
+  decided_at: ISODateTime | null;
+  cancelled_at: ISODateTime | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface Holiday {
+  id: UUID;
+  name: string;
+  holiday_date: ISODate;
+  region: string;
+  optional: boolean;
   version: number;
   created_at: ISODateTime;
   updated_at: ISODateTime;

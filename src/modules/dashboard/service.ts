@@ -1,5 +1,5 @@
-import type { AuthUser, CoreUser, ExpenseTicket, TimesheetSubmission, UUID } from "#shared";
-import { AssetStatuses, AttendanceDayStatuses, EmploymentStatuses, ExpenseStatuses, Roles, TimesheetStatuses } from "#shared";
+import type { AuthUser, CoreUser, ExpenseTicket, LeaveRequest, TimesheetSubmission, UUID, WfhRequest } from "#shared";
+import { AssetStatuses, AttendanceDayStatuses, EmploymentStatuses, ExpenseStatuses, LeaveRequestStatuses, Roles, TimesheetStatuses } from "#shared";
 import type { MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 
@@ -15,6 +15,7 @@ export interface DashboardMetric {
     | "assets"
     | "timesheets"
     | "attendance"
+    | "leave_wfh"
     | "notifications"
     | "outbox"
     | "system";
@@ -42,6 +43,8 @@ export interface DashboardSummary {
     expense_finance_pending: number;
     expense_total_pending: number;
     timesheet_pending: number;
+    leave_pending: number;
+    wfh_pending: number;
     document_verification_pending: number;
   };
   operations: {
@@ -82,10 +85,14 @@ export class DashboardService {
     const visibleSubmissions = this.visibleTimesheetSubmissions(actor, visibleUserIds);
     const visibleSegments = this.visibleWorkSegments(actor, visibleUserIds);
     const visibleAttendance = this.visibleAttendanceDays(actor, visibleUserIds);
+    const visibleLeaveRequests = this.visibleLeaveRequests(actor, visibleUserIds);
+    const visibleWfhRequests = this.visibleWfhRequests(actor, visibleUserIds);
     const visibleAssets = this.visibleAssets(actor, visibleUserIds);
     const pendingManagerExpenses = visibleTickets.filter((ticket) => this.isManagerPendingFor(actor, ticket)).length;
     const pendingFinanceExpenses = visibleTickets.filter((ticket) => this.isFinancePendingFor(actor, ticket)).length;
     const pendingTimesheets = visibleSubmissions.filter((submission) => this.isTimesheetPendingFor(actor, submission)).length;
+    const pendingLeaves = visibleLeaveRequests.filter((request) => this.isLeaveWfhPendingFor(actor, request)).length;
+    const pendingWfh = visibleWfhRequests.filter((request) => this.isLeaveWfhPendingFor(actor, request)).length;
     const pendingDocuments = this.pendingDocumentVerificationCount(actor, visibleTickets, visibleUserIds);
     const operations = {
       assets_total: visibleAssets.length,
@@ -118,6 +125,7 @@ export class DashboardService {
         metric("active_employees", "Active employees", activeEmployees, "count", "core"),
         metric("pending_expense_approvals", "Pending expense approvals", expensePending, "count", "expenses"),
         metric("pending_timesheet_approvals", "Pending timesheet approvals", pendingTimesheets, "count", "timesheets"),
+        metric("pending_leave_wfh_approvals", "Pending Leave/WFH approvals", pendingLeaves + pendingWfh, "count", "leave_wfh"),
         metric("attendance_exceptions", "Attendance exceptions", this.attendanceExceptionCount(visibleAttendance), "count", "attendance"),
         metric("assigned_assets", "Assigned assets", operations.assets_assigned, "count", "assets"),
         metric("documents_pending_verification", "Documents pending verification", pendingDocuments, "count", "documents"),
@@ -135,6 +143,8 @@ export class DashboardService {
         expense_finance_pending: pendingFinanceExpenses,
         expense_total_pending: expensePending,
         timesheet_pending: pendingTimesheets,
+        leave_pending: pendingLeaves,
+        wfh_pending: pendingWfh,
         document_verification_pending: pendingDocuments
       },
       operations,
@@ -142,17 +152,12 @@ export class DashboardService {
       attention: [
         metric("pending_expense_approvals", "Expense approvals waiting", expensePending, "count", "expenses"),
         metric("pending_timesheet_approvals", "Timesheets waiting", pendingTimesheets, "count", "timesheets"),
+        metric("pending_leave_wfh_approvals", "Leave/WFH approvals waiting", pendingLeaves + pendingWfh, "count", "leave_wfh"),
         metric("attendance_exceptions", "Attendance exceptions", this.attendanceExceptionCount(visibleAttendance), "count", "attendance"),
         metric("asset_recovery_pending", "Asset recoveries pending", operations.assets_recovery_pending, "count", "assets"),
         metric("outbox_pending", "Integration events pending", operations.outbox_pending, "count", "outbox")
       ].filter((item) => Number(item.value) > 0),
       unavailable_features: [
-        {
-          key: "leave_wfh_holidays",
-          label: "Leave, WFH, and holidays",
-          status: "not_implemented",
-          notes: "Leave/WFH/holiday workflows are scheduled for Phase 3 and are not counted in this dashboard yet."
-        },
         {
           key: "helpdesk",
           label: "Helpdesk",
@@ -225,6 +230,22 @@ export class DashboardService {
     return days.filter((record) => visibleUserIds.has(record.employee_user_id));
   }
 
+  private visibleLeaveRequests(actor: AuthUser, visibleUserIds: Set<UUID>): LeaveRequest[] {
+    const requests = this.store.leaveRequests.filter((request) => !request.deleted_at);
+    if (this.canSeeSystemWide(actor)) {
+      return requests;
+    }
+    return requests.filter((request) => visibleUserIds.has(request.employee_user_id) || request.current_approver_user_id === actor.id);
+  }
+
+  private visibleWfhRequests(actor: AuthUser, visibleUserIds: Set<UUID>): WfhRequest[] {
+    const requests = this.store.wfhRequests.filter((request) => !request.deleted_at);
+    if (this.canSeeSystemWide(actor)) {
+      return requests;
+    }
+    return requests.filter((request) => visibleUserIds.has(request.employee_user_id) || request.current_approver_user_id === actor.id);
+  }
+
   private attendanceExceptionCount(records: Array<{ exception_type: string | null; status: string }>): number {
     return records.filter(
       (record) =>
@@ -257,6 +278,13 @@ export class DashboardService {
     return (
       submission.status === TimesheetStatuses.PendingApproval &&
       (submission.current_approver_user_id === actor.id || this.canSeeSystemWide(actor))
+    );
+  }
+
+  private isLeaveWfhPendingFor(actor: AuthUser, request: LeaveRequest | WfhRequest): boolean {
+    return (
+      request.status === LeaveRequestStatuses.PendingManager &&
+      (request.current_approver_user_id === actor.id || this.canSeeSystemWide(actor))
     );
   }
 

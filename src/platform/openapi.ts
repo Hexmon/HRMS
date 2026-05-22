@@ -46,6 +46,14 @@ const idParamSchema = {
   }
 };
 
+const userIdParamSchema = {
+  type: "object",
+  required: ["user_id"],
+  properties: {
+    user_id: uuid("Employee user UUID path parameter")
+  }
+};
+
 const expenseDocumentParamSchema = {
   type: "object",
   required: ["id", "documentId"],
@@ -858,7 +866,7 @@ const dashboardMetricSchema = {
     unit: { type: "string", enum: ["count", "money", "hours", "status"], example: "count" },
     source: {
       type: "string",
-      enum: ["core", "expenses", "documents", "assets", "timesheets", "attendance", "notifications", "outbox", "system"],
+      enum: ["core", "expenses", "documents", "assets", "timesheets", "attendance", "leave_wfh", "notifications", "outbox", "system"],
       example: "expenses"
     }
   },
@@ -1132,6 +1140,157 @@ const attendanceRegularizationSchema = {
     current_approver_user_id: { ...uuid("Current approver user UUID"), nullable: true },
     decision_remarks: { type: "string", nullable: true },
     version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const leaveWfhQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    year: { type: "integer", minimum: 2000, maximum: 2100, example: 2026 },
+    leave_type: { type: "string", enum: ["casual", "sick", "earned", "unpaid", "comp_off"], example: "casual" },
+    status: { type: "string", enum: ["pending_manager", "approved", "returned", "rejected", "cancelled"], example: "pending_manager" },
+    date_from: date("Start date filter", "2026-05-01"),
+    date_to: date("End date filter", "2026-05-31"),
+    user_id: uuid("Optional employee user UUID"),
+    department_id: uuid("Optional department UUID"),
+    request_kind: { type: "string", enum: ["leave", "wfh"], example: "leave" }
+  }
+};
+
+const leaveRequestCreateBody = {
+  type: "object",
+  required: ["leave_type", "date_from", "date_to", "reason"],
+  properties: {
+    leave_type: { type: "string", enum: ["casual", "sick", "earned", "unpaid", "comp_off"], example: "casual" },
+    date_from: date("Leave start date", "2026-05-26"),
+    date_to: date("Leave end date", "2026-05-27"),
+    half_day: { type: "boolean", default: false, example: false },
+    reason: { type: "string", minLength: 3, maxLength: 1000, example: "Family travel" },
+    document_ids: { type: "array", items: uuid("Supporting document UUID") }
+  },
+  additionalProperties: false
+};
+
+const wfhRequestCreateBody = {
+  type: "object",
+  required: ["date_from", "date_to", "reason"],
+  properties: {
+    date_from: date("WFH start date", "2026-05-28"),
+    date_to: date("WFH end date", "2026-05-28"),
+    half_day: { type: "boolean", default: false, example: false },
+    reason: { type: "string", minLength: 3, maxLength: 1000, example: "Remote work due to home installation" },
+    project_ref: { type: "string", maxLength: 120, example: "QA-PRJ-001" }
+  },
+  additionalProperties: false
+};
+
+const leaveWfhDecisionBody = {
+  type: "object",
+  required: ["decision", "expected_version"],
+  properties: {
+    decision: { type: "string", enum: ["approve", "reject", "return"], example: "approve" },
+    remarks: { type: "string", description: "Required for reject/return decisions.", example: "Approved." },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const leaveWfhCancelBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    remarks: { type: "string", maxLength: 1000, example: "Plans changed." },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const holidayUpsertBody = {
+  type: "object",
+  required: ["name", "date"],
+  properties: {
+    name: { type: "string", minLength: 2, maxLength: 160, example: "Foundation Day" },
+    date: date("Holiday date", "2026-12-24"),
+    region: { type: "string", default: "All", example: "All" },
+    optional: { type: "boolean", default: false, example: true },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const leaveBalanceResponseSchema = {
+  type: "object",
+  required: ["generated_at", "year", "user", "balances", "pending_requests_summary"],
+  properties: {
+    generated_at: dateTime("Balance generation timestamp"),
+    year: { type: "integer", example: 2026 },
+    user: { type: "object", additionalProperties: true },
+    balances: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["leave_type", "label", "total", "used", "pending", "available"],
+        properties: {
+          leave_type: { type: "string", enum: ["casual", "sick", "earned", "unpaid", "comp_off"], example: "casual" },
+          label: { type: "string", example: "Casual Leave" },
+          total: { type: "number", example: 12 },
+          used: { type: "number", example: 2 },
+          pending: { type: "number", example: 1 },
+          available: { type: "number", nullable: true, example: 9 }
+        },
+        additionalProperties: true
+      }
+    },
+    accruals: { type: "array", items: { type: "object", additionalProperties: true } },
+    pending_requests_summary: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const leaveRequestSchema = {
+  type: "object",
+  required: ["id", "request_code", "employee_user_id", "leave_type", "date_from", "date_to", "duration", "status", "version"],
+  properties: {
+    id: uuid("Leave request UUID"),
+    request_code: { type: "string", example: "LV-2026-0001" },
+    employee_user_id: uuid("Employee user UUID"),
+    leave_type: { type: "string", enum: ["casual", "sick", "earned", "unpaid", "comp_off"], example: "casual" },
+    date_from: date("Leave start date", "2026-05-26"),
+    date_to: date("Leave end date", "2026-05-27"),
+    duration: { type: "number", example: 2 },
+    status: { type: "string", enum: ["pending_manager", "approved", "returned", "rejected", "cancelled"], example: "pending_manager" },
+    current_approver_user_id: { ...uuid("Current approver user UUID"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const wfhRequestSchema = {
+  type: "object",
+  required: ["id", "request_code", "employee_user_id", "date_from", "date_to", "duration", "status", "version"],
+  properties: {
+    id: uuid("WFH request UUID"),
+    request_code: { type: "string", example: "WFH-2026-0001" },
+    employee_user_id: uuid("Employee user UUID"),
+    date_from: date("WFH start date", "2026-05-28"),
+    date_to: date("WFH end date", "2026-05-28"),
+    duration: { type: "number", example: 1 },
+    project_ref: { type: "string", nullable: true, example: "QA-PRJ-001" },
+    status: { type: "string", enum: ["pending_manager", "approved", "returned", "rejected", "cancelled"], example: "pending_manager" },
+    current_approver_user_id: { ...uuid("Current approver user UUID"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const holidaysResponseSchema = {
+  type: "object",
+  required: ["holidays", "calendar_metadata"],
+  properties: {
+    holidays: { type: "array", items: { type: "object", additionalProperties: true } },
+    calendar_metadata: { type: "object", additionalProperties: true }
   },
   additionalProperties: true
 };
@@ -1768,7 +1927,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/dashboard/summary": operation(
     "Dashboard",
     "Dashboard summary",
-    "Returns a role-scoped dashboard summary assembled from implemented backend modules only: Core users, Expenses, Documents, Assets, Timesheets, Attendance, Notifications, and Outbox. Missing modules such as Leave/WFH/Holidays, Helpdesk, and Projects are explicitly marked not_implemented instead of returning mock counts.",
+    "Returns a role-scoped dashboard summary assembled from implemented backend modules only: Core users, Expenses, Documents, Assets, Timesheets, Attendance, Leave/WFH, Notifications, and Outbox. Missing modules such as Helpdesk and Projects are explicitly marked not_implemented instead of returning mock counts.",
     { response200: dashboardSummarySchema }
   ),
   "POST /api/v1/attendance/punches": operation(
@@ -1824,6 +1983,90 @@ const routeDocs: Record<string, RouteSchema> = {
     "Attendance exceptions",
     "Lists late, missing punch, absent, early-out, and correction exceptions visible to HR/Admin/Auditor or a reporting manager.",
     { querystring: attendanceQuerySchema, response200: { ...paginated({ type: "object", additionalProperties: true }), additionalProperties: true } }
+  ),
+  "GET /api/v1/leave/balances/my": operation(
+    "Leave / WFH / Holidays",
+    "My leave balances",
+    "Returns authenticated employee leave balances, accrual placeholder, and pending Leave/WFH request counts for a selected year.",
+    { querystring: leaveWfhQuerySchema, response200: leaveBalanceResponseSchema }
+  ),
+  "GET /api/v1/leave/balances/{user_id}": operation(
+    "Leave / WFH / Holidays",
+    "Employee leave balances",
+    "Returns leave balances for an in-scope employee. HR/Admin/Auditor can view all users; managers can view reporting hierarchy.",
+    { params: userIdParamSchema, querystring: leaveWfhQuerySchema, response200: leaveBalanceResponseSchema }
+  ),
+  "POST /api/v1/leave/requests": operation(
+    "Leave / WFH / Holidays",
+    "Apply leave",
+    "Submits a Leave request for the authenticated employee, validates date range, overlap, and available non-unpaid balance, then routes it to the immediate manager or Admin fallback.",
+    { body: leaveRequestCreateBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/leave/requests/my": operation(
+    "Leave / WFH / Holidays",
+    "My leave requests",
+    "Lists authenticated employee Leave requests with status and date filters.",
+    { querystring: leaveWfhQuerySchema, response200: paginated(leaveRequestSchema) }
+  ),
+  "GET /api/v1/leave/requests/queue/manager": operation(
+    "Leave / WFH / Holidays",
+    "Manager leave approval queue",
+    "Lists Leave requests assigned to the authenticated manager, or all matching requests for HR/Admin decision actors.",
+    { querystring: leaveWfhQuerySchema, response200: { ...paginated(leaveRequestSchema), additionalProperties: true } }
+  ),
+  "POST /api/v1/leave/requests/{id}/decision": operation(
+    "Leave / WFH / Holidays",
+    "Decide leave request",
+    "Approves, returns, or rejects a pending Leave request with optimistic concurrency. Reject/return require remarks and self-processing is blocked.",
+    { params: idParamSchema, body: leaveWfhDecisionBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "POST /api/v1/leave/requests/{id}/cancel": operation(
+    "Leave / WFH / Holidays",
+    "Cancel leave request",
+    "Cancels an own pending/returned Leave request, with HR/Admin override and optimistic concurrency protection.",
+    { params: idParamSchema, body: leaveWfhCancelBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "POST /api/v1/wfh/requests": operation(
+    "Leave / WFH / Holidays",
+    "Apply WFH",
+    "Submits a Work From Home request for the authenticated employee, validates date range and active Leave/WFH overlap, then routes it to the immediate manager or Admin fallback.",
+    { body: wfhRequestCreateBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/wfh/requests/my": operation(
+    "Leave / WFH / Holidays",
+    "My WFH requests",
+    "Lists authenticated employee WFH requests with status and date filters.",
+    { querystring: leaveWfhQuerySchema, response200: paginated(wfhRequestSchema) }
+  ),
+  "GET /api/v1/wfh/requests/queue/manager": operation(
+    "Leave / WFH / Holidays",
+    "Manager WFH approval queue",
+    "Lists WFH requests assigned to the authenticated manager, or all matching requests for HR/Admin decision actors.",
+    { querystring: leaveWfhQuerySchema, response200: { ...paginated(wfhRequestSchema), additionalProperties: true } }
+  ),
+  "POST /api/v1/wfh/requests/{id}/decision": operation(
+    "Leave / WFH / Holidays",
+    "Decide WFH request",
+    "Approves, returns, or rejects a pending WFH request with optimistic concurrency. Reject/return require remarks and self-processing is blocked.",
+    { params: idParamSchema, body: leaveWfhDecisionBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/leave-wfh/hr-monitor": operation(
+    "Leave / WFH / Holidays",
+    "HR Leave/WFH monitor",
+    "Lists Leave and WFH requests visible to HR/Admin/Auditor with request-kind, status, employee, department, and date filters.",
+    { querystring: leaveWfhQuerySchema, response200: { ...paginated({ type: "object", additionalProperties: true }), additionalProperties: true } }
+  ),
+  "GET /api/v1/holidays": operation(
+    "Leave / WFH / Holidays",
+    "Holiday calendar",
+    "Returns the company holiday calendar for a selected year.",
+    { querystring: leaveWfhQuerySchema, response200: holidaysResponseSchema }
+  ),
+  "PUT /api/v1/holidays/{id}": operation(
+    "Leave / WFH / Holidays",
+    "Upsert holiday",
+    "Creates or updates a holiday calendar entry. HR Manager or Admin role is required; expected_version enforces optimistic concurrency when updating.",
+    { params: idParamSchema, body: holidayUpsertBody, response200: { type: "object", additionalProperties: true } }
   ),
   "GET /api/v1/platform/finance-governance": operation(
     "Admin / Configuration",
@@ -1961,6 +2204,7 @@ export const openApiTags = [
   { name: "Assets", description: "Asset inventory, QR scan, assignment, recovery, and license workflows." },
   { name: "Timesheets", description: "Work segments, submissions, approval queues, and workflow definitions." },
   { name: "Attendance", description: "Punches, summaries, calendars, exceptions, and regularization workflows." },
+  { name: "Leave / WFH / Holidays", description: "Leave balances, leave/WFH request workflows, HR monitor, and holiday calendar contracts." },
   { name: "Reports & Analytics", description: "Role-scoped expense registers and export readiness." },
   { name: "Notifications", description: "Notification contracts are emitted by backend workflows; no public endpoint is exposed in this delivery." },
   { name: "Outbox / Platform Events", description: "Transactional outbox and protected local event consumer contracts." },
