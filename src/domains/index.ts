@@ -2,6 +2,7 @@ export * from "./admin";
 export * from "./assets";
 export * from "./auth";
 export * from "./core";
+export * from "./dashboard";
 export * from "./documents";
 export * from "./expenses";
 export * from "./platform";

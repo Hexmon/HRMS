@@ -16,7 +16,9 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/auth";
+import { useDashboardSummary } from "@/domains/dashboard";
 import { DashboardHero } from "@/components/dashboards/shared";
+import { BackendDashboardSummary } from "@/components/dashboards/backend-summary";
 import { MainAdminDashboard } from "@/components/dashboards/main-admin";
 import { HrAdminDashboard } from "@/components/dashboards/hr-admin";
 import { EmployeeDashboard } from "@/components/dashboards/employee";
@@ -68,6 +70,7 @@ const HERO_ACTIONS: Record<Role, { label: string; to: string; variant?: "primary
 
 function DashboardPage() {
   const { user, activeRole } = useAuth();
+  const summaryQuery = useDashboardSummary(Boolean(user));
   if (!user || !activeRole) return null;
 
   const actions = HERO_ACTIONS[activeRole] ?? HERO_ACTIONS.employee;
@@ -75,6 +78,11 @@ function DashboardPage() {
   return (
     <>
       <DashboardHero user={user} activeRole={activeRole} actions={actions} />
+      <BackendDashboardSummary
+        summary={summaryQuery.data}
+        loading={summaryQuery.isLoading}
+        error={summaryQuery.error instanceof Error ? summaryQuery.error : null}
+      />
       {activeRole === "main_admin" && <MainAdminDashboard />}
       {activeRole === "hr_admin" && <HrAdminDashboard />}
       {activeRole === "employee" && <EmployeeDashboard />}

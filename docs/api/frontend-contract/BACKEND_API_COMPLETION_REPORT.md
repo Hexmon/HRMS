@@ -6,21 +6,21 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category                                     | Count | Frontend action                                                    | Backend action                                                                           |
 | -------------------------------------------- | ----: | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Implemented APIs ready to integrate          |    76 | Use generated client from `openapi.json`.                          | Keep behavior stable and fix bugs only.                                                  |
+| Implemented APIs ready to integrate          |    77 | Use generated client from `openapi.json`.                          | Keep behavior stable and fix bugs only.                                                  |
 | Implemented APIs needing expansion           |     0 | Use the expanded OpenAPI shapes.                                   | Phase 1A-1C completed the 11 existing API expansions.                                    |
 | Implemented APIs to delete                   |     0 | Do not remove current generated client operations.                 | No deletion from current OpenAPI.                                                        |
-| Planned new APIs                             |   138 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass.                     |
-| Target implemented contract after completion |   214 | Regenerate frontend client only after each backend phase lands.    | `76 current + 138 remaining`; the 11 P1 updates stayed part of the original API surface. |
+| Planned new APIs                             |   137 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass.                     |
+| Target implemented contract after completion |   214 | Regenerate frontend client only after each backend phase lands.    | `77 current + 137 remaining`; the 11 P1 updates stayed part of the original API surface. |
 
 ## Development Phases
 
-| Phase                     | Meaning                                             | Backend work                                                                      | Frontend guidance                                               |
-| ------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| P0 ready                  | Existing implemented APIs                           | No planned changes required for initial integration.                              | Integrate directly from `openapi.json` and `ENDPOINT_INDEX.md`. |
-| P1 update existing        | Existing APIs need fuller shapes                    | Add backward-compatible fields/filters/actions, update tests, regenerate OpenAPI. | Keep adapters tolerant until expanded fields are available.     |
-| P2 core missing           | Auth, dashboard, core, EMS, attendance, leave/WFH   | Build core employee lifecycle and daily HR workflows first.                       | Keep these modules mocked until implemented.                    |
-| P3 module completion      | Projects, assets additions, helpdesk, notifications | Build operational modules after P2 data foundations exist.                        | Integrate route-by-route as OpenAPI grows.                      |
-| P4 admin/report hardening | Admin settings and non-expense reports              | Add policy/config/report/export breadth with audit and RBAC.                      | Do not bypass backend scope with client-side aggregation.       |
+| Phase                     | Meaning                                             | Backend work                                                                      | Frontend guidance                                                                                                      |
+| ------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| P0 ready                  | Existing implemented APIs                           | No planned changes required for initial integration.                              | Integrate directly from `openapi.json` and `ENDPOINT_INDEX.md`.                                                        |
+| P1 update existing        | Existing APIs need fuller shapes                    | Add backward-compatible fields/filters/actions, update tests, regenerate OpenAPI. | Keep adapters tolerant until expanded fields are available.                                                            |
+| P2 core missing           | Auth, core, EMS, attendance, leave/WFH              | Build core employee lifecycle and daily HR workflows first.                       | Keep these modules mocked until implemented. Dashboard summary is now implemented and must be integrated from OpenAPI. |
+| P3 module completion      | Projects, assets additions, helpdesk, notifications | Build operational modules after P2 data foundations exist.                        | Integrate route-by-route as OpenAPI grows.                                                                             |
+| P4 admin/report hardening | Admin settings and non-expense reports              | Add policy/config/report/export breadth with audit and RBAC.                      | Do not bypass backend scope with client-side aggregation.                                                              |
 
 ## Current Implemented API Summary
 
@@ -30,6 +30,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Assets                       |          9 | Inventory, detail, assignment/return, QR scan, license lifecycle, and employee termination event.                                      |
 | Auth & Sessions              |         11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
 | Core / Employees & Hierarchy |          3 | User list/detail and hierarchy subtree.                                                                                                |
+| Dashboard                    |          1 | Role-scoped summary derived from implemented Core, Expenses, Documents, Assets, Timesheets, Notifications, and Outbox data.            |
 | Documents                    |          7 | Metadata upload/list/detail, expense document link, download URL, verification, access log.                                            |
 | Expenses / Manager           |          3 | Manager queue, manager verify action, manager document verification.                                                                   |
 | Expenses / Requester         |          6 | Create/list/detail/update placeholder/submit/timeline.                                                                                 |
@@ -72,7 +73,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **138**.
+Total remaining planned new operations: **137**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -87,11 +88,11 @@ Total remaining planned new operations: **138**.
 | POST   | `/api/v1/onboarding/company-bootstrap`    | `/onboarding`                  | Create initial company settings and first admin context after signup.      | Authenticated bootstrap actor or one-time bootstrap token.       | company profile, locale, fiscal settings, first_admin_profile      | company, admin_user, setup_progress, next_steps           | 409 if company bootstrap already completed; audit event required.                         | Implemented in Phase 2 |
 | PATCH  | `/api/v1/auth/session/preference`         | `topbar role/company switcher` | Persist active role, company, and session preference for multi-role users. | Authenticated user; only roles assigned to same user.            | active_role_id, company_id optional, landing_page optional         | active_role, permissions, navigation, preferences         | 400 invalid preference, 403 unassigned role, 409 role inactive.                           | Implemented in Phase 2 |
 
-### Dashboard (1 planned APIs)
+### Dashboard (1 implemented API)
 
-| Method | Planned path                | Frontend route/screen | Purpose and business behavior                                                                                | Auth/persona                                     | Inputs                                                                          | Success response                                                               | Errors/OCC/rate notes                                                         | State                     |
-| ------ | --------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | ------------------------- |
-| GET    | `/api/v1/dashboard/summary` | `/dashboard`          | Return role-scoped dashboard cards, pending queues, announcements, birthdays, audit snippets, and shortcuts. | Authenticated; response changes by role/persona. | Query: date_range, include=cards,queues,announcements,birthdays,audit,shortcuts | cards[], queues[], announcements[], birthdays[], audit_snippets[], shortcuts[] | Shared errors; 403 for role without dashboard access; cache short-lived only. | Planned / Not Implemented |
+| Method | Planned path                | Frontend route/screen | Purpose and business behavior                                                                                                                                            | Auth/persona                                                         | Inputs | Success response                                                                                              | Errors/OCC/rate notes                                                                | State                  |
+| ------ | --------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------- |
+| GET    | `/api/v1/dashboard/summary` | `/dashboard`          | Return role-scoped dashboard cards, pending approvals, workforce, operations, workload, attention items, and explicit not_implemented markers for modules still missing. | Authenticated; response changes by actor hierarchy and role/persona. | None   | generated_at, scope, cards[], workforce, approvals, operations, workload, attention[], unavailable_features[] | Shared errors; 401 for unauthenticated sessions; no mock counts for missing modules. | Implemented in Phase 3 |
 
 ### Employees / Core (13 planned APIs)
 
