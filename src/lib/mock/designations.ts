@@ -1,5 +1,6 @@
 export interface Designation {
   id: string;
+  apiId?: string;
   title: string;
   level: "Junior" | "Mid" | "Senior" | "Lead" | "Principal" | "Director";
   department: string;

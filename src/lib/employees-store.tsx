@@ -1,7 +1,16 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { coreApi, mapApiUsersToEmployees } from "@/domains/core";
-import { pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
+import {
+  asArray,
+  asRecord,
+  isUuid,
+  pageItems,
+  text,
+  useApiRouteEnabled,
+  withApiFallback,
+  type ApiRecord,
+} from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import { EMPLOYEES, type Employee, type AuditEntry, type RoleHistoryEntry } from "./mock/employees";
 import { DEPARTMENTS as SEED_DEPTS, type Department } from "./mock/departments";
@@ -10,6 +19,45 @@ import { DESIGNATIONS as SEED_DESIGS, type Designation } from "./mock/designatio
 const EMP_KEY = "hawkaii_employees_v2";
 const DEPT_KEY = "hawkaii_departments_v1";
 const DESG_KEY = "hawkaii_designations_v1";
+
+const backendRoleByUiRole: Record<string, string> = {
+  main_admin: "Admin",
+  hr_admin: "HR Manager",
+  employee: "Employee",
+  manager: "Reviewer",
+  project_manager: "Reviewer",
+  finance_manager: "Finance Manager",
+  asset_admin: "Asset Manager",
+  helpdesk_agent: "Employee",
+};
+
+function apiEmploymentStatus(status: Employee["status"]): string {
+  switch (status) {
+    case "exited":
+      return "terminated";
+    case "active":
+    case "probation":
+    case "confirmed":
+    case "notice_period":
+      return "active";
+    case "draft":
+    case "invited":
+    case "onboarding":
+    case "inactive":
+    default:
+      return "inactive";
+  }
+}
+
+function selectorLevel(value: unknown): Designation["level"] {
+  const level = typeof value === "number" ? value : Number(value);
+  if (level >= 6) return "Director";
+  if (level >= 5) return "Principal";
+  if (level >= 4) return "Lead";
+  if (level >= 3) return "Senior";
+  if (level <= 1) return "Junior";
+  return "Mid";
+}
 
 interface Ctx {
   employees: Employee[];
@@ -56,6 +104,7 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
   const [employees, setEmployees] = React.useState<Employee[]>(EMPLOYEES);
   const [departments, setDepartments] = React.useState<Department[]>(SEED_DEPTS);
   const [designations, setDesignations] = React.useState<Designation[]>(SEED_DESIGS);
+  const queryClient = useQueryClient();
   const apiEnabled = useApiRouteEnabled([
     "/dashboard",
     "/employees",
@@ -84,84 +133,55 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
     saveLs(DESG_KEY, next);
   };
 
-  const upsert: Ctx["upsert"] = (e, actor = "Rahul Verma") => {
-    const exists = employees.some((x) => x.id === e.id);
-    const action = exists ? "Profile updated" : "Profile created";
-    const next: Employee = {
-      ...e,
-      audit: [newAudit(actor, action), ...(e.audit ?? [])],
-    };
-    persistE(exists ? employees.map((x) => (x.id === e.id ? next : x)) : [next, ...employees]);
-  };
-
-  const remove: Ctx["remove"] = (id) => persistE(employees.filter((x) => x.id !== id));
-
-  const setStatus: Ctx["setStatus"] = (id, status, actor = "Rahul Verma") => {
-    persistE(
-      employees.map((x) =>
-        x.id === id
-          ? {
-              ...x,
-              status,
-              audit: [newAudit(actor, "Status changed", `Status set to ${status}`), ...x.audit],
-            }
-          : x,
+  const apiSelectorsQuery = useQuery({
+    queryKey: queryKeys.list("core", "org-selectors"),
+    queryFn: () =>
+      withApiFallback(
+        async () => coreApi.orgSelectors(),
+        () => ({ departments, designations, managers: [], roles: [] }),
       ),
-    );
-  };
+    enabled: apiEnabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
 
-  const setLogin: Ctx["setLogin"] = (id, enabled, actor = "Rahul Verma") => {
-    persistE(
-      employees.map((x) =>
-        x.id === id
-          ? {
-              ...x,
-              loginEnabled: enabled,
-              audit: [newAudit(actor, enabled ? "Login enabled" : "Login disabled"), ...x.audit],
-            }
-          : x,
-      ),
-    );
-  };
+  const visibleDepartments = React.useMemo<Department[]>(() => {
+    const rows = asArray(asRecord(apiSelectorsQuery.data).departments);
+    if (!apiEnabled || rows.length === 0) return departments;
+    return rows.map((value) => {
+      const row = asRecord(value);
+      const id = text(row.id);
+      const name = text(row.name, "Department");
+      const head = employees.find(
+        (employee) => employee.department === name && employee.manager !== "—",
+      )?.manager;
+      return {
+        id,
+        apiId: id,
+        name,
+        head: head ?? "—",
+        headcount: employees.filter((employee) => employee.department === name).length,
+      };
+    });
+  }, [apiEnabled, apiSelectorsQuery.data, departments, employees]);
 
-  const setRoles: Ctx["setRoles"] = (id, roles, actor = "Rahul Verma") => {
-    persistE(
-      employees.map((x) => {
-        if (x.id !== id) return x;
-        const entry: RoleHistoryEntry = {
-          at: new Date().toISOString(),
-          actor,
-          from: x.systemRoles,
-          to: roles,
-        };
-        return {
-          ...x,
-          systemRoles: roles,
-          roleHistory: [entry, ...x.roleHistory],
-          audit: [newAudit(actor, "Roles updated", roles.join(", ")), ...x.audit],
-        };
-      }),
-    );
-  };
+  const visibleDesignations = React.useMemo<Designation[]>(() => {
+    const rows = asArray(asRecord(apiSelectorsQuery.data).designations);
+    if (!apiEnabled || rows.length === 0) return designations;
+    return rows.map((value) => {
+      const row = asRecord(value);
+      const id = text(row.id);
+      return {
+        id,
+        apiId: id,
+        title: text(row.title, "Employee"),
+        level: selectorLevel(row.level),
+        department: "—",
+      };
+    });
+  }, [apiEnabled, apiSelectorsQuery.data, designations]);
 
-  const addDepartment: Ctx["addDepartment"] = (name, _description) => {
-    const id = `DEP-${String(departments.length + 1).padStart(2, "0")}`;
-    const dept: Department = { id, name, head: "—", headcount: 0 };
-    persistD([...departments, dept]);
-    return dept;
-  };
-
-  const addDesignation: Ctx["addDesignation"] = (title, department) => {
-    const id = `DSG-${String(designations.length + 1).padStart(2, "0")}`;
-    const desig: Designation = { id, title, level: "Mid", department };
-    persistG([...designations, desig]);
-    return desig;
-  };
-
-  const reset = () => {
-    persistE(EMPLOYEES);
-    persistD(SEED_DEPTS);
-    persistG(SEED_DESIGS);
+  const invalidateCore = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.domain("core") });
   };
 
   const apiEmployeesQuery = useQuery({
@@ -179,15 +199,229 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
   });
 
   const visibleEmployees = apiEnabled ? (apiEmployeesQuery.data ?? []) : employees;
-  const apiError = apiEmployeesQuery.error instanceof Error ? apiEmployeesQuery.error : null;
+  const apiError =
+    apiEmployeesQuery.error instanceof Error
+      ? apiEmployeesQuery.error
+      : apiSelectorsQuery.error instanceof Error
+        ? apiSelectorsQuery.error
+        : null;
+
+  const findEmployee = (id: string) =>
+    visibleEmployees.find((employee) => employee.id === id || employee.apiId === id);
+
+  const resolveDepartmentId = (employee: Employee): string | null => {
+    const department = visibleDepartments.find(
+      (candidate) => candidate.name === employee.department || candidate.id === employee.department,
+    );
+    const id = department?.apiId ?? department?.id;
+    return id && isUuid(id) ? id : null;
+  };
+
+  const resolveDesignationId = (employee: Employee): string | null => {
+    const designation = visibleDesignations.find(
+      (candidate) =>
+        candidate.title === employee.designation || candidate.id === employee.designation,
+    );
+    const id = designation?.apiId ?? designation?.id;
+    return id && isUuid(id) ? id : null;
+  };
+
+  const resolveManagerId = (employee: Employee): string | null => {
+    const manager = visibleEmployees.find(
+      (candidate) => candidate.name === employee.manager || candidate.id === employee.manager,
+    );
+    const id = manager?.apiId;
+    return id && isUuid(id) ? id : null;
+  };
+
+  const employeeWriteBody = (employee: Employee): ApiRecord => {
+    const departmentId = resolveDepartmentId(employee);
+    const designationId = resolveDesignationId(employee);
+    if (!departmentId || !designationId) {
+      throw new Error("Employee department and designation must come from backend selectors.");
+    }
+    return {
+      employee_code: employee.id,
+      email: employee.email,
+      full_name: employee.name,
+      department_id: departmentId,
+      designation_id: designationId,
+      manager_user_id: resolveManagerId(employee),
+      roles: Array.from(
+        new Set(employee.systemRoles.map((role) => backendRoleByUiRole[role] ?? "Employee")),
+      ),
+      employment_status: apiEmploymentStatus(employee.status),
+      joined_on: employee.joinedAt,
+      login_enabled: employee.loginEnabled,
+    };
+  };
+
+  const updateMutation = useMutation({
+    mutationFn: (employee: Employee) => {
+      if (!employee.apiId || !isUuid(employee.apiId)) {
+        return coreApi.createUser(employeeWriteBody(employee));
+      }
+      const {
+        employee_code: _employeeCode,
+        login_enabled: _loginEnabled,
+        roles: _roles,
+        ...body
+      } = employeeWriteBody(employee);
+      return coreApi.updateUser(employee.apiId, {
+        ...body,
+        expected_version: employee.version ?? 1,
+      });
+    },
+    onSuccess: invalidateCore,
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ employee, status }: { employee: Employee; status: Employee["status"] }) => {
+      if (!employee.apiId || !isUuid(employee.apiId)) return Promise.resolve({});
+      const expected_version = employee.version ?? 1;
+      if (status === "active" || status === "confirmed" || status === "probation") {
+        return coreApi.activateUser(employee.apiId, { expected_version });
+      }
+      if (status === "inactive" || status === "exited") {
+        return coreApi.deactivateUser(employee.apiId, {
+          expected_version,
+          status: status === "exited" ? "terminated" : "inactive",
+        });
+      }
+      return coreApi.updateUser(employee.apiId, {
+        expected_version,
+        employment_status: apiEmploymentStatus(status),
+      });
+    },
+    onSuccess: invalidateCore,
+  });
+
+  const loginMutation = useMutation({
+    mutationFn: ({ employee, enabled }: { employee: Employee; enabled: boolean }) => {
+      if (!employee.apiId || !isUuid(employee.apiId)) return Promise.resolve({});
+      const expected_version = employee.version ?? 1;
+      return enabled
+        ? coreApi.enableLogin(employee.apiId, { expected_version, invite_email: true })
+        : coreApi.disableLogin(employee.apiId, { expected_version });
+    },
+    onSuccess: invalidateCore,
+  });
+
+  const rolesMutation = useMutation({
+    mutationFn: ({ employee, roles }: { employee: Employee; roles: string[] }) => {
+      if (!employee.apiId || !isUuid(employee.apiId)) return Promise.resolve({});
+      return coreApi.replaceRoles(employee.apiId, {
+        expected_version: employee.version ?? 1,
+        roles: Array.from(new Set(roles.map((role) => backendRoleByUiRole[role] ?? "Employee"))),
+      });
+    },
+    onSuccess: invalidateCore,
+  });
+
+  const upsert: Ctx["upsert"] = (e, actor = "Rahul Verma") => {
+    const exists = employees.some((x) => x.id === e.id);
+    const action = exists ? "Profile updated" : "Profile created";
+    const next: Employee = {
+      ...e,
+      audit: [newAudit(actor, action), ...(e.audit ?? [])],
+    };
+    persistE(exists ? employees.map((x) => (x.id === e.id ? next : x)) : [next, ...employees]);
+    if (apiEnabled) {
+      void updateMutation
+        .mutateAsync({ ...(findEmployee(e.id) ?? {}), ...next })
+        .catch(() => undefined);
+    }
+  };
+
+  const remove: Ctx["remove"] = (id) => persistE(employees.filter((x) => x.id !== id));
+
+  const setStatus: Ctx["setStatus"] = (id, status, actor = "Rahul Verma") => {
+    const current = findEmployee(id);
+    persistE(
+      employees.map((x) =>
+        x.id === id
+          ? {
+              ...x,
+              status,
+              audit: [newAudit(actor, "Status changed", `Status set to ${status}`), ...x.audit],
+            }
+          : x,
+      ),
+    );
+    if (apiEnabled && current && status !== "notice_period") {
+      void statusMutation.mutateAsync({ employee: current, status }).catch(() => undefined);
+    }
+  };
+
+  const setLogin: Ctx["setLogin"] = (id, enabled, actor = "Rahul Verma") => {
+    const current = findEmployee(id);
+    persistE(
+      employees.map((x) =>
+        x.id === id
+          ? {
+              ...x,
+              loginEnabled: enabled,
+              audit: [newAudit(actor, enabled ? "Login enabled" : "Login disabled"), ...x.audit],
+            }
+          : x,
+      ),
+    );
+    if (apiEnabled && current) {
+      void loginMutation.mutateAsync({ employee: current, enabled }).catch(() => undefined);
+    }
+  };
+
+  const setRoles: Ctx["setRoles"] = (id, roles, actor = "Rahul Verma") => {
+    const current = findEmployee(id);
+    persistE(
+      employees.map((x) => {
+        if (x.id !== id) return x;
+        const entry: RoleHistoryEntry = {
+          at: new Date().toISOString(),
+          actor,
+          from: x.systemRoles,
+          to: roles,
+        };
+        return {
+          ...x,
+          systemRoles: roles,
+          roleHistory: [entry, ...x.roleHistory],
+          audit: [newAudit(actor, "Roles updated", roles.join(", ")), ...x.audit],
+        };
+      }),
+    );
+    if (apiEnabled && current) {
+      void rolesMutation.mutateAsync({ employee: current, roles }).catch(() => undefined);
+    }
+  };
+
+  const addDepartment: Ctx["addDepartment"] = (name, _description) => {
+    const id = `DEP-${String(visibleDepartments.length + 1).padStart(2, "0")}`;
+    const dept: Department = { id, name, head: "—", headcount: 0 };
+    persistD([...departments, dept]);
+    return dept;
+  };
+
+  const addDesignation: Ctx["addDesignation"] = (title, department) => {
+    const id = `DSG-${String(visibleDesignations.length + 1).padStart(2, "0")}`;
+    const desig: Designation = { id, title, level: "Mid", department };
+    persistG([...designations, desig]);
+    return desig;
+  };
+
+  const reset = () => {
+    persistE(EMPLOYEES);
+    persistD(SEED_DEPTS);
+    persistG(SEED_DESIGS);
+  };
 
   return (
     <Ctx.Provider
       value={{
         employees: visibleEmployees,
-        departments,
-        designations,
-        loading: apiEnabled && apiEmployeesQuery.isLoading,
+        departments: visibleDepartments,
+        designations: visibleDesignations,
+        loading: apiEnabled && (apiEmployeesQuery.isLoading || apiSelectorsQuery.isLoading),
         error: apiError,
         isApiBacked: apiEnabled && Boolean(apiEmployeesQuery.data),
         upsert,

@@ -1,5 +1,6 @@
 export interface Department {
   id: string;
+  apiId?: string;
   name: string;
   head: string;
   headcount: number;

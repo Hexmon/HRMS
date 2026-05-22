@@ -4970,6 +4970,393 @@
         }
       }
     },
+    "/api/v1/core/master-data/org-selectors": {
+      "get": {
+        "summary": "Org selectors",
+        "tags": ["Core / Employees & Hierarchy"],
+        "description": "Returns active departments, designations, manager candidates, and backend role labels used by employee create/edit forms. The list is scoped by the authenticated actor where manager visibility is restricted.",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["departments", "designations", "managers", "roles"],
+                  "properties": {
+                    "departments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "department_code", "name"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Department UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "department_code": {
+                            "type": "string",
+                            "example": "SALES"
+                          },
+                          "name": {
+                            "type": "string",
+                            "example": "Sales"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "designations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "designation_code", "title", "level"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Designation UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "designation_code": {
+                            "type": "string",
+                            "example": "EMPLOYEE"
+                          },
+                          "title": {
+                            "type": "string",
+                            "example": "Employee"
+                          },
+                          "level": {
+                            "type": "integer",
+                            "nullable": true,
+                            "example": 1
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "managers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "employee_code", "full_name"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "User UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "full_name": {
+                            "type": "string",
+                            "example": "Employee E1"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["key", "label"],
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "enum": [
+                              "Employee",
+                              "Reviewer",
+                              "Director",
+                              "Finance Manager",
+                              "Admin",
+                              "Auditor",
+                              "Asset Manager",
+                              "HR Manager"
+                            ],
+                            "example": "Employee"
+                          },
+                          "label": {
+                            "type": "string",
+                            "enum": [
+                              "Employee",
+                              "Reviewer",
+                              "Director",
+                              "Finance Manager",
+                              "Admin",
+                              "Auditor",
+                              "Asset Manager",
+                              "HR Manager"
+                            ],
+                            "example": "Employee"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/core/users": {
       "get": {
         "summary": "List users",
@@ -5075,7 +5462,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": ["enabled", "disabled"],
+              "enum": ["enabled", "disabled", "setup_pending"],
               "example": "enabled"
             },
             "in": "query",
@@ -5257,7 +5644,7 @@
                           },
                           "login_state": {
                             "type": "string",
-                            "enum": ["enabled", "disabled"],
+                            "enum": ["enabled", "disabled", "setup_pending"],
                             "example": "enabled"
                           },
                           "role_labels": {
@@ -5339,6 +5726,662 @@
                     }
                   },
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create user",
+        "tags": ["Core / Employees & Hierarchy"],
+        "description": "Creates a Core employee profile with department, designation, reporting manager, roles, lifecycle status, and optional password setup action. The API never creates a shared/default production password; login enablement queues password setup.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "employee_code",
+                  "email",
+                  "full_name",
+                  "department_id",
+                  "designation_id"
+                ],
+                "properties": {
+                  "employee_code": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 32,
+                    "example": "EMP1001"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "new.employee@example.test"
+                  },
+                  "full_name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160,
+                    "example": "New Employee"
+                  },
+                  "department_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Department UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                  },
+                  "designation_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Designation UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                  },
+                  "manager_user_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Reporting manager user UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                    "nullable": true
+                  },
+                  "roles": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "Employee",
+                        "Reviewer",
+                        "Director",
+                        "Finance Manager",
+                        "Admin",
+                        "Auditor",
+                        "Asset Manager",
+                        "HR Manager"
+                      ],
+                      "example": "Employee"
+                    },
+                    "minItems": 1,
+                    "example": ["Employee"]
+                  },
+                  "employment_status": {
+                    "type": "string",
+                    "enum": ["active", "inactive", "terminated", "suspended"],
+                    "example": "inactive"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Asia/Kolkata"
+                  },
+                  "joined_on": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Joining date",
+                    "example": "2026-05-04",
+                    "nullable": true
+                  },
+                  "login_enabled": {
+                    "type": "boolean",
+                    "description": "When true, creates a password setup action instead of assigning a default password.",
+                    "example": true
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "employee_code",
+                    "email",
+                    "full_name",
+                    "roles",
+                    "department",
+                    "designation",
+                    "manager",
+                    "display_label",
+                    "status",
+                    "login_state",
+                    "role_labels",
+                    "reporting_line",
+                    "role_assignments",
+                    "direct_reports_summary",
+                    "documents_summary",
+                    "assets_summary",
+                    "attendance_summary",
+                    "leave_summary",
+                    "timesheet_summary",
+                    "expense_summary",
+                    "profile_tabs_available"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Authenticated user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "employee_code": {
+                      "type": "string",
+                      "example": "N1"
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email",
+                      "example": "finance@example.test"
+                    },
+                    "full_name": {
+                      "type": "string",
+                      "example": "Finance Manager"
+                    },
+                    "department_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Department UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "designation_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Designation UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "manager_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Manager user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "hierarchy_path": {
+                      "type": "string",
+                      "example": "CEO.FIN.N1"
+                    },
+                    "employment_status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "example": "Asia/Kolkata"
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Finance Manager"]
+                    },
+                    "department": {
+                      "type": "object",
+                      "required": ["id", "department_code", "name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Department UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "department_code": {
+                          "type": "string",
+                          "example": "SALES"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Sales"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "designation": {
+                      "type": "object",
+                      "required": ["id", "designation_code", "title", "level"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Designation UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "designation_code": {
+                          "type": "string",
+                          "example": "EMPLOYEE"
+                        },
+                        "title": {
+                          "type": "string",
+                          "example": "Employee"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "nullable": true,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "manager": {
+                      "type": "object",
+                      "required": ["id", "employee_code", "full_name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "User UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "employee_code": {
+                          "type": "string",
+                          "example": "E1"
+                        },
+                        "full_name": {
+                          "type": "string",
+                          "example": "Employee E1"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "display_label": {
+                      "type": "string",
+                      "example": "E1 - Employee E1"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "login_state": {
+                      "type": "string",
+                      "enum": ["enabled", "disabled", "setup_pending"],
+                      "example": "enabled"
+                    },
+                    "role_labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Employee"]
+                    },
+                    "reporting_line": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "employee_code", "full_name"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "User UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "full_name": {
+                            "type": "string",
+                            "example": "Employee E1"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "role_assignments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["role", "status"],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "example": "Employee"
+                          },
+                          "status": {
+                            "type": "string",
+                            "example": "active"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "direct_reports_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "documents_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "assets_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "attendance_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "leave_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "timesheet_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "expense_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "profile_tabs_available": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "profile",
+                        "reporting",
+                        "roles",
+                        "documents",
+                        "assets",
+                        "attendance",
+                        "leave",
+                        "timesheets",
+                        "expenses"
+                      ]
+                    },
+                    "onboarding": {
+                      "type": "object",
+                      "required": ["setup_required", "invite_sent", "next_step"],
+                      "properties": {
+                        "setup_required": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "invite_sent": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "next_step": {
+                          "type": "string",
+                          "enum": ["set_password", "none"],
+                          "example": "set_password"
+                        },
+                        "dev_only": {
+                          "type": "object",
+                          "nullable": true,
+                          "description": "Local/QA only token echo for automated testing. Production responses omit this object.",
+                          "additionalProperties": true
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "sessions_revoked": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": true
                 }
               }
             }
@@ -5783,7 +6826,7 @@
                     },
                     "login_state": {
                       "type": "string",
-                      "enum": ["enabled", "disabled"],
+                      "enum": ["enabled", "disabled", "setup_pending"],
                       "example": "enabled"
                     },
                     "role_labels": {
@@ -5879,6 +6922,3700 @@
                         "timesheets",
                         "expenses"
                       ]
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update user",
+        "tags": ["Core / Employees & Hierarchy"],
+        "description": "Updates an employee profile, org placement, manager, lifecycle fields, and optimistic concurrency version. Manager changes update descendant hierarchy paths and block hierarchy cycles.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["expected_version"],
+                "properties": {
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "employee.changed@example.test"
+                  },
+                  "full_name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160,
+                    "example": "Employee Changed"
+                  },
+                  "department_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Department UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                  },
+                  "designation_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Designation UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                  },
+                  "manager_user_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Reporting manager user UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                    "nullable": true
+                  },
+                  "employment_status": {
+                    "type": "string",
+                    "enum": ["active", "inactive", "terminated", "suspended"],
+                    "example": "active"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Asia/Kolkata"
+                  },
+                  "joined_on": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Joining date",
+                    "example": "2026-05-04",
+                    "nullable": true
+                  },
+                  "terminated_on": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Termination date",
+                    "example": "2026-05-04",
+                    "nullable": true
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "employee_code",
+                    "email",
+                    "full_name",
+                    "roles",
+                    "department",
+                    "designation",
+                    "manager",
+                    "display_label",
+                    "status",
+                    "login_state",
+                    "role_labels",
+                    "reporting_line",
+                    "role_assignments",
+                    "direct_reports_summary",
+                    "documents_summary",
+                    "assets_summary",
+                    "attendance_summary",
+                    "leave_summary",
+                    "timesheet_summary",
+                    "expense_summary",
+                    "profile_tabs_available"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Authenticated user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "employee_code": {
+                      "type": "string",
+                      "example": "N1"
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email",
+                      "example": "finance@example.test"
+                    },
+                    "full_name": {
+                      "type": "string",
+                      "example": "Finance Manager"
+                    },
+                    "department_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Department UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "designation_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Designation UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "manager_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Manager user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "hierarchy_path": {
+                      "type": "string",
+                      "example": "CEO.FIN.N1"
+                    },
+                    "employment_status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "example": "Asia/Kolkata"
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Finance Manager"]
+                    },
+                    "department": {
+                      "type": "object",
+                      "required": ["id", "department_code", "name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Department UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "department_code": {
+                          "type": "string",
+                          "example": "SALES"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Sales"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "designation": {
+                      "type": "object",
+                      "required": ["id", "designation_code", "title", "level"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Designation UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "designation_code": {
+                          "type": "string",
+                          "example": "EMPLOYEE"
+                        },
+                        "title": {
+                          "type": "string",
+                          "example": "Employee"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "nullable": true,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "manager": {
+                      "type": "object",
+                      "required": ["id", "employee_code", "full_name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "User UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "employee_code": {
+                          "type": "string",
+                          "example": "E1"
+                        },
+                        "full_name": {
+                          "type": "string",
+                          "example": "Employee E1"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "display_label": {
+                      "type": "string",
+                      "example": "E1 - Employee E1"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "login_state": {
+                      "type": "string",
+                      "enum": ["enabled", "disabled", "setup_pending"],
+                      "example": "enabled"
+                    },
+                    "role_labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Employee"]
+                    },
+                    "reporting_line": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "employee_code", "full_name"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "User UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "full_name": {
+                            "type": "string",
+                            "example": "Employee E1"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "role_assignments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["role", "status"],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "example": "Employee"
+                          },
+                          "status": {
+                            "type": "string",
+                            "example": "active"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "direct_reports_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "documents_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "assets_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "attendance_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "leave_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "timesheet_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "expense_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "profile_tabs_available": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "profile",
+                        "reporting",
+                        "roles",
+                        "documents",
+                        "assets",
+                        "attendance",
+                        "leave",
+                        "timesheets",
+                        "expenses"
+                      ]
+                    },
+                    "onboarding": {
+                      "type": "object",
+                      "required": ["setup_required", "invite_sent", "next_step"],
+                      "properties": {
+                        "setup_required": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "invite_sent": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "next_step": {
+                          "type": "string",
+                          "enum": ["set_password", "none"],
+                          "example": "set_password"
+                        },
+                        "dev_only": {
+                          "type": "object",
+                          "nullable": true,
+                          "description": "Local/QA only token echo for automated testing. Production responses omit this object.",
+                          "additionalProperties": true
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "sessions_revoked": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/core/users/{id}/activate": {
+      "post": {
+        "summary": "Activate user",
+        "tags": ["Core / Employees & Hierarchy"],
+        "description": "Reactivates an inactive, suspended, or terminated employee profile with optimistic concurrency protection.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["expected_version"],
+                "properties": {
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "effective_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Effective date",
+                    "example": "2026-05-04"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": "Voluntary exit"
+                  },
+                  "remarks": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "example": "Approved by HR"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["inactive", "terminated", "suspended"],
+                    "example": "inactive"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "employee_code",
+                    "email",
+                    "full_name",
+                    "roles",
+                    "department",
+                    "designation",
+                    "manager",
+                    "display_label",
+                    "status",
+                    "login_state",
+                    "role_labels",
+                    "reporting_line",
+                    "role_assignments",
+                    "direct_reports_summary",
+                    "documents_summary",
+                    "assets_summary",
+                    "attendance_summary",
+                    "leave_summary",
+                    "timesheet_summary",
+                    "expense_summary",
+                    "profile_tabs_available"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Authenticated user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "employee_code": {
+                      "type": "string",
+                      "example": "N1"
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email",
+                      "example": "finance@example.test"
+                    },
+                    "full_name": {
+                      "type": "string",
+                      "example": "Finance Manager"
+                    },
+                    "department_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Department UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "designation_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Designation UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "manager_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Manager user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "hierarchy_path": {
+                      "type": "string",
+                      "example": "CEO.FIN.N1"
+                    },
+                    "employment_status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "example": "Asia/Kolkata"
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Finance Manager"]
+                    },
+                    "department": {
+                      "type": "object",
+                      "required": ["id", "department_code", "name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Department UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "department_code": {
+                          "type": "string",
+                          "example": "SALES"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Sales"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "designation": {
+                      "type": "object",
+                      "required": ["id", "designation_code", "title", "level"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Designation UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "designation_code": {
+                          "type": "string",
+                          "example": "EMPLOYEE"
+                        },
+                        "title": {
+                          "type": "string",
+                          "example": "Employee"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "nullable": true,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "manager": {
+                      "type": "object",
+                      "required": ["id", "employee_code", "full_name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "User UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "employee_code": {
+                          "type": "string",
+                          "example": "E1"
+                        },
+                        "full_name": {
+                          "type": "string",
+                          "example": "Employee E1"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "display_label": {
+                      "type": "string",
+                      "example": "E1 - Employee E1"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "login_state": {
+                      "type": "string",
+                      "enum": ["enabled", "disabled", "setup_pending"],
+                      "example": "enabled"
+                    },
+                    "role_labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Employee"]
+                    },
+                    "reporting_line": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "employee_code", "full_name"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "User UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "full_name": {
+                            "type": "string",
+                            "example": "Employee E1"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "role_assignments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["role", "status"],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "example": "Employee"
+                          },
+                          "status": {
+                            "type": "string",
+                            "example": "active"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "direct_reports_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "documents_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "assets_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "attendance_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "leave_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "timesheet_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "expense_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "profile_tabs_available": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "profile",
+                        "reporting",
+                        "roles",
+                        "documents",
+                        "assets",
+                        "attendance",
+                        "leave",
+                        "timesheets",
+                        "expenses"
+                      ]
+                    },
+                    "onboarding": {
+                      "type": "object",
+                      "required": ["setup_required", "invite_sent", "next_step"],
+                      "properties": {
+                        "setup_required": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "invite_sent": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "next_step": {
+                          "type": "string",
+                          "enum": ["set_password", "none"],
+                          "example": "set_password"
+                        },
+                        "dev_only": {
+                          "type": "object",
+                          "nullable": true,
+                          "description": "Local/QA only token echo for automated testing. Production responses omit this object.",
+                          "additionalProperties": true
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "sessions_revoked": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/core/users/{id}/deactivate": {
+      "post": {
+        "summary": "Deactivate user",
+        "tags": ["Core / Employees & Hierarchy"],
+        "description": "Deactivates, suspends, or terminates an employee, revokes active login credentials, and emits a platform event for downstream offboarding workflows such as asset recovery.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["expected_version"],
+                "properties": {
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "effective_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Effective date",
+                    "example": "2026-05-04"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": "Voluntary exit"
+                  },
+                  "remarks": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "example": "Approved by HR"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["inactive", "terminated", "suspended"],
+                    "example": "inactive"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "employee_code",
+                    "email",
+                    "full_name",
+                    "roles",
+                    "department",
+                    "designation",
+                    "manager",
+                    "display_label",
+                    "status",
+                    "login_state",
+                    "role_labels",
+                    "reporting_line",
+                    "role_assignments",
+                    "direct_reports_summary",
+                    "documents_summary",
+                    "assets_summary",
+                    "attendance_summary",
+                    "leave_summary",
+                    "timesheet_summary",
+                    "expense_summary",
+                    "profile_tabs_available"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Authenticated user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "employee_code": {
+                      "type": "string",
+                      "example": "N1"
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email",
+                      "example": "finance@example.test"
+                    },
+                    "full_name": {
+                      "type": "string",
+                      "example": "Finance Manager"
+                    },
+                    "department_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Department UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "designation_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Designation UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "manager_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Manager user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "hierarchy_path": {
+                      "type": "string",
+                      "example": "CEO.FIN.N1"
+                    },
+                    "employment_status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "example": "Asia/Kolkata"
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Finance Manager"]
+                    },
+                    "department": {
+                      "type": "object",
+                      "required": ["id", "department_code", "name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Department UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "department_code": {
+                          "type": "string",
+                          "example": "SALES"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Sales"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "designation": {
+                      "type": "object",
+                      "required": ["id", "designation_code", "title", "level"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Designation UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "designation_code": {
+                          "type": "string",
+                          "example": "EMPLOYEE"
+                        },
+                        "title": {
+                          "type": "string",
+                          "example": "Employee"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "nullable": true,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "manager": {
+                      "type": "object",
+                      "required": ["id", "employee_code", "full_name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "User UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "employee_code": {
+                          "type": "string",
+                          "example": "E1"
+                        },
+                        "full_name": {
+                          "type": "string",
+                          "example": "Employee E1"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "display_label": {
+                      "type": "string",
+                      "example": "E1 - Employee E1"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "login_state": {
+                      "type": "string",
+                      "enum": ["enabled", "disabled", "setup_pending"],
+                      "example": "enabled"
+                    },
+                    "role_labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Employee"]
+                    },
+                    "reporting_line": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "employee_code", "full_name"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "User UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "full_name": {
+                            "type": "string",
+                            "example": "Employee E1"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "role_assignments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["role", "status"],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "example": "Employee"
+                          },
+                          "status": {
+                            "type": "string",
+                            "example": "active"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "direct_reports_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "documents_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "assets_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "attendance_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "leave_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "timesheet_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "expense_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "profile_tabs_available": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "profile",
+                        "reporting",
+                        "roles",
+                        "documents",
+                        "assets",
+                        "attendance",
+                        "leave",
+                        "timesheets",
+                        "expenses"
+                      ]
+                    },
+                    "onboarding": {
+                      "type": "object",
+                      "required": ["setup_required", "invite_sent", "next_step"],
+                      "properties": {
+                        "setup_required": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "invite_sent": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "next_step": {
+                          "type": "string",
+                          "enum": ["set_password", "none"],
+                          "example": "set_password"
+                        },
+                        "dev_only": {
+                          "type": "object",
+                          "nullable": true,
+                          "description": "Local/QA only token echo for automated testing. Production responses omit this object.",
+                          "additionalProperties": true
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "sessions_revoked": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/core/users/{id}/login/enable": {
+      "post": {
+        "summary": "Enable login setup",
+        "tags": ["Core / Employees & Hierarchy"],
+        "description": "Starts login enablement by issuing a one-time password setup action. Local/QA responses include a dev_only token; production must deliver the setup action via configured email/notification provider before sign-in succeeds.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["expected_version"],
+                "properties": {
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "invite_email": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": "Access no longer required"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "employee_code",
+                    "email",
+                    "full_name",
+                    "roles",
+                    "department",
+                    "designation",
+                    "manager",
+                    "display_label",
+                    "status",
+                    "login_state",
+                    "role_labels",
+                    "reporting_line",
+                    "role_assignments",
+                    "direct_reports_summary",
+                    "documents_summary",
+                    "assets_summary",
+                    "attendance_summary",
+                    "leave_summary",
+                    "timesheet_summary",
+                    "expense_summary",
+                    "profile_tabs_available"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Authenticated user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "employee_code": {
+                      "type": "string",
+                      "example": "N1"
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email",
+                      "example": "finance@example.test"
+                    },
+                    "full_name": {
+                      "type": "string",
+                      "example": "Finance Manager"
+                    },
+                    "department_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Department UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "designation_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Designation UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "manager_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Manager user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "hierarchy_path": {
+                      "type": "string",
+                      "example": "CEO.FIN.N1"
+                    },
+                    "employment_status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "example": "Asia/Kolkata"
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Finance Manager"]
+                    },
+                    "department": {
+                      "type": "object",
+                      "required": ["id", "department_code", "name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Department UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "department_code": {
+                          "type": "string",
+                          "example": "SALES"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Sales"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "designation": {
+                      "type": "object",
+                      "required": ["id", "designation_code", "title", "level"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Designation UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "designation_code": {
+                          "type": "string",
+                          "example": "EMPLOYEE"
+                        },
+                        "title": {
+                          "type": "string",
+                          "example": "Employee"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "nullable": true,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "manager": {
+                      "type": "object",
+                      "required": ["id", "employee_code", "full_name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "User UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "employee_code": {
+                          "type": "string",
+                          "example": "E1"
+                        },
+                        "full_name": {
+                          "type": "string",
+                          "example": "Employee E1"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "display_label": {
+                      "type": "string",
+                      "example": "E1 - Employee E1"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "login_state": {
+                      "type": "string",
+                      "enum": ["enabled", "disabled", "setup_pending"],
+                      "example": "enabled"
+                    },
+                    "role_labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Employee"]
+                    },
+                    "reporting_line": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "employee_code", "full_name"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "User UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "full_name": {
+                            "type": "string",
+                            "example": "Employee E1"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "role_assignments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["role", "status"],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "example": "Employee"
+                          },
+                          "status": {
+                            "type": "string",
+                            "example": "active"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "direct_reports_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "documents_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "assets_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "attendance_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "leave_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "timesheet_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "expense_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "profile_tabs_available": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "profile",
+                        "reporting",
+                        "roles",
+                        "documents",
+                        "assets",
+                        "attendance",
+                        "leave",
+                        "timesheets",
+                        "expenses"
+                      ]
+                    },
+                    "onboarding": {
+                      "type": "object",
+                      "required": ["setup_required", "invite_sent", "next_step"],
+                      "properties": {
+                        "setup_required": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "invite_sent": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "next_step": {
+                          "type": "string",
+                          "enum": ["set_password", "none"],
+                          "example": "set_password"
+                        },
+                        "dev_only": {
+                          "type": "object",
+                          "nullable": true,
+                          "description": "Local/QA only token echo for automated testing. Production responses omit this object.",
+                          "additionalProperties": true
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "sessions_revoked": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/core/users/{id}/login/disable": {
+      "post": {
+        "summary": "Disable login",
+        "tags": ["Core / Employees & Hierarchy"],
+        "description": "Revokes active user credentials, revokes active sessions where the session store supports it, and marks login disabled with optimistic concurrency protection.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["expected_version"],
+                "properties": {
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "invite_email": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": "Access no longer required"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "employee_code",
+                    "email",
+                    "full_name",
+                    "roles",
+                    "department",
+                    "designation",
+                    "manager",
+                    "display_label",
+                    "status",
+                    "login_state",
+                    "role_labels",
+                    "reporting_line",
+                    "role_assignments",
+                    "direct_reports_summary",
+                    "documents_summary",
+                    "assets_summary",
+                    "attendance_summary",
+                    "leave_summary",
+                    "timesheet_summary",
+                    "expense_summary",
+                    "profile_tabs_available"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Authenticated user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "employee_code": {
+                      "type": "string",
+                      "example": "N1"
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email",
+                      "example": "finance@example.test"
+                    },
+                    "full_name": {
+                      "type": "string",
+                      "example": "Finance Manager"
+                    },
+                    "department_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Department UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "designation_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Designation UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "manager_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Manager user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "hierarchy_path": {
+                      "type": "string",
+                      "example": "CEO.FIN.N1"
+                    },
+                    "employment_status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "example": "Asia/Kolkata"
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Finance Manager"]
+                    },
+                    "department": {
+                      "type": "object",
+                      "required": ["id", "department_code", "name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Department UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "department_code": {
+                          "type": "string",
+                          "example": "SALES"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Sales"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "designation": {
+                      "type": "object",
+                      "required": ["id", "designation_code", "title", "level"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Designation UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "designation_code": {
+                          "type": "string",
+                          "example": "EMPLOYEE"
+                        },
+                        "title": {
+                          "type": "string",
+                          "example": "Employee"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "nullable": true,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "manager": {
+                      "type": "object",
+                      "required": ["id", "employee_code", "full_name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "User UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "employee_code": {
+                          "type": "string",
+                          "example": "E1"
+                        },
+                        "full_name": {
+                          "type": "string",
+                          "example": "Employee E1"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "display_label": {
+                      "type": "string",
+                      "example": "E1 - Employee E1"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "login_state": {
+                      "type": "string",
+                      "enum": ["enabled", "disabled", "setup_pending"],
+                      "example": "enabled"
+                    },
+                    "role_labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Employee"]
+                    },
+                    "reporting_line": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "employee_code", "full_name"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "User UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "full_name": {
+                            "type": "string",
+                            "example": "Employee E1"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "role_assignments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["role", "status"],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "example": "Employee"
+                          },
+                          "status": {
+                            "type": "string",
+                            "example": "active"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "direct_reports_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "documents_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "assets_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "attendance_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "leave_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "timesheet_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "expense_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "profile_tabs_available": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "profile",
+                        "reporting",
+                        "roles",
+                        "documents",
+                        "assets",
+                        "attendance",
+                        "leave",
+                        "timesheets",
+                        "expenses"
+                      ]
+                    },
+                    "onboarding": {
+                      "type": "object",
+                      "required": ["setup_required", "invite_sent", "next_step"],
+                      "properties": {
+                        "setup_required": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "invite_sent": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "next_step": {
+                          "type": "string",
+                          "enum": ["set_password", "none"],
+                          "example": "set_password"
+                        },
+                        "dev_only": {
+                          "type": "object",
+                          "nullable": true,
+                          "description": "Local/QA only token echo for automated testing. Production responses omit this object.",
+                          "additionalProperties": true
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "sessions_revoked": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/core/users/{id}/roles": {
+      "put": {
+        "summary": "Replace roles",
+        "tags": ["Core / Employees & Hierarchy"],
+        "description": "Replaces backend role assignments for an employee. Admin can assign all roles; HR Manager can assign non-admin roles and cannot modify admin users. Active session preference is adjusted if the previous active role is removed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["roles", "expected_version"],
+                "properties": {
+                  "roles": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "Employee",
+                        "Reviewer",
+                        "Director",
+                        "Finance Manager",
+                        "Admin",
+                        "Auditor",
+                        "Asset Manager",
+                        "HR Manager"
+                      ],
+                      "example": "Employee"
+                    },
+                    "minItems": 1,
+                    "example": ["Employee", "HR Manager"]
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "remarks": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "example": "Role change approved by HR"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "employee_code",
+                    "email",
+                    "full_name",
+                    "roles",
+                    "department",
+                    "designation",
+                    "manager",
+                    "display_label",
+                    "status",
+                    "login_state",
+                    "role_labels",
+                    "reporting_line",
+                    "role_assignments",
+                    "direct_reports_summary",
+                    "documents_summary",
+                    "assets_summary",
+                    "attendance_summary",
+                    "leave_summary",
+                    "timesheet_summary",
+                    "expense_summary",
+                    "profile_tabs_available"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Authenticated user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "employee_code": {
+                      "type": "string",
+                      "example": "N1"
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email",
+                      "example": "finance@example.test"
+                    },
+                    "full_name": {
+                      "type": "string",
+                      "example": "Finance Manager"
+                    },
+                    "department_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Department UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "designation_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Designation UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "manager_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Manager user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "hierarchy_path": {
+                      "type": "string",
+                      "example": "CEO.FIN.N1"
+                    },
+                    "employment_status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "example": "Asia/Kolkata"
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Finance Manager"]
+                    },
+                    "department": {
+                      "type": "object",
+                      "required": ["id", "department_code", "name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Department UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "department_code": {
+                          "type": "string",
+                          "example": "SALES"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Sales"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "designation": {
+                      "type": "object",
+                      "required": ["id", "designation_code", "title", "level"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Designation UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "designation_code": {
+                          "type": "string",
+                          "example": "EMPLOYEE"
+                        },
+                        "title": {
+                          "type": "string",
+                          "example": "Employee"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "nullable": true,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "manager": {
+                      "type": "object",
+                      "required": ["id", "employee_code", "full_name"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "User UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "employee_code": {
+                          "type": "string",
+                          "example": "E1"
+                        },
+                        "full_name": {
+                          "type": "string",
+                          "example": "Employee E1"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "display_label": {
+                      "type": "string",
+                      "example": "E1 - Employee E1"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "active"
+                    },
+                    "login_state": {
+                      "type": "string",
+                      "enum": ["enabled", "disabled", "setup_pending"],
+                      "example": "enabled"
+                    },
+                    "role_labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": ["Employee"]
+                    },
+                    "reporting_line": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "employee_code", "full_name"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "User UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "full_name": {
+                            "type": "string",
+                            "example": "Employee E1"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "role_assignments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["role", "status"],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "example": "Employee"
+                          },
+                          "status": {
+                            "type": "string",
+                            "example": "active"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "direct_reports_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "documents_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "assets_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "attendance_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "leave_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "timesheet_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "expense_summary": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "profile_tabs_available": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "profile",
+                        "reporting",
+                        "roles",
+                        "documents",
+                        "assets",
+                        "attendance",
+                        "leave",
+                        "timesheets",
+                        "expenses"
+                      ]
+                    },
+                    "onboarding": {
+                      "type": "object",
+                      "required": ["setup_required", "invite_sent", "next_step"],
+                      "properties": {
+                        "setup_required": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "invite_sent": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "next_step": {
+                          "type": "string",
+                          "enum": ["set_password", "none"],
+                          "example": "set_password"
+                        },
+                        "dev_only": {
+                          "type": "object",
+                          "nullable": true,
+                          "description": "Local/QA only token echo for automated testing. Production responses omit this object.",
+                          "additionalProperties": true
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "sessions_revoked": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 1
                     }
                   },
                   "additionalProperties": true

@@ -38,6 +38,20 @@ function mapRole(value: unknown): string {
   }
 }
 
+function mapStatus(value: unknown, fallback?: Employee["status"]): Employee["status"] {
+  switch (text(value).trim().toLowerCase()) {
+    case "active":
+      return "active";
+    case "terminated":
+      return "exited";
+    case "inactive":
+    case "suspended":
+      return "inactive";
+    default:
+      return fallback ?? "active";
+  }
+}
+
 export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee>): Employee {
   const row = asRecord(value);
   const name = text(row.full_name ?? row.name, fallback?.name ?? "Employee User");
@@ -50,6 +64,10 @@ export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee
   return {
     id: text(row.employee_code, fallback?.id ?? text(row.id, "EMP-API")),
     apiId: text(row.id, fallback?.apiId),
+    version:
+      typeof row.version === "number" && Number.isFinite(row.version)
+        ? row.version
+        : fallback?.version,
     firstName: text(row.first_name, fallback?.firstName ?? split.firstName),
     middleName: text(row.middle_name, fallback?.middleName),
     lastName: text(row.last_name, fallback?.lastName ?? split.lastName),
@@ -73,7 +91,7 @@ export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee
     ),
     location: text(row.location ?? row.work_location, fallback?.location ?? "—"),
     workMode: fallback?.workMode ?? "hybrid",
-    status: text(row.employment_status, fallback?.status ?? "active") as Employee["status"],
+    status: mapStatus(row.status ?? row.employment_status, fallback?.status),
     employmentType: fallback?.employmentType ?? "full_time",
     joinedAt: dateText(
       row.joined_at ?? row.created_at,
@@ -82,10 +100,12 @@ export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee
     probationEndDate: text(row.probation_end_date, fallback?.probationEndDate),
     noticeDays: fallback?.noticeDays ?? 30,
     shift: text(row.shift, fallback?.shift ?? "General"),
-    loginEnabled: boolValue(
-      row.login_enabled,
-      fallback?.loginEnabled ?? row.login_state !== "disabled",
-    ),
+    loginEnabled:
+      row.login_state === "enabled"
+        ? true
+        : row.login_state === "disabled" || row.login_state === "setup_pending"
+          ? false
+          : boolValue(row.login_enabled, fallback?.loginEnabled ?? false),
     systemRoles: roles.length ? roles : ["employee"],
     lastLoginAt: text(row.last_login_at, fallback?.lastLoginAt),
     avatarTone: fallback?.avatarTone ?? "primary",
