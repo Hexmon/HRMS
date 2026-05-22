@@ -1957,6 +1957,174 @@ const settlementBody = {
   }
 };
 
+const projectQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    status: { type: "string", enum: ["planned", "active", "on_hold", "completed", "cancelled", "archived"], example: "active" },
+    client: { type: "string", example: "NorthBank" },
+    manager_user_id: uuid("Project manager user UUID"),
+    search: { type: "string", example: "payments" },
+    include: { type: "string", example: "members,allocations,milestones,documents,summary" },
+    active_only: { type: "boolean", example: true },
+    role: { type: "string", example: "Engineer" },
+    user_id: uuid("Employee user UUID"),
+    date_from: date("Start date filter", "2026-05-01"),
+    date_to: date("End date filter", "2026-05-31"),
+    document_type: { type: "string", example: "sow" },
+    department_id: uuid("Department UUID"),
+    group_by: { type: "string", enum: ["department", "manager"], example: "department" }
+  }
+};
+
+const projectBody = {
+  type: "object",
+  required: ["project_code", "name", "client_name", "manager_user_id", "start_date", "end_date"],
+  properties: {
+    project_code: { type: "string", minLength: 2, maxLength: 40, example: "ATL-PAY" },
+    name: { type: "string", minLength: 2, maxLength: 180, example: "Atlas Payments Platform" },
+    client_name: { type: "string", minLength: 1, maxLength: 180, example: "NorthBank" },
+    project_type: { type: "string", enum: ["client", "internal"], default: "client", example: "client" },
+    billing_type: { type: "string", enum: ["fixed", "hourly", "retainer", "internal"], default: "fixed", example: "fixed" },
+    manager_user_id: uuid("Project manager user UUID"),
+    department_id: uuid("Owning department UUID"),
+    start_date: date("Project start date", "2026-05-01"),
+    end_date: date("Project end date", "2026-09-30"),
+    status: { type: "string", enum: ["planned", "active", "on_hold", "completed", "cancelled", "archived"], default: "planned", example: "active" },
+    health: { type: "string", enum: ["green", "amber", "red"], default: "green", example: "green" },
+    description: { type: "string", maxLength: 2000, example: "Client implementation project." },
+    estimated_hours: money("Estimated project hours", "1200.00"),
+    estimated_budget: money("Estimated project budget", "250000.00"),
+    tech_stack: { type: "array", items: { type: "string" }, example: ["TypeScript", "PostgreSQL"] },
+    priority: { type: "string", enum: ["low", "medium", "high", "critical"], default: "medium", example: "high" },
+    cost_center: { type: "string", example: "CC-DEL-01" }
+  },
+  additionalProperties: false
+};
+
+const projectUpdateBody = {
+  ...projectBody,
+  required: ["expected_version"],
+  properties: {
+    ...projectBody.properties,
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  }
+};
+
+const projectArchiveBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    remarks: { type: "string", example: "Delivery completed and documents archived." },
+    expected_version: { type: "integer", minimum: 1, example: 3 }
+  },
+  additionalProperties: false
+};
+
+const projectMemberBody = {
+  type: "object",
+  required: ["user_id", "project_role", "start_date", "expected_version"],
+  properties: {
+    user_id: uuid("Employee user UUID"),
+    project_role: { type: "string", example: "Engineer" },
+    allocation_percent: { type: "integer", minimum: 0, maximum: 200, default: 100, example: 80 },
+    billable: { type: "boolean", default: true, example: true },
+    start_date: date("Assignment start date", "2026-05-01"),
+    end_date: date("Assignment end date", "2026-09-30"),
+    reporting_lead_user_id: uuid("Reporting lead user UUID"),
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const projectMemberUpdateBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    project_role: { type: "string", example: "Senior Engineer" },
+    allocation_percent: { type: "integer", minimum: 0, maximum: 200, example: 100 },
+    billable: { type: "boolean", example: true },
+    start_date: date("Assignment start date", "2026-05-01"),
+    end_date: date("Assignment end date", "2026-09-30"),
+    reporting_lead_user_id: uuid("Reporting lead user UUID"),
+    status: { type: "string", enum: ["active", "removed"], example: "removed" },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const projectAllocationBody = {
+  type: "object",
+  required: ["user_id", "date_from", "allocation_percent", "expected_version"],
+  properties: {
+    user_id: uuid("Employee user UUID"),
+    date_from: date("Allocation start date", "2026-05-01"),
+    date_to: date("Allocation end date", "2026-09-30"),
+    allocation_percent: { type: "integer", minimum: 0, maximum: 200, example: 75 },
+    billable: { type: "boolean", default: true, example: true },
+    notes: { type: "string", example: "Ramp to full-time allocation next sprint." },
+    expected_version: { type: "integer", minimum: 1, example: 2 }
+  },
+  additionalProperties: false
+};
+
+const projectMilestoneBody = {
+  type: "object",
+  required: ["name", "due_date", "expected_version"],
+  properties: {
+    name: { type: "string", example: "Payments core launch" },
+    owner_user_id: uuid("Milestone owner user UUID"),
+    status: { type: "string", enum: ["planned", "in_progress", "completed", "on_hold"], default: "planned", example: "planned" },
+    start_date: date("Milestone start date", "2026-05-01"),
+    due_date: date("Milestone due date", "2026-08-15"),
+    priority: { type: "string", enum: ["low", "medium", "high", "critical"], default: "medium", example: "high" },
+    expected_version: { type: "integer", minimum: 1, example: 2 }
+  },
+  additionalProperties: false
+};
+
+const projectSchema = {
+  type: "object",
+  required: ["id", "project_code", "name", "client_name", "status", "version", "counts"],
+  properties: {
+    id: uuid("Project UUID"),
+    project_code: { type: "string", example: "ATL-PAY" },
+    code: { type: "string", example: "ATL-PAY" },
+    name: { type: "string", example: "Atlas Payments Platform" },
+    client_name: { type: "string", example: "NorthBank" },
+    client: { type: "string", example: "NorthBank" },
+    project_type: { type: "string", example: "client" },
+    type: { type: "string", example: "client" },
+    billing_type: { type: "string", example: "fixed" },
+    billingType: { type: "string", example: "fixed" },
+    manager_user_id: uuid("Project manager user UUID"),
+    manager: { type: "object", additionalProperties: true },
+    department: { type: "object", nullable: true, additionalProperties: true },
+    start_date: date("Project start date", "2026-05-01"),
+    end_date: date("Project end date", "2026-09-30"),
+    status: { type: "string", example: "active" },
+    health: { type: "string", example: "green" },
+    description: { type: "string", nullable: true },
+    estimated_hours: money("Estimated hours", "1200.00"),
+    actual_hours: money("Actual hours", "420.00"),
+    estimated_budget: money("Estimated budget", "250000.00"),
+    actual_spend: money("Actual spend", "120000.00"),
+    tech_stack: { type: "array", items: { type: "string" } },
+    priority: { type: "string", example: "high" },
+    cost_center: { type: "string", nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 },
+    counts: { type: "object", additionalProperties: true },
+    permissions: { type: "object", additionalProperties: true },
+    members: { type: "array", items: { type: "object", additionalProperties: true } },
+    allocations: { type: "array", items: { type: "object", additionalProperties: true } },
+    milestones: { type: "array", items: { type: "object", additionalProperties: true } },
+    modules: { type: "array", items: { type: "object", additionalProperties: true } },
+    documents: { type: "array", items: { type: "object", additionalProperties: true } },
+    summary: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
 const documentUploadBody = {
   type: "object",
   required: ["business_object_type", "business_object_id", "classification", "document_type", "file_name", "mime_type", "size_bytes"],
@@ -2067,6 +2235,21 @@ const routeDocs: Record<string, RouteSchema> = {
     "Returns a role-scoped dashboard summary assembled from implemented backend modules only: Core users, Expenses, Documents, Assets, Timesheets, Attendance, Leave/WFH, Notifications, and Outbox. Missing modules such as Helpdesk and Projects are explicitly marked not_implemented instead of returning mock counts.",
     { response200: dashboardSummarySchema }
   ),
+  "POST /api/v1/projects": operation("Projects / Utilization", "Create project", "Creates a project with core delivery metadata, owning manager, dates, budget/effort estimates, and optimistic concurrency version. Admin can create for any active manager; non-admin managers can create projects for themselves.", { body: projectBody, response200: { type: "object", required: ["project", "version"], properties: { project: projectSchema, version: { type: "integer", example: 1 } }, additionalProperties: true } }),
+  "GET /api/v1/projects": operation("Projects / Utilization", "List projects", "Lists projects visible to portfolio roles, assigned project managers, reporting managers, and project members. Supports status, client, manager, search, pagination, and totals.", { querystring: projectQuerySchema, response200: { ...paginated(projectSchema), additionalProperties: true } }),
+  "GET /api/v1/projects/{id}": operation("Projects / Utilization", "Project detail", "Returns one project detail with optional included members, allocation history, milestones/modules, documents, and summary data.", { params: idParamSchema, querystring: projectQuerySchema, response200: projectSchema }),
+  "PATCH /api/v1/projects/{id}": operation("Projects / Utilization", "Update project", "Updates project metadata with optimistic concurrency protection. Only Admin or the assigned project manager can mutate the project.", { params: idParamSchema, body: projectUpdateBody, response200: { type: "object", required: ["project", "version"], properties: { project: projectSchema, version: { type: "integer", example: 2 } }, additionalProperties: true } }),
+  "POST /api/v1/projects/{id}/archive": operation("Projects / Utilization", "Archive project", "Archives a project with optimistic concurrency. Active projects with active members must first be moved out of active delivery state or members removed.", { params: idParamSchema, body: projectArchiveBody, response200: { type: "object", additionalProperties: true } }),
+  "GET /api/v1/projects/{id}/members": operation("Projects / Utilization", "List project members", "Lists members assigned to a project with active-only and role filters.", { params: idParamSchema, querystring: projectQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
+  "POST /api/v1/projects/{id}/members": operation("Projects / Utilization", "Add project member", "Adds an active employee to a project and creates the initial allocation row with project-level optimistic concurrency.", { params: idParamSchema, body: projectMemberBody, response200: { type: "object", additionalProperties: true } }),
+  "PATCH /api/v1/projects/{id}/members/{member_id}": operation("Projects / Utilization", "Update project member", "Updates or removes a project member with member-level optimistic concurrency and returns project version/capacity warnings.", { params: { type: "object", required: ["id", "member_id"], properties: { id: uuid("Project UUID"), member_id: uuid("Project member UUID") } }, body: projectMemberUpdateBody, response200: { type: "object", additionalProperties: true } }),
+  "GET /api/v1/projects/{id}/allocations": operation("Projects / Utilization", "List allocation history", "Lists project allocation entries with employee and date-range filters, plus allocation totals.", { params: idParamSchema, querystring: projectQuerySchema, response200: { ...paginated({ type: "object", additionalProperties: true }), additionalProperties: true } }),
+  "POST /api/v1/projects/{id}/allocations": operation("Projects / Utilization", "Create allocation", "Creates an allocation entry for an active project member, updates the member allocation snapshot, and returns capacity warnings.", { params: idParamSchema, body: projectAllocationBody, response200: { type: "object", additionalProperties: true } }),
+  "GET /api/v1/projects/{id}/milestones": operation("Projects / Utilization", "List milestones", "Lists project modules/milestones visible to project-scoped users.", { params: idParamSchema, querystring: projectQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
+  "POST /api/v1/projects/{id}/milestones": operation("Projects / Utilization", "Create milestone", "Creates a project module/milestone with project-level optimistic concurrency.", { params: idParamSchema, body: projectMilestoneBody, response200: { type: "object", additionalProperties: true } }),
+  "GET /api/v1/projects/{id}/documents": operation("Projects / Utilization", "List project documents", "Lists project-scoped documents from the existing Documents module metadata. Downloads and verification continue through Documents APIs.", { params: idParamSchema, querystring: projectQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
+  "GET /api/v1/projects/{id}/summary": operation("Projects / Utilization", "Project summary", "Returns project cards, timesheet rollups, expense rollups, and allocation summary derived from implemented backend modules.", { params: idParamSchema, querystring: projectQuerySchema, response200: { type: "object", additionalProperties: true } }),
+  "GET /api/v1/team-utilization/summary": operation("Projects / Utilization", "Team utilization summary", "Returns bench, overload, capacity, billable/non-billable, and utilization analytics without client-side all-user aggregation.", { querystring: projectQuerySchema, response200: { type: "object", additionalProperties: true } }),
   "POST /api/v1/attendance/punches": operation(
     "Attendance",
     "Record punch",
@@ -2421,6 +2604,7 @@ export const openApiTags = [
   { name: "Attendance", description: "Punches, summaries, calendars, exceptions, and regularization workflows." },
   { name: "Leave / WFH / Holidays", description: "Leave balances, leave/WFH request workflows, HR monitor, and holiday calendar contracts." },
   { name: "EMS", description: "Employee self-service profile, requests, HR letters, and policy acknowledgement workflows." },
+  { name: "Projects / Utilization", description: "Project CRUD, delivery team allocation, milestones, project summaries, and utilization analytics." },
   { name: "Reports & Analytics", description: "Role-scoped expense registers and export readiness." },
   { name: "Notifications", description: "Notification contracts are emitted by backend workflows; no public endpoint is exposed in this delivery." },
   { name: "Outbox / Platform Events", description: "Transactional outbox and protected local event consumer contracts." },
@@ -2450,7 +2634,8 @@ export const openApiComponents = {
     EmsProfileChangeRequest: emsProfileChangeSchema,
     EmsServiceRequest: emsServiceRequestSchema,
     EmsLetter: emsLetterSchema,
-    EmsPolicy: emsPolicySchema
+    EmsPolicy: emsPolicySchema,
+    Project: projectSchema
   }
 };
 

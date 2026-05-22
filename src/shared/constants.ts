@@ -22,6 +22,8 @@ export const Permissions = {
   DocumentWrite: "document:write",
   DocumentVerify: "document:verify",
   ReportRead: "report:read",
+  ProjectRead: "project:read",
+  ProjectManage: "project:manage",
   AssetManage: "asset:manage",
   TimesheetApprove: "timesheet:approve",
   Admin: "admin:*"
@@ -228,6 +230,70 @@ export type LeaveRequestStatus =
 export const WfhRequestStatuses = LeaveRequestStatuses;
 
 export type WfhRequestStatus = LeaveRequestStatus;
+
+export const ProjectStatuses = {
+  Planned: "planned",
+  Active: "active",
+  OnHold: "on_hold",
+  Completed: "completed",
+  Cancelled: "cancelled",
+  Archived: "archived"
+} as const;
+
+export type ProjectStatus = (typeof ProjectStatuses)[keyof typeof ProjectStatuses];
+
+export const ProjectHealthStatuses = {
+  Green: "green",
+  Amber: "amber",
+  Red: "red"
+} as const;
+
+export type ProjectHealthStatus =
+  (typeof ProjectHealthStatuses)[keyof typeof ProjectHealthStatuses];
+
+export const ProjectTypes = {
+  Client: "client",
+  Internal: "internal"
+} as const;
+
+export type ProjectType = (typeof ProjectTypes)[keyof typeof ProjectTypes];
+
+export const ProjectBillingTypes = {
+  Fixed: "fixed",
+  Hourly: "hourly",
+  Retainer: "retainer",
+  Internal: "internal"
+} as const;
+
+export type ProjectBillingType =
+  (typeof ProjectBillingTypes)[keyof typeof ProjectBillingTypes];
+
+export const ProjectPriorities = {
+  Low: "low",
+  Medium: "medium",
+  High: "high",
+  Critical: "critical"
+} as const;
+
+export type ProjectPriority = (typeof ProjectPriorities)[keyof typeof ProjectPriorities];
+
+export const ProjectMemberStatuses = {
+  Active: "active",
+  Removed: "removed"
+} as const;
+
+export type ProjectMemberStatus =
+  (typeof ProjectMemberStatuses)[keyof typeof ProjectMemberStatuses];
+
+export const ProjectMilestoneStatuses = {
+  Planned: "planned",
+  InProgress: "in_progress",
+  Completed: "completed",
+  OnHold: "on_hold"
+} as const;
+
+export type ProjectMilestoneStatus =
+  (typeof ProjectMilestoneStatuses)[keyof typeof ProjectMilestoneStatuses];
 
 export const EmsProfileChangeStatuses = {
   Pending: "pending",

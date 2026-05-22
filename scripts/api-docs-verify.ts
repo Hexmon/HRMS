@@ -38,6 +38,7 @@ const allowedTags = new Set([
   "Attendance",
   "Leave / WFH / Holidays",
   "EMS",
+  "Projects / Utilization",
   "Reports & Analytics",
   "Notifications",
   "Outbox / Platform Events",
@@ -104,7 +105,14 @@ const bodyRequiredOperations = new Set([
   "POST /api/v1/ems/profile-change-requests/{id}/decision",
   "POST /api/v1/ems/requests",
   "POST /api/v1/ems/letters/{id}/acknowledge",
-  "POST /api/v1/ems/policies/{id}/acknowledge"
+  "POST /api/v1/ems/policies/{id}/acknowledge",
+  "POST /api/v1/projects",
+  "PATCH /api/v1/projects/{id}",
+  "POST /api/v1/projects/{id}/archive",
+  "POST /api/v1/projects/{id}/members",
+  "PATCH /api/v1/projects/{id}/members/{member_id}",
+  "POST /api/v1/projects/{id}/allocations",
+  "POST /api/v1/projects/{id}/milestones"
 ]);
 
 const occOperations = new Set([
@@ -126,7 +134,13 @@ const occOperations = new Set([
   "PATCH /api/v1/ems/profile/me",
   "POST /api/v1/ems/profile-change-requests/{id}/decision",
   "POST /api/v1/ems/letters/{id}/acknowledge",
-  "POST /api/v1/ems/policies/{id}/acknowledge"
+  "POST /api/v1/ems/policies/{id}/acknowledge",
+  "PATCH /api/v1/projects/{id}",
+  "POST /api/v1/projects/{id}/archive",
+  "POST /api/v1/projects/{id}/members",
+  "PATCH /api/v1/projects/{id}/members/{member_id}",
+  "POST /api/v1/projects/{id}/allocations",
+  "POST /api/v1/projects/{id}/milestones"
 ]);
 
 const listOperations = new Set([
@@ -170,7 +184,13 @@ const listOperations = new Set([
   "GET /api/v1/ems/requests/my",
   "GET /api/v1/ems/requests/queue/hr",
   "GET /api/v1/ems/letters",
-  "GET /api/v1/ems/policies"
+  "GET /api/v1/ems/policies",
+  "GET /api/v1/projects",
+  "GET /api/v1/projects/{id}/members",
+  "GET /api/v1/projects/{id}/allocations",
+  "GET /api/v1/projects/{id}/milestones",
+  "GET /api/v1/projects/{id}/documents",
+  "GET /api/v1/team-utilization/summary"
 ]);
 
 process.env.HRMS_ALLOW_MEMORY_STORE ??= "true";

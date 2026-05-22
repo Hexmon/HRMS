@@ -27,6 +27,10 @@ import type {
   LeaveRequest,
   ManagerBackupAssignment,
   OutboxEvent,
+  ProjectAllocationRecord,
+  ProjectMemberRecord,
+  ProjectMilestoneRecord,
+  ProjectRecord,
   TimesheetSubmission,
   UUID,
   WfhRequest
@@ -44,7 +48,14 @@ import {
   Roles,
   EmsLetterStatuses,
   EmsPolicyAcknowledgementStatuses,
-  TimesheetStatuses
+  TimesheetStatuses,
+  ProjectBillingTypes,
+  ProjectHealthStatuses,
+  ProjectMemberStatuses,
+  ProjectMilestoneStatuses,
+  ProjectPriorities,
+  ProjectStatuses,
+  ProjectTypes
 } from "#shared";
 import { MemorySessionStore, getLocalDemoPassword, hashPasswordSync, type SessionStore } from "#auth";
 
@@ -272,6 +283,10 @@ export interface DataStore {
     remarks: string | null;
     created_at: string;
   }>;
+  projects: ProjectRecord[];
+  projectMembers: ProjectMemberRecord[];
+  projectAllocations: ProjectAllocationRecord[];
+  projectMilestones: ProjectMilestoneRecord[];
   attendancePunches: AttendancePunch[];
   attendanceDayRecords: AttendanceDayRecord[];
   attendanceRegularizations: AttendanceRegularizationRequest[];
@@ -706,6 +721,156 @@ export function createMemoryDataStore(): MemoryDataStore {
     created_at: created,
     updated_at: created
   }));
+  const projectHawkaiiId = uuidFromName("project-hawkaii-hrms");
+  const projectFinanceId = uuidFromName("project-finance-automation");
+  const projectMembers: ProjectMemberRecord[] = [
+    {
+      id: uuidFromName("project-hawkaii-hrms-member-e1"),
+      project_id: projectHawkaiiId,
+      employee_user_id: seedIds.employee1,
+      project_role: "Engineer",
+      allocation_percent: 80,
+      billable: false,
+      start_date: "2026-05-01",
+      end_date: null,
+      reporting_lead_user_id: seedIds.manager,
+      status: ProjectMemberStatuses.Active,
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("project-hawkaii-hrms-member-e2"),
+      project_id: projectHawkaiiId,
+      employee_user_id: seedIds.employee2,
+      project_role: "QA Analyst",
+      allocation_percent: 60,
+      billable: false,
+      start_date: "2026-05-01",
+      end_date: null,
+      reporting_lead_user_id: seedIds.manager,
+      status: ProjectMemberStatuses.Active,
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("project-finance-automation-member-e2"),
+      project_id: projectFinanceId,
+      employee_user_id: seedIds.employee2,
+      project_role: "Implementation Engineer",
+      allocation_percent: 50,
+      billable: true,
+      start_date: "2026-04-15",
+      end_date: null,
+      reporting_lead_user_id: seedIds.financeManager,
+      status: ProjectMemberStatuses.Active,
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    }
+  ];
+  const projectAllocations: ProjectAllocationRecord[] = projectMembers.map((member) => ({
+    id: uuidFromName(`allocation-${member.id}`),
+    project_id: member.project_id,
+    employee_user_id: member.employee_user_id,
+    date_from: member.start_date,
+    date_to: member.end_date,
+    allocation_percent: member.allocation_percent,
+    billable: member.billable,
+    notes: "Seed allocation",
+    version: 1,
+    created_at: created,
+    updated_at: created,
+    deleted_at: null
+  }));
+  const projectMilestones: ProjectMilestoneRecord[] = [
+    {
+      id: uuidFromName("project-hawkaii-hrms-milestone-core"),
+      project_id: projectHawkaiiId,
+      name: "Core HR workflows",
+      owner_user_id: seedIds.employee1,
+      status: ProjectMilestoneStatuses.InProgress,
+      start_date: "2026-05-01",
+      due_date: "2026-07-31",
+      priority: ProjectPriorities.High,
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("project-finance-automation-milestone-expense"),
+      project_id: projectFinanceId,
+      name: "Expense finance automation",
+      owner_user_id: seedIds.employee2,
+      status: ProjectMilestoneStatuses.Planned,
+      start_date: "2026-06-01",
+      due_date: "2026-08-31",
+      priority: ProjectPriorities.Medium,
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    }
+  ];
+  const projects: ProjectRecord[] = [
+    {
+      id: projectHawkaiiId,
+      project_code: "HAW-HRMS",
+      name: "Hawkaii HRMS Production Readiness",
+      client_name: "Hawkaii",
+      project_type: ProjectTypes.Internal,
+      billing_type: ProjectBillingTypes.Internal,
+      manager_user_id: seedIds.manager,
+      department_id: seedIds.departmentSales,
+      start_date: "2026-05-01",
+      end_date: "2026-09-30",
+      status: ProjectStatuses.Active,
+      health: ProjectHealthStatuses.Green,
+      description: "Internal HRMS implementation and production readiness program.",
+      estimated_hours: "2400.00",
+      actual_hours: "320.00",
+      estimated_budget: "0.00",
+      actual_spend: "0.00",
+      tech_stack: ["TypeScript", "Fastify", "React"],
+      priority: ProjectPriorities.High,
+      cost_center: "CC-INT-HRMS",
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: projectFinanceId,
+      project_code: "FIN-AUTO",
+      name: "Finance Automation Rollout",
+      client_name: "Internal Finance",
+      project_type: ProjectTypes.Internal,
+      billing_type: ProjectBillingTypes.Internal,
+      manager_user_id: seedIds.financeManager,
+      department_id: seedIds.departmentFinance,
+      start_date: "2026-04-15",
+      end_date: "2026-08-31",
+      status: ProjectStatuses.Active,
+      health: ProjectHealthStatuses.Amber,
+      description: "Finance workflow automation and reporting rollout.",
+      estimated_hours: "1200.00",
+      actual_hours: "180.00",
+      estimated_budget: "0.00",
+      actual_spend: "0.00",
+      tech_stack: ["Fastify", "PostgreSQL"],
+      priority: ProjectPriorities.Medium,
+      cost_center: "CC-FIN-AUTO",
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    }
+  ];
   return {
     kind: "memory",
     departments,
@@ -775,6 +940,10 @@ export function createMemoryDataStore(): MemoryDataStore {
     ],
     timesheetSubmissions: [],
     timesheetActions: [],
+    projects,
+    projectMembers,
+    projectAllocations,
+    projectMilestones,
     attendancePunches: [],
     attendanceDayRecords: [],
     attendanceRegularizations: [],

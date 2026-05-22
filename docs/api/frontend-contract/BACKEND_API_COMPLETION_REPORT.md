@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 121 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 136 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 94 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `121 current + 94 remaining`; EMS added `GET /api/v1/ems/requests/my` after UI audit showed the route needed an own-request list. |
+| Planned new APIs | 79 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `136 current + 79 remaining`; Projects/utilization added 15 operations after UI audit confirmed project portfolio, detail, and team utilization needs. |
 
 ## Development Phases
 
@@ -19,7 +19,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | P0 ready | Existing implemented APIs | No planned changes required for initial integration. | Integrate directly from `openapi.json` and `ENDPOINT_INDEX.md`. |
 | P1 update existing | Existing APIs need fuller shapes | Add backward-compatible fields/filters/actions, update tests, regenerate OpenAPI. | Keep adapters tolerant until expanded fields are available. |
 | P2 core missing | Auth, core, EMS, leave/WFH | Build daily HR workflows after the Phase 3 attendance, leave/WFH, and EMS slices. | Keep modules mocked until implemented. Employee CRUD/admin, attendance, primary leave/WFH, and primary EMS APIs are now available from OpenAPI. |
-| P3 module completion | Projects, assets additions, helpdesk, notifications | Build operational modules after P2 data foundations exist. | Integrate route-by-route as OpenAPI grows. |
+| P3 module completion | Helpdesk, notifications, assets additions | Build operational modules after P2 data foundations exist. | Integrate route-by-route as OpenAPI grows. |
 | P4 admin/report hardening | Admin settings and non-expense reports | Add policy/config/report/export breadth with audit and RBAC. | Do not bypass backend scope with client-side aggregation. |
 
 ## Current Implemented API Summary
@@ -42,6 +42,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Attendance | 9 | Punches, my punch list, my/team summaries, monthly calendar, regularization submit/list/decision, and exception queue. |
 | Leave / WFH / Holidays | 14 | Leave balances, leave apply/cancel/decision queues, WFH apply/decision queues, HR monitor, and holiday list/upsert. |
 | EMS | 13 | Employee profile, profile change requests and HR decisions, generic employee requests and HR queue, letters, and policy acknowledgements. |
+| Projects / Utilization | 15 | Project CRUD, members, allocations, milestones/modules, project documents, project summary, and team utilization analytics. |
 
 P0 frontend integration can start with these operations only. The authoritative machine-readable list remains `docs/api/frontend-contract/openapi.json`.
 
@@ -76,7 +77,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **94**.
+Total remaining planned new operations: **79**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -182,25 +183,25 @@ Total remaining planned new operations: **94**.
 | GET | `/api/v1/timesheets/submissions/{id}` | `/timesheet/submissions/:id` | Return submission detail with segments and decision history. | Owner, approver, HR/Admin/auditor. | Path id | submission, segments[], workflow_history[], version | 403 out-of-scope; 404 unknown. | Planned / Not Implemented |
 | GET | `/api/v1/timesheets/selectors` | `/timesheet/forms` | Return projects, tasks, cycles, approvers, and workflow metadata for forms. | Authenticated user; scoped to assignments. | include, date optional | projects[], tasks[], cycles[], approvers[], rules | Shared errors; cache short-lived. | Planned / Not Implemented |
 
-### Projects / Utilization (15 planned APIs)
+### Projects / Utilization (15 implemented APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/api/v1/projects` | `/projects/new` | Create project. | PM/Admin/project admin. | name, code, client, dates, status, budget optional | project, version | 409 duplicate code; audit required. | Planned / Not Implemented |
-| GET | `/api/v1/projects` | `/projects` | List projects. | Authenticated; scoped by membership/role. | page, page_size, status, client, manager_user_id, search, sort | items[], pagination, totals | 403 restricted portfolio; paginated. | Planned / Not Implemented |
-| GET | `/api/v1/projects/{id}` | `/projects/:id` | Return project detail. | Project member, PM, HR/Admin/auditor by scope. | Path id; include=members,allocations,milestones,documents,summary | project detail, version, selected includes | 403 not member/out-of-scope. | Planned / Not Implemented |
-| PATCH | `/api/v1/projects/{id}` | `/projects/:id/settings` | Update project metadata. | PM/Admin/project admin. | fields plus expected_version | project, version | 409 stale version/invalid status transition. | Planned / Not Implemented |
-| POST | `/api/v1/projects/{id}/archive` | `/projects/:id/settings` | Archive project. | PM/Admin/project admin. | remarks, expected_version | project status, version | 409 active allocation/milestone blockers. | Planned / Not Implemented |
-| GET | `/api/v1/projects/{id}/members` | `/projects/:id/team` | List project members. | Project member/PM/Admin. | page, page_size, role, active_only | items[], pagination | 403 out-of-scope; paginated. | Planned / Not Implemented |
-| POST | `/api/v1/projects/{id}/members` | `/projects/:id/team` | Add project member. | PM/Admin/project admin. | user_id, project_role, start_date, allocation_percent, expected_version | member, project_version | 409 duplicate active member or capacity conflict. | Planned / Not Implemented |
-| PATCH | `/api/v1/projects/{id}/members/{member_id}` | `/projects/:id/team` | Update or remove project member. | PM/Admin/project admin. | member fields/status, expected_version | member, project_version | 409 stale member/project version. | Planned / Not Implemented |
-| GET | `/api/v1/projects/{id}/allocations` | `/projects/:id/allocations` | List allocation history. | Project member scoped; PM/HR/Admin broader. | page, page_size, user_id, date_range | items[], pagination, totals | Shared errors; paginated. | Planned / Not Implemented |
-| POST | `/api/v1/projects/{id}/allocations` | `/projects/:id/allocations` | Create allocation entry. | PM/Admin/project admin. | user_id, date_from, date_to, allocation_percent, expected_version | allocation, capacity_warnings, version | 409 capacity conflict or stale version. | Planned / Not Implemented |
-| GET | `/api/v1/projects/{id}/milestones` | `/projects/:id/milestones` | List project modules/milestones. | Project member/PM/Admin. | page, page_size, status | items[], pagination | Shared errors. | Planned / Not Implemented |
-| POST | `/api/v1/projects/{id}/milestones` | `/projects/:id/milestones` | Create project milestone/module. | PM/Admin/project admin. | name, due_date, owner_user_id, status, expected_version | milestone, project_version | 409 stale project version. | Planned / Not Implemented |
-| GET | `/api/v1/projects/{id}/documents` | `/projects/:id/documents` | List project documents. | Project member/PM/Admin with classification rules. | page, page_size, document_type | items[], pagination | 403 restricted classification; download through document API. | Planned / Not Implemented |
-| GET | `/api/v1/projects/{id}/summary` | `/projects/:id/summary` | Return project dashboard summary. | Project member/PM/Admin by scope. | date_range | cards, timesheet_summary, expense_summary, allocation_summary | Shared errors; money as strings. | Planned / Not Implemented |
-| GET | `/api/v1/team-utilization/summary` | `/team-utilization` | Return bench, overload, and utilization analytics. | Manager/HR/Admin/PM by scope. | date_range, department_id, manager_user_id, group_by | cards, series[], employees[] | 403 out-of-scope; do not aggregate all users client-side. | Planned / Not Implemented |
+| POST | `/api/v1/projects` | `/projects/new` | Create project. | PM/Admin/project admin. | name, code, client, dates, status, budget optional | project, version | 409 duplicate code; audit required. | Implemented in Phase 4 |
+| GET | `/api/v1/projects` | `/projects` | List projects. | Authenticated; scoped by membership/role. | page, page_size, status, client, manager_user_id, search, sort | items[], pagination, totals | 403 restricted portfolio; paginated. | Implemented in Phase 4 |
+| GET | `/api/v1/projects/{id}` | `/projects/:id` | Return project detail. | Project member, PM, HR/Admin/auditor by scope. | Path id; include=members,allocations,milestones,documents,summary | project detail, version, selected includes | 403 not member/out-of-scope. | Implemented in Phase 4 |
+| PATCH | `/api/v1/projects/{id}` | `/projects/:id/settings` | Update project metadata. | PM/Admin/project admin. | fields plus expected_version | project, version | 409 stale version/invalid status transition. | Implemented in Phase 4 |
+| POST | `/api/v1/projects/{id}/archive` | `/projects/:id/settings` | Archive project. | PM/Admin/project admin. | remarks, expected_version | project status, version | 409 active allocation/milestone blockers. | Implemented in Phase 4 |
+| GET | `/api/v1/projects/{id}/members` | `/projects/:id/team` | List project members. | Project member/PM/Admin. | page, page_size, role, active_only | items[], pagination | 403 out-of-scope; paginated. | Implemented in Phase 4 |
+| POST | `/api/v1/projects/{id}/members` | `/projects/:id/team` | Add project member. | PM/Admin/project admin. | user_id, project_role, start_date, allocation_percent, expected_version | member, project_version | 409 duplicate active member or capacity conflict. | Implemented in Phase 4 |
+| PATCH | `/api/v1/projects/{id}/members/{member_id}` | `/projects/:id/team` | Update or remove project member. | PM/Admin/project admin. | member fields/status, expected_version | member, project_version | 409 stale member/project version. | Implemented in Phase 4 |
+| GET | `/api/v1/projects/{id}/allocations` | `/projects/:id/allocations` | List allocation history. | Project member scoped; PM/HR/Admin broader. | page, page_size, user_id, date_range | items[], pagination, totals | Shared errors; paginated. | Implemented in Phase 4 |
+| POST | `/api/v1/projects/{id}/allocations` | `/projects/:id/allocations` | Create allocation entry. | PM/Admin/project admin. | user_id, date_from, date_to, allocation_percent, expected_version | allocation, capacity_warnings, version | 409 capacity conflict or stale version. | Implemented in Phase 4 |
+| GET | `/api/v1/projects/{id}/milestones` | `/projects/:id/milestones` | List project modules/milestones. | Project member/PM/Admin. | page, page_size, status | items[], pagination | Shared errors. | Implemented in Phase 4 |
+| POST | `/api/v1/projects/{id}/milestones` | `/projects/:id/milestones` | Create project milestone/module. | PM/Admin/project admin. | name, due_date, owner_user_id, status, expected_version | milestone, project_version | 409 stale project version. | Implemented in Phase 4 |
+| GET | `/api/v1/projects/{id}/documents` | `/projects/:id/documents` | List project documents. | Project member/PM/Admin with classification rules. | page, page_size, document_type | items[], pagination | 403 restricted classification; download through document API. | Implemented in Phase 4 |
+| GET | `/api/v1/projects/{id}/summary` | `/projects/:id/summary` | Return project dashboard summary. | Project member/PM/Admin by scope. | date_range | cards, timesheet_summary, expense_summary, allocation_summary | Shared errors; money as strings. | Implemented in Phase 4 |
+| GET | `/api/v1/team-utilization/summary` | `/team-utilization` | Return bench, overload, and utilization analytics. | Manager/HR/Admin/PM by scope. | date_range, department_id, manager_user_id, group_by | cards, series[], employees[] | 403 out-of-scope; do not aggregate all users client-side. | Implemented in Phase 4 |
 
 ### Expenses / Finance Additions (4 planned APIs)
 

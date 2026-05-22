@@ -21,6 +21,7 @@ export const timesheets = pgSchema("timesheets");
 export const attendance = pgSchema("attendance");
 export const leaveWfh = pgSchema("leave_wfh");
 export const ems = pgSchema("ems");
+export const projects = pgSchema("projects");
 export const platform = pgSchema("platform");
 
 const uuidPk = uuid("id").primaryKey();
@@ -756,6 +757,108 @@ export const timesheetApprovalActions = timesheets.table("timesheet_approval_act
   remarks: text("remarks"),
   createdAt
 });
+
+export const projectRecords = projects.table(
+  "projects",
+  {
+    id: uuidPk.defaultRandom(),
+    projectCode: text("project_code").notNull(),
+    name: text("name").notNull(),
+    clientName: text("client_name").notNull(),
+    projectType: text("project_type").notNull(),
+    billingType: text("billing_type").notNull(),
+    managerUserId: uuid("manager_user_id").notNull(),
+    departmentId: uuid("department_id"),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    status: text("status").notNull(),
+    health: text("health").notNull(),
+    description: text("description"),
+    estimatedHours: numeric("estimated_hours", { precision: 10, scale: 2 }).notNull().default("0"),
+    actualHours: numeric("actual_hours", { precision: 10, scale: 2 }).notNull().default("0"),
+    estimatedBudget: numeric("estimated_budget", { precision: 14, scale: 2 }).notNull().default("0"),
+    actualSpend: numeric("actual_spend", { precision: 14, scale: 2 }).notNull().default("0"),
+    techStack: jsonb("tech_stack").notNull().default([]),
+    priority: text("priority").notNull(),
+    costCenter: text("cost_center"),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("projects_code_uq").on(table.projectCode),
+    index("projects_status_manager_idx").on(table.status, table.managerUserId, table.updatedAt),
+    index("projects_client_status_idx").on(table.clientName, table.status)
+  ]
+);
+
+export const projectMembers = projects.table(
+  "project_members",
+  {
+    id: uuidPk.defaultRandom(),
+    projectId: uuid("project_id").notNull(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    projectRole: text("project_role").notNull(),
+    allocationPercent: integer("allocation_percent").notNull().default(100),
+    billable: boolean("billable").notNull().default(true),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date"),
+    reportingLeadUserId: uuid("reporting_lead_user_id"),
+    status: text("status").notNull(),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("project_members_active_user_uq").on(table.projectId, table.employeeUserId),
+    index("project_members_employee_idx").on(table.employeeUserId, table.status)
+  ]
+);
+
+export const projectAllocations = projects.table(
+  "project_allocations",
+  {
+    id: uuidPk.defaultRandom(),
+    projectId: uuid("project_id").notNull(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    dateFrom: date("date_from").notNull(),
+    dateTo: date("date_to"),
+    allocationPercent: integer("allocation_percent").notNull(),
+    billable: boolean("billable").notNull().default(true),
+    notes: text("notes"),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    index("project_allocations_employee_date_idx").on(table.employeeUserId, table.dateFrom, table.dateTo),
+    index("project_allocations_project_date_idx").on(table.projectId, table.dateFrom)
+  ]
+);
+
+export const projectMilestones = projects.table(
+  "project_milestones",
+  {
+    id: uuidPk.defaultRandom(),
+    projectId: uuid("project_id").notNull(),
+    name: text("name").notNull(),
+    ownerUserId: uuid("owner_user_id"),
+    status: text("status").notNull(),
+    startDate: date("start_date"),
+    dueDate: date("due_date").notNull(),
+    priority: text("priority").notNull(),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    index("project_milestones_project_status_idx").on(table.projectId, table.status, table.dueDate)
+  ]
+);
 
 export const emsEmployeeProfiles = ems.table(
   "employee_profiles",

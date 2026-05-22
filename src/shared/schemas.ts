@@ -12,6 +12,13 @@ import {
   LeaveRequestStatuses,
   LeaveTypes,
   PaymentTypes,
+  ProjectBillingTypes,
+  ProjectHealthStatuses,
+  ProjectMemberStatuses,
+  ProjectMilestoneStatuses,
+  ProjectPriorities,
+  ProjectStatuses,
+  ProjectTypes,
   TimesheetStatuses
 } from "./constants.js";
 
@@ -323,6 +330,134 @@ export const holidayUpsertSchema = z.object({
 });
 
 export type HolidayUpsertInput = z.infer<typeof holidayUpsertSchema>;
+
+export const projectCreateSchema = z.object({
+  project_code: z.string().trim().min(2).max(40),
+  name: z.string().trim().min(2).max(180),
+  client_name: z.string().trim().min(1).max(180),
+  project_type: z.enum([ProjectTypes.Client, ProjectTypes.Internal]).default(ProjectTypes.Client),
+  billing_type: z
+    .enum([
+      ProjectBillingTypes.Fixed,
+      ProjectBillingTypes.Hourly,
+      ProjectBillingTypes.Retainer,
+      ProjectBillingTypes.Internal
+    ])
+    .default(ProjectBillingTypes.Fixed),
+  manager_user_id: uuidSchema,
+  department_id: uuidSchema.optional(),
+  start_date: isoDateSchema,
+  end_date: isoDateSchema,
+  status: z
+    .enum([
+      ProjectStatuses.Planned,
+      ProjectStatuses.Active,
+      ProjectStatuses.OnHold,
+      ProjectStatuses.Completed,
+      ProjectStatuses.Cancelled,
+      ProjectStatuses.Archived
+    ])
+    .default(ProjectStatuses.Planned),
+  health: z
+    .enum([
+      ProjectHealthStatuses.Green,
+      ProjectHealthStatuses.Amber,
+      ProjectHealthStatuses.Red
+    ])
+    .default(ProjectHealthStatuses.Green),
+  description: z.string().trim().max(2000).optional(),
+  estimated_hours: moneySchema.default("0.00"),
+  estimated_budget: moneySchema.default("0.00"),
+  tech_stack: z.array(z.string().trim().min(1).max(80)).default([]),
+  priority: z
+    .enum([
+      ProjectPriorities.Low,
+      ProjectPriorities.Medium,
+      ProjectPriorities.High,
+      ProjectPriorities.Critical
+    ])
+    .default(ProjectPriorities.Medium),
+  cost_center: z.string().trim().max(80).optional()
+});
+
+export type ProjectCreateInput = z.infer<typeof projectCreateSchema>;
+
+export const projectUpdateSchema = projectCreateSchema
+  .partial()
+  .extend({ expected_version: z.number().int().min(1) });
+
+export type ProjectUpdateInput = z.infer<typeof projectUpdateSchema>;
+
+export const projectArchiveSchema = z.object({
+  remarks: z.string().trim().max(1000).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type ProjectArchiveInput = z.infer<typeof projectArchiveSchema>;
+
+export const projectMemberCreateSchema = z.object({
+  user_id: uuidSchema,
+  project_role: z.string().trim().min(1).max(120),
+  allocation_percent: z.number().int().min(0).max(200).default(100),
+  billable: z.boolean().default(true),
+  start_date: isoDateSchema,
+  end_date: isoDateSchema.optional(),
+  reporting_lead_user_id: uuidSchema.optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type ProjectMemberCreateInput = z.infer<typeof projectMemberCreateSchema>;
+
+export const projectMemberUpdateSchema = z.object({
+  project_role: z.string().trim().min(1).max(120).optional(),
+  allocation_percent: z.number().int().min(0).max(200).optional(),
+  billable: z.boolean().optional(),
+  start_date: isoDateSchema.optional(),
+  end_date: isoDateSchema.nullish(),
+  reporting_lead_user_id: uuidSchema.nullish(),
+  status: z.enum([ProjectMemberStatuses.Active, ProjectMemberStatuses.Removed]).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type ProjectMemberUpdateInput = z.infer<typeof projectMemberUpdateSchema>;
+
+export const projectAllocationCreateSchema = z.object({
+  user_id: uuidSchema,
+  date_from: isoDateSchema,
+  date_to: isoDateSchema.optional(),
+  allocation_percent: z.number().int().min(0).max(200),
+  billable: z.boolean().default(true),
+  notes: z.string().trim().max(1000).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type ProjectAllocationCreateInput = z.infer<typeof projectAllocationCreateSchema>;
+
+export const projectMilestoneCreateSchema = z.object({
+  name: z.string().trim().min(1).max(180),
+  owner_user_id: uuidSchema.optional(),
+  status: z
+    .enum([
+      ProjectMilestoneStatuses.Planned,
+      ProjectMilestoneStatuses.InProgress,
+      ProjectMilestoneStatuses.Completed,
+      ProjectMilestoneStatuses.OnHold
+    ])
+    .default(ProjectMilestoneStatuses.Planned),
+  start_date: isoDateSchema.optional(),
+  due_date: isoDateSchema,
+  priority: z
+    .enum([
+      ProjectPriorities.Low,
+      ProjectPriorities.Medium,
+      ProjectPriorities.High,
+      ProjectPriorities.Critical
+    ])
+    .default(ProjectPriorities.Medium),
+  expected_version: z.number().int().min(1)
+});
+
+export type ProjectMilestoneCreateInput = z.infer<typeof projectMilestoneCreateSchema>;
 
 export const workflowDefinitionSchema = z.object({
   name: z.string().min(1),

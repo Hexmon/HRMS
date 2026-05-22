@@ -88,6 +88,13 @@ const expectedOperations = [
   "GET /api/v1/manager-backups",
   "GET /api/v1/openapi.json",
   "GET /api/v1/platform/finance-governance",
+  "GET /api/v1/projects",
+  "GET /api/v1/projects/{id}",
+  "GET /api/v1/projects/{id}/allocations",
+  "GET /api/v1/projects/{id}/documents",
+  "GET /api/v1/projects/{id}/members",
+  "GET /api/v1/projects/{id}/milestones",
+  "GET /api/v1/projects/{id}/summary",
   "GET /api/v1/reports/expenses/advance-aging",
   "GET /api/v1/reports/expenses/audit",
   "GET /api/v1/reports/expenses/finance-analytics",
@@ -102,6 +109,7 @@ const expectedOperations = [
   "GET /api/v1/timesheets/submissions/my",
   "GET /api/v1/timesheets/work-segments",
   "GET /api/v1/timesheets/workflow-definitions",
+  "GET /api/v1/team-utilization/summary",
   "GET /api/v1/wfh/requests/my",
   "GET /api/v1/wfh/requests/queue/manager",
   "GET /health/live",
@@ -156,6 +164,13 @@ const expectedOperations = [
   "POST /api/v1/leave/requests/{id}/decision",
   "POST /api/v1/manager-backups",
   "POST /api/v1/onboarding/company-bootstrap",
+  "PATCH /api/v1/projects/{id}",
+  "POST /api/v1/projects",
+  "POST /api/v1/projects/{id}/allocations",
+  "POST /api/v1/projects/{id}/archive",
+  "POST /api/v1/projects/{id}/members",
+  "PATCH /api/v1/projects/{id}/members/{member_id}",
+  "POST /api/v1/projects/{id}/milestones",
   "POST /api/v1/reports/exports",
   "POST /api/v1/timesheets/submissions",
   "POST /api/v1/timesheets/submissions/{id}/approve",
@@ -226,6 +241,13 @@ const bodyRequiredOperations = [
   "POST /api/v1/ems/requests",
   "POST /api/v1/ems/letters/{id}/acknowledge",
   "POST /api/v1/ems/policies/{id}/acknowledge",
+  "POST /api/v1/projects",
+  "PATCH /api/v1/projects/{id}",
+  "POST /api/v1/projects/{id}/archive",
+  "POST /api/v1/projects/{id}/members",
+  "PATCH /api/v1/projects/{id}/members/{member_id}",
+  "POST /api/v1/projects/{id}/allocations",
+  "POST /api/v1/projects/{id}/milestones",
   "POST /api/v1/manager-backups",
   "POST /api/v1/reports/exports",
   "PUT /api/v1/platform/finance-governance"
@@ -249,6 +271,12 @@ const occOperations = [
   "POST /api/v1/ems/profile-change-requests/{id}/decision",
   "POST /api/v1/ems/letters/{id}/acknowledge",
   "POST /api/v1/ems/policies/{id}/acknowledge",
+  "PATCH /api/v1/projects/{id}",
+  "POST /api/v1/projects/{id}/archive",
+  "POST /api/v1/projects/{id}/members",
+  "PATCH /api/v1/projects/{id}/members/{member_id}",
+  "POST /api/v1/projects/{id}/allocations",
+  "POST /api/v1/projects/{id}/milestones",
   "DELETE /api/v1/manager-backups/{id}"
 ];
 
@@ -292,7 +320,13 @@ const listOperations = [
   "GET /api/v1/ems/requests/my",
   "GET /api/v1/ems/requests/queue/hr",
   "GET /api/v1/ems/letters",
-  "GET /api/v1/ems/policies"
+  "GET /api/v1/ems/policies",
+  "GET /api/v1/projects",
+  "GET /api/v1/projects/{id}/members",
+  "GET /api/v1/projects/{id}/allocations",
+  "GET /api/v1/projects/{id}/milestones",
+  "GET /api/v1/projects/{id}/documents",
+  "GET /api/v1/team-utilization/summary"
 ];
 
 describe("API contracts", () => {
@@ -483,7 +517,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(121);
+    expect(rows.length).toBe(136);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

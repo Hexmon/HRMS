@@ -16,6 +16,13 @@ import type {
   LeaveRequestStatus,
   LeaveType,
   PaymentType,
+  ProjectBillingType,
+  ProjectHealthStatus,
+  ProjectMemberStatus,
+  ProjectMilestoneStatus,
+  ProjectPriority,
+  ProjectStatus,
+  ProjectType,
   RoleKey,
   TimesheetStatus
 } from "./constants.js";
@@ -337,6 +344,80 @@ export interface Holiday {
   holiday_date: ISODate;
   region: string;
   optional: boolean;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface ProjectRecord {
+  id: UUID;
+  project_code: string;
+  name: string;
+  client_name: string;
+  project_type: ProjectType;
+  billing_type: ProjectBillingType;
+  manager_user_id: UUID;
+  department_id: UUID | null;
+  start_date: ISODate;
+  end_date: ISODate;
+  status: ProjectStatus;
+  health: ProjectHealthStatus;
+  description: string | null;
+  estimated_hours: Money;
+  actual_hours: Money;
+  estimated_budget: Money;
+  actual_spend: Money;
+  tech_stack: string[];
+  priority: ProjectPriority;
+  cost_center: string | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface ProjectMemberRecord {
+  id: UUID;
+  project_id: UUID;
+  employee_user_id: UUID;
+  project_role: string;
+  allocation_percent: number;
+  billable: boolean;
+  start_date: ISODate;
+  end_date: ISODate | null;
+  reporting_lead_user_id: UUID | null;
+  status: ProjectMemberStatus;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface ProjectAllocationRecord {
+  id: UUID;
+  project_id: UUID;
+  employee_user_id: UUID;
+  date_from: ISODate;
+  date_to: ISODate | null;
+  allocation_percent: number;
+  billable: boolean;
+  notes: string | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface ProjectMilestoneRecord {
+  id: UUID;
+  project_id: UUID;
+  name: string;
+  owner_user_id: UUID | null;
+  status: ProjectMilestoneStatus;
+  start_date: ISODate | null;
+  due_date: ISODate;
+  priority: ProjectPriority;
   version: number;
   created_at: ISODateTime;
   updated_at: ISODateTime;

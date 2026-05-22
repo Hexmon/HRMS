@@ -6,14 +6,14 @@ This audit maps the current Hawkaii HRMS frontend to the custom backend contract
 
 - The app is a mock-first HRMS frontend. Most business state is in `src/lib/*-store.tsx` and `src/lib/mock/`.
 - The visible product surface includes auth/onboarding, dashboard, employees, EMS, attendance, leave/WFH, timesheets, projects, utilization, expenses, assets, helpdesk, reports, admin settings, and developer handoff.
-- Existing backend handoff coverage is strongest for auth/session, core user hierarchy, expenses, finance, documents, assets, timesheets, attendance basics, primary leave/WFH/holiday workflows, primary EMS self-service workflows, expense reports, health, and OpenAPI tooling.
-- Full frontend coverage requires additional API groups for EMS admin/document wrappers, attendance reports/exports, leave/WFH export/reporting, projects, helpdesk, admin settings, notifications, dashboard role widgets, and non-expense reports.
+- Existing backend handoff coverage is strongest for auth/session, core user hierarchy, expenses, finance, documents, assets, timesheets, attendance basics, primary leave/WFH/holiday workflows, primary EMS self-service workflows, project portfolio/utilization, expense reports, health, and OpenAPI tooling.
+- Full frontend coverage requires additional API groups for EMS admin/document wrappers, attendance reports/exports, leave/WFH export/reporting, project reports/detail hardening, helpdesk, admin settings, notifications, dashboard role widgets, and non-expense reports.
 
 ## API Count Summary
 
-Current documented backend contract: **121 operations** in `openapi.json` after Phase 3 EMS API completion.
+Current documented backend contract: **136 operations** in `openapi.json` after Phase 4 Projects/utilization API completion.
 
-- **119** operations are under `/api/v1/**`.
+- **134** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
 - **0** documented backend operations currently need deletion from the OpenAPI pack because Reviewer/Director APIs are not present there.
 
@@ -21,11 +21,11 @@ Disjoint implementation counts for backend planning:
 
 | Category | Count | Meaning |
 | --- | ---: | --- |
-| Existing APIs ready to integrate as-is | 121 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
+| Existing APIs ready to integrate as-is | 136 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
 | Existing APIs to update in place | 0 | Phase 1A-1C existing API expansions have landed; new gaps should be added as explicit new endpoints. |
 | Existing APIs to delete | 0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
-| New APIs remaining to add | 94 | Remaining first-pass count needed after Phase 3 EMS API completion. |
-| Target contract size after additions | 215 | `121 current + 94 remaining`; EMS added `GET /api/v1/ems/requests/my` after UI audit showed the route needed an own-request list. |
+| New APIs remaining to add | 79 | Remaining first-pass count needed after Phase 4 Projects/utilization API completion. |
+| Target contract size after additions | 215 | `136 current + 79 remaining`; Projects/utilization added 15 operations after UI audit confirmed project portfolio, detail, and team utilization needs. |
 
 Existing APIs updated in place during earlier phases:
 
@@ -54,14 +54,14 @@ Minimum new API operation count by frontend area:
 | Attendance | 3 | Daily calendar endpoint, manager queue alias if needed by UI, reports/exports. Punches, monthly calendar, summaries, regularization submit/list/decision, and exceptions are implemented. |
 | Leave/WFH | 1 | Primary balances, leave apply/cancel/decision, WFH apply/decision, HR monitor, and holiday list/upsert are implemented; export/report job endpoint remains. |
 | Timesheets | 5 | Project aggregations, missing submissions, productivity summaries, submission detail, selector metadata. |
-| Projects/utilization | 15 | Project CRUD, members, allocations, modules/milestones, project documents, project summaries, utilization/bench/overload analytics. |
+| Projects/utilization | 0 | Project CRUD, members, allocations, modules/milestones, project documents, project summaries, and utilization/bench/overload analytics are implemented. |
 | Expenses/finance | 4 | Expense metadata/policy requirements, dashboard summary, withdraw, clarification thread. |
 | Assets | 10 | Requests, decisions, cancellation, acknowledgements, maintenance, warranty/vendor views, recovery queues, reports. |
 | Helpdesk | 15 | Ticket CRUD, comments, internal notes, attachments, assignment, priority/status changes, resolve/close/reopen/escalate, categories, SLA, reports. |
 | Reports | 10 | HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, export list/detail beyond existing expense exports. |
 | Admin settings | 20 | Company profile, master data, RBAC, workflows, policies, email templates, notification channels, security settings, audit logs. |
 | Notifications | 4 | Feed, unread count, mark read, mark all read/preferences integration. |
-| **Total remaining** | **94** | Remaining operation count for full visible frontend coverage after Phase 3 EMS. |
+| **Total remaining** | **79** | Remaining operation count for full visible frontend coverage after Phase 4 Projects/utilization. |
 
 ## Expense Flow Alignment
 
@@ -98,7 +98,7 @@ Remove:
 | Attendance                 | `/attendance/*`                                                                                             | Punches, my punch list, my/team summaries, monthly calendar, regularization submit/list/decision, and exceptions. | Daily calendar alias if required, manager queue alias if required, attendance reports/exports.                                                                                    |
 | Leave/WFH                  | `/leave-wfh/*`                                                                                              | Balances, apply leave, apply WFH, cancel leave, manager decisions, HR monitor, holiday list, and holiday upsert. | Leave/WFH export/report job and later reporting parity.                                                                                                                          |
 | Timesheets                 | `/timesheet/*`                                                                                              | Work segments, submissions, approver queue, workflow definitions.            | Project view aggregations, missing submissions, productivity summaries, richer rejection/return remarks, project-selector metadata.                                               |
-| Projects/utilization       | `/projects`, `/projects/:id`, `/team-utilization`                                                           | None in frontend contract pack.                                              | Project CRUD, members, allocation history, modules/milestones, project documents, project timesheets/expenses summaries, utilization/bench/overload analytics.                    |
+| Projects/utilization       | `/projects`, `/projects/:id`, `/team-utilization`                                                           | Project CRUD, members, allocations, modules/milestones, project documents, project summary, and team utilization. | Project report parity, timesheet submission detail, document upload/attach UX, and e2e/user-flow coverage.                                                                        |
 | Expenses/finance           | `/expenses/*`                                                                                               | Good baseline coverage.                                                      | Keep current Manager -> Finance contract; add frontend report shapes that match current expense dashboard cards and registers.                                                    |
 | Assets                     | `/assets/*`                                                                                                 | Inventory, detail, assign, return, QR scan, license APIs, termination event. | Asset requests, request decisions/cancel, employee acknowledgement, maintenance records, warranty/vendor views, offboarding recovery queues, asset report endpoints.              |
 | Helpdesk                   | `/helpdesk/*`                                                                                               | None in frontend contract pack.                                              | Ticket CRUD, comments, internal notes, attachments, assignment, priority/status changes, resolve/close/reopen/escalate, categories, SLA policy, agent queue, reports.             |

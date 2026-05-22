@@ -27,6 +27,10 @@ import type {
   LeaveRequest,
   ManagerBackupAssignment,
   OutboxEvent,
+  ProjectAllocationRecord,
+  ProjectMemberRecord,
+  ProjectMilestoneRecord,
+  ProjectRecord,
   TimesheetSubmission,
   WfhRequest
 } from "#shared";
@@ -63,6 +67,10 @@ export interface PostgresDataStoreOptions {
 }
 
 const resetTables = [
+  "projects.project_milestones",
+  "projects.project_allocations",
+  "projects.project_members",
+  "projects.projects",
   "ems.policy_acknowledgements",
   "ems.policies",
   "ems.letters",
@@ -176,6 +184,10 @@ function copyData(target: DataStore, source: DataStore): void {
   target.workflowDefinitions = source.workflowDefinitions;
   target.timesheetSubmissions = source.timesheetSubmissions;
   target.timesheetActions = source.timesheetActions;
+  target.projects = source.projects;
+  target.projectMembers = source.projectMembers;
+  target.projectAllocations = source.projectAllocations;
+  target.projectMilestones = source.projectMilestones;
   target.attendancePunches = source.attendancePunches;
   target.attendanceDayRecords = source.attendanceDayRecords;
   target.attendanceRegularizations = source.attendanceRegularizations;
@@ -294,6 +306,10 @@ class PostgresPersistence {
       loaded.workflowDefinitions = await this.loadWorkflowDefinitions(client);
       loaded.timesheetSubmissions = await this.loadTimesheetSubmissions(client);
       loaded.timesheetActions = await this.loadTimesheetActions(client);
+      loaded.projects = await this.loadProjects(client);
+      loaded.projectMembers = await this.loadProjectMembers(client);
+      loaded.projectAllocations = await this.loadProjectAllocations(client);
+      loaded.projectMilestones = await this.loadProjectMilestones(client);
       loaded.attendancePunches = await this.loadAttendancePunches(client);
       loaded.attendanceDayRecords = await this.loadAttendanceDayRecords(client);
       loaded.attendanceRegularizations = await this.loadAttendanceRegularizations(client);
@@ -324,6 +340,7 @@ class PostgresPersistence {
       await this.flushDocuments(client);
       await this.flushAssets(client);
       await this.flushTimesheets(client);
+      await this.flushProjects(client);
       await this.flushAttendance(client);
       await this.flushLeaveWfh(client);
       await this.flushEms(client);
@@ -857,6 +874,92 @@ class PostgresPersistence {
       decision: row.decision,
       remarks: row.remarks,
       created_at: asIso(row.created_at)
+    }));
+  }
+
+  private async loadProjects(client: PoolClient): Promise<ProjectRecord[]> {
+    const { rows } = await client.query("SELECT * FROM projects.projects ORDER BY project_code");
+    return rows.map((row) => ({
+      id: row.id,
+      project_code: row.project_code,
+      name: row.name,
+      client_name: row.client_name,
+      project_type: row.project_type,
+      billing_type: row.billing_type,
+      manager_user_id: row.manager_user_id,
+      department_id: row.department_id,
+      start_date: asDate(row.start_date),
+      end_date: asDate(row.end_date),
+      status: row.status,
+      health: row.health,
+      description: row.description,
+      estimated_hours: asMoney(row.estimated_hours) ?? "0.00",
+      actual_hours: asMoney(row.actual_hours) ?? "0.00",
+      estimated_budget: asMoney(row.estimated_budget) ?? "0.00",
+      actual_spend: asMoney(row.actual_spend) ?? "0.00",
+      tech_stack: Array.isArray(row.tech_stack) ? row.tech_stack : [],
+      priority: row.priority,
+      cost_center: row.cost_center,
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadProjectMembers(client: PoolClient): Promise<ProjectMemberRecord[]> {
+    const { rows } = await client.query("SELECT * FROM projects.project_members ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      project_id: row.project_id,
+      employee_user_id: row.employee_user_id,
+      project_role: row.project_role,
+      allocation_percent: row.allocation_percent,
+      billable: Boolean(row.billable),
+      start_date: asDate(row.start_date),
+      end_date: asDateOrNull(row.end_date),
+      reporting_lead_user_id: row.reporting_lead_user_id,
+      status: row.status,
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadProjectAllocations(client: PoolClient): Promise<ProjectAllocationRecord[]> {
+    const { rows } = await client.query("SELECT * FROM projects.project_allocations ORDER BY date_from DESC, id");
+    return rows.map((row) => ({
+      id: row.id,
+      project_id: row.project_id,
+      employee_user_id: row.employee_user_id,
+      date_from: asDate(row.date_from),
+      date_to: asDateOrNull(row.date_to),
+      allocation_percent: row.allocation_percent,
+      billable: Boolean(row.billable),
+      notes: row.notes,
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadProjectMilestones(client: PoolClient): Promise<ProjectMilestoneRecord[]> {
+    const { rows } = await client.query("SELECT * FROM projects.project_milestones ORDER BY due_date, id");
+    return rows.map((row) => ({
+      id: row.id,
+      project_id: row.project_id,
+      name: row.name,
+      owner_user_id: row.owner_user_id,
+      status: row.status,
+      start_date: asDateOrNull(row.start_date),
+      due_date: asDate(row.due_date),
+      priority: row.priority,
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
     }));
   }
 
@@ -1833,6 +1936,171 @@ class PostgresPersistence {
           action.decision,
           action.remarks,
           action.created_at
+        ]
+      );
+    }
+  }
+
+  private async flushProjects(client: PoolClient): Promise<void> {
+    for (const project of this.store.projects) {
+      await client.query(
+        `INSERT INTO projects.projects (
+          id, project_code, name, client_name, project_type, billing_type,
+          manager_user_id, department_id, start_date, end_date, status, health,
+          description, estimated_hours, actual_hours, estimated_budget, actual_spend,
+          tech_stack, priority, cost_center, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19, $20, $21, $22, $23, $24)
+        ON CONFLICT (id) DO UPDATE
+        SET project_code = EXCLUDED.project_code,
+            name = EXCLUDED.name,
+            client_name = EXCLUDED.client_name,
+            project_type = EXCLUDED.project_type,
+            billing_type = EXCLUDED.billing_type,
+            manager_user_id = EXCLUDED.manager_user_id,
+            department_id = EXCLUDED.department_id,
+            start_date = EXCLUDED.start_date,
+            end_date = EXCLUDED.end_date,
+            status = EXCLUDED.status,
+            health = EXCLUDED.health,
+            description = EXCLUDED.description,
+            estimated_hours = EXCLUDED.estimated_hours,
+            actual_hours = EXCLUDED.actual_hours,
+            estimated_budget = EXCLUDED.estimated_budget,
+            actual_spend = EXCLUDED.actual_spend,
+            tech_stack = EXCLUDED.tech_stack,
+            priority = EXCLUDED.priority,
+            cost_center = EXCLUDED.cost_center,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          project.id,
+          project.project_code,
+          project.name,
+          project.client_name,
+          project.project_type,
+          project.billing_type,
+          project.manager_user_id,
+          project.department_id,
+          project.start_date,
+          project.end_date,
+          project.status,
+          project.health,
+          project.description,
+          project.estimated_hours,
+          project.actual_hours,
+          project.estimated_budget,
+          project.actual_spend,
+          JSON.stringify(project.tech_stack),
+          project.priority,
+          project.cost_center,
+          project.version,
+          project.created_at,
+          project.updated_at,
+          project.deleted_at
+        ]
+      );
+    }
+    for (const member of this.store.projectMembers) {
+      await client.query(
+        `INSERT INTO projects.project_members (
+          id, project_id, employee_user_id, project_role, allocation_percent,
+          billable, start_date, end_date, reporting_lead_user_id, status,
+          version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (id) DO UPDATE
+        SET project_role = EXCLUDED.project_role,
+            allocation_percent = EXCLUDED.allocation_percent,
+            billable = EXCLUDED.billable,
+            start_date = EXCLUDED.start_date,
+            end_date = EXCLUDED.end_date,
+            reporting_lead_user_id = EXCLUDED.reporting_lead_user_id,
+            status = EXCLUDED.status,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          member.id,
+          member.project_id,
+          member.employee_user_id,
+          member.project_role,
+          member.allocation_percent,
+          member.billable,
+          member.start_date,
+          member.end_date,
+          member.reporting_lead_user_id,
+          member.status,
+          member.version,
+          member.created_at,
+          member.updated_at,
+          member.deleted_at
+        ]
+      );
+    }
+    for (const allocation of this.store.projectAllocations) {
+      await client.query(
+        `INSERT INTO projects.project_allocations (
+          id, project_id, employee_user_id, date_from, date_to, allocation_percent,
+          billable, notes, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (id) DO UPDATE
+        SET date_from = EXCLUDED.date_from,
+            date_to = EXCLUDED.date_to,
+            allocation_percent = EXCLUDED.allocation_percent,
+            billable = EXCLUDED.billable,
+            notes = EXCLUDED.notes,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          allocation.id,
+          allocation.project_id,
+          allocation.employee_user_id,
+          allocation.date_from,
+          allocation.date_to,
+          allocation.allocation_percent,
+          allocation.billable,
+          allocation.notes,
+          allocation.version,
+          allocation.created_at,
+          allocation.updated_at,
+          allocation.deleted_at
+        ]
+      );
+    }
+    for (const milestone of this.store.projectMilestones) {
+      await client.query(
+        `INSERT INTO projects.project_milestones (
+          id, project_id, name, owner_user_id, status, start_date, due_date,
+          priority, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (id) DO UPDATE
+        SET name = EXCLUDED.name,
+            owner_user_id = EXCLUDED.owner_user_id,
+            status = EXCLUDED.status,
+            start_date = EXCLUDED.start_date,
+            due_date = EXCLUDED.due_date,
+            priority = EXCLUDED.priority,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          milestone.id,
+          milestone.project_id,
+          milestone.name,
+          milestone.owner_user_id,
+          milestone.status,
+          milestone.start_date,
+          milestone.due_date,
+          milestone.priority,
+          milestone.version,
+          milestone.created_at,
+          milestone.updated_at,
+          milestone.deleted_at
         ]
       );
     }
