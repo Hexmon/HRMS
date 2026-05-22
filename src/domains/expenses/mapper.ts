@@ -26,17 +26,23 @@ function mapStatus(value: unknown, fallback: ExpenseStatus = "draft"): ExpenseSt
   const map: Record<string, ExpenseStatus> = {
     draft: "draft",
     submitted: "submitted",
+    pending_manager_verification: "pending_manager",
     pending_manager: "pending_manager",
     manager_returned: "manager_returned",
     manager_rejected: "manager_rejected",
+    manager_verified: "finance_verification",
+    clarification_required: "finance_hold",
     finance_verification: "finance_verification",
     finance_hold: "finance_hold",
+    finance_approved: "finance_verified",
     finance_verified: "finance_verified",
     payment_released: "payment_released",
     bills_submitted: "bills_submitted",
     settlement_review: "settlement_review",
     pending_adjustment: "pending_adjustment",
+    finance_routing_exception: "finance_hold",
     closed: "closed",
+    cancelled: "closed",
     withdrawn: "withdrawn",
   };
   return map[status] ?? fallback;
@@ -78,12 +84,12 @@ function mapLineItems(value: unknown, fallback: LineItem[]): LineItem[] {
     const row = asRecord(item);
     return {
       id: text(row.id, `li_${index + 1}`),
-      category: text(row.category ?? row.expense_category, "General"),
+      category: text(row.category ?? row.expense_category ?? row.line_category, "General"),
       description: text(row.description, "Expense item"),
       quantity: numberValue(row.quantity, 1),
       unitCost: numberValue(row.unit_cost ?? row.unitCost ?? row.amount, 0),
       taxAmount: numberValue(row.tax_amount ?? row.taxAmount, 0),
-      vendor: text(row.vendor, "—"),
+      vendor: text(row.vendor ?? row.vendor_name, "—"),
     };
   });
 }
@@ -95,8 +101,9 @@ function mapDocuments(value: unknown, fallback: ExpenseDoc[]): ExpenseDoc[] {
     const row = asRecord(item);
     return {
       id: text(row.id ?? row.document_id, `doc_${index + 1}`),
-      name: text(row.name ?? row.file_name, "Document"),
-      kind: (normalized(row.kind ?? row.document_type) || "other") as ExpenseDoc["kind"],
+      name: text(row.name ?? row.file_name ?? row.type ?? row.document_type, "Document"),
+      kind: (normalized(row.kind ?? row.type ?? row.document_type) ||
+        "other") as ExpenseDoc["kind"],
       uploadedAt: dateText(row.uploaded_at ?? row.created_at),
     };
   });
@@ -150,10 +157,14 @@ export function mapApiExpenseTicket(
 
   return {
     id: text(row.id ?? row.ticket_no, fallback?.id ?? "EXP-API"),
+    version: numberValue(row.version, fallback?.version ?? 1),
     employee: text(row.requester_name ?? row.employee, fallback?.employee ?? "Employee"),
     employeeId: text(row.requester_user_id ?? row.employee_id, fallback?.employeeId ?? "self"),
     department: text(row.department_name ?? row.department_id, fallback?.department ?? "General"),
-    manager: text(row.manager_name ?? row.manager_user_id, fallback?.manager ?? "Manager"),
+    manager: text(
+      row.manager_name ?? row.manager_verifier_label ?? row.manager_user_id,
+      fallback?.manager ?? "Manager",
+    ),
     expenseType,
     subType: text(row.expense_sub_type ?? row.sub_type, fallback?.subType ?? "General"),
     taskTitle: text(row.task_title, fallback?.taskTitle ?? text(row.ticket_no, "Expense")),
@@ -189,7 +200,7 @@ export function mapApiExpenseTicket(
           }
         : undefined,
     lineItems: mapLineItems(
-      row.line_items,
+      row.line_items ?? row.lineItems,
       fallback?.lineItems ?? [
         {
           id: "li_1",
@@ -224,5 +235,63 @@ export function mapApiExpenseTickets(
     const key = text(row.id ?? row.ticket_no);
     const fallback = fallbacks.find((ticket) => ticket.id === key);
     return mapApiExpenseTicket(row as ApiRecord, fallback);
+  });
+}
+
+function approvalRole(eventType: string): string {
+  if (eventType.includes("manager")) return "Manager";
+  if (
+    eventType.includes("finance") ||
+    eventType.includes("payment") ||
+    eventType.includes("settlement")
+  ) {
+    return "Finance";
+  }
+  if (eventType.includes("document")) return "Documents";
+  return "Requester";
+}
+
+function approvalStatus(eventType: string): ApprovalEvent["status"] {
+  if (
+    eventType.includes("reject") ||
+    eventType.includes("return") ||
+    eventType.includes("hold") ||
+    eventType.includes("clarification")
+  ) {
+    return "rejected";
+  }
+  return "approved";
+}
+
+export function mapApiExpenseApprovals(
+  values: unknown[],
+  fallback: ApprovalEvent[],
+): ApprovalEvent[] {
+  const rows = asArray(values);
+  if (!rows.length) return fallback;
+  return rows.map((item) => {
+    const row = asRecord(item);
+    const eventType = normalized(row.event_type);
+    return {
+      by: text(row.actor_name ?? row.actor ?? row.actor_user_id, "System"),
+      role: approvalRole(eventType),
+      action: text(row.label ?? row.event_type, "Workflow event"),
+      status: approvalStatus(eventType),
+      remark: text(row.remarks) || undefined,
+      at: dateText(row.timestamp ?? row.created_at),
+    };
+  });
+}
+
+export function mapApiExpenseAudit(values: unknown[], fallback: AuditEvent[]): AuditEvent[] {
+  const rows = asArray(values);
+  if (!rows.length) return fallback;
+  return rows.map((item) => {
+    const row = asRecord(item);
+    return {
+      by: text(row.actor_name ?? row.actor ?? row.actor_user_id, "System"),
+      what: text(row.label ?? row.event_type, "Expense event"),
+      at: dateText(row.timestamp ?? row.created_at),
+    };
   });
 }

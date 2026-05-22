@@ -16,7 +16,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_app/expenses/register")({ component: ExpenseRegister });
 
 function ExpenseRegister() {
-  const { tickets } = useExpenses();
+  const { tickets, loading, error } = useExpenses();
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [pay, setPay] = useState("all");
@@ -134,6 +134,13 @@ function ExpenseRegister() {
       columns={cols}
       rows={rows}
       searchKeys={["id", "employee", "taskTitle"]}
+      emptyTitle="No expense records"
+      emptyDescription={
+        error
+          ? "Expense register data could not be loaded from the backend."
+          : "No expenses match the current filters."
+      }
+      loading={loading}
       toolbarRight={
         <div className="flex flex-wrap items-center gap-2">
           <Select value={dept} onValueChange={setDept}>

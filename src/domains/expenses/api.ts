@@ -62,8 +62,8 @@ export const expensesApi = {
   timeline(id: string) {
     return apiRequest<ApiRecord[]>(`/api/v1/expenses/${id}/timeline`);
   },
-  audit(id: string) {
-    return apiRequest<ApiRecord[]>(`/api/v1/expenses/${id}/audit`);
+  audit(id: string, query: PageQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord>>(`/api/v1/expenses/${id}/audit`, { query });
   },
   financeAnalytics(query: PageQuery = {}) {
     return apiRequest<ApiRecord>("/api/v1/reports/expenses/finance-analytics", { query });

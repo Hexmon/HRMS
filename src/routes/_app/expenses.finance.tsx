@@ -45,7 +45,7 @@ const cols: Column<ExpenseTicket>[] = [
 ];
 
 function FinanceQueue() {
-  const { tickets } = useExpenses();
+  const { tickets, loading } = useExpenses();
   const groups = useMemo(
     () => ({
       verify: tickets.filter((t) => t.status === "finance_verification"),
@@ -71,7 +71,12 @@ function FinanceQueue() {
       </TabsList>
       {(["verify", "pay", "settle", "hold", "closed"] as const).map((k) => (
         <TabsContent key={k} value={k} className="mt-4">
-          <DataTable columns={cols} rows={groups[k]} searchKeys={["id", "employee", "taskTitle"]} />
+          <DataTable
+            columns={cols}
+            rows={groups[k]}
+            searchKeys={["id", "employee", "taskTitle"]}
+            loading={loading}
+          />
         </TabsContent>
       ))}
     </Tabs>

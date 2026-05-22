@@ -12,7 +12,7 @@ export const Route = createFileRoute("/_app/expenses/my")({ component: MyExpense
 
 function MyExpenses() {
   const { user } = useAuth();
-  const { tickets, withdraw } = useExpenses();
+  const { tickets, withdraw, loading, error } = useExpenses();
   const nav = useNavigate();
   const me = user?.name ?? "You";
   const rows = useMemo(
@@ -79,7 +79,12 @@ function MyExpenses() {
       rows={rows}
       searchKeys={["id", "taskTitle", "subType"]}
       emptyTitle="No expenses yet"
-      emptyDescription="Create your first expense ticket to get started."
+      emptyDescription={
+        error
+          ? "Expense data could not be loaded from the backend."
+          : "Create your first expense ticket to get started."
+      }
+      loading={loading}
       toolbarRight={
         <Button onClick={() => nav({ to: "/expenses/create" })} className="rounded-full">
           <Plus className="mr-1 h-4 w-4" /> New Expense

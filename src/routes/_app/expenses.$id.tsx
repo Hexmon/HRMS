@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import {
@@ -11,6 +12,14 @@ import {
   FINANCE_ROLES,
   type ExpenseTicket,
 } from "@/lib/expenses-store";
+import {
+  expensesApi,
+  mapApiExpenseApprovals,
+  mapApiExpenseAudit,
+  mapApiExpenseTicket,
+} from "@/domains/expenses";
+import { isUuid, pageItems, withApiFallback } from "@/shared/api";
+import { queryKeys, queryTimings } from "@/shared/query";
 import {
   DataCard,
   StatusBadge,
@@ -63,10 +72,51 @@ type Action =
 
 function ExpenseDetail() {
   const { id } = Route.useParams();
-  const { byId, managerAction, financeAction, addComment } = useExpenses();
+  const { byId, managerAction, financeAction, addComment, loading, error } = useExpenses();
   const { activeRole, user } = useAuth();
   const nav = useNavigate();
-  const t = byId(id);
+  const listTicket = byId(id);
+  const detailQuery = useQuery({
+    queryKey: queryKeys.detail("expenses", "ticket", id),
+    queryFn: () =>
+      withApiFallback(
+        async () => mapApiExpenseTicket(await expensesApi.get(id), listTicket),
+        () => listTicket as ExpenseTicket,
+      ),
+    enabled: isUuid(id),
+    staleTime: queryTimings.detailStaleMs,
+  });
+  const timelineQuery = useQuery({
+    queryKey: queryKeys.list("expenses", "timeline", { id }),
+    queryFn: () =>
+      withApiFallback(
+        () => expensesApi.timeline(id),
+        () => [],
+      ),
+    enabled: isUuid(id),
+    staleTime: queryTimings.detailStaleMs,
+  });
+  const auditQuery = useQuery({
+    queryKey: queryKeys.list("expenses", "audit", { id, page_size: 100 }),
+    queryFn: () =>
+      withApiFallback(
+        () => expensesApi.audit(id, { page_size: 100 }),
+        () => ({ items: [], page: 1, page_size: 100, total: 0 }),
+      ),
+    enabled: isUuid(id),
+    staleTime: queryTimings.detailStaleMs,
+  });
+  const baseTicket = detailQuery.data ?? listTicket;
+  const t = baseTicket
+    ? {
+        ...baseTicket,
+        approvals: mapApiExpenseApprovals(timelineQuery.data ?? [], baseTicket.approvals),
+        audit: mapApiExpenseAudit(
+          timelineQuery.data ?? pageItems(auditQuery.data),
+          baseTicket.audit,
+        ),
+      }
+    : undefined;
   const [action, setAction] = useState<Action>(null);
   const [remark, setRemark] = useState("");
   const [comment, setComment] = useState("");
@@ -76,8 +126,12 @@ function ExpenseDetail() {
       <div className="rounded-2xl border bg-card p-10">
         <EmptyState
           icon={Receipt}
-          title="Ticket not found"
-          description="The expense ticket you're looking for doesn't exist."
+          title={loading || detailQuery.isLoading ? "Loading ticket" : "Ticket not found"}
+          description={
+            error || detailQuery.error
+              ? "Expense ticket data could not be loaded from the backend."
+              : "The expense ticket you're looking for doesn't exist."
+          }
           action={<Button onClick={() => nav({ to: "/expenses/my" })}>Back to my expenses</Button>}
         />
       </div>

@@ -99,6 +99,7 @@ export interface SalesMeta {
 
 export interface ExpenseTicket {
   id: string;
+  version?: number;
   // requester
   employee: string;
   employeeId: string;
@@ -190,11 +191,39 @@ export function fmtCurrency(n: number) {
 
 const money = (value: number) => value.toFixed(2);
 
+function apiExpenseSubType(ticket: ExpenseTicket): string {
+  if (ticket.expenseType === "project") {
+    switch (ticket.project?.projectExpenseType) {
+      case "material":
+        return "Material Consumables";
+      case "lodging":
+        return "Lodging & Boarding";
+      case "travel":
+      case "misc":
+      default:
+        return "Project Travel";
+    }
+  }
+
+  const subtype = ticket.subType.toLowerCase();
+  if (subtype.includes("demo") || ticket.sales?.meetingType.toLowerCase() === "demo") {
+    return "Demo/Presentation";
+  }
+  if (subtype.includes("marketing") || ticket.sales?.meetingType.toLowerCase() === "event") {
+    return "Marketing Event";
+  }
+  if (subtype.includes("travel")) return "Sales Travel";
+  if (subtype.includes("meeting")) return "Client Meeting";
+  return "Miscellaneous Sales Expense";
+}
+
 function expenseCreateBody(ticket: ExpenseTicket) {
+  const total = ticketTotal(ticket);
+  const expenseSubType = apiExpenseSubType(ticket);
   return {
     submit: ticket.status !== "draft",
     expense_type: ticket.expenseType === "sales_presales" ? "SalesPreSales" : "Project",
-    expense_sub_type: ticket.subType || "Misc Sales Expense",
+    expense_sub_type: expenseSubType,
     project_code: ticket.project?.projectCode,
     client_name: ticket.sales?.client,
     task_title: ticket.taskTitle || "Expense request",
@@ -202,18 +231,18 @@ function expenseCreateBody(ticket: ExpenseTicket) {
     location: ticket.location,
     start_date: ticket.startDate,
     end_date: ticket.endDate,
-    estimated_amount: money(ticket.estimatedAmount),
+    estimated_amount: money(total),
     payment_type: ticket.paymentType === "advance" ? "Advance" : "ReimbursementAccrued",
-    advance_amount: ticket.paymentType === "advance" ? money(ticket.estimatedAmount) : undefined,
+    advance_amount: ticket.paymentType === "advance" ? money(total) : undefined,
     advance_justification: ticket.paymentType === "advance" ? ticket.remarks : undefined,
     line_items: ticket.lineItems.map((item) => ({
-      line_category: item.category || ticket.subType || "misc",
+      line_category: item.category || expenseSubType,
       description: item.description || ticket.taskTitle || "Expense item",
       quantity: money(item.quantity),
       unit_cost: money(item.unitCost),
       line_total: money(item.quantity * item.unitCost + item.taxAmount),
       tax_amount: money(item.taxAmount),
-      vendor: item.vendor || undefined,
+      vendor_name: item.vendor || undefined,
     })),
   };
 }
@@ -782,6 +811,9 @@ const SEED: ExpenseTicket[] = [
 // ---------- Provider ----------
 interface Ctx {
   tickets: ExpenseTicket[];
+  loading: boolean;
+  error: Error | null;
+  isApiBacked: boolean;
   byId: (id: string) => ExpenseTicket | undefined;
   add: (
     t: Omit<ExpenseTicket, "id" | "createdAt" | "audit" | "approvals" | "comments" | "stage">,
@@ -890,15 +922,17 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
       id,
       action,
       remark,
+      expectedVersion,
     }: {
       id: string;
       action: "approve" | "return" | "reject";
       remark?: string;
+      expectedVersion: number;
     }) =>
       expensesApi.managerVerify(id, {
         decision: action,
         remarks: remark,
-        expected_version: 1,
+        expected_version: expectedVersion,
       }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.domain("expenses") });
@@ -913,6 +947,8 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
       id,
       action,
       payload,
+      expectedVersion,
+      actualAmount,
     }: {
       id: string;
       action: Ctx["financeAction"] extends (
@@ -924,36 +960,34 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         ? A
         : never;
       payload?: { remark?: string; payment?: Payment; settlement?: Partial<Settlement> };
+      expectedVersion: number;
+      actualAmount?: number;
     }) => {
       if (action === "verify" || action === "hold") {
         return expensesApi.financeApprove(id, {
           decision: action === "hold" ? "hold" : "verify",
           remarks: payload?.remark,
-          expected_version: 1,
+          expected_version: expectedVersion,
         });
       }
       if (action === "release_payment") {
         return expensesApi.recordPayment(id, {
-          paid_amount: money(payload?.payment?.paidAmount ?? 0),
+          amount: money(payload?.payment?.paidAmount ?? 0),
           payment_mode: payload?.payment?.mode,
-          paid_on: payload?.payment?.paidOn,
-          payment_reference: payload?.payment?.reference,
-          remarks: payload?.payment?.remarks ?? payload?.remark,
-          expected_version: 1,
+          payment_date: payload?.payment?.paidOn,
+          reference_no: payload?.payment?.reference,
+          expected_version: expectedVersion,
         });
       }
       if (action === "mark_bills") {
         return expensesApi.submitBills(id, {
-          remarks: payload?.remark,
-          expected_version: 1,
+          expected_version: expectedVersion,
         });
       }
       return expensesApi.settle(id, {
-        advance_amount: money(payload?.settlement?.advanceAmount ?? 0),
-        actual_spent: money(payload?.settlement?.actualSpent ?? 0),
-        balance: money(payload?.settlement?.balance ?? 0),
+        actual_amount: money(actualAmount ?? payload?.settlement?.actualSpent ?? 0),
         remarks: payload?.settlement?.remarks ?? payload?.remark,
-        expected_version: 1,
+        expected_version: expectedVersion,
       });
     },
     onSuccess: (_data, variables) => {
@@ -964,17 +998,40 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
+  const hasAnyApiResult =
+    myExpensesQuery.data !== undefined ||
+    managerQueueQuery.data !== undefined ||
+    financeQueueQuery.data !== undefined;
+
   const visibleTickets = React.useMemo(() => {
+    if (!apiEnabled) return tickets;
+    if (!hasAnyApiResult) return [];
     const combined = [
       ...(myExpensesQuery.data ?? []),
       ...(managerQueueQuery.data ?? []),
       ...(financeQueueQuery.data ?? []),
     ];
-    if (!combined.length) return tickets;
+    if (!combined.length) return [];
     const byId = new Map<string, ExpenseTicket>();
-    for (const ticket of [...combined, ...tickets]) byId.set(ticket.id, ticket);
+    for (const ticket of combined) byId.set(ticket.id, ticket);
     return Array.from(byId.values());
-  }, [financeQueueQuery.data, managerQueueQuery.data, myExpensesQuery.data, tickets]);
+  }, [
+    apiEnabled,
+    financeQueueQuery.data,
+    hasAnyApiResult,
+    managerQueueQuery.data,
+    myExpensesQuery.data,
+    tickets,
+  ]);
+
+  const queryError = [myExpensesQuery.error, managerQueueQuery.error, financeQueueQuery.error].find(
+    (error): error is Error => error instanceof Error,
+  );
+  const apiError = apiEnabled && !hasAnyApiResult ? (queryError ?? null) : null;
+  const loading =
+    apiEnabled &&
+    !hasAnyApiResult &&
+    (myExpensesQuery.isLoading || managerQueueQuery.isLoading || financeQueueQuery.isLoading);
 
   const byId: Ctx["byId"] = (id) => visibleTickets.find((t) => t.id === id);
 
@@ -1085,7 +1142,15 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         return pushAudit(next, by, `Manager ${action}`);
       }),
     );
-    if (apiEnabled && isUuid(id)) managerDecisionMutation.mutate({ id, action, remark });
+    if (apiEnabled && isUuid(id)) {
+      const current = visibleTickets.find((ticket) => ticket.id === id);
+      managerDecisionMutation.mutate({
+        id,
+        action,
+        remark,
+        expectedVersion: current?.version ?? 1,
+      });
+    }
   };
 
   const financeAction: Ctx["financeAction"] = (id, action, by, payload = {}) => {
@@ -1203,7 +1268,19 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         }
       }),
     );
-    if (apiEnabled && isUuid(id)) financeDecisionMutation.mutate({ id, action, payload });
+    if (apiEnabled && isUuid(id)) {
+      const current = visibleTickets.find((ticket) => ticket.id === id);
+      financeDecisionMutation.mutate({
+        id,
+        action,
+        payload,
+        expectedVersion: current?.version ?? 1,
+        actualAmount:
+          payload.settlement?.actualSpent ??
+          current?.settlement?.actualSpent ??
+          (current ? ticketTotal(current) : 0),
+      });
+    }
   };
 
   const addComment: Ctx["addComment"] = (id, by, text) => {
@@ -1220,6 +1297,9 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     <C.Provider
       value={{
         tickets: visibleTickets,
+        loading,
+        error: apiError,
+        isApiBacked: apiEnabled && hasAnyApiResult,
         byId,
         add,
         patch,

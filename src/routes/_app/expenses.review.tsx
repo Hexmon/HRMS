@@ -47,7 +47,7 @@ const cols: Column<ExpenseTicket>[] = [
 ];
 
 function ManagerVerificationQueue() {
-  const { tickets } = useExpenses();
+  const { tickets, loading, error } = useExpenses();
   const groups = useMemo(
     () => ({
       pending: tickets.filter((t) => t.status === "pending_manager"),
@@ -79,7 +79,12 @@ function ManagerVerificationQueue() {
             rows={groups[k]}
             searchKeys={["id", "employee", "taskTitle"]}
             emptyTitle="Queue clear"
-            emptyDescription="No tickets in this state."
+            emptyDescription={
+              error
+                ? "Expense queue data could not be loaded from the backend."
+                : "No tickets in this state."
+            }
+            loading={loading}
           />
         </TabsContent>
       ))}
