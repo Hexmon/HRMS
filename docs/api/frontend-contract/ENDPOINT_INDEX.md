@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 77
+Documented operations: 85
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -801,6 +801,50 @@ Success body highlights:
 
 Core APIs expose active employee identity and hierarchy context for role-aware frontend screens.
 
+### GET /api/v1/core/master-data/org-selectors
+
+| Field | Contract |
+|---|---|
+| Purpose | Org selectors |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `departments` | array of object | required | - |
+| `designations` | array of object | required | - |
+| `managers` | array of object | required | - |
+| `roles` | array of object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
 ### GET /api/v1/core/users
 
 | Field | Contract |
@@ -822,7 +866,7 @@ Core APIs expose active employee identity and hierarchy context for role-aware f
 | `role` | query | no | string | - |
 | `employment_status` | query | no | string enum("active", "inactive", "terminated", "suspended") | - |
 | `manager_user_id` | query | no | string<uuid> | - |
-| `login_state` | query | no | string enum("enabled", "disabled") | - |
+| `login_state` | query | no | string enum("enabled", "disabled", "setup_pending") | - |
 
 **Request body**
 
@@ -855,6 +899,92 @@ Success body highlights:
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
 - Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/core/users
+
+| Field | Contract |
+|---|---|
+| Purpose | Create user |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `employee_code` | string | required | minLength 2 |
+| `email` | string<email> | required | - |
+| `full_name` | string | required | minLength 2 |
+| `department_id` | string<uuid> | required | Department UUID |
+| `designation_id` | string<uuid> | required | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Reporting manager user UUID |
+| `roles` | array of string enum("Employee", "Reviewer", "Director", "Finance Manager", "Admin", "Auditor", "Asset Manager", "HR Manager") | optional | minItems 1 |
+| `employment_status` | string enum("active", "inactive", "terminated", "suspended") | optional | - |
+| `timezone` | string | optional, nullable | - |
+| `joined_on` | string<date> | optional, nullable | Joining date |
+| `login_enabled` | boolean | optional | When true, creates a password setup action instead of assigning a default password. |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Authenticated user UUID |
+| `employee_code` | string | required | - |
+| `email` | string<email> | required | - |
+| `full_name` | string | required | - |
+| `department_id` | string<uuid> | optional | Department UUID |
+| `designation_id` | string<uuid> | optional | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
+| `hierarchy_path` | string | optional | - |
+| `employment_status` | string | optional | - |
+| `timezone` | string | optional | - |
+| `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
+| `role_labels` | array of string | required | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+| `expense_summary` | object | required | - |
+| `profile_tabs_available` | array of string | required | - |
+| `onboarding` | object | optional | - |
+| `sessions_revoked` | integer | optional | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
 ### GET /api/v1/core/users/{id}
@@ -907,7 +1037,7 @@ Success body highlights:
 | `manager` | object | required, nullable | - |
 | `display_label` | string | required | - |
 | `status` | string | required | - |
-| `login_state` | string enum("enabled", "disabled") | required | - |
+| `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
 | `role_labels` | array of string | required | - |
 | `reporting_line` | array of object | required | - |
 | `role_assignments` | array of object | required | - |
@@ -924,6 +1054,497 @@ Success body highlights:
 
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PATCH /api/v1/core/users/{id}
+
+| Field | Contract |
+|---|---|
+| Purpose | Update user |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `expected_version` | integer | required | minimum 1 |
+| `email` | string<email> | optional | - |
+| `full_name` | string | optional | minLength 2 |
+| `department_id` | string<uuid> | optional | Department UUID |
+| `designation_id` | string<uuid> | optional | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Reporting manager user UUID |
+| `employment_status` | string enum("active", "inactive", "terminated", "suspended") | optional | - |
+| `timezone` | string | optional, nullable | - |
+| `joined_on` | string<date> | optional, nullable | Joining date |
+| `terminated_on` | string<date> | optional, nullable | Termination date |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Authenticated user UUID |
+| `employee_code` | string | required | - |
+| `email` | string<email> | required | - |
+| `full_name` | string | required | - |
+| `department_id` | string<uuid> | optional | Department UUID |
+| `designation_id` | string<uuid> | optional | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
+| `hierarchy_path` | string | optional | - |
+| `employment_status` | string | optional | - |
+| `timezone` | string | optional | - |
+| `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
+| `role_labels` | array of string | required | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+| `expense_summary` | object | required | - |
+| `profile_tabs_available` | array of string | required | - |
+| `onboarding` | object | optional | - |
+| `sessions_revoked` | integer | optional | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/core/users/{id}/activate
+
+| Field | Contract |
+|---|---|
+| Purpose | Activate user |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `expected_version` | integer | required | minimum 1 |
+| `effective_date` | string<date> | optional | Effective date |
+| `reason` | string | optional | - |
+| `remarks` | string | optional | - |
+| `status` | string enum("inactive", "terminated", "suspended") | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Authenticated user UUID |
+| `employee_code` | string | required | - |
+| `email` | string<email> | required | - |
+| `full_name` | string | required | - |
+| `department_id` | string<uuid> | optional | Department UUID |
+| `designation_id` | string<uuid> | optional | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
+| `hierarchy_path` | string | optional | - |
+| `employment_status` | string | optional | - |
+| `timezone` | string | optional | - |
+| `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
+| `role_labels` | array of string | required | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+| `expense_summary` | object | required | - |
+| `profile_tabs_available` | array of string | required | - |
+| `onboarding` | object | optional | - |
+| `sessions_revoked` | integer | optional | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/core/users/{id}/deactivate
+
+| Field | Contract |
+|---|---|
+| Purpose | Deactivate user |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `expected_version` | integer | required | minimum 1 |
+| `effective_date` | string<date> | optional | Effective date |
+| `reason` | string | optional | - |
+| `remarks` | string | optional | - |
+| `status` | string enum("inactive", "terminated", "suspended") | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Authenticated user UUID |
+| `employee_code` | string | required | - |
+| `email` | string<email> | required | - |
+| `full_name` | string | required | - |
+| `department_id` | string<uuid> | optional | Department UUID |
+| `designation_id` | string<uuid> | optional | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
+| `hierarchy_path` | string | optional | - |
+| `employment_status` | string | optional | - |
+| `timezone` | string | optional | - |
+| `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
+| `role_labels` | array of string | required | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+| `expense_summary` | object | required | - |
+| `profile_tabs_available` | array of string | required | - |
+| `onboarding` | object | optional | - |
+| `sessions_revoked` | integer | optional | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/core/users/{id}/login/enable
+
+| Field | Contract |
+|---|---|
+| Purpose | Enable login setup |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `expected_version` | integer | required | minimum 1 |
+| `invite_email` | boolean | optional | - |
+| `reason` | string | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Authenticated user UUID |
+| `employee_code` | string | required | - |
+| `email` | string<email> | required | - |
+| `full_name` | string | required | - |
+| `department_id` | string<uuid> | optional | Department UUID |
+| `designation_id` | string<uuid> | optional | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
+| `hierarchy_path` | string | optional | - |
+| `employment_status` | string | optional | - |
+| `timezone` | string | optional | - |
+| `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
+| `role_labels` | array of string | required | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+| `expense_summary` | object | required | - |
+| `profile_tabs_available` | array of string | required | - |
+| `onboarding` | object | optional | - |
+| `sessions_revoked` | integer | optional | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/core/users/{id}/login/disable
+
+| Field | Contract |
+|---|---|
+| Purpose | Disable login |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `expected_version` | integer | required | minimum 1 |
+| `invite_email` | boolean | optional | - |
+| `reason` | string | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Authenticated user UUID |
+| `employee_code` | string | required | - |
+| `email` | string<email> | required | - |
+| `full_name` | string | required | - |
+| `department_id` | string<uuid> | optional | Department UUID |
+| `designation_id` | string<uuid> | optional | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
+| `hierarchy_path` | string | optional | - |
+| `employment_status` | string | optional | - |
+| `timezone` | string | optional | - |
+| `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
+| `role_labels` | array of string | required | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+| `expense_summary` | object | required | - |
+| `profile_tabs_available` | array of string | required | - |
+| `onboarding` | object | optional | - |
+| `sessions_revoked` | integer | optional | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PUT /api/v1/core/users/{id}/roles
+
+| Field | Contract |
+|---|---|
+| Purpose | Replace roles |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `roles` | array of string enum("Employee", "Reviewer", "Director", "Finance Manager", "Admin", "Auditor", "Asset Manager", "HR Manager") | required | minItems 1 |
+| `expected_version` | integer | required | minimum 1 |
+| `remarks` | string | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Authenticated user UUID |
+| `employee_code` | string | required | - |
+| `email` | string<email> | required | - |
+| `full_name` | string | required | - |
+| `department_id` | string<uuid> | optional | Department UUID |
+| `designation_id` | string<uuid> | optional | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
+| `hierarchy_path` | string | optional | - |
+| `employment_status` | string | optional | - |
+| `timezone` | string | optional | - |
+| `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
+| `role_labels` | array of string | required | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+| `expense_summary` | object | required | - |
+| `profile_tabs_available` | array of string | required | - |
+| `onboarding` | object | optional | - |
+| `sessions_revoked` | integer | optional | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
 ### GET /api/v1/core/users/{id}/subtree

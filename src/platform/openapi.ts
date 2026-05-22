@@ -461,7 +461,7 @@ const coreUserListItemSchema = {
     manager: { ...userReferenceSchema, nullable: true },
     display_label: { type: "string", example: "E1 - Employee E1" },
     status: { type: "string", example: "active" },
-    login_state: { type: "string", enum: ["enabled", "disabled"], example: "enabled" },
+    login_state: { type: "string", enum: ["enabled", "disabled", "setup_pending"], example: "enabled" },
     role_labels: { type: "array", items: { type: "string" }, example: ["Employee"] }
   },
   additionalProperties: true
@@ -521,6 +521,127 @@ const coreUserDetailSchema = {
     profile_tabs_available: { type: "array", items: { type: "string" }, example: ["profile", "reporting", "roles", "documents", "assets", "attendance", "leave", "timesheets", "expenses"] }
   },
   additionalProperties: true
+};
+
+const coreRoleSchema = {
+  type: "string",
+  enum: ["Employee", "Reviewer", "Director", "Finance Manager", "Admin", "Auditor", "Asset Manager", "HR Manager"],
+  example: "Employee"
+};
+
+const coreUserCreateBodySchema = {
+  type: "object",
+  required: ["employee_code", "email", "full_name", "department_id", "designation_id"],
+  properties: {
+    employee_code: { type: "string", minLength: 2, maxLength: 32, example: "EMP1001" },
+    email: { type: "string", format: "email", example: "new.employee@example.test" },
+    full_name: { type: "string", minLength: 2, maxLength: 160, example: "New Employee" },
+    department_id: uuid("Department UUID"),
+    designation_id: uuid("Designation UUID"),
+    manager_user_id: { ...uuid("Reporting manager user UUID"), nullable: true },
+    roles: { type: "array", items: coreRoleSchema, minItems: 1, example: ["Employee"] },
+    employment_status: { type: "string", enum: ["active", "inactive", "terminated", "suspended"], example: "inactive" },
+    timezone: { type: "string", nullable: true, example: "Asia/Kolkata" },
+    joined_on: { ...date("Joining date"), nullable: true },
+    login_enabled: { type: "boolean", description: "When true, creates a password setup action instead of assigning a default password.", example: true }
+  },
+  additionalProperties: false
+};
+
+const coreUserUpdateBodySchema = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    expected_version: { type: "integer", minimum: 1, example: 1 },
+    email: { type: "string", format: "email", example: "employee.changed@example.test" },
+    full_name: { type: "string", minLength: 2, maxLength: 160, example: "Employee Changed" },
+    department_id: uuid("Department UUID"),
+    designation_id: uuid("Designation UUID"),
+    manager_user_id: { ...uuid("Reporting manager user UUID"), nullable: true },
+    employment_status: { type: "string", enum: ["active", "inactive", "terminated", "suspended"], example: "active" },
+    timezone: { type: "string", nullable: true, example: "Asia/Kolkata" },
+    joined_on: { ...date("Joining date"), nullable: true },
+    terminated_on: { ...date("Termination date"), nullable: true }
+  },
+  additionalProperties: false
+};
+
+const coreUserStatusBodySchema = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    expected_version: { type: "integer", minimum: 1, example: 1 },
+    effective_date: date("Effective date"),
+    reason: { type: "string", maxLength: 500, example: "Voluntary exit" },
+    remarks: { type: "string", maxLength: 1000, example: "Approved by HR" },
+    status: { type: "string", enum: ["inactive", "terminated", "suspended"], example: "inactive" }
+  },
+  additionalProperties: false
+};
+
+const coreUserLoginBodySchema = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    expected_version: { type: "integer", minimum: 1, example: 1 },
+    invite_email: { type: "boolean", example: true },
+    reason: { type: "string", maxLength: 500, example: "Access no longer required" }
+  },
+  additionalProperties: false
+};
+
+const coreUserRolesBodySchema = {
+  type: "object",
+  required: ["roles", "expected_version"],
+  properties: {
+    roles: { type: "array", items: coreRoleSchema, minItems: 1, example: ["Employee", "HR Manager"] },
+    expected_version: { type: "integer", minimum: 1, example: 1 },
+    remarks: { type: "string", maxLength: 1000, example: "Role change approved by HR" }
+  },
+  additionalProperties: false
+};
+
+const coreUserMutationResponseSchema = {
+  ...coreUserDetailSchema,
+  properties: {
+    ...coreUserDetailSchema.properties,
+    onboarding: {
+      type: "object",
+      required: ["setup_required", "invite_sent", "next_step"],
+      properties: {
+        setup_required: { type: "boolean", example: true },
+        invite_sent: { type: "boolean", example: false },
+        next_step: { type: "string", enum: ["set_password", "none"], example: "set_password" },
+        dev_only: authDevOnlySchema
+      },
+      additionalProperties: true
+    },
+    sessions_revoked: { type: "integer", minimum: 0, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const orgSelectorsResponseSchema = {
+  type: "object",
+  required: ["departments", "designations", "managers", "roles"],
+  properties: {
+    departments: { type: "array", items: departmentReferenceSchema },
+    designations: { type: "array", items: designationReferenceSchema },
+    managers: { type: "array", items: userReferenceSchema },
+    roles: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["key", "label"],
+        properties: {
+          key: coreRoleSchema,
+          label: coreRoleSchema
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  additionalProperties: false
 };
 
 const subtreeUserSchema = {
@@ -1467,8 +1588,16 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/auth/logout": operation("Auth & Sessions", "Logout", "Revokes the current Valkey-backed session when a valid cookie is present and always clears the browser session cookie. Safe to call when no session is present.", { response200: statusResponseSchema }, false),
   "GET /api/v1/auth/me": operation("Auth & Sessions", "Current session", "Returns the authenticated actor resolved from bearer token or session cookie, including active role, available roles, permissions, navigation hints, company context, preferences, and low-bandwidth client defaults.", { response200: authSessionContextSchema }),
 
-  "GET /api/v1/core/users": operation("Core / Employees & Hierarchy", "List users", "Paginated employee/user search for authorized modules and admins. Supports frontend table filters, manager scoping, login-state filters, sorting, compact org references, and summary counts.", { querystring: { ...paginationQuerySchema, properties: { ...paginationQuerySchema.properties, q: { type: "string", description: "Optional employee code/name/email search.", example: "E1" }, department_id: uuid("Filter by department UUID"), designation_id: uuid("Filter by designation UUID"), role: { type: "string", description: "Filter by assigned role label.", example: "Employee" }, employment_status: { type: "string", enum: ["active", "inactive", "terminated", "suspended"], example: "active" }, manager_user_id: uuid("Filter by direct manager UUID"), login_state: { type: "string", enum: ["enabled", "disabled"], example: "enabled" } } }, response200: coreUserListResponseSchema }),
+  "GET /api/v1/core/master-data/org-selectors": operation("Core / Employees & Hierarchy", "Org selectors", "Returns active departments, designations, manager candidates, and backend role labels used by employee create/edit forms. The list is scoped by the authenticated actor where manager visibility is restricted.", { response200: orgSelectorsResponseSchema }),
+  "GET /api/v1/core/users": operation("Core / Employees & Hierarchy", "List users", "Paginated employee/user search for authorized modules and admins. Supports frontend table filters, manager scoping, login-state filters, sorting, compact org references, and summary counts.", { querystring: { ...paginationQuerySchema, properties: { ...paginationQuerySchema.properties, q: { type: "string", description: "Optional employee code/name/email search.", example: "E1" }, department_id: uuid("Filter by department UUID"), designation_id: uuid("Filter by designation UUID"), role: { type: "string", description: "Filter by assigned role label.", example: "Employee" }, employment_status: { type: "string", enum: ["active", "inactive", "terminated", "suspended"], example: "active" }, manager_user_id: uuid("Filter by direct manager UUID"), login_state: { type: "string", enum: ["enabled", "disabled", "setup_pending"], example: "enabled" } } }, response200: coreUserListResponseSchema }),
+  "POST /api/v1/core/users": operation("Core / Employees & Hierarchy", "Create user", "Creates a Core employee profile with department, designation, reporting manager, roles, lifecycle status, and optional password setup action. The API never creates a shared/default production password; login enablement queues password setup.", { body: coreUserCreateBodySchema, response200: coreUserMutationResponseSchema }),
   "GET /api/v1/core/users/{id}": operation("Core / Employees & Hierarchy", "Get user", "Returns one Core employee/user record with reporting line, role assignments, login state, and compact cross-module summaries for employee detail tabs.", { params: idParamSchema, response200: coreUserDetailSchema }),
+  "PATCH /api/v1/core/users/{id}": operation("Core / Employees & Hierarchy", "Update user", "Updates an employee profile, org placement, manager, lifecycle fields, and optimistic concurrency version. Manager changes update descendant hierarchy paths and block hierarchy cycles.", { params: idParamSchema, body: coreUserUpdateBodySchema, response200: coreUserMutationResponseSchema }),
+  "POST /api/v1/core/users/{id}/activate": operation("Core / Employees & Hierarchy", "Activate user", "Reactivates an inactive, suspended, or terminated employee profile with optimistic concurrency protection.", { params: idParamSchema, body: coreUserStatusBodySchema, response200: coreUserMutationResponseSchema }),
+  "POST /api/v1/core/users/{id}/deactivate": operation("Core / Employees & Hierarchy", "Deactivate user", "Deactivates, suspends, or terminates an employee, revokes active login credentials, and emits a platform event for downstream offboarding workflows such as asset recovery.", { params: idParamSchema, body: coreUserStatusBodySchema, response200: coreUserMutationResponseSchema }),
+  "POST /api/v1/core/users/{id}/login/enable": operation("Core / Employees & Hierarchy", "Enable login setup", "Starts login enablement by issuing a one-time password setup action. Local/QA responses include a dev_only token; production must deliver the setup action via configured email/notification provider before sign-in succeeds.", { params: idParamSchema, body: coreUserLoginBodySchema, response200: coreUserMutationResponseSchema }),
+  "POST /api/v1/core/users/{id}/login/disable": operation("Core / Employees & Hierarchy", "Disable login", "Revokes active user credentials, revokes active sessions where the session store supports it, and marks login disabled with optimistic concurrency protection.", { params: idParamSchema, body: coreUserLoginBodySchema, response200: coreUserMutationResponseSchema }),
+  "PUT /api/v1/core/users/{id}/roles": operation("Core / Employees & Hierarchy", "Replace roles", "Replaces backend role assignments for an employee. Admin can assign all roles; HR Manager can assign non-admin roles and cannot modify admin users. Active session preference is adjusted if the previous active role is removed.", { params: idParamSchema, body: coreUserRolesBodySchema, response200: coreUserMutationResponseSchema }),
   "GET /api/v1/core/users/{id}/subtree": operation(
     "Core / Employees & Hierarchy",
     "Hierarchy subordinate subtree",

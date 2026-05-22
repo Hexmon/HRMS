@@ -1,7 +1,10 @@
-import type { AuthUser, CoreUser, Department, Designation, UUID } from "#shared";
-import { Roles } from "#shared";
-import { forbidden, notFound } from "../../platform/errors.js";
-import type { MemoryDataStore } from "../../platform/data-store.js";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import type { AuthUser, CoreUser, Department, Designation, RoleKey, UUID } from "#shared";
+import { EmploymentStatuses, Roles } from "#shared";
+import { badRequest, conflict, forbidden, notFound } from "../../platform/errors.js";
+import type { AuthTokenRecord, MemoryDataStore } from "../../platform/data-store.js";
+import { nowIso } from "../../platform/data-store.js";
+import { appendCoreOutboxEvent } from "./events.js";
 import { CoreRepository } from "./repository.js";
 
 export interface SubtreeUser extends CoreUser {
@@ -33,9 +36,11 @@ export interface UserDirectoryQuery {
   role?: string;
   employment_status?: string;
   manager_user_id?: UUID;
-  login_state?: "enabled" | "disabled";
+  login_state?: LoginState;
   sort?: string;
 }
+
+export type LoginState = "enabled" | "disabled" | "setup_pending";
 
 export interface UserReference {
   id: UUID;
@@ -62,7 +67,7 @@ export interface CoreUserListItem extends CoreUser {
   manager: UserReference | null;
   display_label: string;
   status: string;
-  login_state: "enabled" | "disabled";
+  login_state: LoginState;
   role_labels: string[];
 }
 
@@ -116,6 +121,72 @@ export interface UserDirectoryResult {
   };
 }
 
+export interface UserCreateInput {
+  employee_code: string;
+  email: string;
+  full_name: string;
+  department_id: UUID;
+  designation_id: UUID;
+  manager_user_id?: UUID | null;
+  roles?: RoleKey[];
+  employment_status?: CoreUser["employment_status"];
+  timezone?: string | null;
+  joined_on?: string | null;
+  login_enabled?: boolean;
+}
+
+export interface UserUpdateInput {
+  email?: string;
+  full_name?: string;
+  department_id?: UUID;
+  designation_id?: UUID;
+  manager_user_id?: UUID | null;
+  employment_status?: CoreUser["employment_status"];
+  timezone?: string | null;
+  joined_on?: string | null;
+  terminated_on?: string | null;
+  expected_version: number;
+}
+
+export interface UserStatusInput {
+  expected_version: number;
+  effective_date?: string;
+  reason?: string;
+  remarks?: string;
+  status?: Extract<CoreUser["employment_status"], "inactive" | "terminated" | "suspended">;
+}
+
+export interface UserLoginInput {
+  expected_version: number;
+  invite_email?: boolean;
+  reason?: string;
+}
+
+export interface UserRolesInput {
+  roles: RoleKey[];
+  expected_version: number;
+  remarks?: string;
+}
+
+export interface CoreUserMutationResult extends CoreUserDetail {
+  onboarding?: {
+    setup_required: boolean;
+    invite_sent: boolean;
+    next_step: "set_password" | "none";
+    dev_only?: {
+      password_setup_token: string | null;
+    };
+  };
+  sessions_revoked?: number;
+}
+
+export interface OrgSelectorsResult {
+  departments: DepartmentReference[];
+  designations: DesignationReference[];
+  managers: UserReference[];
+  roles: Array<{ key: RoleKey; label: string }>;
+}
+
 export class CoreService {
   private readonly repository: CoreRepository;
 
@@ -143,6 +214,246 @@ export class CoreService {
         sort: params.sort ?? "employee_code"
       }
     };
+  }
+
+  orgSelectors(actor: AuthUser): OrgSelectorsResult {
+    const managerCandidates = this.visibleUsersFor(actor)
+      .filter((user) => user.employment_status === EmploymentStatuses.Active)
+      .map((user) => toUserReference(user));
+    return {
+      departments: this.repository.departments()
+        .filter((department) => department.status === "active")
+        .map(toDepartmentReference),
+      designations: this.repository.designations()
+        .filter((designation) => designation.status === "active")
+        .map(toDesignationReference),
+      managers: managerCandidates,
+      roles: allowedRoleKeys.map((role) => ({ key: role, label: role }))
+    };
+  }
+
+  createUser(actor: AuthUser, input: UserCreateInput): CoreUserMutationResult {
+    requirePeopleManager(actor);
+    const employeeCode = normalizeEmployeeCode(input.employee_code);
+    const email = normalizeEmail(input.email);
+    if (this.store.users.some((user) => normalizeEmployeeCode(user.employee_code) === employeeCode && !user.deleted_at)) {
+      throw conflict("Employee code already exists.", { employee_code: employeeCode });
+    }
+    if (this.store.users.some((user) => normalizeEmail(user.email) === email && !user.deleted_at)) {
+      throw conflict("Email already exists.", { email });
+    }
+    this.requireDepartment(input.department_id);
+    this.requireDesignation(input.designation_id);
+    const manager = input.manager_user_id ? this.requireActiveManager(input.manager_user_id) : null;
+    const roles = this.normalizeRoles(input.roles ?? [Roles.Employee]);
+    requireCanAssignRoles(actor, roles);
+
+    const now = nowIso();
+    const user: CoreUser = {
+      id: randomUUID(),
+      employee_code: employeeCode,
+      email,
+      full_name: normalizeText(input.full_name, "Full name"),
+      department_id: input.department_id,
+      designation_id: input.designation_id,
+      roles,
+      employment_status: input.employment_status ?? EmploymentStatuses.Inactive,
+      hierarchy_path: hierarchyPathFor(employeeCode, manager),
+      manager_user_id: manager?.id ?? null,
+      timezone: normalizeOptional(input.timezone),
+      joined_on: input.joined_on ?? now.slice(0, 10),
+      terminated_on: null,
+      deleted_at: null,
+      version: 1
+    };
+    this.store.users.push(user);
+    appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user",
+      aggregateId: user.id,
+      eventType: "core.user.created",
+      payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id },
+      idempotencyKey: `core.user.created:${user.id}`
+    });
+    const onboarding = input.login_enabled ? this.queuePasswordSetup(user, "employee_create") : undefined;
+    return this.withMutationMetadata(this.toDetail(user), onboarding ? { onboarding } : {});
+  }
+
+  updateUser(actor: AuthUser, id: UUID, input: UserUpdateInput): CoreUserMutationResult {
+    requirePeopleManager(actor);
+    const user = this.requireUserForWrite(id);
+    requireExpectedVersion(user, input.expected_version);
+
+    if (input.email !== undefined) {
+      const email = normalizeEmail(input.email);
+      const duplicate = this.store.users.find((candidate) => candidate.id !== user.id && normalizeEmail(candidate.email) === email && !candidate.deleted_at);
+      if (duplicate) {
+        throw conflict("Email already exists.", { email });
+      }
+      user.email = email;
+    }
+    if (input.full_name !== undefined) {
+      user.full_name = normalizeText(input.full_name, "Full name");
+    }
+    if (input.department_id !== undefined) {
+      this.requireDepartment(input.department_id);
+      user.department_id = input.department_id;
+    }
+    if (input.designation_id !== undefined) {
+      this.requireDesignation(input.designation_id);
+      user.designation_id = input.designation_id;
+    }
+    if (input.manager_user_id !== undefined) {
+      this.updateManager(user, input.manager_user_id);
+    }
+    if (input.employment_status !== undefined) {
+      user.employment_status = input.employment_status;
+      if (input.employment_status !== EmploymentStatuses.Terminated) {
+        user.terminated_on = input.terminated_on ?? null;
+      }
+    }
+    if (input.timezone !== undefined) {
+      user.timezone = normalizeOptional(input.timezone);
+    }
+    if (input.joined_on !== undefined) {
+      user.joined_on = input.joined_on;
+    }
+    if (input.terminated_on !== undefined) {
+      user.terminated_on = input.terminated_on;
+    }
+    user.version += 1;
+    appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user",
+      aggregateId: user.id,
+      eventType: "core.user.updated",
+      payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id },
+      idempotencyKey: `core.user.updated:${user.id}:${user.version}`
+    });
+    return this.toDetail(user);
+  }
+
+  activateUser(actor: AuthUser, id: UUID, input: UserStatusInput): CoreUserMutationResult {
+    requirePeopleManager(actor);
+    const user = this.requireUserForWrite(id);
+    requireExpectedVersion(user, input.expected_version);
+    if (user.employment_status === EmploymentStatuses.Active) {
+      throw conflict("Employee is already active.", { id });
+    }
+    user.employment_status = EmploymentStatuses.Active;
+    user.terminated_on = null;
+    user.version += 1;
+    appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user",
+      aggregateId: user.id,
+      eventType: "core.user.activated",
+      payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id, remarks: input.remarks ?? null },
+      idempotencyKey: `core.user.activated:${user.id}:${user.version}`
+    });
+    return this.toDetail(user);
+  }
+
+  deactivateUser(actor: AuthUser, id: UUID, input: UserStatusInput): CoreUserMutationResult {
+    requirePeopleManager(actor);
+    const user = this.requireUserForWrite(id);
+    requireExpectedVersion(user, input.expected_version);
+    const nextStatus = input.status ?? EmploymentStatuses.Inactive;
+    if (user.employment_status === nextStatus) {
+      throw conflict("Employee already has the requested inactive status.", { id, status: nextStatus });
+    }
+    user.employment_status = nextStatus;
+    user.terminated_on = nextStatus === EmploymentStatuses.Terminated ? input.effective_date ?? nowIso().slice(0, 10) : null;
+    const now = nowIso();
+    for (const credential of this.store.userCredentials.filter((credential) => credential.user_id === user.id && !credential.deleted_at)) {
+      credential.status = "revoked";
+      credential.updated_at = now;
+    }
+    user.version += 1;
+    appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user",
+      aggregateId: user.id,
+      eventType: nextStatus === EmploymentStatuses.Terminated ? "core.user.terminated" : "core.user.deactivated",
+      payload: {
+        user_id: user.id,
+        employee_code: user.employee_code,
+        actor_user_id: actor.id,
+        status: nextStatus,
+        reason: input.reason ?? null,
+        effective_date: input.effective_date ?? null
+      },
+      idempotencyKey: `core.user.deactivated:${user.id}:${user.version}`
+    });
+    return this.toDetail(user);
+  }
+
+  async disableLogin(actor: AuthUser, id: UUID, input: UserLoginInput): Promise<CoreUserMutationResult> {
+    requirePeopleManager(actor);
+    const user = this.requireUserForWrite(id);
+    requireExpectedVersion(user, input.expected_version);
+    const activeCredentials = this.store.userCredentials.filter((credential) => credential.user_id === user.id && credential.status === "active" && !credential.deleted_at);
+    if (activeCredentials.length === 0 && this.loginState(user.id) !== "setup_pending") {
+      throw conflict("Login is already disabled.", { id });
+    }
+    const now = nowIso();
+    for (const credential of activeCredentials) {
+      credential.status = "revoked";
+      credential.updated_at = now;
+    }
+    this.revokeActivePasswordSetupTokens(user.id);
+    const sessionsRevoked = await this.store.sessionStore.revokeUser?.(user.id, "login_disabled") ?? 0;
+    user.version += 1;
+    appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user",
+      aggregateId: user.id,
+      eventType: "core.user.login_disabled",
+      payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id, sessions_revoked: sessionsRevoked, reason: input.reason ?? null },
+      idempotencyKey: `core.user.login_disabled:${user.id}:${user.version}`
+    });
+    return this.withMutationMetadata(this.toDetail(user), { sessions_revoked: sessionsRevoked });
+  }
+
+  enableLogin(actor: AuthUser, id: UUID, input: UserLoginInput): CoreUserMutationResult {
+    requirePeopleManager(actor);
+    const user = this.requireUserForWrite(id);
+    requireExpectedVersion(user, input.expected_version);
+    if (this.loginState(user.id) === "enabled") {
+      throw conflict("Login is already enabled.", { id });
+    }
+    const onboarding = this.queuePasswordSetup(user, "employee_login_enable");
+    user.version += 1;
+    appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user",
+      aggregateId: user.id,
+      eventType: "core.user.login_setup_requested",
+      payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id, invite_email: Boolean(input.invite_email) },
+      idempotencyKey: `core.user.login_setup_requested:${user.id}:${user.version}`
+    });
+    return this.withMutationMetadata(this.toDetail(user), { onboarding });
+  }
+
+  replaceRoles(actor: AuthUser, id: UUID, input: UserRolesInput): CoreUserMutationResult {
+    const user = this.requireUserForWrite(id);
+    requireExpectedVersion(user, input.expected_version);
+    const roles = this.normalizeRoles(input.roles);
+    requireCanAssignRoles(actor, roles, user);
+    if (actor.id === user.id && user.roles.includes(Roles.Admin) && !roles.includes(Roles.Admin)) {
+      throw forbidden("Admin users cannot remove their own admin role.");
+    }
+    const previousRoles = [...user.roles];
+    user.roles = roles;
+    user.version += 1;
+    const preference = this.store.userSessionPreferences.find((candidate) => candidate.user_id === user.id);
+    if (preference && !roles.includes(preference.active_role)) {
+      preference.active_role = roles[0] ?? Roles.Employee;
+      preference.updated_at = nowIso();
+      preference.version += 1;
+    }
+    appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user",
+      aggregateId: user.id,
+      eventType: "core.user.roles_replaced",
+      payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id, previous_roles: previousRoles, roles, remarks: input.remarks ?? null },
+      idempotencyKey: `core.user.roles_replaced:${user.id}:${user.version}`
+    });
+    return this.toDetail(user);
   }
 
   getUser(id: UUID): CoreUser;
@@ -399,8 +710,14 @@ export class CoreService {
     return this.repository.designations().find((designation) => designation.id === id) ?? null;
   }
 
-  private loginState(userId: UUID): "enabled" | "disabled" {
-    return this.store.userCredentials.some((credential) => credential.user_id === userId && credential.status === "active" && !credential.deleted_at) ? "enabled" : "disabled";
+  private loginState(userId: UUID): LoginState {
+    if (this.store.userCredentials.some((credential) => credential.user_id === userId && credential.status === "active" && !credential.deleted_at)) {
+      return "enabled";
+    }
+    if (this.store.authTokens.some((token) => token.user_id === userId && token.token_type === "password_setup" && token.status === "active" && Date.parse(token.expires_at) > Date.now())) {
+      return "setup_pending";
+    }
+    return "disabled";
   }
 
   private canReadSubtree(actor: AuthUser, root: CoreUser): boolean {
@@ -416,6 +733,107 @@ export class CoreService {
     }
     return actor.id === user.id || user.hierarchy_path.startsWith(`${actor.hierarchy_path}.`);
   }
+
+  private requireUserForWrite(id: UUID): CoreUser {
+    const user = this.repository.findUser(id);
+    if (!user) {
+      throw notFound("User not found", { id });
+    }
+    return user;
+  }
+
+  private requireDepartment(id: UUID): Department {
+    const department = this.repository.departments().find((candidate) => candidate.id === id && candidate.status === "active");
+    if (!department) {
+      throw notFound("Active department not found", { id });
+    }
+    return department;
+  }
+
+  private requireDesignation(id: UUID): Designation {
+    const designation = this.repository.designations().find((candidate) => candidate.id === id && candidate.status === "active");
+    if (!designation) {
+      throw notFound("Active designation not found", { id });
+    }
+    return designation;
+  }
+
+  private requireActiveManager(id: UUID): CoreUser {
+    const manager = this.repository.findActiveUser(id);
+    if (!manager) {
+      throw notFound("Active manager not found", { id });
+    }
+    return manager;
+  }
+
+  private updateManager(user: CoreUser, managerUserId: UUID | null): void {
+    const oldPrefix = `${user.hierarchy_path}.`;
+    const manager = managerUserId ? this.requireActiveManager(managerUserId) : null;
+    if (manager?.id === user.id || (manager && manager.hierarchy_path.startsWith(oldPrefix))) {
+      throw badRequest("Manager cannot be the employee or one of their descendants.");
+    }
+    const nextPath = hierarchyPathFor(user.employee_code, manager);
+    if (nextPath === user.hierarchy_path && user.manager_user_id === (manager?.id ?? null)) {
+      return;
+    }
+    const previousPath = user.hierarchy_path;
+    user.manager_user_id = manager?.id ?? null;
+    user.hierarchy_path = nextPath;
+    for (const candidate of this.store.users) {
+      if (candidate.id !== user.id && candidate.hierarchy_path.startsWith(`${previousPath}.`)) {
+        candidate.hierarchy_path = `${nextPath}.${candidate.hierarchy_path.slice(previousPath.length + 1)}`;
+        candidate.version += 1;
+      }
+    }
+  }
+
+  private normalizeRoles(roles: readonly RoleKey[]): RoleKey[] {
+    if (!roles.length) {
+      throw badRequest("At least one role is required.");
+    }
+    const unique = [...new Set(roles)];
+    const invalid = unique.filter((role) => !allowedRoleKeys.includes(role));
+    if (invalid.length > 0) {
+      throw badRequest("One or more roles are not supported.", { roles: invalid });
+    }
+    return unique;
+  }
+
+  private queuePasswordSetup(user: CoreUser, reason: string): CoreUserMutationResult["onboarding"] {
+    this.revokeActivePasswordSetupTokens(user.id);
+    const raw = randomBytes(32).toString("base64url");
+    const now = nowIso();
+    const token: AuthTokenRecord = {
+      id: randomUUID(),
+      token_hash: tokenHash(raw),
+      token_type: "password_setup",
+      user_id: user.id,
+      email: user.email,
+      company_id: this.store.companyProfiles.find((company) => company.status === "active")?.id ?? null,
+      status: "active",
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      used_at: null,
+      created_at: now,
+      metadata: { reason }
+    };
+    this.store.authTokens.push(token);
+    return {
+      setup_required: true,
+      invite_sent: false,
+      next_step: "set_password",
+      ...devOnly({ password_setup_token: raw })
+    };
+  }
+
+  private revokeActivePasswordSetupTokens(userId: UUID): void {
+    for (const token of this.store.authTokens.filter((candidate) => candidate.user_id === userId && candidate.token_type === "password_setup" && candidate.status === "active")) {
+      token.status = "revoked";
+    }
+  }
+
+  private withMutationMetadata(detail: CoreUserDetail, metadata: Partial<CoreUserMutationResult>): CoreUserMutationResult {
+    return Object.assign(detail, metadata);
+  }
 }
 
 function hierarchyDepth(path: string): number {
@@ -425,6 +843,76 @@ function hierarchyDepth(path: string): number {
 function hasPrivilegedProfileRead(actor: AuthUser): boolean {
   const privilegedRoles: readonly string[] = [Roles.Admin, Roles.Auditor, Roles.HRManager];
   return actor.roles.some((role) => privilegedRoles.includes(role));
+}
+
+function requirePeopleManager(actor: AuthUser): void {
+  if (!actor.roles.some((role) => role === Roles.Admin || role === Roles.HRManager)) {
+    throw forbidden("Only Admin and HR Manager users can manage employee profiles.");
+  }
+}
+
+function requireCanAssignRoles(actor: AuthUser, roles: readonly RoleKey[], target?: CoreUser): void {
+  if (actor.roles.includes(Roles.Admin)) {
+    return;
+  }
+  if (actor.roles.includes(Roles.HRManager) && !roles.includes(Roles.Admin) && !target?.roles.includes(Roles.Admin)) {
+    return;
+  }
+  throw forbidden("Only Admin users can assign privileged roles.");
+}
+
+function requireExpectedVersion(user: CoreUser, expectedVersion: number): void {
+  if (user.version !== expectedVersion) {
+    throw conflict("Employee profile was modified by another actor. Refresh and retry.", {
+      expected_version: expectedVersion,
+      current_version: user.version
+    });
+  }
+}
+
+const allowedRoleKeys = Object.values(Roles) as RoleKey[];
+
+function normalizeEmployeeCode(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9_-]{1,31}$/u.test(normalized)) {
+    throw badRequest("Employee code must be 2-32 letters, numbers, hyphens, or underscores.");
+  }
+  return normalized;
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeText(value: string, field: string): string {
+  const normalized = value.trim().replace(/\s+/gu, " ");
+  if (normalized.length < 2) {
+    throw badRequest(`${field} is required.`);
+  }
+  return normalized;
+}
+
+function normalizeOptional(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function ltreeLabel(value: string): string {
+  const label = value.toUpperCase().replace(/[^A-Z0-9_]/gu, "_");
+  return /^[A-Z_]/u.test(label) ? label : `U_${label}`;
+}
+
+function hierarchyPathFor(employeeCode: string, manager: CoreUser | null): string {
+  const label = ltreeLabel(employeeCode);
+  return manager ? `${manager.hierarchy_path}.${label}` : label;
+}
+
+function tokenHash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function devOnly(value: NonNullable<CoreUserMutationResult["onboarding"]>["dev_only"]): Pick<NonNullable<CoreUserMutationResult["onboarding"]>, "dev_only"> | object {
+  return process.env.NODE_ENV === "production" ? {} : { dev_only: value };
 }
 
 function toUserReference(user: CoreUser): UserReference {

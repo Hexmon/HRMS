@@ -109,4 +109,151 @@ describe("core hierarchy API", () => {
     expect(forbiddenDetail.statusCode).toBe(403);
   });
 
+  it("supports admin employee CRUD, login setup, role replacement, and lifecycle actions", async () => {
+    const admin = await loginAs(app, "ADM");
+    const manager = await loginAs(app, "D1");
+
+    const selectors = await app.inject({
+      method: "GET",
+      url: "/api/v1/core/master-data/org-selectors",
+      headers: authHeader(admin.token)
+    });
+    expect(selectors.statusCode).toBe(200);
+    expect(selectors.json().departments.length).toBeGreaterThan(0);
+    expect(selectors.json().roles.map((role: { key: string }) => role.key)).toContain("HR Manager");
+
+    const forbiddenCreate = await app.inject({
+      method: "POST",
+      url: "/api/v1/core/users",
+      headers: authHeader(manager.token),
+      payload: {
+        employee_code: "QA1000",
+        email: "qa1000@example.test",
+        full_name: "Forbidden Create",
+        department_id: manager.user.department_id,
+        designation_id: manager.user.designation_id
+      }
+    });
+    expect(forbiddenCreate.statusCode).toBe(403);
+
+    const create = await app.inject({
+      method: "POST",
+      url: "/api/v1/core/users",
+      headers: authHeader(admin.token),
+      payload: {
+        employee_code: "QA1001",
+        email: "qa1001@example.test",
+        full_name: "QA Employee",
+        department_id: manager.user.department_id,
+        designation_id: manager.user.designation_id,
+        manager_user_id: manager.user.id,
+        roles: ["Employee"],
+        employment_status: "active",
+        login_enabled: true,
+        joined_on: "2026-05-22"
+      }
+    });
+    expect(create.statusCode).toBe(200);
+    expect(create.json()).toMatchObject({
+      employee_code: "QA1001",
+      login_state: "setup_pending",
+      manager: { employee_code: "D1" },
+      version: 1
+    });
+    expect(create.json().onboarding.dev_only.password_setup_token).toEqual(expect.any(String));
+
+    const patch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/core/users/${create.json().id}`,
+      headers: authHeader(admin.token),
+      payload: {
+        full_name: "QA Employee Updated",
+        expected_version: 1
+      }
+    });
+    expect(patch.statusCode).toBe(200);
+    expect(patch.json()).toMatchObject({ full_name: "QA Employee Updated", version: 2 });
+
+    const disableLogin = await app.inject({
+      method: "POST",
+      url: `/api/v1/core/users/${create.json().id}/login/disable`,
+      headers: authHeader(admin.token),
+      payload: { expected_version: 2, reason: "setup cancelled" }
+    });
+    expect(disableLogin.statusCode).toBe(200);
+    expect(disableLogin.json()).toMatchObject({ login_state: "disabled", sessions_revoked: 0, version: 3 });
+
+    const enableLogin = await app.inject({
+      method: "POST",
+      url: `/api/v1/core/users/${create.json().id}/login/enable`,
+      headers: authHeader(admin.token),
+      payload: { expected_version: 3, invite_email: true }
+    });
+    expect(enableLogin.statusCode).toBe(200);
+    expect(enableLogin.json()).toMatchObject({ login_state: "setup_pending", version: 4 });
+
+    const setupToken = enableLogin.json().onboarding.dev_only.password_setup_token;
+    const setPassword = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/set-password",
+      payload: { token: setupToken, password: "NewUserPass123", confirm_password: "NewUserPass123" }
+    });
+    expect(setPassword.statusCode).toBe(200);
+
+    const afterPassword = await app.inject({
+      method: "GET",
+      url: `/api/v1/core/users/${create.json().id}`,
+      headers: authHeader(admin.token)
+    });
+    expect(afterPassword.statusCode).toBe(200);
+    expect(afterPassword.json()).toMatchObject({ login_state: "enabled", version: 5 });
+
+    const roles = await app.inject({
+      method: "PUT",
+      url: `/api/v1/core/users/${create.json().id}/roles`,
+      headers: authHeader(admin.token),
+      payload: { roles: ["Employee", "HR Manager"], expected_version: 5, remarks: "Promoted to HR support" }
+    });
+    expect(roles.statusCode).toBe(200);
+    expect(roles.json().role_labels).toEqual(["Employee", "HR Manager"]);
+    expect(roles.json().version).toBe(6);
+
+    const stalePatch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/core/users/${create.json().id}`,
+      headers: authHeader(admin.token),
+      payload: {
+        full_name: "Stale Update",
+        expected_version: 5
+      }
+    });
+    expect(stalePatch.statusCode).toBe(409);
+
+    const deactivate = await app.inject({
+      method: "POST",
+      url: `/api/v1/core/users/${create.json().id}/deactivate`,
+      headers: authHeader(admin.token),
+      payload: { expected_version: 6, status: "inactive", reason: "Access ended" }
+    });
+    expect(deactivate.statusCode).toBe(200);
+    expect(deactivate.json()).toMatchObject({ employment_status: "inactive", login_state: "disabled", version: 7 });
+    expect(app.store.outbox.some((event) => event.event_type === "core.user.deactivated" && event.aggregate_id === create.json().id)).toBe(true);
+
+    const inactiveLogin = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { email: "qa1001@example.test", password: "NewUserPass123" }
+    });
+    expect(inactiveLogin.statusCode).toBe(403);
+
+    const activate = await app.inject({
+      method: "POST",
+      url: `/api/v1/core/users/${create.json().id}/activate`,
+      headers: authHeader(admin.token),
+      payload: { expected_version: 7, remarks: "Returned to service" }
+    });
+    expect(activate.statusCode).toBe(200);
+    expect(activate.json()).toMatchObject({ employment_status: "active", version: 8 });
+  });
+
 });

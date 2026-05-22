@@ -49,6 +49,7 @@ const expectedOperations = [
   "GET /api/v1/assets/",
   "GET /api/v1/assets/{id}",
   "GET /api/v1/auth/me",
+  "GET /api/v1/core/master-data/org-selectors",
   "GET /api/v1/core/users",
   "GET /api/v1/core/users/{id}",
   "GET /api/v1/core/users/{id}/subtree",
@@ -85,6 +86,7 @@ const expectedOperations = [
   "GET /health/live",
   "GET /health/ready",
   "PATCH /api/v1/auth/session/preference",
+  "PATCH /api/v1/core/users/{id}",
   "PATCH /api/v1/expenses/{id}",
   "POST /api/v1/assets/",
   "POST /api/v1/assets/events/employee-terminated",
@@ -102,6 +104,11 @@ const expectedOperations = [
   "POST /api/v1/auth/verify-email",
   "POST /api/v1/auth/login",
   "POST /api/v1/auth/logout",
+  "POST /api/v1/core/users",
+  "POST /api/v1/core/users/{id}/activate",
+  "POST /api/v1/core/users/{id}/deactivate",
+  "POST /api/v1/core/users/{id}/login/disable",
+  "POST /api/v1/core/users/{id}/login/enable",
   "POST /api/v1/documents",
   "POST /api/v1/documents/{id}/download-url",
   "POST /api/v1/documents/{id}/verify",
@@ -121,6 +128,7 @@ const expectedOperations = [
   "POST /api/v1/timesheets/submissions/{id}/approve",
   "POST /api/v1/timesheets/work-segments",
   "POST /api/v1/timesheets/workflow-definitions",
+  "PUT /api/v1/core/users/{id}/roles",
   "PUT /api/v1/platform/finance-governance"
 ] as const;
 
@@ -134,8 +142,21 @@ const bodyRequiredOperations = [
   "POST /api/v1/auth/signup",
   "PATCH /api/v1/auth/session/preference",
   "POST /api/v1/auth/login",
+  "POST /api/v1/core/users",
+  "PATCH /api/v1/core/users/{id}",
+  "POST /api/v1/core/users/{id}/activate",
+  "POST /api/v1/core/users/{id}/deactivate",
+  "POST /api/v1/core/users/{id}/login/enable",
+  "POST /api/v1/core/users/{id}/login/disable",
+  "PUT /api/v1/core/users/{id}/roles",
   "POST /api/v1/expenses",
   "POST /api/v1/expenses/{id}/submit",
+  "PATCH /api/v1/core/users/{id}",
+  "POST /api/v1/core/users/{id}/activate",
+  "POST /api/v1/core/users/{id}/deactivate",
+  "POST /api/v1/core/users/{id}/login/enable",
+  "POST /api/v1/core/users/{id}/login/disable",
+  "PUT /api/v1/core/users/{id}/roles",
   "POST /api/v1/expenses/{id}/manager/verify",
   "POST /api/v1/expenses/{id}/finance/approve",
   "POST /api/v1/expenses/{id}/finance/payment",
@@ -382,7 +403,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(77);
+    expect(rows.length).toBe(85);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);
