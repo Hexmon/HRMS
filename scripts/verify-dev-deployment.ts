@@ -7,7 +7,7 @@ loadRuntimeEnv();
 
 const envFile = process.env.HRMS_ENV_FILE ?? ".env.local";
 const reportDir = process.env.HRMS_REPORT_DIR ?? "docs/qa/runs/dev-standalone";
-const composeProject = process.env.HRMS_COMPOSE_PROJECT ?? "hrms_backend_dev";
+const composeProject = process.env.HRMS_COMPOSE_PROJECT ?? "hawkaii_hrms_backend_dev";
 const composeFiles = (process.env.HRMS_COMPOSE_FILES ?? "infra/docker/docker-compose.dev.yml")
   .split(",")
   .map((item) => item.trim())
@@ -125,7 +125,7 @@ record(
 );
 
 const openapi = await request("/api/v1/openapi.json");
-record("openapi available", openapi.status === 200 && openapi.text.includes("HRMS/ERP API") ? "pass" : "fail", `status=${openapi.status}`);
+record("openapi available", openapi.status === 200 && openapi.text.includes("Hawkaii HRMS API") ? "pass" : "fail", `status=${openapi.status}`);
 
 const login = await request("/api/v1/auth/login", {
   method: "POST",

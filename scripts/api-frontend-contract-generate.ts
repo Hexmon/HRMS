@@ -56,7 +56,7 @@ function renderEndpointIndex(): string {
   return [
     "# Endpoint Index",
     `This file is generated from ${code("docs/api/openapi.json")} by ${code("pnpm api:frontend-contract:generate")}.`,
-    `OpenAPI title: ${spec.info?.title ?? "HRMS/ERP API"}`,
+    `OpenAPI title: ${spec.info?.title ?? "Hawkaii HRMS API"}`,
     `OpenAPI version: ${spec.info?.version ?? "unknown"}`,
     `Documented operations: ${operations.length}`,
     `Use ${code("openapi.json")} for exact schemas and this index for frontend behavior notes.`,

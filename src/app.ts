@@ -77,7 +77,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(swagger, {
     openapi: {
       info: {
-        title: "HRMS/ERP API",
+        title: "Hawkaii HRMS API",
         version: "0.1.0"
       },
       tags: openApiTags,

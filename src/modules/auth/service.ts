@@ -668,9 +668,9 @@ function presentUser(user: CoreUser) {
 
 function defaultCompany(user: AuthUser): CompanyProfileRecord {
   return {
-    id: "local-hrms",
-    company_name: "HRMS",
-    company_slug: "hrms",
+    id: "local-hawkaii-hrms",
+    company_name: "Hawkaii HRMS",
+    company_slug: "hawkaii-hrms",
     timezone: readTimezone(user) ?? "Asia/Kolkata",
     locale: "en-IN",
     fiscal_year_start_month: 4,

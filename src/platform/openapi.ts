@@ -378,7 +378,7 @@ const authSessionContextSchema = {
       type: "object",
       required: ["id", "name", "timezone"],
       properties: {
-        id: { type: "string", example: "local-hrms" },
+        id: { type: "string", example: "local-hawkaii-hrms" },
         name: { type: "string", example: "HRMS" },
         timezone: { type: "string", example: "Asia/Kolkata" }
       },

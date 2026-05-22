@@ -1,6 +1,6 @@
-# AGENTS.md - Standalone HRMS Backend Engineering Directive
+# AGENTS.md - Hawkaii HRMS Backend Engineering Directive
 
-This project is the backend-only standalone extraction of the enterprise HRMS/ERP platform. It is a single Node.js/TypeScript package and must not be converted back into a monorepo.
+This project is the backend-only standalone extraction of Hawkaii HRMS. It is a single Node.js/TypeScript package and must not be converted back into a monorepo.
 
 ## Architecture
 

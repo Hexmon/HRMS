@@ -206,15 +206,15 @@ describe("API contracts", () => {
   it("exposes OpenAPI and typed health responses", async () => {
     const health = await app.inject({ method: "GET", url: "/health/live" });
     expect(health.statusCode).toBe(200);
-    expect(health.json()).toEqual({ status: "ok", service: "hrms-api" });
+    expect(health.json()).toEqual({ status: "ok", service: "hawkaii-hrms-api" });
 
     const versionedHealth = await app.inject({ method: "GET", url: "/api/v1/health/live" });
     expect(versionedHealth.statusCode).toBe(200);
-    expect(versionedHealth.json()).toEqual({ status: "ok", service: "hrms-api" });
+    expect(versionedHealth.json()).toEqual({ status: "ok", service: "hawkaii-hrms-api" });
 
     const openapi = await app.inject({ method: "GET", url: "/api/v1/openapi.json" });
     expect(openapi.statusCode).toBe(200);
-    expect(openapi.json().info.title).toBe("HRMS/ERP API");
+    expect(openapi.json().info.title).toBe("Hawkaii HRMS API");
 
     const docs = await app.inject({ method: "GET", url: "/docs" });
     expect(docs.statusCode).toBe(200);

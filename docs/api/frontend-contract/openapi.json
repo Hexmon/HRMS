@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "HRMS/ERP API",
+    "title": "Hawkaii HRMS API",
     "version": "0.1.0"
   },
   "components": {
@@ -4266,7 +4266,7 @@
                       "properties": {
                         "id": {
                           "type": "string",
-                          "example": "local-hrms"
+                          "example": "local-hawkaii-hrms"
                         },
                         "name": {
                           "type": "string",
@@ -4894,7 +4894,7 @@
                       "properties": {
                         "id": {
                           "type": "string",
-                          "example": "local-hrms"
+                          "example": "local-hawkaii-hrms"
                         },
                         "name": {
                           "type": "string",

@@ -2,7 +2,7 @@
 
 This file is generated from `docs/api/openapi.json` by `pnpm api:frontend-contract:generate`.
 
-OpenAPI title: HRMS/ERP API
+OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 

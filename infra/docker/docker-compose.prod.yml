@@ -16,7 +16,7 @@ x-backend-environment: &backend-environment
   JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
   SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-hrms_session}
   COOKIE_SECURE: ${COOKIE_SECURE:-true}
-  API_BASE_URL: ${API_BASE_URL:-http://api:3001}
+  API_BASE_URL: ${API_BASE_URL:-http://hawkaii-hrms-api:3001}
   HRMS_DATA_STORE: postgres
   OUTBOX_WORKER_INTERVAL_MS: ${OUTBOX_WORKER_INTERVAL_MS:-2000}
 
@@ -62,7 +62,7 @@ services:
     volumes:
       - minio-data:/data
 
-  migrate:
+  hawkaii-hrms-migrate:
     build: *backend-build
     environment: *backend-environment
     depends_on:
@@ -75,11 +75,11 @@ services:
     command: ["pnpm", "db:migrate:prod"]
     restart: "no"
 
-  api:
+  hawkaii-hrms-api:
     build: *backend-build
     environment: *backend-environment
     depends_on:
-      migrate:
+      hawkaii-hrms-migrate:
         condition: service_completed_successfully
       valkey:
         condition: service_healthy
@@ -95,11 +95,11 @@ services:
       timeout: 5s
       retries: 12
 
-  outbox-worker:
+  hawkaii-hrms-outbox-worker:
     build: *backend-build
     environment: *backend-environment
     depends_on:
-      api:
+      hawkaii-hrms-api:
         condition: service_healthy
       valkey:
         condition: service_healthy

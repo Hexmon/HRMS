@@ -3,7 +3,7 @@ import type { FastifyPluginAsync } from "fastify";
 export const healthRoutes: FastifyPluginAsync = async (fastify) => {
   const live = async () => ({
     status: "ok",
-    service: "hrms-api"
+    service: "hawkaii-hrms-api"
   });
 
   const ready = async () => ({
