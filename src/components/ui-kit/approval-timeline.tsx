@@ -12,7 +12,11 @@ export interface ApprovalStep {
 const STATE: Record<ApprovalStep["status"], { icon: LucideIcon; cls: string; ring: string }> = {
   approved: { icon: Check, cls: "bg-success text-success-foreground", ring: "ring-success/30" },
   pending: { icon: Clock, cls: "bg-warning text-warning-foreground", ring: "ring-warning/30" },
-  rejected: { icon: X, cls: "bg-destructive text-destructive-foreground", ring: "ring-destructive/30" },
+  rejected: {
+    icon: X,
+    cls: "bg-destructive text-destructive-foreground",
+    ring: "ring-destructive/30",
+  },
   skipped: { icon: Clock, cls: "bg-muted text-muted-foreground", ring: "ring-border" },
 };
 

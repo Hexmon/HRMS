@@ -2,8 +2,17 @@ import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-r
 import { PageHeader, ModuleTabs } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import {
-  LayoutDashboard, Users, Clock, Plane, Briefcase, Timer, Wallet,
-  Boxes, LifeBuoy, ShieldCheck, ChevronLeft,
+  LayoutDashboard,
+  Users,
+  Clock,
+  Plane,
+  Briefcase,
+  Timer,
+  Wallet,
+  Boxes,
+  LifeBuoy,
+  ShieldCheck,
+  ChevronLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -18,13 +27,48 @@ interface CategoryDef {
 
 export const REPORT_CATEGORIES: CategoryDef[] = [
   { to: "/reports/hr", label: "HR Reports", icon: Users, roles: ["main_admin", "hr_admin"] },
-  { to: "/reports/attendance", label: "Attendance Reports", icon: Clock, roles: ["main_admin", "hr_admin", "manager"] },
-  { to: "/reports/leave", label: "Leave & WFH Reports", icon: Plane, roles: ["main_admin", "hr_admin", "manager"] },
-  { to: "/reports/projects", label: "Project Reports", icon: Briefcase, roles: ["main_admin", "manager", "project_manager"] },
-  { to: "/reports/timesheet", label: "Timesheet Reports", icon: Timer, roles: ["main_admin", "manager", "project_manager", "hr_admin"] },
-  { to: "/reports/expenses", label: "Expense Reports", icon: Wallet, roles: ["main_admin", "finance_manager"] },
-  { to: "/reports/assets", label: "Asset Reports", icon: Boxes, roles: ["main_admin", "asset_admin"] },
-  { to: "/reports/helpdesk", label: "Helpdesk Reports", icon: LifeBuoy, roles: ["main_admin", "helpdesk_agent", "asset_admin", "hr_admin", "finance_manager"] },
+  {
+    to: "/reports/attendance",
+    label: "Attendance Reports",
+    icon: Clock,
+    roles: ["main_admin", "hr_admin", "manager"],
+  },
+  {
+    to: "/reports/leave",
+    label: "Leave & WFH Reports",
+    icon: Plane,
+    roles: ["main_admin", "hr_admin", "manager"],
+  },
+  {
+    to: "/reports/projects",
+    label: "Project Reports",
+    icon: Briefcase,
+    roles: ["main_admin", "manager", "project_manager"],
+  },
+  {
+    to: "/reports/timesheet",
+    label: "Timesheet Reports",
+    icon: Timer,
+    roles: ["main_admin", "manager", "project_manager", "hr_admin"],
+  },
+  {
+    to: "/reports/expenses",
+    label: "Expense Reports",
+    icon: Wallet,
+    roles: ["main_admin", "finance_manager"],
+  },
+  {
+    to: "/reports/assets",
+    label: "Asset Reports",
+    icon: Boxes,
+    roles: ["main_admin", "asset_admin"],
+  },
+  {
+    to: "/reports/helpdesk",
+    label: "Helpdesk Reports",
+    icon: LifeBuoy,
+    roles: ["main_admin", "helpdesk_agent", "asset_admin", "hr_admin", "finance_manager"],
+  },
   { to: "/reports/audit", label: "Audit Reports", icon: ShieldCheck, roles: ["main_admin"] },
 ];
 
@@ -52,15 +96,25 @@ function ReportsLayout() {
         actions={
           !isIndex && (
             <Button asChild size="sm" variant="ghost">
-              <Link to="/reports"><ChevronLeft className="mr-1 h-4 w-4" /> Back to reports</Link>
+              <Link to="/reports">
+                <ChevronLeft className="mr-1 h-4 w-4" /> Back to reports
+              </Link>
             </Button>
           )
         }
       />
       {!isIndex && (
-        <ModuleTabs tabs={visibleCategoriesForRole(activeRole ?? null).map((c) => ({ to: c.to, label: c.label, icon: c.icon }))} />
+        <ModuleTabs
+          tabs={visibleCategoriesForRole(activeRole ?? null).map((c) => ({
+            to: c.to,
+            label: c.label,
+            icon: c.icon,
+          }))}
+        />
       )}
-      <div className="pt-4 page-fade-in"><Outlet /></div>
+      <div className="pt-4 page-fade-in">
+        <Outlet />
+      </div>
     </>
   );
 }

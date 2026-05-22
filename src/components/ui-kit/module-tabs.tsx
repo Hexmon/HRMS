@@ -27,16 +27,10 @@ export function ModuleTabs({ tabs, className }: Props) {
   return (
     <div
       role="tablist"
-      className={cn(
-        "-mx-1 flex gap-1 overflow-x-auto border-b pt-1",
-        "scrollbar-thin",
-        className,
-      )}
+      className={cn("-mx-1 flex gap-1 overflow-x-auto border-b pt-1", "scrollbar-thin", className)}
     >
       {tabs.map((t) => {
-        const active = t.exact
-          ? path === t.to
-          : path === t.to || path.startsWith(t.to + "/");
+        const active = t.exact ? path === t.to : path === t.to || path.startsWith(t.to + "/");
         const Icon = t.icon;
         return (
           <Link

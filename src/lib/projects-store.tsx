@@ -60,8 +60,13 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
   const upsert: Ctx["upsert"] = (p, actor = "System") => {
     const exists = projects.some((x) => x.id === p.id);
     const next = exists
-      ? projects.map((x) => (x.id === p.id ? { ...p, audit: [...x.audit, newAudit(actor, "Project updated")] } : x))
-      : [{ ...p, audit: [...(p.audit ?? []), newAudit(actor, "Project created", p.name)] }, ...projects];
+      ? projects.map((x) =>
+          x.id === p.id ? { ...p, audit: [...x.audit, newAudit(actor, "Project updated")] } : x,
+        )
+      : [
+          { ...p, audit: [...(p.audit ?? []), newAudit(actor, "Project created", p.name)] },
+          ...projects,
+        ];
     persist(next);
   };
 
@@ -73,7 +78,11 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
     persist(
       projects.map((p) =>
         p.id === id
-          ? { ...p, status, audit: [...p.audit, newAudit(actor, `Status changed to ${status}`, remarks)] }
+          ? {
+              ...p,
+              status,
+              audit: [...p.audit, newAudit(actor, `Status changed to ${status}`, remarks)],
+            }
           : p,
       ),
     );

@@ -772,7 +772,7 @@ export function AdminSettingsProvider({ children }: { children: React.ReactNode 
   useQuery({
     queryKey: queryKeys.detail("admin", "finance-governance", "current"),
     queryFn: () =>
-      withApiFallback(
+      withApiFallback<unknown>(
         () => adminApi.getFinanceGovernance(),
         () => policies.expense,
       ),
@@ -794,7 +794,7 @@ export function AdminSettingsProvider({ children }: { children: React.ReactNode 
   useQuery({
     queryKey: queryKeys.list("timesheets", "workflow-definitions"),
     queryFn: () =>
-      withApiFallback(
+      withApiFallback<unknown>(
         () => timesheetsApi.listWorkflowDefinitions({ page_size: 100 }),
         () => ({
           items: workflows,

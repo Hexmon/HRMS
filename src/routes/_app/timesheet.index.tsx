@@ -71,13 +71,15 @@ function MyTimesheetPage() {
   // Identify current employee from user (fall back to demo employee)
   const me = useMemo(() => {
     return (
-      employees.find((e) => e.email === user?.email) ??
-      employees.find((e) => e.id === "EMP-1042")!
+      employees.find((e) => e.email === user?.email) ?? employees.find((e) => e.id === "EMP-1042")!
     );
   }, [employees, user]);
 
   const myProjects = useMemo(
-    () => projects.filter((p) => p.members.some((m) => m.employeeId === me.id) && p.status !== "cancelled"),
+    () =>
+      projects.filter(
+        (p) => p.members.some((m) => m.employeeId === me.id) && p.status !== "cancelled",
+      ),
     [projects, me],
   );
 
@@ -182,9 +184,7 @@ function MyTimesheetPage() {
   const updateHours = (id: string, date: string, value: string) => {
     const num = value === "" ? 0 : Number(value);
     if (Number.isNaN(num) || num < 0 || num > 24) return;
-    setRows((r) =>
-      r.map((x) => (x.id === id ? { ...x, hours: { ...x.hours, [date]: num } } : x)),
-    );
+    setRows((r) => r.map((x) => (x.id === id ? { ...x, hours: { ...x.hours, [date]: num } } : x)));
   };
 
   const copyPreviousDay = (rowId: string, dayIdx: number) => {
@@ -242,7 +242,10 @@ function MyTimesheetPage() {
   };
 
   const dateLabel = (d: string, opts?: Intl.DateTimeFormatOptions) =>
-    new Date(d).toLocaleDateString(undefined, opts ?? { weekday: "short", month: "short", day: "numeric" });
+    new Date(d).toLocaleDateString(
+      undefined,
+      opts ?? { weekday: "short", month: "short", day: "numeric" },
+    );
 
   return (
     <div className="space-y-4">
@@ -294,9 +297,27 @@ function MyTimesheetPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Total hours" value={totals.total.toFixed(1)} icon={Clock} tone="primary" hint="This week" />
-        <StatCard label="Billable" value={totals.billable.toFixed(1)} icon={DollarSign} tone="success" hint={`${totals.total ? Math.round((totals.billable / totals.total) * 100) : 0}% mix`} />
-        <StatCard label="Non-billable" value={totals.nonBillable.toFixed(1)} icon={Coffee} tone="warning" hint="Internal time" />
+        <StatCard
+          label="Total hours"
+          value={totals.total.toFixed(1)}
+          icon={Clock}
+          tone="primary"
+          hint="This week"
+        />
+        <StatCard
+          label="Billable"
+          value={totals.billable.toFixed(1)}
+          icon={DollarSign}
+          tone="success"
+          hint={`${totals.total ? Math.round((totals.billable / totals.total) * 100) : 0}% mix`}
+        />
+        <StatCard
+          label="Non-billable"
+          value={totals.nonBillable.toFixed(1)}
+          icon={Coffee}
+          tone="warning"
+          hint="Internal time"
+        />
         <StatCard
           label="Capacity gap"
           value={`${Math.max(0, 40 - totals.total).toFixed(1)}h`}
@@ -327,12 +348,21 @@ function MyTimesheetPage() {
                   {weekDays.map((d, i) => {
                     const isWeekend = i >= 5;
                     return (
-                      <th key={d} className={cn("px-2 py-3 text-center font-medium", isWeekend && "bg-muted/40")}>
+                      <th
+                        key={d}
+                        className={cn(
+                          "px-2 py-3 text-center font-medium",
+                          isWeekend && "bg-muted/40",
+                        )}
+                      >
                         <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                           {new Date(d).toLocaleDateString(undefined, { weekday: "short" })}
                         </div>
                         <div className="text-xs font-semibold">
-                          {new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                          {new Date(d).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}
                         </div>
                       </th>
                     );
@@ -348,7 +378,11 @@ function MyTimesheetPage() {
                       <EmptyState
                         icon={Clock}
                         title="No entries yet for this week"
-                        description={readOnly ? "Nothing submitted." : "Click 'Add row' to log hours against your projects."}
+                        description={
+                          readOnly
+                            ? "Nothing submitted."
+                            : "Click 'Add row' to log hours against your projects."
+                        }
                       />
                     </td>
                   </tr>
@@ -368,7 +402,9 @@ function MyTimesheetPage() {
                             </SelectTrigger>
                             <SelectContent>
                               {myProjects.map((p) => (
-                                <SelectItem key={p.id} value={p.id}>{p.code} · {p.name}</SelectItem>
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.code} · {p.name}
+                                </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -390,7 +426,10 @@ function MyTimesheetPage() {
                         {weekDays.map((d, i) => {
                           const isWeekend = i >= 5;
                           return (
-                            <td key={d} className={cn("px-1 py-2 align-middle", isWeekend && "bg-muted/30")}>
+                            <td
+                              key={d}
+                              className={cn("px-1 py-2 align-middle", isWeekend && "bg-muted/30")}
+                            >
                               <div className="flex items-center justify-center gap-1">
                                 <Input
                                   type="number"
@@ -416,10 +455,17 @@ function MyTimesheetPage() {
                             </td>
                           );
                         })}
-                        <td className="px-3 py-2 text-center font-semibold">{rowTotal.toFixed(1)}</td>
+                        <td className="px-3 py-2 text-center font-semibold">
+                          {rowTotal.toFixed(1)}
+                        </td>
                         {!readOnly && (
                           <td className="px-2">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeRow(r.id)}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => removeRow(r.id)}
+                            >
                               <Trash2 className="h-3.5 w-3.5 text-destructive" />
                             </Button>
                           </td>
@@ -431,7 +477,9 @@ function MyTimesheetPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t bg-secondary/30 text-xs font-semibold">
-                  <td colSpan={2} className="px-4 py-3 text-right text-muted-foreground">Daily totals</td>
+                  <td colSpan={2} className="px-4 py-3 text-right text-muted-foreground">
+                    Daily totals
+                  </td>
                   {weekDays.map((d, i) => (
                     <td key={d} className={cn("px-2 py-3 text-center", i >= 5 && "bg-muted/40")}>
                       {totals.dayTotals[d].toFixed(1)}
@@ -469,7 +517,10 @@ function MyTimesheetPage() {
       )}
 
       {/* Approval timeline */}
-      {(week.status === "pending" || week.status === "approved" || week.status === "rejected" || week.status === "returned") && (
+      {(week.status === "pending" ||
+        week.status === "approved" ||
+        week.status === "rejected" ||
+        week.status === "returned") && (
         <Card className="rounded-2xl border-border/60 p-5">
           <p className="mb-3 text-sm font-semibold">Approval timeline</p>
           <ApprovalTimeline
@@ -539,13 +590,21 @@ function DayView({
             onClick={() => onDayChange(d)}
             className={cn(
               "flex flex-col items-center rounded-xl border px-3 py-2 text-xs transition",
-              activeDay === d ? "border-primary bg-primary-soft text-primary" : "border-border hover:bg-accent",
+              activeDay === d
+                ? "border-primary bg-primary-soft text-primary"
+                : "border-border hover:bg-accent",
               i >= 5 && activeDay !== d && "bg-muted/40",
             )}
           >
-            <span className="font-medium">{new Date(d).toLocaleDateString(undefined, { weekday: "short" })}</span>
-            <span className="text-[11px] text-muted-foreground">{new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-            <span className="mt-0.5 text-[11px] font-semibold">{dayTotals[d]?.toFixed(1) ?? "0.0"}h</span>
+            <span className="font-medium">
+              {new Date(d).toLocaleDateString(undefined, { weekday: "short" })}
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              {new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            </span>
+            <span className="mt-0.5 text-[11px] font-semibold">
+              {dayTotals[d]?.toFixed(1) ?? "0.0"}h
+            </span>
           </button>
         ))}
       </div>
@@ -557,7 +616,10 @@ function DayView({
           </p>
         )}
         {dayRows.map((r) => (
-          <div key={r.id} className="grid items-center gap-2 rounded-xl border bg-card p-3 sm:grid-cols-12">
+          <div
+            key={r.id}
+            className="grid items-center gap-2 rounded-xl border bg-card p-3 sm:grid-cols-12"
+          >
             <div className="sm:col-span-4">
               <Label className="text-[11px]">Project</Label>
               <Select
@@ -565,17 +627,26 @@ function DayView({
                 disabled={readOnly}
                 onValueChange={(v) => onUpdateRow(r.id, { projectId: v })}
               >
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   {myProjects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.code} · {p.name}</SelectItem>
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.code} · {p.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="sm:col-span-3">
               <Label className="text-[11px]">Task</Label>
-              <Input className="h-8 text-xs" value={r.task} disabled={readOnly} onChange={(e) => onUpdateRow(r.id, { task: e.target.value })} />
+              <Input
+                className="h-8 text-xs"
+                value={r.task}
+                disabled={readOnly}
+                onChange={(e) => onUpdateRow(r.id, { task: e.target.value })}
+              />
             </div>
             <div className="sm:col-span-2">
               <Label className="text-[11px]">Hours</Label>
@@ -594,11 +665,20 @@ function DayView({
               <div>
                 <Label className="text-[11px]">Billable</Label>
                 <div className="pt-1">
-                  <Switch checked={r.billable} disabled={readOnly} onCheckedChange={(c) => onUpdateRow(r.id, { billable: c })} />
+                  <Switch
+                    checked={r.billable}
+                    disabled={readOnly}
+                    onCheckedChange={(c) => onUpdateRow(r.id, { billable: c })}
+                  />
                 </div>
               </div>
               {!readOnly && (
-                <Button variant="ghost" size="icon" className="ml-auto" onClick={() => onRemoveRow(r.id)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="ml-auto"
+                  onClick={() => onRemoveRow(r.id)}
+                >
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               )}

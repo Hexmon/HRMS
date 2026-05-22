@@ -14,7 +14,11 @@ export const PASSWORD_RULES: PasswordRule[] = [
   { key: "sym", label: "A symbol", test: (v) => /[^A-Za-z0-9]/.test(v) },
 ];
 
-export function passwordScore(v: string): { score: number; label: string; tone: "destructive" | "warning" | "info" | "success" } {
+export function passwordScore(v: string): {
+  score: number;
+  label: string;
+  tone: "destructive" | "warning" | "info" | "success";
+} {
   const passed = PASSWORD_RULES.filter((r) => r.test(v)).length;
   if (!v) return { score: 0, label: "Empty", tone: "destructive" };
   if (passed <= 2) return { score: 25, label: "Weak", tone: "destructive" };

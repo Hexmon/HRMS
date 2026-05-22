@@ -3,7 +3,13 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Download, Filter } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui-kit";
 import { exportCsv, daysAgo, isoToday } from "@/lib/reports/utils";
@@ -31,7 +37,11 @@ interface Props<T extends { id: string }> {
   defaultFrom?: string;
   defaultTo?: string;
   facets?: FacetOptions;
-  summary?: { label: string; value: ReactNode; tone?: "default" | "success" | "warning" | "destructive" | "info" }[];
+  summary?: {
+    label: string;
+    value: ReactNode;
+    tone?: "default" | "success" | "warning" | "destructive" | "info";
+  }[];
   build: (filters: ReportFilters) => T[];
   columns: Column<T>[];
   searchKeys?: (keyof T)[];
@@ -48,7 +58,17 @@ const TONE: Record<string, string> = {
 };
 
 export function ReportShell<T extends { id: string }>({
-  title, description, defaultFrom, defaultTo, facets, summary, build, columns, searchKeys, exportName, emptyTitle,
+  title,
+  description,
+  defaultFrom,
+  defaultTo,
+  facets,
+  summary,
+  build,
+  columns,
+  searchKeys,
+  exportName,
+  emptyTitle,
 }: Props<T>) {
   const { departments, employees } = useEmployees();
   const [from, setFrom] = useState(defaultFrom ?? daysAgo(90));
@@ -67,7 +87,7 @@ export function ReportShell<T extends { id: string }>({
       const out: Record<string, unknown> = {};
       for (const c of columns) {
         const value = (r as unknown as Record<string, unknown>)[c.key];
-        out[c.header] = typeof value === "object" ? JSON.stringify(value) : value ?? "";
+        out[c.header] = typeof value === "object" ? JSON.stringify(value) : (value ?? "");
       }
       return out;
     });
@@ -93,7 +113,12 @@ export function ReportShell<T extends { id: string }>({
         <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           <div className="space-y-1">
             <Label className="text-[11px]">From</Label>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9" />
+            <Input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="h-9"
+            />
           </div>
           <div className="space-y-1">
             <Label className="text-[11px]">To</Label>
@@ -103,10 +128,16 @@ export function ReportShell<T extends { id: string }>({
             <div className="space-y-1">
               <Label className="text-[11px]">Department</Label>
               <Select value={department} onValueChange={setDepartment}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All departments</SelectItem>
-                  {departments.map((d) => <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>)}
+                  {departments.map((d) => (
+                    <SelectItem key={d.id} value={d.name}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -115,10 +146,16 @@ export function ReportShell<T extends { id: string }>({
             <div className="space-y-1">
               <Label className="text-[11px]">Employee</Label>
               <Select value={employee} onValueChange={setEmployee}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent className="max-h-72">
                   <SelectItem value="all">All employees</SelectItem>
-                  {employeePool.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+                  {employeePool.map((e) => (
+                    <SelectItem key={e} value={e}>
+                      {e}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -127,10 +164,16 @@ export function ReportShell<T extends { id: string }>({
             <div className="space-y-1">
               <Label className="text-[11px]">Status</Label>
               <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
-                  {(facets.statusOptions ?? []).map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                  {(facets.statusOptions ?? []).map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -142,7 +185,9 @@ export function ReportShell<T extends { id: string }>({
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
           {summary.map((s, i) => (
             <Card key={i} className={`rounded-2xl p-4 ${TONE[s.tone ?? "default"]}`}>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{s.label}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                {s.label}
+              </p>
               <p className="mt-1 text-2xl font-semibold">{s.value}</p>
             </Card>
           ))}

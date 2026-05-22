@@ -14,17 +14,44 @@ function HrReports() {
   const { employees, departments } = useEmployees();
 
   const empCols: Column<Employee>[] = [
-    { key: "id", header: "Emp ID", render: (e) => <span className="font-mono text-xs">{e.id}</span> },
+    {
+      key: "id",
+      header: "Emp ID",
+      render: (e) => <span className="font-mono text-xs">{e.id}</span>,
+    },
     { key: "name", header: "Name", render: (e) => <span className="font-medium">{e.name}</span> },
-    { key: "designation", header: "Designation", render: (e) => <span className="text-sm">{e.designation}</span> },
-    { key: "department", header: "Department", render: (e) => <span className="text-sm">{e.department}</span> },
-    { key: "manager", header: "Manager", render: (e) => <span className="text-sm">{e.manager}</span> },
-    { key: "location", header: "Location", render: (e) => <span className="text-sm">{e.location}</span> },
+    {
+      key: "designation",
+      header: "Designation",
+      render: (e) => <span className="text-sm">{e.designation}</span>,
+    },
+    {
+      key: "department",
+      header: "Department",
+      render: (e) => <span className="text-sm">{e.department}</span>,
+    },
+    {
+      key: "manager",
+      header: "Manager",
+      render: (e) => <span className="text-sm">{e.manager}</span>,
+    },
+    {
+      key: "location",
+      header: "Location",
+      render: (e) => <span className="text-sm">{e.location}</span>,
+    },
     { key: "status", header: "Status", render: (e) => <StatusBadge status={e.status} /> },
-    { key: "joinedAt", header: "Joined", render: (e) => <span className="text-xs text-muted-foreground">{e.joinedAt}</span> },
+    {
+      key: "joinedAt",
+      header: "Joined",
+      render: (e) => <span className="text-xs text-muted-foreground">{e.joinedAt}</span>,
+    },
   ];
 
-  const filterEmployees = (f: { from: string; to: string; department: string; employee: string; status: string }, dateField?: keyof Employee) =>
+  const filterEmployees = (
+    f: { from: string; to: string; department: string; employee: string; status: string },
+    dateField?: keyof Employee,
+  ) =>
     employees.filter((e) => {
       if (f.department !== "all" && e.department !== f.department) return false;
       if (f.employee !== "all" && e.name !== f.employee) return false;
@@ -34,7 +61,14 @@ function HrReports() {
     });
 
   const statusOptions = [
-    "active", "probation", "confirmed", "notice_period", "exited", "onboarding", "invited", "draft",
+    "active",
+    "probation",
+    "confirmed",
+    "notice_period",
+    "exited",
+    "onboarding",
+    "invited",
+    "draft",
   ].map((s) => ({ value: s, label: s.replace("_", " ") }));
 
   const deptHeadcount = useMemo(() => {
@@ -80,9 +114,18 @@ function HrReports() {
           facets={{ showDepartment: true, showEmployee: true, showStatus: true, statusOptions }}
           summary={[
             { label: "Total employees", value: employees.length, tone: "info" },
-            { label: "Active", value: employees.filter((e) => e.status === "active" || e.status === "confirmed").length, tone: "success" },
+            {
+              label: "Active",
+              value: employees.filter((e) => e.status === "active" || e.status === "confirmed")
+                .length,
+              tone: "success",
+            },
             { label: "Departments", value: departments.length },
-            { label: "On notice", value: employees.filter((e) => e.status === "notice_period").length, tone: "warning" },
+            {
+              label: "On notice",
+              value: employees.filter((e) => e.status === "notice_period").length,
+              tone: "warning",
+            },
           ]}
           build={(f) => filterEmployees(f, "joinedAt")}
           columns={empCols}
@@ -97,7 +140,11 @@ function HrReports() {
           description="Employees joined within the selected date range."
           facets={{ showDepartment: true }}
           summary={[
-            { label: "Joiners in range", value: employees.filter((e) => inDateRange(e.joinedAt, undefined, undefined)).length, tone: "info" },
+            {
+              label: "Joiners in range",
+              value: employees.filter((e) => inDateRange(e.joinedAt, undefined, undefined)).length,
+              tone: "info",
+            },
           ]}
           build={(f) => filterEmployees(f, "joinedAt")}
           columns={empCols}
@@ -112,8 +159,16 @@ function HrReports() {
           description="Employees with exited or notice-period status."
           facets={{ showDepartment: true }}
           summary={[
-            { label: "Exited", value: employees.filter((e) => e.status === "exited").length, tone: "destructive" },
-            { label: "Serving notice", value: employees.filter((e) => e.status === "notice_period").length, tone: "warning" },
+            {
+              label: "Exited",
+              value: employees.filter((e) => e.status === "exited").length,
+              tone: "destructive",
+            },
+            {
+              label: "Serving notice",
+              value: employees.filter((e) => e.status === "notice_period").length,
+              tone: "warning",
+            },
           ]}
           build={(f) =>
             filterEmployees(f).filter((e) => e.status === "exited" || e.status === "notice_period")
@@ -131,8 +186,16 @@ function HrReports() {
           summary={[{ label: "Departments", value: departments.length, tone: "info" }]}
           build={() => deptHeadcount}
           columns={[
-            { key: "dept", header: "Department", render: (r) => <span className="font-medium">{r.dept}</span> },
-            { key: "count", header: "Headcount", render: (r) => <span className="font-mono">{r.count}</span> },
+            {
+              key: "dept",
+              header: "Department",
+              render: (r) => <span className="font-medium">{r.dept}</span>,
+            },
+            {
+              key: "count",
+              header: "Headcount",
+              render: (r) => <span className="font-mono">{r.count}</span>,
+            },
           ]}
           searchKeys={["dept"]}
           exportName="department-headcount"
@@ -145,8 +208,16 @@ function HrReports() {
           description="Headcount grouped by designation."
           build={() => desigHeadcount}
           columns={[
-            { key: "designation", header: "Designation", render: (r) => <span className="font-medium">{r.designation}</span> },
-            { key: "count", header: "Headcount", render: (r) => <span className="font-mono">{r.count}</span> },
+            {
+              key: "designation",
+              header: "Designation",
+              render: (r) => <span className="font-medium">{r.designation}</span>,
+            },
+            {
+              key: "count",
+              header: "Headcount",
+              render: (r) => <span className="font-mono">{r.count}</span>,
+            },
           ]}
           searchKeys={["designation"]}
           exportName="designation-headcount"
@@ -162,12 +233,36 @@ function HrReports() {
             roleAccess.filter((r) => f.department === "all" || r.department === f.department)
           }
           columns={[
-            { key: "id", header: "Emp ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
-            { key: "name", header: "Name", render: (r) => <span className="font-medium">{r.name}</span> },
-            { key: "department", header: "Department", render: (r) => <span className="text-sm">{r.department}</span> },
-            { key: "roles", header: "Roles", render: (r) => <span className="text-sm">{r.roles}</span> },
-            { key: "loginEnabled", header: "Login", render: (r) => <StatusBadge status={r.loginEnabled ? "active" : "inactive"} /> },
-            { key: "lastLoginAt", header: "Last login", render: (r) => <span className="text-xs text-muted-foreground">{r.lastLoginAt}</span> },
+            {
+              key: "id",
+              header: "Emp ID",
+              render: (r) => <span className="font-mono text-xs">{r.id}</span>,
+            },
+            {
+              key: "name",
+              header: "Name",
+              render: (r) => <span className="font-medium">{r.name}</span>,
+            },
+            {
+              key: "department",
+              header: "Department",
+              render: (r) => <span className="text-sm">{r.department}</span>,
+            },
+            {
+              key: "roles",
+              header: "Roles",
+              render: (r) => <span className="text-sm">{r.roles}</span>,
+            },
+            {
+              key: "loginEnabled",
+              header: "Login",
+              render: (r) => <StatusBadge status={r.loginEnabled ? "active" : "inactive"} />,
+            },
+            {
+              key: "lastLoginAt",
+              header: "Last login",
+              render: (r) => <span className="text-xs text-muted-foreground">{r.lastLoginAt}</span>,
+            },
           ]}
           searchKeys={["name", "id", "department", "roles"]}
           exportName="role-access"
@@ -180,8 +275,16 @@ function HrReports() {
           description="Employees in invited, draft or onboarding stage with pending steps."
           facets={{ showDepartment: true }}
           summary={[
-            { label: "Onboarding", value: employees.filter((e) => e.status === "onboarding").length, tone: "info" },
-            { label: "Invited", value: employees.filter((e) => e.status === "invited").length, tone: "info" },
+            {
+              label: "Onboarding",
+              value: employees.filter((e) => e.status === "onboarding").length,
+              tone: "info",
+            },
+            {
+              label: "Invited",
+              value: employees.filter((e) => e.status === "invited").length,
+              tone: "info",
+            },
           ]}
           build={(f) =>
             filterEmployees(f).filter((e) => ["invited", "draft", "onboarding"].includes(e.status))
@@ -200,7 +303,11 @@ function HrReports() {
           build={(f) => filterEmployees(f).filter((e) => e.status === "notice_period")}
           columns={[
             ...empCols,
-            { key: "noticeDays", header: "Notice days", render: (e) => <span className="font-mono text-sm">{e.noticeDays}</span> },
+            {
+              key: "noticeDays",
+              header: "Notice days",
+              render: (e) => <span className="font-mono text-sm">{e.noticeDays}</span>,
+            },
           ]}
           searchKeys={["name", "id"]}
           exportName="notice-period"

@@ -1,9 +1,30 @@
-import { Briefcase, Users, Timer, Activity, Receipt, AlertTriangle, ChevronRight, FileBarChart, BarChart3, GanttChart, FileSpreadsheet } from "lucide-react";
+import {
+  Briefcase,
+  Users,
+  Timer,
+  Activity,
+  Receipt,
+  AlertTriangle,
+  ChevronRight,
+  FileBarChart,
+  BarChart3,
+  GanttChart,
+  FileSpreadsheet,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { StatCard, DataCard, ChartCard, StatusBadge, EmptyState, QuickActionCard } from "@/components/ui-kit";
+import {
+  StatCard,
+  DataCard,
+  ChartCard,
+  StatusBadge,
+  EmptyState,
+  QuickActionCard,
+} from "@/components/ui-kit";
 import { PROJECTS } from "@/lib/mock";
 import { MiniBars, DonutChart, ProgressBar, CHART_COLORS } from "./shared";
+
+type ProgressTone = NonNullable<Parameters<typeof ProgressBar>[0]["tone"]>;
 
 const billableMix = [
   { name: "Billable", value: 612, color: CHART_COLORS.PRIMARY },
@@ -40,27 +61,57 @@ export function ProjectManagerDashboard() {
   return (
     <>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-        <StatCard label="Active projects" value="4" hint="3 on track" icon={Briefcase} tone="primary" />
-        <StatCard label="Allocated members" value="31" hint="Across 4 projects" icon={Users} tone="info" />
-        <StatCard label="Timesheets pending" value="6" hint="Action required" icon={Timer} tone="warning" />
+        <StatCard
+          label="Active projects"
+          value="4"
+          hint="3 on track"
+          icon={Briefcase}
+          tone="primary"
+        />
+        <StatCard
+          label="Allocated members"
+          value="31"
+          hint="Across 4 projects"
+          icon={Users}
+          tone="info"
+        />
+        <StatCard
+          label="Timesheets pending"
+          value="6"
+          hint="Action required"
+          icon={Timer}
+          tone="warning"
+        />
         <StatCard label="On track" value="3 / 4" hint="1 at risk" icon={Activity} tone="success" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <DataCard title="Project health" description="Status & delivery progress" className="lg:col-span-2" padded={false}>
+        <DataCard
+          title="Project health"
+          description="Status & delivery progress"
+          className="lg:col-span-2"
+          padded={false}
+        >
           <ul className="divide-y">
             {PROJECTS.map((p) => {
-              const progress = p.estimatedHours ? Math.min(100, Math.round((p.actualHours / p.estimatedHours) * 100)) : 0;
-              const tone = p.status === "on_hold" ? "warning" : progress < 50 ? "info" : "primary";
+              const progress = p.estimatedHours
+                ? Math.min(100, Math.round((p.actualHours / p.estimatedHours) * 100))
+                : 0;
+              const tone: ProgressTone =
+                p.status === "on_hold" ? "warning" : progress < 50 ? "info" : "primary";
               return (
                 <li key={p.id} className="grid grid-cols-12 items-center gap-3 px-5 py-3.5">
                   <div className="col-span-12 sm:col-span-5">
                     <p className="text-sm font-semibold">{p.name}</p>
-                    <p className="text-xs text-muted-foreground">{p.client} · Due {p.endDate}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {p.client} · Due {p.endDate}
+                    </p>
                   </div>
                   <div className="col-span-8 sm:col-span-5 space-y-1.5">
-                    <ProgressBar value={progress} tone={tone as any} />
-                    <p className="text-[11px] text-muted-foreground">{progress}% complete · {p.members.length} members</p>
+                    <ProgressBar value={progress} tone={tone} />
+                    <p className="text-[11px] text-muted-foreground">
+                      {progress}% complete · {p.members.length} members
+                    </p>
                   </div>
                   <div className="col-span-4 sm:col-span-2 sm:text-right">
                     <StatusBadge status={p.status} />
@@ -108,7 +159,12 @@ export function ProjectManagerDashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <DataCard title="Team allocation" description="Across active projects" className="lg:col-span-2" padded={false}>
+        <DataCard
+          title="Team allocation"
+          description="Across active projects"
+          className="lg:col-span-2"
+          padded={false}
+        >
           <ul className="divide-y">
             {allocations.map((a) => (
               <li key={a.name} className="grid grid-cols-12 items-center gap-3 px-5 py-3.5">
@@ -117,9 +173,14 @@ export function ProjectManagerDashboard() {
                   <p className="text-xs text-muted-foreground">{a.projects.join(", ")}</p>
                 </div>
                 <div className="col-span-9 sm:col-span-6">
-                  <ProgressBar value={a.pct} tone={a.pct >= 90 ? "destructive" : a.pct >= 70 ? "primary" : "info"} />
+                  <ProgressBar
+                    value={a.pct}
+                    tone={a.pct >= 90 ? "destructive" : a.pct >= 70 ? "primary" : "info"}
+                  />
                 </div>
-                <p className="col-span-3 sm:col-span-2 text-right text-sm font-semibold">{a.pct}%</p>
+                <p className="col-span-3 sm:col-span-2 text-right text-sm font-semibold">
+                  {a.pct}%
+                </p>
               </li>
             ))}
           </ul>
@@ -133,7 +194,9 @@ export function ProjectManagerDashboard() {
               {delayedTasks.map((t) => (
                 <li key={t.id} className="px-5 py-3.5">
                   <p className="text-sm font-medium">{t.title}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{t.owner} · {t.id}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {t.owner} · {t.id}
+                  </p>
                   <p className="mt-1 inline-block rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">
                     Overdue {t.overdue}d
                   </p>
@@ -146,10 +209,30 @@ export function ProjectManagerDashboard() {
 
       <DataCard title="Project reports" description="Quick exports & shortcuts" padded={false}>
         <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
-          <QuickActionCard icon={GanttChart} title="Delivery timeline" description="Gantt across projects" to="/reports" />
-          <QuickActionCard icon={BarChart3} title="Utilisation report" description="By member & project" to="/reports" />
-          <QuickActionCard icon={FileBarChart} title="Profitability" description="Billable hours vs cost" to="/reports" />
-          <QuickActionCard icon={FileSpreadsheet} title="Timesheet export" description="CSV / XLSX" to="/timesheet" />
+          <QuickActionCard
+            icon={GanttChart}
+            title="Delivery timeline"
+            description="Gantt across projects"
+            to="/reports"
+          />
+          <QuickActionCard
+            icon={BarChart3}
+            title="Utilisation report"
+            description="By member & project"
+            to="/reports"
+          />
+          <QuickActionCard
+            icon={FileBarChart}
+            title="Profitability"
+            description="Billable hours vs cost"
+            to="/reports"
+          />
+          <QuickActionCard
+            icon={FileSpreadsheet}
+            title="Timesheet export"
+            description="CSV / XLSX"
+            to="/timesheet"
+          />
         </div>
       </DataCard>
     </>

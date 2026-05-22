@@ -14,7 +14,15 @@ interface Props {
 const CLS =
   "group block w-full text-left rounded-2xl border border-border/60 bg-card p-4 transition hover:-translate-y-0.5 hover:shadow-md";
 
-function Inner({ Icon, title, description }: { Icon: Props["icon"]; title: string; description?: string }) {
+function Inner({
+  Icon,
+  title,
+  description,
+}: {
+  Icon: Props["icon"];
+  title: string;
+  description?: string;
+}) {
   return (
     <div className="flex items-start justify-between gap-3">
       <div>

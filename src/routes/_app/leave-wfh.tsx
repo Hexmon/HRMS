@@ -2,9 +2,7 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { PageHeader, ModuleTabs } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
-import {
-  LayoutDashboard, CalendarPlus, Home, CheckSquare, Eye, CalendarDays,
-} from "lucide-react";
+import { LayoutDashboard, CalendarPlus, Home, CheckSquare, Eye, CalendarDays } from "lucide-react";
 
 export const Route = createFileRoute("/_app/leave-wfh")({
   component: LeaveLayout,
@@ -38,7 +36,9 @@ function LeaveLayout() {
         description="Apply, track and approve time-off and work-from-home requests."
       />
       <ModuleTabs tabs={visible} />
-      <div className="pt-4 page-fade-in"><Outlet /></div>
+      <div className="pt-4 page-fade-in">
+        <Outlet />
+      </div>
     </>
   );
 }

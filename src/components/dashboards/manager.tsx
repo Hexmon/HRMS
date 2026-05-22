@@ -1,12 +1,33 @@
-import { Users, ClipboardCheck, Receipt, Activity, Timer, LifeBuoy, ChevronRight, AlertTriangle, CalendarDays } from "lucide-react";
+import {
+  Users,
+  ClipboardCheck,
+  Receipt,
+  Activity,
+  Timer,
+  LifeBuoy,
+  ChevronRight,
+  AlertTriangle,
+  CalendarDays,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { StatCard, DataCard, ChartCard, StatusBadge, UserAvatar, EmptyState } from "@/components/ui-kit";
+import {
+  StatCard,
+  DataCard,
+  ChartCard,
+  StatusBadge,
+  UserAvatar,
+  EmptyState,
+} from "@/components/ui-kit";
 import { MiniArea, ProgressBar, CHART_COLORS } from "./shared";
 
 const utilTrend = [
-  { label: "W14", v: 76 }, { label: "W15", v: 80 }, { label: "W16", v: 78 },
-  { label: "W17", v: 84 }, { label: "W18", v: 82 }, { label: "W19", v: 86 },
+  { label: "W14", v: 76 },
+  { label: "W15", v: 80 },
+  { label: "W16", v: 78 },
+  { label: "W17", v: 84 },
+  { label: "W18", v: 82 },
+  { label: "W19", v: 86 },
 ];
 
 const team = [
@@ -38,14 +59,37 @@ export function ManagerDashboard() {
     <>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
         <StatCard label="My team" value="12" icon={Users} tone="primary" />
-        <StatCard label="Present today" value="10" hint="2 on WFH/leave" icon={Activity} tone="success" />
-        <StatCard label="Approval queue" value="5" hint="Leave + timesheet" icon={ClipboardCheck} tone="warning" />
+        <StatCard
+          label="Present today"
+          value="10"
+          hint="2 on WFH/leave"
+          icon={Activity}
+          tone="success"
+        />
+        <StatCard
+          label="Approval queue"
+          value="5"
+          hint="Leave + timesheet"
+          icon={ClipboardCheck}
+          tone="warning"
+        />
         <StatCard label="Expenses pending" value="USD 698" icon={Receipt} tone="warning" />
-        <StatCard label="Utilisation" value="86%" hint="+4% w/w" icon={Timer} tone="info" trend={{ value: "4%", direction: "up" }} />
+        <StatCard
+          label="Utilisation"
+          value="86%"
+          hint="+4% w/w"
+          icon={Timer}
+          tone="info"
+          trend={{ value: "4%", direction: "up" }}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <ChartCard title="Team utilisation" subtitle="Weekly trend (last 6 weeks)" className="lg:col-span-2">
+        <ChartCard
+          title="Team utilisation"
+          subtitle="Weekly trend (last 6 weeks)"
+          className="lg:col-span-2"
+        >
           <MiniArea data={utilTrend} height={200} color={CHART_COLORS.PRIMARY} />
         </ChartCard>
 
@@ -77,15 +121,31 @@ export function ManagerDashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <DataCard title="Approval queue" description="Leave / WFH / timesheets" padded={false}
-          actions={<Button asChild size="sm" variant="ghost" className="text-primary"><Link to="/leave-wfh">Review <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link></Button>}
+        <DataCard
+          title="Approval queue"
+          description="Leave / WFH / timesheets"
+          padded={false}
+          actions={
+            <Button asChild size="sm" variant="ghost" className="text-primary">
+              <Link to="/leave-wfh">
+                Review <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          }
         >
           {approvals.length === 0 ? (
-            <EmptyState icon={ClipboardCheck} title="Inbox zero" description="No pending approvals." />
+            <EmptyState
+              icon={ClipboardCheck}
+              title="Inbox zero"
+              description="No pending approvals."
+            />
           ) : (
             <ul className="divide-y">
               {approvals.map((a) => (
-                <li key={a.who + a.what} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                <li
+                  key={a.who + a.what}
+                  className="flex items-center justify-between gap-3 px-5 py-3.5"
+                >
                   <UserAvatar name={a.who} subtitle={a.what} size="sm" showMeta />
                   <StatusBadge status={a.status} label={a.kind} />
                 </li>
@@ -94,15 +154,26 @@ export function ManagerDashboard() {
           )}
         </DataCard>
 
-        <DataCard title="Expense approvals" padded={false}
-          actions={<Button asChild size="sm" variant="ghost" className="text-primary"><Link to="/expenses">Review <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link></Button>}
+        <DataCard
+          title="Expense approvals"
+          padded={false}
+          actions={
+            <Button asChild size="sm" variant="ghost" className="text-primary">
+              <Link to="/expenses">
+                Review <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          }
         >
           {expenses.length === 0 ? (
             <EmptyState icon={Receipt} title="No expenses to review" />
           ) : (
             <ul className="divide-y">
               {expenses.map((e) => (
-                <li key={e.who + e.what} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                <li
+                  key={e.who + e.what}
+                  className="flex items-center justify-between gap-3 px-5 py-3.5"
+                >
                   <UserAvatar name={e.who} subtitle={e.what} size="sm" showMeta />
                   <StatusBadge status={e.status} />
                 </li>
@@ -113,8 +184,18 @@ export function ManagerDashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <DataCard title="Team members" description="Today's status" className="lg:col-span-2" padded={false}
-          actions={<Button asChild size="sm" variant="ghost" className="text-primary"><Link to="/employees">View all <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link></Button>}
+        <DataCard
+          title="Team members"
+          description="Today's status"
+          className="lg:col-span-2"
+          padded={false}
+          actions={
+            <Button asChild size="sm" variant="ghost" className="text-primary">
+              <Link to="/employees">
+                View all <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          }
         >
           <ul className="divide-y">
             {team.map((m) => (
@@ -123,7 +204,10 @@ export function ManagerDashboard() {
                   <UserAvatar name={m.name} subtitle={m.role} size="sm" showMeta />
                 </div>
                 <div className="col-span-8 sm:col-span-5 space-y-1.5">
-                  <ProgressBar value={m.util} tone={m.util > 85 ? "success" : m.util > 70 ? "primary" : "warning"} />
+                  <ProgressBar
+                    value={m.util}
+                    tone={m.util > 85 ? "success" : m.util > 70 ? "primary" : "warning"}
+                  />
                   <p className="text-[11px] text-muted-foreground">{m.util}% utilised</p>
                 </div>
                 <div className="col-span-4 sm:col-span-2 sm:text-right">
@@ -142,7 +226,9 @@ export function ManagerDashboard() {
               {missingTs.map((m) => (
                 <li key={m.name} className="flex items-center justify-between px-5 py-3.5">
                   <UserAvatar name={m.name} subtitle={m.week} size="sm" showMeta />
-                  <Button size="sm" variant="outline" className="rounded-full">Nudge</Button>
+                  <Button size="sm" variant="outline" className="rounded-full">
+                    Nudge
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -166,16 +252,32 @@ export function ManagerDashboard() {
           </ul>
         </DataCard>
 
-        <DataCard title="Team helpdesk" description="Active issues affecting your team" padded={false}>
+        <DataCard
+          title="Team helpdesk"
+          description="Active issues affecting your team"
+          padded={false}
+        >
           <ul className="divide-y">
             {[
-              { id: "TKT-12001", title: "VPN not connecting from Lagos", who: "Olu Adeyemi", status: "in_progress" as const },
-              { id: "TKT-12015", title: "Code editor licence expired", who: "Daniel Park", status: "open" as const },
+              {
+                id: "TKT-12001",
+                title: "VPN not connecting from Lagos",
+                who: "Olu Adeyemi",
+                status: "in_progress" as const,
+              },
+              {
+                id: "TKT-12015",
+                title: "Code editor licence expired",
+                who: "Daniel Park",
+                status: "open" as const,
+              },
             ].map((t) => (
               <li key={t.id} className="flex items-center justify-between px-5 py-3.5">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{t.title}</p>
-                  <p className="text-xs text-muted-foreground">{t.id} · {t.who}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t.id} · {t.who}
+                  </p>
                 </div>
                 <StatusBadge status={t.status} />
               </li>

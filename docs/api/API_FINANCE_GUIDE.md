@@ -29,6 +29,7 @@ Use Employee `E1` for request self-service, Manager `D1` for manager verificatio
 Finance uses the unified platform session. Anonymous users are redirected to `/login?returnTo=/finance/...`; unauthorized roles see access denied or a role-appropriate redirect while backend RBAC remains authoritative. Finance topbar owns user/session/logout actions, and the sidebar contains stable pages only. Dynamic `/finance/tickets/{id}` and `/finance/requests/{id}` routes open from queue/table/actions and are not sidebar items.
 
 Role-aware Finance landing:
+
 - Employee/requester `/finance` -> `/finance/my-expenses`.
 - Finance Manager/Admin `/finance` -> `/finance/dashboard`.
 - Auditor `/finance` -> `/finance/reports`.

@@ -38,10 +38,17 @@ export function StepperForm({ steps, onComplete, completeLabel = "Submit" }: Pro
                 {done ? <Check className="h-4 w-4" /> : i + 1}
               </div>
               <div className="hidden min-w-0 sm:block">
-                <p className={cn("truncate text-xs font-semibold", current ? "text-foreground" : "text-muted-foreground")}>
+                <p
+                  className={cn(
+                    "truncate text-xs font-semibold",
+                    current ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
                   {s.title}
                 </p>
-                {s.description && <p className="truncate text-[11px] text-muted-foreground">{s.description}</p>}
+                {s.description && (
+                  <p className="truncate text-[11px] text-muted-foreground">{s.description}</p>
+                )}
               </div>
               {i < steps.length - 1 && (
                 <div className={cn("ml-1 h-px flex-1", done ? "bg-success" : "bg-border")} />
@@ -54,7 +61,11 @@ export function StepperForm({ steps, onComplete, completeLabel = "Submit" }: Pro
       <div className="rounded-2xl border bg-card p-5">{steps[active].content}</div>
 
       <div className="flex items-center justify-between">
-        <Button variant="ghost" disabled={active === 0} onClick={() => setActive((a) => Math.max(0, a - 1))}>
+        <Button
+          variant="ghost"
+          disabled={active === 0}
+          onClick={() => setActive((a) => Math.max(0, a - 1))}
+        >
           Back
         </Button>
         <Button

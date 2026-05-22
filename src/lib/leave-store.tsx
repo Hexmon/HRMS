@@ -2,7 +2,13 @@ import * as React from "react";
 
 export type LeaveType = "casual" | "sick" | "earned" | "unpaid" | "comp_off";
 export type ReqKind = "leave" | "wfh";
-export type ReqStatus = "draft" | "submitted" | "pending_manager" | "approved" | "rejected" | "cancelled";
+export type ReqStatus =
+  | "draft"
+  | "submitted"
+  | "pending_manager"
+  | "approved"
+  | "rejected"
+  | "cancelled";
 
 export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = {
   casual: "Casual Leave",
@@ -39,13 +45,112 @@ export interface Holiday {
 }
 
 const SEED: LeaveRequest[] = [
-  { id: "LV-2041", kind: "leave", employee: "Daniel Park", department: "Engineering", manager: "Ananya Iyer", leaveType: "earned", fromDate: "2026-05-15", toDate: "2026-05-19", halfDay: false, duration: 5, reason: "Family vacation to Goa", status: "pending_manager", createdAt: "2026-05-08" },
-  { id: "LV-2040", kind: "leave", employee: "Fatima Noor", department: "Design", manager: "Vikram Reddy", leaveType: "sick", fromDate: "2026-05-12", toDate: "2026-05-12", halfDay: false, duration: 1, reason: "Flu — doctor visit", status: "pending_manager", createdAt: "2026-05-08" },
-  { id: "LV-2039", kind: "leave", employee: "You", department: "Product", manager: "Ananya Iyer", leaveType: "casual", fromDate: "2026-05-22", toDate: "2026-05-22", halfDay: true, duration: 0.5, reason: "Personal errand", status: "approved", createdAt: "2026-05-04" },
-  { id: "LV-2038", kind: "leave", employee: "You", department: "Product", manager: "Ananya Iyer", leaveType: "earned", fromDate: "2026-04-12", toDate: "2026-04-14", halfDay: false, duration: 3, reason: "Cousin's wedding", status: "approved", createdAt: "2026-04-01" },
-  { id: "WFH-118", kind: "wfh", employee: "Aryan Mehta", department: "Engineering", manager: "Ananya Iyer", fromDate: "2026-05-14", toDate: "2026-05-14", halfDay: false, duration: 1, reason: "Plumber visit", projectRef: "Atlas Payments", status: "pending_manager", createdAt: "2026-05-07" },
-  { id: "WFH-117", kind: "wfh", employee: "You", department: "Product", manager: "Ananya Iyer", fromDate: "2026-05-13", toDate: "2026-05-13", halfDay: false, duration: 1, reason: "Heads-down deep work", projectRef: "Discovery Q2", status: "approved", createdAt: "2026-05-05" },
-  { id: "LV-2031", kind: "leave", employee: "Jacob Owens", department: "Sales", manager: "Vikram Reddy", leaveType: "casual", fromDate: "2026-04-29", toDate: "2026-04-29", halfDay: false, duration: 1, reason: "Family event", status: "rejected", remarks: "Quarter close week — please reschedule.", createdAt: "2026-04-22" },
+  {
+    id: "LV-2041",
+    kind: "leave",
+    employee: "Daniel Park",
+    department: "Engineering",
+    manager: "Ananya Iyer",
+    leaveType: "earned",
+    fromDate: "2026-05-15",
+    toDate: "2026-05-19",
+    halfDay: false,
+    duration: 5,
+    reason: "Family vacation to Goa",
+    status: "pending_manager",
+    createdAt: "2026-05-08",
+  },
+  {
+    id: "LV-2040",
+    kind: "leave",
+    employee: "Fatima Noor",
+    department: "Design",
+    manager: "Vikram Reddy",
+    leaveType: "sick",
+    fromDate: "2026-05-12",
+    toDate: "2026-05-12",
+    halfDay: false,
+    duration: 1,
+    reason: "Flu — doctor visit",
+    status: "pending_manager",
+    createdAt: "2026-05-08",
+  },
+  {
+    id: "LV-2039",
+    kind: "leave",
+    employee: "You",
+    department: "Product",
+    manager: "Ananya Iyer",
+    leaveType: "casual",
+    fromDate: "2026-05-22",
+    toDate: "2026-05-22",
+    halfDay: true,
+    duration: 0.5,
+    reason: "Personal errand",
+    status: "approved",
+    createdAt: "2026-05-04",
+  },
+  {
+    id: "LV-2038",
+    kind: "leave",
+    employee: "You",
+    department: "Product",
+    manager: "Ananya Iyer",
+    leaveType: "earned",
+    fromDate: "2026-04-12",
+    toDate: "2026-04-14",
+    halfDay: false,
+    duration: 3,
+    reason: "Cousin's wedding",
+    status: "approved",
+    createdAt: "2026-04-01",
+  },
+  {
+    id: "WFH-118",
+    kind: "wfh",
+    employee: "Aryan Mehta",
+    department: "Engineering",
+    manager: "Ananya Iyer",
+    fromDate: "2026-05-14",
+    toDate: "2026-05-14",
+    halfDay: false,
+    duration: 1,
+    reason: "Plumber visit",
+    projectRef: "Atlas Payments",
+    status: "pending_manager",
+    createdAt: "2026-05-07",
+  },
+  {
+    id: "WFH-117",
+    kind: "wfh",
+    employee: "You",
+    department: "Product",
+    manager: "Ananya Iyer",
+    fromDate: "2026-05-13",
+    toDate: "2026-05-13",
+    halfDay: false,
+    duration: 1,
+    reason: "Heads-down deep work",
+    projectRef: "Discovery Q2",
+    status: "approved",
+    createdAt: "2026-05-05",
+  },
+  {
+    id: "LV-2031",
+    kind: "leave",
+    employee: "Jacob Owens",
+    department: "Sales",
+    manager: "Vikram Reddy",
+    leaveType: "casual",
+    fromDate: "2026-04-29",
+    toDate: "2026-04-29",
+    halfDay: false,
+    duration: 1,
+    reason: "Family event",
+    status: "rejected",
+    remarks: "Quarter close week — please reschedule.",
+    createdAt: "2026-04-22",
+  },
 ];
 
 export const HOLIDAYS: Holiday[] = [
@@ -79,12 +184,19 @@ export function LeaveProvider({ children }: { children: React.ReactNode }) {
   const add: Ctx["add"] = (r) => {
     const prefix = r.kind === "wfh" ? "WFH" : "LV";
     const id = `${prefix}-${1000 + Math.floor(Math.random() * 9000)}`;
-    const created: LeaveRequest = { ...r, id, createdAt: new Date().toISOString().slice(0, 10), status: "pending_manager" };
+    const created: LeaveRequest = {
+      ...r,
+      id,
+      createdAt: new Date().toISOString().slice(0, 10),
+      status: "pending_manager",
+    };
     setRequests((rs) => [created, ...rs]);
     return created;
   };
   const setStatus: Ctx["setStatus"] = (id, status, remarks) => {
-    setRequests((rs) => rs.map((r) => (r.id === id ? { ...r, status, remarks: remarks ?? r.remarks } : r)));
+    setRequests((rs) =>
+      rs.map((r) => (r.id === id ? { ...r, status, remarks: remarks ?? r.remarks } : r)),
+    );
   };
   const cancel: Ctx["cancel"] = (id) => setStatus(id, "cancelled");
 

@@ -16,20 +16,20 @@
 
 A single login screen serves every role. The active role drives sidebar visibility, dashboards, approval queues and report access. There is intentionally **no separate admin/employee/finance portal** — one app, one login, role-driven UI.
 
-| Role | Purpose |
-|---|---|
-| `main_admin` | Full access across all modules and configuration |
-| `hr_admin` | HR ops: employees, EMS, leave, attendance, HR reports, HR settings |
-| `admin` | Workspace admin (similar to HR Admin minus payroll-sensitive areas) |
-| `employee` | Self-service: profile, attendance, leave, timesheet, expenses, assets, helpdesk |
-| `manager` | Team approvals, team reports, plus all employee capabilities |
-| `team_lead` | Lightweight team approvals |
-| `module_lead` | Module-level approvals on timesheets/leave |
-| `project_manager` | Projects, allocations, timesheet approvals, project reports |
-| `finance_manager` | Expense finance queue, payment release, settlement, finance reports |
-| `asset_admin` (Asset / IT Admin) | Asset inventory, assignment, warranty, IT helpdesk |
-| `helpdesk_agent` | Helpdesk queue, SLA, ticket workflow |
-| `auditor` | Read-only across audit logs and reports |
+| Role                             | Purpose                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| `main_admin`                     | Full access across all modules and configuration                                |
+| `hr_admin`                       | HR ops: employees, EMS, leave, attendance, HR reports, HR settings              |
+| `admin`                          | Workspace admin (similar to HR Admin minus payroll-sensitive areas)             |
+| `employee`                       | Self-service: profile, attendance, leave, timesheet, expenses, assets, helpdesk |
+| `manager`                        | Team approvals, team reports, plus all employee capabilities                    |
+| `team_lead`                      | Lightweight team approvals                                                      |
+| `module_lead`                    | Module-level approvals on timesheets/leave                                      |
+| `project_manager`                | Projects, allocations, timesheet approvals, project reports                     |
+| `finance_manager`                | Expense finance queue, payment release, settlement, finance reports             |
+| `asset_admin` (Asset / IT Admin) | Asset inventory, assignment, warranty, IT helpdesk                              |
+| `helpdesk_agent`                 | Helpdesk queue, SLA, ticket workflow                                            |
+| `auditor`                        | Read-only across audit logs and reports                                         |
 
 Role definitions live in `src/lib/mock/roles.ts` and the access map (which modules each role sees) lives in `src/lib/auth.tsx` (`ROLE_MAP`).
 
@@ -37,21 +37,21 @@ Role definitions live in `src/lib/mock/roles.ts` and the access map (which modul
 
 ## 3. Main Routes
 
-| Route | Module |
-|---|---|
-| `/dashboard` | Role-aware dashboard |
-| `/employees` | Employees directory + profile (`/employees/$id`) |
-| `/ems` | Employee self-service (profile, documents, policies, requests, letters, admin) |
-| `/attendance` | Attendance dashboard, calendar, exceptions |
-| `/leave-wfh` | Leave & WFH apply / approvals / monitor / holidays |
-| `/projects` | Projects list + detail (`/projects/$id`) |
-| `/team-utilization` | Capacity, bench, billable mix |
-| `/timesheet` | Timesheet entry, approvals, project view |
-| `/expenses` | Create, my, review, director, finance, register, mapping, reports, detail |
-| `/assets` | Inventory, my assets, requests, returns, warranty, detail |
-| `/helpdesk` | My tickets, queue, categories, SLA, reports, ticket detail |
-| `/reports` | HR, attendance, leave, timesheet, projects, expenses, assets, helpdesk, audit |
-| `/admin-settings` | Company, master data, roles, workflows, policies, templates, notifications, security, audit |
+| Route               | Module                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| `/dashboard`        | Role-aware dashboard                                                                        |
+| `/employees`        | Employees directory + profile (`/employees/$id`)                                            |
+| `/ems`              | Employee self-service (profile, documents, policies, requests, letters, admin)              |
+| `/attendance`       | Attendance dashboard, calendar, exceptions                                                  |
+| `/leave-wfh`        | Leave & WFH apply / approvals / monitor / holidays                                          |
+| `/projects`         | Projects list + detail (`/projects/$id`)                                                    |
+| `/team-utilization` | Capacity, bench, billable mix                                                               |
+| `/timesheet`        | Timesheet entry, approvals, project view                                                    |
+| `/expenses`         | Create, my, review, director, finance, register, mapping, reports, detail                   |
+| `/assets`           | Inventory, my assets, requests, returns, warranty, detail                                   |
+| `/helpdesk`         | My tickets, queue, categories, SLA, reports, ticket detail                                  |
+| `/reports`          | HR, attendance, leave, timesheet, projects, expenses, assets, helpdesk, audit               |
+| `/admin-settings`   | Company, master data, roles, workflows, policies, templates, notifications, security, audit |
 
 Auth-related screens (mock only): `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/set-password`, `/verify-email`, `/onboarding`.
 
@@ -102,15 +102,15 @@ Stateful UI (forms, approvals, drawers) is wired through Context providers in `s
 
 ## 6. Role Logic Location
 
-| Concern | File |
-|---|---|
-| Active session + role switcher | `src/lib/auth.tsx` (`useAuth`, `ROLE_MAP`) |
-| Role definitions | `src/lib/mock/roles.ts` |
-| Permission groups & matrix | `src/lib/mock/permissions.ts` + `src/lib/admin-settings-store.tsx` |
-| Sidebar visibility | `src/components/app-sidebar.tsx` (filters by `ROLE_MAP[role].modules`) |
-| Module-tab visibility | Per-layout `gate` flags (e.g. `src/routes/_app/leave-wfh.tsx`) |
-| Route guards | `beforeLoad` in `src/routes/_app/admin-settings.tsx` |
-| Dashboards per role | `src/components/dashboards/*.tsx` |
+| Concern                        | File                                                                   |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| Active session + role switcher | `src/lib/auth.tsx` (`useAuth`, `ROLE_MAP`)                             |
+| Role definitions               | `src/lib/mock/roles.ts`                                                |
+| Permission groups & matrix     | `src/lib/mock/permissions.ts` + `src/lib/admin-settings-store.tsx`     |
+| Sidebar visibility             | `src/components/app-sidebar.tsx` (filters by `ROLE_MAP[role].modules`) |
+| Module-tab visibility          | Per-layout `gate` flags (e.g. `src/routes/_app/leave-wfh.tsx`)         |
+| Route guards                   | `beforeLoad` in `src/routes/_app/admin-settings.tsx`                   |
+| Dashboards per role            | `src/components/dashboards/*.tsx`                                      |
 
 To add a new role: extend `roles.ts`, add it to `ROLE_MAP` in `auth.tsx`, and (optionally) add a dashboard component.
 

@@ -41,19 +41,33 @@ function buildAttendance(employees: { id: string; name: string; department: stri
       let inTime = "09:05";
       let outTime = "18:10";
       let hours = 9;
-      if (r < 5) { status = "absent"; inTime = ""; outTime = ""; hours = 0; }
-      else if (r < 12) { status = "leave"; inTime = ""; outTime = ""; hours = 0; }
-      else if (r < 22) { status = "wfh"; }
-      else if (r < 35) {
+      if (r < 5) {
+        status = "absent";
+        inTime = "";
+        outTime = "";
+        hours = 0;
+      } else if (r < 12) {
+        status = "leave";
+        inTime = "";
+        outTime = "";
+        hours = 0;
+      } else if (r < 22) {
+        status = "wfh";
+      } else if (r < 35) {
         status = "late";
         const mins = (r % 50) + 15;
-        inTime = `09:${(mins).toString().padStart(2, "0")}`;
+        inTime = `09:${mins.toString().padStart(2, "0")}`;
         hours = 8.5;
       }
       out.push({
         id: e.id + "-" + iso,
-        date: iso, employee: e.name, department: e.department, status,
-        inTime, outTime, hours,
+        date: iso,
+        employee: e.name,
+        department: e.department,
+        status,
+        inTime,
+        outTime,
+        hours,
         note: status === "late" ? `Late · ${(r % 50) + 15} min` : undefined,
       });
     }
@@ -63,9 +77,16 @@ function buildAttendance(employees: { id: string; name: string; department: stri
 
 function AttendanceReports() {
   const { employees } = useEmployees();
-  const all = useMemo(() => buildAttendance(employees.map((e) => ({ id: e.id, name: e.name, department: e.department }))), [employees]);
+  const all = useMemo(
+    () =>
+      buildAttendance(employees.map((e) => ({ id: e.id, name: e.name, department: e.department }))),
+    [employees],
+  );
 
-  const baseFilter = (rows: AttRow[], f: { from: string; to: string; department: string; employee: string; status: string }) =>
+  const baseFilter = (
+    rows: AttRow[],
+    f: { from: string; to: string; department: string; employee: string; status: string },
+  ) =>
     rows.filter((r) => {
       if (!inDateRange(r.date, f.from, f.to)) return false;
       if (f.department !== "all" && r.department !== f.department) return false;
@@ -75,17 +96,48 @@ function AttendanceReports() {
     });
 
   const cols: Column<AttRow>[] = [
-    { key: "date", header: "Date", render: (r) => <span className="font-mono text-xs">{r.date}</span> },
-    { key: "employee", header: "Employee", render: (r) => <span className="font-medium">{r.employee}</span> },
-    { key: "department", header: "Department", render: (r) => <span className="text-sm">{r.department}</span> },
+    {
+      key: "date",
+      header: "Date",
+      render: (r) => <span className="font-mono text-xs">{r.date}</span>,
+    },
+    {
+      key: "employee",
+      header: "Employee",
+      render: (r) => <span className="font-medium">{r.employee}</span>,
+    },
+    {
+      key: "department",
+      header: "Department",
+      render: (r) => <span className="text-sm">{r.department}</span>,
+    },
     { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
-    { key: "inTime", header: "In", render: (r) => <span className="font-mono text-sm">{r.inTime || "—"}</span> },
-    { key: "outTime", header: "Out", render: (r) => <span className="font-mono text-sm">{r.outTime || "—"}</span> },
-    { key: "hours", header: "Hours", render: (r) => <span className="font-mono text-sm">{r.hours.toFixed(1)}</span> },
-    { key: "note", header: "Note", render: (r) => <span className="text-xs text-muted-foreground">{r.note ?? "—"}</span> },
+    {
+      key: "inTime",
+      header: "In",
+      render: (r) => <span className="font-mono text-sm">{r.inTime || "—"}</span>,
+    },
+    {
+      key: "outTime",
+      header: "Out",
+      render: (r) => <span className="font-mono text-sm">{r.outTime || "—"}</span>,
+    },
+    {
+      key: "hours",
+      header: "Hours",
+      render: (r) => <span className="font-mono text-sm">{r.hours.toFixed(1)}</span>,
+    },
+    {
+      key: "note",
+      header: "Note",
+      render: (r) => <span className="text-xs text-muted-foreground">{r.note ?? "—"}</span>,
+    },
   ];
 
-  const statusOptions = ["present", "late", "absent", "wfh", "leave"].map((s) => ({ value: s, label: s }));
+  const statusOptions = ["present", "late", "absent", "wfh", "leave"].map((s) => ({
+    value: s,
+    label: s,
+  }));
 
   return (
     <Tabs defaultValue="daily">
@@ -105,9 +157,21 @@ function AttendanceReports() {
           facets={{ showDepartment: true, showEmployee: true, showStatus: true, statusOptions }}
           summary={[
             { label: "Records", value: all.length, tone: "info" },
-            { label: "Present today", value: all.filter((r) => r.date === all[0]?.date && r.status === "present").length, tone: "success" },
-            { label: "WFH today", value: all.filter((r) => r.date === all[0]?.date && r.status === "wfh").length, tone: "info" },
-            { label: "Absent today", value: all.filter((r) => r.date === all[0]?.date && r.status === "absent").length, tone: "destructive" },
+            {
+              label: "Present today",
+              value: all.filter((r) => r.date === all[0]?.date && r.status === "present").length,
+              tone: "success",
+            },
+            {
+              label: "WFH today",
+              value: all.filter((r) => r.date === all[0]?.date && r.status === "wfh").length,
+              tone: "info",
+            },
+            {
+              label: "Absent today",
+              value: all.filter((r) => r.date === all[0]?.date && r.status === "absent").length,
+              tone: "destructive",
+            },
           ]}
           build={(f) => baseFilter(all, f)}
           columns={cols}
@@ -121,7 +185,12 @@ function AttendanceReports() {
           title="Late Arrivals"
           description="Employees who clocked in after 09:15."
           facets={{ showDepartment: true, showEmployee: true }}
-          build={(f) => baseFilter(all.filter((r) => r.status === "late"), f)}
+          build={(f) =>
+            baseFilter(
+              all.filter((r) => r.status === "late"),
+              f,
+            )
+          }
           columns={cols}
           searchKeys={["employee"]}
           exportName="late-arrivals"
@@ -133,7 +202,12 @@ function AttendanceReports() {
           title="Early Departures"
           description="Employees who logged off before 17:30."
           facets={{ showDepartment: true, showEmployee: true }}
-          build={(f) => baseFilter(all.filter((r) => r.hours > 0 && r.hours < 8), f)}
+          build={(f) =>
+            baseFilter(
+              all.filter((r) => r.hours > 0 && r.hours < 8),
+              f,
+            )
+          }
           columns={cols}
           searchKeys={["employee"]}
           exportName="early-departures"
@@ -145,7 +219,12 @@ function AttendanceReports() {
           title="Absenteeism Report"
           description="Unplanned absences without leave approval."
           facets={{ showDepartment: true, showEmployee: true }}
-          build={(f) => baseFilter(all.filter((r) => r.status === "absent"), f)}
+          build={(f) =>
+            baseFilter(
+              all.filter((r) => r.status === "absent"),
+              f,
+            )
+          }
           columns={cols}
           searchKeys={["employee"]}
           exportName="absenteeism"
@@ -161,7 +240,12 @@ function AttendanceReports() {
           title="Attendance Exceptions"
           description="Late arrivals, missed punches and partial days."
           facets={{ showDepartment: true, showEmployee: true }}
-          build={(f) => baseFilter(all.filter((r) => r.status === "late" || r.status === "absent"), f)}
+          build={(f) =>
+            baseFilter(
+              all.filter((r) => r.status === "late" || r.status === "absent"),
+              f,
+            )
+          }
           columns={cols}
           searchKeys={["employee"]}
           exportName="attendance-exceptions"
@@ -173,14 +257,29 @@ function AttendanceReports() {
 
 function MonthlySummary({ all }: { all: AttRow[] }) {
   const summary = useMemo(() => {
-    const m = new Map<string, { present: number; late: number; absent: number; wfh: number; leave: number; total: number }>();
+    const m = new Map<
+      string,
+      { present: number; late: number; absent: number; wfh: number; leave: number; total: number }
+    >();
     for (const r of all) {
-      const cur = m.get(r.employee) ?? { present: 0, late: 0, absent: 0, wfh: 0, leave: 0, total: 0 };
+      const cur = m.get(r.employee) ?? {
+        present: 0,
+        late: 0,
+        absent: 0,
+        wfh: 0,
+        leave: 0,
+        total: 0,
+      };
       cur[r.status] += 1;
       cur.total += 1;
       m.set(r.employee, cur);
     }
-    return Array.from(m.entries()).map(([emp, v]) => ({ id: emp, employee: emp, ...v, attendance: Math.round(((v.present + v.late + v.wfh) / Math.max(1, v.total)) * 100) }));
+    return Array.from(m.entries()).map(([emp, v]) => ({
+      id: emp,
+      employee: emp,
+      ...v,
+      attendance: Math.round(((v.present + v.late + v.wfh) / Math.max(1, v.total)) * 100),
+    }));
   }, [all]);
 
   return (
@@ -189,13 +288,39 @@ function MonthlySummary({ all }: { all: AttRow[] }) {
       description="Per-employee attendance percentage over the last 30 days."
       build={() => summary}
       columns={[
-        { key: "employee", header: "Employee", render: (r) => <span className="font-medium">{r.employee}</span> },
-        { key: "present", header: "Present", render: (r) => <span className="font-mono">{r.present}</span> },
+        {
+          key: "employee",
+          header: "Employee",
+          render: (r) => <span className="font-medium">{r.employee}</span>,
+        },
+        {
+          key: "present",
+          header: "Present",
+          render: (r) => <span className="font-mono">{r.present}</span>,
+        },
         { key: "late", header: "Late", render: (r) => <span className="font-mono">{r.late}</span> },
-        { key: "absent", header: "Absent", render: (r) => <span className="font-mono">{r.absent}</span> },
+        {
+          key: "absent",
+          header: "Absent",
+          render: (r) => <span className="font-mono">{r.absent}</span>,
+        },
         { key: "wfh", header: "WFH", render: (r) => <span className="font-mono">{r.wfh}</span> },
-        { key: "leave", header: "Leave", render: (r) => <span className="font-mono">{r.leave}</span> },
-        { key: "attendance", header: "Attendance %", render: (r) => <span className={`font-mono ${r.attendance < 80 ? "text-destructive" : "text-success"}`}>{r.attendance}%</span> },
+        {
+          key: "leave",
+          header: "Leave",
+          render: (r) => <span className="font-mono">{r.leave}</span>,
+        },
+        {
+          key: "attendance",
+          header: "Attendance %",
+          render: (r) => (
+            <span
+              className={`font-mono ${r.attendance < 80 ? "text-destructive" : "text-success"}`}
+            >
+              {r.attendance}%
+            </span>
+          ),
+        },
       ]}
       searchKeys={["employee"]}
       exportName="monthly-attendance"

@@ -18,7 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useEmployees } from "@/lib/employees-store";
-import { useSupabaseEmployees } from "@/lib/hooks/use-supabase-employees";
 import { useAuth } from "@/lib/auth";
 import {
   EMPLOYEE_STATUS_LABEL,
@@ -50,16 +49,7 @@ export const Route = createFileRoute("/_app/employees")({
 });
 
 function EmployeesPage() {
-  const {
-    employees: mockEmployees,
-    departments,
-    designations,
-    setStatus,
-    setLogin,
-  } = useEmployees();
-  const { data: remote, loading: remoteLoading } = useSupabaseEmployees();
-  // Prefer real backend data when a Supabase session is active; otherwise fall back to mock.
-  const employees = remote && remote.length > 0 ? remote : mockEmployees;
+  const { employees, departments, designations, setStatus, setLogin } = useEmployees();
   const { activeRole, user } = useAuth();
   const navigate = useNavigate();
 
@@ -247,9 +237,7 @@ function EmployeesPage() {
       <PageHeader
         eyebrow="People"
         title="Employees"
-        description={`${visible.length} ${visible.length === 1 ? "person" : "people"} in your workspace.${
-          remote && remote.length ? " · Live data" : remoteLoading ? " · Loading…" : ""
-        }`}
+        description={`${visible.length} ${visible.length === 1 ? "person" : "people"} in your workspace.`}
         actions={
           <>
             <ActionButton

@@ -32,9 +32,14 @@ export async function punchIn(employeeId: string, workMode = "office") {
       },
       { onConflict: "employee_id,log_date" },
     )
-    .select("*").single();
+    .select("*")
+    .single();
   if (error) throw error;
-  await writeAuditLog({ action: "attendance.punch_in", entityType: "attendance_log", entityId: data.id });
+  await writeAuditLog({
+    action: "attendance.punch_in",
+    entityType: "attendance_log",
+    entityId: data.id,
+  });
   return data;
 }
 
@@ -42,7 +47,10 @@ export async function punchOut(employeeId: string) {
   const today = new Date().toISOString().slice(0, 10);
   const { data: existing } = await supabase
     .from("attendance_logs")
-    .select("*").eq("employee_id", employeeId).eq("log_date", today).maybeSingle();
+    .select("*")
+    .eq("employee_id", employeeId)
+    .eq("log_date", today)
+    .maybeSingle();
   if (!existing) throw new Error("No punch in for today");
   const out = new Date();
   const inTs = existing.punch_in ? new Date(existing.punch_in) : out;
@@ -50,8 +58,14 @@ export async function punchOut(employeeId: string) {
   const { data, error } = await supabase
     .from("attendance_logs")
     .update({ punch_out: out.toISOString(), work_hours: Number(hours.toFixed(2)) })
-    .eq("id", existing.id).select("*").single();
+    .eq("id", existing.id)
+    .select("*")
+    .single();
   if (error) throw error;
-  await writeAuditLog({ action: "attendance.punch_out", entityType: "attendance_log", entityId: data.id });
+  await writeAuditLog({
+    action: "attendance.punch_out",
+    entityType: "attendance_log",
+    entityId: data.id,
+  });
   return data;
 }

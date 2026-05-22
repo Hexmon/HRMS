@@ -26,11 +26,7 @@ import { useAuth } from "@/lib/auth";
 import { useEmployees } from "@/lib/employees-store";
 import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
-import {
-  TIMESHEET_STATUS_LABEL,
-  type TimesheetWeek,
-  DEMO_LAST_WEEK,
-} from "@/lib/mock/timesheets";
+import { TIMESHEET_STATUS_LABEL, type TimesheetWeek, DEMO_LAST_WEEK } from "@/lib/mock/timesheets";
 import {
   CheckCircle2,
   XCircle,
@@ -85,7 +81,9 @@ function ApprovalsPage() {
   }, [employees, projects, activeRole, user, isAdmin]);
 
   const buildRow = (w: TimesheetWeek): Row => {
-    const wkEntries = entries.filter((e) => e.employeeId === w.employeeId && e.weekStart === w.weekStart);
+    const wkEntries = entries.filter(
+      (e) => e.employeeId === w.employeeId && e.weekStart === w.weekStart,
+    );
     const total = wkEntries.reduce((s, e) => s + e.hours, 0);
     const billable = wkEntries.filter((e) => e.billable).reduce((s, e) => s + e.hours, 0);
     return {
@@ -109,9 +107,13 @@ function ApprovalsPage() {
     return weeks.filter((w) => ids.has(w.employeeId));
   }, [weeks, scopedEmployees]);
 
-  const pending = scopedWeeks.filter((w) => w.status === "pending" || w.status === "submitted").map(buildRow);
+  const pending = scopedWeeks
+    .filter((w) => w.status === "pending" || w.status === "submitted")
+    .map(buildRow);
   const approved = scopedWeeks.filter((w) => w.status === "approved").map(buildRow);
-  const rejected = scopedWeeks.filter((w) => w.status === "rejected" || w.status === "returned").map(buildRow);
+  const rejected = scopedWeeks
+    .filter((w) => w.status === "rejected" || w.status === "returned")
+    .map(buildRow);
 
   // Missing: scoped employees who have no week record for last week
   const missing: Row[] = useMemo(() => {
@@ -119,7 +121,11 @@ function ApprovalsPage() {
       scopedWeeks.filter((w) => w.weekStart === DEMO_LAST_WEEK).map((w) => w.employeeId),
     );
     return scopedEmployees
-      .filter((e) => !submittedIds.has(e.id) && (e.status === "active" || e.status === "confirmed" || e.status === "probation"))
+      .filter(
+        (e) =>
+          !submittedIds.has(e.id) &&
+          (e.status === "active" || e.status === "confirmed" || e.status === "probation"),
+      )
       .map((e) => ({
         id: `missing_${e.id}`,
         weekId: "",
@@ -146,7 +152,11 @@ function ApprovalsPage() {
   };
   const toggle = (id: string, on: boolean) => {
     const next = new Set(selected);
-    on ? next.add(id) : next.delete(id);
+    if (on) {
+      next.add(id);
+    } else {
+      next.delete(id);
+    }
     setSelected(next);
   };
 
@@ -195,10 +205,7 @@ function ApprovalsPage() {
         key: "sel",
         header: " ",
         render: (r) => (
-          <Checkbox
-            checked={selected.has(r.id)}
-            onCheckedChange={(c) => toggle(r.id, !!c)}
-          />
+          <Checkbox checked={selected.has(r.id)} onCheckedChange={(c) => toggle(r.id, !!c)} />
         ),
         className: "w-8",
       });
@@ -207,19 +214,39 @@ function ApprovalsPage() {
       {
         key: "employee",
         header: "Employee",
-        render: (r) => <UserAvatar name={r.employeeName} email={r.employeeId} tone="primary" showMeta subtitle={r.department} />,
+        render: (r) => (
+          <UserAvatar
+            name={r.employeeName}
+            email={r.employeeId}
+            tone="primary"
+            showMeta
+            subtitle={r.department}
+          />
+        ),
       },
       {
         key: "week",
         header: "Week",
         render: (r) => (
           <span className="text-xs">
-            {new Date(r.weekStart).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+            {new Date(r.weekStart).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
           </span>
         ),
       },
-      { key: "total", header: "Total", render: (r) => <span className="text-sm font-semibold">{r.total.toFixed(1)}h</span> },
-      { key: "billable", header: "Billable", render: (r) => <span className="text-sm">{r.billable.toFixed(1)}h</span> },
+      {
+        key: "total",
+        header: "Total",
+        render: (r) => <span className="text-sm font-semibold">{r.total.toFixed(1)}h</span>,
+      },
+      {
+        key: "billable",
+        header: "Billable",
+        render: (r) => <span className="text-sm">{r.billable.toFixed(1)}h</span>,
+      },
       {
         key: "missing",
         header: "Missing",
@@ -233,7 +260,12 @@ function ApprovalsPage() {
       {
         key: "status",
         header: "Status",
-        render: (r) => <StatusBadge status={r.status === "submitted" ? "pending" : r.status} label={TIMESHEET_STATUS_LABEL[r.status]} />,
+        render: (r) => (
+          <StatusBadge
+            status={r.status === "submitted" ? "pending" : r.status}
+            label={TIMESHEET_STATUS_LABEL[r.status]}
+          />
+        ),
       },
     );
     if (showActions) {
@@ -245,10 +277,26 @@ function ApprovalsPage() {
             <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => approveOne(r)}>
               <CheckCircle2 className="mr-1 h-3.5 w-3.5 text-success" /> Approve
             </Button>
-            <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => { setRejectFor(r); setRemarks(""); }}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2"
+              onClick={() => {
+                setRejectFor(r);
+                setRemarks("");
+              }}
+            >
               <XCircle className="mr-1 h-3.5 w-3.5 text-destructive" /> Reject
             </Button>
-            <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => { setReturnFor(r); setRemarks(""); }}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2"
+              onClick={() => {
+                setReturnFor(r);
+                setRemarks("");
+              }}
+            >
               <CornerUpLeft className="mr-1 h-3.5 w-3.5" /> Return
             </Button>
           </div>
@@ -268,10 +316,34 @@ function ApprovalsPage() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Pending" value={stats.pending} icon={Clock} tone="warning" hint="Action required" />
-        <StatCard label="Approved" value={stats.approved} icon={CheckCircle2} tone="success" hint="In your scope" />
-        <StatCard label="Rejected / Returned" value={stats.rejected} icon={XCircle} tone="destructive" hint="With remarks" />
-        <StatCard label="Missing submissions" value={stats.missing} icon={AlertTriangle} tone="info" hint="Last week" />
+        <StatCard
+          label="Pending"
+          value={stats.pending}
+          icon={Clock}
+          tone="warning"
+          hint="Action required"
+        />
+        <StatCard
+          label="Approved"
+          value={stats.approved}
+          icon={CheckCircle2}
+          tone="success"
+          hint="In your scope"
+        />
+        <StatCard
+          label="Rejected / Returned"
+          value={stats.rejected}
+          icon={XCircle}
+          tone="destructive"
+          hint="With remarks"
+        />
+        <StatCard
+          label="Missing submissions"
+          value={stats.missing}
+          icon={AlertTriangle}
+          tone="info"
+          hint="Last week"
+        />
       </div>
 
       <Tabs defaultValue="pending" className="space-y-3">
@@ -286,7 +358,12 @@ function ApprovalsPage() {
             <Button variant="outline" size="sm" onClick={() => toggleAll(pending, true)}>
               Select all pending
             </Button>
-            <ActionButton size="sm" icon={<ListChecks className="h-4 w-4" />} onClick={bulkApprove} disabled={selected.size === 0}>
+            <ActionButton
+              size="sm"
+              icon={<ListChecks className="h-4 w-4" />}
+              onClick={bulkApprove}
+              disabled={selected.size === 0}
+            >
               Bulk approve ({selected.size})
             </ActionButton>
           </div>
@@ -295,7 +372,11 @@ function ApprovalsPage() {
         <TabsContent value="pending">
           {pending.length === 0 ? (
             <Card className="rounded-2xl border-border/60 p-10">
-              <EmptyState icon={CheckCircle2} title="All clear" description="No timesheets pending your approval." />
+              <EmptyState
+                icon={CheckCircle2}
+                title="All clear"
+                description="No timesheets pending your approval."
+              />
             </Card>
           ) : (
             <DataTable
@@ -319,13 +400,22 @@ function ApprovalsPage() {
         <TabsContent value="rejected">
           {rejected.length === 0 ? (
             <Card className="rounded-2xl border-border/60 p-10">
-              <EmptyState icon={XCircle} title="Nothing rejected" description="No rejections or returns in your scope." />
+              <EmptyState
+                icon={XCircle}
+                title="Nothing rejected"
+                description="No rejections or returns in your scope."
+              />
             </Card>
           ) : (
             <div className="space-y-2">
-              <DataTable columns={buildColumns(rejected, false, false)} rows={rejected} searchKeys={["employeeName"]} />
+              <DataTable
+                columns={buildColumns(rejected, false, false)}
+                rows={rejected}
+                searchKeys={["employeeName"]}
+              />
               <Card className="rounded-2xl border-border/60 p-4 text-xs text-muted-foreground">
-                Tip: Returned weeks become editable for the employee. Rejected weeks remain locked until re-submission.
+                Tip: Returned weeks become editable for the employee. Rejected weeks remain locked
+                until re-submission.
               </Card>
             </div>
           )}
@@ -334,7 +424,11 @@ function ApprovalsPage() {
         <TabsContent value="missing">
           {missing.length === 0 ? (
             <Card className="rounded-2xl border-border/60 p-10">
-              <EmptyState icon={CheckCircle2} title="No missing submissions" description="Everyone in your scope submitted last week." />
+              <EmptyState
+                icon={CheckCircle2}
+                title="No missing submissions"
+                description="Everyone in your scope submitted last week."
+              />
             </Card>
           ) : (
             <DataTable
@@ -354,16 +448,30 @@ function ApprovalsPage() {
             <DialogTitle>Reject timesheet</DialogTitle>
             <DialogDescription>
               {rejectFor?.employeeName} · Week of{" "}
-              {rejectFor && new Date(rejectFor.weekStart).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
+              {rejectFor &&
+                new Date(rejectFor.weekStart).toLocaleDateString(undefined, {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })}
             </DialogDescription>
           </DialogHeader>
           <div>
             <p className="mb-1 text-xs font-medium">Remarks (required)</p>
-            <Textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={4} placeholder="Why are you rejecting this week?" />
+            <Textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              rows={4}
+              placeholder="Why are you rejecting this week?"
+            />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectFor(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={submitReject}>Reject</Button>
+            <Button variant="outline" onClick={() => setRejectFor(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={submitReject}>
+              Reject
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -375,15 +483,27 @@ function ApprovalsPage() {
             <DialogTitle>Return for changes</DialogTitle>
             <DialogDescription>
               {returnFor?.employeeName} · Week of{" "}
-              {returnFor && new Date(returnFor.weekStart).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
+              {returnFor &&
+                new Date(returnFor.weekStart).toLocaleDateString(undefined, {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })}
             </DialogDescription>
           </DialogHeader>
           <div>
             <p className="mb-1 text-xs font-medium">What needs fixing? (required)</p>
-            <Textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={4} placeholder="Add task descriptions, fix hours, etc." />
+            <Textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              rows={4}
+              placeholder="Add task descriptions, fix hours, etc."
+            />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReturnFor(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setReturnFor(null)}>
+              Cancel
+            </Button>
             <ActionButton onClick={submitReturn}>Return</ActionButton>
           </DialogFooter>
         </DialogContent>

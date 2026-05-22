@@ -21,7 +21,14 @@ interface Props {
   className?: string;
 }
 
-export function InfoCard({ icon: Icon, title, description, tone = "primary", footer, className }: Props) {
+export function InfoCard({
+  icon: Icon,
+  title,
+  description,
+  tone = "primary",
+  footer,
+  className,
+}: Props) {
   return (
     <Card className={cn("rounded-2xl border-border/60 p-5", className)}>
       <div className={cn("grid h-10 w-10 place-items-center rounded-xl", TONE[tone])}>

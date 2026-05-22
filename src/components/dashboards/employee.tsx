@@ -2,15 +2,38 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import {
-  CalendarDays, Timer, Receipt, LifeBuoy, FileText, CalendarClock, Clock, Play, Pause,
-  Briefcase, ChevronRight, Coffee, CalendarPlus,
+  CalendarDays,
+  Timer,
+  Receipt,
+  LifeBuoy,
+  FileText,
+  CalendarClock,
+  Clock,
+  Play,
+  Pause,
+  Briefcase,
+  ChevronRight,
+  Coffee,
+  CalendarPlus,
 } from "lucide-react";
-import { StatCard, DataCard, ChartCard, StatusBadge, EmptyState, QuickActionCard } from "@/components/ui-kit";
+import {
+  StatCard,
+  DataCard,
+  ChartCard,
+  StatusBadge,
+  EmptyState,
+  QuickActionCard,
+} from "@/components/ui-kit";
 import { MiniArea, CHART_COLORS, ProgressBar } from "./shared";
 
 const weekHours = [
-  { label: "Mon", v: 8.5 }, { label: "Tue", v: 7.8 }, { label: "Wed", v: 8 },
-  { label: "Thu", v: 7.5 }, { label: "Fri", v: 6 }, { label: "Sat", v: 0 }, { label: "Sun", v: 0 },
+  { label: "Mon", v: 8.5 },
+  { label: "Tue", v: 7.8 },
+  { label: "Wed", v: 8 },
+  { label: "Thu", v: 7.5 },
+  { label: "Fri", v: 6 },
+  { label: "Sat", v: 0 },
+  { label: "Sun", v: 0 },
 ];
 
 const myAttendance = [
@@ -56,7 +79,15 @@ export function EmployeeDashboard() {
               className="mt-4 h-11 w-full rounded-xl text-primary-foreground"
               style={{ background: punched ? "var(--destructive)" : "var(--gradient-primary)" }}
             >
-              {punched ? <><Pause className="mr-1.5 h-4 w-4" /> Punch out</> : <><Play className="mr-1.5 h-4 w-4" /> Punch in</>}
+              {punched ? (
+                <>
+                  <Pause className="mr-1.5 h-4 w-4" /> Punch out
+                </>
+              ) : (
+                <>
+                  <Play className="mr-1.5 h-4 w-4" /> Punch in
+                </>
+              )}
             </Button>
             <Button variant="outline" className="mt-2 h-9 w-full rounded-xl text-xs">
               <Coffee className="mr-1.5 h-3.5 w-3.5" /> Start break
@@ -64,11 +95,17 @@ export function EmployeeDashboard() {
           </div>
         </DataCard>
 
-        <ChartCard title="Today's working hours" subtitle="6h 24m logged · target 8h" className="lg:col-span-2">
+        <ChartCard
+          title="Today's working hours"
+          subtitle="6h 24m logged · target 8h"
+          className="lg:col-span-2"
+        >
           <div className="space-y-3">
             <ProgressBar value={(6.4 / 8) * 100} tone="primary" />
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>0h</span><span>4h</span><span>8h</span>
+              <span>0h</span>
+              <span>4h</span>
+              <span>8h</span>
             </div>
             <div className="pt-2">
               <p className="mb-2 text-xs font-medium text-muted-foreground">This week</p>
@@ -80,7 +117,13 @@ export function EmployeeDashboard() {
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard label="Leave balance" value="12 d" hint="Earned + casual" icon={CalendarDays} tone="primary" />
+        <StatCard
+          label="Leave balance"
+          value="12 d"
+          hint="Earned + casual"
+          icon={CalendarDays}
+          tone="primary"
+        />
         <StatCard label="Pending WFH" value="1" hint="Tomorrow" icon={CalendarClock} tone="info" />
         <StatCard label="Timesheet" value="32 / 40 h" hint="Week 19" icon={Timer} tone="warning" />
         <StatCard label="Open tickets" value="0" icon={LifeBuoy} tone="success" />
@@ -89,17 +132,47 @@ export function EmployeeDashboard() {
       {/* Quick actions */}
       <DataCard title="Quick actions" description="Jump into a workflow" padded={false}>
         <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
-          <QuickActionCard icon={CalendarPlus} title="Apply for leave" description="Casual, sick or earned" to="/leave-wfh" />
-          <QuickActionCard icon={Timer} title="Log time" description="Submit weekly timesheet" to="/timesheet" />
-          <QuickActionCard icon={Receipt} title="New expense" description="Submit a claim" to="/expenses" />
-          <QuickActionCard icon={LifeBuoy} title="Raise a ticket" description="IT, HR or finance" to="/helpdesk" />
+          <QuickActionCard
+            icon={CalendarPlus}
+            title="Apply for leave"
+            description="Casual, sick or earned"
+            to="/leave-wfh"
+          />
+          <QuickActionCard
+            icon={Timer}
+            title="Log time"
+            description="Submit weekly timesheet"
+            to="/timesheet"
+          />
+          <QuickActionCard
+            icon={Receipt}
+            title="New expense"
+            description="Submit a claim"
+            to="/expenses"
+          />
+          <QuickActionCard
+            icon={LifeBuoy}
+            title="Raise a ticket"
+            description="IT, HR or finance"
+            to="/helpdesk"
+          />
         </div>
       </DataCard>
 
       {/* Attendance + leave/wfh */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <DataCard title="My attendance" description="Last 4 days" className="lg:col-span-2" padded={false}
-          actions={<Button asChild size="sm" variant="ghost" className="text-primary"><Link to="/attendance">View all <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link></Button>}
+        <DataCard
+          title="My attendance"
+          description="Last 4 days"
+          className="lg:col-span-2"
+          padded={false}
+          actions={
+            <Button asChild size="sm" variant="ghost" className="text-primary">
+              <Link to="/attendance">
+                View all <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          }
         >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -166,8 +239,8 @@ export function EmployeeDashboard() {
         <DataCard title="My assets" padded={false}>
           <ul className="divide-y">
             {[
-              { name: "MacBook Pro 16\"", id: "AST-7701" },
-              { name: "Dell UltraSharp 27\"", id: "AST-7710" },
+              { name: 'MacBook Pro 16"', id: "AST-7701" },
+              { name: 'Dell UltraSharp 27"', id: "AST-7710" },
             ].map((a) => (
               <li key={a.id} className="flex items-center justify-between px-5 py-3.5">
                 <div>
@@ -200,7 +273,9 @@ export function EmployeeDashboard() {
                     <p className="text-xs text-muted-foreground">{d.size}</p>
                   </div>
                 </div>
-                <Button size="sm" variant="ghost" className="text-primary">Download</Button>
+                <Button size="sm" variant="ghost" className="text-primary">
+                  Download
+                </Button>
               </li>
             ))}
           </ul>

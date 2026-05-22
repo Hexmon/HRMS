@@ -16,34 +16,34 @@ Legacy reviewer/director approval vocabulary is not an active frontend contract.
 
 ## Status Labels
 
-| Status | Frontend meaning |
-|---|---|
-| Pending Manager Verification | Submitted by employee and waiting for manager action. |
-| Manager Returned | Manager returned the request; requester must revise or respond. |
-| Manager Rejected | Manager rejected the request; no finance approval. |
-| Manager Verified | Manager approved verification; finance can process next. |
-| Finance Approved | Finance approved the request for payment/document/settlement flow. |
-| Payment Released | Payment was released by finance. |
-| Bills Submitted | Bills/documents were submitted for verification. |
-| Pending Adjustment | Settlement found payable/recoverable/no-balance adjustment work. |
-| Closed | Ticket is closed/read-only except backend-authorized correction notes. |
+| Status                       | Frontend meaning                                                       |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| Pending Manager Verification | Submitted by employee and waiting for manager action.                  |
+| Manager Returned             | Manager returned the request; requester must revise or respond.        |
+| Manager Rejected             | Manager rejected the request; no finance approval.                     |
+| Manager Verified             | Manager approved verification; finance can process next.               |
+| Finance Approved             | Finance approved the request for payment/document/settlement flow.     |
+| Payment Released             | Payment was released by finance.                                       |
+| Bills Submitted              | Bills/documents were submitted for verification.                       |
+| Pending Adjustment           | Settlement found payable/recoverable/no-balance adjustment work.       |
+| Closed                       | Ticket is closed/read-only except backend-authorized correction notes. |
 
 ## Frontend Screens And API Mapping
 
-| Screen/workspace | APIs |
-|---|---|
-| Raise Expense Request | `POST /api/v1/expenses` |
-| My Expenses | `GET /api/v1/expenses/my`, `GET /api/v1/reports/expenses/my` |
-| Request Detail | `GET /api/v1/expenses/{id}`, `GET /api/v1/expenses/{id}/timeline` |
-| Manager Workspace | `GET /api/v1/expenses/queue/manager`, `POST /api/v1/expenses/{id}/manager/verify` |
-| Finance Queue | `GET /api/v1/expenses/queue/finance` |
-| Finance Ticket Detail | `GET /api/v1/expenses/{id}/finance-detail`, `GET /api/v1/expenses/{id}/audit` |
-| Finance Approval | `POST /api/v1/expenses/{id}/finance/approve` |
-| Payment Release | `POST /api/v1/expenses/{id}/finance/payment` |
-| Bills/Documents | `POST /api/v1/expenses/{id}/documents`, `POST /api/v1/expenses/{id}/bills` |
-| Document Verification | `POST /api/v1/expenses/{id}/documents/{documentId}/verify` |
-| Settlement | `POST /api/v1/expenses/{id}/settlement` |
-| Finance Reports | finance dashboard/history/analytics/aging/payments/audit report APIs |
+| Screen/workspace      | APIs                                                                              |
+| --------------------- | --------------------------------------------------------------------------------- |
+| Raise Expense Request | `POST /api/v1/expenses`                                                           |
+| My Expenses           | `GET /api/v1/expenses/my`, `GET /api/v1/reports/expenses/my`                      |
+| Request Detail        | `GET /api/v1/expenses/{id}`, `GET /api/v1/expenses/{id}/timeline`                 |
+| Manager Workspace     | `GET /api/v1/expenses/queue/manager`, `POST /api/v1/expenses/{id}/manager/verify` |
+| Finance Queue         | `GET /api/v1/expenses/queue/finance`                                              |
+| Finance Ticket Detail | `GET /api/v1/expenses/{id}/finance-detail`, `GET /api/v1/expenses/{id}/audit`     |
+| Finance Approval      | `POST /api/v1/expenses/{id}/finance/approve`                                      |
+| Payment Release       | `POST /api/v1/expenses/{id}/finance/payment`                                      |
+| Bills/Documents       | `POST /api/v1/expenses/{id}/documents`, `POST /api/v1/expenses/{id}/bills`        |
+| Document Verification | `POST /api/v1/expenses/{id}/documents/{documentId}/verify`                        |
+| Settlement            | `POST /api/v1/expenses/{id}/settlement`                                           |
+| Finance Reports       | finance dashboard/history/analytics/aging/payments/audit report APIs              |
 
 ## Required Frontend Behaviors
 

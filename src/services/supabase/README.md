@@ -7,15 +7,15 @@ team migrates each screen off mock data.
 
 ## Modules
 
-| Module          | File                  | Purpose                                  |
-|-----------------|----------------------|------------------------------------------|
-| Auth            | `auth.ts`            | sign in/up/out, current profile, roles, has_permission |
-| Company         | `company.ts`         | read & update the tenant company         |
-| Employees       | `employees.ts`       | CRUD over `employees` (RLS-scoped)       |
-| Roles           | `roles.ts`           | roles, permissions, role assignment      |
-| Master data     | `master-data.ts`     | departments & designations               |
-| Audit           | `audit.ts`           | `writeAuditLog`, list                    |
-| Notifications   | `notifications.ts`   | per-user notification feed               |
+| Module        | File               | Purpose                                                |
+| ------------- | ------------------ | ------------------------------------------------------ |
+| Auth          | `auth.ts`          | sign in/up/out, current profile, roles, has_permission |
+| Company       | `company.ts`       | read & update the tenant company                       |
+| Employees     | `employees.ts`     | CRUD over `employees` (RLS-scoped)                     |
+| Roles         | `roles.ts`         | roles, permissions, role assignment                    |
+| Master data   | `master-data.ts`   | departments & designations                             |
+| Audit         | `audit.ts`         | `writeAuditLog`, list                                  |
+| Notifications | `notifications.ts` | per-user notification feed                             |
 
 ## Tenant scoping
 
@@ -30,12 +30,18 @@ All tenant tables are filtered by RLS using
 import { AuthService, EmployeeService, AuditService } from "@/services/supabase";
 
 const profile = await AuthService.getCurrentUserProfile();
-const roles   = profile ? await AuthService.getUserRoles(profile.id) : [];
+const roles = profile ? await AuthService.getUserRoles(profile.id) : [];
 const allowed = await AuthService.hasPermission("employees", "write");
 
-const list    = await EmployeeService.getCompanyEmployees();
-await EmployeeService.createEmployee({ /* ... */ });
-await AuditService.writeAuditLog({ action: "employee.created", entityType: "employee", entityId: id });
+const list = await EmployeeService.getCompanyEmployees();
+await EmployeeService.createEmployee({
+  /* ... */
+});
+await AuditService.writeAuditLog({
+  action: "employee.created",
+  entityType: "employee",
+  entityId: id,
+});
 ```
 
 ## Migration plan (for later iterations)

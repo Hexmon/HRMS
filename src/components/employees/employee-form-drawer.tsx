@@ -12,7 +12,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { Check, Plus, ChevronRight, ChevronLeft, Camera, ShieldCheck, Mail, Briefcase, UserRound } from "lucide-react";
+import {
+  Check,
+  Plus,
+  ChevronRight,
+  ChevronLeft,
+  Camera,
+  ShieldCheck,
+  Mail,
+  Briefcase,
+  UserRound,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -73,7 +83,8 @@ const STEPS = [
 ];
 
 export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
-  const { employees, departments, designations, addDepartment, addDesignation, upsert } = useEmployees();
+  const { employees, departments, designations, addDepartment, addDesignation, upsert } =
+    useEmployees();
   const [active, setActive] = useState(0);
   const [error, setError] = useState("");
   const [deptOpen, setDeptOpen] = useState(false);
@@ -152,7 +163,8 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
 
-  const fullName = [form.firstName, form.middleName, form.lastName].filter(Boolean).join(" ").trim() || "—";
+  const fullName =
+    [form.firstName, form.middleName, form.lastName].filter(Boolean).join(" ").trim() || "—";
 
   const validateStep = (s: number) => {
     if (s === 0) {
@@ -214,7 +226,13 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
       systemRoles: form.systemRoles.length ? form.systemRoles : ["employee"],
       avatarTone: initial?.avatarTone ?? "primary",
       roleHistory: initial?.roleHistory ?? [
-        { at: new Date().toISOString(), actor: "Rahul Verma", from: [], to: form.systemRoles, remarks: "Initial role" },
+        {
+          at: new Date().toISOString(),
+          actor: "Rahul Verma",
+          from: [],
+          to: form.systemRoles,
+          remarks: "Initial role",
+        },
       ],
       audit: initial?.audit ?? [],
       documents: initial?.documents ?? [],
@@ -242,7 +260,9 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
               {initial ? initial.name : fullName}
             </h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {initial ? `${initial.id} • ${initial.designation}` : "Create a complete employee profile in three quick steps."}
+              {initial
+                ? `${initial.id} • ${initial.designation}`
+                : "Create a complete employee profile in three quick steps."}
             </p>
 
             <ol className="mt-5 flex items-center gap-2">
@@ -262,7 +282,12 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
                       {done ? <Check className="h-4 w-4" /> : i + 1}
                     </div>
                     <div className="hidden min-w-0 sm:block">
-                      <p className={cn("truncate text-xs font-semibold", current ? "text-foreground" : "text-muted-foreground")}>
+                      <p
+                        className={cn(
+                          "truncate text-xs font-semibold",
+                          current ? "text-foreground" : "text-muted-foreground",
+                        )}
+                      >
                         {s.title}
                       </p>
                       <p className="truncate text-[11px] text-muted-foreground">{s.description}</p>
@@ -277,13 +302,7 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            {active === 0 && (
-              <Step1
-                form={form}
-                set={set}
-                fullName={fullName}
-              />
-            )}
+            {active === 0 && <Step1 form={form} set={set} fullName={fullName} />}
             {active === 1 && (
               <Step2
                 form={form}
@@ -294,9 +313,7 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
                 onAddDesig={() => setDesigOpen(true)}
               />
             )}
-            {active === 2 && (
-              <Step3 form={form} set={set} />
-            )}
+            {active === 2 && <Step3 form={form} set={set} />}
 
             {error && (
               <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -310,7 +327,11 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
               <ChevronLeft className="mr-1 h-4 w-4" /> Back
             </Button>
             <div className="flex items-center gap-2">
-              <Button variant="outline" className="rounded-full" onClick={() => onOpenChange(false)}>
+              <Button
+                variant="outline"
+                className="rounded-full"
+                onClick={() => onOpenChange(false)}
+              >
                 Cancel
               </Button>
               {active < STEPS.length - 1 ? (
@@ -401,22 +422,64 @@ function Step1({
           />
         </Grid>
         <Grid cols={3}>
-          <Field label="First name" id="fn" required value={form.firstName} onChange={(v) => set("firstName", v)} />
-          <Field label="Middle name" id="mn" value={form.middleName} onChange={(v) => set("middleName", v)} />
-          <Field label="Last name" id="ln" required value={form.lastName} onChange={(v) => set("lastName", v)} />
+          <Field
+            label="First name"
+            id="fn"
+            required
+            value={form.firstName}
+            onChange={(v) => set("firstName", v)}
+          />
+          <Field
+            label="Middle name"
+            id="mn"
+            value={form.middleName}
+            onChange={(v) => set("middleName", v)}
+          />
+          <Field
+            label="Last name"
+            id="ln"
+            required
+            value={form.lastName}
+            onChange={(v) => set("lastName", v)}
+          />
         </Grid>
         <div className="rounded-xl bg-primary-soft/50 px-3 py-2 text-xs text-primary">
           Full name: <span className="font-semibold">{fullName}</span>
         </div>
-        <Field label="Date of birth" id="dob" type="date" value={form.dob} onChange={(v) => set("dob", v)} />
+        <Field
+          label="Date of birth"
+          id="dob"
+          type="date"
+          value={form.dob}
+          onChange={(v) => set("dob", v)}
+        />
       </Section>
 
       <Section title="Contact">
         <Grid>
-          <Field label="Contact number" id="phone" value={form.phone} onChange={(v) => set("phone", v)} />
-          <Field label="Personal email" id="pemail" type="email" value={form.personalEmail} onChange={(v) => set("personalEmail", v)} />
+          <Field
+            label="Contact number"
+            id="phone"
+            value={form.phone}
+            onChange={(v) => set("phone", v)}
+          />
+          <Field
+            label="Personal email"
+            id="pemail"
+            type="email"
+            value={form.personalEmail}
+            onChange={(v) => set("personalEmail", v)}
+          />
         </Grid>
-        <Field label="Company email" id="cemail" type="email" required value={form.email} onChange={(v) => set("email", v)} placeholder="name@company.com" />
+        <Field
+          label="Company email"
+          id="cemail"
+          type="email"
+          required
+          value={form.email}
+          onChange={(v) => set("email", v)}
+          placeholder="name@company.com"
+        />
       </Section>
     </div>
   );
@@ -441,12 +504,22 @@ function Step2({
     <div className="space-y-5">
       <Section title="Employment">
         <Grid>
-          <Field label="Date of joining" id="joined" type="date" required value={form.joinedAt} onChange={(v) => set("joinedAt", v)} />
+          <Field
+            label="Date of joining"
+            id="joined"
+            type="date"
+            required
+            value={form.joinedAt}
+            onChange={(v) => set("joinedAt", v)}
+          />
           <SelectField
             label="Employment type"
             value={form.employmentType}
             onChange={(v) => set("employmentType", v as EmploymentType)}
-            options={Object.entries(EMPLOYMENT_TYPE_LABEL).map(([value, label]) => ({ value, label }))}
+            options={Object.entries(EMPLOYMENT_TYPE_LABEL).map(([value, label]) => ({
+              value,
+              label,
+            }))}
           />
         </Grid>
         <Grid>
@@ -466,19 +539,34 @@ function Step2({
           />
         </Grid>
         <Grid>
-          <Field label="Reporting to" id="rep" value={form.manager} onChange={(v) => set("manager", v)} />
+          <Field
+            label="Reporting to"
+            id="rep"
+            value={form.manager}
+            onChange={(v) => set("manager", v)}
+          />
           <SelectField
             label="Lifecycle status"
             value={form.status}
             onChange={(v) => set("status", v as EmployeeStatus)}
-            options={Object.entries(EMPLOYEE_STATUS_LABEL).map(([value, label]) => ({ value, label }))}
+            options={Object.entries(EMPLOYEE_STATUS_LABEL).map(([value, label]) => ({
+              value,
+              label,
+            }))}
           />
         </Grid>
       </Section>
 
       <Section title="Work setup">
         <Grid>
-          <Field label="Work location" id="loc" required value={form.location} onChange={(v) => set("location", v)} placeholder="City, Country" />
+          <Field
+            label="Work location"
+            id="loc"
+            required
+            value={form.location}
+            onChange={(v) => set("location", v)}
+            placeholder="City, Country"
+          />
           <SelectField
             label="Work mode"
             value={form.workMode}
@@ -487,8 +575,20 @@ function Step2({
           />
         </Grid>
         <Grid cols={3}>
-          <Field label="Probation end date" id="prob" type="date" value={form.probationEndDate} onChange={(v) => set("probationEndDate", v)} />
-          <Field label="Notice period (days)" id="notice" type="number" value={String(form.noticeDays)} onChange={(v) => set("noticeDays", Number(v) || 0)} />
+          <Field
+            label="Probation end date"
+            id="prob"
+            type="date"
+            value={form.probationEndDate}
+            onChange={(v) => set("probationEndDate", v)}
+          />
+          <Field
+            label="Notice period (days)"
+            id="notice"
+            type="number"
+            value={String(form.noticeDays)}
+            onChange={(v) => set("noticeDays", Number(v) || 0)}
+          />
           <Field label="Shift" id="shift" value={form.shift} onChange={(v) => set("shift", v)} />
         </Grid>
       </Section>
@@ -505,13 +605,14 @@ function Step3({
 }) {
   const toggleRole = (key: Role) => {
     const has = form.systemRoles.includes(key);
-    set("systemRoles", has ? form.systemRoles.filter((r) => r !== key) : [...form.systemRoles, key]);
+    set(
+      "systemRoles",
+      has ? form.systemRoles.filter((r) => r !== key) : [...form.systemRoles, key],
+    );
   };
 
   const previewModules = Array.from(
-    new Set(
-      ROLES.filter((r) => form.systemRoles.includes(r.key)).flatMap((r) => r.modules),
-    ),
+    new Set(ROLES.filter((r) => form.systemRoles.includes(r.key)).flatMap((r) => r.modules)),
   );
 
   return (
@@ -562,13 +663,17 @@ function Step3({
                 onClick={() => toggleRole(r.key)}
                 className={cn(
                   "rounded-xl border p-3 text-left transition",
-                  checked ? "border-primary bg-primary-soft/60" : "border-border bg-card hover:bg-accent/40",
+                  checked
+                    ? "border-primary bg-primary-soft/60"
+                    : "border-border bg-card hover:bg-accent/40",
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold">{r.label}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{r.description}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                      {r.description}
+                    </p>
                   </div>
                   <Checkbox checked={checked} className="mt-0.5" />
                 </div>
@@ -581,11 +686,16 @@ function Step3({
       <Section title="Module permissions preview">
         <div className="rounded-xl border bg-secondary/30 p-3">
           {previewModules.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Select at least one role to preview accessible modules.</p>
+            <p className="text-xs text-muted-foreground">
+              Select at least one role to preview accessible modules.
+            </p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {previewModules.map((m) => (
-                <span key={m} className="rounded-full border bg-card px-2.5 py-0.5 text-[11px] font-medium text-foreground">
+                <span
+                  key={m}
+                  className="rounded-full border bg-card px-2.5 py-0.5 text-[11px] font-medium text-foreground"
+                >
                   {m}
                 </span>
               ))}
@@ -612,7 +722,9 @@ function Step3({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-3">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </p>
       <div className="space-y-3">{children}</div>
     </div>
   );
@@ -620,7 +732,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Grid({ children, cols = 2 }: { children: React.ReactNode; cols?: 2 | 3 }) {
   return (
-    <div className={cn("grid gap-3", cols === 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2")}>
+    <div
+      className={cn(
+        "grid gap-3",
+        cols === 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2",
+      )}
+    >
       {children}
     </div>
   );
@@ -649,7 +766,13 @@ function Field({
         {label}
         {required && <span className="ml-0.5 text-destructive">*</span>}
       </Label>
-      <Input id={id} type={type} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      <Input
+        id={id}
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }
@@ -715,7 +838,9 @@ function SelectFieldWithAdd({
         </SelectTrigger>
         <SelectContent>
           {options.map((o) => (
-            <SelectItem key={o} value={o}>{o}</SelectItem>
+            <SelectItem key={o} value={o}>
+              {o}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -738,7 +863,11 @@ function ToggleRow({
 }) {
   return (
     <label className="flex cursor-pointer items-start gap-3 rounded-xl border bg-card p-4 transition hover:bg-accent/40">
-      <Checkbox checked={checked} onCheckedChange={(c) => onChange(c === true)} className="mt-0.5" />
+      <Checkbox
+        checked={checked}
+        onCheckedChange={(c) => onChange(c === true)}
+        className="mt-0.5"
+      />
       <div className="flex-1">
         <p className="flex items-center gap-1.5 text-sm font-medium">
           {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}

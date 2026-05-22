@@ -6,9 +6,7 @@ import {
   registerRetryAfter,
   waitForClientRateLimit,
 } from "./rate-limiter";
-import type { ApiRecord, HttpMethod } from "./types";
-
-type QueryValue = string | number | boolean | null | undefined;
+import type { ApiRecord, HttpMethod, QueryValue } from "./types";
 
 export interface ApiRequestOptions {
   method?: HttpMethod;
@@ -89,7 +87,10 @@ export async function apiRequest<T = ApiRecord>(
 }
 
 export async function withApiFallback<T>(apiCall: () => Promise<T>, fallback: () => T): Promise<T> {
-  if (!isApiEnabled()) return fallback();
+  if (!isApiEnabled()) {
+    if (isMockFallbackEnabled()) return fallback();
+    throw new ApiUnavailableError("Backend API is disabled and mock fallback is not enabled.");
+  }
 
   try {
     return await apiCall();

@@ -8,11 +8,7 @@ export async function signInWithPassword(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
-export async function signUpWithPassword(
-  email: string,
-  password: string,
-  fullName: string,
-) {
+export async function signUpWithPassword(email: string, password: string, fullName: string) {
   return supabase.auth.signUp({
     email,
     password,

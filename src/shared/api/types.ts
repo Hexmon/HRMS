@@ -1,6 +1,9 @@
 export type ApiRecord = Record<string, unknown>;
 
+export type QueryValue = string | number | boolean | null | undefined;
+
 export interface PageQuery {
+  [key: string]: QueryValue;
   page?: number;
   page_size?: number;
   sort?: string;

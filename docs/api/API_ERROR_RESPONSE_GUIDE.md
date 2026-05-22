@@ -26,15 +26,15 @@ Date: 2026-05-01
 
 ## Important Status Codes
 
-| Status | Meaning | Consumer action |
-|---|---|---|
-| `400` | Invalid request or business precondition | Fix fields, required remarks, state, or payload |
-| `401` | Missing/invalid auth | Login and send bearer token or cookie |
-| `403` | Role/object policy denial | Show forbidden state; do not retry blindly |
-| `404` | Resource not found or not visible | Check id and object access |
-| `409` | OCC conflict | Refresh latest record/version and retry |
-| `429` | Rate limit exceeded | Wait for `Retry-After` seconds and retry safely |
-| `500` | Unexpected server error | Capture `request_id` and report defect |
+| Status | Meaning                                  | Consumer action                                 |
+| ------ | ---------------------------------------- | ----------------------------------------------- |
+| `400`  | Invalid request or business precondition | Fix fields, required remarks, state, or payload |
+| `401`  | Missing/invalid auth                     | Login and send bearer token or cookie           |
+| `403`  | Role/object policy denial                | Show forbidden state; do not retry blindly      |
+| `404`  | Resource not found or not visible        | Check id and object access                      |
+| `409`  | OCC conflict                             | Refresh latest record/version and retry         |
+| `429`  | Rate limit exceeded                      | Wait for `Retry-After` seconds and retry safely |
+| `500`  | Unexpected server error                  | Capture `request_id` and report defect          |
 
 ## OCC Conflict Example
 

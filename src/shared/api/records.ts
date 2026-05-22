@@ -14,9 +14,8 @@ export function asArray(value: unknown): unknown[] {
 
 export function pageItems<T = ApiRecord>(value: unknown): T[] {
   if (!isRecord(value)) return [];
-  return Array.isArray((value as PaginatedResponse<T>).items)
-    ? ((value as PaginatedResponse<T>).items as T[])
-    : [];
+  const page = value as unknown as Partial<PaginatedResponse<T>>;
+  return Array.isArray(page.items) ? page.items : [];
 }
 
 export function text(value: unknown, fallback = ""): string {

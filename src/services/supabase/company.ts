@@ -17,11 +17,7 @@ export async function getCurrentCompany(): Promise<Company | null> {
 }
 
 export async function createCompany(input: CompanyInsert): Promise<Company | null> {
-  const { data, error } = await supabase
-    .from("companies")
-    .insert(input)
-    .select("*")
-    .single();
+  const { data, error } = await supabase.from("companies").insert(input).select("*").single();
   if (error) {
     console.warn("[company] createCompany", error.message);
     return null;

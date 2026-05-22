@@ -18,7 +18,12 @@ const C_KEY = "hawkaii_helpdesk_categories_v1";
 const ls = {
   get<T>(k: string, fb: T): T {
     if (typeof window === "undefined") return fb;
-    try { const r = window.localStorage.getItem(k); return r ? (JSON.parse(r) as T) : fb; } catch { return fb; }
+    try {
+      const r = window.localStorage.getItem(k);
+      return r ? (JSON.parse(r) as T) : fb;
+    } catch {
+      return fb;
+    }
   },
   set(k: string, v: unknown) {
     if (typeof window === "undefined") return;
@@ -28,7 +33,13 @@ const ls = {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const now = () => new Date().toISOString();
-const evt = (actor: string, action: string, detail?: string): TicketEvent => ({ id: "e_" + uid(), at: now(), actor, action, detail });
+const evt = (actor: string, action: string, detail?: string): TicketEvent => ({
+  id: "e_" + uid(),
+  at: now(),
+  actor,
+  action,
+  detail,
+});
 
 export interface NewTicketInput {
   subject: string;
@@ -48,7 +59,13 @@ interface Ctx {
   tickets: Ticket[];
   categories: CategoryConfig[];
   createTicket: (input: NewTicketInput) => Ticket;
-  addComment: (id: string, body: string, author: string, authorRole?: string, internal?: boolean) => void;
+  addComment: (
+    id: string,
+    body: string,
+    author: string,
+    authorRole?: string,
+    internal?: boolean,
+  ) => void;
   addAttachment: (id: string, name: string, by: string) => void;
   changePriority: (id: string, priority: TicketPriority, actor: string) => void;
   assign: (id: string, assignee: string, assigneeRole: string | undefined, actor: string) => void;
@@ -73,8 +90,14 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     setCategories(ls.get(C_KEY, SEED_CATEGORIES));
   }, []);
 
-  const persistT = (next: Ticket[]) => { setTickets(next); ls.set(T_KEY, next); };
-  const persistC = (next: CategoryConfig[]) => { setCategories(next); ls.set(C_KEY, next); };
+  const persistT = (next: Ticket[]) => {
+    setTickets(next);
+    ls.set(T_KEY, next);
+  };
+  const persistC = (next: CategoryConfig[]) => {
+    setCategories(next);
+    ls.set(C_KEY, next);
+  };
 
   const update = (id: string, mut: (t: Ticket) => Ticket) => {
     persistT(tickets.map((t) => (t.id === id ? { ...mut(t), updatedAt: now() } : t)));
@@ -115,7 +138,14 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
       events: [
         { id: "e_" + uid(), at, actor: input.raisedBy, action: "Ticket created" },
         ...(cfg?.defaultAssignee
-          ? [{ id: "e_" + uid(), at, actor: "System", action: `Auto-assigned to ${cfg.defaultAssignee}` }]
+          ? [
+              {
+                id: "e_" + uid(),
+                at,
+                actor: "System",
+                action: `Auto-assigned to ${cfg.defaultAssignee}`,
+              },
+            ]
           : []),
       ],
     };
@@ -220,15 +250,29 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     persistC(categories.map((c) => (c.key === key ? { ...c, active } : c)));
   };
 
-  const reset = () => { persistT(SEED_TICKETS); persistC(SEED_CATEGORIES); };
+  const reset = () => {
+    persistT(SEED_TICKETS);
+    persistC(SEED_CATEGORIES);
+  };
 
   return (
     <Ctx_.Provider
       value={{
-        tickets, categories,
-        createTicket, addComment, addAttachment, changePriority,
-        assign, setStatus, resolve, close, reopen, escalate,
-        upsertCategory, toggleCategory, reset,
+        tickets,
+        categories,
+        createTicket,
+        addComment,
+        addAttachment,
+        changePriority,
+        assign,
+        setStatus,
+        resolve,
+        close,
+        reopen,
+        escalate,
+        upsertCategory,
+        toggleCategory,
+        reset,
       }}
     >
       {children}
@@ -244,22 +288,35 @@ export function useHelpdesk() {
 
 // ---- role helpers ----
 export const HELPDESK_AGENT_ROLES = [
-  "main_admin", "helpdesk_agent", "asset_admin", "hr_admin", "finance_manager",
+  "main_admin",
+  "helpdesk_agent",
+  "asset_admin",
+  "hr_admin",
+  "finance_manager",
 ] as const;
 
 export function categoryForRole(role: string | null): TicketCategory[] {
   switch (role) {
-    case "asset_admin": return ["IT", "Assets"];
-    case "hr_admin": return ["HR"];
-    case "finance_manager": return ["Finance"];
-    case "helpdesk_agent": return ["IT", "Admin", "Project Support"];
-    case "main_admin": return ["IT", "HR", "Finance", "Admin", "Assets", "Project Support"];
-    default: return [];
+    case "asset_admin":
+      return ["IT", "Assets"];
+    case "hr_admin":
+      return ["HR"];
+    case "finance_manager":
+      return ["Finance"];
+    case "helpdesk_agent":
+      return ["IT", "Admin", "Project Support"];
+    case "main_admin":
+      return ["IT", "HR", "Finance", "Admin", "Assets", "Project Support"];
+    default:
+      return [];
   }
 }
 
 export const PRIORITY_TONE: Record<TicketPriority, { cls: string; dot: string }> = {
-  Urgent: { cls: "bg-destructive/15 text-destructive border-destructive/30", dot: "bg-destructive" },
+  Urgent: {
+    cls: "bg-destructive/15 text-destructive border-destructive/30",
+    dot: "bg-destructive",
+  },
   High: { cls: "bg-warning/20 text-warning-foreground border-warning/40", dot: "bg-warning" },
   Medium: { cls: "bg-info/15 text-info border-info/30", dot: "bg-info" },
   Low: { cls: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground/60" },

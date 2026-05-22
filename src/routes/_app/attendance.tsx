@@ -18,7 +18,9 @@ const TABS = [
 
 function AttendanceLayout() {
   const { activeRole } = useAuth();
-  const visible = TABS.filter((t) => !t.adminOnly || (activeRole && ADMIN_ROLES.includes(activeRole)));
+  const visible = TABS.filter(
+    (t) => !t.adminOnly || (activeRole && ADMIN_ROLES.includes(activeRole)),
+  );
 
   return (
     <>
@@ -28,7 +30,9 @@ function AttendanceLayout() {
         description="Track punch-ins, work hours, exceptions and team-wide presence."
       />
       <ModuleTabs tabs={visible} />
-      <div className="pt-4 page-fade-in"><Outlet /></div>
+      <div className="pt-4 page-fade-in">
+        <Outlet />
+      </div>
     </>
   );
 }

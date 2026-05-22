@@ -14,9 +14,6 @@ export async function listMyNotifications(): Promise<Notification[]> {
 }
 
 export async function markNotificationRead(id: string) {
-  const { error } = await supabase
-    .from("notifications")
-    .update({ is_read: true })
-    .eq("id", id);
+  const { error } = await supabase.from("notifications").update({ is_read: true }).eq("id", id);
   if (error) throw error;
 }

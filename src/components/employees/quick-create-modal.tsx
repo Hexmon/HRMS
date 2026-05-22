@@ -14,7 +14,14 @@ interface Props {
   showDescription?: boolean;
 }
 
-export function QuickCreateModal({ open, onOpenChange, title, label, onCreate, showDescription = true }: Props) {
+export function QuickCreateModal({
+  open,
+  onOpenChange,
+  title,
+  label,
+  onCreate,
+  showDescription = true,
+}: Props) {
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
 
@@ -57,7 +64,12 @@ export function QuickCreateModal({ open, onOpenChange, title, label, onCreate, s
         {showDescription && (
           <div className="space-y-1.5">
             <Label htmlFor="qc-desc">Description (optional)</Label>
-            <Textarea id="qc-desc" rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} />
+            <Textarea
+              id="qc-desc"
+              rows={3}
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+            />
           </div>
         )}
       </div>

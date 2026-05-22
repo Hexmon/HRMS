@@ -3,7 +3,13 @@ import { useMemo } from "react";
 import { useHelpdesk } from "@/lib/helpdesk-store";
 import { DataCard, DataTable, StatCard, type Column } from "@/components/ui-kit";
 import { SlaBadge, PriorityBadge } from "@/components/helpdesk/badges";
-import { computeSla, fmtDateTime, SLA_MATRIX, type Ticket, type TicketPriority } from "@/lib/mock/helpdesk";
+import {
+  computeSla,
+  fmtDateTime,
+  SLA_MATRIX,
+  type Ticket,
+  type TicketPriority,
+} from "@/lib/mock/helpdesk";
 import { Timer, AlertTriangle, ShieldCheck, Activity } from "lucide-react";
 
 export const Route = createFileRoute("/_app/helpdesk/sla")({ component: SlaScreen });
@@ -23,24 +29,43 @@ function SlaScreen() {
 
   const cols: Column<Ticket>[] = [
     {
-      key: "id", header: "Ticket",
+      key: "id",
+      header: "Ticket",
       render: (t) => (
-        <button onClick={() => navigate({ to: "/helpdesk/$id", params: { id: t.id } })} className="text-left">
+        <button
+          onClick={() => navigate({ to: "/helpdesk/$id", params: { id: t.id } })}
+          className="text-left"
+        >
           <p className="font-mono text-xs font-semibold text-primary">{t.id}</p>
           <p className="mt-0.5 truncate text-sm font-medium">{t.subject}</p>
         </button>
       ),
     },
     { key: "priority", header: "Priority", render: (t) => <PriorityBadge priority={t.priority} /> },
-    { key: "category", header: "Category", render: (t) => <span className="text-sm">{t.category}</span> },
-    { key: "assignee", header: "Assignee", render: (t) => <span className="text-sm">{t.assignee ?? "Unassigned"}</span> },
     {
-      key: "first", header: "First response",
+      key: "category",
+      header: "Category",
+      render: (t) => <span className="text-sm">{t.category}</span>,
+    },
+    {
+      key: "assignee",
+      header: "Assignee",
+      render: (t) => <span className="text-sm">{t.assignee ?? "Unassigned"}</span>,
+    },
+    {
+      key: "first",
+      header: "First response",
       render: (t) => {
         const sla = computeSla(t);
         return (
           <div className="text-xs">
-            <p className={sla.responseState === "breached" ? "font-medium text-destructive" : "text-foreground"}>
+            <p
+              className={
+                sla.responseState === "breached"
+                  ? "font-medium text-destructive"
+                  : "text-foreground"
+              }
+            >
               {t.firstResponseAt ? "Sent " + fmtDateTime(t.firstResponseAt) : "Pending"}
             </p>
             <p className="text-muted-foreground">Due {fmtDateTime(sla.responseDueAt)}</p>
@@ -49,7 +74,8 @@ function SlaScreen() {
       },
     },
     {
-      key: "resolve", header: "Resolution",
+      key: "resolve",
+      header: "Resolution",
       render: (t) => {
         const sla = computeSla(t);
         return (

@@ -29,7 +29,9 @@ function TimesheetLayout() {
         description="Log time against projects, submit weekly, and approve at speed."
       />
       <ModuleTabs tabs={visible} />
-      <div className="pt-4 page-fade-in"><Outlet /></div>
+      <div className="pt-4 page-fade-in">
+        <Outlet />
+      </div>
     </>
   );
 }

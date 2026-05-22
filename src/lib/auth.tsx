@@ -242,7 +242,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    return loginFromMock(email, password);
+    if (isMockFallbackEnabled()) return loginFromMock(email, password);
+    return {
+      ok: false,
+      error: "Backend API is disabled and mock sign-in fallback is not enabled.",
+    };
   };
 
   const logout = () => {

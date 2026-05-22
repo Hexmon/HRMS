@@ -32,7 +32,15 @@ const ACCENT: Record<StatTone, string> = {
   destructive: "from-destructive/70 to-destructive/0",
 };
 
-export function StatCard({ label, value, hint, trend, icon: Icon, tone = "primary", accent = false }: Props) {
+export function StatCard({
+  label,
+  value,
+  hint,
+  trend,
+  icon: Icon,
+  tone = "primary",
+  accent = false,
+}: Props) {
   return (
     <Card className="surface-card-hover relative overflow-hidden p-5">
       {accent && (
@@ -43,17 +51,25 @@ export function StatCard({ label, value, hint, trend, icon: Icon, tone = "primar
       )}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {label}
+          </p>
           <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{value}</p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             {trend && (
               <span
                 className={cn(
                   "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-semibold",
-                  trend.direction === "up" ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive",
+                  trend.direction === "up"
+                    ? "bg-success/15 text-success"
+                    : "bg-destructive/15 text-destructive",
                 )}
               >
-                {trend.direction === "up" ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                {trend.direction === "up" ? (
+                  <ArrowUpRight className="h-3 w-3" />
+                ) : (
+                  <ArrowDownRight className="h-3 w-3" />
+                )}
                 {trend.value}
               </span>
             )}
@@ -61,7 +77,12 @@ export function StatCard({ label, value, hint, trend, icon: Icon, tone = "primar
           </div>
         </div>
         {Icon && (
-          <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl ring-1 ring-border/60", TONE[tone])}>
+          <div
+            className={cn(
+              "grid h-11 w-11 shrink-0 place-items-center rounded-xl ring-1 ring-border/60",
+              TONE[tone],
+            )}
+          >
             <Icon className="h-5 w-5" />
           </div>
         )}

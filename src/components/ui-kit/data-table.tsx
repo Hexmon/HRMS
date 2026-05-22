@@ -35,7 +35,9 @@ interface Props<T extends { id: string }> {
   searchKeys?: (keyof T)[];
   emptyTitle?: string;
   emptyDescription?: string;
-  rowActions?: (row: T) => { label: string; onClick?: () => void; tone?: "default" | "destructive" }[];
+  rowActions?: (
+    row: T,
+  ) => { label: string; onClick?: () => void; tone?: "default" | "destructive" }[];
   toolbarRight?: ReactNode;
   /** Show a skeleton loading state instead of rows. */
   loading?: boolean;
@@ -70,7 +72,13 @@ export function DataTable<T extends { id: string }>({
   const filtered = useMemo(() => {
     if (!q) return rows;
     const ql = q.toLowerCase();
-    return rows.filter((r) => searchKeys.some((k) => String(r[k] ?? "").toLowerCase().includes(ql)));
+    return rows.filter((r) =>
+      searchKeys.some((k) =>
+        String(r[k] ?? "")
+          .toLowerCase()
+          .includes(ql),
+      ),
+    );
   }, [rows, q, searchKeys]);
 
   return (
@@ -92,7 +100,10 @@ export function DataTable<T extends { id: string }>({
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3">
               {columns.map((c) => (
-                <Skeleton key={c.key} className={cn("h-8 flex-1 rounded-md", i % 2 === 0 ? "opacity-90" : "opacity-70")} />
+                <Skeleton
+                  key={c.key}
+                  className={cn("h-8 flex-1 rounded-md", i % 2 === 0 ? "opacity-90" : "opacity-70")}
+                />
               ))}
             </div>
           ))}
@@ -141,7 +152,14 @@ export function DataTable<T extends { id: string }>({
                   }
                 >
                   {columns.map((c) => (
-                    <TableCell key={c.key} className={cn("px-4 py-3 align-middle", c.align && ALIGN[c.align], c.className)}>
+                    <TableCell
+                      key={c.key}
+                      className={cn(
+                        "px-4 py-3 align-middle",
+                        c.align && ALIGN[c.align],
+                        c.className,
+                      )}
+                    >
                       {c.render(row)}
                     </TableCell>
                   ))}
@@ -163,7 +181,11 @@ export function DataTable<T extends { id: string }>({
                             <DropdownMenuItem
                               key={i}
                               onClick={a.onClick}
-                              className={a.tone === "destructive" ? "text-destructive focus:text-destructive" : ""}
+                              className={
+                                a.tone === "destructive"
+                                  ? "text-destructive focus:text-destructive"
+                                  : ""
+                              }
                             >
                               {a.label}
                             </DropdownMenuItem>

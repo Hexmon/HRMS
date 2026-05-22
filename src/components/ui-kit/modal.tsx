@@ -20,7 +20,15 @@ interface Props {
 
 const SIZE = { sm: "sm:max-w-md", md: "sm:max-w-lg", lg: "sm:max-w-2xl" };
 
-export function Modal({ open, onOpenChange, title, description, children, footer, size = "md" }: Props) {
+export function Modal({
+  open,
+  onOpenChange,
+  title,
+  description,
+  children,
+  footer,
+  size = "md",
+}: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={SIZE[size] + " rounded-2xl"}>

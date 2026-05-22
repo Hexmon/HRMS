@@ -19,8 +19,7 @@ const SLA_CLS: Record<SlaState, string> = {
 
 export function SlaBadge({ ticket }: { ticket: Ticket }) {
   const sla = computeSla(ticket);
-  const state =
-    ticket.status === "closed" || ticket.status === "resolved" ? "met" : sla.worst;
+  const state = ticket.status === "closed" || ticket.status === "resolved" ? "met" : sla.worst;
   return (
     <span
       className={cn(

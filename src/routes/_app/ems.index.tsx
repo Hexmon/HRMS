@@ -6,8 +6,20 @@ import { Progress } from "@/components/ui/progress";
 import { useAuth, ROLE_LABELS } from "@/lib/auth";
 import { StatCard, StatusBadge, DataCard, EmptyState } from "@/components/ui-kit";
 import {
-  Briefcase, Mail, Phone, MapPin, Calendar, CalendarDays, Clock, Timer, Receipt,
-  Laptop, LifeBuoy, FileText, Megaphone, Sparkles,
+  Briefcase,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+  CalendarDays,
+  Clock,
+  Timer,
+  Receipt,
+  Laptop,
+  LifeBuoy,
+  FileText,
+  Megaphone,
+  Sparkles,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_app/ems/")({
@@ -15,9 +27,24 @@ export const Route = createFileRoute("/_app/ems/")({
 });
 
 const ANNOUNCEMENTS = [
-  { id: 1, title: "Q2 Town Hall — May 22", body: "Join the all-hands at 4 PM IST. Calendar invite shared.", tag: "Company" },
-  { id: 2, title: "New leave policy effective June 1", body: "Earned leave accrual updated to 1.75 days/month.", tag: "HR" },
-  { id: 3, title: "Office maintenance — 18 May", body: "BLR HQ closed for AC servicing. Plan WFH.", tag: "Facilities" },
+  {
+    id: 1,
+    title: "Q2 Town Hall — May 22",
+    body: "Join the all-hands at 4 PM IST. Calendar invite shared.",
+    tag: "Company",
+  },
+  {
+    id: 2,
+    title: "New leave policy effective June 1",
+    body: "Earned leave accrual updated to 1.75 days/month.",
+    tag: "HR",
+  },
+  {
+    id: 3,
+    title: "Office maintenance — 18 May",
+    body: "BLR HQ closed for AC servicing. Plan WFH.",
+    tag: "Facilities",
+  },
 ];
 
 const HOLIDAYS = [
@@ -29,7 +56,11 @@ const HOLIDAYS = [
 function EmsDashboard() {
   const { user, activeRole } = useAuth();
   if (!user) return null;
-  const initials = user.name.split(" ").map((n) => n[0]).slice(0, 2).join("");
+  const initials = user.name
+    .split(" ")
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("");
 
   return (
     <div className="space-y-6 pt-4">
@@ -37,7 +68,9 @@ function EmsDashboard() {
         <Card className="rounded-2xl border-border/60 lg:col-span-1">
           <div className="p-6 text-center" style={{ background: "var(--gradient-hero)" }}>
             <Avatar className="mx-auto h-20 w-20 ring-4 ring-background">
-              <AvatarFallback className="bg-primary text-primary-foreground text-xl font-semibold">{initials}</AvatarFallback>
+              <AvatarFallback className="bg-primary text-primary-foreground text-xl font-semibold">
+                {initials}
+              </AvatarFallback>
             </Avatar>
             <h3 className="mt-3 text-lg font-semibold">{user.name}</h3>
             <p className="text-xs text-muted-foreground">{user.designation}</p>
@@ -46,11 +79,21 @@ function EmsDashboard() {
             </span>
           </div>
           <ul className="space-y-3 p-6 text-sm">
-            <li className="flex items-center gap-2.5 text-muted-foreground"><Mail className="h-4 w-4" /> {user.email}</li>
-            <li className="flex items-center gap-2.5 text-muted-foreground"><Briefcase className="h-4 w-4" /> {user.department}</li>
-            <li className="flex items-center gap-2.5 text-muted-foreground"><MapPin className="h-4 w-4" /> Bangalore, IN</li>
-            <li className="flex items-center gap-2.5 text-muted-foreground"><Phone className="h-4 w-4" /> +91 98xxx xxxxx</li>
-            <li className="flex items-center gap-2.5 text-muted-foreground"><Calendar className="h-4 w-4" /> Joined Mar 2022</li>
+            <li className="flex items-center gap-2.5 text-muted-foreground">
+              <Mail className="h-4 w-4" /> {user.email}
+            </li>
+            <li className="flex items-center gap-2.5 text-muted-foreground">
+              <Briefcase className="h-4 w-4" /> {user.department}
+            </li>
+            <li className="flex items-center gap-2.5 text-muted-foreground">
+              <MapPin className="h-4 w-4" /> Bangalore, IN
+            </li>
+            <li className="flex items-center gap-2.5 text-muted-foreground">
+              <Phone className="h-4 w-4" /> +91 98xxx xxxxx
+            </li>
+            <li className="flex items-center gap-2.5 text-muted-foreground">
+              <Calendar className="h-4 w-4" /> Joined Mar 2022
+            </li>
           </ul>
           <div className="border-t p-4">
             <Button asChild variant="outline" className="w-full rounded-full">
@@ -61,10 +104,28 @@ function EmsDashboard() {
 
         <div className="space-y-4 lg:col-span-2">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label="Today" value="Present" hint="In at 09:08" icon={Clock} tone="success" />
+            <StatCard
+              label="Today"
+              value="Present"
+              hint="In at 09:08"
+              icon={Clock}
+              tone="success"
+            />
             <StatCard label="Leave balance" value="12" hint="days remaining" tone="info" />
-            <StatCard label="Pending timesheet" value="1" hint="week to submit" icon={Timer} tone="warning" />
-            <StatCard label="Pending expenses" value="2" hint="USD 184.00" icon={Receipt} tone="primary" />
+            <StatCard
+              label="Pending timesheet"
+              value="1"
+              hint="week to submit"
+              icon={Timer}
+              tone="warning"
+            />
+            <StatCard
+              label="Pending expenses"
+              value="2"
+              hint="USD 184.00"
+              icon={Receipt}
+              tone="primary"
+            />
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -90,7 +151,10 @@ function EmsDashboard() {
                   { name: "Dell U2723QE Monitor", tag: "AST-1188" },
                   { name: "Logitech MX Keys", tag: "AST-0902" },
                 ].map((a) => (
-                  <li key={a.tag} className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2">
+                  <li
+                    key={a.tag}
+                    className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2"
+                  >
                     <div className="flex items-center gap-2.5">
                       <Laptop className="h-4 w-4 text-primary" />
                       <span className="font-medium">{a.name}</span>
@@ -108,7 +172,6 @@ function EmsDashboard() {
         <DataCard
           title="Company announcements"
           description="Latest updates from leadership and HR"
-         
           className="lg:col-span-2"
         >
           <ul className="divide-y">
@@ -120,7 +183,9 @@ function EmsDashboard() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-semibold">{a.title}</p>
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{a.tag}</span>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {a.tag}
+                    </span>
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">{a.body}</p>
                 </div>
@@ -151,7 +216,10 @@ function EmsDashboard() {
               { id: "TKT-12044", subject: "Mac running slow after update", status: "in_progress" },
               { id: "TKT-12012", subject: "VPN reconnect prompt", status: "closed" },
             ].map((t) => (
-              <li key={t.id} className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5">
+              <li
+                key={t.id}
+                className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5"
+              >
                 <div>
                   <p className="font-medium">{t.subject}</p>
                   <p className="text-xs text-muted-foreground">{t.id}</p>
@@ -169,9 +237,15 @@ function EmsDashboard() {
               { name: "ID Proof — Passport", status: "verified" },
               { name: "Address Proof", status: "pending" },
             ].map((d) => (
-              <li key={d.name} className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5">
+              <li
+                key={d.name}
+                className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5"
+              >
                 <span className="font-medium">{d.name}</span>
-                <StatusBadge status={d.status === "verified" ? "completed" : "pending"} label={d.status === "verified" ? "Verified" : "Pending"} />
+                <StatusBadge
+                  status={d.status === "verified" ? "completed" : "pending"}
+                  label={d.status === "verified" ? "Verified" : "Pending"}
+                />
               </li>
             ))}
           </ul>

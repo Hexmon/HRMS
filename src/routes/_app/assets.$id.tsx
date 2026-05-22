@@ -10,12 +10,30 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  ArrowLeft, Wrench, Undo2, FileText, Plus, ClipboardCheck, AlertTriangle,
+  ArrowLeft,
+  Wrench,
+  Undo2,
+  FileText,
+  Plus,
+  ClipboardCheck,
+  AlertTriangle,
 } from "lucide-react";
 import type { AssetCondition, MaintenanceEntry } from "@/lib/mock/assets";
 import { toast } from "sonner";
@@ -34,7 +52,9 @@ function AssetDetail() {
     return (
       <div className="rounded-2xl border bg-card p-10 text-center">
         <h2 className="text-lg font-semibold">Asset not found</h2>
-        <Button asChild className="mt-4"><Link to="/assets/inventory">Back to inventory</Link></Button>
+        <Button asChild className="mt-4">
+          <Link to="/assets/inventory">Back to inventory</Link>
+        </Button>
       </div>
     );
   }
@@ -46,10 +66,19 @@ function AssetDetail() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="sm"><Link to="/assets/inventory"><ArrowLeft className="mr-1 h-4 w-4" />Inventory</Link></Button>
+          <Button asChild variant="ghost" size="sm">
+            <Link to="/assets/inventory">
+              <ArrowLeft className="mr-1 h-4 w-4" />
+              Inventory
+            </Link>
+          </Button>
           <div>
-            <h2 className="text-xl font-semibold tracking-tight">{asset.brand} {asset.model}</h2>
-            <p className="text-xs text-muted-foreground">{asset.id} · {asset.serial} · {asset.type}</p>
+            <h2 className="text-xl font-semibold tracking-tight">
+              {asset.brand} {asset.model}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {asset.id} · {asset.serial} · {asset.type}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -64,11 +93,24 @@ function AssetDetail() {
             />
           )}
           {isAdmin && asset.status === "assigned" && (
-            <ReturnDialog onReturn={(d, c, r) => { returnAsset(asset.id, d, c, r); toast.success("Asset returned to inventory"); }} />
+            <ReturnDialog
+              onReturn={(d, c, r) => {
+                returnAsset(asset.id, d, c, r);
+                toast.success("Asset returned to inventory");
+              }}
+            />
           )}
           {isAdmin && asset.status !== "repair" && asset.status !== "retired" && (
-            <Button variant="outline" className="rounded-full" onClick={() => { setStatus(asset.id, "repair", "Marco Rossi", "Sent for service"); toast.success("Marked as in repair"); }}>
-              <Wrench className="mr-1.5 h-4 w-4" />Send to repair
+            <Button
+              variant="outline"
+              className="rounded-full"
+              onClick={() => {
+                setStatus(asset.id, "repair", "Marco Rossi", "Sent for service");
+                toast.success("Marked as in repair");
+              }}
+            >
+              <Wrench className="mr-1.5 h-4 w-4" />
+              Send to repair
             </Button>
           )}
         </div>
@@ -102,7 +144,10 @@ function AssetDetail() {
                 <Info k="Vendor" v={asset.vendor} />
                 <Info k="Invoice #" v={asset.invoiceNumber} />
                 <Info k="Purchased" v={asset.purchaseDate} />
-                <Info k="Warranty" v={`${asset.warrantyExpiry} (${days < 0 ? "expired" : days + "d left"})`} />
+                <Info
+                  k="Warranty"
+                  v={`${asset.warrantyExpiry} (${days < 0 ? "expired" : days + "d left"})`}
+                />
                 <Info k="Cost" v={fmtMoney(asset.cost)} />
                 <Info k="Location" v={asset.location} />
                 <Info k="Condition" v={<span className="uppercase">{asset.condition}</span>} />
@@ -113,11 +158,24 @@ function AssetDetail() {
                 <div className="space-y-2">
                   <p className="text-sm font-medium">{asset.assignedTo}</p>
                   <p className="text-xs text-muted-foreground">Assigned on {asset.assignedOn}</p>
-                  {asset.expectedReturn && <p className="text-xs text-muted-foreground">Expected return: {asset.expectedReturn}</p>}
-                  <div className="pt-1"><StatusBadge status={asset.history[0]?.acknowledged ? "confirmed" : "pending"} label={asset.history[0]?.acknowledged ? "Acknowledged" : "Pending acknowledgement"} /></div>
+                  {asset.expectedReturn && (
+                    <p className="text-xs text-muted-foreground">
+                      Expected return: {asset.expectedReturn}
+                    </p>
+                  )}
+                  <div className="pt-1">
+                    <StatusBadge
+                      status={asset.history[0]?.acknowledged ? "confirmed" : "pending"}
+                      label={
+                        asset.history[0]?.acknowledged ? "Acknowledged" : "Pending acknowledgement"
+                      }
+                    />
+                  </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">Not currently assigned. Available in <strong>{asset.location}</strong>.</p>
+                <p className="text-sm text-muted-foreground">
+                  Not currently assigned. Available in <strong>{asset.location}</strong>.
+                </p>
               )}
             </DataCard>
           </div>
@@ -126,16 +184,41 @@ function AssetDetail() {
         <TabsContent value="history" className="mt-4">
           <DataCard title="Assignment history" padded={false}>
             {asset.history.length === 0 ? (
-              <p className="px-5 py-8 text-center text-sm text-muted-foreground">No assignment history yet.</p>
+              <p className="px-5 py-8 text-center text-sm text-muted-foreground">
+                No assignment history yet.
+              </p>
             ) : (
               <ul className="divide-y">
                 {asset.history.map((h) => (
-                  <li key={h.id} className="grid grid-cols-1 gap-2 px-5 py-4 md:grid-cols-5 md:items-center">
-                    <div><p className="text-sm font-medium">{h.employee}</p><p className="text-xs text-muted-foreground">{h.employeeId}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Assigned</p><p className="text-sm">{h.assignedOn}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Returned</p><p className="text-sm">{h.returnedOn ?? "—"}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Condition</p><p className="text-sm uppercase">{h.conditionAtHandover}{h.conditionAtReturn ? ` → ${h.conditionAtReturn}` : ""}</p></div>
-                    <div className="md:text-right"><StatusBadge status={h.acknowledged ? "confirmed" : "pending"} label={h.acknowledged ? "Acknowledged" : "Pending"} /></div>
+                  <li
+                    key={h.id}
+                    className="grid grid-cols-1 gap-2 px-5 py-4 md:grid-cols-5 md:items-center"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{h.employee}</p>
+                      <p className="text-xs text-muted-foreground">{h.employeeId}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Assigned</p>
+                      <p className="text-sm">{h.assignedOn}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Returned</p>
+                      <p className="text-sm">{h.returnedOn ?? "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Condition</p>
+                      <p className="text-sm uppercase">
+                        {h.conditionAtHandover}
+                        {h.conditionAtReturn ? ` → ${h.conditionAtReturn}` : ""}
+                      </p>
+                    </div>
+                    <div className="md:text-right">
+                      <StatusBadge
+                        status={h.acknowledged ? "confirmed" : "pending"}
+                        label={h.acknowledged ? "Acknowledged" : "Pending"}
+                      />
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -146,7 +229,16 @@ function AssetDetail() {
         <TabsContent value="maintenance" className="mt-4">
           <DataCard
             title="Maintenance & repair log"
-            actions={isAdmin ? <MaintenanceDialog onAdd={(e) => { addMaintenance(asset.id, e); toast.success("Maintenance logged"); }} /> : undefined}
+            actions={
+              isAdmin ? (
+                <MaintenanceDialog
+                  onAdd={(e) => {
+                    addMaintenance(asset.id, e);
+                    toast.success("Maintenance logged");
+                  }}
+                />
+              ) : undefined
+            }
           >
             {asset.maintenance.length === 0 ? (
               <p className="text-sm text-muted-foreground">No maintenance records yet.</p>
@@ -156,8 +248,14 @@ function AssetDetail() {
                   <li key={m.id} className="rounded-xl border p-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <p className="text-sm font-medium capitalize">{m.type}{m.vendor ? ` · ${m.vendor}` : ""}</p>
-                        <p className="text-xs text-muted-foreground">{m.date}{m.cost ? ` · ${fmtMoney(m.cost)}` : ""}</p>
+                        <p className="text-sm font-medium capitalize">
+                          {m.type}
+                          {m.vendor ? ` · ${m.vendor}` : ""}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {m.date}
+                          {m.cost ? ` · ${fmtMoney(m.cost)}` : ""}
+                        </p>
                       </div>
                       <Wrench className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -179,7 +277,9 @@ function AssetDetail() {
                   <li key={d.id} className="flex items-center gap-2 rounded-xl border p-3 text-sm">
                     <FileText className="h-4 w-4 text-primary" />
                     <span className="flex-1 truncate">{d.name}</span>
-                    <span className="text-xs uppercase tracking-wider text-muted-foreground">{d.kind}</span>
+                    <span className="text-xs uppercase tracking-wider text-muted-foreground">
+                      {d.kind}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -194,9 +294,14 @@ function AssetDetail() {
                 <li key={a.id} className="px-5 py-3 text-sm">
                   <div className="flex items-center justify-between">
                     <p className="font-medium">{a.action}</p>
-                    <p className="text-xs text-muted-foreground">{new Date(a.at).toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(a.at).toLocaleString()}
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">{a.actor}{a.remarks ? ` · ${a.remarks}` : ""}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {a.actor}
+                    {a.remarks ? ` · ${a.remarks}` : ""}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -216,9 +321,19 @@ function Info({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
-function AssignDialog({ employees, onAssign }: {
+function AssignDialog({
+  employees,
+  onAssign,
+}: {
   employees: { id: string; name: string }[];
-  onAssign: (emp: string, eid: string, on: string, ret: string, cond: AssetCondition, rem: string) => void;
+  onAssign: (
+    emp: string,
+    eid: string,
+    on: string,
+    ret: string,
+    cond: AssetCondition,
+    rem: string,
+  ) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [eid, setEid] = useState(employees[0]?.id ?? "");
@@ -236,48 +351,90 @@ function AssignDialog({ employees, onAssign }: {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="rounded-full text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
-          <ClipboardCheck className="mr-1.5 h-4 w-4" />Assign
+        <Button
+          className="rounded-full text-primary-foreground"
+          style={{ background: "var(--gradient-primary)" }}
+        >
+          <ClipboardCheck className="mr-1.5 h-4 w-4" />
+          Assign
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Assign asset</DialogTitle>
-          <DialogDescription>Hand over to an employee with condition & return date.</DialogDescription>
+          <DialogDescription>
+            Hand over to an employee with condition & return date.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2 space-y-1">
             <Label>Employee</Label>
             <Select value={eid} onValueChange={setEid}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.name} · {e.id}</SelectItem>)}
+                {employees.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>
+                    {e.name} · {e.id}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1"><Label>Assignment date</Label><Input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></div>
-          <div className="space-y-1"><Label>Expected return</Label><Input type="date" value={ret} onChange={(e) => setRet(e.target.value)} /></div>
-          <div className="space-y-1"><Label>Condition at handover</Label>
+          <div className="space-y-1">
+            <Label>Assignment date</Label>
+            <Input type="date" value={on} onChange={(e) => setOn(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>Expected return</Label>
+            <Input type="date" value={ret} onChange={(e) => setRet(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>Condition at handover</Label>
             <Select value={cond} onValueChange={(v) => setCond(v as AssetCondition)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{(["new", "good", "fair", "poor"] as AssetCondition[]).map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(["new", "good", "fair", "poor"] as AssetCondition[]).map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
-          <div className="sm:col-span-2 space-y-1"><Label>Remarks</Label><Textarea rows={2} value={rem} onChange={(e) => setRem(e.target.value)} /></div>
+          <div className="sm:col-span-2 space-y-1">
+            <Label>Remarks</Label>
+            <Textarea rows={2} value={rem} onChange={(e) => setRem(e.target.value)} />
+          </div>
           <Card className="sm:col-span-2 rounded-xl border-dashed bg-muted/20 p-3 text-xs text-muted-foreground">
             Employee acknowledgement will be requested in their EMS inbox after handover.
           </Card>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-full">Cancel</Button>
-          <Button onClick={submit} className="rounded-full text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>Confirm assignment</Button>
+          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-full">
+            Cancel
+          </Button>
+          <Button
+            onClick={submit}
+            className="rounded-full text-primary-foreground"
+            style={{ background: "var(--gradient-primary)" }}
+          >
+            Confirm assignment
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ReturnDialog({ onReturn }: { onReturn: (d: string, c: AssetCondition, r: string) => void }) {
+function ReturnDialog({
+  onReturn,
+}: {
+  onReturn: (d: string, c: AssetCondition, r: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
   const [d, setD] = useState(today);
@@ -286,23 +443,54 @@ function ReturnDialog({ onReturn }: { onReturn: (d: string, c: AssetCondition, r
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="rounded-full"><Undo2 className="mr-1.5 h-4 w-4" />Mark returned</Button>
+        <Button variant="outline" className="rounded-full">
+          <Undo2 className="mr-1.5 h-4 w-4" />
+          Mark returned
+        </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Return asset</DialogTitle><DialogDescription>Reclaim and set condition at return.</DialogDescription></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Return asset</DialogTitle>
+          <DialogDescription>Reclaim and set condition at return.</DialogDescription>
+        </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1"><Label>Return date</Label><Input type="date" value={d} onChange={(e) => setD(e.target.value)} /></div>
-          <div className="space-y-1"><Label>Condition</Label>
+          <div className="space-y-1">
+            <Label>Return date</Label>
+            <Input type="date" value={d} onChange={(e) => setD(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>Condition</Label>
             <Select value={c} onValueChange={(v) => setC(v as AssetCondition)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{(["new", "good", "fair", "poor"] as AssetCondition[]).map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(["new", "good", "fair", "poor"] as AssetCondition[]).map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
-          <div className="col-span-2 space-y-1"><Label>Recovery remarks</Label><Textarea rows={2} value={r} onChange={(e) => setR(e.target.value)} /></div>
+          <div className="col-span-2 space-y-1">
+            <Label>Recovery remarks</Label>
+            <Textarea rows={2} value={r} onChange={(e) => setR(e.target.value)} />
+          </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-full">Cancel</Button>
-          <Button onClick={() => { onReturn(d, c, r); setOpen(false); }} className="rounded-full">Confirm</Button>
+          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-full">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              onReturn(d, c, r);
+              setOpen(false);
+            }}
+            className="rounded-full"
+          >
+            Confirm
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -318,27 +506,68 @@ function MaintenanceDialog({ onAdd }: { onAdd: (m: MaintenanceEntry) => void }) 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="rounded-full"><Plus className="mr-1 h-4 w-4" />Log service</Button>
+        <Button size="sm" variant="outline" className="rounded-full">
+          <Plus className="mr-1 h-4 w-4" />
+          Log service
+        </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Log maintenance</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Log maintenance</DialogTitle>
+        </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1"><Label>Type</Label>
+          <div className="space-y-1">
+            <Label>Type</Label>
             <Select value={type} onValueChange={(v) => setType(v as MaintenanceEntry["type"])}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{["service", "repair", "inspection", "upgrade"].map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {["service", "repair", "inspection", "upgrade"].map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1"><Label>Vendor</Label><Input value={vendor} onChange={(e) => setVendor(e.target.value)} /></div>
-          <div className="col-span-2 space-y-1"><Label>Cost (USD)</Label><Input type="number" value={cost || ""} onChange={(e) => setCost(Number(e.target.value))} /></div>
-          <div className="col-span-2 space-y-1"><Label>Notes</Label><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+          <div className="space-y-1">
+            <Label>Vendor</Label>
+            <Input value={vendor} onChange={(e) => setVendor(e.target.value)} />
+          </div>
+          <div className="col-span-2 space-y-1">
+            <Label>Cost (USD)</Label>
+            <Input
+              type="number"
+              value={cost || ""}
+              onChange={(e) => setCost(Number(e.target.value))}
+            />
+          </div>
+          <div className="col-span-2 space-y-1">
+            <Label>Notes</Label>
+            <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-full">Cancel</Button>
-          <Button onClick={() => {
-            onAdd({ id: "m_" + Math.random().toString(36).slice(2, 8), date: new Date().toISOString().slice(0, 10), type, vendor, cost, notes });
-            setOpen(false);
-          }} className="rounded-full">Save</Button>
+          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-full">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              onAdd({
+                id: "m_" + Math.random().toString(36).slice(2, 8),
+                date: new Date().toISOString().slice(0, 10),
+                type,
+                vendor,
+                cost,
+                notes,
+              });
+              setOpen(false);
+            }}
+            className="rounded-full"
+          >
+            Save
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

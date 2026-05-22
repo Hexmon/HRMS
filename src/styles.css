@@ -90,7 +90,8 @@
 
   --gradient-primary: linear-gradient(135deg, oklch(0.46 0.21 290), oklch(0.62 0.2 305));
   --gradient-soft: linear-gradient(180deg, oklch(0.99 0.005 285), oklch(0.96 0.025 290));
-  --gradient-hero: radial-gradient(at 20% 0%, oklch(0.95 0.06 290) 0, transparent 50%),
+  --gradient-hero:
+    radial-gradient(at 20% 0%, oklch(0.95 0.06 290) 0, transparent 50%),
     radial-gradient(at 80% 100%, oklch(0.94 0.05 260) 0, transparent 50%);
 
   --shadow-sm: 0 1px 2px oklch(0.46 0.21 290 / 0.06);
@@ -184,7 +185,10 @@
     scrollbar-width: thin;
     scrollbar-color: color-mix(in oklab, var(--color-foreground) 18%, transparent) transparent;
   }
-  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
   *::-webkit-scrollbar-thumb {
     background: color-mix(in oklab, var(--color-foreground) 14%, transparent);
     border-radius: 9999px;
@@ -196,14 +200,24 @@
     background-clip: padding-box;
     border: 2px solid transparent;
   }
-  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
 @layer utilities {
   .bg-app {
     background:
-      radial-gradient(60rem 30rem at 100% -10%, color-mix(in oklab, var(--color-primary) 8%, transparent), transparent 60%),
-      radial-gradient(40rem 24rem at 0% 110%, color-mix(in oklab, var(--color-info) 7%, transparent), transparent 60%),
+      radial-gradient(
+        60rem 30rem at 100% -10%,
+        color-mix(in oklab, var(--color-primary) 8%, transparent),
+        transparent 60%
+      ),
+      radial-gradient(
+        40rem 24rem at 0% 110%,
+        color-mix(in oklab, var(--color-info) 7%, transparent),
+        transparent 60%
+      ),
       var(--color-background);
   }
   .surface-card {
@@ -213,9 +227,10 @@
     box-shadow: var(--shadow-card);
   }
   .surface-card-hover {
-    transition: transform var(--duration-base) var(--ease-out-soft),
-                box-shadow var(--duration-base) var(--ease-out-soft),
-                border-color var(--duration-base) var(--ease-out-soft);
+    transition:
+      transform var(--duration-base) var(--ease-out-soft),
+      box-shadow var(--duration-base) var(--ease-out-soft),
+      border-color var(--duration-base) var(--ease-out-soft);
   }
   .surface-card-hover:hover {
     transform: translateY(-1px);
@@ -232,13 +247,21 @@
     animation: page-fade var(--duration-base) var(--ease-out-soft);
   }
   @keyframes page-fade {
-    from { opacity: 0; transform: translateY(4px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;

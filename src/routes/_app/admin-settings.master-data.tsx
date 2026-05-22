@@ -7,15 +7,30 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { DataTable, type Column, ActionButton, Modal } from "@/components/ui-kit";
-import { useAdminSettings, MASTER_LABELS, type MasterKey, type MasterRow } from "@/lib/admin-settings-store";
+import {
+  useAdminSettings,
+  MASTER_LABELS,
+  type MasterKey,
+  type MasterRow,
+} from "@/lib/admin-settings-store";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/_app/admin-settings/master-data")({ component: MasterDataScreen });
+export const Route = createFileRoute("/_app/admin-settings/master-data")({
+  component: MasterDataScreen,
+});
 
 const KEYS: MasterKey[] = [
-  "departments", "designations", "employmentTypes", "workLocations", "shifts",
-  "leaveTypes", "expenseCategories", "assetCategories", "helpdeskCategories", "projectRoles",
+  "departments",
+  "designations",
+  "employmentTypes",
+  "workLocations",
+  "shifts",
+  "leaveTypes",
+  "expenseCategories",
+  "assetCategories",
+  "helpdeskCategories",
+  "projectRoles",
 ];
 
 function MasterDataScreen() {
@@ -25,8 +40,16 @@ function MasterDataScreen() {
   const [editing, setEditing] = useState<MasterRow | null>(null);
   const [form, setForm] = useState({ name: "", description: "" });
 
-  const startAdd = () => { setEditing(null); setForm({ name: "", description: "" }); setOpen(true); };
-  const startEdit = (row: MasterRow) => { setEditing(row); setForm({ name: row.name, description: row.description ?? "" }); setOpen(true); };
+  const startAdd = () => {
+    setEditing(null);
+    setForm({ name: "", description: "" });
+    setOpen(true);
+  };
+  const startEdit = (row: MasterRow) => {
+    setEditing(row);
+    setForm({ name: row.name, description: row.description ?? "" });
+    setOpen(true);
+  };
 
   const onSave = () => {
     if (!form.name.trim()) return toast.error("Name is required");
@@ -41,11 +64,23 @@ function MasterDataScreen() {
   };
 
   const columns = (key: MasterKey): Column<MasterRow>[] => [
-    { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs text-muted-foreground">{r.id}</span> },
-    { key: "name", header: "Name", render: (r) => <span className="font-medium">{r.name}</span> },
-    { key: "meta", header: "Details", render: (r) => <span className="text-sm text-muted-foreground">{r.meta ?? r.description ?? "—"}</span> },
     {
-      key: "active", header: "Status", render: (r) => (
+      key: "id",
+      header: "ID",
+      render: (r) => <span className="font-mono text-xs text-muted-foreground">{r.id}</span>,
+    },
+    { key: "name", header: "Name", render: (r) => <span className="font-medium">{r.name}</span> },
+    {
+      key: "meta",
+      header: "Details",
+      render: (r) => (
+        <span className="text-sm text-muted-foreground">{r.meta ?? r.description ?? "—"}</span>
+      ),
+    },
+    {
+      key: "active",
+      header: "Status",
+      render: (r) => (
         <div className="flex items-center gap-2">
           <Switch checked={r.active} onCheckedChange={() => toggleMasterActive(key, r.id)} />
           <span className="text-xs">{r.active ? "Active" : "Inactive"}</span>
@@ -57,7 +92,11 @@ function MasterDataScreen() {
   return (
     <Tabs value={activeKey} onValueChange={(v) => setActiveKey(v as MasterKey)}>
       <TabsList className="h-auto flex-wrap">
-        {KEYS.map((k) => <TabsTrigger key={k} value={k}>{MASTER_LABELS[k]}</TabsTrigger>)}
+        {KEYS.map((k) => (
+          <TabsTrigger key={k} value={k}>
+            {MASTER_LABELS[k]}
+          </TabsTrigger>
+        ))}
       </TabsList>
 
       {KEYS.map((k) => (
@@ -66,9 +105,13 @@ function MasterDataScreen() {
             <div className="flex items-center justify-between border-b p-4">
               <div>
                 <p className="text-sm font-semibold">{MASTER_LABELS[k]}</p>
-                <p className="text-xs text-muted-foreground">{masters[k].length} record{masters[k].length === 1 ? "" : "s"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {masters[k].length} record{masters[k].length === 1 ? "" : "s"}
+                </p>
               </div>
-              <ActionButton size="sm" icon={<Plus className="h-4 w-4" />} onClick={startAdd}>Add</ActionButton>
+              <ActionButton size="sm" icon={<Plus className="h-4 w-4" />} onClick={startAdd}>
+                Add
+              </ActionButton>
             </div>
             <DataTable
               columns={columns(k)}
@@ -76,8 +119,18 @@ function MasterDataScreen() {
               searchKeys={["name", "id", "meta", "description"]}
               rowActions={(row) => [
                 { label: "Edit", onClick: () => startEdit(row) },
-                { label: row.active ? "Deactivate" : "Activate", onClick: () => toggleMasterActive(k, row.id) },
-                { label: "Delete", tone: "destructive", onClick: () => { deleteMaster(k, row.id); toast.success("Deleted"); } },
+                {
+                  label: row.active ? "Deactivate" : "Activate",
+                  onClick: () => toggleMasterActive(k, row.id),
+                },
+                {
+                  label: "Delete",
+                  tone: "destructive",
+                  onClick: () => {
+                    deleteMaster(k, row.id);
+                    toast.success("Deleted");
+                  },
+                },
               ]}
               emptyTitle={`No ${MASTER_LABELS[k].toLowerCase()} yet`}
             />
@@ -88,11 +141,21 @@ function MasterDataScreen() {
       <Modal
         open={open}
         onOpenChange={setOpen}
-        title={editing ? `Edit ${MASTER_LABELS[activeKey].replace(/s$/, "")}` : `Add ${MASTER_LABELS[activeKey].replace(/s$/, "")}`}
+        title={
+          editing
+            ? `Edit ${MASTER_LABELS[activeKey].replace(/s$/, "")}`
+            : `Add ${MASTER_LABELS[activeKey].replace(/s$/, "")}`
+        }
         footer={
           <div className="flex w-full justify-end gap-2">
-            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={onSave} style={{ background: "var(--gradient-primary)" }} className="text-primary-foreground">
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={onSave}
+              style={{ background: "var(--gradient-primary)" }}
+              className="text-primary-foreground"
+            >
               {editing ? "Save changes" : "Add"}
             </Button>
           </div>
@@ -101,15 +164,27 @@ function MasterDataScreen() {
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label className="text-xs">Name</Label>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Engineering" />
+            <Input
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="e.g. Engineering"
+            />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Description (optional)</Label>
-            <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Short description" />
+            <Input
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Short description"
+            />
           </div>
           {editing && (
             <button
-              onClick={() => { deleteMaster(activeKey, editing.id); toast.success("Deleted"); setOpen(false); }}
+              onClick={() => {
+                deleteMaster(activeKey, editing.id);
+                toast.success("Deleted");
+                setOpen(false);
+              }}
               className="mt-2 inline-flex items-center gap-1.5 text-xs text-destructive hover:underline"
             >
               <Trash2 className="h-3.5 w-3.5" /> Delete this record

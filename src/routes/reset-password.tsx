@@ -71,15 +71,30 @@ function ResetPasswordPage() {
         <div className="space-y-1.5">
           <Label htmlFor="pwd">New password</Label>
           <div className="relative">
-            <Input id="pwd" type={show ? "text" : "password"} value={pwd} onChange={(e) => setPwd(e.target.value)} className="pr-10" />
-            <button type="button" onClick={() => setShow(!show)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:bg-muted">
+            <Input
+              id="pwd"
+              type={show ? "text" : "password"}
+              value={pwd}
+              onChange={(e) => setPwd(e.target.value)}
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShow(!show)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+            >
               {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="cf">Confirm password</Label>
-          <Input id="cf" type={show ? "text" : "password"} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          <Input
+            id="cf"
+            type={show ? "text" : "password"}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
         </div>
 
         <div className="space-y-2 rounded-xl border bg-secondary/40 p-3">
@@ -88,7 +103,10 @@ function ResetPasswordPage() {
             <span className="font-medium">{meta.label}</span>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
-            <div className="h-full rounded-full transition-all" style={{ width: `${meta.score}%`, background: `var(--${meta.tone})` }} />
+            <div
+              className="h-full rounded-full transition-all"
+              style={{ width: `${meta.score}%`, background: `var(--${meta.tone})` }}
+            />
           </div>
           <ul className="grid grid-cols-1 gap-1 pt-1 text-[11px] sm:grid-cols-2">
             {PASSWORD_RULES.map((r) => {
@@ -104,10 +122,16 @@ function ResetPasswordPage() {
         </div>
 
         {error && (
-          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {error}
+          </p>
         )}
 
-        <Button type="submit" className="h-11 w-full rounded-xl text-sm font-semibold text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
+        <Button
+          type="submit"
+          className="h-11 w-full rounded-xl text-sm font-semibold text-primary-foreground"
+          style={{ background: "var(--gradient-primary)" }}
+        >
           Update password
         </Button>
       </form>

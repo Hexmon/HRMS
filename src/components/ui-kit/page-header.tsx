@@ -64,9 +64,7 @@ const SEGMENT_LABELS: Record<string, string> = {
 
 function pretty(seg: string) {
   if (SEGMENT_LABELS[seg]) return SEGMENT_LABELS[seg];
-  return seg
-    .replace(/[-_]/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return seg.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function buildCrumbs(path: string) {
@@ -80,7 +78,13 @@ function buildCrumbs(path: string) {
   return safe;
 }
 
-export function PageHeader({ title, description, actions, eyebrow, showBreadcrumbs = true }: Props) {
+export function PageHeader({
+  title,
+  description,
+  actions,
+  eyebrow,
+  showBreadcrumbs = true,
+}: Props) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const crumbs = buildCrumbs(path);
   const showCrumbs = showBreadcrumbs && crumbs.length > 1;
@@ -88,8 +92,14 @@ export function PageHeader({ title, description, actions, eyebrow, showBreadcrum
   return (
     <div className="space-y-3">
       {showCrumbs && (
-        <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Link to="/dashboard" className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 transition hover:bg-accent hover:text-foreground">
+        <nav
+          aria-label="Breadcrumb"
+          className="flex items-center gap-1 text-xs text-muted-foreground"
+        >
+          <Link
+            to="/dashboard"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 transition hover:bg-accent hover:text-foreground"
+          >
             <Home className="h-3 w-3" />
             <span className="hidden sm:inline">Home</span>
           </Link>
@@ -102,7 +112,10 @@ export function PageHeader({ title, description, actions, eyebrow, showBreadcrum
                 {last || c.isParam ? (
                   <span className={last ? "font-medium text-foreground" : ""}>{label}</span>
                 ) : (
-                  <Link to={c.href} className="rounded-md px-1.5 py-0.5 transition hover:bg-accent hover:text-foreground">
+                  <Link
+                    to={c.href}
+                    className="rounded-md px-1.5 py-0.5 transition hover:bg-accent hover:text-foreground"
+                  >
                     {label}
                   </Link>
                 )}
@@ -115,13 +128,17 @@ export function PageHeader({ title, description, actions, eyebrow, showBreadcrum
       <div className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           {eyebrow && (
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">{eyebrow}</p>
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
+              {eyebrow}
+            </p>
           )}
           <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground sm:text-[26px]">
             {title}
           </h1>
           {description && (
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              {description}
+            </p>
           )}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

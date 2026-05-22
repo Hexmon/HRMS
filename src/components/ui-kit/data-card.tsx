@@ -11,7 +11,14 @@ interface Props {
   padded?: boolean;
 }
 
-export function DataCard({ title, description, actions, children, className, padded = true }: Props) {
+export function DataCard({
+  title,
+  description,
+  actions,
+  children,
+  className,
+  padded = true,
+}: Props) {
   return (
     <Card className={cn("overflow-hidden rounded-2xl border-border/60", className)}>
       <div className="flex items-start justify-between gap-3 border-b p-5">

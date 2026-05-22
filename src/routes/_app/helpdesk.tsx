@@ -5,7 +5,13 @@ import { useAuth } from "@/lib/auth";
 import { HELPDESK_AGENT_ROLES } from "@/lib/helpdesk-store";
 import { RaiseTicketDrawer } from "@/components/helpdesk/raise-ticket-drawer";
 import {
-  LayoutDashboard, Inbox, Headphones, Timer, FolderTree, BarChart3, Plus,
+  LayoutDashboard,
+  Inbox,
+  Headphones,
+  Timer,
+  FolderTree,
+  BarChart3,
+  Plus,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_app/helpdesk")({ component: HelpdeskLayout });
@@ -43,7 +49,9 @@ function HelpdeskLayout() {
         }
       />
       {!isDetail && <ModuleTabs tabs={visible} />}
-      <div className="pt-4 page-fade-in"><Outlet /></div>
+      <div className="pt-4 page-fade-in">
+        <Outlet />
+      </div>
       <RaiseTicketDrawer open={open} onOpenChange={setOpen} />
     </>
   );

@@ -1,7 +1,26 @@
-import { Users, UserPlus, FileCheck2, CalendarDays, AlarmClock, ClipboardX, LifeBuoy, Megaphone, BookOpen, ChevronRight, ShieldCheck } from "lucide-react";
+import {
+  Users,
+  UserPlus,
+  FileCheck2,
+  CalendarDays,
+  AlarmClock,
+  ClipboardX,
+  LifeBuoy,
+  Megaphone,
+  BookOpen,
+  ChevronRight,
+  ShieldCheck,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { StatCard, DataCard, ChartCard, StatusBadge, UserAvatar, EmptyState } from "@/components/ui-kit";
+import {
+  StatCard,
+  DataCard,
+  ChartCard,
+  StatusBadge,
+  UserAvatar,
+  EmptyState,
+} from "@/components/ui-kit";
 import { MiniBars, CHART_COLORS } from "./shared";
 
 const joiningPipeline = [
@@ -22,31 +41,89 @@ const probation = [
 ];
 
 const newJoinersTrend = [
-  { label: "Jan", v: 4 }, { label: "Feb", v: 6 }, { label: "Mar", v: 3 },
-  { label: "Apr", v: 7 }, { label: "May", v: 8 }, { label: "Jun", v: 5 },
+  { label: "Jan", v: 4 },
+  { label: "Feb", v: 6 },
+  { label: "Mar", v: 3 },
+  { label: "Apr", v: 7 },
+  { label: "May", v: 8 },
+  { label: "Jun", v: 5 },
 ];
 
 export function HrAdminDashboard() {
   return (
     <>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-        <StatCard label="Active employees" value="238" hint="10 inactive" icon={Users} tone="primary" />
-        <StatCard label="New joining pipeline" value="6" hint="3 in onboarding" icon={UserPlus} tone="info" />
-        <StatCard label="Documents pending" value="14" hint="Verify identity & PAN" icon={FileCheck2} tone="warning" />
-        <StatCard label="Leave / WFH pending" value="12" hint="Action required" icon={CalendarDays} tone="warning" />
-        <StatCard label="Attendance exceptions" value="9" hint="Today" icon={AlarmClock} tone="destructive" />
-        <StatCard label="Probation ending" value="2" hint="Within 30 days" icon={ShieldCheck} tone="info" />
-        <StatCard label="On notice" value="3" hint="Plan replacements" icon={ClipboardX} tone="destructive" />
+        <StatCard
+          label="Active employees"
+          value="238"
+          hint="10 inactive"
+          icon={Users}
+          tone="primary"
+        />
+        <StatCard
+          label="New joining pipeline"
+          value="6"
+          hint="3 in onboarding"
+          icon={UserPlus}
+          tone="info"
+        />
+        <StatCard
+          label="Documents pending"
+          value="14"
+          hint="Verify identity & PAN"
+          icon={FileCheck2}
+          tone="warning"
+        />
+        <StatCard
+          label="Leave / WFH pending"
+          value="12"
+          hint="Action required"
+          icon={CalendarDays}
+          tone="warning"
+        />
+        <StatCard
+          label="Attendance exceptions"
+          value="9"
+          hint="Today"
+          icon={AlarmClock}
+          tone="destructive"
+        />
+        <StatCard
+          label="Probation ending"
+          value="2"
+          hint="Within 30 days"
+          icon={ShieldCheck}
+          tone="info"
+        />
+        <StatCard
+          label="On notice"
+          value="3"
+          hint="Plan replacements"
+          icon={ClipboardX}
+          tone="destructive"
+        />
         <StatCard label="HR helpdesk" value="4" hint="2 unread" icon={LifeBuoy} tone="primary" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <ChartCard title="New joiners — last 6 months" subtitle="Onboarding throughput" className="lg:col-span-2">
+        <ChartCard
+          title="New joiners — last 6 months"
+          subtitle="Onboarding throughput"
+          className="lg:col-span-2"
+        >
           <MiniBars data={newJoinersTrend} height={210} color={CHART_COLORS.PRIMARY} />
         </ChartCard>
 
-        <DataCard title="Joining pipeline" padded={false}
-          actions={<Button asChild size="sm" variant="ghost" className="text-primary"><Link to="/employees">View <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link></Button>}
+        <DataCard
+          title="Joining pipeline"
+          padded={false}
+          actions={
+            <Button asChild size="sm" variant="ghost" className="text-primary">
+              <Link to="/employees">
+                View <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          }
         >
           {joiningPipeline.length === 0 ? (
             <EmptyState icon={UserPlus} title="No upcoming joiners" />
@@ -67,11 +144,24 @@ export function HrAdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <DataCard title="Attendance exceptions" description="Today's anomalies" padded={false}
-          actions={<Button asChild size="sm" variant="ghost" className="text-primary"><Link to="/attendance">Open <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link></Button>}
+        <DataCard
+          title="Attendance exceptions"
+          description="Today's anomalies"
+          padded={false}
+          actions={
+            <Button asChild size="sm" variant="ghost" className="text-primary">
+              <Link to="/attendance">
+                Open <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          }
         >
           {attendanceExceptions.length === 0 ? (
-            <EmptyState icon={AlarmClock} title="No exceptions today" description="Everyone is on time." />
+            <EmptyState
+              icon={AlarmClock}
+              title="No exceptions today"
+              description="Everyone is on time."
+            />
           ) : (
             <ul className="divide-y">
               {attendanceExceptions.map((a) => (
@@ -92,7 +182,9 @@ export function HrAdminDashboard() {
               {probation.map((p) => (
                 <li key={p.name} className="flex items-center justify-between px-5 py-3.5">
                   <UserAvatar name={p.name} subtitle={`Ends ${p.end}`} size="sm" showMeta />
-                  <Button size="sm" variant="outline" className="rounded-full">Schedule review</Button>
+                  <Button size="sm" variant="outline" className="rounded-full">
+                    Schedule review
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -104,8 +196,16 @@ export function HrAdminDashboard() {
         <DataCard title="Policy updates" description="Drafts ready to publish" padded={false}>
           <ul className="divide-y">
             {[
-              { title: "Updated WFH policy v2.4", body: "Hybrid quotas changed to 2 days office / week", icon: BookOpen },
-              { title: "New travel reimbursement caps", body: "Effective 1 Jun 2026 across regions", icon: Megaphone },
+              {
+                title: "Updated WFH policy v2.4",
+                body: "Hybrid quotas changed to 2 days office / week",
+                icon: BookOpen,
+              },
+              {
+                title: "New travel reimbursement caps",
+                body: "Effective 1 Jun 2026 across regions",
+                icon: Megaphone,
+              },
             ].map((p) => (
               <li key={p.title} className="flex items-start gap-3 px-5 py-3.5">
                 <div className="grid h-9 w-9 place-items-center rounded-xl bg-primary-soft text-primary">
@@ -115,7 +215,9 @@ export function HrAdminDashboard() {
                   <p className="text-sm font-medium">{p.title}</p>
                   <p className="text-xs text-muted-foreground">{p.body}</p>
                 </div>
-                <Button size="sm" variant="ghost" className="text-primary">Review</Button>
+                <Button size="sm" variant="ghost" className="text-primary">
+                  Review
+                </Button>
               </li>
             ))}
           </ul>
@@ -124,13 +226,25 @@ export function HrAdminDashboard() {
         <DataCard title="HR helpdesk" description="Open HR tickets" padded={false}>
           <ul className="divide-y">
             {[
-              { id: "TKT-12002", title: "Update bank account for payroll", who: "Mei Lin", priority: "Medium" },
-              { id: "TKT-12011", title: "Maternity benefit query", who: "Hana Kobayashi", priority: "High" },
+              {
+                id: "TKT-12002",
+                title: "Update bank account for payroll",
+                who: "Mei Lin",
+                priority: "Medium",
+              },
+              {
+                id: "TKT-12011",
+                title: "Maternity benefit query",
+                who: "Hana Kobayashi",
+                priority: "High",
+              },
             ].map((t) => (
               <li key={t.id} className="flex items-center justify-between px-5 py-3.5">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{t.title}</p>
-                  <p className="text-xs text-muted-foreground">{t.id} · {t.who}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t.id} · {t.who}
+                  </p>
                 </div>
                 <StatusBadge status="open" label={t.priority} />
               </li>

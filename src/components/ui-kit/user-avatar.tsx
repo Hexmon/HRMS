@@ -11,7 +11,12 @@ interface Props {
   tone?: "primary" | "success" | "info" | "warning";
 }
 
-const SIZES = { xs: "h-7 w-7 text-[10px]", sm: "h-8 w-8 text-xs", md: "h-9 w-9 text-xs", lg: "h-12 w-12 text-sm" };
+const SIZES = {
+  xs: "h-7 w-7 text-[10px]",
+  sm: "h-8 w-8 text-xs",
+  md: "h-9 w-9 text-xs",
+  lg: "h-12 w-12 text-sm",
+};
 
 const TONE = {
   primary: "bg-primary-soft text-primary",
@@ -20,8 +25,21 @@ const TONE = {
   warning: "bg-warning/20 text-warning-foreground",
 };
 
-export function UserAvatar({ name, email, src, size = "md", showMeta, subtitle, tone = "primary" }: Props) {
-  const initials = name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
+export function UserAvatar({
+  name,
+  email,
+  src,
+  size = "md",
+  showMeta,
+  subtitle,
+  tone = "primary",
+}: Props) {
+  const initials = name
+    .split(" ")
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
   const avatar = (
     <Avatar className={SIZES[size]}>
       {src && <AvatarImage src={src} alt={name} />}

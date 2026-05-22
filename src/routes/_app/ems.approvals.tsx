@@ -13,31 +13,91 @@ export const Route = createFileRoute("/_app/ems/approvals")({
   component: MyApprovals,
 });
 
-const APPROVER_ROLES: Role[] = ["manager", "project_manager", "hr_admin", "finance_manager", "main_admin", "asset_admin", "helpdesk_agent"];
+const APPROVER_ROLES: Role[] = [
+  "manager",
+  "project_manager",
+  "hr_admin",
+  "finance_manager",
+  "main_admin",
+  "asset_admin",
+  "helpdesk_agent",
+];
 
 interface Row {
-  id: string; person: string; subject: string; raisedOn: string; status: string;
+  id: string;
+  person: string;
+  subject: string;
+  raisedOn: string;
+  status: string;
 }
 
 const LEAVE: Row[] = [
-  { id: "LV-2041", person: "Daniel Park", subject: "Earned leave 15-19 May", raisedOn: "08 May", status: "pending" },
-  { id: "LV-2040", person: "Fatima Noor", subject: "Sick leave 12 May", raisedOn: "08 May", status: "pending" },
+  {
+    id: "LV-2041",
+    person: "Daniel Park",
+    subject: "Earned leave 15-19 May",
+    raisedOn: "08 May",
+    status: "pending",
+  },
+  {
+    id: "LV-2040",
+    person: "Fatima Noor",
+    subject: "Sick leave 12 May",
+    raisedOn: "08 May",
+    status: "pending",
+  },
 ];
 const WFH: Row[] = [
-  { id: "WFH-118", person: "Aryan Mehta", subject: "WFH on 14 May (Wed)", raisedOn: "07 May", status: "pending" },
+  {
+    id: "WFH-118",
+    person: "Aryan Mehta",
+    subject: "WFH on 14 May (Wed)",
+    raisedOn: "07 May",
+    status: "pending",
+  },
 ];
 const TS: Row[] = [
-  { id: "TS-W19", person: "Fatima Noor", subject: "Week of 5 May (40h)", raisedOn: "10 May", status: "pending" },
-  { id: "TS-W19b", person: "Jacob Owens", subject: "Week of 5 May (38h)", raisedOn: "10 May", status: "pending" },
+  {
+    id: "TS-W19",
+    person: "Fatima Noor",
+    subject: "Week of 5 May (40h)",
+    raisedOn: "10 May",
+    status: "pending",
+  },
+  {
+    id: "TS-W19b",
+    person: "Jacob Owens",
+    subject: "Week of 5 May (38h)",
+    raisedOn: "10 May",
+    status: "pending",
+  },
 ];
 const EXP: Row[] = [
-  { id: "EXP-401", person: "Daniel Park", subject: "Client lunch — USD 84.50", raisedOn: "06 May", status: "pending" },
+  {
+    id: "EXP-401",
+    person: "Daniel Park",
+    subject: "Client lunch — USD 84.50",
+    raisedOn: "06 May",
+    status: "pending",
+  },
 ];
 const ASSET: Row[] = [
-  { id: "AST-R12", person: "Aryan Mehta", subject: "Request: 4K monitor", raisedOn: "06 May", status: "pending" },
+  {
+    id: "AST-R12",
+    person: "Aryan Mehta",
+    subject: "Request: 4K monitor",
+    raisedOn: "06 May",
+    status: "pending",
+  },
 ];
 const HD: Row[] = [
-  { id: "TKT-12044", person: "Daniel Park", subject: "Mac running slow — escalation", raisedOn: "Today", status: "open" },
+  {
+    id: "TKT-12044",
+    person: "Daniel Park",
+    subject: "Mac running slow — escalation",
+    raisedOn: "Today",
+    status: "open",
+  },
 ];
 
 function ApprovalTable({ rows, kind }: { rows: Row[]; kind: string }) {
@@ -48,22 +108,42 @@ function ApprovalTable({ rows, kind }: { rows: Row[]; kind: string }) {
   };
   const columns: Column<Row>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
-    { key: "person", header: "Requester", render: (r: any) => <>{r.person}</> },
-    { key: "subject", header: "Subject", render: (r) => <span className="font-medium">{r.subject}</span> },
-    { key: "raisedOn", header: "Raised", render: (r: any) => <>{r.raisedOn}</> },
+    { key: "person", header: "Requester", render: (r) => <>{r.person}</> },
+    {
+      key: "subject",
+      header: "Subject",
+      render: (r) => <span className="font-medium">{r.subject}</span>,
+    },
+    { key: "raisedOn", header: "Raised", render: (r) => <>{r.raisedOn}</> },
     { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
     {
-      key: "actions", header: "Actions",
+      key: "actions",
+      header: "Actions",
       render: (r) => (
         <div className="flex gap-2">
-          <Button size="sm" className="h-7 rounded-full" onClick={() => act(r.id, true)}><Check className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" variant="outline" className="h-7 rounded-full" onClick={() => act(r.id, false)}><X className="h-3.5 w-3.5" /></Button>
+          <Button size="sm" className="h-7 rounded-full" onClick={() => act(r.id, true)}>
+            <Check className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 rounded-full"
+            onClick={() => act(r.id, false)}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
         </div>
       ),
     },
   ];
   if (data.length === 0)
-    return <EmptyState icon={CheckSquare} title="All caught up" description="No pending items in this queue." />;
+    return (
+      <EmptyState
+        icon={CheckSquare}
+        title="All caught up"
+        description="No pending items in this queue."
+      />
+    );
   return <DataTable rows={data} columns={columns} />;
 }
 
@@ -100,12 +180,24 @@ function MyApprovals() {
           <TabsTrigger value="asset">Asset</TabsTrigger>
           <TabsTrigger value="hd">Helpdesk</TabsTrigger>
         </TabsList>
-        <TabsContent value="leave" className="mt-4"><ApprovalTable rows={LEAVE} kind="Leave" /></TabsContent>
-        <TabsContent value="wfh" className="mt-4"><ApprovalTable rows={WFH} kind="WFH" /></TabsContent>
-        <TabsContent value="ts" className="mt-4"><ApprovalTable rows={TS} kind="Timesheet" /></TabsContent>
-        <TabsContent value="exp" className="mt-4"><ApprovalTable rows={EXP} kind="Expense" /></TabsContent>
-        <TabsContent value="asset" className="mt-4"><ApprovalTable rows={ASSET} kind="Asset" /></TabsContent>
-        <TabsContent value="hd" className="mt-4"><ApprovalTable rows={HD} kind="Ticket" /></TabsContent>
+        <TabsContent value="leave" className="mt-4">
+          <ApprovalTable rows={LEAVE} kind="Leave" />
+        </TabsContent>
+        <TabsContent value="wfh" className="mt-4">
+          <ApprovalTable rows={WFH} kind="WFH" />
+        </TabsContent>
+        <TabsContent value="ts" className="mt-4">
+          <ApprovalTable rows={TS} kind="Timesheet" />
+        </TabsContent>
+        <TabsContent value="exp" className="mt-4">
+          <ApprovalTable rows={EXP} kind="Expense" />
+        </TabsContent>
+        <TabsContent value="asset" className="mt-4">
+          <ApprovalTable rows={ASSET} kind="Asset" />
+        </TabsContent>
+        <TabsContent value="hd" className="mt-4">
+          <ApprovalTable rows={HD} kind="Ticket" />
+        </TabsContent>
       </Tabs>
     </div>
   );

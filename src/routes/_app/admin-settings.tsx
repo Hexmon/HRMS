@@ -2,8 +2,16 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { PageHeader, ModuleTabs } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import {
-  LayoutDashboard, Building2, Database, ShieldCheck, GitBranch, FileText,
-  Mail, BellRing, Lock, ScrollText,
+  LayoutDashboard,
+  Building2,
+  Database,
+  ShieldCheck,
+  GitBranch,
+  FileText,
+  Mail,
+  BellRing,
+  Lock,
+  ScrollText,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_app/admin-settings")({
@@ -22,7 +30,13 @@ export const Route = createFileRoute("/_app/admin-settings")({
   component: AdminSettingsLayout,
 });
 
-interface Tab { to: string; label: string; icon: typeof LayoutDashboard; mainOnly?: boolean; exact?: boolean }
+interface Tab {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  mainOnly?: boolean;
+  exact?: boolean;
+}
 
 const TABS: Tab[] = [
   { to: "/admin-settings", label: "Overview", icon: LayoutDashboard, exact: true },
@@ -54,7 +68,9 @@ function AdminSettingsLayout() {
         }
       />
       <ModuleTabs tabs={visible} />
-      <div className="pt-4 page-fade-in"><Outlet /></div>
+      <div className="pt-4 page-fade-in">
+        <Outlet />
+      </div>
     </>
   );
 }

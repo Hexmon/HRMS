@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -112,7 +118,9 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
       Array.from(
         new Set(
           employees
-            .filter((e) => e.systemRoles.includes("project_manager") || e.systemRoles.includes("manager"))
+            .filter(
+              (e) => e.systemRoles.includes("project_manager") || e.systemRoles.includes("manager"),
+            )
             .map((e) => e.name),
         ),
       ),
@@ -141,7 +149,10 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
     );
 
   const removeMember = (idx: number) =>
-    update("members", form.members.filter((_, i) => i !== idx));
+    update(
+      "members",
+      form.members.filter((_, i) => i !== idx),
+    );
 
   const submit = () => {
     if (!form.name.trim()) {
@@ -195,11 +206,19 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label>Project name *</Label>
-            <Input value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="Atlas Payments Platform" />
+            <Input
+              value={form.name}
+              onChange={(e) => update("name", e.target.value)}
+              placeholder="Atlas Payments Platform"
+            />
           </div>
           <div>
             <Label>Project code</Label>
-            <Input value={form.code} onChange={(e) => update("code", e.target.value)} placeholder="ATL-PAY" />
+            <Input
+              value={form.code}
+              onChange={(e) => update("code", e.target.value)}
+              placeholder="ATL-PAY"
+            />
           </div>
           <div>
             <Label>Client name</Label>
@@ -212,21 +231,32 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
           <div>
             <Label>Project type</Label>
             <Select value={form.type} onValueChange={(v) => update("type", v as ProjectType)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {(Object.keys(PROJECT_TYPE_LABEL) as ProjectType[]).map((k) => (
-                  <SelectItem key={k} value={k}>{PROJECT_TYPE_LABEL[k]}</SelectItem>
+                  <SelectItem key={k} value={k}>
+                    {PROJECT_TYPE_LABEL[k]}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
             <Label>Billing type</Label>
-            <Select value={form.billingType} onValueChange={(v) => update("billingType", v as BillingType)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+            <Select
+              value={form.billingType}
+              onValueChange={(v) => update("billingType", v as BillingType)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {(Object.keys(BILLING_TYPE_LABEL) as BillingType[]).map((k) => (
-                  <SelectItem key={k} value={k}>{BILLING_TYPE_LABEL[k]}</SelectItem>
+                  <SelectItem key={k} value={k}>
+                    {BILLING_TYPE_LABEL[k]}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -234,24 +264,39 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
           <div className="sm:col-span-2">
             <Label>Project manager *</Label>
             <Select value={form.manager} onValueChange={(v) => update("manager", v)}>
-              <SelectTrigger><SelectValue placeholder="Select PM" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder="Select PM" />
+              </SelectTrigger>
               <SelectContent>
                 {managers.map((m) => (
-                  <SelectItem key={m} value={m}>{m}</SelectItem>
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
                 ))}
-                {managers.length === 0 && employees.slice(0, 8).map((e) => (
-                  <SelectItem key={e.id} value={e.name}>{e.name}</SelectItem>
-                ))}
+                {managers.length === 0 &&
+                  employees.slice(0, 8).map((e) => (
+                    <SelectItem key={e.id} value={e.name}>
+                      {e.name}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
           <div>
             <Label>Start date</Label>
-            <Input type="date" value={form.startDate} onChange={(e) => update("startDate", e.target.value)} />
+            <Input
+              type="date"
+              value={form.startDate}
+              onChange={(e) => update("startDate", e.target.value)}
+            />
           </div>
           <div>
             <Label>End date</Label>
-            <Input type="date" value={form.endDate} onChange={(e) => update("endDate", e.target.value)} />
+            <Input
+              type="date"
+              value={form.endDate}
+              onChange={(e) => update("endDate", e.target.value)}
+            />
           </div>
           <div className="sm:col-span-2">
             <Label>Description</Label>
@@ -298,25 +343,37 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
           <div>
             <Label>Priority</Label>
             <Select value={form.priority} onValueChange={(v) => update("priority", v as Priority)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {(Object.keys(PRIORITY_LABEL) as Priority[]).map((k) => (
-                  <SelectItem key={k} value={k}>{PRIORITY_LABEL[k]}</SelectItem>
+                  <SelectItem key={k} value={k}>
+                    {PRIORITY_LABEL[k]}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
             <Label>Cost center</Label>
-            <Input value={form.costCenter} onChange={(e) => update("costCenter", e.target.value)} placeholder="CC-DEL-01" />
+            <Input
+              value={form.costCenter}
+              onChange={(e) => update("costCenter", e.target.value)}
+              placeholder="CC-DEL-01"
+            />
           </div>
           <div className="sm:col-span-2">
             <Label>Department</Label>
             <Select value={form.department} onValueChange={(v) => update("department", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {departments.map((d) => (
-                  <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                  <SelectItem key={d.id} value={d.name}>
+                    {d.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -330,7 +387,9 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
       content: (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Add the founding team. You can adjust allocations later.</p>
+            <p className="text-sm text-muted-foreground">
+              Add the founding team. You can adjust allocations later.
+            </p>
             <Button variant="outline" size="sm" onClick={addMember} className="rounded-full">
               <Plus className="mr-1 h-4 w-4" /> Add member
             </Button>
@@ -338,7 +397,8 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
 
           {form.members.length === 0 && (
             <div className="rounded-2xl border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
-              No team members yet. Click <span className="font-medium text-foreground">Add member</span> to get started.
+              No team members yet. Click{" "}
+              <span className="font-medium text-foreground">Add member</span> to get started.
             </div>
           )}
 
@@ -355,17 +415,25 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
                         updateMember(i, { employeeId: v, name: emp?.name ?? "" });
                       }}
                     >
-                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         {employees.map((e) => (
-                          <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+                          <SelectItem key={e.id} value={e.id}>
+                            {e.name}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
                     <Label className="text-xs">Project role</Label>
-                    <Input className="h-9" value={m.role} onChange={(e) => updateMember(i, { role: e.target.value })} />
+                    <Input
+                      className="h-9"
+                      value={m.role}
+                      onChange={(e) => updateMember(i, { role: e.target.value })}
+                    />
                   </div>
                   <div>
                     <Label className="text-xs">Allocation %</Label>
@@ -380,7 +448,10 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
                   </div>
                   <div className="flex items-center justify-between gap-3 pt-5">
                     <Label className="text-xs">Billable</Label>
-                    <Switch checked={m.billable} onCheckedChange={(c) => updateMember(i, { billable: c })} />
+                    <Switch
+                      checked={m.billable}
+                      onCheckedChange={(c) => updateMember(i, { billable: c })}
+                    />
                   </div>
                   <div>
                     <Label className="text-xs">Assignment start</Label>
@@ -402,7 +473,12 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
                   </div>
                 </div>
                 <div className="mt-2 flex justify-end">
-                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => removeMember(i)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => removeMember(i)}
+                  >
                     <Trash2 className="mr-1 h-4 w-4" /> Remove
                   </Button>
                 </div>
@@ -420,11 +496,17 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
         <SheetHeader className="border-b px-6 py-5">
           <SheetTitle>{initial ? "Edit project" : "Add project"}</SheetTitle>
           <SheetDescription>
-            {initial ? "Update project details, planning and team." : "Set up a new project in 3 quick steps."}
+            {initial
+              ? "Update project details, planning and team."
+              : "Set up a new project in 3 quick steps."}
           </SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto p-6">
-          <StepperForm steps={steps} onComplete={submit} completeLabel={initial ? "Save changes" : "Create project"} />
+          <StepperForm
+            steps={steps}
+            onComplete={submit}
+            completeLabel={initial ? "Save changes" : "Create project"}
+          />
         </div>
       </SheetContent>
     </Sheet>

@@ -18,7 +18,11 @@ function MyAssets() {
     <div className="space-y-4">
       {mine.length === 0 ? (
         <DataCard title="My assets">
-          <EmptyState icon={Laptop} title="Nothing assigned yet" description="When IT hands you a device, it will show up here." />
+          <EmptyState
+            icon={Laptop}
+            title="Nothing assigned yet"
+            description="When IT hands you a device, it will show up here."
+          />
         </DataCard>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -33,8 +37,12 @@ function MyAssets() {
                     <Laptop className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{a.brand} {a.model}</p>
-                    <p className="text-xs text-muted-foreground">{a.id} · {a.type} · {a.serial}</p>
+                    <p className="truncate text-sm font-semibold">
+                      {a.brand} {a.model}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {a.id} · {a.type} · {a.serial}
+                    </p>
                   </div>
                   <StatusBadge status={a.status} />
                 </div>
@@ -43,31 +51,57 @@ function MyAssets() {
                   <Row k="Expected return" v={a.expectedReturn ?? "—"} />
                   <Row k="Condition" v={<span className="uppercase">{a.condition}</span>} />
                   <Row k="Cost" v={fmtMoney(a.cost)} />
-                  <Row k="Warranty" v={
-                    <span className={d < 0 ? "text-destructive font-medium" : d <= 60 ? "text-warning-foreground font-medium" : ""}>
-                      {d < 0 ? `Expired ${Math.abs(d)}d ago` : `${d}d left`}
-                    </span>
-                  } />
+                  <Row
+                    k="Warranty"
+                    v={
+                      <span
+                        className={
+                          d < 0
+                            ? "text-destructive font-medium"
+                            : d <= 60
+                              ? "text-warning-foreground font-medium"
+                              : ""
+                        }
+                      >
+                        {d < 0 ? `Expired ${Math.abs(d)}d ago` : `${d}d left`}
+                      </span>
+                    }
+                  />
                   <Row k="Location" v={a.location} />
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/20 p-3">
                   {ack ? (
                     <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
-                      <ShieldCheck className="h-3.5 w-3.5" />Acknowledged
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      Acknowledged
                     </span>
                   ) : (
-                    <Button size="sm" className="rounded-full" onClick={() => { acknowledgeAssignment(a.id, user?.name ?? "You"); toast.success("Receipt acknowledged"); }}>
+                    <Button
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => {
+                        acknowledgeAssignment(a.id, user?.name ?? "You");
+                        toast.success("Receipt acknowledged");
+                      }}
+                    >
                       Acknowledge receipt
                     </Button>
                   )}
                   <div className="flex gap-2">
-                    <Button asChild size="sm" variant="ghost"><Link to="/assets/$id" params={{ id: a.id }}>Details</Link></Button>
-                    <Button asChild size="sm" variant="outline" className="rounded-full"><Link to="/assets/requests">Raise issue</Link></Button>
+                    <Button asChild size="sm" variant="ghost">
+                      <Link to="/assets/$id" params={{ id: a.id }}>
+                        Details
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline" className="rounded-full">
+                      <Link to="/assets/requests">Raise issue</Link>
+                    </Button>
                   </div>
                 </div>
                 {d < 0 && (
                   <div className="flex items-center gap-2 border-t bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                    <AlertTriangle className="h-3.5 w-3.5" />Warranty expired — contact IT for renewal.
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Warranty expired — contact IT for renewal.
                   </div>
                 )}
               </Card>
@@ -76,10 +110,20 @@ function MyAssets() {
         </div>
       )}
 
-      <DataCard title="Need something else?" description="Raise a request for a new asset, replacement, repair or return.">
+      <DataCard
+        title="Need something else?"
+        description="Raise a request for a new asset, replacement, repair or return."
+      >
         <div className="flex flex-wrap gap-2">
-          <Button asChild className="rounded-full text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
-            <Link to="/assets/requests"><Inbox className="mr-1.5 h-4 w-4" />Raise asset request</Link>
+          <Button
+            asChild
+            className="rounded-full text-primary-foreground"
+            style={{ background: "var(--gradient-primary)" }}
+          >
+            <Link to="/assets/requests">
+              <Inbox className="mr-1.5 h-4 w-4" />
+              Raise asset request
+            </Link>
           </Button>
         </div>
       </DataCard>

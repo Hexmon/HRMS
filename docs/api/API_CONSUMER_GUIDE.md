@@ -6,15 +6,15 @@ Date: 2026-05-01
 
 Use Docker portable QA for consumer testing:
 
-| Purpose | URL |
-|---|---|
-| API base URL | `http://localhost:3101` |
-| Swagger UI | `http://localhost:3101/docs` |
-| OpenAPI JSON | `http://localhost:3101/api/v1/openapi.json` |
-| Static OpenAPI artifact | `docs/api/openapi.json` |
-| Core guide | `docs/api/API_CORE_GUIDE.md` |
-| Curl suite | `docs/api/collections/curl-smoke-tests.sh` |
-| Postman collection | `docs/api/collections/hrms-platform.postman_collection.json` |
+| Purpose                 | URL                                                          |
+| ----------------------- | ------------------------------------------------------------ |
+| API base URL            | `http://localhost:3101`                                      |
+| Swagger UI              | `http://localhost:3101/docs`                                 |
+| OpenAPI JSON            | `http://localhost:3101/api/v1/openapi.json`                  |
+| Static OpenAPI artifact | `docs/api/openapi.json`                                      |
+| Core guide              | `docs/api/API_CORE_GUIDE.md`                                 |
+| Curl suite              | `docs/api/collections/curl-smoke-tests.sh`                   |
+| Postman collection      | `docs/api/collections/hrms-platform.postman_collection.json` |
 
 All business APIs are under `/api/v1`. Health also has unversioned `/health/live` and `/health/ready`.
 
@@ -22,18 +22,18 @@ All business APIs are under `/api/v1`. Health also has unversioned `/health/live
 
 Safe local QA personas:
 
-| Email | Code | Role |
-|---|---|---|
-| `e1@example.test` | `E1` | Employee requester |
-| `manager@example.test` | `D1` | Assigned manager |
-| `executive@example.test` | `S1` | Employee / manager backup |
-| `finance@example.test` | `N1` | Finance Manager |
-| `finance2@example.test` | `N2` | Alternate Finance User |
-| `admin@example.test` | `ADM` | Admin / HR Admin |
-| `hrm@example.test` | `HRM` | HR Manager |
-| `assets@example.test` | `AST` | Asset Admin |
-| `auditor@example.test` | `AUD` | Auditor |
-| `timesheet.approver@example.test` | `TSA` | Timesheet Approver |
+| Email                             | Code  | Role                      |
+| --------------------------------- | ----- | ------------------------- |
+| `e1@example.test`                 | `E1`  | Employee requester        |
+| `manager@example.test`            | `D1`  | Assigned manager          |
+| `executive@example.test`          | `S1`  | Employee / manager backup |
+| `finance@example.test`            | `N1`  | Finance Manager           |
+| `finance2@example.test`           | `N2`  | Alternate Finance User    |
+| `admin@example.test`              | `ADM` | Admin / HR Admin          |
+| `hrm@example.test`                | `HRM` | HR Manager                |
+| `assets@example.test`             | `AST` | Asset Admin               |
+| `auditor@example.test`            | `AUD` | Auditor                   |
+| `timesheet.approver@example.test` | `TSA` | Timesheet Approver        |
 
 These are local QA seeds only. Do not use production credentials in examples or docs.
 
@@ -77,12 +77,12 @@ Business API routes under `/api/v1/**` are rate-limited as a platform safety con
 
 Defaults in DEV/Docker QA:
 
-| Bucket | Default |
-|---|---|
-| Auth login | 10 requests/minute/IP |
-| Public asset scan | 60 requests/minute/IP |
-| General reads | 120 requests/minute/user-or-IP |
-| Mutations | 60 requests/minute/user-or-IP |
+| Bucket            | Default                        |
+| ----------------- | ------------------------------ |
+| Auth login        | 10 requests/minute/IP          |
+| Public asset scan | 60 requests/minute/IP          |
+| General reads     | 120 requests/minute/user-or-IP |
+| Mutations         | 60 requests/minute/user-or-IP  |
 
 `429 TOO_MANY_REQUESTS` responses include `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and the standard `request_id`.
 

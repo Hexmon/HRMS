@@ -12,7 +12,9 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Mail } from "lucide-react";
 
-export const Route = createFileRoute("/_app/admin-settings/email-templates")({ component: EmailTemplatesScreen });
+export const Route = createFileRoute("/_app/admin-settings/email-templates")({
+  component: EmailTemplatesScreen,
+});
 
 function EmailTemplatesScreen() {
   const { templates, updateTemplate } = useAdminSettings();
@@ -24,7 +26,10 @@ function EmailTemplatesScreen() {
   const onSelect = (key: string) => {
     setActiveKey(key);
     const t = templates.find((x) => x.key === key);
-    if (t) { setDraftSubject(t.subject); setDraftBody(t.body); }
+    if (t) {
+      setDraftSubject(t.subject);
+      setDraftBody(t.body);
+    }
   };
 
   const onSave = () => {
@@ -63,11 +68,19 @@ function EmailTemplatesScreen() {
         <div className="mb-4 flex items-start justify-between">
           <div>
             <p className="text-sm font-semibold">{active.name}</p>
-            <p className="text-xs text-muted-foreground">Use double-curly variables like <code className="rounded bg-muted px-1 text-[11px]">{"{{name}}"}</code>.</p>
+            <p className="text-xs text-muted-foreground">
+              Use double-curly variables like{" "}
+              <code className="rounded bg-muted px-1 text-[11px]">{"{{name}}"}</code>.
+            </p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px]">{active.active ? "Active" : "Disabled"}</Badge>
-            <Switch checked={active.active} onCheckedChange={(v) => updateTemplate(active.key, { active: v })} />
+            <Badge variant="outline" className="text-[10px]">
+              {active.active ? "Active" : "Disabled"}
+            </Badge>
+            <Switch
+              checked={active.active}
+              onCheckedChange={(v) => updateTemplate(active.key, { active: v })}
+            />
           </div>
         </div>
 
@@ -78,13 +91,32 @@ function EmailTemplatesScreen() {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Body</Label>
-            <Textarea rows={10} value={draftBody} onChange={(e) => setDraftBody(e.target.value)} className="font-mono text-xs" />
+            <Textarea
+              rows={10}
+              value={draftBody}
+              onChange={(e) => setDraftBody(e.target.value)}
+              className="font-mono text-xs"
+            />
           </div>
         </div>
 
         <div className="mt-5 flex justify-end gap-2 border-t pt-4">
-          <Button variant="ghost" onClick={() => { setDraftSubject(active.subject); setDraftBody(active.body); }}>Reset</Button>
-          <Button onClick={onSave} style={{ background: "var(--gradient-primary)" }} className="text-primary-foreground">Save template</Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setDraftSubject(active.subject);
+              setDraftBody(active.body);
+            }}
+          >
+            Reset
+          </Button>
+          <Button
+            onClick={onSave}
+            style={{ background: "var(--gradient-primary)" }}
+            className="text-primary-foreground"
+          >
+            Save template
+          </Button>
         </div>
       </Card>
     </div>

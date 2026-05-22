@@ -64,11 +64,14 @@ function UtilizationPage() {
   const isManager = activeRole === "manager";
 
   const scopedEmployees = useMemo(() => {
-    if (isMain || activeRole === "hr_admin") return employees.filter((e) => e.status !== "exited" && e.status !== "inactive");
+    if (isMain || activeRole === "hr_admin")
+      return employees.filter((e) => e.status !== "exited" && e.status !== "inactive");
     if (isManager) return employees.filter((e) => e.manager === user?.name);
     if (isPM) {
       const ids = new Set<string>();
-      projects.filter((p) => p.manager === user?.name).forEach((p) => p.members.forEach((m) => ids.add(m.employeeId)));
+      projects
+        .filter((p) => p.manager === user?.name)
+        .forEach((p) => p.members.forEach((m) => ids.add(m.employeeId)));
       return employees.filter((e) => ids.has(e.id));
     }
     return employees.filter((e) => e.email === user?.email);
@@ -113,22 +116,43 @@ function UtilizationPage() {
     const cap = rows.length * CAPACITY;
     const allocated = rows.reduce((s, r) => s + r.allocated, 0);
     const submitted = rows.reduce((s, r) => s + r.submitted, 0);
-    const billableEntries = entries.filter((x) =>
-      x.weekStart === DEMO_LAST_WEEK && rows.some((r) => r.id === x.employeeId),
+    const billableEntries = entries.filter(
+      (x) => x.weekStart === DEMO_LAST_WEEK && rows.some((r) => r.id === x.employeeId),
     );
     const billable = billableEntries.filter((e) => e.billable).reduce((s, e) => s + e.hours, 0);
     const nonBillable = billableEntries.filter((e) => !e.billable).reduce((s, e) => s + e.hours, 0);
-    const avgUtil = rows.length ? Math.round(rows.reduce((s, r) => s + r.utilization, 0) / rows.length) : 0;
+    const avgUtil = rows.length
+      ? Math.round(rows.reduce((s, r) => s + r.utilization, 0) / rows.length)
+      : 0;
     const bench = rows.filter((r) => r.status === "bench").length;
     const overloaded = rows.filter((r) => r.status === "overloaded").length;
     return { cap, allocated, submitted, billable, nonBillable, avgUtil, bench, overloaded };
   }, [rows, entries]);
 
   const handleExport = () => {
-    const headers = ["Employee", "Department", "Designation", "Available", "Allocated", "Submitted", "Utilization %", "Status"];
+    const headers = [
+      "Employee",
+      "Department",
+      "Designation",
+      "Available",
+      "Allocated",
+      "Submitted",
+      "Utilization %",
+      "Status",
+    ];
     const csvRows = rows.map((r) =>
-      [r.name, r.department, r.designation, r.available, r.allocated.toFixed(1), r.submitted.toFixed(1), r.utilization, r.status]
-        .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","),
+      [
+        r.name,
+        r.department,
+        r.designation,
+        r.available,
+        r.allocated.toFixed(1),
+        r.submitted.toFixed(1),
+        r.utilization,
+        r.status,
+      ]
+        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .join(","),
     );
     const csv = [headers.join(","), ...csvRows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -152,25 +176,51 @@ function UtilizationPage() {
   };
 
   const capacityCols: Column<CapRow>[] = [
-    { key: "name", header: "Employee", render: (r) => <UserAvatar name={r.name} email={r.id} tone="primary" showMeta subtitle={r.designation} /> },
-    { key: "dept", header: "Department", render: (r) => <span className="text-xs">{r.department}</span> },
-    { key: "avail", header: "Available", render: (r) => <span className="text-sm">{r.available}h</span> },
-    { key: "alloc", header: "Allocated", render: (r) => <span className="text-sm font-semibold">{r.allocated.toFixed(1)}h</span> },
-    { key: "sub", header: "Submitted", render: (r) => <span className="text-sm">{r.submitted.toFixed(1)}h</span> },
+    {
+      key: "name",
+      header: "Employee",
+      render: (r) => (
+        <UserAvatar name={r.name} email={r.id} tone="primary" showMeta subtitle={r.designation} />
+      ),
+    },
+    {
+      key: "dept",
+      header: "Department",
+      render: (r) => <span className="text-xs">{r.department}</span>,
+    },
+    {
+      key: "avail",
+      header: "Available",
+      render: (r) => <span className="text-sm">{r.available}h</span>,
+    },
+    {
+      key: "alloc",
+      header: "Allocated",
+      render: (r) => <span className="text-sm font-semibold">{r.allocated.toFixed(1)}h</span>,
+    },
+    {
+      key: "sub",
+      header: "Submitted",
+      render: (r) => <span className="text-sm">{r.submitted.toFixed(1)}h</span>,
+    },
     {
       key: "util",
       header: "Utilization",
       render: (r) => {
         const tone =
-          r.utilization > 100 ? "bg-destructive" :
-          r.utilization < 50 ? "bg-info" : "bg-primary";
+          r.utilization > 100 ? "bg-destructive" : r.utilization < 50 ? "bg-info" : "bg-primary";
         return (
           <div className="w-32">
             <div className="flex items-center justify-between text-xs">
-              <span className={cn("font-semibold", r.utilization > 100 && "text-destructive")}>{r.utilization}%</span>
+              <span className={cn("font-semibold", r.utilization > 100 && "text-destructive")}>
+                {r.utilization}%
+              </span>
             </div>
             <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-              <div className={cn("h-full rounded-full", tone)} style={{ width: `${Math.min(100, r.utilization)}%` }} />
+              <div
+                className={cn("h-full rounded-full", tone)}
+                style={{ width: `${Math.min(100, r.utilization)}%` }}
+              />
             </div>
           </div>
         );
@@ -189,7 +239,12 @@ function UtilizationPage() {
         title="Team Utilization"
         description={`Capacity, allocation and billability across ${rows.length} ${rows.length === 1 ? "person" : "people"}.`}
         actions={
-          <ActionButton size="sm" variant="secondary" icon={<Download className="h-4 w-4" />} onClick={handleExport}>
+          <ActionButton
+            size="sm"
+            variant="secondary"
+            icon={<Download className="h-4 w-4" />}
+            onClick={handleExport}
+          >
             Export
           </ActionButton>
         }
@@ -206,34 +261,97 @@ function UtilizationPage() {
 
         <TabsContent value="dashboard" className="space-y-3">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard label="Total capacity" value={`${stats.cap}h`} icon={Clock} tone="primary" hint={`${rows.length} × ${CAPACITY}h/wk`} />
-            <StatCard label="Allocated" value={`${stats.allocated.toFixed(0)}h`} icon={Activity} tone="info" hint="Planned this week" />
-            <StatCard label="Submitted" value={`${stats.submitted.toFixed(0)}h`} icon={TrendingUp} tone="success" hint="Last full week" />
-            <StatCard label="Avg utilization" value={`${stats.avgUtil}%`} icon={Users} tone={stats.avgUtil > 90 ? "destructive" : stats.avgUtil < 50 ? "warning" : "primary"} hint="Across team" />
+            <StatCard
+              label="Total capacity"
+              value={`${stats.cap}h`}
+              icon={Clock}
+              tone="primary"
+              hint={`${rows.length} × ${CAPACITY}h/wk`}
+            />
+            <StatCard
+              label="Allocated"
+              value={`${stats.allocated.toFixed(0)}h`}
+              icon={Activity}
+              tone="info"
+              hint="Planned this week"
+            />
+            <StatCard
+              label="Submitted"
+              value={`${stats.submitted.toFixed(0)}h`}
+              icon={TrendingUp}
+              tone="success"
+              hint="Last full week"
+            />
+            <StatCard
+              label="Avg utilization"
+              value={`${stats.avgUtil}%`}
+              icon={Users}
+              tone={stats.avgUtil > 90 ? "destructive" : stats.avgUtil < 50 ? "warning" : "primary"}
+              hint="Across team"
+            />
           </div>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard label="Billable hours" value={`${stats.billable.toFixed(0)}h`} icon={DollarSign} tone="success" hint="Last week" />
-            <StatCard label="Non-billable" value={`${stats.nonBillable.toFixed(0)}h`} icon={Coffee} tone="warning" hint="Internal time" />
-            <StatCard label="On bench" value={stats.bench} icon={Sofa} tone={stats.bench ? "info" : "success"} hint="Available now" />
-            <StatCard label="Overloaded" value={stats.overloaded} icon={AlertTriangle} tone={stats.overloaded ? "destructive" : "success"} hint=">100% allocation" />
+            <StatCard
+              label="Billable hours"
+              value={`${stats.billable.toFixed(0)}h`}
+              icon={DollarSign}
+              tone="success"
+              hint="Last week"
+            />
+            <StatCard
+              label="Non-billable"
+              value={`${stats.nonBillable.toFixed(0)}h`}
+              icon={Coffee}
+              tone="warning"
+              hint="Internal time"
+            />
+            <StatCard
+              label="On bench"
+              value={stats.bench}
+              icon={Sofa}
+              tone={stats.bench ? "info" : "success"}
+              hint="Available now"
+            />
+            <StatCard
+              label="Overloaded"
+              value={stats.overloaded}
+              icon={AlertTriangle}
+              tone={stats.overloaded ? "destructive" : "success"}
+              hint=">100% allocation"
+            />
           </div>
         </TabsContent>
 
         <TabsContent value="capacity">
-          <DataTable columns={capacityCols} rows={rows} searchKeys={["name", "department", "designation"]} emptyTitle="No team data" />
+          <DataTable
+            columns={capacityCols}
+            rows={rows}
+            searchKeys={["name", "department", "designation"]}
+            emptyTitle="No team data"
+          />
         </TabsContent>
 
         <TabsContent value="bench">
           {benchRows.length === 0 ? (
             <Card className="rounded-2xl border-border/60 p-10">
-              <EmptyState icon={Users} title="No one on the bench" description="Everyone is allocated to at least one active project." />
+              <EmptyState
+                icon={Users}
+                title="No one on the bench"
+                description="Everyone is allocated to at least one active project."
+              />
             </Card>
           ) : (
             <div className="grid gap-3 md:grid-cols-2">
               {benchRows.map((r) => (
                 <Card key={r.id} className="rounded-2xl border-border/60 p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <UserAvatar name={r.name} email={r.id} tone="info" showMeta subtitle={`${r.designation} · ${r.department}`} />
+                    <UserAvatar
+                      name={r.name}
+                      email={r.id}
+                      tone="info"
+                      showMeta
+                      subtitle={`${r.designation} · ${r.department}`}
+                    />
                     {statusBadge(r.status)}
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -247,10 +365,17 @@ function UtilizationPage() {
                     </div>
                   </div>
                   <div className="mt-3">
-                    <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Skills</p>
+                    <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Skills
+                    </p>
                     <div className="flex flex-wrap gap-1">
                       {r.skills.map((s) => (
-                        <span key={s} className="rounded-full border bg-secondary/40 px-2 py-0.5 text-[11px]">{s}</span>
+                        <span
+                          key={s}
+                          className="rounded-full border bg-secondary/40 px-2 py-0.5 text-[11px]"
+                        >
+                          {s}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -266,14 +391,24 @@ function UtilizationPage() {
         <TabsContent value="overload">
           {overloadRows.length === 0 ? (
             <Card className="rounded-2xl border-border/60 p-10">
-              <EmptyState icon={AlertTriangle} title="No one is overloaded" description="All allocations are within healthy limits." />
+              <EmptyState
+                icon={AlertTriangle}
+                title="No one is overloaded"
+                description="All allocations are within healthy limits."
+              />
             </Card>
           ) : (
             <div className="space-y-3">
               {overloadRows.map((r) => (
                 <Card key={r.id} className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <UserAvatar name={r.name} email={r.id} tone="warning" showMeta subtitle={`${r.designation} · ${r.department}`} />
+                    <UserAvatar
+                      name={r.name}
+                      email={r.id}
+                      tone="warning"
+                      showMeta
+                      subtitle={`${r.designation} · ${r.department}`}
+                    />
                     <span className="rounded-full bg-destructive px-2 py-0.5 text-[11px] font-semibold text-destructive-foreground">
                       {r.utilization}% allocated
                     </span>
@@ -281,7 +416,9 @@ function UtilizationPage() {
                   <div className="mt-3 space-y-1.5">
                     {r.projects.map((p) => (
                       <div key={p.code} className="flex items-center justify-between text-xs">
-                        <span><span className="font-mono font-semibold">{p.code}</span> · {p.name}</span>
+                        <span>
+                          <span className="font-mono font-semibold">{p.code}</span> · {p.name}
+                        </span>
                         <span className="font-semibold">{p.allocation}%</span>
                       </div>
                     ))}
@@ -295,8 +432,18 @@ function UtilizationPage() {
 
         <TabsContent value="billable" className="space-y-3">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-            <StatCard label="Billable" value={`${stats.billable.toFixed(0)}h`} icon={DollarSign} tone="success" />
-            <StatCard label="Non-billable" value={`${stats.nonBillable.toFixed(0)}h`} icon={Coffee} tone="warning" />
+            <StatCard
+              label="Billable"
+              value={`${stats.billable.toFixed(0)}h`}
+              icon={DollarSign}
+              tone="success"
+            />
+            <StatCard
+              label="Non-billable"
+              value={`${stats.nonBillable.toFixed(0)}h`}
+              icon={Coffee}
+              tone="warning"
+            />
             <StatCard
               label="Billable %"
               value={`${stats.submitted ? Math.round((stats.billable / stats.submitted) * 100) : 0}%`}
@@ -313,30 +460,60 @@ function UtilizationPage() {
                   <span className="font-semibold text-success">{stats.billable.toFixed(0)}h</span>
                 </div>
                 <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
-                  <div className="h-full bg-success" style={{ width: `${stats.submitted ? (stats.billable / stats.submitted) * 100 : 0}%` }} />
+                  <div
+                    className="h-full bg-success"
+                    style={{
+                      width: `${stats.submitted ? (stats.billable / stats.submitted) * 100 : 0}%`,
+                    }}
+                  />
                 </div>
               </div>
               <div>
                 <div className="mb-1 flex items-center justify-between text-xs">
                   <span>Non-billable</span>
-                  <span className="font-semibold text-warning-foreground">{stats.nonBillable.toFixed(0)}h</span>
+                  <span className="font-semibold text-warning-foreground">
+                    {stats.nonBillable.toFixed(0)}h
+                  </span>
                 </div>
                 <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
-                  <div className="h-full bg-warning" style={{ width: `${stats.submitted ? (stats.nonBillable / stats.submitted) * 100 : 0}%` }} />
+                  <div
+                    className="h-full bg-warning"
+                    style={{
+                      width: `${stats.submitted ? (stats.nonBillable / stats.submitted) * 100 : 0}%`,
+                    }}
+                  />
                 </div>
               </div>
             </div>
           </Card>
           <DataTable
             columns={[
-              { key: "name", header: "Employee", render: (r: CapRow) => <UserAvatar name={r.name} email={r.id} tone="primary" showMeta subtitle={r.department} /> },
-              { key: "sub", header: "Submitted", render: (r) => <span className="text-sm">{r.submitted.toFixed(1)}h</span> },
+              {
+                key: "name",
+                header: "Employee",
+                render: (r: CapRow) => (
+                  <UserAvatar
+                    name={r.name}
+                    email={r.id}
+                    tone="primary"
+                    showMeta
+                    subtitle={r.department}
+                  />
+                ),
+              },
+              {
+                key: "sub",
+                header: "Submitted",
+                render: (r) => <span className="text-sm">{r.submitted.toFixed(1)}h</span>,
+              },
               {
                 key: "mix",
                 header: "Billable mix",
                 render: (r) => {
                   const billable = entries
-                    .filter((e) => e.employeeId === r.id && e.weekStart === DEMO_LAST_WEEK && e.billable)
+                    .filter(
+                      (e) => e.employeeId === r.id && e.weekStart === DEMO_LAST_WEEK && e.billable,
+                    )
                     .reduce((s, e) => s + e.hours, 0);
                   const pct = r.submitted ? Math.round((billable / r.submitted) * 100) : 0;
                   return (

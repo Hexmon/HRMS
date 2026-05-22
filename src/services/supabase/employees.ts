@@ -48,7 +48,11 @@ export async function createEmployee(input: EmployeeInsert) {
 export async function updateEmployee(id: string, patch: EmployeeUpdate) {
   const { data: prev } = await supabase.from("employees").select("*").eq("id", id).maybeSingle();
   const { data, error } = await supabase
-    .from("employees").update(patch).eq("id", id).select("*").single();
+    .from("employees")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
   if (error) throw error;
   await writeAuditLog({
     action: "employee.updated",
@@ -62,7 +66,11 @@ export async function updateEmployee(id: string, patch: EmployeeUpdate) {
 
 export async function setEmployeeLogin(id: string, loginEnabled: boolean) {
   const { data, error } = await supabase
-    .from("employees").update({ login_enabled: loginEnabled }).eq("id", id).select("*").single();
+    .from("employees")
+    .update({ login_enabled: loginEnabled })
+    .eq("id", id)
+    .select("*")
+    .single();
   if (error) throw error;
   await writeAuditLog({
     action: loginEnabled ? "employee.login_enabled" : "employee.login_disabled",
@@ -77,7 +85,9 @@ export async function setEmployeeStatus(id: string, status: string) {
     .from("employees")
     // employee_status is a typed enum in the DB; cast at the boundary
     .update({ employee_status: status as never })
-    .eq("id", id).select("*").single();
+    .eq("id", id)
+    .select("*")
+    .single();
   if (error) throw error;
   await writeAuditLog({
     action: "employee.status_changed",

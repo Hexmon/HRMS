@@ -77,8 +77,22 @@ function SetPasswordPage() {
       subtitle="Choose a strong password to secure your workspace."
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <PasswordField label="New password" id="pwd" value={pwd} onChange={setPwd} show={show} setShow={setShow} />
-        <PasswordField label="Confirm password" id="cf" value={confirm} onChange={setConfirm} show={show} setShow={setShow} />
+        <PasswordField
+          label="New password"
+          id="pwd"
+          value={pwd}
+          onChange={setPwd}
+          show={show}
+          setShow={setShow}
+        />
+        <PasswordField
+          label="Confirm password"
+          id="cf"
+          value={confirm}
+          onChange={setConfirm}
+          show={show}
+          setShow={setShow}
+        />
 
         <div className="space-y-2 rounded-xl border bg-secondary/40 p-3">
           <div className="flex items-center justify-between text-xs">
@@ -105,7 +119,9 @@ function SetPasswordPage() {
         </div>
 
         {error && (
-          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {error}
+          </p>
         )}
 
         <Button
@@ -142,7 +158,13 @@ function PasswordField({
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
       <div className="relative">
-        <Input id={id} type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} className="pr-10" />
+        <Input
+          id={id}
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="pr-10"
+        />
         <button
           type="button"
           onClick={() => setShow(!show)}

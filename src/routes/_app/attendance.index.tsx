@@ -7,8 +7,19 @@ import { useAuth } from "@/lib/auth";
 import { StatCard, DataCard, StatusBadge, EmptyState } from "@/components/ui-kit";
 import { toast } from "sonner";
 import {
-  Users, UserCheck, UserX, AlarmClock, LogOut, Home, CalendarDays, ClipboardX,
-  Play, Pause, Square, Clock, Building2,
+  Users,
+  UserCheck,
+  UserX,
+  AlarmClock,
+  LogOut,
+  Home,
+  CalendarDays,
+  ClipboardX,
+  Play,
+  Pause,
+  Square,
+  Clock,
+  Building2,
 } from "lucide-react";
 import type { Role } from "@/lib/mock/roles";
 
@@ -64,7 +75,9 @@ function AdminView() {
                       <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="font-medium">{d.dept}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">{d.present}/{d.strength} · {pct}%</span>
+                    <span className="text-xs text-muted-foreground">
+                      {d.present}/{d.strength} · {pct}%
+                    </span>
                   </div>
                   <Progress value={pct} className="h-2" />
                 </li>
@@ -76,7 +89,10 @@ function AdminView() {
         <DataCard title="Attendance exceptions" description="Needs attention">
           <ul className="space-y-2.5">
             {EXCEPTIONS.map((e) => (
-              <li key={e.name} className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5 text-sm">
+              <li
+                key={e.name}
+                className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5 text-sm"
+              >
                 <div>
                   <p className="font-medium">{e.name}</p>
                   <p className="text-xs text-muted-foreground">{e.reason}</p>
@@ -116,9 +132,18 @@ function EmployeeView() {
     setInTime(now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
     toast.success("Punched in");
   };
-  const startBreak = () => { setState("break"); toast("Break started"); };
-  const endBreak = () => { setState("working"); toast("Resumed work"); };
-  const punchOut = () => { setState("done"); toast.success("Punched out"); };
+  const startBreak = () => {
+    setState("break");
+    toast("Break started");
+  };
+  const endBreak = () => {
+    setState("working");
+    toast("Resumed work");
+  };
+  const punchOut = () => {
+    setState("done");
+    toast.success("Punched out");
+  };
 
   const STATE_LABEL: Record<PunchState, { l: string; s: string }> = {
     idle: { l: "Not started", s: "draft" },
@@ -134,13 +159,25 @@ function EmployeeView() {
           <div className="p-6" style={{ background: "var(--gradient-hero)" }}>
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-primary">{now.toLocaleDateString(undefined, { weekday: "long" })}</p>
-                <p className="text-2xl font-semibold">{now.toLocaleDateString(undefined, { day: "2-digit", month: "long", year: "numeric" })}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+                  {now.toLocaleDateString(undefined, { weekday: "long" })}
+                </p>
+                <p className="text-2xl font-semibold">
+                  {now.toLocaleDateString(undefined, {
+                    day: "2-digit",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </p>
               </div>
               <StatusBadge status={STATE_LABEL[state].s} label={STATE_LABEL[state].l} />
             </div>
             <p className="mt-4 text-5xl font-bold tabular-nums tracking-tight">
-              {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              {now.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              })}
             </p>
             {inTime && <p className="mt-1 text-xs text-muted-foreground">Punched in at {inTime}</p>}
           </div>
@@ -160,16 +197,24 @@ function EmployeeView() {
           </div>
           <div className="flex flex-wrap gap-2 border-t p-4">
             {state === "idle" && (
-              <Button className="rounded-full" onClick={punchIn}><Play className="mr-1.5 h-4 w-4" /> Punch in</Button>
+              <Button className="rounded-full" onClick={punchIn}>
+                <Play className="mr-1.5 h-4 w-4" /> Punch in
+              </Button>
             )}
             {state === "working" && (
               <>
-                <Button variant="outline" className="rounded-full" onClick={startBreak}><Pause className="mr-1.5 h-4 w-4" /> Start break</Button>
-                <Button className="rounded-full" onClick={punchOut}><Square className="mr-1.5 h-4 w-4" /> Punch out</Button>
+                <Button variant="outline" className="rounded-full" onClick={startBreak}>
+                  <Pause className="mr-1.5 h-4 w-4" /> Start break
+                </Button>
+                <Button className="rounded-full" onClick={punchOut}>
+                  <Square className="mr-1.5 h-4 w-4" /> Punch out
+                </Button>
               </>
             )}
             {state === "break" && (
-              <Button className="rounded-full" onClick={endBreak}><Play className="mr-1.5 h-4 w-4" /> Resume</Button>
+              <Button className="rounded-full" onClick={endBreak}>
+                <Play className="mr-1.5 h-4 w-4" /> Resume
+              </Button>
             )}
             {state === "done" && (
               <p className="text-sm text-muted-foreground">Day completed. See you tomorrow.</p>
@@ -186,10 +231,15 @@ function EmployeeView() {
               { day: "Thu, May 8", in: "09:21", out: "18:55", hrs: "9h 34m", status: "present" },
               { day: "Fri, May 9", in: "09:48", out: "18:15", hrs: "8h 27m", status: "late" },
             ].map((d) => (
-              <li key={d.day} className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2">
+              <li
+                key={d.day}
+                className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2"
+              >
                 <div>
                   <p className="font-medium">{d.day}</p>
-                  <p className="text-xs text-muted-foreground">{d.in} – {d.out}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {d.in} – {d.out}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-xs font-semibold">{d.hrs}</p>
@@ -202,8 +252,20 @@ function EmployeeView() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <StatCard label="MTD work hours" value="142h" hint="of 168h target" icon={Clock} tone="primary" />
-        <StatCard label="Late this month" value="2" hint="threshold: 3" icon={AlarmClock} tone="warning" />
+        <StatCard
+          label="MTD work hours"
+          value="142h"
+          hint="of 168h target"
+          icon={Clock}
+          tone="primary"
+        />
+        <StatCard
+          label="Late this month"
+          value="2"
+          hint="threshold: 3"
+          icon={AlarmClock}
+          tone="warning"
+        />
         <StatCard label="Absent w/o leave" value="0" icon={ClipboardX} tone="success" />
       </div>
 

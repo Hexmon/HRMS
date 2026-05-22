@@ -23,9 +23,14 @@ export async function applyLeave(input: Omit<LeaveInsert, "company_id">) {
   const { data, error } = await supabase
     .from("leave_requests")
     .insert({ ...input, company_id: cid as string })
-    .select("*").single();
+    .select("*")
+    .single();
   if (error) throw error;
-  await writeAuditLog({ action: "leave.requested", entityType: "leave_request", entityId: data.id });
+  await writeAuditLog({
+    action: "leave.requested",
+    entityType: "leave_request",
+    entityId: data.id,
+  });
   return data;
 }
 
@@ -33,9 +38,16 @@ export async function decideLeave(id: string, status: "approved" | "rejected", r
   const { data, error } = await supabase
     .from("leave_requests")
     .update({ status, remarks, approved_at: new Date().toISOString() })
-    .eq("id", id).select("*").single();
+    .eq("id", id)
+    .select("*")
+    .single();
   if (error) throw error;
-  await writeAuditLog({ action: `leave.${status}`, entityType: "leave_request", entityId: id, remarks });
+  await writeAuditLog({
+    action: `leave.${status}`,
+    entityType: "leave_request",
+    entityId: id,
+    remarks,
+  });
   return data;
 }
 
@@ -53,7 +65,8 @@ export async function applyWfh(input: Omit<WfhInsert, "company_id">) {
   const { data, error } = await supabase
     .from("wfh_requests")
     .insert({ ...input, company_id: cid as string })
-    .select("*").single();
+    .select("*")
+    .single();
   if (error) throw error;
   await writeAuditLog({ action: "wfh.requested", entityType: "wfh_request", entityId: data.id });
   return data;
@@ -63,9 +76,16 @@ export async function decideWfh(id: string, status: "approved" | "rejected", rem
   const { data, error } = await supabase
     .from("wfh_requests")
     .update({ status, remarks, approved_at: new Date().toISOString() })
-    .eq("id", id).select("*").single();
+    .eq("id", id)
+    .select("*")
+    .single();
   if (error) throw error;
-  await writeAuditLog({ action: `wfh.${status}`, entityType: "wfh_request", entityId: id, remarks });
+  await writeAuditLog({
+    action: `wfh.${status}`,
+    entityType: "wfh_request",
+    entityId: id,
+    remarks,
+  });
   return data;
 }
 
@@ -77,7 +97,9 @@ export async function listHolidays(): Promise<Holiday[]> {
 
 export async function listLeaveBalances(employeeId: string): Promise<LeaveBalance[]> {
   const { data, error } = await supabase
-    .from("leave_balances").select("*").eq("employee_id", employeeId);
+    .from("leave_balances")
+    .select("*")
+    .eq("employee_id", employeeId);
   if (error) return [];
   return data ?? [];
 }

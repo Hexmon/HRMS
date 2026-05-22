@@ -70,7 +70,10 @@ function ProjectViewPage() {
       const total = mEntries.reduce((s, e) => s + e.hours, 0);
       const billable = mEntries.filter((e) => e.billable).reduce((s, e) => s + e.hours, 0);
       const submitted = weeks.some(
-        (w) => w.employeeId === m.employeeId && w.weekStart === weekStart && (w.status === "approved" || w.status === "pending"),
+        (w) =>
+          w.employeeId === m.employeeId &&
+          w.weekStart === weekStart &&
+          (w.status === "approved" || w.status === "pending"),
       );
       return {
         id: m.id,
@@ -92,8 +95,24 @@ function ProjectViewPage() {
   }, [memberRows]);
 
   const cols: Column<MemberRow>[] = [
-    { key: "name", header: "Member", render: (r) => <UserAvatar name={r.name} email={r.employeeId} tone="primary" showMeta subtitle={r.employeeId} /> },
-    { key: "total", header: "Hours", render: (r) => <span className="text-sm font-semibold">{r.total.toFixed(1)}h</span> },
+    {
+      key: "name",
+      header: "Member",
+      render: (r) => (
+        <UserAvatar
+          name={r.name}
+          email={r.employeeId}
+          tone="primary"
+          showMeta
+          subtitle={r.employeeId}
+        />
+      ),
+    },
+    {
+      key: "total",
+      header: "Hours",
+      render: (r) => <span className="text-sm font-semibold">{r.total.toFixed(1)}h</span>,
+    },
     {
       key: "mix",
       header: "Billable mix",
@@ -103,7 +122,9 @@ function ProjectViewPage() {
           <div className="w-32">
             <div className="flex items-center justify-between text-xs">
               <span>{pct}%</span>
-              <span className="text-muted-foreground">{r.billable.toFixed(1)} / {r.total.toFixed(1)}h</span>
+              <span className="text-muted-foreground">
+                {r.billable.toFixed(1)} / {r.total.toFixed(1)}h
+              </span>
             </div>
             <Progress value={pct} className="mt-1 h-1.5" />
           </div>
@@ -125,7 +146,11 @@ function ProjectViewPage() {
   if (myProjects.length === 0) {
     return (
       <Card className="rounded-2xl border-border/60 p-10">
-        <EmptyState icon={Briefcase} title="No projects to review" description="You don't manage any projects yet." />
+        <EmptyState
+          icon={Briefcase}
+          title="No projects to review"
+          description="You don't manage any projects yet."
+        />
       </Card>
     );
   }
@@ -135,24 +160,39 @@ function ProjectViewPage() {
       <Card className="rounded-2xl border-border/60 p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[200px]">
-            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Project</p>
+            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Project
+            </p>
             <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {myProjects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.code} · {p.name}</SelectItem>
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.code} · {p.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="min-w-[180px]">
-            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Week</p>
+            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Week
+            </p>
             <Select value={weekStart} onValueChange={setWeekStart}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {weekOptions.map((w) => (
                   <SelectItem key={w} value={w}>
-                    Week of {new Date(w).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                    Week of{" "}
+                    {new Date(w).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -162,10 +202,34 @@ function ProjectViewPage() {
       </Card>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Total hours" value={totals.total.toFixed(1)} icon={Clock} tone="primary" hint="This week" />
-        <StatCard label="Billable" value={totals.billable.toFixed(1)} icon={DollarSign} tone="success" hint={`${totals.total ? Math.round((totals.billable / totals.total) * 100) : 0}% mix`} />
-        <StatCard label="Non-billable" value={totals.nonBillable.toFixed(1)} icon={Activity} tone="warning" hint="Internal time" />
-        <StatCard label="Missing submissions" value={totals.missing} icon={AlertTriangle} tone={totals.missing ? "destructive" : "info"} hint="Of project members" />
+        <StatCard
+          label="Total hours"
+          value={totals.total.toFixed(1)}
+          icon={Clock}
+          tone="primary"
+          hint="This week"
+        />
+        <StatCard
+          label="Billable"
+          value={totals.billable.toFixed(1)}
+          icon={DollarSign}
+          tone="success"
+          hint={`${totals.total ? Math.round((totals.billable / totals.total) * 100) : 0}% mix`}
+        />
+        <StatCard
+          label="Non-billable"
+          value={totals.nonBillable.toFixed(1)}
+          icon={Activity}
+          tone="warning"
+          hint="Internal time"
+        />
+        <StatCard
+          label="Missing submissions"
+          value={totals.missing}
+          icon={AlertTriangle}
+          tone={totals.missing ? "destructive" : "info"}
+          hint="Of project members"
+        />
       </div>
 
       <DataTable

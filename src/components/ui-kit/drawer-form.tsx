@@ -18,7 +18,15 @@ interface Props {
   side?: "right" | "left";
 }
 
-export function DrawerForm({ open, onOpenChange, title, description, children, footer, side = "right" }: Props) {
+export function DrawerForm({
+  open,
+  onOpenChange,
+  title,
+  description,
+  children,
+  footer,
+  side = "right",
+}: Props) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side={side} className="flex w-full flex-col gap-0 p-0 sm:max-w-lg">

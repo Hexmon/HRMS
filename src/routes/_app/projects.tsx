@@ -59,7 +59,8 @@ function ProjectsPage() {
   const visible = useMemo(() => {
     if (isMain || isFinance) return projects;
     if (isPM) return projects.filter((p) => p.manager === user?.name);
-    if (isManager) return projects.filter((p) => p.members.some((m) => m.reportingLead === user?.name));
+    if (isManager)
+      return projects.filter((p) => p.members.some((m) => m.reportingLead === user?.name));
     // employee
     return projects.filter((p) => p.members.some((m) => m.name === user?.name));
   }, [projects, activeRole, isMain, isPM, isManager, isFinance, user]);
@@ -106,9 +107,33 @@ function ProjectsPage() {
   const goDetail = (id: string) => navigate({ to: "/projects/$id", params: { id } });
 
   const handleExport = () => {
-    const headers = ["Code", "Name", "Client", "Type", "Manager", "Start", "End", "Team", "Billing", "Status", "Health"];
+    const headers = [
+      "Code",
+      "Name",
+      "Client",
+      "Type",
+      "Manager",
+      "Start",
+      "End",
+      "Team",
+      "Billing",
+      "Status",
+      "Health",
+    ];
     const rows = filtered.map((p) =>
-      [p.code, p.name, p.client, p.type, p.manager, p.startDate, p.endDate, p.members.length, p.billingType, p.status, p.health]
+      [
+        p.code,
+        p.name,
+        p.client,
+        p.type,
+        p.manager,
+        p.startDate,
+        p.endDate,
+        p.members.length,
+        p.billingType,
+        p.status,
+        p.health,
+      ]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(","),
     );
@@ -128,7 +153,10 @@ function ProjectsPage() {
       key: "code",
       header: "Code",
       render: (p) => (
-        <button onClick={() => goDetail(p.id)} className="font-mono text-xs font-semibold text-primary hover:underline">
+        <button
+          onClick={() => goDetail(p.id)}
+          className="font-mono text-xs font-semibold text-primary hover:underline"
+        >
           {p.code}
         </button>
       ),
@@ -152,15 +180,30 @@ function ProjectsPage() {
     {
       key: "manager",
       header: "Manager",
-      render: (p) => <UserAvatar name={p.manager} email={p.managerEmail ?? ""} tone="primary" showMeta={false} />,
+      render: (p) => (
+        <UserAvatar name={p.manager} email={p.managerEmail ?? ""} tone="primary" showMeta={false} />
+      ),
     },
     {
       key: "timeline",
       header: "Timeline",
       render: (p) => (
         <div className="text-xs">
-          <p className="font-medium">{new Date(p.startDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
-          <p className="text-muted-foreground">→ {new Date(p.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
+          <p className="font-medium">
+            {new Date(p.startDate).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </p>
+          <p className="text-muted-foreground">
+            →{" "}
+            {new Date(p.endDate).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </p>
         </div>
       ),
     },
@@ -172,7 +215,9 @@ function ProjectsPage() {
     {
       key: "billing",
       header: "Billing",
-      render: (p) => <StatusBadge status={p.billingType} label={BILLING_TYPE_LABEL[p.billingType]} />,
+      render: (p) => (
+        <StatusBadge status={p.billingType} label={BILLING_TYPE_LABEL[p.billingType]} />
+      ),
     },
     {
       key: "status",
@@ -194,7 +239,12 @@ function ProjectsPage() {
         description={`${visible.length} ${visible.length === 1 ? "project" : "projects"} in your view.`}
         actions={
           <>
-            <ActionButton variant="secondary" size="sm" icon={<Download className="h-4 w-4" />} onClick={handleExport}>
+            <ActionButton
+              variant="secondary"
+              size="sm"
+              icon={<Download className="h-4 w-4" />}
+              onClick={handleExport}
+            >
               Export
             </ActionButton>
             {canEdit && (
@@ -207,10 +257,34 @@ function ProjectsPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Total projects" value={stats.total} icon={Briefcase} tone="primary" hint="In your view" />
-        <StatCard label="Active" value={stats.active} icon={Activity} tone="success" hint="In flight" />
-        <StatCard label="On hold" value={stats.onHold} icon={PauseCircle} tone="warning" hint="Paused" />
-        <StatCard label="Completed" value={stats.completed} icon={CheckCircle2} tone="info" hint="Closed out" />
+        <StatCard
+          label="Total projects"
+          value={stats.total}
+          icon={Briefcase}
+          tone="primary"
+          hint="In your view"
+        />
+        <StatCard
+          label="Active"
+          value={stats.active}
+          icon={Activity}
+          tone="success"
+          hint="In flight"
+        />
+        <StatCard
+          label="On hold"
+          value={stats.onHold}
+          icon={PauseCircle}
+          tone="warning"
+          hint="Paused"
+        />
+        <StatCard
+          label="Completed"
+          value={stats.completed}
+          icon={CheckCircle2}
+          tone="info"
+          hint="Closed out"
+        />
       </div>
 
       <DataTable
@@ -222,25 +296,35 @@ function ProjectsPage() {
         toolbarRight={
           <div className="flex flex-wrap items-center gap-2">
             <Select value={status} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 w-[140px] rounded-full"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[140px] rounded-full">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 {(Object.keys(PROJECT_STATUS_LABEL) as ProjectStatus[]).map((s) => (
-                  <SelectItem key={s} value={s}>{PROJECT_STATUS_LABEL[s]}</SelectItem>
+                  <SelectItem key={s} value={s}>
+                    {PROJECT_STATUS_LABEL[s]}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select value={pm} onValueChange={setPm}>
-              <SelectTrigger className="h-9 w-[160px] rounded-full"><SelectValue placeholder="Manager" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[160px] rounded-full">
+                <SelectValue placeholder="Manager" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All managers</SelectItem>
                 {pms.map((m) => (
-                  <SelectItem key={m} value={m}>{m}</SelectItem>
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select value={type} onValueChange={setType}>
-              <SelectTrigger className="h-9 w-[130px] rounded-full"><SelectValue placeholder="Type" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[130px] rounded-full">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Client + Internal</SelectItem>
                 <SelectItem value="client">Client</SelectItem>
@@ -248,29 +332,39 @@ function ProjectsPage() {
               </SelectContent>
             </Select>
             <Select value={dept} onValueChange={setDept}>
-              <SelectTrigger className="h-9 w-[150px] rounded-full"><SelectValue placeholder="Department" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[150px] rounded-full">
+                <SelectValue placeholder="Department" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All departments</SelectItem>
                 {departments.map((d) => (
-                  <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                  <SelectItem key={d.id} value={d.name}>
+                    {d.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select value={billing} onValueChange={setBilling}>
-              <SelectTrigger className="h-9 w-[140px] rounded-full"><SelectValue placeholder="Billing" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-[140px] rounded-full">
+                <SelectValue placeholder="Billing" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All billing</SelectItem>
                 {(Object.keys(BILLING_TYPE_LABEL) as BillingType[]).map((b) => (
-                  <SelectItem key={b} value={b}>{BILLING_TYPE_LABEL[b]}</SelectItem>
+                  <SelectItem key={b} value={b}>
+                    {BILLING_TYPE_LABEL[b]}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
         }
         rowActions={(p) => {
-          const actions: { label: string; onClick?: () => void; tone?: "default" | "destructive" }[] = [
-            { label: "Open project", onClick: () => goDetail(p.id) },
-          ];
+          const actions: {
+            label: string;
+            onClick?: () => void;
+            tone?: "default" | "destructive";
+          }[] = [{ label: "Open project", onClick: () => goDetail(p.id) }];
           if (canEdit) {
             actions.push({ label: "Edit", onClick: () => openEdit(p) });
             if (p.status !== "active") {
@@ -313,12 +407,23 @@ function ProjectsPage() {
         }}
       />
 
-      <ProjectFormDrawer open={formOpen} onOpenChange={setFormOpen} initial={editing} actor={user?.name ?? "System"} />
+      <ProjectFormDrawer
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        initial={editing}
+        actor={user?.name ?? "System"}
+      />
 
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1"><CircleDot className="h-3 w-3 text-success" /> Green = on track</span>
-        <span className="inline-flex items-center gap-1"><CircleDot className="h-3 w-3 text-warning-foreground" /> Amber = at risk</span>
-        <span className="inline-flex items-center gap-1"><CircleDot className="h-3 w-3 text-destructive" /> Red = critical</span>
+        <span className="inline-flex items-center gap-1">
+          <CircleDot className="h-3 w-3 text-success" /> Green = on track
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <CircleDot className="h-3 w-3 text-warning-foreground" /> Amber = at risk
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <CircleDot className="h-3 w-3 text-destructive" /> Red = critical
+        </span>
       </div>
     </>
   );

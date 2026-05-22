@@ -1,4 +1,4 @@
-import { ButtonHTMLAttributes, forwardRef, ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ElementType, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Slot } from "@radix-ui/react-slot";
 
@@ -29,10 +29,20 @@ const SIZES: Record<Size, string> = {
 
 export const ActionButton = forwardRef<HTMLButtonElement, Props>(
   (
-    { variant = "primary", size = "md", icon, iconPosition = "left", asChild, className, children, style, ...rest },
+    {
+      variant = "primary",
+      size = "md",
+      icon,
+      iconPosition = "left",
+      asChild,
+      className,
+      children,
+      style,
+      ...rest
+    },
     ref,
   ) => {
-    const Comp: any = asChild ? Slot : "button";
+    const Comp: ElementType = asChild ? Slot : "button";
     const mergedStyle =
       variant === "primary" ? { background: "var(--gradient-primary)", ...style } : style;
     return (

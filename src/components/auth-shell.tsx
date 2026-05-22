@@ -17,17 +17,22 @@ export function AuthShell({ title, subtitle, children, footer, highlight }: Auth
     heading: (
       <>
         One workspace for your{" "}
-        <span className="bg-clip-text text-transparent" style={{ backgroundImage: "var(--gradient-primary)" }}>
+        <span
+          className="bg-clip-text text-transparent"
+          style={{ backgroundImage: "var(--gradient-primary)" }}
+        >
           entire people operation.
         </span>
       </>
     ),
-    body:
-      "Attendance, leave, projects, timesheets, expenses, assets and helpdesk — beautifully unified, role-aware, and audit-ready.",
+    body: "Attendance, leave, projects, timesheets, expenses, assets and helpdesk — beautifully unified, role-aware, and audit-ready.",
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden" style={{ background: "var(--gradient-hero)" }}>
+    <div
+      className="relative min-h-screen overflow-hidden"
+      style={{ background: "var(--gradient-hero)" }}
+    >
       <div className="absolute inset-0 -z-10 bg-background/40" />
       <div className="mx-auto grid min-h-screen max-w-6xl grid-cols-1 gap-10 px-6 py-10 lg:grid-cols-2 lg:items-center">
         <div className="hidden flex-col justify-between lg:flex">
@@ -40,7 +45,9 @@ export function AuthShell({ title, subtitle, children, footer, highlight }: Auth
             </div>
             <div>
               <p className="text-lg font-semibold tracking-tight">Hawkaii HRMS</p>
-              <p className="text-xs text-muted-foreground">Workforce operations, beautifully unified</p>
+              <p className="text-xs text-muted-foreground">
+                Workforce operations, beautifully unified
+              </p>
             </div>
           </Link>
 
@@ -48,11 +55,15 @@ export function AuthShell({ title, subtitle, children, footer, highlight }: Auth
             <div className="inline-flex items-center gap-2 rounded-full border bg-card/60 px-3 py-1 text-xs font-medium text-primary backdrop-blur">
               <Sparkles className="h-3.5 w-3.5" /> {hl.eyebrow}
             </div>
-            <h2 className="text-4xl font-semibold leading-tight tracking-tight text-foreground">{hl.heading}</h2>
+            <h2 className="text-4xl font-semibold leading-tight tracking-tight text-foreground">
+              {hl.heading}
+            </h2>
             <p className="max-w-md text-base text-muted-foreground">{hl.body}</p>
           </div>
 
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Hawkaii HRMS · All rights reserved</p>
+          <p className="text-xs text-muted-foreground">
+            © {new Date().getFullYear()} Hawkaii HRMS · All rights reserved
+          </p>
         </div>
 
         <div className="mx-auto w-full max-w-md">
@@ -72,7 +83,9 @@ export function AuthShell({ title, subtitle, children, footer, highlight }: Auth
 
             <div className="mt-6">{children}</div>
 
-            {footer && <div className="mt-6 text-center text-xs text-muted-foreground">{footer}</div>}
+            {footer && (
+              <div className="mt-6 text-center text-xs text-muted-foreground">{footer}</div>
+            )}
           </Card>
         </div>
       </div>

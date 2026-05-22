@@ -8,15 +8,34 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { DataCard } from "@/components/ui-kit";
 import { Modal } from "@/components/ui-kit";
-import { User, Phone, MapPin, Briefcase, AlertTriangle, Edit3 } from "lucide-react";
+import {
+  User,
+  Phone,
+  MapPin,
+  Briefcase,
+  AlertTriangle,
+  Edit3,
+  type LucideIcon,
+} from "lucide-react";
 
 export const Route = createFileRoute("/_app/ems/profile")({
   component: MyProfile,
 });
 
-interface Field { label: string; value: string; }
+interface Field {
+  label: string;
+  value: string;
+}
 
-function Section({ title, icon: Icon, fields }: { title: string; icon: any; fields: Field[] }) {
+function Section({
+  title,
+  icon: Icon,
+  fields,
+}: {
+  title: string;
+  icon: LucideIcon;
+  fields: Field[];
+}) {
   return (
     <DataCard title={title} actions={<Icon className="h-4 w-4 text-primary" />}>
       <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
@@ -50,7 +69,9 @@ function MyProfile() {
   return (
     <div className="space-y-4 pt-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Profile changes require HR approval before they go live.</p>
+        <p className="text-sm text-muted-foreground">
+          Profile changes require HR approval before they go live.
+        </p>
         <Button onClick={() => setOpen(true)} className="rounded-full" size="sm">
           <Edit3 className="mr-2 h-4 w-4" /> Request profile update
         </Button>
@@ -130,19 +151,35 @@ function MyProfile() {
         description="HR Admin will review and approve this change."
         footer={
           <>
-            <Button variant="outline" className="rounded-full" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button className="rounded-full" onClick={submit}>Submit request</Button>
+            <Button variant="outline" className="rounded-full" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button className="rounded-full" onClick={submit}>
+              Submit request
+            </Button>
           </>
         }
       >
         <div className="space-y-3">
           <div>
             <Label htmlFor="field">Field to update</Label>
-            <Input id="field" value={field} onChange={(e) => setField(e.target.value)} placeholder="e.g. Current address" className="mt-1" />
+            <Input
+              id="field"
+              value={field}
+              onChange={(e) => setField(e.target.value)}
+              placeholder="e.g. Current address"
+              className="mt-1"
+            />
           </div>
           <div>
             <Label htmlFor="val">New value</Label>
-            <Input id="val" value={val} onChange={(e) => setVal(e.target.value)} placeholder="Enter the new value" className="mt-1" />
+            <Input
+              id="val"
+              value={val}
+              onChange={(e) => setVal(e.target.value)}
+              placeholder="Enter the new value"
+              className="mt-1"
+            />
           </div>
         </div>
       </Modal>

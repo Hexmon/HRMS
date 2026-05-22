@@ -34,7 +34,11 @@ export function DashboardHero({
   actions: HeroAction[];
 }) {
   const greeting =
-    new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
+    new Date().getHours() < 12
+      ? "Good morning"
+      : new Date().getHours() < 18
+        ? "Good afternoon"
+        : "Good evening";
   return (
     <Card className="overflow-hidden rounded-3xl border-border/60 p-0 shadow-sm">
       <div className="relative p-6 sm:p-8" style={{ background: "var(--gradient-hero)" }}>
@@ -46,7 +50,9 @@ export function DashboardHero({
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
               {greeting}, {user.name.split(" ")[0]} 👋
             </h1>
-            <p className="mt-1 max-w-xl text-sm text-muted-foreground">{ROLE_MAP[activeRole].description}</p>
+            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+              {ROLE_MAP[activeRole].description}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             {actions.map((a) => (
@@ -55,11 +61,11 @@ export function DashboardHero({
                 asChild
                 variant={a.variant === "outline" ? "outline" : undefined}
                 className={
-                  a.variant === "outline"
-                    ? "rounded-full"
-                    : "rounded-full text-primary-foreground"
+                  a.variant === "outline" ? "rounded-full" : "rounded-full text-primary-foreground"
                 }
-                style={a.variant === "outline" ? undefined : { background: "var(--gradient-primary)" }}
+                style={
+                  a.variant === "outline" ? undefined : { background: "var(--gradient-primary)" }
+                }
               >
                 <Link to={a.to}>{a.label}</Link>
               </Button>
@@ -108,10 +114,26 @@ export function MiniArea({
           </linearGradient>
         </defs>
         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
-        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} width={28} />
+        <XAxis
+          dataKey="label"
+          axisLine={false}
+          tickLine={false}
+          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+        />
+        <YAxis
+          axisLine={false}
+          tickLine={false}
+          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+          width={28}
+        />
         <Tooltip contentStyle={tooltipStyle} />
-        <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} fill={`url(#g-${color})`} />
+        <Area
+          type="monotone"
+          dataKey={dataKey}
+          stroke={color}
+          strokeWidth={2}
+          fill={`url(#g-${color})`}
+        />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -130,8 +152,18 @@ export function MiniBars({
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 10, right: 4, left: -20, bottom: 0 }}>
         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
-        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} width={28} />
+        <XAxis
+          dataKey="label"
+          axisLine={false}
+          tickLine={false}
+          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+        />
+        <YAxis
+          axisLine={false}
+          tickLine={false}
+          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+          width={28}
+        />
         <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--muted)" }} />
         <Bar dataKey="v" fill={color} radius={[6, 6, 0, 0]} />
       </BarChart>
@@ -150,7 +182,14 @@ export function DonutChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <PieChart>
-        <Pie data={data} dataKey="value" innerRadius={42} outerRadius={62} paddingAngle={2} stroke="none">
+        <Pie
+          data={data}
+          dataKey="value"
+          innerRadius={42}
+          outerRadius={62}
+          paddingAngle={2}
+          stroke="none"
+        >
           {data.map((d, i) => (
             <Cell key={d.name} fill={d.color ?? palette[i % palette.length]} />
           ))}
@@ -163,7 +202,13 @@ export function DonutChart({
 
 export const CHART_COLORS = { PRIMARY, PRIMARY_SOFT, SUCCESS, WARNING, INFO, DESTRUCTIVE };
 
-export function ProgressBar({ value, tone = "primary" }: { value: number; tone?: "primary" | "success" | "warning" | "destructive" | "info" }) {
+export function ProgressBar({
+  value,
+  tone = "primary",
+}: {
+  value: number;
+  tone?: "primary" | "success" | "warning" | "destructive" | "info";
+}) {
   const map = {
     primary: "var(--gradient-primary)",
     success: "var(--success)",

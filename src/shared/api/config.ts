@@ -18,10 +18,13 @@ function normalizeBaseUrl(value: string | undefined): string {
   return (value || DEFAULT_API_BASE_URL).replace(/\/+$/, "");
 }
 
+const isProductionMode = import.meta.env.PROD || import.meta.env.MODE === "production";
+const requestedMockFallback = parseBoolean(envValue("VITE_API_MOCK_FALLBACK"), !isProductionMode);
+
 export const apiConfig = {
   baseUrl: normalizeBaseUrl(envValue("VITE_API_BASE_URL")),
   enabled: parseBoolean(envValue("VITE_API_ENABLED"), true),
-  mockFallback: parseBoolean(envValue("VITE_API_MOCK_FALLBACK"), true),
+  mockFallback: isProductionMode ? false : requestedMockFallback,
   rateLimitEnabled: parseBoolean(envValue("VITE_API_RATE_LIMIT_ENABLED"), true),
   rateLimitMaxRequests: parseNumber(envValue("VITE_API_RATE_LIMIT_MAX_REQUESTS"), 50),
   rateLimitWindowMs: parseNumber(envValue("VITE_API_RATE_LIMIT_WINDOW_MS"), 10_000),
