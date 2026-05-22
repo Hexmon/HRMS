@@ -6,10 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { useAuth } from "@/lib/auth";
-import { useLeave } from "@/lib/leave-store";
 import { toast } from "sonner";
-import { Home, Send, Save } from "lucide-react";
+import { Home, Send } from "lucide-react";
+import { useCreateWfhMutation } from "@/domains/leave-wfh";
 
 export const Route = createFileRoute("/_app/leave-wfh/apply-wfh")({
   component: ApplyWfhPage,
@@ -25,9 +24,8 @@ function diffDays(from: string, to: string, half: boolean) {
 }
 
 function ApplyWfhPage() {
-  const { user } = useAuth();
-  const { add } = useLeave();
   const navigate = useNavigate();
+  const mutation = useCreateWfhMutation();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [dayType, setDayType] = useState<"full" | "half">("full");
@@ -35,26 +33,25 @@ function ApplyWfhPage() {
   const [project, setProject] = useState("");
 
   const duration = diffDays(from, to, dayType === "half");
-  const manager = "Ananya Iyer";
 
-  const submit = (asDraft = false) => {
+  const submit = async () => {
     if (!from || !to) return toast.error("Please select both dates");
     if (new Date(to) < new Date(from)) return toast.error("End date must be after start date");
     if (!reason.trim()) return toast.error("Reason is required");
-    const r = add({
-      kind: "wfh",
-      employee: user?.name ?? "You",
-      department: user?.department ?? "—",
-      manager,
-      fromDate: from,
-      toDate: to,
-      halfDay: dayType === "half",
-      duration,
-      reason,
-      projectRef: project || undefined,
-    });
-    toast.success(asDraft ? "Saved as draft" : `WFH request ${r.id} submitted`);
-    navigate({ to: "/leave-wfh" });
+    try {
+      const response = await mutation.mutateAsync({
+        date_from: from,
+        date_to: to,
+        half_day: dayType === "half",
+        reason,
+        project_ref: project || undefined,
+      });
+      const requestId = typeof response.request_id === "string" ? response.request_id : "submitted";
+      toast.success(`WFH request ${requestId} submitted`);
+      navigate({ to: "/leave-wfh" });
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
 
   return (
@@ -119,7 +116,7 @@ function ApplyWfhPage() {
         </div>
         <div>
           <Label>Reporting manager</Label>
-          <Input value={manager} disabled className="mt-1.5" />
+          <Input value="Assigned automatically" disabled className="mt-1.5" />
         </div>
         <div className="md:col-span-2">
           <Label htmlFor="reason">Reason</Label>
@@ -140,14 +137,19 @@ function ApplyWfhPage() {
           day{duration === 1 ? "" : "s"}
         </p>
         <div className="flex gap-2">
-          <Button variant="outline" className="rounded-full" onClick={() => submit(true)}>
-            <Save className="mr-1.5 h-4 w-4" /> Save draft
-          </Button>
-          <Button className="rounded-full" onClick={() => submit(false)}>
+          <Button
+            className="rounded-full"
+            disabled={mutation.isPending}
+            onClick={() => void submit()}
+          >
             <Send className="mr-1.5 h-4 w-4" /> Submit
           </Button>
         </div>
       </div>
     </Card>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "WFH request failed.";
 }

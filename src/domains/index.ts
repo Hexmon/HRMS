@@ -6,6 +6,7 @@ export * from "./core";
 export * from "./dashboard";
 export * from "./documents";
 export * from "./expenses";
+export * from "./leave-wfh";
 export * from "./platform";
 export * from "./reports";
 export * from "./timesheets";

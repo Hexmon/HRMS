@@ -4,7 +4,6 @@ Run these scenarios against `http://localhost:3101` or the configured QA API bas
 
 ## Auth And Session
 
-- Run `npm run api:frontend-contract:route-coverage` and confirm all visible routes map to a contract group.
 - Login with email/password and verify token/cookie session bootstrap.
 - Load `/auth/me` after refresh.
 - Logout and confirm protected screens redirect or show unauthenticated state.

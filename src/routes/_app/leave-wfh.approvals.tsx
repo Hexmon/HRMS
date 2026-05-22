@@ -13,10 +13,16 @@ import {
   Modal,
 } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
-import { useLeave, LEAVE_TYPE_LABEL, type LeaveRequest, type ReqStatus } from "@/lib/leave-store";
+import { LEAVE_TYPE_LABEL, type LeaveRequest } from "@/lib/leave-store";
 import type { Role } from "@/lib/mock/roles";
 import { toast } from "sonner";
 import { CheckSquare, Check, X, MessageCircle, CalendarDays, Home } from "lucide-react";
+import {
+  requestsFromPage,
+  useLeaveManagerQueue,
+  useLeaveWfhDecisionMutation,
+  useWfhManagerQueue,
+} from "@/domains/leave-wfh";
 
 export const Route = createFileRoute("/_app/leave-wfh/approvals")({
   component: ApprovalsPage,
@@ -26,43 +32,68 @@ const APPROVER: Role[] = ["manager", "project_manager", "hr_admin", "main_admin"
 
 function ApprovalsPage() {
   const { activeRole } = useAuth();
-  const { requests, setStatus } = useLeave();
+  const leaveQueue = useLeaveManagerQueue({ page: 1, page_size: 50 });
+  const wfhQueue = useWfhManagerQueue({ page: 1, page_size: 50 });
+  const decisionMutation = useLeaveWfhDecisionMutation();
 
   const [modal, setModal] = useState<{
     open: boolean;
     req?: LeaveRequest;
-    action?: "rejected" | "submitted";
+    action?: "rejected" | "returned";
   }>({ open: false });
   const [remark, setRemark] = useState("");
 
-  const pending = useMemo(() => requests.filter((r) => r.status === "pending_manager"), [requests]);
-  const leaves = pending.filter((r) => r.kind === "leave");
-  const wfhs = pending.filter((r) => r.kind === "wfh");
+  const leaves = useMemo(() => requestsFromPage(leaveQueue.data), [leaveQueue.data]);
+  const wfhs = useMemo(() => requestsFromPage(wfhQueue.data), [wfhQueue.data]);
+  const loadError = leaveQueue.error ?? wfhQueue.error ?? null;
+  const isLoading = leaveQueue.isLoading || wfhQueue.isLoading;
 
   if (!activeRole || !APPROVER.includes(activeRole)) return <Navigate to="/leave-wfh" />;
 
-  const approve = (r: LeaveRequest) => {
-    setStatus(r.id, "approved");
-    toast.success(`${r.id} approved`);
+  const decide = async (
+    r: LeaveRequest,
+    decision: "approve" | "reject" | "return",
+    remarks?: string,
+  ) => {
+    try {
+      await decisionMutation.mutateAsync({
+        kind: r.kind,
+        id: r.id,
+        input: {
+          decision,
+          remarks,
+          expected_version: r.expectedVersion ?? 1,
+        },
+      });
+      toast.success(
+        `${r.id} ${decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "returned"}`,
+      );
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
-  const openModal = (r: LeaveRequest, action: "rejected" | "submitted") => {
+  const openModal = (r: LeaveRequest, action: "rejected" | "returned") => {
     setModal({ open: true, req: r, action });
     setRemark("");
   };
-  const submitModal = () => {
+  const submitModal = async () => {
     if (!modal.req || !modal.action) return;
     if (!remark.trim()) return toast.error("Remarks are required");
-    const status: ReqStatus = modal.action === "rejected" ? "rejected" : "submitted";
-    setStatus(modal.req.id, status, remark);
-    toast.success(
-      modal.action === "rejected"
-        ? `${modal.req.id} rejected`
-        : `Returned to ${modal.req.employee} for clarification`,
-    );
+    await decide(modal.req, modal.action === "rejected" ? "reject" : "return", remark.trim());
     setModal({ open: false });
   };
 
   function Queue({ rows, kind }: { rows: LeaveRequest[]; kind: "leave" | "wfh" }) {
+    if (loadError)
+      return (
+        <EmptyState
+          icon={CheckSquare}
+          title="Could not load approvals"
+          description={errorMessage(loadError)}
+        />
+      );
+    if (isLoading)
+      return <p className="text-sm text-muted-foreground">Loading approval queue...</p>;
     if (rows.length === 0)
       return (
         <EmptyState
@@ -128,7 +159,12 @@ function ApprovalsPage() {
         header: "Actions",
         render: (r) => (
           <div className="flex gap-1.5">
-            <Button size="sm" className="h-7 rounded-full" onClick={() => approve(r)}>
+            <Button
+              size="sm"
+              className="h-7 rounded-full"
+              disabled={decisionMutation.isPending}
+              onClick={() => void decide(r, "approve")}
+            >
               <Check className="h-3.5 w-3.5" />
             </Button>
             <Button
@@ -143,7 +179,7 @@ function ApprovalsPage() {
               size="sm"
               variant="ghost"
               className="h-7 rounded-full"
-              onClick={() => openModal(r, "submitted")}
+              onClick={() => openModal(r, "returned")}
               title="Return for clarification"
             >
               <MessageCircle className="h-3.5 w-3.5" />
@@ -160,12 +196,7 @@ function ApprovalsPage() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <StatCard label="Pending leave" value={leaves.length} icon={CalendarDays} tone="warning" />
         <StatCard label="Pending WFH" value={wfhs.length} icon={Home} tone="info" />
-        <StatCard
-          label="Approved (this week)"
-          value={requests.filter((r) => r.status === "approved").length}
-          icon={Check}
-          tone="success"
-        />
+        <StatCard label="Approved (this week)" value="0" icon={Check} tone="success" />
       </div>
 
       <Tabs defaultValue="leave">
@@ -195,7 +226,11 @@ function ApprovalsPage() {
             >
               Cancel
             </Button>
-            <Button className="rounded-full" onClick={submitModal}>
+            <Button
+              className="rounded-full"
+              disabled={decisionMutation.isPending}
+              onClick={() => void submitModal()}
+            >
               {modal.action === "rejected" ? "Reject" : "Return"}
             </Button>
           </>
@@ -215,4 +250,8 @@ function ApprovalsPage() {
       </Modal>
     </div>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Leave/WFH approval request failed.";
 }

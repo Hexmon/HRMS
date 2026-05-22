@@ -13,10 +13,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { useAuth } from "@/lib/auth";
-import { useLeave, LEAVE_TYPE_LABEL, type LeaveType } from "@/lib/leave-store";
+import { LEAVE_TYPE_LABEL, type LeaveType } from "@/lib/leave-store";
 import { toast } from "sonner";
-import { CalendarPlus, Paperclip, Send, Save } from "lucide-react";
+import { CalendarPlus, Paperclip, Send } from "lucide-react";
+import { useCreateLeaveMutation } from "@/domains/leave-wfh";
 
 export const Route = createFileRoute("/_app/leave-wfh/apply-leave")({
   component: ApplyLeavePage,
@@ -32,9 +32,8 @@ function diffDays(from: string, to: string, half: boolean) {
 }
 
 function ApplyLeavePage() {
-  const { user } = useAuth();
-  const { add } = useLeave();
   const navigate = useNavigate();
+  const mutation = useCreateLeaveMutation();
   const [type, setType] = useState<LeaveType>("casual");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -43,26 +42,26 @@ function ApplyLeavePage() {
   const [file, setFile] = useState<string>("");
 
   const duration = diffDays(from, to, dayType === "half");
-  const manager = "Ananya Iyer";
 
-  const submit = (asDraft = false) => {
+  const submit = async () => {
     if (!from || !to) return toast.error("Please select both dates");
     if (new Date(to) < new Date(from)) return toast.error("End date must be after start date");
     if (!reason.trim()) return toast.error("Reason is required");
-    const r = add({
-      kind: "leave",
-      employee: user?.name ?? "You",
-      department: user?.department ?? "—",
-      manager,
-      leaveType: type,
-      fromDate: from,
-      toDate: to,
-      halfDay: dayType === "half",
-      duration,
-      reason,
-    });
-    toast.success(asDraft ? "Saved as draft" : `Leave request ${r.id} submitted`);
-    navigate({ to: "/leave-wfh" });
+    try {
+      const response = await mutation.mutateAsync({
+        leave_type: type,
+        date_from: from,
+        date_to: to,
+        half_day: dayType === "half",
+        reason,
+        document_ids: [],
+      });
+      const requestId = typeof response.request_id === "string" ? response.request_id : "submitted";
+      toast.success(`Leave request ${requestId} submitted`);
+      navigate({ to: "/leave-wfh" });
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
 
   return (
@@ -97,7 +96,7 @@ function ApplyLeavePage() {
         </div>
         <div>
           <Label>Reporting manager</Label>
-          <Input value={manager} disabled className="mt-1.5" />
+          <Input value="Assigned automatically" disabled className="mt-1.5" />
         </div>
         <div>
           <Label htmlFor="from">From date</Label>
@@ -165,14 +164,19 @@ function ApplyLeavePage() {
           day{duration === 1 ? "" : "s"}
         </p>
         <div className="flex gap-2">
-          <Button variant="outline" className="rounded-full" onClick={() => submit(true)}>
-            <Save className="mr-1.5 h-4 w-4" /> Save draft
-          </Button>
-          <Button className="rounded-full" onClick={() => submit(false)}>
+          <Button
+            className="rounded-full"
+            disabled={mutation.isPending}
+            onClick={() => void submit()}
+          >
             <Send className="mr-1.5 h-4 w-4" /> Submit
           </Button>
         </div>
       </div>
     </Card>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Leave request failed.";
 }

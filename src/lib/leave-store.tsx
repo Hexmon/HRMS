@@ -7,6 +7,7 @@ export type ReqStatus =
   | "submitted"
   | "pending_manager"
   | "approved"
+  | "returned"
   | "rejected"
   | "cancelled";
 
@@ -34,6 +35,7 @@ export interface LeaveRequest {
   status: ReqStatus;
   remarks?: string;
   createdAt: string;
+  expectedVersion?: number;
 }
 
 export interface Holiday {

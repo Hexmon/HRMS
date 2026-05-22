@@ -12,10 +12,11 @@ import {
 } from "@/components/ui/select";
 import { DataTable, type Column, StatusBadge, EmptyState, StatCard } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
-import { useLeave, LEAVE_TYPE_LABEL, type LeaveRequest } from "@/lib/leave-store";
+import { LEAVE_TYPE_LABEL, type LeaveRequest } from "@/lib/leave-store";
 import type { Role } from "@/lib/mock/roles";
 import { toast } from "sonner";
 import { Download, Eye, Filter, CalendarDays } from "lucide-react";
+import { requestsFromPage, useLeaveWfhMonitor, type LeaveWfhStatus } from "@/domains/leave-wfh";
 
 export const Route = createFileRoute("/_app/leave-wfh/monitor")({
   component: MonitorPage,
@@ -25,12 +26,19 @@ const ADMIN: Role[] = ["hr_admin", "main_admin"];
 
 function MonitorPage() {
   const { activeRole } = useAuth();
-  const { requests } = useLeave();
 
   const [dept, setDept] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
+  const monitorQuery = useLeaveWfhMonitor({
+    page: 1,
+    page_size: 100,
+    status: status === "all" ? undefined : (status as LeaveWfhStatus),
+    date_from: from || undefined,
+    date_to: to || undefined,
+  });
+  const requests = requestsFromPage(monitorQuery.data);
 
   const departments = useMemo(
     () => Array.from(new Set(requests.map((r) => r.department))),
@@ -203,7 +211,7 @@ function MonitorPage() {
                 <SelectItem value="approved">Approved</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
-                <SelectItem value="submitted">Returned</SelectItem>
+                <SelectItem value="returned">Returned</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -227,11 +235,19 @@ function MonitorPage() {
         </div>
       </Card>
 
-      {filtered.length === 0 ? (
+      {monitorQuery.isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading Leave/WFH monitor...</p>
+      ) : monitorQuery.isError ? (
+        <EmptyState title="Could not load monitor" description={errorMessage(monitorQuery.error)} />
+      ) : filtered.length === 0 ? (
         <EmptyState title="No requests match filters" description="Try widening your selection." />
       ) : (
         <DataTable rows={filtered} columns={cols} searchKeys={["employee", "manager", "reason"]} />
       )}
     </div>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Leave/WFH monitor request failed.";
 }

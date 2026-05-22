@@ -48,6 +48,10 @@ const MAP: Record<string, { label: string; cls: string }> = {
     label: "Pending Manager",
     cls: "bg-warning/20 text-warning-foreground border-warning/40",
   },
+  returned: {
+    label: "Returned",
+    cls: "bg-warning/20 text-warning-foreground border-warning/40",
+  },
   manager_returned: {
     label: "Manager Returned",
     cls: "bg-warning/20 text-warning-foreground border-warning/40",

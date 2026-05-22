@@ -20,7 +20,7 @@ When asking Codex to implement a screen, include:
 
 1. The target frontend route/screen name.
 2. The exact API operations from `ENDPOINT_INDEX.md`.
-3. The relevant business rules from `BUSINESS_RULES.md`, `EXPENSE_FINANCE_FLOW.md`, or missing-operation notes from `FRONTEND_BACKEND_GAP_AUDIT.md`.
+3. The relevant business rules from `BUSINESS_RULES.md` or `EXPENSE_FINANCE_FLOW.md`.
 4. The desired loading, empty, error, `403`, `409`, and `429` behavior.
 5. A statement that the frontend must consume Fastify APIs only.
 
@@ -33,4 +33,3 @@ When asking Codex to implement a screen, include:
 - Use toasts or inline errors for backend validation messages.
 - Refetch after mutations instead of manually guessing next backend state.
 - Keep object storage and internal infrastructure invisible to the browser.
-- Run `npm run api:frontend-contract:route-coverage` when route coverage or expense workflow screens change.

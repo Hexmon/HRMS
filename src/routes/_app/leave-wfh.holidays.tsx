@@ -6,13 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { DataCard, Modal } from "@/components/ui-kit";
+import { DataCard, EmptyState, Modal } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
-import { HOLIDAYS, type Holiday } from "@/lib/leave-store";
 import type { Role } from "@/lib/mock/roles";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Plus, MapPin, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { holidaysFromResponse, useHolidayMutation, useHolidays } from "@/domains/leave-wfh";
 
 export const Route = createFileRoute("/_app/leave-wfh/holidays")({
   component: HolidaysPage,
@@ -23,7 +23,6 @@ const ADMIN: Role[] = ["hr_admin", "main_admin"];
 function HolidaysPage() {
   const { activeRole } = useAuth();
   const isAdmin = !!activeRole && ADMIN.includes(activeRole);
-  const [list, setList] = useState<Holiday[]>(HOLIDAYS);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [date, setDate] = useState("");
@@ -40,6 +39,9 @@ function HolidaysPage() {
   const days = new Date(cursor.y, cursor.m + 1, 0).getDate();
   const prev = () => setCursor((c) => (c.m === 0 ? { y: c.y - 1, m: 11 } : { y: c.y, m: c.m - 1 }));
   const next = () => setCursor((c) => (c.m === 11 ? { y: c.y + 1, m: 0 } : { y: c.y, m: c.m + 1 }));
+  const holidaysQuery = useHolidays({ year: cursor.y, page: 1, page_size: 100 });
+  const mutation = useHolidayMutation();
+  const list = holidaysFromResponse(holidaysQuery.data);
 
   const monthHolidays = useMemo(
     () =>
@@ -50,24 +52,27 @@ function HolidaysPage() {
     [list, cursor],
   );
 
-  const add = () => {
+  const add = async () => {
     if (!name || !date) return toast.error("Name and date are required");
-    setList((l) => [
-      ...l,
-      {
-        id: `H-${Math.random().toString(36).slice(2, 7)}`,
-        name,
-        date,
-        region: region || "All",
-        optional,
-      },
-    ]);
-    toast.success(`${name} added to holidays`);
-    setOpen(false);
-    setName("");
-    setDate("");
-    setRegion("");
-    setOptional(false);
+    try {
+      await mutation.mutateAsync({
+        id: createId(),
+        input: {
+          name,
+          date,
+          region: region || "All",
+          optional,
+        },
+      });
+      toast.success(`${name} added to holidays`);
+      setOpen(false);
+      setName("");
+      setDate("");
+      setRegion("");
+      setOptional(false);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
 
   return (
@@ -89,43 +94,57 @@ function HolidaysPage() {
 
         <TabsContent value="list" className="mt-4">
           <DataCard title={`${list.length} holidays`} description="Sorted by date">
-            <ul className="divide-y">
-              {list
-                .sort((a, b) => a.date.localeCompare(b.date))
-                .map((h) => (
-                  <li
-                    key={h.id}
-                    className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary">
-                        <CalendarDays className="h-4 w-4" />
+            {holidaysQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading holidays...</p>
+            ) : holidaysQuery.isError ? (
+              <EmptyState
+                title="Could not load holidays"
+                description={errorMessage(holidaysQuery.error)}
+              />
+            ) : list.length === 0 ? (
+              <EmptyState
+                title="No holidays"
+                description="No holidays are configured for this year."
+              />
+            ) : (
+              <ul className="divide-y">
+                {list
+                  .sort((a, b) => a.date.localeCompare(b.date))
+                  .map((h) => (
+                    <li
+                      key={h.id}
+                      className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary">
+                          <CalendarDays className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold">
+                            {h.name}
+                            {h.optional && (
+                              <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                Optional
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                            <MapPin className="h-3 w-3" /> {h.region}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold">
-                          {h.name}
-                          {h.optional && (
-                            <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                              Optional
-                            </span>
-                          )}
-                        </p>
-                        <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                          <MapPin className="h-3 w-3" /> {h.region}
-                        </p>
-                      </div>
-                    </div>
-                    <p className="text-sm font-medium">
-                      {new Date(h.date).toLocaleDateString(undefined, {
-                        weekday: "short",
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </p>
-                  </li>
-                ))}
-            </ul>
+                      <p className="text-sm font-medium">
+                        {new Date(h.date).toLocaleDateString(undefined, {
+                          weekday: "short",
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </p>
+                    </li>
+                  ))}
+              </ul>
+            )}
           </DataCard>
         </TabsContent>
 
@@ -198,7 +217,11 @@ function HolidaysPage() {
             <Button variant="outline" className="rounded-full" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button className="rounded-full" onClick={add}>
+            <Button
+              className="rounded-full"
+              disabled={mutation.isPending}
+              onClick={() => void add()}
+            >
               Add
             </Button>
           </>
@@ -250,4 +273,15 @@ function HolidaysPage() {
       </Modal>
     </div>
   );
+}
+
+function createId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `00000000-0000-4000-8000-${Date.now().toString().padStart(12, "0").slice(-12)}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Holiday request failed.";
 }

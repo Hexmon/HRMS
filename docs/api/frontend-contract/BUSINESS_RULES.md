@@ -6,7 +6,6 @@
 - Do not query PostgreSQL, Valkey, MinIO/S3, Drizzle, migrations, or internal repositories from frontend code.
 - Frontend route guards improve UX, but backend RBAC/ABAC is authoritative.
 - Use `openapi.json` for exact field-level schemas and `ENDPOINT_INDEX.md` for behavior and UI notes.
-- Use `FRONTEND_BACKEND_GAP_AUDIT.md` when a visible frontend feature is not yet represented in OpenAPI.
 
 ## Auth And Sessions
 
