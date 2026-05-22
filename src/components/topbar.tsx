@@ -5,6 +5,8 @@ import {
   Plus,
   User as UserIcon,
   Settings as SettingsIcon,
+  Server,
+  WifiOff,
   Briefcase,
   Receipt,
   Plane,
@@ -21,9 +23,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useApiReady } from "@/domains/platform";
 import { useAuth, ROLE_MAP } from "@/lib/auth";
 import { UserAvatar } from "@/components/ui-kit/user-avatar";
 import { NotificationPanel } from "@/components/ui-kit/notification-panel";
+import { isApiEnabled } from "@/shared/api";
 
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -61,10 +66,27 @@ export function Topbar() {
   const { user, activeRole, logout } = useAuth();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const apiEnabled = isApiEnabled();
+  const apiReady = useApiReady(apiEnabled);
   const title =
     PAGE_TITLES[path] ??
     Object.entries(PAGE_TITLES).find(([k]) => path.startsWith(k + "/"))?.[1] ??
     "Hawkaii HRMS";
+  const platformStatus = !apiEnabled
+    ? "disabled"
+    : apiReady.isLoading
+      ? "checking"
+      : apiReady.data?.status === "ok"
+        ? "ready"
+        : "unavailable";
+  const platformLabel =
+    platformStatus === "ready"
+      ? "Platform API ready"
+      : platformStatus === "checking"
+        ? "Checking platform API"
+        : platformStatus === "disabled"
+          ? "Platform API disabled"
+          : "Platform API unavailable";
 
   if (!user || !activeRole) return null;
 
@@ -115,6 +137,24 @@ export function Topbar() {
 
         {/* Notifications */}
         <NotificationPanel />
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              aria-label={platformLabel}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border bg-card text-muted-foreground"
+            >
+              {platformStatus === "ready" ? (
+                <Server className="h-4 w-4 text-success" />
+              ) : (
+                <WifiOff
+                  className={`h-4 w-4 ${platformStatus === "checking" ? "text-warning" : "text-destructive"}`}
+                />
+              )}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{platformLabel}</TooltipContent>
+        </Tooltip>
 
         {/* Profile dropdown */}
         <DropdownMenu>
