@@ -518,7 +518,7 @@ export const PROJECTS: Project[] = [
     actualHours: 720,
     estimatedBudget: 0,
     actualSpend: 0,
-    techStack: ["TypeScript", "React", "Supabase"],
+    techStack: ["TypeScript", "React", "Backend API"],
     priority: "medium",
     costCenter: "CC-INT-01",
     department: "People Ops",

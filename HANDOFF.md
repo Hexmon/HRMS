@@ -1,6 +1,6 @@
 # Hawkaii HRMS — Developer Handoff
 
-> Frontend prototype. No backend, no Supabase, no real auth. All data is mock and lives in `src/lib/mock/*`. Replace mock stores with real API clients when the Node.js / Next.js backend is built.
+> Frontend is migrating module-by-module to the Hawkaii HRMS Fastify backend. Integrated modules use `/api/v1` adapters; remaining mock/local modules are tracked in `docs/api/frontend-contract/FRONTEND_BACKEND_GAP_AUDIT.md`.
 
 ---
 

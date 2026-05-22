@@ -1,5 +1,6 @@
 export * from "./admin";
 export * from "./assets";
+export * from "./attendance";
 export * from "./auth";
 export * from "./core";
 export * from "./dashboard";
