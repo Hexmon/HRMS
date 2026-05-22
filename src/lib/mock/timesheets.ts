@@ -28,6 +28,12 @@ export interface TimesheetWeek {
   department: string;
   weekStart: string;
   status: TimesheetEntryStatus;
+  version?: number;
+  totalHours?: number;
+  billableHours?: number;
+  nonBillableHours?: number;
+  expectedHours?: number;
+  missingHours?: number;
   submittedAt?: string;
   decidedAt?: string;
   decidedBy?: string;

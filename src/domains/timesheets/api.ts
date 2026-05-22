@@ -1,6 +1,11 @@
 import { apiRequest } from "@/shared/api";
 import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } from "@/shared/api";
 
+interface TimesheetDecisionBody extends ExpectedVersionBody {
+  decision: "approve" | "reject" | "return";
+  remarks?: string;
+}
+
 export const timesheetsApi = {
   createWorkSegment(input: ApiRecord) {
     return apiRequest<ApiRecord>("/api/v1/timesheets/work-segments", {
@@ -17,10 +22,10 @@ export const timesheetsApi = {
   listMySubmissions(query: PageQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/timesheets/submissions/my", { query });
   },
-  approverQueuePartial(query: PageQuery = {}) {
+  approverQueue(query: PageQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/timesheets/queue/approver", { query });
   },
-  approveSubmissionPartial(id: string, input: ExpectedVersionBody) {
+  decideSubmission(id: string, input: TimesheetDecisionBody) {
     return apiRequest<ApiRecord>(`/api/v1/timesheets/submissions/${id}/approve`, {
       method: "POST",
       body: input,

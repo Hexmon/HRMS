@@ -62,7 +62,7 @@ function ApprovalsPage() {
   const { user, activeRole } = useAuth();
   const { employees } = useEmployees();
   const { projects } = useProjects();
-  const { entries, weeks, setWeekStatus } = useTimesheets();
+  const { entries, weeks, loading, error, isApiBacked, setWeekStatus } = useTimesheets();
 
   const isAdmin = activeRole === "main_admin" || activeRole === "hr_admin";
 
@@ -84,8 +84,9 @@ function ApprovalsPage() {
     const wkEntries = entries.filter(
       (e) => e.employeeId === w.employeeId && e.weekStart === w.weekStart,
     );
-    const total = wkEntries.reduce((s, e) => s + e.hours, 0);
-    const billable = wkEntries.filter((e) => e.billable).reduce((s, e) => s + e.hours, 0);
+    const total = w.totalHours ?? wkEntries.reduce((s, e) => s + e.hours, 0);
+    const billable =
+      w.billableHours ?? wkEntries.filter((e) => e.billable).reduce((s, e) => s + e.hours, 0);
     return {
       id: w.id,
       weekId: w.id,
@@ -95,7 +96,7 @@ function ApprovalsPage() {
       weekStart: w.weekStart,
       total,
       billable,
-      missing: Math.max(0, TARGET - total),
+      missing: w.missingHours ?? Math.max(0, TARGET - total),
       status: w.status,
       remarks: w.remarks,
       decidedBy: w.decidedBy,
@@ -104,8 +105,9 @@ function ApprovalsPage() {
 
   const scopedWeeks = useMemo(() => {
     const ids = new Set(scopedEmployees.map((e) => e.id));
+    if (isApiBacked && ids.size === 0) return weeks;
     return weeks.filter((w) => ids.has(w.employeeId));
-  }, [weeks, scopedEmployees]);
+  }, [weeks, scopedEmployees, isApiBacked]);
 
   const pending = scopedWeeks
     .filter((w) => w.status === "pending" || w.status === "submitted")
@@ -160,42 +162,66 @@ function ApprovalsPage() {
     setSelected(next);
   };
 
-  const approveOne = (r: Row) => {
-    setWeekStatus(r.weekId, "approved", user?.name);
-    toast.success("Approved", { description: `${r.employeeName} · ${r.weekStart}` });
+  const approveOne = async (r: Row) => {
+    try {
+      await setWeekStatus(r.weekId, "approved", user?.name);
+      toast.success("Approved", { description: `${r.employeeName} · ${r.weekStart}` });
+    } catch (err) {
+      toast.error("Could not approve timesheet", {
+        description: err instanceof Error ? err.message : "Backend request failed.",
+      });
+    }
   };
-  const bulkApprove = () => {
+  const bulkApprove = async () => {
     let n = 0;
-    pending.forEach((r) => {
-      if (selected.has(r.id)) {
-        setWeekStatus(r.weekId, "approved", user?.name);
-        n++;
+    try {
+      for (const r of pending) {
+        if (selected.has(r.id)) {
+          await setWeekStatus(r.weekId, "approved", user?.name);
+          n++;
+        }
       }
-    });
-    toast.success(`${n} weeks approved`);
-    setSelected(new Set());
+      toast.success(`${n} weeks approved`);
+      setSelected(new Set());
+    } catch (err) {
+      toast.error("Could not bulk approve timesheets", {
+        description: err instanceof Error ? err.message : "Backend request failed.",
+      });
+    }
   };
-  const submitReject = () => {
+  const submitReject = async () => {
     if (!rejectFor) return;
     if (!remarks.trim()) {
       toast.error("Remarks are required");
       return;
     }
-    setWeekStatus(rejectFor.weekId, "rejected", user?.name, remarks.trim());
-    toast.success("Rejected", { description: `${rejectFor.employeeName}` });
-    setRejectFor(null);
-    setRemarks("");
+    try {
+      await setWeekStatus(rejectFor.weekId, "rejected", user?.name, remarks.trim());
+      toast.success("Rejected", { description: `${rejectFor.employeeName}` });
+      setRejectFor(null);
+      setRemarks("");
+    } catch (err) {
+      toast.error("Could not reject timesheet", {
+        description: err instanceof Error ? err.message : "Backend request failed.",
+      });
+    }
   };
-  const submitReturn = () => {
+  const submitReturn = async () => {
     if (!returnFor) return;
     if (!remarks.trim()) {
       toast.error("Remarks are required");
       return;
     }
-    setWeekStatus(returnFor.weekId, "returned", user?.name, remarks.trim());
-    toast.success("Returned for changes", { description: `${returnFor.employeeName}` });
-    setReturnFor(null);
-    setRemarks("");
+    try {
+      await setWeekStatus(returnFor.weekId, "returned", user?.name, remarks.trim());
+      toast.success("Returned for changes", { description: `${returnFor.employeeName}` });
+      setReturnFor(null);
+      setRemarks("");
+    } catch (err) {
+      toast.error("Could not return timesheet", {
+        description: err instanceof Error ? err.message : "Backend request failed.",
+      });
+    }
   };
 
   const buildColumns = (rows: Row[], showActions: boolean, showSelect: boolean): Column<Row>[] => {
@@ -315,6 +341,13 @@ function ApprovalsPage() {
 
   return (
     <div className="space-y-4">
+      {error && (
+        <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
+          <p className="text-sm font-semibold text-destructive">Timesheet API unavailable</p>
+          <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label="Pending"
@@ -383,6 +416,7 @@ function ApprovalsPage() {
               columns={buildColumns(pending, true, true)}
               rows={pending}
               searchKeys={["employeeName", "department"]}
+              loading={loading}
               emptyTitle="Nothing pending"
             />
           )}
@@ -393,6 +427,7 @@ function ApprovalsPage() {
             columns={buildColumns(approved, false, false)}
             rows={approved}
             searchKeys={["employeeName", "department"]}
+            loading={loading}
             emptyTitle="No approved weeks yet"
           />
         </TabsContent>
@@ -412,6 +447,7 @@ function ApprovalsPage() {
                 columns={buildColumns(rejected, false, false)}
                 rows={rejected}
                 searchKeys={["employeeName"]}
+                loading={loading}
               />
               <Card className="rounded-2xl border-border/60 p-4 text-xs text-muted-foreground">
                 Tip: Returned weeks become editable for the employee. Rejected weeks remain locked
@@ -435,6 +471,7 @@ function ApprovalsPage() {
               columns={buildColumns(missing, false, false)}
               rows={missing}
               searchKeys={["employeeName", "department"]}
+              loading={loading}
               emptyTitle="No missing submissions"
             />
           )}

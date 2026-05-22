@@ -31,6 +31,7 @@ import {
   isoDate,
   addDays,
   DEMO_TODAY_ISO,
+  type TimesheetEntry,
 } from "@/lib/mock/timesheets";
 import {
   Plus,
@@ -66,12 +67,21 @@ function MyTimesheetPage() {
   const { user } = useAuth();
   const { employees } = useEmployees();
   const { projects } = useProjects();
-  const { entries, weeks, addEntry, removeEntry, ensureWeek, setWeekStatus } = useTimesheets();
+  const { entries, weeks, loading, error, saveWeekEntries, ensureWeek, setWeekStatus } =
+    useTimesheets();
+  const [savingAction, setSavingAction] = useState<"draft" | "submit" | null>(null);
 
   // Identify current employee from user (fall back to demo employee)
   const me = useMemo(() => {
     return (
-      employees.find((e) => e.email === user?.email) ?? employees.find((e) => e.id === "EMP-1042")!
+      employees.find((e) => e.email === user?.email) ??
+      employees.find((e) => e.id === "EMP-1042") ??
+      employees[0] ?? {
+        id: user?.id ?? "self",
+        name: user?.name ?? "Employee",
+        department: user?.department ?? "General",
+        manager: "Manager",
+      }
     );
   }, [employees, user]);
 
@@ -198,16 +208,15 @@ function MyTimesheetPage() {
     );
   };
 
-  const persistRows = (status: "draft" | "pending") => {
-    // Wipe & rewrite week entries
-    weekEntries.forEach((e) => removeEntry(e.id));
+  const persistRows = async (status: "draft" | "pending") => {
+    const nextEntries: Array<Omit<TimesheetEntry, "id">> = [];
     rows.forEach((r) => {
       const project = projects.find((p) => p.id === r.projectId);
       if (!project) return;
       weekDays.forEach((d) => {
         const h = Number(r.hours[d]) || 0;
         if (h > 0) {
-          addEntry({
+          nextEntries.push({
             employeeId: me.id,
             employeeName: me.name,
             weekStart,
@@ -223,22 +232,41 @@ function MyTimesheetPage() {
         }
       });
     });
-    setWeekStatus(week.id, status);
+    await saveWeekEntries(nextEntries, { employeeId: me.id, weekStart });
+    if (status === "pending") await setWeekStatus(week.id, status);
   };
 
-  const onSaveDraft = () => {
+  const onSaveDraft = async () => {
     if (readOnly) return;
-    persistRows("draft");
-    toast.success("Draft saved");
+    setSavingAction("draft");
+    try {
+      await persistRows("draft");
+      toast.success("Draft saved");
+    } catch (err) {
+      toast.error("Could not save draft", {
+        description: err instanceof Error ? err.message : "Backend request failed.",
+      });
+    } finally {
+      setSavingAction(null);
+    }
   };
-  const onSubmitWeek = () => {
+  const onSubmitWeek = async () => {
     if (readOnly) return;
     if (totals.total === 0) {
       toast.error("Add some hours before submitting");
       return;
     }
-    persistRows("pending");
-    toast.success("Week submitted for approval");
+    setSavingAction("submit");
+    try {
+      await persistRows("pending");
+      toast.success("Week submitted for approval");
+    } catch (err) {
+      toast.error("Could not submit week", {
+        description: err instanceof Error ? err.message : "Backend request failed.",
+      });
+    } finally {
+      setSavingAction(null);
+    }
   };
 
   const dateLabel = (d: string, opts?: Intl.DateTimeFormatOptions) =>
@@ -283,17 +311,34 @@ function MyTimesheetPage() {
             </Tabs>
             {!readOnly && (
               <>
-                <Button variant="outline" size="sm" onClick={onSaveDraft}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onSaveDraft}
+                  disabled={loading || savingAction !== null}
+                >
                   <Save className="mr-1 h-4 w-4" /> Save draft
                 </Button>
-                <ActionButton size="sm" icon={<Send className="h-4 w-4" />} onClick={onSubmitWeek}>
-                  Submit week
+                <ActionButton
+                  size="sm"
+                  icon={<Send className="h-4 w-4" />}
+                  onClick={onSubmitWeek}
+                  disabled={loading || savingAction !== null}
+                >
+                  {savingAction === "submit" ? "Submitting" : "Submit week"}
                 </ActionButton>
               </>
             )}
           </div>
         </div>
       </Card>
+
+      {error && (
+        <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
+          <p className="text-sm font-semibold text-destructive">Timesheet API unavailable</p>
+          <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -377,11 +422,13 @@ function MyTimesheetPage() {
                     <td colSpan={11} className="p-8">
                       <EmptyState
                         icon={Clock}
-                        title="No entries yet for this week"
+                        title={loading ? "Loading timesheet" : "No entries yet for this week"}
                         description={
-                          readOnly
-                            ? "Nothing submitted."
-                            : "Click 'Add row' to log hours against your projects."
+                          loading
+                            ? "Fetching current backend timesheet entries."
+                            : readOnly
+                              ? "Nothing submitted."
+                              : "Click 'Add row' to log hours against your projects."
                         }
                       />
                     </td>

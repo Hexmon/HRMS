@@ -40,7 +40,7 @@ interface MemberRow {
 function ProjectViewPage() {
   const { user, activeRole } = useAuth();
   const { projects } = useProjects();
-  const { entries, weeks } = useTimesheets();
+  const { entries, weeks, loading, error } = useTimesheets();
 
   const isAdmin = activeRole === "main_admin";
   const myProjects = useMemo(
@@ -201,6 +201,13 @@ function ProjectViewPage() {
         </div>
       </Card>
 
+      {error && (
+        <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
+          <p className="text-sm font-semibold text-destructive">Timesheet API unavailable</p>
+          <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label="Total hours"
@@ -236,6 +243,7 @@ function ProjectViewPage() {
         columns={cols}
         rows={memberRows}
         searchKeys={["name", "employeeId"]}
+        loading={loading}
         emptyTitle="No team members"
       />
     </div>
