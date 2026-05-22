@@ -1,4 +1,5 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -6,6 +7,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, type Column, StatusBadge, EmptyState, StatCard } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
+import { documentsApi, mapApiDocuments } from "@/domains/documents";
+import { isUuid, pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
+import { queryKeys, queryTimings } from "@/shared/query";
 import { toast } from "sonner";
 import {
   FileCheck2,
@@ -170,6 +174,48 @@ const POLICIES = [
 ];
 
 function DocQueue() {
+  const queryClient = useQueryClient();
+  const apiEnabled = useApiRouteEnabled(["/ems", "/documents"]);
+  const documentsQuery = useQuery({
+    queryKey: queryKeys.list("documents", "verification-queue", { page_size: 100 }),
+    queryFn: () =>
+      withApiFallback(
+        async () => mapApiDocuments(pageItems(await documentsApi.list({ page_size: 100 }))),
+        () =>
+          DOC_QUEUE.map((row) => ({
+            id: row.id,
+            name: row.doc,
+            category: row.doc,
+            status: row.status === "pending" ? ("pending" as const) : ("uploaded" as const),
+            uploadedOn: row.uploadedOn,
+            owner: row.employee,
+            classification: "normal",
+            businessObjectType: "employee",
+            businessObjectId: "",
+          })),
+      ),
+    enabled: apiEnabled,
+    staleTime: queryTimings.realtimeStaleMs,
+  });
+  const verifyMutation = useMutation({
+    mutationFn: (id: string) => documentsApi.verify(id, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("documents") });
+      toast.success("Document verified");
+    },
+    onError: () => toast.error("Document could not be verified."),
+  });
+  const rows: DocRow[] = apiEnabled
+    ? (documentsQuery.data ?? [])
+        .filter((document) => document.status !== "verified")
+        .map((document) => ({
+          id: document.id,
+          employee: document.owner,
+          doc: document.category,
+          uploadedOn: document.uploadedOn ?? "—",
+          status: document.status,
+        }))
+    : DOC_QUEUE;
   const cols: Column<DocRow>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "employee", header: "Employee", render: (r) => <>{r.employee}</> },
@@ -179,12 +225,19 @@ function DocQueue() {
     {
       key: "a",
       header: "Actions",
-      render: () => (
+      render: (row) => (
         <div className="flex gap-2">
           <Button
             size="sm"
             className="h-7 rounded-full"
-            onClick={() => toast.success("Document verified")}
+            disabled={apiEnabled && (!isUuid(row.id) || verifyMutation.isPending)}
+            onClick={() => {
+              if (!apiEnabled || !isUuid(row.id)) {
+                toast.success("Document verified");
+                return;
+              }
+              verifyMutation.mutate(row.id);
+            }}
           >
             <Check className="h-3.5 w-3.5" />
           </Button>
@@ -200,7 +253,19 @@ function DocQueue() {
       ),
     },
   ];
-  return <DataTable rows={DOC_QUEUE} columns={cols} />;
+  return (
+    <DataTable
+      rows={rows}
+      columns={cols}
+      loading={apiEnabled && documentsQuery.isLoading}
+      emptyTitle="No documents pending"
+      emptyDescription={
+        documentsQuery.error
+          ? "Document verification queue could not be loaded from the backend."
+          : "All visible documents are verified."
+      }
+    />
+  );
 }
 
 function ProfileQueue() {
