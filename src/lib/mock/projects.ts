@@ -7,7 +7,10 @@ export type ModuleStatus = "planned" | "in_progress" | "completed" | "on_hold";
 
 export interface ProjectMember {
   id: string;
+  apiId?: string;
+  version?: number;
   employeeId: string;
+  employeeUserId?: string;
   name: string;
   role: string;
   allocation: number; // percent
@@ -15,10 +18,15 @@ export interface ProjectMember {
   startDate: string;
   endDate?: string;
   reportingLead?: string;
+  reportingLeadUserId?: string;
+  status?: string;
 }
 
 export interface ProjectModule {
   id: string;
+  apiId?: string;
+  version?: number;
+  ownerUserId?: string;
   name: string;
   lead: string;
   status: ModuleStatus;
@@ -46,6 +54,7 @@ export interface ProjectAuditEntry {
 
 export interface Project {
   id: string;
+  version?: number;
   code: string;
   name: string;
   client: string;
@@ -53,6 +62,7 @@ export interface Project {
   billingType: BillingType;
   manager: string;
   managerEmail?: string;
+  managerUserId?: string;
   startDate: string;
   endDate: string;
   status: ProjectStatus;
@@ -67,11 +77,16 @@ export interface Project {
   priority: Priority;
   costCenter: string;
   department: string;
+  departmentId?: string;
   // ops
   members: ProjectMember[];
   modules: ProjectModule[];
   documents: ProjectDocument[];
   audit: ProjectAuditEntry[];
+  permissions?: {
+    can_edit?: boolean;
+    can_archive?: boolean;
+  };
 }
 
 export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {

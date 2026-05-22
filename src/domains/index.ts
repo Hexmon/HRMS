@@ -9,5 +9,6 @@ export * from "./ems";
 export * from "./expenses";
 export * from "./leave-wfh";
 export * from "./platform";
+export * from "./projects";
 export * from "./reports";
 export * from "./timesheets";

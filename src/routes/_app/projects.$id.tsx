@@ -58,7 +58,7 @@ export const Route = createFileRoute("/_app/projects/$id")({
 function ProjectDetailPage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const { projects, removeMember, setStatus } = useProjects();
+  const { projects, removeMember, setStatus, loading, error } = useProjects();
   const { activeRole, user } = useAuth();
   const project = projects.find((p) => p.id === id);
 
@@ -67,15 +67,23 @@ function ProjectDetailPage() {
   const isMain = activeRole === "main_admin";
   const isPM = activeRole === "project_manager" && project?.manager === user?.name;
   const isFinance = activeRole === "finance_manager";
-  const canEdit = isMain || isPM;
+  const canEdit = project?.permissions?.can_edit ?? (isMain || isPM);
 
   if (!project) {
     return (
       <Card className="rounded-2xl border-border/60 p-12">
         <EmptyState
           icon={Briefcase}
-          title="Project not found"
-          description="It may have been removed or you don't have access."
+          title={
+            error ? "Project could not load" : loading ? "Loading project" : "Project not found"
+          }
+          description={
+            error
+              ? error.message
+              : loading
+                ? "Waiting for the backend project detail."
+                : "It may have been removed or you don't have access."
+          }
           action={
             <ActionButton
               variant="secondary"
@@ -89,6 +97,19 @@ function ProjectDetailPage() {
       </Card>
     );
   }
+
+  const changeStatus = (status: typeof project.status, label: string) => {
+    Promise.resolve(setStatus(project.id, status, user?.name))
+      .then(() => toast.success(label))
+      .catch((err) =>
+        toast.error("Project update failed", {
+          description:
+            err instanceof Error
+              ? err.message
+              : "The backend API did not accept the status change.",
+        }),
+      );
+  };
 
   const progress = project.estimatedHours
     ? Math.min(100, Math.round((project.actualHours / project.estimatedHours) * 100))
@@ -417,10 +438,7 @@ function ProjectDetailPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          setStatus(project.id, "active", user?.name);
-                          toast.success("Project active");
-                        }}
+                        onClick={() => changeStatus("active", "Project active")}
                       >
                         Mark active
                       </Button>
@@ -429,10 +447,7 @@ function ProjectDetailPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          setStatus(project.id, "on_hold", user?.name);
-                          toast.success("On hold");
-                        }}
+                        onClick={() => changeStatus("on_hold", "On hold")}
                       >
                         Put on hold
                       </Button>
@@ -441,10 +456,7 @@ function ProjectDetailPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          setStatus(project.id, "completed", user?.name);
-                          toast.success("Completed");
-                        }}
+                        onClick={() => changeStatus("completed", "Completed")}
                       >
                         Close out
                       </Button>
@@ -499,8 +511,16 @@ function ProjectDetailPage() {
                         label: "Remove from project",
                         tone: "destructive",
                         onClick: () => {
-                          removeMember(project.id, m.id, user?.name);
-                          toast.success("Member removed", { description: m.name });
+                          Promise.resolve(removeMember(project.id, m.id, user?.name))
+                            .then(() => toast.success("Member removed", { description: m.name }))
+                            .catch((err) =>
+                              toast.error("Member removal failed", {
+                                description:
+                                  err instanceof Error
+                                    ? err.message
+                                    : "The backend API did not accept the team change.",
+                              }),
+                            );
                         },
                       },
                     ]

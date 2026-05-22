@@ -18,6 +18,8 @@ import { useEmployees } from "@/lib/employees-store";
 import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { DEMO_LAST_WEEK } from "@/lib/mock/timesheets";
+import { useTeamUtilizationSummary } from "@/domains/projects";
+import { asArray, asRecord, isApiEnabled, numberValue, text } from "@/shared/api";
 import {
   Activity,
   Users,
@@ -47,6 +49,8 @@ interface CapRow {
   available: number;
   allocated: number;
   submitted: number;
+  billable: number;
+  nonBillable: number;
   utilization: number;
   status: "bench" | "underutilized" | "healthy" | "overloaded";
   projects: { code: string; name: string; allocation: number }[];
@@ -58,6 +62,8 @@ function UtilizationPage() {
   const { employees } = useEmployees();
   const { projects } = useProjects();
   const { entries } = useTimesheets();
+  const apiMode = isApiEnabled();
+  const utilizationQuery = useTeamUtilizationSummary({ page: 1, page_size: 100 }, apiMode);
 
   const isMain = activeRole === "main_admin";
   const isPM = activeRole === "project_manager";
@@ -77,7 +83,7 @@ function UtilizationPage() {
     return employees.filter((e) => e.email === user?.email);
   }, [employees, projects, activeRole, user, isMain, isManager, isPM]);
 
-  const rows: CapRow[] = useMemo(() => {
+  const localRows: CapRow[] = useMemo(() => {
     return scopedEmployees.map((e) => {
       const memberOf = projects
         .filter((p) => p.status !== "cancelled" && p.status !== "completed")
@@ -104,6 +110,12 @@ function UtilizationPage() {
         available: CAPACITY,
         allocated,
         submitted,
+        billable: entries
+          .filter((x) => x.employeeId === e.id && x.weekStart === DEMO_LAST_WEEK && x.billable)
+          .reduce((s, x) => s + x.hours, 0),
+        nonBillable: entries
+          .filter((x) => x.employeeId === e.id && x.weekStart === DEMO_LAST_WEEK && !x.billable)
+          .reduce((s, x) => s + x.hours, 0),
         utilization,
         status,
         projects: memberOf,
@@ -112,22 +124,55 @@ function UtilizationPage() {
     });
   }, [scopedEmployees, projects, entries]);
 
+  const apiRows: CapRow[] = useMemo(() => {
+    return asArray(asRecord(utilizationQuery.data).employees).map((value) => {
+      const row = asRecord(value);
+      const userRecord = asRecord(row.user);
+      const department = asRecord(row.department);
+      const designation = asRecord(row.designation);
+      return {
+        id: text(userRecord.employee_code ?? userRecord.id, "EMP"),
+        name: text(userRecord.full_name, "Employee"),
+        department: text(department.name, "—"),
+        designation: text(designation.title, "Employee"),
+        available: numberValue(row.available_hours, CAPACITY),
+        allocated: numberValue(row.allocated_hours, 0),
+        submitted: numberValue(row.submitted_hours, 0),
+        billable: numberValue(row.billable_hours, 0),
+        nonBillable: numberValue(row.non_billable_hours, 0),
+        utilization: numberValue(row.utilization_percent, 0),
+        status: text(row.status, "healthy") as CapRow["status"],
+        projects: asArray(row.projects).map((project) => {
+          const projectRecord = asRecord(project);
+          return {
+            code: text(projectRecord.code, "PROJECT"),
+            name: text(projectRecord.name, "Project"),
+            allocation: numberValue(projectRecord.allocation_percent, 0),
+          };
+        }),
+        skills: [text(designation.title, "Employee"), text(department.name, "—")],
+      };
+    });
+  }, [utilizationQuery.data]);
+
+  const rows = useMemo(
+    () => (apiMode ? (utilizationQuery.data ? apiRows : []) : localRows),
+    [apiMode, apiRows, localRows, utilizationQuery.data],
+  );
+
   const stats = useMemo(() => {
     const cap = rows.length * CAPACITY;
     const allocated = rows.reduce((s, r) => s + r.allocated, 0);
     const submitted = rows.reduce((s, r) => s + r.submitted, 0);
-    const billableEntries = entries.filter(
-      (x) => x.weekStart === DEMO_LAST_WEEK && rows.some((r) => r.id === x.employeeId),
-    );
-    const billable = billableEntries.filter((e) => e.billable).reduce((s, e) => s + e.hours, 0);
-    const nonBillable = billableEntries.filter((e) => !e.billable).reduce((s, e) => s + e.hours, 0);
+    const billable = rows.reduce((s, r) => s + r.billable, 0);
+    const nonBillable = rows.reduce((s, r) => s + r.nonBillable, 0);
     const avgUtil = rows.length
       ? Math.round(rows.reduce((s, r) => s + r.utilization, 0) / rows.length)
       : 0;
     const bench = rows.filter((r) => r.status === "bench").length;
     const overloaded = rows.filter((r) => r.status === "overloaded").length;
     return { cap, allocated, submitted, billable, nonBillable, avgUtil, bench, overloaded };
-  }, [rows, entries]);
+  }, [rows]);
 
   const handleExport = () => {
     const headers = [
@@ -237,7 +282,13 @@ function UtilizationPage() {
       <PageHeader
         eyebrow="Insights"
         title="Team Utilization"
-        description={`Capacity, allocation and billability across ${rows.length} ${rows.length === 1 ? "person" : "people"}.`}
+        description={
+          utilizationQuery.isLoading
+            ? "Loading utilization from Hawkaii HRMS."
+            : utilizationQuery.error instanceof Error
+              ? "Utilization data could not be loaded from the backend."
+              : `Capacity, allocation and billability across ${rows.length} ${rows.length === 1 ? "person" : "people"}.`
+        }
         actions={
           <ActionButton
             size="sm"
@@ -327,7 +378,20 @@ function UtilizationPage() {
             columns={capacityCols}
             rows={rows}
             searchKeys={["name", "department", "designation"]}
-            emptyTitle="No team data"
+            emptyTitle={
+              utilizationQuery.error instanceof Error
+                ? "Utilization could not load"
+                : utilizationQuery.isLoading
+                  ? "Loading utilization"
+                  : "No team data"
+            }
+            emptyDescription={
+              utilizationQuery.error instanceof Error
+                ? utilizationQuery.error.message
+                : utilizationQuery.isLoading
+                  ? "Waiting for backend utilization analytics."
+                  : undefined
+            }
           />
         </TabsContent>
 
@@ -510,11 +574,7 @@ function UtilizationPage() {
                 key: "mix",
                 header: "Billable mix",
                 render: (r) => {
-                  const billable = entries
-                    .filter(
-                      (e) => e.employeeId === r.id && e.weekStart === DEMO_LAST_WEEK && e.billable,
-                    )
-                    .reduce((s, e) => s + e.hours, 0);
+                  const billable = r.billable;
                   const pct = r.submitted ? Math.round((billable / r.submitted) * 100) : 0;
                   return (
                     <div className="w-32">

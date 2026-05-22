@@ -15,16 +15,16 @@ Production base URLs must come from environment/config. Do not hard-code localho
 
 ## File Map
 
-| File                               | Use                                                                                                                      |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `openapi.json`                     | Machine-readable API contract for client/type generation.                                                                |
-| `ENDPOINT_INDEX.md`                | Generated operation-by-operation detail for all public API operations.                                                   |
-| `BUSINESS_RULES.md`                | Cross-cutting auth, RBAC, pagination, OCC, rate-limit, document, audit, finance, asset, timesheet, and report rules.     |
-| `EXPENSE_FINANCE_FLOW.md`          | Manager -> Finance expense workflow, statuses, actors, blocked actions, and document gates.                              |
-| `FRONTEND_BACKEND_GAP_AUDIT.md`    | Feature-wise frontend route coverage, backend gaps, and keep/change/add/remove decisions.                                |
+| File                               | Use                                                                                                                   |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `openapi.json`                     | Machine-readable API contract for client/type generation.                                                             |
+| `ENDPOINT_INDEX.md`                | Generated operation-by-operation detail for all public API operations.                                                |
+| `BUSINESS_RULES.md`                | Cross-cutting auth, RBAC, pagination, OCC, rate-limit, document, audit, finance, asset, timesheet, and report rules.  |
+| `EXPENSE_FINANCE_FLOW.md`          | Manager -> Finance expense workflow, statuses, actors, blocked actions, and document gates.                           |
+| `FRONTEND_BACKEND_GAP_AUDIT.md`    | Feature-wise frontend route coverage, backend gaps, and keep/change/add/remove decisions.                             |
 | `BACKEND_API_COMPLETION_REPORT.md` | Docs-only backend completion plan for implemented APIs and the remaining 94 planned APIs after the Phase 3 EMS slice. |
-| `FRONTEND_CODEX_NOTES.md`          | Direct notes for frontend engineers using Codex.                                                                         |
-| `FRONTEND_QA_CHECKLIST.md`         | Manual frontend integration scenarios by persona/module.                                                                 |
+| `FRONTEND_CODEX_NOTES.md`          | Direct notes for frontend engineers using Codex.                                                                      |
+| `FRONTEND_QA_CHECKLIST.md`         | Manual frontend integration scenarios by persona/module.                                                              |
 
 ## Consumer Rules
 

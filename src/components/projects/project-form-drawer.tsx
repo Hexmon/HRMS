@@ -48,6 +48,7 @@ interface FormState {
   type: ProjectType;
   billingType: BillingType;
   manager: string;
+  managerUserId: string;
   startDate: string;
   endDate: string;
   description: string;
@@ -57,6 +58,7 @@ interface FormState {
   priority: Priority;
   costCenter: string;
   department: string;
+  departmentId: string;
   members: ProjectMember[];
 }
 
@@ -67,6 +69,7 @@ const empty = (): FormState => ({
   type: "client",
   billingType: "fixed",
   manager: "",
+  managerUserId: "",
   startDate: new Date().toISOString().slice(0, 10),
   endDate: "",
   description: "",
@@ -76,6 +79,7 @@ const empty = (): FormState => ({
   priority: "medium",
   costCenter: "",
   department: "Engineering",
+  departmentId: "",
   members: [],
 });
 
@@ -94,6 +98,7 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
         type: initial.type,
         billingType: initial.billingType,
         manager: initial.manager,
+        managerUserId: initial.managerUserId ?? "",
         startDate: initial.startDate,
         endDate: initial.endDate,
         description: initial.description,
@@ -103,6 +108,7 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
         priority: initial.priority,
         costCenter: initial.costCenter,
         department: initial.department,
+        departmentId: initial.departmentId ?? "",
         members: initial.members,
       });
     } else {
@@ -121,7 +127,7 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
             .filter(
               (e) => e.systemRoles.includes("project_manager") || e.systemRoles.includes("manager"),
             )
-            .map((e) => e.name),
+            .map((e) => e.apiId ?? e.id),
         ),
       ),
     [employees],
@@ -133,6 +139,7 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
       {
         id: "m_" + Math.random().toString(36).slice(2, 8),
         employeeId: employees[0]?.id ?? "",
+        employeeUserId: employees[0]?.apiId,
         name: employees[0]?.name ?? "",
         role: "Engineer",
         allocation: 50,
@@ -154,7 +161,7 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
       form.members.filter((_, i) => i !== idx),
     );
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.name.trim()) {
       toast.error("Project name is required");
       return;
@@ -172,6 +179,7 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
       type: form.type,
       billingType: form.billingType,
       manager: form.manager,
+      managerUserId: form.managerUserId || undefined,
       startDate: form.startDate,
       endDate: form.endDate || form.startDate,
       status: initial?.status ?? "planned",
@@ -188,14 +196,24 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
       priority: form.priority,
       costCenter: form.costCenter,
       department: form.department,
+      departmentId: form.departmentId || undefined,
       members: form.members,
       modules: initial?.modules ?? [],
       documents: initial?.documents ?? [],
       audit: initial?.audit ?? [],
+      version: initial?.version,
+      permissions: initial?.permissions,
     };
-    upsert(next, actor);
-    toast.success(initial ? "Project updated" : "Project created", { description: next.name });
-    onOpenChange(false);
+    try {
+      await upsert(next, actor);
+      toast.success(initial ? "Project updated" : "Project created", { description: next.name });
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(initial ? "Project update failed" : "Project creation failed", {
+        description:
+          error instanceof Error ? error.message : "The backend API did not accept the project.",
+      });
+    }
   };
 
   const steps: Step[] = [
@@ -263,19 +281,31 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
           </div>
           <div className="sm:col-span-2">
             <Label>Project manager *</Label>
-            <Select value={form.manager} onValueChange={(v) => update("manager", v)}>
+            <Select
+              value={form.managerUserId || form.manager}
+              onValueChange={(v) => {
+                const employee = employees.find((e) => e.apiId === v || e.id === v || e.name === v);
+                update("managerUserId", employee?.apiId ?? v);
+                update("manager", employee?.name ?? v);
+              }}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select PM" />
               </SelectTrigger>
               <SelectContent>
-                {managers.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m}
-                  </SelectItem>
-                ))}
+                {managers.map((m) => {
+                  const employee = employees.find(
+                    (e) => e.apiId === m || e.id === m || e.name === m,
+                  );
+                  return (
+                    <SelectItem key={m} value={m}>
+                      {employee?.name ?? m}
+                    </SelectItem>
+                  );
+                })}
                 {managers.length === 0 &&
                   employees.slice(0, 8).map((e) => (
-                    <SelectItem key={e.id} value={e.name}>
+                    <SelectItem key={e.apiId ?? e.id} value={e.apiId ?? e.id}>
                       {e.name}
                     </SelectItem>
                   ))}
@@ -365,13 +395,22 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
           </div>
           <div className="sm:col-span-2">
             <Label>Department</Label>
-            <Select value={form.department} onValueChange={(v) => update("department", v)}>
+            <Select
+              value={form.departmentId || form.department}
+              onValueChange={(v) => {
+                const department = departments.find(
+                  (d) => d.apiId === v || d.id === v || d.name === v,
+                );
+                update("departmentId", department?.apiId ?? v);
+                update("department", department?.name ?? v);
+              }}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {departments.map((d) => (
-                  <SelectItem key={d.id} value={d.name}>
+                  <SelectItem key={d.apiId ?? d.id} value={d.apiId ?? d.id}>
                     {d.name}
                   </SelectItem>
                 ))}
@@ -409,10 +448,14 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
                   <div>
                     <Label className="text-xs">Employee</Label>
                     <Select
-                      value={m.employeeId}
+                      value={m.employeeUserId || m.employeeId}
                       onValueChange={(v) => {
-                        const emp = employees.find((e) => e.id === v);
-                        updateMember(i, { employeeId: v, name: emp?.name ?? "" });
+                        const emp = employees.find((e) => e.apiId === v || e.id === v);
+                        updateMember(i, {
+                          employeeId: emp?.id ?? v,
+                          employeeUserId: emp?.apiId ?? v,
+                          name: emp?.name ?? "",
+                        });
                       }}
                     >
                       <SelectTrigger className="h-9">
@@ -420,7 +463,7 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
                       </SelectTrigger>
                       <SelectContent>
                         {employees.map((e) => (
-                          <SelectItem key={e.id} value={e.id}>
+                          <SelectItem key={e.apiId ?? e.id} value={e.apiId ?? e.id}>
                             {e.name}
                           </SelectItem>
                         ))}

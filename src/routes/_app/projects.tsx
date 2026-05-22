@@ -45,7 +45,7 @@ export const Route = createFileRoute("/_app/projects")({
 });
 
 function ProjectsPage() {
-  const { projects, setStatus } = useProjects();
+  const { projects, setStatus, loading, error } = useProjects();
   const { departments } = useEmployees();
   const { activeRole, user } = useAuth();
   const navigate = useNavigate();
@@ -63,7 +63,7 @@ function ProjectsPage() {
       return projects.filter((p) => p.members.some((m) => m.reportingLead === user?.name));
     // employee
     return projects.filter((p) => p.members.some((m) => m.name === user?.name));
-  }, [projects, activeRole, isMain, isPM, isManager, isFinance, user]);
+  }, [projects, isMain, isPM, isManager, isFinance, user]);
 
   const [status, setStatusFilter] = useState<string>("all");
   const [pm, setPm] = useState<string>("all");
@@ -105,6 +105,19 @@ function ProjectsPage() {
     setFormOpen(true);
   };
   const goDetail = (id: string) => navigate({ to: "/projects/$id", params: { id } });
+
+  const changeStatus = (p: Project, nextStatus: Project["status"], label: string) => {
+    Promise.resolve(setStatus(p.id, nextStatus, user?.name))
+      .then(() => toast.success(label, { description: p.name }))
+      .catch((err) =>
+        toast.error("Project update failed", {
+          description:
+            err instanceof Error
+              ? err.message
+              : "The backend API did not accept the status change.",
+        }),
+      );
+  };
 
   const handleExport = () => {
     const headers = [
@@ -236,7 +249,13 @@ function ProjectsPage() {
       <PageHeader
         eyebrow="Delivery"
         title="Projects"
-        description={`${visible.length} ${visible.length === 1 ? "project" : "projects"} in your view.`}
+        description={
+          loading
+            ? "Loading projects from Hawkaii HRMS."
+            : error
+              ? "Project data could not be loaded from the backend."
+              : `${visible.length} ${visible.length === 1 ? "project" : "projects"} in your view.`
+        }
         actions={
           <>
             <ActionButton
@@ -291,8 +310,20 @@ function ProjectsPage() {
         columns={columns}
         rows={filtered}
         searchKeys={["name", "code", "client", "manager", "department"]}
-        emptyTitle="No projects match these filters"
-        emptyDescription="Try clearing filters or adjusting the search."
+        emptyTitle={
+          error
+            ? "Projects could not load"
+            : loading
+              ? "Loading projects"
+              : "No projects match these filters"
+        }
+        emptyDescription={
+          error
+            ? error.message
+            : loading
+              ? "Waiting for the backend project portfolio."
+              : "Try clearing filters or adjusting the search."
+        }
         toolbarRight={
           <div className="flex flex-wrap items-center gap-2">
             <Select value={status} onValueChange={setStatusFilter}>
@@ -365,42 +396,31 @@ function ProjectsPage() {
             onClick?: () => void;
             tone?: "default" | "destructive";
           }[] = [{ label: "Open project", onClick: () => goDetail(p.id) }];
-          if (canEdit) {
+          const canEditProject = p.permissions?.can_edit ?? canEdit;
+          if (canEditProject) {
             actions.push({ label: "Edit", onClick: () => openEdit(p) });
             if (p.status !== "active") {
               actions.push({
                 label: "Mark active",
-                onClick: () => {
-                  setStatus(p.id, "active", user?.name);
-                  toast.success("Project marked active", { description: p.name });
-                },
+                onClick: () => changeStatus(p, "active", "Project marked active"),
               });
             }
             if (p.status !== "on_hold") {
               actions.push({
                 label: "Put on hold",
-                onClick: () => {
-                  setStatus(p.id, "on_hold", user?.name);
-                  toast.success("Project on hold", { description: p.name });
-                },
+                onClick: () => changeStatus(p, "on_hold", "Project on hold"),
               });
             }
             if (p.status !== "completed") {
               actions.push({
                 label: "Mark completed",
-                onClick: () => {
-                  setStatus(p.id, "completed", user?.name);
-                  toast.success("Project completed", { description: p.name });
-                },
+                onClick: () => changeStatus(p, "completed", "Project completed"),
               });
             }
             actions.push({
               label: "Cancel project",
               tone: "destructive",
-              onClick: () => {
-                setStatus(p.id, "cancelled", user?.name);
-                toast.success("Project cancelled", { description: p.name });
-              },
+              onClick: () => changeStatus(p, "cancelled", "Project cancelled"),
             });
           }
           return actions;

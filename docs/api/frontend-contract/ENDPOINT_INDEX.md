@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 121
+Documented operations: 136
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -6872,4 +6872,915 @@ Schema: `object`.
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
 - OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+## Projects / Utilization
+
+Backend-owned API group.
+
+### GET /api/v1/projects
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | List projects                                                                                 |
+| Frontend use | List projects                                                                                 |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("planned", "active", "on_hold", "completed", "cancelled", "archived") | - |
+| `client` | query | no | string | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `search` | query | no | string | - |
+| `include` | query | no | string | - |
+| `active_only` | query | no | boolean | - |
+| `role` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("department", "manager") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/projects
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Create project                                                                                |
+| Frontend use | Create project                                                                                |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type                                                                              | Required | Notes                                                      |
+| ------------------ | --------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------- |
+| `project_code`     | string                                                                            | required | minLength 2                                                |
+| `name`             | string                                                                            | required | minLength 2                                                |
+| `client_name`      | string                                                                            | required | minLength 1                                                |
+| `project_type`     | string enum("client", "internal")                                                 | optional | default "client"                                           |
+| `billing_type`     | string enum("fixed", "hourly", "retainer", "internal")                            | optional | default "fixed"                                            |
+| `manager_user_id`  | string<uuid>                                                                      | required | Project manager user UUID                                  |
+| `department_id`    | string<uuid>                                                                      | optional | Owning department UUID                                     |
+| `start_date`       | string<date>                                                                      | required | Project start date                                         |
+| `end_date`         | string<date>                                                                      | required | Project end date                                           |
+| `status`           | string enum("planned", "active", "on_hold", "completed", "cancelled", "archived") | optional | default "planned"                                          |
+| `health`           | string enum("green", "amber", "red")                                              | optional | default "green"                                            |
+| `description`      | string                                                                            | optional | -                                                          |
+| `estimated_hours`  | string                                                                            | optional | Estimated project hours; pattern ^-?\d{1,12}(\.\d{1,2})?$  |
+| `estimated_budget` | string                                                                            | optional | Estimated project budget; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
+| `tech_stack`       | array of string                                                                   | optional | -                                                          |
+| `priority`         | string enum("low", "medium", "high", "critical")                                  | optional | default "medium"                                           |
+| `cost_center`      | string                                                                            | optional | -                                                          |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field     | Type    | Required | Notes |
+| --------- | ------- | -------- | ----- |
+| `project` | object  | required | -     |
+| `version` | integer | required | -     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/projects/{id}
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Project detail                                                                                |
+| Frontend use | Project detail                                                                                |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("planned", "active", "on_hold", "completed", "cancelled", "archived") | - |
+| `client` | query | no | string | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `search` | query | no | string | - |
+| `include` | query | no | string | - |
+| `active_only` | query | no | boolean | - |
+| `role` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("department", "manager") | - |
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field              | Type            | Required           | Notes                                              |
+| ------------------ | --------------- | ------------------ | -------------------------------------------------- |
+| `id`               | string<uuid>    | required           | Project UUID                                       |
+| `project_code`     | string          | required           | -                                                  |
+| `code`             | string          | optional           | -                                                  |
+| `name`             | string          | required           | -                                                  |
+| `client_name`      | string          | required           | -                                                  |
+| `client`           | string          | optional           | -                                                  |
+| `project_type`     | string          | optional           | -                                                  |
+| `type`             | string          | optional           | -                                                  |
+| `billing_type`     | string          | optional           | -                                                  |
+| `billingType`      | string          | optional           | -                                                  |
+| `manager_user_id`  | string<uuid>    | optional           | Project manager user UUID                          |
+| `manager`          | object          | optional           | -                                                  |
+| `department`       | object          | optional, nullable | -                                                  |
+| `start_date`       | string<date>    | optional           | Project start date                                 |
+| `end_date`         | string<date>    | optional           | Project end date                                   |
+| `status`           | string          | required           | -                                                  |
+| `health`           | string          | optional           | -                                                  |
+| `description`      | string          | optional, nullable | -                                                  |
+| `estimated_hours`  | string          | optional           | Estimated hours; pattern ^-?\d{1,12}(\.\d{1,2})?$  |
+| `actual_hours`     | string          | optional           | Actual hours; pattern ^-?\d{1,12}(\.\d{1,2})?$     |
+| `estimated_budget` | string          | optional           | Estimated budget; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
+| `actual_spend`     | string          | optional           | Actual spend; pattern ^-?\d{1,12}(\.\d{1,2})?$     |
+| `tech_stack`       | array of string | optional           | -                                                  |
+| `priority`         | string          | optional           | -                                                  |
+| `cost_center`      | string          | optional, nullable | -                                                  |
+| `version`          | integer         | required           | minimum 1                                          |
+| `counts`           | object          | required           | -                                                  |
+| `permissions`      | object          | optional           | -                                                  |
+| `members`          | array of object | optional           | -                                                  |
+| `allocations`      | array of object | optional           | -                                                  |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PATCH /api/v1/projects/{id}
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Update project                                                                                |
+| Frontend use | Update project                                                                                |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type                                                                              | Required | Notes                                                      |
+| ------------------ | --------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------- |
+| `project_code`     | string                                                                            | optional | minLength 2                                                |
+| `name`             | string                                                                            | optional | minLength 2                                                |
+| `client_name`      | string                                                                            | optional | minLength 1                                                |
+| `project_type`     | string enum("client", "internal")                                                 | optional | default "client"                                           |
+| `billing_type`     | string enum("fixed", "hourly", "retainer", "internal")                            | optional | default "fixed"                                            |
+| `manager_user_id`  | string<uuid>                                                                      | optional | Project manager user UUID                                  |
+| `department_id`    | string<uuid>                                                                      | optional | Owning department UUID                                     |
+| `start_date`       | string<date>                                                                      | optional | Project start date                                         |
+| `end_date`         | string<date>                                                                      | optional | Project end date                                           |
+| `status`           | string enum("planned", "active", "on_hold", "completed", "cancelled", "archived") | optional | default "planned"                                          |
+| `health`           | string enum("green", "amber", "red")                                              | optional | default "green"                                            |
+| `description`      | string                                                                            | optional | -                                                          |
+| `estimated_hours`  | string                                                                            | optional | Estimated project hours; pattern ^-?\d{1,12}(\.\d{1,2})?$  |
+| `estimated_budget` | string                                                                            | optional | Estimated project budget; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
+| `tech_stack`       | array of string                                                                   | optional | -                                                          |
+| `priority`         | string enum("low", "medium", "high", "critical")                                  | optional | default "medium"                                           |
+| `cost_center`      | string                                                                            | optional | -                                                          |
+| `expected_version` | integer                                                                           | required | minimum 1                                                  |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field     | Type    | Required | Notes |
+| --------- | ------- | -------- | ----- |
+| `project` | object  | required | -     |
+| `version` | integer | required | -     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/projects/{id}/archive
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Archive project                                                                               |
+| Frontend use | Archive project                                                                               |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type    | Required | Notes     |
+| ------------------ | ------- | -------- | --------- |
+| `remarks`          | string  | optional | -         |
+| `expected_version` | integer | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/projects/{id}/members
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | List project members                                                                          |
+| Frontend use | List project members                                                                          |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("planned", "active", "on_hold", "completed", "cancelled", "archived") | - |
+| `client` | query | no | string | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `search` | query | no | string | - |
+| `include` | query | no | string | - |
+| `active_only` | query | no | boolean | - |
+| `role` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("department", "manager") | - |
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/projects/{id}/members
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Add project member                                                                            |
+| Frontend use | Add project member                                                                            |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field                    | Type         | Required | Notes                    |
+| ------------------------ | ------------ | -------- | ------------------------ |
+| `user_id`                | string<uuid> | required | Employee user UUID       |
+| `project_role`           | string       | required | -                        |
+| `allocation_percent`     | integer      | optional | default 100; minimum 0   |
+| `billable`               | boolean      | optional | default true             |
+| `start_date`             | string<date> | required | Assignment start date    |
+| `end_date`               | string<date> | optional | Assignment end date      |
+| `reporting_lead_user_id` | string<uuid> | optional | Reporting lead user UUID |
+| `expected_version`       | integer      | required | minimum 1                |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PATCH /api/v1/projects/{id}/members/{member_id}
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Update project member                                                                         |
+| Frontend use | Update project member                                                                         |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+| `member_id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field                    | Type                             | Required | Notes                    |
+| ------------------------ | -------------------------------- | -------- | ------------------------ |
+| `project_role`           | string                           | optional | -                        |
+| `allocation_percent`     | integer                          | optional | minimum 0                |
+| `billable`               | boolean                          | optional | -                        |
+| `start_date`             | string<date>                     | optional | Assignment start date    |
+| `end_date`               | string<date>                     | optional | Assignment end date      |
+| `reporting_lead_user_id` | string<uuid>                     | optional | Reporting lead user UUID |
+| `status`                 | string enum("active", "removed") | optional | -                        |
+| `expected_version`       | integer                          | required | minimum 1                |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/projects/{id}/allocations
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | List allocation history                                                                       |
+| Frontend use | List allocation history                                                                       |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("planned", "active", "on_hold", "completed", "cancelled", "archived") | - |
+| `client` | query | no | string | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `search` | query | no | string | - |
+| `include` | query | no | string | - |
+| `active_only` | query | no | boolean | - |
+| `role` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("department", "manager") | - |
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/projects/{id}/allocations
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Create allocation                                                                             |
+| Frontend use | Create allocation                                                                             |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field                | Type         | Required | Notes                 |
+| -------------------- | ------------ | -------- | --------------------- |
+| `user_id`            | string<uuid> | required | Employee user UUID    |
+| `date_from`          | string<date> | required | Allocation start date |
+| `date_to`            | string<date> | optional | Allocation end date   |
+| `allocation_percent` | integer      | required | minimum 0             |
+| `billable`           | boolean      | optional | default true          |
+| `notes`              | string       | optional | -                     |
+| `expected_version`   | integer      | required | minimum 1             |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/projects/{id}/milestones
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | List milestones                                                                               |
+| Frontend use | List milestones                                                                               |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("planned", "active", "on_hold", "completed", "cancelled", "archived") | - |
+| `client` | query | no | string | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `search` | query | no | string | - |
+| `include` | query | no | string | - |
+| `active_only` | query | no | boolean | - |
+| `role` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("department", "manager") | - |
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/projects/{id}/milestones
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Create milestone                                                                              |
+| Frontend use | Create milestone                                                                              |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type                                                          | Required | Notes                     |
+| ------------------ | ------------------------------------------------------------- | -------- | ------------------------- |
+| `name`             | string                                                        | required | -                         |
+| `owner_user_id`    | string<uuid>                                                  | optional | Milestone owner user UUID |
+| `status`           | string enum("planned", "in_progress", "completed", "on_hold") | optional | default "planned"         |
+| `start_date`       | string<date>                                                  | optional | Milestone start date      |
+| `due_date`         | string<date>                                                  | required | Milestone due date        |
+| `priority`         | string enum("low", "medium", "high", "critical")              | optional | default "medium"          |
+| `expected_version` | integer                                                       | required | minimum 1                 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/projects/{id}/documents
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | List project documents                                                                        |
+| Frontend use | List project documents                                                                        |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("planned", "active", "on_hold", "completed", "cancelled", "archived") | - |
+| `client` | query | no | string | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `search` | query | no | string | - |
+| `include` | query | no | string | - |
+| `active_only` | query | no | boolean | - |
+| `role` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("department", "manager") | - |
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Use backend document APIs only; never expose object-storage credentials or direct bucket paths.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/projects/{id}/summary
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Project summary                                                                               |
+| Frontend use | Project summary                                                                               |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("planned", "active", "on_hold", "completed", "cancelled", "archived") | - |
+| `client` | query | no | string | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `search` | query | no | string | - |
+| `include` | query | no | string | - |
+| `active_only` | query | no | boolean | - |
+| `role` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("department", "manager") | - |
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/team-utilization/summary
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Team utilization summary                                                                      |
+| Frontend use | Team utilization summary                                                                      |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("planned", "active", "on_hold", "completed", "cancelled", "archived") | - |
+| `client` | query | no | string | - |
+| `manager_user_id` | query | no | string<uuid> | - |
+| `search` | query | no | string | - |
+| `include` | query | no | string | - |
+| `active_only` | query | no | boolean | - |
+| `role` | query | no | string | - |
+| `user_id` | query | no | string<uuid> | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `document_type` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("department", "manager") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
 - Respect `429` and `Retry-After`; never build tight retry loops.
