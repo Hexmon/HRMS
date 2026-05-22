@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { authApi } from "@/domains/auth";
+import { authApi, type SessionContextResponse } from "@/domains/auth";
 import {
   ApiError,
   clearApiAccessToken,
@@ -98,19 +98,56 @@ const randomToken = () =>
 
 const ROLE_BY_LABEL = new Map(ROLES.map((role) => [role.label.toLowerCase(), role.key]));
 const ROLE_BY_KEY = new Map(ROLES.map((role) => [role.key, role.key]));
+const API_ROLE_BY_NORMALIZED = new Map<string, Role>([
+  ["admin", "main_admin"],
+  ["hradmin", "hr_admin"],
+  ["hrmanager", "hr_admin"],
+  ["humanresourcesmanager", "hr_admin"],
+  ["employee", "employee"],
+  ["reviewer", "manager"],
+  ["manager", "manager"],
+  ["director", "manager"],
+  ["projectmanager", "project_manager"],
+  ["financemanager", "finance_manager"],
+  ["assetmanager", "asset_admin"],
+  ["assetitadmin", "asset_admin"],
+  ["helpdeskagent", "helpdesk_agent"],
+]);
+
+const BACKEND_ROLE_BY_LOCAL_ROLE: Partial<Record<Role, string>> = {
+  main_admin: "Admin",
+  hr_admin: "HR Manager",
+  employee: "Employee",
+  manager: "Reviewer",
+  project_manager: "Reviewer",
+  finance_manager: "Finance Manager",
+  asset_admin: "Asset Manager",
+};
+
+function shouldUseLocalAuthState(): boolean {
+  return !isApiEnabled() || isMockFallbackEnabled();
+}
 
 function mapApiRole(value: unknown): Role | null {
   if (typeof value !== "string") return null;
-  const normalized = value.trim().toLowerCase().replace(/\s+/g, "_");
+  const trimmed = value.trim();
+  const normalized = trimmed.toLowerCase().replace(/\s+/g, "_");
+  const compact = trimmed.toLowerCase().replace(/[^a-z0-9]/g, "");
   return (
-    ROLE_BY_KEY.get(normalized as Role) ?? ROLE_BY_LABEL.get(value.trim().toLowerCase()) ?? null
+    ROLE_BY_KEY.get(normalized as Role) ??
+    ROLE_BY_LABEL.get(trimmed.toLowerCase()) ??
+    API_ROLE_BY_NORMALIZED.get(compact) ??
+    null
   );
 }
 
-function apiUserToLocalUser(apiUser: ApiRecord): User {
-  const roles = Array.isArray(apiUser.roles)
-    ? apiUser.roles.map(mapApiRole).filter((role): role is Role => Boolean(role))
-    : [];
+function apiUserToLocalUser(apiUser: ApiRecord, roleValues?: unknown[]): User {
+  const roleCandidates = roleValues?.length
+    ? roleValues
+    : Array.isArray(apiUser.roles)
+      ? apiUser.roles
+      : [];
+  const roles = roleCandidates.map(mapApiRole).filter((role): role is Role => Boolean(role));
   const fallbackRole: Role = roles[0] ?? "employee";
 
   return {
@@ -131,6 +168,19 @@ function apiUserToLocalUser(apiUser: ApiRecord): User {
   };
 }
 
+function sessionRoleValues(session: SessionContextResponse): unknown[] {
+  const available = Array.isArray(session.available_roles)
+    ? session.available_roles.flatMap((role) => [role.key, role.label])
+    : [];
+  const userRoles = Array.isArray(session.user?.roles) ? session.user.roles : [];
+  return [...available, ...userRoles];
+}
+
+function activeRoleFromSession(session: SessionContextResponse, user: User): Role {
+  const active = session.active_role;
+  return mapApiRole(active?.key) ?? mapApiRole(active?.label) ?? user.roles[0];
+}
+
 export function dashboardPathForRole(_role: Role | null): string {
   // Single dashboard route adapts to active role, satisfying role-based redirect.
   return "/dashboard";
@@ -142,9 +192,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = React.useState<User[]>(SEED_USERS);
   const [setupDone, setSetupDone] = React.useState(true);
 
+  const persistSession = React.useCallback((u: User | null, role: Role | null) => {
+    if (!shouldUseLocalAuthState()) return;
+    if (u && role) ls.set(SESSION_KEY, { userId: u.id, role });
+    else ls.del(SESSION_KEY);
+  }, []);
+
+  const applyApiUser = React.useCallback(
+    (apiUserRecord: ApiRecord, roleValues?: unknown[], activeRoleOverride?: Role) => {
+      const apiUser = apiUserToLocalUser(apiUserRecord, roleValues);
+      const nextRole = activeRoleOverride ?? apiUser.roles[0];
+      setUsers((current) => {
+        const nextUsers = [...current.filter((u) => u.id !== apiUser.id), apiUser];
+        if (shouldUseLocalAuthState()) ls.set(USERS_KEY, nextUsers);
+        return nextUsers;
+      });
+      setUser(apiUser);
+      setActiveRoleState(nextRole);
+      persistSession(apiUser, nextRole);
+      return { user: apiUser, role: nextRole };
+    },
+    [persistSession],
+  );
+
+  const applyApiSession = React.useCallback(
+    (session: SessionContextResponse) => {
+      const roleValues = sessionRoleValues(session);
+      const apiUser = apiUserToLocalUser(session.user, roleValues);
+      return applyApiUser(session.user, roleValues, activeRoleFromSession(session, apiUser));
+    },
+    [applyApiUser],
+  );
+
   const apiSessionQuery = useQuery({
     queryKey: queryKeys.detail("auth", "session", "me"),
-    queryFn: () => authApi.getSessionPartial(),
+    queryFn: () => authApi.getSession(),
     enabled: isApiEnabled() && user === null,
     retry: false,
     staleTime: queryTimings.realtimeStaleMs,
@@ -153,13 +235,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // hydrate
   React.useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = ls.get<User[] | null>(USERS_KEY, null);
+    const useLocalAuth = shouldUseLocalAuthState();
+    const stored = useLocalAuth ? ls.get<User[] | null>(USERS_KEY, null) : null;
     const merged = stored && stored.length ? stored : SEED_USERS;
     setUsers(merged);
-    if (!stored) ls.set(USERS_KEY, SEED_USERS);
+    if (useLocalAuth && !stored) ls.set(USERS_KEY, SEED_USERS);
 
-    setSetupDone(ls.get<boolean>(SETUP_KEY, true));
+    setSetupDone(useLocalAuth ? ls.get<boolean>(SETUP_KEY, true) : true);
 
+    if (!useLocalAuth) return;
     const session = ls.get<{ userId: string; role: Role } | null>(SESSION_KEY, null);
     if (session) {
       const u = merged.find((m) => m.id === session.userId);
@@ -172,35 +256,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (!apiSessionQuery.data) return;
-    const record = apiSessionQuery.data.user
-      ? (apiSessionQuery.data.user as ApiRecord)
-      : apiSessionQuery.data;
-    const apiUser = apiUserToLocalUser(record);
-    setUsers((current) => {
-      const nextUsers = [...current.filter((u) => u.id !== apiUser.id), apiUser];
-      ls.set(USERS_KEY, nextUsers);
-      return nextUsers;
-    });
-    setUser(apiUser);
-    setActiveRoleState(apiUser.roles[0]);
-    persistSession(apiUser, apiUser.roles[0]);
-  }, [apiSessionQuery.data]);
+    applyApiSession(apiSessionQuery.data);
+  }, [apiSessionQuery.data, applyApiSession]);
 
   React.useEffect(() => {
     if (apiSessionQuery.error instanceof ApiError && apiSessionQuery.error.status === 401) {
       clearApiAccessToken();
       persistSession(null, null);
     }
-  }, [apiSessionQuery.error]);
-
-  const persistSession = (u: User | null, role: Role | null) => {
-    if (u && role) ls.set(SESSION_KEY, { userId: u.id, role });
-    else ls.del(SESSION_KEY);
-  };
+  }, [apiSessionQuery.error, persistSession]);
 
   const persistUsers = (next: User[]) => {
     setUsers(next);
-    ls.set(USERS_KEY, next);
+    if (shouldUseLocalAuthState()) ls.set(USERS_KEY, next);
   };
 
   // -------- Sessions --------
@@ -225,12 +293,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const response = await authApi.login({ email, password: password ?? "" });
         setApiAccessToken(response.access_token);
-        const apiUser = apiUserToLocalUser(response.user);
-        const nextUsers = [...users.filter((u) => u.id !== apiUser.id), apiUser];
-        persistUsers(nextUsers);
-        setUser(apiUser);
-        setActiveRoleState(apiUser.roles[0]);
-        persistSession(apiUser, apiUser.roles[0]);
+        try {
+          const session = await authApi.getSession();
+          applyApiSession(session);
+        } catch {
+          applyApiUser(response.user);
+        }
         return { ok: true };
       } catch (error) {
         clearApiAccessToken();
@@ -260,6 +328,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setActiveRole = (role: Role) => {
     setActiveRoleState(role);
     if (user) persistSession(user, role);
+    const backendRole = BACKEND_ROLE_BY_LOCAL_ROLE[role];
+    if (isApiEnabled() && backendRole) {
+      void authApi
+        .updateSessionPreference({ active_role: backendRole })
+        .then((session) => applyApiSession(session))
+        .catch(() => undefined);
+    }
   };
 
   const canAccess = React.useCallback(
