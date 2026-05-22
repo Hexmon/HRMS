@@ -29,6 +29,29 @@ export interface PendingSignup {
   passwordSet: boolean;
   createdAt: number;
   expiresAt: number;
+  bootstrapToken?: string | null;
+}
+
+type AuthNextStep = "verify_email" | "set_password" | "login" | "company_bootstrap";
+
+interface AuthVerificationResult {
+  status: "ok" | "expired" | "invalid";
+  pending?: PendingSignup;
+  nextStep?: AuthNextStep;
+  loginAllowed?: boolean;
+}
+
+interface CompanySetupInput {
+  companyName?: string;
+  timezone?: string;
+  locale?: string;
+  fullName?: string;
+  landingPage?: string;
+}
+
+interface CompanySetupResult {
+  ok: boolean;
+  error?: string;
 }
 
 interface AuthState {
@@ -45,19 +68,28 @@ interface AuthState {
       PendingSignup,
       "id" | "token" | "isFirstAdmin" | "verified" | "passwordSet" | "createdAt" | "expiresAt"
     >,
-  ) => PendingSignup;
-  resendVerification: (email: string) => PendingSignup | null;
-  verifyToken: (token: string) => { status: "ok" | "expired" | "invalid"; pending?: PendingSignup };
+  ) => Promise<PendingSignup>;
+  resendVerification: (email: string) => Promise<PendingSignup | null>;
+  verifyToken: (token: string) => Promise<AuthVerificationResult>;
   setPasswordForToken: (
     token: string,
     password: string,
-  ) => { ok: boolean; user?: User; isFirstAdmin?: boolean; error?: string };
+  ) => Promise<{
+    ok: boolean;
+    user?: User;
+    isFirstAdmin?: boolean;
+    requiresLogin?: boolean;
+    error?: string;
+  }>;
   // password reset
-  requestPasswordReset: (email: string) => { ok: boolean; token?: string };
-  resetPasswordWithToken: (token: string, password: string) => { ok: boolean; error?: string };
+  requestPasswordReset: (email: string) => Promise<{ ok: boolean; token?: string }>;
+  resetPasswordWithToken: (
+    token: string,
+    password: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
   // wizard
   isCompanySetupComplete: boolean;
-  completeCompanySetup: () => void;
+  completeCompanySetup: (input?: CompanySetupInput) => Promise<CompanySetupResult>;
 }
 
 const AuthCtx = React.createContext<AuthState | null>(null);
@@ -67,6 +99,7 @@ const PENDING_KEY = "hawkaii_pending_signups";
 const PASSWORDS_KEY = "hawkaii_passwords";
 const RESET_KEY = "hawkaii_resets";
 const SETUP_KEY = "hawkaii_company_setup";
+const BOOTSTRAP_TOKEN_KEY = "hawkaii_company_bootstrap_token";
 
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24; // 24h
 
@@ -88,6 +121,21 @@ const ls = {
   del(k: string) {
     if (typeof window === "undefined") return;
     window.localStorage.removeItem(k);
+  },
+};
+
+const ss = {
+  get(k: string): string | null {
+    if (typeof window === "undefined") return null;
+    return window.sessionStorage.getItem(k);
+  },
+  set(k: string, v: string | null | undefined) {
+    if (typeof window === "undefined" || !v) return;
+    window.sessionStorage.setItem(k, v);
+  },
+  del(k: string) {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.removeItem(k);
   },
 };
 
@@ -126,6 +174,22 @@ const BACKEND_ROLE_BY_LOCAL_ROLE: Partial<Record<Role, string>> = {
 
 function shouldUseLocalAuthState(): boolean {
   return !isApiEnabled() || isMockFallbackEnabled();
+}
+
+function currentBootstrapToken(): string | null {
+  return ss.get(BOOTSTRAP_TOKEN_KEY);
+}
+
+function devOnlyToken(
+  response: { dev_only?: Record<string, unknown> },
+  key: string,
+): string | null {
+  const value = response.dev_only?.[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function mapApiRole(value: unknown): Role | null {
@@ -241,7 +305,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUsers(merged);
     if (useLocalAuth && !stored) ls.set(USERS_KEY, SEED_USERS);
 
-    setSetupDone(useLocalAuth ? ls.get<boolean>(SETUP_KEY, true) : true);
+    setSetupDone(useLocalAuth ? ls.get<boolean>(SETUP_KEY, true) : !currentBootstrapToken());
 
     if (!useLocalAuth) return;
     const session = ls.get<{ userId: string; role: Role } | null>(SESSION_KEY, null);
@@ -345,8 +409,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [activeRole],
   );
 
-  // -------- Signup / Verification --------
-  const signup: AuthState["signup"] = (input) => {
+  const signupFromLocal = (input: Parameters<AuthState["signup"]>[0]) => {
     const pending = ls.get<PendingSignup[]>(PENDING_KEY, []);
     const email = input.email.trim().toLowerCase();
     // First verified user of a company becomes Main Admin: check existing users for the same domain
@@ -371,7 +434,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return record;
   };
 
-  const resendVerification: AuthState["resendVerification"] = (email) => {
+  const resendVerificationFromLocal = (email: string) => {
     const normalized = email.trim().toLowerCase();
     const pending = ls.get<PendingSignup[]>(PENDING_KEY, []);
     const idx = pending.findIndex((p) => p.email === normalized);
@@ -387,7 +450,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return updated;
   };
 
-  const verifyToken: AuthState["verifyToken"] = (token) => {
+  const verifyTokenFromLocal = (token: string): AuthVerificationResult => {
     const pending = ls.get<PendingSignup[]>(PENDING_KEY, []);
     const rec = pending.find((p) => p.token === token);
     if (!rec) return { status: "invalid" };
@@ -396,10 +459,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       rec.verified = true;
       ls.set(PENDING_KEY, pending);
     }
-    return { status: "ok", pending: rec };
+    return { status: "ok", pending: rec, nextStep: "set_password", loginAllowed: false };
   };
 
-  const setPasswordForToken: AuthState["setPasswordForToken"] = (token, password) => {
+  const setPasswordForTokenFromLocal = (token: string, password: string) => {
     const pending = ls.get<PendingSignup[]>(PENDING_KEY, []);
     const idx = pending.findIndex((p) => p.token === token);
     if (idx === -1) return { ok: false, error: "Invalid or expired link." };
@@ -443,8 +506,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { ok: true, user: newUser, isFirstAdmin: rec.isFirstAdmin };
   };
 
-  // -------- Password reset --------
-  const requestPasswordReset: AuthState["requestPasswordReset"] = (email) => {
+  const requestPasswordResetFromLocal = (email: string) => {
     const normalized = email.trim().toLowerCase();
     const u = users.find((m) => m.email.toLowerCase() === normalized);
     if (!u) return { ok: false };
@@ -455,7 +517,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { ok: true, token };
   };
 
-  const resetPasswordWithToken: AuthState["resetPasswordWithToken"] = (token, password) => {
+  const resetPasswordWithTokenFromLocal = (token: string, password: string) => {
     const resets = ls.get<Record<string, { userId: string; expiresAt: number }>>(RESET_KEY, {});
     const entry = resets[token];
     if (!entry) return { ok: false, error: "Invalid or expired link." };
@@ -468,9 +530,206 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { ok: true };
   };
 
-  const completeCompanySetup = () => {
+  // -------- Signup / Verification --------
+  const signup: AuthState["signup"] = async (input) => {
+    if (isApiEnabled()) {
+      try {
+        const fullName = [input.firstName, input.middleName, input.lastName]
+          .filter(Boolean)
+          .join(" ");
+        const response = await authApi.signup({
+          company_name: input.companyName,
+          full_name: fullName,
+          email: input.email.trim().toLowerCase(),
+          timezone: "Asia/Kolkata",
+          locale: "en-IN",
+        });
+        return {
+          ...input,
+          email: input.email.trim().toLowerCase(),
+          id: response.signup_id,
+          token: devOnlyToken(response, "email_verification_token") ?? "",
+          isFirstAdmin: true,
+          verified: false,
+          passwordSet: false,
+          createdAt: Date.now(),
+          expiresAt: Date.now() + TOKEN_TTL_MS,
+        };
+      } catch (error) {
+        if (isMockFallbackEnabled() && shouldUseMockFallback(error)) return signupFromLocal(input);
+        throw error;
+      }
+    }
+    if (isMockFallbackEnabled()) return signupFromLocal(input);
+    throw new ApiError({
+      status: 503,
+      code: "api_disabled",
+      message: "Backend API is disabled and mock signup fallback is not enabled.",
+    });
+  };
+
+  const resendVerification: AuthState["resendVerification"] = async (email) => {
+    if (isApiEnabled()) {
+      try {
+        const response = await authApi.resendEmailVerification({
+          email: email.trim().toLowerCase(),
+        });
+        return {
+          id: "resend_" + randomToken().slice(0, 8),
+          firstName: "",
+          lastName: "",
+          email: email.trim().toLowerCase(),
+          companyName: "",
+          contact: "",
+          token: devOnlyToken(response, "email_verification_token") ?? "",
+          isFirstAdmin: true,
+          verified: false,
+          passwordSet: false,
+          createdAt: Date.now(),
+          expiresAt: Date.now() + TOKEN_TTL_MS,
+        };
+      } catch (error) {
+        if (isMockFallbackEnabled() && shouldUseMockFallback(error)) {
+          return resendVerificationFromLocal(email);
+        }
+        throw error;
+      }
+    }
+    if (isMockFallbackEnabled()) return resendVerificationFromLocal(email);
+    return null;
+  };
+
+  const verifyToken: AuthState["verifyToken"] = async (token) => {
+    if (isApiEnabled()) {
+      try {
+        const response = await authApi.verifyEmail({ token });
+        const bootstrapToken = devOnlyToken(response, "company_bootstrap_token");
+        const passwordSetupToken = devOnlyToken(response, "password_setup_token");
+        if (bootstrapToken) {
+          ss.set(BOOTSTRAP_TOKEN_KEY, bootstrapToken);
+          setSetupDone(false);
+        }
+        return {
+          status: "ok",
+          nextStep: response.next_step,
+          loginAllowed: response.login_allowed,
+          pending: {
+            id: response.user_id,
+            firstName: "",
+            lastName: "",
+            email: "",
+            companyName: "",
+            contact: "",
+            token: passwordSetupToken ?? "",
+            bootstrapToken,
+            isFirstAdmin: Boolean(bootstrapToken),
+            verified: true,
+            passwordSet: response.login_allowed,
+            createdAt: Date.now(),
+            expiresAt: Date.now() + TOKEN_TTL_MS,
+          },
+        };
+      } catch (error) {
+        if (isMockFallbackEnabled() && shouldUseMockFallback(error))
+          return verifyTokenFromLocal(token);
+        return { status: "invalid" };
+      }
+    }
+    if (isMockFallbackEnabled()) return verifyTokenFromLocal(token);
+    return { status: "invalid" };
+  };
+
+  const setPasswordForToken: AuthState["setPasswordForToken"] = async (token, password) => {
+    if (isApiEnabled()) {
+      try {
+        await authApi.setPassword({ token, password, confirm_password: password });
+        const isFirstAdmin = Boolean(currentBootstrapToken());
+        if (isFirstAdmin) setSetupDone(false);
+        return { ok: true, isFirstAdmin, requiresLogin: true };
+      } catch (error) {
+        if (isMockFallbackEnabled() && shouldUseMockFallback(error)) {
+          return setPasswordForTokenFromLocal(token, password);
+        }
+        return { ok: false, error: errorMessage(error, "Could not set password.") };
+      }
+    }
+    if (isMockFallbackEnabled()) return setPasswordForTokenFromLocal(token, password);
+    return { ok: false, error: "Backend API is disabled and mock fallback is not enabled." };
+  };
+
+  // -------- Password reset --------
+  const requestPasswordReset: AuthState["requestPasswordReset"] = async (email) => {
+    if (isApiEnabled()) {
+      try {
+        const response = await authApi.requestPasswordReset({ email: email.trim().toLowerCase() });
+        return {
+          ok: response.accepted,
+          token: devOnlyToken(response, "password_reset_token") ?? undefined,
+        };
+      } catch (error) {
+        if (isMockFallbackEnabled() && shouldUseMockFallback(error)) {
+          return requestPasswordResetFromLocal(email);
+        }
+        return { ok: false };
+      }
+    }
+    if (isMockFallbackEnabled()) return requestPasswordResetFromLocal(email);
+    return { ok: false };
+  };
+
+  const resetPasswordWithToken: AuthState["resetPasswordWithToken"] = async (token, password) => {
+    if (isApiEnabled()) {
+      try {
+        await authApi.confirmPasswordReset({ token, password, confirm_password: password });
+        return { ok: true };
+      } catch (error) {
+        if (isMockFallbackEnabled() && shouldUseMockFallback(error)) {
+          return resetPasswordWithTokenFromLocal(token, password);
+        }
+        return { ok: false, error: errorMessage(error, "Could not reset password.") };
+      }
+    }
+    if (isMockFallbackEnabled()) return resetPasswordWithTokenFromLocal(token, password);
+    return { ok: false, error: "Backend API is disabled and mock fallback is not enabled." };
+  };
+
+  const completeCompanySetup: AuthState["completeCompanySetup"] = async (input) => {
+    if (isApiEnabled()) {
+      const bootstrapToken = currentBootstrapToken();
+      if (!bootstrapToken) {
+        return {
+          ok: false,
+          error: "Company setup token is missing. Sign in from the setup link again.",
+        };
+      }
+      try {
+        await authApi.bootstrapCompany({
+          bootstrap_token: bootstrapToken,
+          company_profile: {
+            company_name: input?.companyName,
+            timezone: input?.timezone,
+            locale: input?.locale ?? "en-IN",
+          },
+          first_admin_profile: {
+            full_name: input?.fullName,
+            landing_page: input?.landingPage ?? "/dashboard",
+          },
+        });
+        ss.del(BOOTSTRAP_TOKEN_KEY);
+        setSetupDone(true);
+        return { ok: true };
+      } catch (error) {
+        if (isMockFallbackEnabled() && shouldUseMockFallback(error)) {
+          setSetupDone(true);
+          ls.set(SETUP_KEY, true);
+          return { ok: true };
+        }
+        return { ok: false, error: errorMessage(error, "Could not complete company setup.") };
+      }
+    }
     setSetupDone(true);
-    ls.set(SETUP_KEY, true);
+    if (shouldUseLocalAuthState()) ls.set(SETUP_KEY, true);
+    return { ok: true };
   };
 
   return (

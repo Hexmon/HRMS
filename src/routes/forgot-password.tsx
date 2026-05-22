@@ -17,16 +17,22 @@ function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState<{ email: string } | null>(null);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError("Enter a valid email address.");
       return;
     }
-    requestPasswordReset(email);
-    setSent({ email });
+    setSubmitting(true);
+    try {
+      await requestPasswordReset(email);
+      setSent({ email });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (sent) {
@@ -76,10 +82,11 @@ function ForgotPasswordPage() {
         )}
         <Button
           type="submit"
+          disabled={submitting}
           className="h-11 w-full rounded-xl text-sm font-semibold text-primary-foreground"
           style={{ background: "var(--gradient-primary)" }}
         >
-          Send reset link
+          {submitting ? "Sending..." : "Send reset link"}
         </Button>
         <Button asChild variant="ghost" className="h-10 w-full rounded-xl">
           <Link to="/login">

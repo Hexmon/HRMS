@@ -42,6 +42,118 @@ export interface SessionPreferenceRequest {
   timezone?: string;
 }
 
+interface DevOnlyTokens {
+  email_verification_token?: string | null;
+  password_setup_token?: string | null;
+  company_bootstrap_token?: string | null;
+  password_reset_token?: string | null;
+  [key: string]: unknown;
+}
+
+interface DevOnlyResponse {
+  dev_only?: DevOnlyTokens;
+  [key: string]: unknown;
+}
+
+export interface SignupRequest {
+  company_name: string;
+  full_name: string;
+  email: string;
+  password?: string;
+  timezone?: string;
+  locale?: string;
+  company_slug?: string;
+  invite_token?: string;
+}
+
+export interface SignupResponse extends DevOnlyResponse {
+  signup_id: string;
+  verification_required: boolean;
+  masked_email: string;
+  next_step: "verify_email";
+  retry_after_seconds: number;
+}
+
+export interface VerifyEmailRequest {
+  token: string;
+  email?: string;
+}
+
+export interface VerifyEmailResponse extends DevOnlyResponse {
+  verified: boolean;
+  user_id: string;
+  company_id?: string | null;
+  login_allowed: boolean;
+  next_step: "company_bootstrap" | "set_password" | "login";
+}
+
+export interface ResendEmailVerificationRequest {
+  email: string;
+  company_slug?: string;
+}
+
+export interface ResendEmailVerificationResponse extends DevOnlyResponse {
+  accepted: boolean;
+  sent: boolean;
+  masked_email: string;
+  retry_after_seconds: number;
+}
+
+export interface SetPasswordRequest {
+  token: string;
+  password: string;
+  confirm_password: string;
+}
+
+export interface SetPasswordResponse {
+  password_set: boolean;
+  login_allowed: boolean;
+  user_id: string;
+  next_step: "login";
+  [key: string]: unknown;
+}
+
+export interface PasswordResetRequest {
+  email: string;
+  company_slug?: string;
+}
+
+export interface PasswordResetRequestResponse extends DevOnlyResponse {
+  accepted: boolean;
+  masked_email: string;
+  retry_after_seconds: number;
+}
+
+export interface PasswordResetConfirmResponse {
+  password_reset: boolean;
+  session_revoked_count: number;
+  next_step: "login";
+  [key: string]: unknown;
+}
+
+export interface CompanyBootstrapRequest {
+  bootstrap_token: string;
+  company_profile?: {
+    company_name?: string;
+    timezone?: string;
+    locale?: string;
+    fiscal_year_start_month?: number;
+  };
+  first_admin_profile?: {
+    full_name?: string;
+    landing_page?: string;
+  };
+}
+
+export interface CompanyBootstrapResponse {
+  company: ApiRecord;
+  admin_user: ApiRecord;
+  setup_progress: ApiRecord;
+  next_steps: string[];
+  preferences: ApiRecord;
+  [key: string]: unknown;
+}
+
 export const authApi = {
   login(input: LoginRequest) {
     return apiRequest<LoginResponse>("/api/v1/auth/login", {
@@ -63,6 +175,55 @@ export const authApi = {
     return apiRequest<SessionContextResponse>("/api/v1/auth/session/preference", {
       method: "PATCH",
       body: input,
+    });
+  },
+  signup(input: SignupRequest) {
+    return apiRequest<SignupResponse>("/api/v1/auth/signup", {
+      method: "POST",
+      body: input,
+      auth: false,
+    });
+  },
+  verifyEmail(input: VerifyEmailRequest) {
+    return apiRequest<VerifyEmailResponse>("/api/v1/auth/verify-email", {
+      method: "POST",
+      body: input,
+      auth: false,
+    });
+  },
+  resendEmailVerification(input: ResendEmailVerificationRequest) {
+    return apiRequest<ResendEmailVerificationResponse>("/api/v1/auth/email-verifications/resend", {
+      method: "POST",
+      body: input,
+      auth: false,
+    });
+  },
+  setPassword(input: SetPasswordRequest) {
+    return apiRequest<SetPasswordResponse>("/api/v1/auth/set-password", {
+      method: "POST",
+      body: input,
+      auth: false,
+    });
+  },
+  requestPasswordReset(input: PasswordResetRequest) {
+    return apiRequest<PasswordResetRequestResponse>("/api/v1/auth/password-reset/request", {
+      method: "POST",
+      body: input,
+      auth: false,
+    });
+  },
+  confirmPasswordReset(input: SetPasswordRequest) {
+    return apiRequest<PasswordResetConfirmResponse>("/api/v1/auth/password-reset/confirm", {
+      method: "POST",
+      body: input,
+      auth: false,
+    });
+  },
+  bootstrapCompany(input: CompanyBootstrapRequest) {
+    return apiRequest<CompanyBootstrapResponse>("/api/v1/onboarding/company-bootstrap", {
+      method: "POST",
+      body: input,
+      auth: false,
     });
   },
 };

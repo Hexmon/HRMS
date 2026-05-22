@@ -31,11 +31,12 @@ function SignupPage() {
   });
   const [agree, setAgree] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const update = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!form.firstName || !form.lastName || !form.email || !form.companyName || !form.contact) {
@@ -50,8 +51,15 @@ function SignupPage() {
       setError("Please accept the Terms and Conditions to continue.");
       return;
     }
-    const rec = signup(form);
-    navigate({ to: "/verify-email", search: { email: rec.email, state: "sent" } });
+    setSubmitting(true);
+    try {
+      const rec = await signup(form);
+      navigate({ to: "/verify-email", search: { email: rec.email, state: "sent" } });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create workspace.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -160,10 +168,12 @@ function SignupPage() {
 
         <Button
           type="submit"
+          disabled={submitting}
           className="h-11 w-full rounded-xl text-sm font-semibold text-primary-foreground"
           style={{ background: "var(--gradient-primary)" }}
         >
-          Create workspace <ArrowRight className="ml-1 h-4 w-4" />
+          {submitting ? "Creating workspace..." : "Create workspace"}{" "}
+          <ArrowRight className="ml-1 h-4 w-4" />
         </Button>
       </form>
     </AuthShell>

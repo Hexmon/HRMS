@@ -118,6 +118,8 @@ function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [done, setDone] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   const [profile, setProfile] = useState<CompanyProfile>({
     companyName: "",
@@ -150,9 +152,25 @@ function OnboardingPage() {
   const next = () => setStep((s) => Math.min(totalSteps, s + 1));
   const back = () => setStep((s) => Math.max(1, s - 1));
 
-  const finish = () => {
-    completeCompanySetup();
-    setDone(true);
+  const finish = async () => {
+    setError("");
+    setSubmitting(true);
+    try {
+      const result = await completeCompanySetup({
+        companyName: profile.companyName || undefined,
+        timezone: profile.timezone,
+        locale: "en-IN",
+        fullName: user.name,
+        landingPage: dashboardPathForRole(activeRole),
+      });
+      if (!result.ok) {
+        setError(result.error ?? "Could not finish setup.");
+        return;
+      }
+      setDone(true);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (done) {
@@ -267,6 +285,12 @@ function OnboardingPage() {
             {step === 5 && <StepPolicies />}
           </div>
 
+          {error && (
+            <p className="mt-6 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {error}
+            </p>
+          )}
+
           <div className="mt-8 flex items-center justify-between border-t pt-6">
             <Button variant="outline" onClick={back} disabled={step === 1} className="rounded-xl">
               <ArrowLeft className="mr-1.5 h-4 w-4" /> Back
@@ -282,10 +306,12 @@ function OnboardingPage() {
             ) : (
               <Button
                 onClick={finish}
+                disabled={submitting}
                 className="rounded-xl text-primary-foreground"
                 style={{ background: "var(--gradient-primary)" }}
               >
-                Finish setup <CheckCircle2 className="ml-1.5 h-4 w-4" />
+                {submitting ? "Finishing..." : "Finish setup"}{" "}
+                <CheckCircle2 className="ml-1.5 h-4 w-4" />
               </Button>
             )}
           </div>

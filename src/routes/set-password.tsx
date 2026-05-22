@@ -29,23 +29,33 @@ function SetPasswordPage() {
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<{ isFirstAdmin: boolean; role: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const meta = passwordScore(pwd);
   const passedAll = PASSWORD_RULES.every((r) => r.test(pwd));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!token) return setError("Missing verification token.");
     if (!passedAll) return setError("Your password doesn't meet all requirements yet.");
     if (pwd !== confirm) return setError("Passwords don't match.");
-    const result = setPasswordForToken(token, pwd);
-    if (!result.ok) return setError(result.error ?? "Could not set password.");
-    setSuccess({ isFirstAdmin: !!result.isFirstAdmin, role: result.user?.roles[0] ?? "employee" });
-    setTimeout(() => {
-      if (result.isFirstAdmin) navigate({ to: "/onboarding" });
-      else navigate({ to: dashboardPathForRole(result.user?.roles[0] ?? "employee") });
-    }, 1400);
+    setSubmitting(true);
+    try {
+      const result = await setPasswordForToken(token, pwd);
+      if (!result.ok) return setError(result.error ?? "Could not set password.");
+      setSuccess({
+        isFirstAdmin: !!result.isFirstAdmin,
+        role: result.user?.roles[0] ?? "employee",
+      });
+      setTimeout(() => {
+        if (result.requiresLogin) navigate({ to: "/login" });
+        else if (result.isFirstAdmin) navigate({ to: "/onboarding" });
+        else navigate({ to: dashboardPathForRole(result.user?.roles[0] ?? "employee") });
+      }, 1400);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!token) {
@@ -64,7 +74,9 @@ function SetPasswordPage() {
         <div className="grid place-items-center rounded-2xl border bg-secondary/40 py-10">
           <CheckCircle2 className="h-14 w-14 text-success" />
           <p className="mt-3 text-sm text-muted-foreground">
-            {success.isFirstAdmin ? "Taking you to company setup…" : "Welcome to your dashboard."}
+            {success.isFirstAdmin
+              ? "Sign in to finish company setup."
+              : "Welcome to your dashboard."}
           </p>
         </div>
       </AuthShell>
@@ -126,10 +138,11 @@ function SetPasswordPage() {
 
         <Button
           type="submit"
+          disabled={submitting}
           className="h-11 w-full rounded-xl text-sm font-semibold text-primary-foreground"
           style={{ background: "var(--gradient-primary)" }}
         >
-          Save password
+          {submitting ? "Saving password..." : "Save password"}
         </Button>
         <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
           <ShieldCheck className="h-3.5 w-3.5" /> Your password is encrypted and never shared

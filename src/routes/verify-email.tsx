@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
@@ -28,14 +28,40 @@ function VerifyEmailPage() {
   const { verifyToken, resendVerification } = useAuth();
   const navigate = useNavigate();
   const [resentAt, setResentAt] = useState<number | null>(null);
+  const [verification, setVerification] = useState<Awaited<ReturnType<typeof verifyToken>> | null>(
+    null,
+  );
+  const [verifying, setVerifying] = useState(false);
 
-  // If a token is present we attempt verification immediately
-  const verification = useMemo(() => (token ? verifyToken(token) : null), [token, verifyToken]);
+  useEffect(() => {
+    let active = true;
+    if (!token) {
+      setVerification(null);
+      return;
+    }
+    setVerifying(true);
+    void verifyToken(token)
+      .then((result) => {
+        if (active) setVerification(result);
+      })
+      .finally(() => {
+        if (active) setVerifying(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [token, verifyToken]);
 
   useEffect(() => {
     if (verification?.status === "ok" && verification.pending) {
       const t = setTimeout(() => {
-        navigate({ to: "/set-password", search: { token: verification.pending!.token } });
+        if (verification.nextStep === "set_password" && verification.pending?.token) {
+          navigate({ to: "/set-password", search: { token: verification.pending.token } });
+        } else if (verification.nextStep === "set_password") {
+          return;
+        } else {
+          navigate({ to: "/login" });
+        }
       }, 1400);
       return () => clearTimeout(t);
     }
@@ -43,17 +69,19 @@ function VerifyEmailPage() {
 
   const state: NonNullable<SearchParams["state"]> =
     stateParam ??
-    (verification
-      ? verification.status === "ok"
-        ? "verified"
-        : verification.status === "expired"
-          ? "expired"
-          : "invalid"
-      : "sent");
+    (verifying
+      ? "sent"
+      : verification
+        ? verification.status === "ok"
+          ? "verified"
+          : verification.status === "expired"
+            ? "expired"
+            : "invalid"
+        : "sent");
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (!email) return;
-    const rec = resendVerification(email);
+    const rec = await resendVerification(email);
     if (rec) {
       setResentAt(Date.now());
       navigate({ to: "/verify-email", search: { email, state: "sent" } });
@@ -73,7 +101,9 @@ function VerifyEmailPage() {
       }
       subtitle={
         state === "verified"
-          ? "Redirecting you to set up your password…"
+          ? verification?.nextStep === "set_password" && !verification.pending?.token
+            ? "Email verified. Check your inbox for the password setup link."
+            : "Redirecting you to the next step..."
           : state === "expired"
             ? "Verification links are valid for 24 hours."
             : state === "invalid"

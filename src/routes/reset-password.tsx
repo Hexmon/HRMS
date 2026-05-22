@@ -29,20 +29,26 @@ function ResetPasswordPage() {
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const meta = passwordScore(pwd);
   const passedAll = PASSWORD_RULES.every((r) => r.test(pwd));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!token) return setError("Missing reset token.");
     if (!passedAll) return setError("Password doesn't meet all requirements.");
     if (pwd !== confirm) return setError("Passwords don't match.");
-    const res = resetPasswordWithToken(token, pwd);
-    if (!res.ok) return setError(res.error ?? "Could not reset password.");
-    setDone(true);
-    setTimeout(() => navigate({ to: "/login" }), 1500);
+    setSubmitting(true);
+    try {
+      const res = await resetPasswordWithToken(token, pwd);
+      if (!res.ok) return setError(res.error ?? "Could not reset password.");
+      setDone(true);
+      setTimeout(() => navigate({ to: "/login" }), 1500);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!token) {
@@ -129,10 +135,11 @@ function ResetPasswordPage() {
 
         <Button
           type="submit"
+          disabled={submitting}
           className="h-11 w-full rounded-xl text-sm font-semibold text-primary-foreground"
           style={{ background: "var(--gradient-primary)" }}
         >
-          Update password
+          {submitting ? "Updating..." : "Update password"}
         </Button>
       </form>
     </AuthShell>
