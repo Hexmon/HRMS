@@ -473,7 +473,7 @@ Frontend:
 | Admin audit log task sheet | `docs(admin): record audit log completion` | Committed in `hrms_backend` as `8985eac` |
 | Non-expense Reports backend | `feat(reports): implement non-expense report APIs` | Committed in `hrms_backend` as `ae8f0d2` |
 | Non-expense Reports frontend | `feat(reports): connect non-expense report screens to backend APIs` | Committed in `hrms-client` as `d8c25a7` |
-| Non-expense Reports task sheet | `docs(reports): record non-expense reports completion` | Pending commit in `hrms_backend` |
+| Non-expense Reports task sheet | `docs(reports): record non-expense reports completion` | Committed in `hrms_backend` as `fb5564c` |
 
 ## Next Steps
 
