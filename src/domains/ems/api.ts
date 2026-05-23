@@ -124,7 +124,7 @@ export const emsApi = {
       { query },
     );
   },
-  attachEmployeeDocument(userId: string, input: EmsDocumentUploadBody) {
+  attachEmployeeDocument(userId: string, input: EmsDocumentUploadBody | FormData) {
     return apiRequest<ApiRecord>(`/api/v1/ems/employees/${userId}/documents`, {
       method: "POST",
       body: input,

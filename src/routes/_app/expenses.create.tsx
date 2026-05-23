@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useAuth } from "@/lib/auth";
 import { useExpenseMetadata } from "@/domains/expenses";
 import { asArray, asRecord, text } from "@/shared/api";
@@ -103,6 +103,9 @@ function CreateExpense() {
   const metadataQuery = useExpenseMetadata();
   const nav = useNavigate();
   const [f, setF] = useState<FormState>(initial);
+  const documentInputRef = useRef<HTMLInputElement>(null);
+  const [pendingDocumentKind, setPendingDocumentKind] =
+    useState<FormState["documents"][number]["kind"]>("other");
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((s) => ({ ...s, [k]: v }));
 
   const metadataSubTypes = useMemo(
@@ -132,7 +135,7 @@ function CreateExpense() {
     [metadataQuery.data],
   );
 
-  const total = f.lineItems.reduce((s, li) => s + li.quantity * li.unitCost + li.taxAmount, 0);
+  const total = f.lineItems.reduce((s, li) => s + li.quantity * li.unitCost, 0);
 
   const updateLi = (id: string, patch: Partial<LineItem>) =>
     set(
@@ -206,6 +209,31 @@ function CreateExpense() {
     });
     toast.success(asDraft ? "Saved as draft" : "Ticket submitted for manager verification");
     nav({ to: "/expenses/my" });
+  };
+
+  const startDocumentUpload = (kind: FormState["documents"][number]["kind"]) => {
+    setPendingDocumentKind(kind);
+    if (documentInputRef.current) {
+      documentInputRef.current.value = "";
+      documentInputRef.current.click();
+    }
+  };
+
+  const attachSelectedDocument = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size <= 0) {
+      toast.error("Selected file is empty.");
+      return;
+    }
+    set("documents", [
+      ...f.documents,
+      {
+        id: `d${Date.now()}`,
+        name: file.name,
+        kind: pendingDocumentKind,
+      },
+    ]);
   };
 
   return (
@@ -448,7 +476,6 @@ function CreateExpense() {
                         <th className="p-2 text-left">Vendor</th>
                         <th className="p-2 text-right">Qty</th>
                         <th className="p-2 text-right">Unit Cost</th>
-                        <th className="p-2 text-right">Tax</th>
                         <th className="p-2 text-right">Total</th>
                         <th />
                       </tr>
@@ -497,18 +524,8 @@ function CreateExpense() {
                               className="h-8 w-28 text-right"
                             />
                           </td>
-                          <td className="p-1.5">
-                            <Input
-                              type="number"
-                              value={li.taxAmount || ""}
-                              onChange={(e) =>
-                                updateLi(li.id, { taxAmount: Number(e.target.value) })
-                              }
-                              className="h-8 w-24 text-right"
-                            />
-                          </td>
                           <td className="p-2 text-right font-medium">
-                            {fmtCurrency(li.quantity * li.unitCost + li.taxAmount)}
+                            {fmtCurrency(li.quantity * li.unitCost)}
                           </td>
                           <td className="p-1">
                             <Button
@@ -525,7 +542,7 @@ function CreateExpense() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t bg-secondary/30">
-                        <td colSpan={6} className="p-2 text-right text-xs text-muted-foreground">
+                        <td colSpan={5} className="p-2 text-right text-xs text-muted-foreground">
                           Total
                         </td>
                         <td className="p-2 text-right font-semibold">{fmtCurrency(total)}</td>
@@ -545,6 +562,13 @@ function CreateExpense() {
             description: "Attach proofs",
             content: (
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                <input
+                  ref={documentInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="sr-only"
+                  onChange={attachSelectedDocument}
+                />
                 {[
                   { kind: "bill" as const, label: "Bills" },
                   { kind: "receipt" as const, label: "Receipts" },
@@ -563,16 +587,7 @@ function CreateExpense() {
                       variant="outline"
                       size="sm"
                       className="mt-2 rounded-full"
-                      onClick={() =>
-                        set("documents", [
-                          ...f.documents,
-                          {
-                            id: `d${Date.now()}`,
-                            name: `${u.label}-${f.documents.length + 1}.pdf`,
-                            kind: u.kind,
-                          },
-                        ])
-                      }
+                      onClick={() => startDocumentUpload(u.kind)}
                     >
                       Add file
                     </Button>

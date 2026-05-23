@@ -129,7 +129,7 @@ export function useEmsRequestMutation() {
 export function useEmsDocumentMutation(userId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: EmsDocumentUploadBody) =>
+    mutationFn: (input: EmsDocumentUploadBody | FormData) =>
       emsApi.attachEmployeeDocument(userId as string, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") });

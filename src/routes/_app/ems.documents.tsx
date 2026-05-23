@@ -141,15 +141,17 @@ function MyDocuments() {
 
     const target = uploadTarget;
     try {
-      await uploadMutation.mutateAsync({
-        classification: classificationFor(target),
-        document_type: documentTypeFor(target),
-        file_name: file.name,
-        mime_type: file.type || "application/octet-stream",
-        size_bytes: file.size,
-      });
+      const prepared = await prepareDocumentFile(file);
+      const formData = new FormData();
+      formData.set("file", prepared.file);
+      formData.set("classification", classificationFor(target));
+      formData.set("document_type", documentTypeFor(target));
+      formData.set("file_name", prepared.file.name);
+      formData.set("mime_type", prepared.file.type || "application/octet-stream");
+      formData.set("size_bytes", String(prepared.file.size));
+      await uploadMutation.mutateAsync(formData);
       toast.success(target ? "Replacement uploaded" : "Document uploaded", {
-        description: `${file.name} is pending verification.`,
+        description: `${prepared.file.name} is pending verification.`,
       });
       setUploadTarget(null);
     } catch (uploadError) {
@@ -162,6 +164,7 @@ function MyDocuments() {
       <input
         ref={fileInputRef}
         type="file"
+        accept="image/*,application/pdf"
         className="sr-only"
         onChange={(event) => void uploadSelectedFile(event)}
       />
@@ -276,6 +279,59 @@ function classificationFor(document: Doc | null): EmsDocumentUploadBody["classif
   if (value.includes("legal")) return "legal";
   if (value.includes("finance") || value.includes("tax")) return "finance";
   return "normal";
+}
+
+async function prepareDocumentFile(file: File): Promise<{ file: File; compressed: boolean }> {
+  if (!file.type.startsWith("image/")) {
+    return { file, compressed: false };
+  }
+  const compressed = await compressImageFile(file);
+  if (!compressed || compressed.size >= file.size) {
+    return { file, compressed: false };
+  }
+  return { file: compressed, compressed: true };
+}
+
+async function compressImageFile(file: File): Promise<File | null> {
+  const imageUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(imageUrl);
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.82),
+    );
+    if (!blob) return null;
+    return new File([blob], renameAsJpeg(file.name), {
+      type: "image/jpeg",
+      lastModified: Date.now(),
+    });
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Selected image could not be read."));
+    image.src = src;
+  });
+}
+
+function renameAsJpeg(name: string): string {
+  return /\.[^.]+$/u.test(name) ? name.replace(/\.[^.]+$/u, ".jpg") : `${name}.jpg`;
 }
 
 function slug(value: string): string {
