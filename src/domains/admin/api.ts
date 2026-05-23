@@ -252,6 +252,51 @@ export interface AdminEmailTemplateUpdateInput extends ApiRecord {
   expected_version: number;
 }
 
+export interface AdminNotificationChannelRecord extends ApiRecord {
+  id: string;
+  event_key: string;
+  key: string;
+  module: string;
+  label: string;
+  in_app_enabled: boolean;
+  inApp: boolean;
+  email_enabled: boolean;
+  email: boolean;
+  push_enabled: boolean;
+  push: boolean;
+  status: "active" | "inactive";
+  active: boolean;
+  updated_at: string;
+  version: number;
+}
+
+export interface AdminNotificationChannelListResponse extends ApiRecord {
+  items: AdminNotificationChannelRecord[];
+  channels: AdminNotificationChannelRecord[];
+  events: AdminNotificationChannelRecord[];
+  versions: Record<string, number>;
+  version: number;
+}
+
+export interface AdminNotificationChannelInput extends ApiRecord {
+  event_key?: string;
+  key?: string;
+  label?: string;
+  in_app_enabled?: boolean;
+  inApp?: boolean;
+  email_enabled?: boolean;
+  email?: boolean;
+  push_enabled?: boolean;
+  push?: boolean;
+  active?: boolean;
+  status?: "active" | "inactive";
+}
+
+export interface AdminNotificationChannelsUpdateInput extends ApiRecord {
+  channels: AdminNotificationChannelInput[];
+  expected_version: number;
+}
+
 export const adminApi = {
   getCompanyProfile() {
     return apiRequest<CompanyProfileResponse>("/api/v1/admin/company-profile");
@@ -383,6 +428,16 @@ export const adminApi = {
         body: input,
       },
     );
+  },
+  listAdminNotificationChannels(params: { module?: string; active_only?: boolean } = {}) {
+    const path = "/api/v1/admin/notification-channels";
+    return apiRequest<AdminNotificationChannelListResponse>(`${path}${queryString(params)}`);
+  },
+  updateAdminNotificationChannels(input: AdminNotificationChannelsUpdateInput) {
+    return apiRequest<AdminNotificationChannelListResponse>("/api/v1/admin/notification-channels", {
+      method: "PUT",
+      body: input,
+    });
   },
   getFinanceGovernance() {
     return apiRequest<ApiRecord>("/api/v1/platform/finance-governance");

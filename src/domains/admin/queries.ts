@@ -3,6 +3,7 @@ import { queryKeys, queryTimings } from "@/shared/query";
 import {
   adminApi,
   type AdminEmailTemplateUpdateInput,
+  type AdminNotificationChannelsUpdateInput,
   type AdminPolicyUpdateInput,
   type AdminWorkflowUpdateInput,
   type CompanyProfileUpdateInput,
@@ -199,6 +200,24 @@ export function useUpdateAdminEmailTemplateMutation() {
       templateKey: string;
       input: AdminEmailTemplateUpdateInput;
     }) => adminApi.updateAdminEmailTemplate(templateKey, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
+  });
+}
+
+export function useAdminNotificationChannels(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("admin", "notification-channels"),
+    queryFn: () => adminApi.listAdminNotificationChannels(),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useUpdateAdminNotificationChannelsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AdminNotificationChannelsUpdateInput) =>
+      adminApi.updateAdminNotificationChannels(input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
   });
 }
