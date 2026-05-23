@@ -287,6 +287,28 @@ export const adminPolicies = platform.table(
   ]
 );
 
+export const adminEmailTemplates = platform.table(
+  "admin_email_templates",
+  {
+    id: uuidPk.defaultRandom(),
+    templateKey: text("template_key").notNull(),
+    module: text("module").notNull(),
+    name: text("name").notNull(),
+    subject: text("subject").notNull(),
+    body: text("body").notNull(),
+    locale: text("locale").notNull().default("en-IN"),
+    status: text("status").notNull().default("active"),
+    createdAt,
+    updatedAt,
+    deletedAt,
+    version
+  },
+  (table) => [
+    uniqueIndex("platform_admin_email_templates_key_uq").on(table.templateKey),
+    index("platform_admin_email_templates_module_status_idx").on(table.module, table.status)
+  ]
+);
+
 export const processedEvents = platform.table("processed_events", {
   consumerName: text("consumer_name").notNull(),
   eventId: uuid("event_id").notNull(),
@@ -1303,6 +1325,7 @@ export const schema = {
   notifications,
   adminWorkflows,
   adminPolicies,
+  adminEmailTemplates,
   processedEvents,
   expenseTickets,
   expenseLineItems,

@@ -91,6 +91,18 @@ export const AdminPolicyKeys = [
 
 export type AdminPolicyKey = (typeof AdminPolicyKeys)[number];
 
+export const AdminEmailTemplateKeys = [
+  "invite",
+  "verify",
+  "reset",
+  "leave",
+  "expense",
+  "ts_reminder",
+  "ticket_update"
+] as const;
+
+export type AdminEmailTemplateKey = (typeof AdminEmailTemplateKeys)[number];
+
 export const EmploymentStatuses = {
   Active: "active",
   Inactive: "inactive",

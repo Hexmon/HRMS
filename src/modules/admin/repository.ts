@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { Department, Designation, AdminPolicyConfigRecord, AdminWorkflowConfigRecord, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
+import type { Department, Designation, AdminEmailTemplateRecord, AdminPolicyConfigRecord, AdminWorkflowConfigRecord, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
 import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
-import { buildDefaultAdminPolicies, buildDefaultAdminWorkflows, nowIso } from "../../platform/data-store.js";
+import { buildDefaultAdminEmailTemplates, buildDefaultAdminPolicies, buildDefaultAdminWorkflows, nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 import type {
   CompanyProfileUpdateInput,
@@ -27,6 +27,11 @@ export class AdminRepository {
     return this.store.adminPolicies.filter((policy) => !policy.deleted_at);
   }
 
+  listAdminEmailTemplates(): AdminEmailTemplateRecord[] {
+    this.ensureAdminEmailTemplates();
+    return this.store.adminEmailTemplates.filter((template) => !template.deleted_at);
+  }
+
   adminWorkflowByKey(workflowKey: string): AdminWorkflowConfigRecord {
     this.ensureAdminWorkflows();
     const workflow = this.store.adminWorkflows.find((candidate) => candidate.workflow_key === workflowKey && !candidate.deleted_at);
@@ -39,6 +44,13 @@ export class AdminRepository {
     const policy = this.store.adminPolicies.find((candidate) => candidate.policy_key === policyKey && !candidate.deleted_at);
     if (!policy) throw notFound("Admin policy configuration not found", { policy_key: policyKey });
     return policy;
+  }
+
+  adminEmailTemplateByKey(templateKey: string): AdminEmailTemplateRecord {
+    this.ensureAdminEmailTemplates();
+    const template = this.store.adminEmailTemplates.find((candidate) => candidate.template_key === templateKey && !candidate.deleted_at);
+    if (!template) throw notFound("Admin email template not found", { template_key: templateKey });
+    return template;
   }
 
   updateAdminWorkflow(workflowKey: string, input: AdminWorkflowUpdateData): AdminWorkflowConfigRecord {
@@ -75,6 +87,26 @@ export class AdminRepository {
     policy.updated_at = nowIso();
     policy.version += 1;
     return policy;
+  }
+
+  updateAdminEmailTemplate(templateKey: string, input: AdminEmailTemplateUpdateData): AdminEmailTemplateRecord {
+    const template = this.adminEmailTemplateByKey(templateKey);
+    if (template.version !== input.expected_version) {
+      throw conflict("Admin email template was modified by another actor.", {
+        aggregate: "admin_email_template",
+        template_key: templateKey,
+        expected_version: input.expected_version,
+        current_version: template.version
+      });
+    }
+    if (input.name) template.name = input.name.trim();
+    if (input.subject) template.subject = input.subject.trim();
+    if (input.body) template.body = input.body.trim();
+    if (input.locale) template.locale = input.locale.trim();
+    if (input.status) template.status = input.status;
+    template.updated_at = nowIso();
+    template.version += 1;
+    return template;
   }
 
   getCurrentCompanyProfile(): CompanyProfileRecord {
@@ -338,6 +370,12 @@ export class AdminRepository {
     const missingDefaults = buildDefaultAdminPolicies(nowIso()).filter((policy) => !existingKeys.has(policy.policy_key));
     this.store.adminPolicies.push(...missingDefaults);
   }
+
+  private ensureAdminEmailTemplates(): void {
+    const existingKeys = new Set(this.store.adminEmailTemplates.filter((template) => !template.deleted_at).map((template) => template.template_key));
+    const missingDefaults = buildDefaultAdminEmailTemplates(nowIso()).filter((template) => !existingKeys.has(template.template_key));
+    this.store.adminEmailTemplates.push(...missingDefaults);
+  }
 }
 
 export interface AdminWorkflowUpdateData {
@@ -351,6 +389,15 @@ export interface AdminPolicyUpdateData {
   label?: string;
   status?: "active" | "inactive";
   config?: Record<string, unknown>;
+  expected_version: number;
+}
+
+export interface AdminEmailTemplateUpdateData {
+  name?: string;
+  subject?: string;
+  body?: string;
+  locale?: string;
+  status?: "active" | "inactive";
   expected_version: number;
 }
 

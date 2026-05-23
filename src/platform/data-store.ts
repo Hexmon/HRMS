@@ -36,6 +36,7 @@ import type {
   ProjectMemberRecord,
   ProjectMilestoneRecord,
   ProjectRecord,
+  AdminEmailTemplateRecord,
   AdminPolicyConfigRecord,
   AdminWorkflowConfigRecord,
   RbacRolePermissionRecord,
@@ -68,6 +69,8 @@ import {
   ProjectPriorities,
   ProjectStatuses,
   ProjectTypes,
+  AdminEmailTemplateKeys,
+  type AdminEmailTemplateKey,
   AdminPolicyKeys,
   type AdminPolicyKey,
   AdminWorkflowApproverTypes,
@@ -337,6 +340,7 @@ export interface DataStore {
   rbacRolePermissions: RbacRolePermissionRecord[];
   adminWorkflows: AdminWorkflowConfigRecord[];
   adminPolicies: AdminPolicyConfigRecord[];
+  adminEmailTemplates: AdminEmailTemplateRecord[];
   users: CoreUser[];
   userCredentials: UserCredentialRecord[];
   authTokens: AuthTokenRecord[];
@@ -793,11 +797,90 @@ export function buildDefaultAdminPolicies(created: string): AdminPolicyConfigRec
     }));
 }
 
+export function buildDefaultAdminEmailTemplates(created: string): AdminEmailTemplateRecord[] {
+  const defaults: Array<{
+    key: AdminEmailTemplateKey;
+    module: string;
+    name: string;
+    subject: string;
+    body: string;
+  }> = [
+    {
+      key: "invite",
+      module: "auth",
+      name: "Employee Invite",
+      subject: "Welcome to {{company}} - set up your account",
+      body: "Hi {{name}},\n\nYou've been invited to join {{company}} on Hawkaii HRMS. Click the link below to set your password and complete onboarding.\n\n{{link}}\n\n- People Ops"
+    },
+    {
+      key: "verify",
+      module: "auth",
+      name: "Email Verification",
+      subject: "Verify your email for {{company}}",
+      body: "Hi {{name}},\n\nPlease verify your email by clicking the link below.\n\n{{link}}\n\nThis link expires in 24 hours."
+    },
+    {
+      key: "reset",
+      module: "auth",
+      name: "Password Reset",
+      subject: "Reset your {{company}} password",
+      body: "Hi {{name}},\n\nUse the link below to reset your password. If you didn't request this, you can ignore this email.\n\n{{link}}"
+    },
+    {
+      key: "leave",
+      module: "leave_wfh",
+      name: "Leave Approval",
+      subject: "Your leave request was {{status}}",
+      body: "Hi {{name}},\n\nYour leave request from {{from}} to {{to}} has been {{status}} by {{approver}}.\n\nRemarks: {{remarks}}"
+    },
+    {
+      key: "expense",
+      module: "expenses",
+      name: "Expense Approval",
+      subject: "Expense {{id}} {{status}}",
+      body: "Hi {{name}},\n\nYour expense claim {{id}} for {{amount}} has been {{status}}.\n\nRemarks: {{remarks}}"
+    },
+    {
+      key: "ts_reminder",
+      module: "timesheets",
+      name: "Timesheet Reminder",
+      subject: "Submit your weekly timesheet",
+      body: "Hi {{name}},\n\nFriendly reminder to submit your timesheet for week ending {{week}} before {{deadline}}."
+    },
+    {
+      key: "ticket_update",
+      module: "helpdesk",
+      name: "Helpdesk Ticket Update",
+      subject: "Ticket {{id}} updated - {{status}}",
+      body: "Hi {{name}},\n\nTicket {{id}} ({{title}}) is now {{status}}.\n\nLatest update: {{message}}"
+    }
+  ];
+
+  const allowedKeys = new Set(AdminEmailTemplateKeys);
+  return defaults
+    .filter((template) => allowedKeys.has(template.key))
+    .map((template) => ({
+      id: uuidFromName(`admin-email-template-${template.key}`),
+      template_key: template.key,
+      module: template.module,
+      name: template.name,
+      subject: template.subject,
+      body: template.body,
+      locale: "en-IN",
+      status: "active",
+      created_at: created,
+      updated_at: created,
+      deleted_at: null,
+      version: 1
+    }));
+}
+
 export function createMemoryDataStore(): MemoryDataStore {
   const created = nowIso();
   const defaultRbac = buildDefaultRbac(created);
   const defaultAdminWorkflows = buildDefaultAdminWorkflows(created);
   const defaultAdminPolicies = buildDefaultAdminPolicies(created);
+  const defaultAdminEmailTemplates = buildDefaultAdminEmailTemplates(created);
   const departments: Department[] = [
     {
       id: seedIds.departmentSales,
@@ -1557,6 +1640,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     rbacRolePermissions: defaultRbac.permissions,
     adminWorkflows: defaultAdminWorkflows,
     adminPolicies: defaultAdminPolicies,
+    adminEmailTemplates: defaultAdminEmailTemplates,
     users,
     userCredentials,
     authTokens: [],

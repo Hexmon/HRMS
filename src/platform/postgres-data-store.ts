@@ -36,6 +36,7 @@ import type {
   ProjectMemberRecord,
   ProjectMilestoneRecord,
   ProjectRecord,
+  AdminEmailTemplateRecord,
   AdminPolicyConfigRecord,
   AdminWorkflowConfigRecord,
   TimesheetSubmission,
@@ -123,6 +124,7 @@ const resetTables = [
   "expenses.expense_line_items",
   "expenses.expense_tickets",
   "platform.processed_events",
+  "platform.admin_email_templates",
   "platform.admin_policies",
   "platform.admin_workflows",
   "platform.notifications",
@@ -179,6 +181,7 @@ function copyData(target: DataStore, source: DataStore): void {
   target.rbacRolePermissions = source.rbacRolePermissions;
   target.adminWorkflows = source.adminWorkflows;
   target.adminPolicies = source.adminPolicies;
+  target.adminEmailTemplates = source.adminEmailTemplates;
   target.users = source.users;
   target.userCredentials = source.userCredentials;
   target.authTokens = source.authTokens;
@@ -315,6 +318,7 @@ class PostgresPersistence {
       loaded.rbacRolePermissions = await this.loadRbacRolePermissions(client);
       loaded.adminWorkflows = await this.loadAdminWorkflows(client);
       loaded.adminPolicies = await this.loadAdminPolicies(client);
+      loaded.adminEmailTemplates = await this.loadAdminEmailTemplates(client);
       loaded.users = await this.loadUsers(client);
       loaded.userCredentials = await this.loadUserCredentials(client);
       loaded.authTokens = await this.loadAuthTokens(client);
@@ -490,6 +494,28 @@ class PostgresPersistence {
       label: row.label,
       status: row.status,
       config: json(row.config),
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+      version: row.version
+    }));
+  }
+
+  private async loadAdminEmailTemplates(client: PoolClient): Promise<AdminEmailTemplateRecord[]> {
+    const { rows } = await client.query(`
+      SELECT id, template_key, module, name, subject, body, locale, status, created_at, updated_at, deleted_at, version
+      FROM platform.admin_email_templates
+      ORDER BY template_key
+    `);
+    return rows.map((row) => ({
+      id: row.id,
+      template_key: row.template_key,
+      module: row.module,
+      name: row.name,
+      subject: row.subject,
+      body: row.body,
+      locale: row.locale,
+      status: row.status,
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
       deleted_at: asIsoOrNull(row.deleted_at),
@@ -1728,6 +1754,33 @@ class PostgresPersistence {
           policy.updated_at,
           policy.deleted_at,
           policy.version
+        ]
+      );
+    }
+    for (const template of this.store.adminEmailTemplates) {
+      await client.query(
+        `INSERT INTO platform.admin_email_templates (
+          id, template_key, module, name, subject, body, locale, status, created_at, updated_at, deleted_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (template_key) DO UPDATE
+        SET module = EXCLUDED.module, name = EXCLUDED.name, subject = EXCLUDED.subject,
+            body = EXCLUDED.body, locale = EXCLUDED.locale, status = EXCLUDED.status,
+            updated_at = EXCLUDED.updated_at, deleted_at = EXCLUDED.deleted_at,
+            version = EXCLUDED.version`,
+        [
+          template.id,
+          template.template_key,
+          template.module,
+          template.name,
+          template.subject,
+          template.body,
+          template.locale,
+          template.status,
+          template.created_at,
+          template.updated_at,
+          template.deleted_at,
+          template.version
         ]
       );
     }

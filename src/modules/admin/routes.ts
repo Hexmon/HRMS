@@ -3,6 +3,8 @@ import { z } from "zod";
 import { unauthorized } from "../../platform/errors.js";
 import { AdminService } from "./service.js";
 import {
+  adminEmailTemplatesQuerySchema,
+  adminEmailTemplateUpdateSchema,
   adminPoliciesQuerySchema,
   adminPolicyUpdateSchema,
   adminWorkflowUpdateSchema,
@@ -12,6 +14,7 @@ import {
   departmentUpdateSchema,
   designationCreateSchema,
   designationUpdateSchema,
+  emailTemplateKeyParamSchema,
   masterDataQuerySchema,
   rbacPermissionsQuerySchema,
   rbacRoleCreateSchema,
@@ -167,6 +170,24 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor,
       params.policy_key,
       adminPolicyUpdateSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/email-templates", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).listAdminEmailTemplates(
+      request.actor,
+      adminEmailTemplatesQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.put("/email-templates/:template_key", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = emailTemplateKeyParamSchema.parse(request.params);
+    return new AdminService(fastify.store).updateAdminEmailTemplate(
+      request.actor,
+      params.template_key,
+      adminEmailTemplateUpdateSchema.parse(request.body)
     );
   });
 };

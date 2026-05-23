@@ -78,6 +78,18 @@ const policyKeyParamSchema = {
   }
 };
 
+const emailTemplateKeyParamSchema = {
+  type: "object",
+  required: ["template_key"],
+  properties: {
+    template_key: {
+      type: "string",
+      enum: ["invite", "verify", "reset", "leave", "expense", "ts_reminder", "ticket_update"],
+      example: "invite"
+    }
+  }
+};
+
 const expenseDocumentParamSchema = {
   type: "object",
   required: ["id", "documentId"],
@@ -806,6 +818,41 @@ const adminPolicyUpdateBody = {
       additionalProperties: { anyOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }, { type: "null" }] },
       example: { graceMinutes: 15, allowRegularization: true }
     },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminEmailTemplateSchema = {
+  type: "object",
+  required: ["id", "template_key", "key", "module", "name", "subject", "body", "locale", "status", "active", "updated_at", "version"],
+  properties: {
+    id: uuid("Admin email template UUID"),
+    template_key: { type: "string", enum: ["invite", "verify", "reset", "leave", "expense", "ts_reminder", "ticket_update"], example: "invite" },
+    key: { type: "string", enum: ["invite", "verify", "reset", "leave", "expense", "ts_reminder", "ticket_update"], example: "invite" },
+    module: { type: "string", example: "auth" },
+    name: { type: "string", example: "Employee Invite" },
+    subject: { type: "string", example: "Welcome to {{company}} - set up your account" },
+    body: { type: "string", example: "Hi {{name}},\\n\\nYou've been invited to join {{company}}.\\n\\n{{link}}" },
+    locale: { type: "string", example: "en-IN" },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    active: { type: "boolean", example: true },
+    updated_at: dateTime("Admin email template update timestamp"),
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminEmailTemplateUpdateBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    name: { type: "string", minLength: 2, maxLength: 160, example: "Employee Invite" },
+    subject: { type: "string", minLength: 2, maxLength: 240, example: "Welcome to {{company}}" },
+    body: { type: "string", minLength: 2, maxLength: 5000, example: "Hi {{name}},\\n\\n{{link}}" },
+    locale: { type: "string", minLength: 2, maxLength: 20, example: "en-IN" },
+    active: { type: "boolean", example: true },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
     expected_version: { type: "integer", minimum: 1, example: 1 }
   },
   additionalProperties: false
@@ -3620,6 +3667,50 @@ const routeDocs: Record<string, RouteSchema> = {
         type: "object",
         required: ["policy", "version"],
         properties: { policy: adminPolicySchema, version: { type: "integer", example: 2 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "GET /api/v1/admin/email-templates": operation(
+    "Admin / Configuration",
+    "List admin email templates",
+    "Lists Admin Settings email templates without exposing provider credentials or SMTP secrets.",
+    {
+      querystring: {
+        type: "object",
+        properties: {
+          module: { type: "string", example: "auth" },
+          locale: { type: "string", example: "en-IN" },
+          active_only: { type: "boolean", example: true }
+        }
+      },
+      response200: {
+        type: "object",
+        required: ["items", "templates", "versions"],
+        properties: {
+          items: { type: "array", items: adminEmailTemplateSchema },
+          templates: { type: "array", items: adminEmailTemplateSchema },
+          versions: {
+            type: "object",
+            additionalProperties: { type: "integer", minimum: 1 },
+            example: { invite: 1, reset: 1 }
+          }
+        },
+        additionalProperties: false
+      }
+    }
+  ),
+  "PUT /api/v1/admin/email-templates/{template_key}": operation(
+    "Admin / Configuration",
+    "Update admin email template",
+    "Updates one Admin Settings email template with optimistic concurrency. Delivery provider configuration is not exposed here.",
+    {
+      params: emailTemplateKeyParamSchema,
+      body: adminEmailTemplateUpdateBody,
+      response200: {
+        type: "object",
+        required: ["template", "version"],
+        properties: { template: adminEmailTemplateSchema, version: { type: "integer", example: 2 } },
         additionalProperties: false
       }
     }

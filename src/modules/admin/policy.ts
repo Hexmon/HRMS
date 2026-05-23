@@ -25,3 +25,8 @@ export function assertCanManagePolicySettings(actor: AuthUser): void {
   if (actor.roles.includes(Roles.Admin)) return;
   throw forbidden("Only Admin can manage policy settings");
 }
+
+export function assertCanManageEmailTemplates(actor: AuthUser): void {
+  if (actor.roles.includes(Roles.Admin)) return;
+  throw forbidden("Only Admin can manage email templates");
+}

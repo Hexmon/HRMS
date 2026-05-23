@@ -11,9 +11,9 @@ This audit maps the current Hawkaii HRMS frontend to the custom backend contract
 
 ## API Count Summary
 
-Current documented backend contract: **191 operations** in `openapi.json` after Phase 5 Admin policy API completion.
+Current documented backend contract: **193 operations** in `openapi.json` after Phase 5 Admin email template API completion.
 
-- **189** operations are under `/api/v1/**`.
+- **191** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
 - **0** documented backend operations currently need deletion from the OpenAPI pack because Reviewer/Director APIs are not present there.
 
@@ -21,11 +21,11 @@ Disjoint implementation counts for backend planning:
 
 | Category | Count | Meaning |
 | --- | ---: | --- |
-| Existing APIs ready to integrate as-is | 191 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
+| Existing APIs ready to integrate as-is | 193 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
 | Existing APIs to update in place | 0 | Phase 1A-1C existing API expansions have landed; new gaps should be added as explicit new endpoints. |
 | Existing APIs to delete | 0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
-| New APIs remaining to add | 24 | Remaining first-pass count needed after Phase 5 Admin policy API completion. |
-| Target contract size after additions | 215 | `191 current + 24 remaining`; Admin policy configuration APIs are now available. |
+| New APIs remaining to add | 23 | Remaining first-pass count needed after Phase 5 Admin email template API completion. |
+| Target contract size after additions | 216 | `193 current + 23 remaining`; Admin email template update was added because the visible UI has a save flow. |
 
 Existing APIs updated in place during earlier phases:
 
@@ -59,9 +59,9 @@ Minimum new API operation count by frontend area:
 | Assets | 0 | Requests, decisions, cancellation, acknowledgements, maintenance, vendor views, and recovery queues are implemented; asset reports remain in Reports. |
 | Helpdesk | 0 | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report are implemented. |
 | Reports | 10 | HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, export list/detail beyond existing expense exports. |
-| Admin settings | 3 | Company profile, department/designation master data, RBAC role/permission configuration, workflow configuration, and policy configuration are implemented; email templates, notification channels, security settings, and audit logs remain. |
+| Admin settings | 2 | Company profile, department/designation master data, RBAC role/permission configuration, workflow configuration, policy configuration, and email template list/update are implemented; notification channels, security settings, and audit logs remain. |
 | Notifications | 0 | Feed, unread count, mark read, and mark all read are implemented; notification channel preferences remain in Admin settings. |
-| **Total remaining** | **24** | Remaining operation count for full visible frontend coverage after Phase 5 Admin policies. |
+| **Total remaining** | **23** | Remaining operation count for full visible frontend coverage after Phase 5 Admin email templates. |
 
 ## Expense Flow Alignment
 
@@ -103,7 +103,7 @@ Remove:
 | Assets                     | `/assets/*`                                                                                                 | Inventory, detail, assign, return, QR scan, license APIs, termination event, requests, acknowledgements, maintenance records, vendor views, and recovery queues.                       | Asset report endpoint parity remains planned under Reports.                                                                                                                     |
 | Helpdesk                   | `/helpdesk/*`                                                                                               | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report. | Broader helpdesk summary report remains planned under non-expense reports.                                                                                                      |
 | Reports                    | `/reports/*`                                                                                                | Expense reports and export jobs.                                             | HR, attendance, leave/WFH, project, timesheet, asset, helpdesk, and audit reports with pagination/filter/export parity.                                                           |
-| Admin settings             | `/admin-settings/*`                                                                                         | Company profile, department/designation master data, RBAC roles/permissions, workflow configs, policies, finance governance, manager backups, timesheet workflow definitions. | Email templates, notification channels, security settings, audit logs.                      |
+| Admin settings             | `/admin-settings/*`                                                                                         | Company profile, department/designation master data, RBAC roles/permissions, workflow configs, policies, email templates, finance governance, manager backups, timesheet workflow definitions. | Notification channels, security settings, audit logs.                      |
 | Notifications              | Topbar notification panel                                                                                   | Notification feed, unread count, mark read, and mark all read.               | Admin notification channel/event preferences remain planned under Admin settings.                                                                                                  |
 
 ## Integration Changes For Frontend

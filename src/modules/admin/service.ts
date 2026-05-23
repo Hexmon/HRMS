@@ -4,6 +4,8 @@ import {
   RbacPermissionActions,
   RbacPermissionGroups,
   Roles,
+  type AdminEmailTemplateKey,
+  type AdminEmailTemplateRecord,
   type AdminPolicyConfigRecord,
   type AdminPolicyKey,
   type AdminWorkflowConfigRecord,
@@ -19,6 +21,8 @@ import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-
 import { appendOutboxEvent } from "../expenses/events.js";
 import { AdminRepository } from "./repository.js";
 import type {
+  AdminEmailTemplatesQuery,
+  AdminEmailTemplateUpdateInput,
   AdminPoliciesQuery,
   AdminPolicyUpdateInput,
   AdminWorkflowStageInput,
@@ -36,7 +40,7 @@ import type {
   RbacRolesQuery,
   RbacRoleUpdateInput
 } from "./schemas.js";
-import { assertCanManageAdminSettings, assertCanManageMasterData, assertCanManagePolicySettings, assertCanManageRbac, assertCanManageWorkflowSettings } from "./policy.js";
+import { assertCanManageAdminSettings, assertCanManageEmailTemplates, assertCanManageMasterData, assertCanManagePolicySettings, assertCanManageRbac, assertCanManageWorkflowSettings } from "./policy.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 
 function page<T>(items: readonly T[], pageNumber = 1, pageSize = 25): Paginated<T> {
@@ -104,6 +108,24 @@ export class AdminService {
     };
   }
 
+  listAdminEmailTemplates(actor: AuthUser, query: AdminEmailTemplatesQuery): AdminEmailTemplateListResponse {
+    assertCanManageEmailTemplates(actor);
+    const moduleFilter = query.module?.trim().toLowerCase();
+    const localeFilter = query.locale?.trim().toLowerCase();
+    const templates = this.repository
+      .listAdminEmailTemplates()
+      .filter((template) => !moduleFilter || template.module.toLowerCase() === moduleFilter || template.template_key.toLowerCase() === moduleFilter)
+      .filter((template) => !localeFilter || template.locale.toLowerCase() === localeFilter)
+      .filter((template) => !query.active_only || template.status === "active")
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((template) => presentAdminEmailTemplate(template));
+    return {
+      items: templates,
+      templates,
+      versions: Object.fromEntries(templates.map((template) => [template.template_key, template.version]))
+    };
+  }
+
   updateAdminWorkflow(actor: AuthUser, workflowKey: AdminWorkflowKey, input: AdminWorkflowUpdateInput): AdminWorkflowMutationResponse {
     assertCanManageWorkflowSettings(actor);
     const stages = input.stages ? normalizeWorkflowStages(input.stages, workflowKey) : undefined;
@@ -148,6 +170,30 @@ export class AdminService {
       idempotencyKey: `admin.policy.updated:${policy.id}:${policy.version}`
     });
     return { policy: presentAdminPolicy(policy), version: policy.version };
+  }
+
+  updateAdminEmailTemplate(actor: AuthUser, templateKey: AdminEmailTemplateKey, input: AdminEmailTemplateUpdateInput): AdminEmailTemplateMutationResponse {
+    assertCanManageEmailTemplates(actor);
+    const template = this.repository.updateAdminEmailTemplate(templateKey, {
+      name: input.name,
+      subject: input.subject,
+      body: input.body,
+      locale: input.locale,
+      status: input.status ?? (input.active === undefined ? undefined : input.active ? "active" : "inactive"),
+      expected_version: input.expected_version
+    });
+    appendOutboxEvent(this.store, {
+      aggregateType: "admin_email_template",
+      aggregateId: template.id,
+      eventType: "admin.email_template.updated",
+      payload: {
+        actor_user_id: actor.id,
+        template_key: template.template_key,
+        changed_fields: Object.keys(input).filter((field) => field !== "expected_version")
+      },
+      idempotencyKey: `admin.email_template.updated:${template.id}:${template.version}`
+    });
+    return { template: presentAdminEmailTemplate(template), version: template.version };
   }
 
   listRbacRoles(actor: AuthUser, query: RbacRolesQuery): Paginated<RbacRoleResponse> {
@@ -520,6 +566,32 @@ export interface AdminPolicyMutationResponse {
   version: number;
 }
 
+export interface AdminEmailTemplateResponse {
+  id: string;
+  template_key: AdminEmailTemplateKey;
+  key: AdminEmailTemplateKey;
+  module: string;
+  name: string;
+  subject: string;
+  body: string;
+  locale: string;
+  status: "active" | "inactive";
+  active: boolean;
+  updated_at: string;
+  version: number;
+}
+
+export interface AdminEmailTemplateListResponse {
+  items: AdminEmailTemplateResponse[];
+  templates: AdminEmailTemplateResponse[];
+  versions: Record<string, number>;
+}
+
+export interface AdminEmailTemplateMutationResponse {
+  template: AdminEmailTemplateResponse;
+  version: number;
+}
+
 export interface CompanyProfileResponse {
   id: string;
   company_name: string;
@@ -642,6 +714,23 @@ function presentAdminPolicy(policy: AdminPolicyConfigRecord): AdminPolicyRespons
     config: policy.config,
     updated_at: policy.updated_at,
     version: policy.version
+  };
+}
+
+function presentAdminEmailTemplate(template: AdminEmailTemplateRecord): AdminEmailTemplateResponse {
+  return {
+    id: template.id,
+    template_key: template.template_key,
+    key: template.template_key,
+    module: template.module,
+    name: template.name,
+    subject: template.subject,
+    body: template.body,
+    locale: template.locale,
+    status: template.status,
+    active: template.status === "active",
+    updated_at: template.updated_at,
+    version: template.version
   };
 }
 

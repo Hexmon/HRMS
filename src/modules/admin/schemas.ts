@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AdminPolicyKeys, AdminWorkflowApproverTypes, AdminWorkflowKeys } from "#shared";
+import { AdminEmailTemplateKeys, AdminPolicyKeys, AdminWorkflowApproverTypes, AdminWorkflowKeys } from "#shared";
 
 export const masterDataQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -49,6 +49,12 @@ export const adminPoliciesQuerySchema = z.object({
   active_only: z.coerce.boolean().optional()
 });
 
+export const adminEmailTemplatesQuerySchema = z.object({
+  module: z.string().max(80).optional(),
+  locale: z.string().max(20).optional(),
+  active_only: z.coerce.boolean().optional()
+});
+
 const workflowStageSchema = z.object({
   id: z.string().min(1).max(80).optional(),
   order: z.number().int().min(1).max(20).optional(),
@@ -86,6 +92,20 @@ export const adminPolicyUpdateSchema = z.object({
 
 export const policyKeyParamSchema = z.object({
   policy_key: z.enum(AdminPolicyKeys)
+});
+
+export const adminEmailTemplateUpdateSchema = z.object({
+  name: z.string().min(2).max(160).optional(),
+  subject: z.string().min(2).max(240).optional(),
+  body: z.string().min(2).max(5000).optional(),
+  active: z.boolean().optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  locale: z.string().min(2).max(20).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export const emailTemplateKeyParamSchema = z.object({
+  template_key: z.enum(AdminEmailTemplateKeys)
 });
 
 const statusSchema = z.enum(["active", "inactive"]);
@@ -154,6 +174,8 @@ export type AdminWorkflowUpdateInput = z.infer<typeof adminWorkflowUpdateSchema>
 export type AdminWorkflowStageInput = z.infer<typeof workflowStageSchema>;
 export type AdminPoliciesQuery = z.infer<typeof adminPoliciesQuerySchema>;
 export type AdminPolicyUpdateInput = z.infer<typeof adminPolicyUpdateSchema>;
+export type AdminEmailTemplatesQuery = z.infer<typeof adminEmailTemplatesQuerySchema>;
+export type AdminEmailTemplateUpdateInput = z.infer<typeof adminEmailTemplateUpdateSchema>;
 export type DepartmentCreateInput = z.infer<typeof departmentCreateSchema>;
 export type DepartmentUpdateInput = z.infer<typeof departmentUpdateSchema>;
 export type DesignationCreateInput = z.infer<typeof designationCreateSchema>;

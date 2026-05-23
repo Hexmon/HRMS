@@ -26,6 +26,7 @@ import type {
   ProjectPriority,
   ProjectStatus,
   ProjectType,
+  AdminEmailTemplateKey,
   AdminPolicyKey,
   AdminWorkflowApproverType,
   AdminWorkflowKey,
@@ -135,6 +136,21 @@ export interface AdminPolicyConfigRecord {
   label: string;
   status: "active" | "inactive";
   config: Record<string, unknown>;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+  version: number;
+}
+
+export interface AdminEmailTemplateRecord {
+  id: UUID;
+  template_key: AdminEmailTemplateKey;
+  module: string;
+  name: string;
+  subject: string;
+  body: string;
+  locale: string;
+  status: "active" | "inactive";
   created_at: ISODateTime;
   updated_at: ISODateTime;
   deleted_at: ISODateTime | null;

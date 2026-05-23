@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 191 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 193 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 24 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `191 current + 24 remaining`; Admin policy configuration APIs are now available. |
+| Planned new APIs | 23 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 216 | Regenerate frontend client only after each backend phase lands. | `193 current + 23 remaining`; Admin email template list/update APIs are now available. |
 
 ## Development Phases
 
@@ -26,7 +26,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Module tag | Operations | Ready surface |
 | --- | ---: | --- |
-| Admin / Configuration | 23 | Company profile read/update, department/designation master-data management, RBAC role/permission configuration, workflow configuration, policy configuration, finance governance, manager backups, and timesheet workflow definition upsert. |
+| Admin / Configuration | 25 | Company profile read/update, department/designation master-data management, RBAC role/permission configuration, workflow configuration, policy configuration, email template configuration, finance governance, manager backups, and timesheet workflow definition upsert. |
 | Assets | 19 | Inventory, detail, assignment/return, QR scan, license lifecycle, employee termination event, requests, acknowledgements, maintenance, vendors, and recovery queue. |
 | Auth & Sessions | 11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
 | Core / Employees & Hierarchy | 11 | User list/detail/subtree, org selectors, employee create/update, lifecycle activation/deactivation, login setup/disable, and role replacement. |
@@ -79,7 +79,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **24**.
+Total remaining planned new operations: **23**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -285,7 +285,8 @@ Total remaining planned new operations: **24**.
 | PUT | `/api/v1/admin/workflows/{workflow_key}` | `/admin-settings/workflows` | Update workflow configuration. | Admin. | workflow config, expected_version | workflow, version | 409 stale/invalid workflow graph. | Implemented in Phase 5 Admin workflows |
 | GET | `/api/v1/admin/policies` | `/admin-settings/policies` | List policies. | Admin/HR/Finance admin by scope. | module optional, active_only | policies[] | Shared errors. | Implemented in Phase 5 Admin policies |
 | PUT | `/api/v1/admin/policies/{policy_key}` | `/admin-settings/policies` | Update policy. | Admin/module owner. | policy config, expected_version | policy, version | 409 stale/invalid policy. | Implemented in Phase 5 Admin policies |
-| GET | `/api/v1/admin/email-templates` | `/admin-settings/templates` | List email templates. | Admin. | module optional, locale optional | templates[] | Do not return SMTP secrets. | Planned / Not Implemented |
+| GET | `/api/v1/admin/email-templates` | `/admin-settings/templates` | List email templates. | Admin. | module optional, locale optional | templates[] | Do not return SMTP secrets. | Implemented in Phase 5 Admin email templates |
+| PUT | `/api/v1/admin/email-templates/{template_key}` | `/admin-settings/templates` | Update email template subject/body/status. | Admin. | template fields, expected_version | template, version | 409 stale template version; no SMTP secrets. | Implemented in Phase 5 Admin email templates |
 | PUT | `/api/v1/admin/notification-channels` | `/admin-settings/notifications` | Update notification channel settings. | Admin. | channels config, expected_version | channels, version | 409 stale/invalid channel config. | Planned / Not Implemented |
 | GET | `/api/v1/admin/audit-log` | `/admin-settings/audit` | Admin settings audit log. | Admin/auditor. | page, page_size, module, actor_user_id, date_range | items[], pagination | Redact secrets; 403 non-auditor/admin. | Planned / Not Implemented |
 

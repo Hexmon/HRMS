@@ -47,6 +47,7 @@ const localDemoPassword = getLocalDemoPassword();
 const expectedOperations = [
   "DELETE /api/v1/manager-backups/{id}",
   "GET /api/v1/admin/company-profile",
+  "GET /api/v1/admin/email-templates",
   "GET /api/v1/admin/master-data/departments",
   "GET /api/v1/admin/master-data/designations",
   "GET /api/v1/admin/policies",
@@ -230,6 +231,7 @@ const expectedOperations = [
   "POST /api/v1/wfh/requests",
   "POST /api/v1/wfh/requests/{id}/decision",
   "PUT /api/v1/admin/company-profile",
+  "PUT /api/v1/admin/email-templates/{template_key}",
   "PUT /api/v1/admin/policies/{policy_key}",
   "PUT /api/v1/admin/rbac/roles/{id}/permissions",
   "PUT /api/v1/admin/workflows/{workflow_key}",
@@ -248,6 +250,7 @@ const bodyRequiredOperations = [
   "POST /api/v1/auth/signup",
   "PATCH /api/v1/auth/session/preference",
   "PUT /api/v1/admin/company-profile",
+  "PUT /api/v1/admin/email-templates/{template_key}",
   "PUT /api/v1/admin/policies/{policy_key}",
   "POST /api/v1/admin/master-data/departments",
   "PATCH /api/v1/admin/master-data/departments/{id}",
@@ -383,6 +386,7 @@ const occOperations = [
   "PATCH /api/v1/admin/master-data/departments/{id}",
   "PATCH /api/v1/admin/master-data/designations/{id}",
   "PATCH /api/v1/admin/rbac/roles/{id}",
+  "PUT /api/v1/admin/email-templates/{template_key}",
   "PUT /api/v1/admin/policies/{policy_key}",
   "PUT /api/v1/admin/rbac/roles/{id}/permissions",
   "PUT /api/v1/admin/workflows/{workflow_key}"
@@ -639,7 +643,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(191);
+    expect(rows.length).toBe(193);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);
