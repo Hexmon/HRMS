@@ -4,7 +4,7 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 6 observability, deployment/security hardening, Helpdesk category configuration, export-file generation, and EMS document upload-picker slices after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, Leave/WFH export completion, verification guardrails, and API/browser e2e baselines. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 6 backup/restore scripts, observability, deployment/security hardening, Helpdesk category configuration, export-file generation, and EMS document upload-picker slices after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, Leave/WFH export completion, verification guardrails, and API/browser e2e baselines. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
@@ -48,6 +48,7 @@ This versioned report captures the completed Phase 6 observability, deployment/s
 | Phase 6 export generation | Completed document-backed export generation for employee/core CSV, report CSV, and attendance/Leave-WFH CSV/JSON export APIs; frontend employee, Leave/WFH monitor, and route-wide ReportShell exports now open generated document downloads when returned |
 | Phase 6 Helpdesk category configuration | Completed Admin/support-scoped Helpdesk category create/update/toggle APIs and connected the `/helpdesk/categories` UI actions to those APIs in API mode |
 | Phase 6 deployment/security hardening | Completed baseline backend security headers, production CORS allowlisting, compose CORS env wiring, deployment verifier service-name alignment, and production-safe logger configuration |
+| Phase 6 backup/restore scripts | Added PostgreSQL custom-format backup and guarded restore scripts plus package commands; live backup execution still requires PostgreSQL client tools on the operator host |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Audit Log Discovery
@@ -268,6 +269,15 @@ Phase 6 completed Helpdesk category create/update/toggle configuration. Broader 
 | Deployment verifier | Updated `scripts/verify-dev-deployment.ts` to expect `hawkaii-hrms-api`, `hawkaii-hrms-migrate`, and `hawkaii-hrms-outbox-worker` by default, with env overrides for alternate compose service names | Fixes stale verifier assumptions left from the old `api`/`migrate`/`outbox-worker` service IDs |
 | Observability | Added `LOG_LEVEL` env wiring and production-safe Fastify/Pino logger options with redaction for authorization, cookies, API keys, tokens, passwords, and JWT secret fields | Existing `x-request-id` response propagation remains the request correlation mechanism |
 | Validation | Backend typecheck, build, lint, implementation guard, contract tests, QA migration, and prod compose config parsing passed | Local untracked `.env.prod` still lacks `CORS_ALLOWED_ORIGINS` and contains `API_BASE_URL=http://api:3001`; operators should sync it from `.env.prod.example` before using `pnpm docker:prod:*` locally |
+
+## Phase 6 Backup And Restore Scripts
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Backup command | Added `pnpm backup:db`, backed by `scripts/backup-db.ts` | Uses `pg_dump --format=custom --no-owner --no-privileges`, writes to `HRMS_BACKUP_DIR` or `backups/`, and creates a SHA-256 manifest |
+| Restore command | Added `pnpm restore:db`, backed by `scripts/restore-db.ts` | Requires `HRMS_RESTORE_FILE` and explicit `HRMS_RESTORE_CONFIRM=restore`; supports `RESTORE_DATABASE_URL` override |
+| Repository hygiene | Added `backups/` to `.gitignore` | Prevents local dump files and manifests from being committed |
+| Validation | `pnpm typecheck`, `pnpm build`, and `pnpm lint` passed | Live backup/restore execution was not run because `pg_dump`/`pg_restore` are not installed on this host PATH |
 
 ## Notifications Discovery
 
@@ -497,6 +507,7 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 6 | Helpdesk category configuration | Add real category create/update/toggle behavior | Completed for `POST /api/v1/helpdesk/categories` and `PATCH /api/v1/helpdesk/categories/{id}` | Completed for `/helpdesk/categories` create/edit/toggle actions in API mode | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, Helpdesk integration test, `pnpm test:contracts`, frontend typecheck/lint/route guards/build | Passed. OpenAPI now has 219 operations across 193 paths. First parallel DB-resetting validation deadlocked; serial reruns passed. | `src/modules/helpdesk/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs, `hrms-client/src/domains/helpdesk/api.ts`, `hrms-client/src/lib/helpdesk-store.tsx` | `feat(helpdesk): add category configuration APIs` / `feat(helpdesk): connect category configuration actions` |
 | 6 | Deployment/security hardening | Add backend security headers, production CORS allowlist, compose env wiring, and verifier service-name sync | Completed for backend API runtime and Docker compose verification scripts | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, QA `pnpm db:migrate`, `pnpm test:contracts`, `pnpm docker:prod:config`, tracked `.env.prod.example` compose config parse | Passed. `pnpm docker:prod:config` also exposed a local untracked `.env.prod` drift warning; `.env.prod.example` validates cleanly. | `src/plugins/security-headers.ts`, `src/app.ts`, config/decorator types, env examples, compose files, `scripts/verify-dev-deployment.ts`, contract test | `chore(security): harden API headers and production CORS` |
 | 6 | Observability | Add production-safe logger level and redaction defaults | Completed with `LOG_LEVEL` env examples/compose wiring and Fastify logger redaction when `logger: true` is used | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, QA `pnpm db:migrate`, `pnpm test:contracts` | Passed. Contract coverage confirms `LOG_LEVEL` is honored alongside the security-header/CORS test. | `src/app.ts`, env examples, compose files, contract test | `chore(observability): configure production-safe API logging` |
+| 6 | Backup/restore | Add guarded database backup and restore scripts | Completed for source-controlled PostgreSQL custom-format backup/restore commands | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint` | Passed. Live backup/restore execution not run because PostgreSQL client tools are not installed on this host PATH. | `scripts/backup-db.ts`, `scripts/restore-db.ts`, `package.json`, `.gitignore` | `chore(ops): add database backup and restore scripts` |
 
 ## Remaining Blockers
 
@@ -534,6 +545,7 @@ Backend:
 - `pnpm verify:scalability`: passed with escalation due `tsx` IPC sandboxing; now covers critical indexes across all implemented backend modules
 - `pnpm docker:prod:config`: passed compose parsing; local untracked `.env.prod` still warns that `CORS_ALLOWED_ORIGINS` is unset
 - `docker compose --env-file .env.prod.example -f infra/docker/docker-compose.prod.yml -p hawkaii_hrms_backend_prod config`: passed with tracked production example values and no CORS/API service-name drift
+- `pnpm backup:db` / `pnpm restore:db`: not run because `pg_dump`/`pg_restore` are not installed on this host PATH; scripts compile through typecheck/build
 
 Frontend:
 
@@ -603,6 +615,7 @@ Frontend:
 - Production CORS now requires `CORS_ALLOWED_ORIGINS`; development and QA compose files keep local frontend origins by default for API-mode validation.
 - The local untracked `.env.prod` file is operator-owned and was not edited by this task; sync it from `.env.prod.example` before local production compose runs.
 - Server startup uses `LOG_LEVEL` and redacts authorization, cookie, API-key, token, password, and JWT secret fields from Pino logs when `logger: true` is enabled.
+- Backup/restore scripts assume PostgreSQL client tools (`pg_dump` and `pg_restore`) are installed on the operator host or CI runner.
 - The Phase 6 API e2e smoke uses local demo password login for employee, peer, and admin actors, and uses the existing seeded `D1` test helper session for manager context because the reviewer email/password account is not active in the current QA seed.
 - The Phase 6 browser e2e smoke waits for client hydration before UI login and uses client-side navigation after login because the current frontend stores the bearer token in memory; full-page route reload auth persistence remains a separate hardening consideration.
 - Employee/core import jobs remain queued metadata only; actual import row parsing and user-creation previews still need an import processor.
@@ -674,6 +687,7 @@ Frontend:
 | Phase 6 Helpdesk category task sheet | `docs(helpdesk): record category configuration completion` | Committed in `hrms_backend` as `df59cc6` |
 | Phase 6 deployment/security hardening | `chore(security): harden API headers and production CORS` | Committed in `hrms_backend` as `4c7dc45` |
 | Phase 6 observability hardening | `chore(observability): configure production-safe API logging` | Committed in `hrms_backend` as `1e8b365` |
+| Phase 6 backup/restore scripts | `chore(ops): add database backup and restore scripts` | Committed in `hrms_backend` as `6a1f1c5` |
 
 ## Next Steps
 
@@ -681,4 +695,4 @@ Frontend:
 2. Backend OpenAPI now has 219 operations across 193 paths; planned operations remaining are 0.
 3. Phase 6 verification guardrails are hardened for full-module implementation coverage, zero planned API backlog, frontend contract sync, critical migration index coverage, and frontend production API/mock fallback config.
 4. Employee/core CSV, report CSV, and Attendance/Leave-WFH CSV/JSON exports now generate backend documents and return `download_document_id`; employee import parsing, XLSX workbook rendering, scheduled exports, retention cleanup, and broader report-shell download UX remain production hardening.
-5. Next roadmap scope: continue Phase 6 with backup/restore, deeper browser mutation/mobile coverage, route-wide export download coverage, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
+5. Next roadmap scope: continue Phase 6 with deeper browser mutation/mobile coverage, route-wide export download coverage, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
