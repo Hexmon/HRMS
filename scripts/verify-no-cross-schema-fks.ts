@@ -1,5 +1,5 @@
 import { read, walkFiles, fail } from "./lib.js";
-import { loadTestEnv, requireEnv } from "./env.js";
+import { loadEnvFile, requireEnv } from "./env.js";
 import { Client } from "pg";
 
 const sqlFiles = walkFiles("src/db/migrations", (path) => path.endsWith(".sql"));
@@ -19,9 +19,15 @@ if (violations.length > 0) {
   fail(`Cross-schema foreign key violations found:\n${violations.join("\n")}`);
 }
 
-loadTestEnv();
+const verifierEnvFile = process.env.HRMS_DB_VERIFY_ENV_FILE ?? ".env.test";
+loadEnvFile(verifierEnvFile, {
+  override: true,
+  required: !process.env.TEST_DATABASE_URL && !process.env.DATABASE_URL
+});
 
-const client = new Client({ connectionString: process.env.TEST_DATABASE_URL ?? requireEnv("DATABASE_URL") });
+const client = new Client({
+  connectionString: process.env.HRMS_DB_VERIFY_DATABASE_URL ?? process.env.TEST_DATABASE_URL ?? requireEnv("DATABASE_URL")
+});
 await client.connect();
 try {
   const result = await client.query<{
