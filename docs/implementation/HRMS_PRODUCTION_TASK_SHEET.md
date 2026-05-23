@@ -4,14 +4,14 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 5 Admin email template configuration slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, and Admin policy additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 5 Admin notification channel configuration slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, and Admin email template additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 193 implemented operations across 171 paths |
-| Planned operations remaining | 23 |
+| Backend OpenAPI | 195 implemented operations across 172 paths |
+| Planned operations remaining | 22 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
@@ -36,7 +36,18 @@ This versioned report captures the completed Phase 5 Admin email template config
 | Admin workflow configurations | Completed for Admin-only workflow config list/update APIs and `/admin-settings/workflows` frontend API-mode integration |
 | Admin policies | Completed for Admin-only policy config list/update APIs and `/admin-settings/policies` frontend API-mode integration |
 | Admin email templates | Completed for Admin-only email template list/update APIs and `/admin-settings/email-templates` frontend API-mode integration |
+| Admin notification channels | Completed for Admin-only notification channel list/update APIs and `/admin-settings/notifications` frontend API-mode integration |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
+
+## Admin Notification Channels Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Frontend route | `hrms-client/src/routes/_app/admin-settings.notifications.tsx` renders notification event rows with In-app, Email, and Push toggles | Replace production-critical localStorage toggles with backend-backed read/update in API mode |
+| Current data source | `hrms-client/src/lib/admin-settings-store.tsx` persists notifications to `hawkaii_admin_notifications_v1` | Keep localStorage behavior only when API mode is disabled |
+| Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` lists `PUT /api/v1/admin/notification-channels` as planned | Implement `PUT` plus a UI-required `GET /api/v1/admin/notification-channels` so the screen can load current backend settings |
+| Existing backend support | User notification feed APIs and `platform.notifications` already exist for topbar read-state | Add separate Admin settings persistence for channel/event preferences; do not change feed delivery behavior in this slice |
+| Deferred scope | Provider secrets, SMTP/push delivery setup, runtime notification dispatch filtering, and per-user preferences are not represented in the current UI | Persist Admin Settings channel preferences only and document runtime enforcement as later delivery-provider hardening |
 
 ## Admin Company Profile Discovery
 
@@ -92,7 +103,7 @@ Deferred from this Helpdesk slice: category mutation endpoints and broader `/api
 | Visible actions | Topbar shows unread badge, lists feed rows, marks one notification read by clicking it, and marks all visible rows read | Implement feed, unread count, mark-read, and mark-all-read endpoints |
 | Planned backend contract | Gap report listed 4 notification operations under `/api/v1/notifications*` | Implement those 4 operations with OpenAPI docs/tests |
 | Existing backend data | Workflow code already writes notification records into the in-memory store; no durable table existed before this slice | Add `platform.notifications` migration, persistence loading/flushing, and owner-scoped service/repository |
-| Deferred scope | Admin notification channel/event preferences are part of Admin settings, not the topbar feed slice | Leave `/api/v1/admin/notification-channels` planned for Phase 5 |
+| Deferred scope | Topbar notification read-state is separate from Admin notification channel preferences | Runtime delivery-provider filtering remains production hardening; Admin channel preferences are completed in Phase 5 |
 
 ## Notifications API Inventory
 
@@ -288,6 +299,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Admin policies | Integrate frontend policies screen | Completed in `hrms-client` | Completed for `/admin-settings/policies` list/edit/save in API mode; local policy store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.policies.tsx`, frontend API docs | `feat(admin): connect policy settings to backend API` |
 | 5 | Admin email templates | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, admin email-template integration test, `pnpm test:contracts` | Passed. OpenAPI generated 193 operations across 171 paths. The update endpoint was added because the visible email-template UI has save/toggle behavior. | `src/modules/admin/*`, `src/db/migrations/0015_admin_email_templates.sql`, `src/shared/constants.ts`, `src/shared/types.ts`, `src/db/schema.ts`, store persistence, OpenAPI/docs/contracts | `feat(admin): implement email template settings APIs` |
 | 5 | Admin email templates | Integrate frontend email-template screen | Completed in `hrms-client` | Completed for `/admin-settings/email-templates` list/edit/save/toggle in API mode; local template store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.email-templates.tsx`, frontend API docs | `feat(admin): connect email templates to backend API` |
+| 5 | Admin notification channels | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, admin notification-channel integration test, `pnpm test:contracts` | Passed. OpenAPI generated 195 operations across 172 paths. A read endpoint was added because the visible UI must load current backend settings before toggles save. | `src/modules/admin/*`, `src/db/migrations/0016_admin_notification_channels.sql`, `src/shared/constants.ts`, `src/shared/types.ts`, `src/db/schema.ts`, store persistence, OpenAPI/docs/contracts | `feat(admin): implement notification channel settings APIs` |
+| 5 | Admin notification channels | Integrate frontend notifications screen | Completed in `hrms-client` | Completed for `/admin-settings/notifications` list/toggle/save in API mode; local notification store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.notifications.tsx`, frontend API docs | `feat(admin): connect notification settings to backend API` |
 
 ## Remaining Blockers
 
@@ -299,7 +312,6 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | P1 | No frontend e2e/user-flow baseline for EMS, Leave/WFH/Holidays, Attendance, Projects, or Helpdesk |
 | P1 | No frontend e2e/user-flow baseline for Notifications/topbar read-state behavior |
 | P1 | Helpdesk category create/update/toggle endpoints remain planned for admin/settings phase; API mode surfaces this as an error instead of mutating local state |
-| P1 | Admin notification channel/event preferences remain planned for Admin settings |
 | P1 | Full asset vendor CRUD, warranty automation, recovery settlement workflow, and asset reports remain planned for admin/report hardening |
 | P1 | Project-specific reports and project document upload/attach UX remain planned |
 | P1 | Timesheet export jobs and full report parity remain planned for the Reports phase |
@@ -307,7 +319,7 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | P1 | Leave/WFH export/report endpoint remains planned for reports/admin phase |
 | P1 | Admin master-data tabs beyond departments/designations remain deferred until backend APIs are defined |
 | P1 | Dynamic RBAC runtime enforcement and custom-role assignment to employees remain deferred; this slice persists Admin Settings RBAC configuration only |
-| P1 | Admin notification channels, security settings, and audit logs remain planned |
+| P1 | Admin security settings and audit logs remain planned; security settings still need a concrete backend contract |
 | P2 | Frontend lint keeps 39 existing Fast Refresh warnings |
 | P2 | Frontend build keeps chunk-size/Wrangler log warnings but exits successfully |
 
@@ -318,10 +330,10 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 193 operation frontend contract after Admin email templates
+- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 195 operation frontend contract after Admin notification channels
 - `pnpm api:docs:verify`: passed
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
-- `pnpm exec vitest run --project integration src/modules/admin/__tests__/admin-email-templates.integration.test.ts`: passed, 2 tests
+- `pnpm exec vitest run --project integration src/modules/admin/__tests__/admin-notification-channels.integration.test.ts`: passed, 2 tests
 - `pnpm test:contracts`: passed, 13 tests
 
 Frontend:
@@ -329,7 +341,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 171 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 172 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -344,7 +356,7 @@ Frontend:
 - Project document APIs list documents already attached to `business_object_type = "project"`; upload/attach UX remains part of later document hardening.
 - Helpdesk category mutation is intentionally not implemented in this slice because the verified planned contract includes `GET /api/v1/helpdesk/categories` only. Category edit/toggle actions stay deferred to admin/settings category management.
 - Helpdesk attachment APIs accept document references only; real upload/replace remains part of the existing Documents/upload hardening work.
-- Notifications read-state is scoped to the topbar feed; admin notification channel preferences remain deferred to the Admin settings phase.
+- Notifications read-state is scoped to the topbar feed; Admin notification channel preferences are now persisted by the Admin Settings API, while runtime delivery-provider filtering remains deferred.
 - Asset workflow requests intentionally extend the existing asset module rather than creating a separate module so base inventory, assignment, return, and license behavior remain unchanged.
 - Asset vendor support is read-only in this slice because the current visible frontend needs vendor cards/selectors; vendor CRUD remains in admin hardening.
 - Asset recovery queue is read-only in this slice and derives from assigned assets owned by inactive/terminated users; settlement workflows remain deferred.
@@ -374,6 +386,9 @@ Frontend:
 - Admin email templates persist the visible Admin Settings template subject, body, active status, locale, and metadata without adding SMTP/provider delivery configuration in this slice.
 - The `PUT /api/v1/admin/email-templates/{template_key}` endpoint was added because the current frontend UI has visible save/toggle behavior, even though the old backlog only listed the read endpoint.
 - `/admin-settings/email-templates` uses backend APIs in API mode for list/edit/save behavior and keeps localStorage template state only when API mode is disabled.
+- Admin notification channels persist the visible Admin Settings In-app, Email, and Push event toggles without adding provider secrets, SMTP/push setup, or runtime notification delivery filtering in this slice.
+- The `GET /api/v1/admin/notification-channels` endpoint was added because the current frontend UI must load current channel settings before saving toggle changes, even though the old backlog only listed the update endpoint.
+- `/admin-settings/notifications` uses backend APIs in API mode for list/toggle/save behavior and keeps localStorage notification settings only when API mode is disabled.
 
 ## Commit Messages
 
@@ -406,10 +421,13 @@ Frontend:
 | Admin email templates backend | `feat(admin): implement email template settings APIs` | Committed in `hrms_backend` as `6778966` |
 | Admin email templates frontend | `feat(admin): connect email templates to backend API` | Committed in `hrms-client` as `fd991af` |
 | Admin email templates task sheet | `docs(admin): record email template settings completion` | Committed in `hrms_backend` as `08b851e` |
+| Admin notification channels backend | `feat(admin): implement notification channel settings APIs` | Committed in `hrms_backend` as `0a2a25f` |
+| Admin notification channels frontend | `feat(admin): connect notification settings to backend API` | Committed in `hrms-client` as `3b7d24c` |
+| Admin notification channels task sheet | `docs(admin): record notification channel settings completion` | Pending commit in this run |
 
 ## Next Steps
 
-1. Phase 5 Admin email templates are implemented, frontend-integrated, and validated for template list/edit/save/toggle behavior.
-2. Backend OpenAPI now has 193 operations across 171 paths; planned operations remaining are 23.
-3. `/admin-settings/email-templates` uses backend APIs in API mode; provider/channel delivery configuration remains explicitly deferred.
-4. Next roadmap scope: Phase 5 Admin notification channels.
+1. Phase 5 Admin notification channels are implemented, frontend-integrated, and validated for channel list/toggle/save behavior.
+2. Backend OpenAPI now has 195 operations across 172 paths; planned operations remaining are 22.
+3. `/admin-settings/notifications` uses backend APIs in API mode; provider delivery setup and runtime dispatch filtering remain explicitly deferred.
+4. Next roadmap scope: Phase 5 Admin security settings or audit logs, with security settings requiring a concrete backend contract before implementation.
