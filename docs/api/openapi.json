@@ -12875,6 +12875,2303 @@
         }
       }
     },
+    "/api/v1/core/users/{id}/roles/history": {
+      "get": {
+        "summary": "Role assignment history",
+        "tags": [
+          "Core / Employees & Hierarchy"
+        ],
+        "description": "Returns a paginated role assignment timeline backed by durable core user outbox events. Admin, HR Manager, Auditor, and the employee themself can read it; managers do not receive sensitive role history unless they have HR/Admin/Auditor scope.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "description": "1-based page number."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "description": "Items per page."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "description": "Optional sort key supported by the endpoint."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "page",
+                    "page_size",
+                    "total"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "user_id",
+                          "employee_code",
+                          "actor",
+                          "from_roles",
+                          "to_roles",
+                          "source_event_type",
+                          "created_at"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9001"
+                          },
+                          "event_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Source outbox event UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                            "nullable": true
+                          },
+                          "user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Employee user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "actor_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Actor user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                            "nullable": true
+                          },
+                          "actor": {
+                            "type": "string",
+                            "example": "ADM - Priya Menon"
+                          },
+                          "from_roles": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "Employee",
+                                "Reviewer",
+                                "Director",
+                                "Finance Manager",
+                                "Admin",
+                                "Auditor",
+                                "Asset Manager",
+                                "HR Manager"
+                              ],
+                              "example": "Employee"
+                            },
+                            "example": [
+                              "Employee"
+                            ]
+                          },
+                          "to_roles": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "Employee",
+                                "Reviewer",
+                                "Director",
+                                "Finance Manager",
+                                "Admin",
+                                "Auditor",
+                                "Asset Manager",
+                                "HR Manager"
+                              ],
+                              "example": "Employee"
+                            },
+                            "example": [
+                              "Employee",
+                              "HR Manager"
+                            ]
+                          },
+                          "remarks": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Role change approved by HR"
+                          },
+                          "source_event_type": {
+                            "type": "string",
+                            "example": "core.user.roles_replaced"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "History event timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    },
+                    "page_size": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 25
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": [
+                      "Invalid input: expected object, received undefined"
+                    ],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": [
+                        "retry_after_seconds"
+                      ],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/core/users/{id}/audit": {
+      "get": {
+        "summary": "Employee audit trail",
+        "tags": [
+          "Core / Employees & Hierarchy"
+        ],
+        "description": "Returns profile, lifecycle, login, and role audit events for an employee. Secret/token-like payload keys are redacted before returning metadata.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "description": "1-based page number."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "description": "Items per page."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "description": "Optional sort key supported by the endpoint."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 120,
+              "example": "core.user.roles_replaced"
+            },
+            "in": "query",
+            "name": "event_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "description": "Audit lower date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-04"
+            },
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "description": "Audit upper date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "page",
+                    "page_size",
+                    "total"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "event_id",
+                          "user_id",
+                          "employee_code",
+                          "event_type",
+                          "action",
+                          "actor",
+                          "created_at"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Audit event UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "event_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Outbox event UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Employee user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "example": "E1"
+                          },
+                          "event_type": {
+                            "type": "string",
+                            "example": "core.user.updated"
+                          },
+                          "action": {
+                            "type": "string",
+                            "example": "Profile updated"
+                          },
+                          "actor_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Actor user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                            "nullable": true
+                          },
+                          "actor": {
+                            "type": "string",
+                            "example": "ADM - Priya Menon"
+                          },
+                          "remarks": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Returned to service"
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Audit event timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    },
+                    "page_size": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 25
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": [
+                      "Invalid input: expected object, received undefined"
+                    ],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": [
+                        "retry_after_seconds"
+                      ],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/core/users/imports": {
+      "post": {
+        "summary": "Create employee import job",
+        "tags": [
+          "Core / Employees & Hierarchy"
+        ],
+        "description": "Queues an employee import job from an uploaded document reference or file metadata. This slice records durable job metadata in the transactional outbox; row parsing and generated user creation remain production hardening work.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "document_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Uploaded employee import document UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                  },
+                  "file_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240,
+                    "example": "employees-may-2026.csv"
+                  },
+                  "dry_run": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "mapping": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "example": {
+                      "email": "Email",
+                      "employee_code": "Employee ID"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "job_id",
+                    "event_id",
+                    "status",
+                    "dry_run",
+                    "accepted_rows",
+                    "rejected_rows",
+                    "row_errors",
+                    "created_users",
+                    "file",
+                    "mapping",
+                    "created_by",
+                    "adapter",
+                    "created_at",
+                    "updated_at"
+                  ],
+                  "properties": {
+                    "job_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Employee import job UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "event_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Source outbox event UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "queued"
+                    },
+                    "outbox_status": {
+                      "type": "string",
+                      "example": "pending"
+                    },
+                    "dry_run": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "accepted_rows": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 0
+                    },
+                    "rejected_rows": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 0
+                    },
+                    "row_errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "created_users": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "file": {
+                      "type": "object",
+                      "required": [
+                        "document_id",
+                        "file_name"
+                      ],
+                      "properties": {
+                        "document_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Uploaded import document UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "file_name": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "employees-may-2026.csv"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "mapping": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "created_by_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Actor user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "created_by": {
+                      "type": "string",
+                      "example": "ADM - Priya Menon"
+                    },
+                    "adapter": {
+                      "type": "string",
+                      "example": "outbox-queued-placeholder"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Job creation timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Job update timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": [
+                      "Invalid input: expected object, received undefined"
+                    ],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": [
+                        "retry_after_seconds"
+                      ],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/core/users/imports/{job_id}": {
+      "get": {
+        "summary": "Get employee import job",
+        "tags": [
+          "Core / Employees & Hierarchy"
+        ],
+        "description": "Returns an employee import job status, counts, row errors, and created-user preview from durable outbox metadata.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "description": "Employee import job UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "job_id",
+                    "event_id",
+                    "status",
+                    "dry_run",
+                    "accepted_rows",
+                    "rejected_rows",
+                    "row_errors",
+                    "created_users",
+                    "file",
+                    "mapping",
+                    "created_by",
+                    "adapter",
+                    "created_at",
+                    "updated_at"
+                  ],
+                  "properties": {
+                    "job_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Employee import job UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "event_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Source outbox event UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "queued"
+                    },
+                    "outbox_status": {
+                      "type": "string",
+                      "example": "pending"
+                    },
+                    "dry_run": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "accepted_rows": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 0
+                    },
+                    "rejected_rows": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 0
+                    },
+                    "row_errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "created_users": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "file": {
+                      "type": "object",
+                      "required": [
+                        "document_id",
+                        "file_name"
+                      ],
+                      "properties": {
+                        "document_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Uploaded import document UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "file_name": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "employees-may-2026.csv"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "mapping": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "created_by_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Actor user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "created_by": {
+                      "type": "string",
+                      "example": "ADM - Priya Menon"
+                    },
+                    "adapter": {
+                      "type": "string",
+                      "example": "outbox-queued-placeholder"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Job creation timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Job update timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": [
+                      "Invalid input: expected object, received undefined"
+                    ],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": [
+                        "retry_after_seconds"
+                      ],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/core/users/exports": {
+      "post": {
+        "summary": "Create employee export job",
+        "tags": [
+          "Core / Employees & Hierarchy"
+        ],
+        "description": "Queues an employee export job for HR/Admin/Auditor users. Real file generation/download is represented by nullable document/download references until the export worker is implemented.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "csv",
+                      "xlsx"
+                    ],
+                    "default": "csv",
+                    "example": "csv"
+                  },
+                  "filters": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "example": {
+                      "department_id": "018f9f4a-7f9a-7c15-8f25-6f7f96f9001"
+                    }
+                  },
+                  "columns": {
+                    "type": "array",
+                    "maxItems": 80,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 80
+                    },
+                    "example": [
+                      "employee_code",
+                      "full_name",
+                      "email",
+                      "roles"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "job_id",
+                    "export_id",
+                    "event_id",
+                    "status",
+                    "format",
+                    "filters",
+                    "columns",
+                    "created_by",
+                    "adapter",
+                    "created_at",
+                    "updated_at"
+                  ],
+                  "properties": {
+                    "job_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Employee export job UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "export_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Employee export job UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "event_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Source outbox event UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "queued"
+                    },
+                    "outbox_status": {
+                      "type": "string",
+                      "example": "pending"
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "csv",
+                        "xlsx"
+                      ],
+                      "example": "csv"
+                    },
+                    "filters": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "download_document_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Document UUID once generated",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "download_url": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "created_by_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Actor user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "created_by": {
+                      "type": "string",
+                      "example": "ADM - Priya Menon"
+                    },
+                    "adapter": {
+                      "type": "string",
+                      "example": "outbox-queued-placeholder"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Job creation timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Job update timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": [
+                      "Invalid input: expected object, received undefined"
+                    ],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": [
+                        "retry_after_seconds"
+                      ],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/core/users/{id}/subtree": {
       "get": {
         "summary": "Hierarchy subordinate subtree",

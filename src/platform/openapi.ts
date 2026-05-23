@@ -1187,6 +1187,138 @@ const coreUserRolesBodySchema = {
   additionalProperties: false
 };
 
+const coreUserAuditQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    event_type: { type: "string", maxLength: 120, example: "core.user.roles_replaced" },
+    date_from: date("Audit lower date filter"),
+    date_to: date("Audit upper date filter")
+  }
+};
+
+const coreImportJobParamSchema = {
+  type: "object",
+  required: ["job_id"],
+  properties: {
+    job_id: uuid("Employee import job UUID path parameter")
+  }
+};
+
+const coreUserRoleHistoryEntrySchema = {
+  type: "object",
+  required: ["id", "user_id", "employee_code", "actor", "from_roles", "to_roles", "source_event_type", "created_at"],
+  properties: {
+    id: { type: "string", example: "018f9f4a-7f9a-7c15-8f25-6f7f96f9001" },
+    event_id: { ...uuid("Source outbox event UUID"), nullable: true },
+    user_id: uuid("Employee user UUID"),
+    employee_code: { type: "string", example: "E1" },
+    actor_user_id: { ...uuid("Actor user UUID"), nullable: true },
+    actor: { type: "string", example: "ADM - Priya Menon" },
+    from_roles: { type: "array", items: coreRoleSchema, example: ["Employee"] },
+    to_roles: { type: "array", items: coreRoleSchema, example: ["Employee", "HR Manager"] },
+    remarks: { type: "string", nullable: true, example: "Role change approved by HR" },
+    source_event_type: { type: "string", example: "core.user.roles_replaced" },
+    created_at: dateTime("History event timestamp")
+  },
+  additionalProperties: false
+};
+
+const coreUserAuditEntrySchema = {
+  type: "object",
+  required: ["id", "event_id", "user_id", "employee_code", "event_type", "action", "actor", "created_at"],
+  properties: {
+    id: uuid("Audit event UUID"),
+    event_id: uuid("Outbox event UUID"),
+    user_id: uuid("Employee user UUID"),
+    employee_code: { type: "string", example: "E1" },
+    event_type: { type: "string", example: "core.user.updated" },
+    action: { type: "string", example: "Profile updated" },
+    actor_user_id: { ...uuid("Actor user UUID"), nullable: true },
+    actor: { type: "string", example: "ADM - Priya Menon" },
+    remarks: { type: "string", nullable: true, example: "Returned to service" },
+    metadata: { type: "object", additionalProperties: true },
+    created_at: dateTime("Audit event timestamp")
+  },
+  additionalProperties: false
+};
+
+const coreUserImportBodySchema = {
+  type: "object",
+  properties: {
+    document_id: uuid("Uploaded employee import document UUID"),
+    file_name: { type: "string", minLength: 1, maxLength: 240, example: "employees-may-2026.csv" },
+    dry_run: { type: "boolean", example: true },
+    mapping: { type: "object", additionalProperties: { type: "string" }, example: { email: "Email", employee_code: "Employee ID" } }
+  },
+  additionalProperties: false
+};
+
+const coreUserExportBodySchema = {
+  type: "object",
+  properties: {
+    format: { type: "string", enum: ["csv", "xlsx"], default: "csv", example: "csv" },
+    filters: { type: "object", additionalProperties: true, example: { department_id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9001" } },
+    columns: { type: "array", maxItems: 80, items: { type: "string", maxLength: 80 }, example: ["employee_code", "full_name", "email", "roles"] }
+  },
+  additionalProperties: false
+};
+
+const coreUserImportJobSchema = {
+  type: "object",
+  required: ["job_id", "event_id", "status", "dry_run", "accepted_rows", "rejected_rows", "row_errors", "created_users", "file", "mapping", "created_by", "adapter", "created_at", "updated_at"],
+  properties: {
+    job_id: uuid("Employee import job UUID"),
+    event_id: uuid("Source outbox event UUID"),
+    status: { type: "string", example: "queued" },
+    outbox_status: { type: "string", example: "pending" },
+    dry_run: { type: "boolean", example: true },
+    accepted_rows: { type: "integer", minimum: 0, example: 0 },
+    rejected_rows: { type: "integer", minimum: 0, example: 0 },
+    row_errors: { type: "array", items: { type: "object", additionalProperties: true } },
+    created_users: { type: "array", items: { type: "object", additionalProperties: true } },
+    file: {
+      type: "object",
+      required: ["document_id", "file_name"],
+      properties: {
+        document_id: { ...uuid("Uploaded import document UUID"), nullable: true },
+        file_name: { type: "string", nullable: true, example: "employees-may-2026.csv" }
+      },
+      additionalProperties: false
+    },
+    mapping: { type: "object", additionalProperties: true },
+    created_by_user_id: { ...uuid("Actor user UUID"), nullable: true },
+    created_by: { type: "string", example: "ADM - Priya Menon" },
+    adapter: { type: "string", example: "outbox-queued-placeholder" },
+    created_at: dateTime("Job creation timestamp"),
+    updated_at: dateTime("Job update timestamp")
+  },
+  additionalProperties: false
+};
+
+const coreUserExportJobSchema = {
+  type: "object",
+  required: ["job_id", "export_id", "event_id", "status", "format", "filters", "columns", "created_by", "adapter", "created_at", "updated_at"],
+  properties: {
+    job_id: uuid("Employee export job UUID"),
+    export_id: uuid("Employee export job UUID"),
+    event_id: uuid("Source outbox event UUID"),
+    status: { type: "string", example: "queued" },
+    outbox_status: { type: "string", example: "pending" },
+    format: { type: "string", enum: ["csv", "xlsx"], example: "csv" },
+    filters: { type: "object", additionalProperties: true },
+    columns: { type: "array", items: { type: "string" } },
+    download_document_id: { ...uuid("Document UUID once generated"), nullable: true },
+    download_url: { type: "string", nullable: true },
+    created_by_user_id: { ...uuid("Actor user UUID"), nullable: true },
+    created_by: { type: "string", example: "ADM - Priya Menon" },
+    adapter: { type: "string", example: "outbox-queued-placeholder" },
+    created_at: dateTime("Job creation timestamp"),
+    updated_at: dateTime("Job update timestamp")
+  },
+  additionalProperties: false
+};
+
 const coreUserMutationResponseSchema = {
   ...coreUserDetailSchema,
   properties: {
@@ -3387,6 +3519,11 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/core/users/{id}/login/enable": operation("Core / Employees & Hierarchy", "Enable login setup", "Starts login enablement by issuing a one-time password setup action. Local/QA responses include a dev_only token; production must deliver the setup action via configured email/notification provider before sign-in succeeds.", { params: idParamSchema, body: coreUserLoginBodySchema, response200: coreUserMutationResponseSchema }),
   "POST /api/v1/core/users/{id}/login/disable": operation("Core / Employees & Hierarchy", "Disable login", "Revokes active user credentials, revokes active sessions where the session store supports it, and marks login disabled with optimistic concurrency protection.", { params: idParamSchema, body: coreUserLoginBodySchema, response200: coreUserMutationResponseSchema }),
   "PUT /api/v1/core/users/{id}/roles": operation("Core / Employees & Hierarchy", "Replace roles", "Replaces backend role assignments for an employee. Admin can assign all roles; HR Manager can assign non-admin roles and cannot modify admin users. Active session preference is adjusted if the previous active role is removed.", { params: idParamSchema, body: coreUserRolesBodySchema, response200: coreUserMutationResponseSchema }),
+  "GET /api/v1/core/users/{id}/roles/history": operation("Core / Employees & Hierarchy", "Role assignment history", "Returns a paginated role assignment timeline backed by durable core user outbox events. Admin, HR Manager, Auditor, and the employee themself can read it; managers do not receive sensitive role history unless they have HR/Admin/Auditor scope.", { params: idParamSchema, querystring: paginationQuerySchema, response200: { ...paginated(coreUserRoleHistoryEntrySchema), additionalProperties: true } }),
+  "GET /api/v1/core/users/{id}/audit": operation("Core / Employees & Hierarchy", "Employee audit trail", "Returns profile, lifecycle, login, and role audit events for an employee. Secret/token-like payload keys are redacted before returning metadata.", { params: idParamSchema, querystring: coreUserAuditQuerySchema, response200: { ...paginated(coreUserAuditEntrySchema), additionalProperties: true } }),
+  "POST /api/v1/core/users/imports": operation("Core / Employees & Hierarchy", "Create employee import job", "Queues an employee import job from an uploaded document reference or file metadata. This slice records durable job metadata in the transactional outbox; row parsing and generated user creation remain production hardening work.", { body: coreUserImportBodySchema, response200: coreUserImportJobSchema }),
+  "GET /api/v1/core/users/imports/{job_id}": operation("Core / Employees & Hierarchy", "Get employee import job", "Returns an employee import job status, counts, row errors, and created-user preview from durable outbox metadata.", { params: coreImportJobParamSchema, response200: coreUserImportJobSchema }),
+  "POST /api/v1/core/users/exports": operation("Core / Employees & Hierarchy", "Create employee export job", "Queues an employee export job for HR/Admin/Auditor users. Real file generation/download is represented by nullable document/download references until the export worker is implemented.", { body: coreUserExportBodySchema, response200: coreUserExportJobSchema }),
   "GET /api/v1/core/users/{id}/subtree": operation(
     "Core / Employees & Hierarchy",
     "Hierarchy subordinate subtree",

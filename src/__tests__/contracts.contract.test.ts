@@ -72,7 +72,10 @@ const expectedOperations = [
   "GET /api/v1/auth/me",
   "GET /api/v1/core/master-data/org-selectors",
   "GET /api/v1/core/users",
+  "GET /api/v1/core/users/imports/{job_id}",
   "GET /api/v1/core/users/{id}",
+  "GET /api/v1/core/users/{id}/audit",
+  "GET /api/v1/core/users/{id}/roles/history",
   "GET /api/v1/core/users/{id}/subtree",
   "GET /api/v1/dashboard/summary",
   "GET /api/v1/documents",
@@ -186,6 +189,8 @@ const expectedOperations = [
   "POST /api/v1/admin/master-data/designations",
   "POST /api/v1/admin/rbac/roles",
   "POST /api/v1/core/users",
+  "POST /api/v1/core/users/exports",
+  "POST /api/v1/core/users/imports",
   "POST /api/v1/core/users/{id}/activate",
   "POST /api/v1/core/users/{id}/deactivate",
   "POST /api/v1/core/users/{id}/login/disable",
@@ -276,6 +281,8 @@ const bodyRequiredOperations = [
   "PUT /api/v1/admin/workflows/{workflow_key}",
   "POST /api/v1/auth/login",
   "POST /api/v1/core/users",
+  "POST /api/v1/core/users/exports",
+  "POST /api/v1/core/users/imports",
   "PATCH /api/v1/core/users/{id}",
   "POST /api/v1/core/users/{id}/activate",
   "POST /api/v1/core/users/{id}/deactivate",
@@ -409,6 +416,8 @@ const occOperations = [
 
 const listOperations = [
   "GET /api/v1/core/users",
+  "GET /api/v1/core/users/{id}/audit",
+  "GET /api/v1/core/users/{id}/roles/history",
   "GET /api/v1/admin/master-data/departments",
   "GET /api/v1/admin/master-data/designations",
   "GET /api/v1/admin/rbac/roles",
@@ -668,7 +677,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(206);
+    expect(rows.length).toBe(211);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

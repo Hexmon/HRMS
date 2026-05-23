@@ -4,14 +4,14 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 5 non-expense Reports slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, and Admin audit-log additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 5 employee/core backlog slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, and non-expense Reports additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 206 implemented operations across 182 paths |
-| Planned operations remaining | 11 |
+| Backend OpenAPI | 211 implemented operations across 187 paths |
+| Planned operations remaining | 6 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
@@ -40,6 +40,8 @@ This versioned report captures the completed Phase 5 non-expense Reports slice a
 | Admin audit log | Completed for Admin/Auditor audit-log read API and `/admin-settings/audit` frontend API-mode integration |
 | Non-expense Reports backend | Completed for HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, export list, and export detail report APIs |
 | Non-expense Reports frontend | Integrated in `hrms-client` for HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes in API mode |
+| Employee/core backlog backend | Completed for role assignment history, profile audit trail, employee import job metadata/status, and employee export job metadata APIs |
+| Employee/core backlog frontend | Integrated in `hrms-client` for employee profile role history/audit tabs and API-backed employee export job queueing |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Audit Log Discovery
@@ -72,6 +74,26 @@ This versioned report captures the completed Phase 5 non-expense Reports slice a
 | Frontend integration | Added report domain API/hooks and connected HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes to `/api/v1/reports/*` in API mode | API-disabled development keeps the existing local/mock report derivations |
 | Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
 | Contract docs | Backend and frontend contract docs now show 206 implemented operations and 11 planned operations remaining | `Reports & Analytics` now counts 15 implemented operations |
+
+## Employee/Core Backlog Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Current roadmap position | After non-expense Reports, the task sheet and gap audit listed 11 planned operations remaining; the largest unblocked group was the five employee/core operations | Complete employee/core before EMS document wrappers, attendance export/aliases, and leave/WFH export |
+| Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` listed role history, employee audit, import job create/status, and export job create under `/api/v1/core/users/*` | Implement those five endpoints with OpenAPI docs, contract tests, and core integration coverage |
+| Existing backend support | Core user mutations already emit durable `core.user.*` outbox events | Derive role history/audit from existing outbox events; use outbox job metadata for import/export requests until real import parsing/export file generation is implemented |
+| Frontend employee routes | `/employees` has an Export action; `/employees/$id` renders role history and audit trail from local employee arrays | Queue backend export jobs in API mode and replace detail role/audit timelines with backend reads when the actor has access |
+| Deferred scope | There is no visible employee import screen yet; document-backed export generation and actual CSV/XLSX import parsing are not implemented | Expose backend job metadata APIs now; leave real processing worker and upload/import UI for production hardening or a future visible route |
+
+## Employee/Core Backlog Completion
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Backend APIs | Added `GET /api/v1/core/users/{id}/roles/history`, `GET /api/v1/core/users/{id}/audit`, `POST /api/v1/core/users/imports`, `GET /api/v1/core/users/imports/{job_id}`, and `POST /api/v1/core/users/exports` | History/audit are backed by core outbox events; import/export jobs are queued metadata with `outbox-queued-placeholder` adapter until processors exist |
+| Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, core integration test, and `pnpm test:contracts` passed | Non-escalated `tsx`/DB test runs hit sandbox IPC/network restrictions and passed when rerun with local QA infra access |
+| Frontend integration | Added Core API hooks for role history, audit, and export job creation; `/employees/$id` now reads role/audit data from backend in API mode; `/employees` queues backend export jobs when API-backed | API-disabled development keeps local role/audit arrays and local CSV export |
+| Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
+| Contract docs | Backend generated OpenAPI/frontend contract now contains 211 operations; frontend contract snapshots were synced from backend | Planned operations remaining drop from 11 to 6 |
 
 ## Admin Notification Channels Discovery
 
@@ -339,6 +361,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Admin audit log | Integrate frontend audit screen | Completed in `hrms-client` | Completed for `/admin-settings/audit` read/filter display in API mode; local audit store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.audit.tsx`, frontend API docs | `feat(admin): connect audit log to backend API` |
 | 5 | Non-expense Reports | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, reports integration test, `pnpm test:contracts` | Passed. OpenAPI generated 206 operations across 182 paths. First contract run failed due a parallel DB reset with the reports integration test; rerun alone passed. | `src/modules/reports/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(reports): implement non-expense report APIs` |
 | 5 | Non-expense Reports | Integrate frontend report screens | Completed in `hrms-client` | Completed for HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/reports/*`, `src/routes/_app/reports*.tsx`, frontend API docs | `feat(reports): connect non-expense report screens to backend APIs` |
+| 5 | Employee/core backlog | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, core integration test, `pnpm test:contracts` | Passed. OpenAPI generated 211 operations across 187 paths. Non-escalated `tsx`/DB runs were sandbox-blocked and passed when rerun with local QA infra access. | `src/modules/core/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(core): implement employee history import and export APIs` |
+| 5 | Employee/core backlog | Integrate frontend employee screens | Completed in `hrms-client` | Completed for employee profile role history/audit reads and API-backed employee export job queueing | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/core/*`, `src/routes/_app/employees.tsx`, `src/routes/_app/employees.$id.tsx`, frontend API docs | `feat(employees): connect employee history and export APIs` |
 
 ## Remaining Blockers
 
@@ -368,18 +392,19 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 206 operation frontend contract after non-expense Reports
+- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 211 operation frontend contract after employee/core backlog
 - `pnpm api:docs:verify`: passed
+- `pnpm api:consumer:verify`: passed with escalation due `tsx` IPC sandboxing
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
-- `pnpm exec vitest run --project integration src/modules/reports/__tests__/reports.integration.test.ts`: passed, 2 tests
-- `pnpm test:contracts`: passed, 13 tests; one earlier parallel run failed due concurrent DB reset and passed when rerun alone
+- `pnpm exec vitest run --project integration src/modules/core/__tests__/core.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
+- `pnpm test:contracts`: passed, 13 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 
 Frontend:
 
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 182 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 187 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -474,10 +499,13 @@ Frontend:
 | Non-expense Reports backend | `feat(reports): implement non-expense report APIs` | Committed in `hrms_backend` as `ae8f0d2` |
 | Non-expense Reports frontend | `feat(reports): connect non-expense report screens to backend APIs` | Committed in `hrms-client` as `d8c25a7` |
 | Non-expense Reports task sheet | `docs(reports): record non-expense reports completion` | Committed in `hrms_backend` as `fb5564c` |
+| Employee/core backlog backend | `feat(core): implement employee history import and export APIs` | Pending commit |
+| Employee/core backlog frontend | `feat(employees): connect employee history and export APIs` | Pending commit |
+| Employee/core backlog task sheet | `docs(core): record employee core backlog completion` | Pending commit |
 
 ## Next Steps
 
-1. Phase 5 non-expense Reports is implemented, frontend-integrated, and validated for visible report routes.
-2. Backend OpenAPI now has 206 operations across 182 paths; planned operations remaining are 11.
-3. Report export jobs are queued metadata only; document-backed export generation/download remains production hardening.
-4. Next roadmap scope: address the remaining 11 planned operations, starting with employee role history/audit/import/export or EMS document wrappers. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
+1. Phase 5 employee/core backlog is implemented, frontend-integrated for visible employee history/export flows, and validated.
+2. Backend OpenAPI now has 211 operations across 187 paths; planned operations remaining are 6.
+3. Employee import/export jobs are queued metadata only; actual import parsing/user creation and document-backed export generation/download remain production hardening.
+4. Next roadmap scope: address the remaining 6 planned operations, starting with EMS document wrappers, then Attendance daily/manager-queue/export, then Leave/WFH export. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.

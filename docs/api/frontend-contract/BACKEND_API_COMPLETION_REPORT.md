@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 206 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 211 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 11 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 217 | Regenerate frontend client only after each backend phase lands. | `206 current + 11 remaining`; non-expense report APIs are now available. |
+| Planned new APIs | 6 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 217 | Regenerate frontend client only after each backend phase lands. | `211 current + 6 remaining`; employee/core history and job APIs are now available. |
 
 ## Development Phases
 
@@ -29,7 +29,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Admin / Configuration | 28 | Company profile read/update, department/designation master-data management, RBAC role/permission configuration, workflow configuration, policy configuration, email template configuration, notification channel configuration, audit log, finance governance, manager backups, and timesheet workflow definition upsert. |
 | Assets | 19 | Inventory, detail, assignment/return, QR scan, license lifecycle, employee termination event, requests, acknowledgements, maintenance, vendors, and recovery queue. |
 | Auth & Sessions | 11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
-| Core / Employees & Hierarchy | 11 | User list/detail/subtree, org selectors, employee create/update, lifecycle activation/deactivation, login setup/disable, and role replacement. |
+| Core / Employees & Hierarchy | 16 | User list/detail/subtree, org selectors, employee create/update, lifecycle activation/deactivation, login setup/disable, role replacement, role history, audit trail, import job metadata, import polling, and export job metadata. |
 | Dashboard | 1 | Role-scoped summary derived from implemented Core, Expenses, Documents, Assets, Timesheets, Attendance, Notifications, and Outbox data. |
 | Documents | 7 | Metadata upload/list/detail, expense document link, download URL, verification, access log. |
 | Expenses / Manager | 3 | Manager queue, manager verify action, manager document verification. |
@@ -79,7 +79,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **11**.
+Total remaining planned new operations: **6**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -100,7 +100,7 @@ Total remaining planned new operations: **11**.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | GET | `/api/v1/dashboard/summary` | `/dashboard` | Return role-scoped dashboard cards, pending approvals, workforce, operations, workload, attention items, and explicit not_implemented markers for modules still missing. | Authenticated; response changes by actor hierarchy and role/persona. | None | generated_at, scope, cards[], workforce, approvals, operations, workload, attention[], unavailable_features[] | Shared errors; 401 for unauthenticated sessions; no mock counts for missing modules. | Implemented in Phase 3 |
 
-### Employees / Core (5 planned APIs, 8 implemented in Phase 3)
+### Employees / Core (13 implemented APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -111,11 +111,11 @@ Total remaining planned new operations: **11**.
 | POST | `/api/v1/core/users/{id}/login/enable` | `/employees/:id/login` | Queue one-time password setup for employee login; no default production password. | HR/Admin only. | Path id; expected_version, invite_email optional | login_state setup_pending, onboarding metadata, version | 409 if login already enabled. Email provider delivery remains production hardening. | Implemented in Phase 3 |
 | POST | `/api/v1/core/users/{id}/login/disable` | `/employees/:id/login` | Disable login and revoke active sessions. | HR/Admin only. | Path id; reason, expected_version | login_state, sessions_revoked, version | 409 stale version or already disabled. | Implemented in Phase 3 |
 | PUT | `/api/v1/core/users/{id}/roles` | `/employees/:id/roles` | Replace assigned backend roles for a user. | Admin; HR can assign non-admin roles to non-admin users. | Path id; roles[], expected_version, remarks | user detail with role_labels and version | 403 for privileged role assignment; 409 stale role version. | Implemented in Phase 3 |
-| GET | `/api/v1/core/users/{id}/roles/history` | `/employees/:id/roles` | Show role assignment history. | Admin/HR/auditor; self can see own active roles only if enabled. | Path id; page, page_size, sort | items[], page, page_size, total | 403 out of scope; paginated audit timeline. | Planned / Not Implemented |
-| GET | `/api/v1/core/users/{id}/audit` | `/employees/:id/audit` | Return profile and access audit events. | Admin/HR/auditor; manager scoped if product allows. | Path id; page, page_size, event_type, date_range | items[], pagination | 403 out of scope; do not expose secret/token data. | Planned / Not Implemented |
-| POST | `/api/v1/core/users/imports` | `/employees/import` | Create employee import job. | HR/Admin only. | file document_id or uploaded metadata, dry_run flag, mapping | job_id, status, accepted_rows, rejected_rows preview | 400 invalid file, 409 duplicate import lock, 429 large-job throttle. | Planned / Not Implemented |
-| GET | `/api/v1/core/users/imports/{job_id}` | `/employees/import` | Poll employee import job status and row errors. | HR/Admin only. | Path job_id | job status, counts, row_errors[], created_users[] | 404 unknown job, 403 tenant mismatch. | Planned / Not Implemented |
-| POST | `/api/v1/core/users/exports` | `/employees/export` | Create employee export job. | HR/Admin/auditor by scope. | filters, columns, format | job_id, status, download_document_id optional | 403 forbidden columns, 429 export throttle. | Planned / Not Implemented |
+| GET | `/api/v1/core/users/{id}/roles/history` | `/employees/:id/roles` | Show role assignment history. | Admin/HR/auditor; self can see own active roles only if enabled. | Path id; page, page_size, sort | items[], page, page_size, total | 403 out of scope; paginated audit timeline. | Implemented in Phase 5 core backlog |
+| GET | `/api/v1/core/users/{id}/audit` | `/employees/:id/audit` | Return profile and access audit events. | Admin/HR/auditor; manager scoped if product allows. | Path id; page, page_size, event_type, date_range | items[], pagination | 403 out of scope; token/secret payload keys are redacted. | Implemented in Phase 5 core backlog |
+| POST | `/api/v1/core/users/imports` | `/employees/import` | Create employee import job. | HR/Admin only. | file document_id or uploaded metadata, dry_run flag, mapping | job_id, status, accepted_rows, rejected_rows preview | 400 invalid file, 409 duplicate import lock, 429 large-job throttle. | Implemented in Phase 5 core backlog |
+| GET | `/api/v1/core/users/imports/{job_id}` | `/employees/import` | Poll employee import job status and row errors. | HR/Admin only. | Path job_id | job status, counts, row_errors[], created_users[] | 404 unknown job, 403 tenant mismatch. | Implemented in Phase 5 core backlog |
+| POST | `/api/v1/core/users/exports` | `/employees/export` | Create employee export job. | HR/Admin/auditor by scope. | filters, columns, format | job_id, status, download_document_id optional | 403 forbidden columns, 429 export throttle. | Implemented in Phase 5 core backlog |
 | GET | `/api/v1/core/master-data/org-selectors` | `/employees filters/forms` | Return active departments, designations, roles, and manager candidates for employee forms. | Authenticated; manager candidates scoped by role. | None | departments[], designations[], roles[], managers[] | Shared errors; cacheable but must refetch after admin changes. | Implemented in Phase 3 |
 
 ### EMS (13 implemented APIs, 2 planned APIs)

@@ -218,6 +218,88 @@ describe("core hierarchy API", () => {
     expect(roles.json().role_labels).toEqual(["Employee", "HR Manager"]);
     expect(roles.json().version).toBe(6);
 
+    const roleHistory = await app.inject({
+      method: "GET",
+      url: `/api/v1/core/users/${create.json().id}/roles/history?page=1&page_size=10`,
+      headers: authHeader(admin.token)
+    });
+    expect(roleHistory.statusCode).toBe(200);
+    expect(roleHistory.json().items[0]).toMatchObject({
+      source_event_type: "core.user.roles_replaced",
+      from_roles: ["Employee"],
+      to_roles: ["Employee", "HR Manager"],
+      remarks: "Promoted to HR support"
+    });
+
+    const audit = await app.inject({
+      method: "GET",
+      url: `/api/v1/core/users/${create.json().id}/audit?page=1&page_size=10&event_type=core.user.roles_replaced`,
+      headers: authHeader(admin.token)
+    });
+    expect(audit.statusCode).toBe(200);
+    expect(audit.json().items).toHaveLength(1);
+    expect(audit.json().items[0]).toMatchObject({ action: "Roles updated", event_type: "core.user.roles_replaced" });
+    expect(JSON.stringify(audit.json().items[0].metadata)).not.toMatch(/token|password/iu);
+
+    const managerHistory = await app.inject({
+      method: "GET",
+      url: `/api/v1/core/users/${create.json().id}/roles/history?page=1&page_size=10`,
+      headers: authHeader(manager.token)
+    });
+    expect(managerHistory.statusCode).toBe(403);
+
+    const importJob = await app.inject({
+      method: "POST",
+      url: "/api/v1/core/users/imports",
+      headers: authHeader(admin.token),
+      payload: {
+        file_name: "employees.csv",
+        dry_run: true,
+        mapping: { employee_code: "Employee ID", email: "Email" }
+      }
+    });
+    expect(importJob.statusCode).toBe(200);
+    expect(importJob.json()).toMatchObject({
+      status: "queued",
+      dry_run: true,
+      accepted_rows: 0,
+      rejected_rows: 0,
+      adapter: "outbox-queued-placeholder"
+    });
+
+    const importPoll = await app.inject({
+      method: "GET",
+      url: `/api/v1/core/users/imports/${importJob.json().job_id}`,
+      headers: authHeader(admin.token)
+    });
+    expect(importPoll.statusCode).toBe(200);
+    expect(importPoll.json().job_id).toBe(importJob.json().job_id);
+
+    const exportJob = await app.inject({
+      method: "POST",
+      url: "/api/v1/core/users/exports",
+      headers: authHeader(admin.token),
+      payload: {
+        format: "csv",
+        filters: { department_id: manager.user.department_id },
+        columns: ["employee_code", "full_name", "roles"]
+      }
+    });
+    expect(exportJob.statusCode).toBe(200);
+    expect(exportJob.json()).toMatchObject({
+      status: "queued",
+      format: "csv",
+      adapter: "outbox-queued-placeholder"
+    });
+
+    const forbiddenExport = await app.inject({
+      method: "POST",
+      url: "/api/v1/core/users/exports",
+      headers: authHeader(manager.token),
+      payload: { format: "csv", filters: {} }
+    });
+    expect(forbiddenExport.statusCode).toBe(403);
+
     const stalePatch = await app.inject({
       method: "PATCH",
       url: `/api/v1/core/users/${create.json().id}`,

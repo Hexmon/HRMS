@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import type { AuthUser, CoreUser, Department, Designation, RoleKey, UUID } from "#shared";
+import type { AuthUser, CoreUser, Department, Designation, OutboxEvent, RoleKey, UUID } from "#shared";
 import { EmploymentStatuses, Roles } from "#shared";
 import { badRequest, conflict, forbidden, notFound } from "../../platform/errors.js";
 import type { AuthTokenRecord, MemoryDataStore } from "../../platform/data-store.js";
@@ -171,6 +171,31 @@ export interface UserRolesInput {
   remarks?: string;
 }
 
+export interface UserHistoryQuery {
+  page: number;
+  page_size: number;
+  sort?: string;
+}
+
+export interface UserAuditQuery extends UserHistoryQuery {
+  event_type?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface UserImportInput {
+  document_id?: UUID;
+  file_name?: string;
+  dry_run?: boolean;
+  mapping?: Record<string, string>;
+}
+
+export interface UserExportInput {
+  format: "csv" | "xlsx";
+  filters: Record<string, unknown>;
+  columns?: string[];
+}
+
 export interface CoreUserMutationResult extends CoreUserDetail {
   onboarding?: {
     setup_required: boolean;
@@ -274,7 +299,7 @@ export class CoreService {
       aggregateType: "core.user",
       aggregateId: user.id,
       eventType: "core.user.created",
-      payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id },
+      payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id, roles: user.roles },
       idempotencyKey: `core.user.created:${user.id}`
     });
     const onboarding = input.login_enabled ? this.queuePasswordSetup(user, "employee_create") : undefined;
@@ -457,6 +482,91 @@ export class CoreService {
       idempotencyKey: `core.user.roles_replaced:${user.id}:${user.version}`
     });
     return this.toDetail(user);
+  }
+
+  roleHistory(actor: AuthUser, id: UUID, query: UserHistoryQuery) {
+    const user = this.requireUserForRead(actor, id);
+    if (!canReadSensitiveUserTimeline(actor, user)) {
+      throw forbidden("You do not have access to this employee role history.");
+    }
+    const roleEvents = this.userTimelineEvents(user.id)
+      .filter((event) => event.event_type === "core.user.roles_replaced" || event.event_type === "core.user.created")
+      .map((event) => this.presentRoleHistoryEvent(user, event));
+    const rows = roleEvents.length > 0 ? roleEvents : [this.presentCurrentRoleHistory(user)];
+    const sorted = sortByCreatedAt(rows, query.sort);
+    return pageWithSummary(sorted, query.page, query.page_size, {
+      current_roles: user.roles,
+      history_events: roleEvents.length
+    });
+  }
+
+  auditTrail(actor: AuthUser, id: UUID, query: UserAuditQuery) {
+    const user = this.requireUserForRead(actor, id);
+    if (!canReadSensitiveUserTimeline(actor, user)) {
+      throw forbidden("You do not have access to this employee audit trail.");
+    }
+    const rows = this.userTimelineEvents(user.id)
+      .filter((event) => !query.event_type || event.event_type === query.event_type)
+      .filter((event) => !query.date_from || event.created_at.slice(0, 10) >= query.date_from)
+      .filter((event) => !query.date_to || event.created_at.slice(0, 10) <= query.date_to)
+      .map((event) => this.presentAuditEvent(user, event));
+    const sorted = sortByCreatedAt(rows, query.sort);
+    return pageWithSummary(sorted, query.page, query.page_size, {
+      events: sorted.length,
+      last_event_at: sorted[0]?.created_at ?? null
+    });
+  }
+
+  createImportJob(actor: AuthUser, input: UserImportInput) {
+    requirePeopleManager(actor);
+    const jobId = randomUUID();
+    const event = appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user_import",
+      aggregateId: jobId,
+      eventType: "core.users.import_requested",
+      payload: {
+        actor_user_id: actor.id,
+        document_id: input.document_id ?? null,
+        file_name: normalizeOptional(input.file_name),
+        dry_run: Boolean(input.dry_run),
+        mapping: input.mapping ?? {},
+        status: "queued",
+        accepted_rows: 0,
+        rejected_rows: 0,
+        row_errors: [],
+        created_users: []
+      },
+      idempotencyKey: `core.users.import_requested:${jobId}`
+    });
+    return this.presentImportJob(event);
+  }
+
+  getImportJob(actor: AuthUser, jobId: UUID) {
+    requirePeopleManager(actor);
+    const event = this.store.outbox.find((candidate) => candidate.aggregate_type === "core.user_import" && candidate.aggregate_id === jobId);
+    if (!event) {
+      throw notFound("Employee import job not found.", { job_id: jobId });
+    }
+    return this.presentImportJob(event);
+  }
+
+  createExportJob(actor: AuthUser, input: UserExportInput) {
+    requireEmployeeExportAccess(actor);
+    const jobId = randomUUID();
+    const event = appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user_export",
+      aggregateId: jobId,
+      eventType: "core.users.export_requested",
+      payload: {
+        actor_user_id: actor.id,
+        format: input.format,
+        filters: input.filters,
+        columns: input.columns ?? defaultEmployeeExportColumns,
+        status: "queued"
+      },
+      idempotencyKey: `core.users.export_requested:${jobId}`
+    });
+    return this.presentExportJob(event);
   }
 
   getUser(id: UUID): CoreUser;
@@ -742,6 +852,17 @@ export class CoreService {
     return actor.id === user.id || user.hierarchy_path.startsWith(`${actor.hierarchy_path}.`);
   }
 
+  private requireUserForRead(actor: AuthUser, id: UUID): CoreUser {
+    const user = this.repository.findUser(id);
+    if (!user) {
+      throw notFound("User not found", { id });
+    }
+    if (!this.canReadUser(actor, user)) {
+      throw forbidden("You do not have access to this employee profile");
+    }
+    return user;
+  }
+
   private requireUserForWrite(id: UUID): CoreUser {
     const user = this.repository.findUser(id);
     if (!user) {
@@ -842,6 +963,118 @@ export class CoreService {
   private withMutationMetadata(detail: CoreUserDetail, metadata: Partial<CoreUserMutationResult>): CoreUserMutationResult {
     return Object.assign(detail, metadata);
   }
+
+  private userTimelineEvents(userId: UUID): OutboxEvent[] {
+    return this.store.outbox.filter((event) => event.aggregate_type === "core.user" && event.aggregate_id === userId);
+  }
+
+  private presentRoleHistoryEvent(user: CoreUser, event: OutboxEvent) {
+    const payload = event.payload;
+    const toRoles = roleArray(payload.roles);
+    const fromRoles = roleArray(payload.previous_roles);
+    return {
+      id: event.event_id,
+      event_id: event.event_id as string | null,
+      user_id: user.id,
+      employee_code: user.employee_code,
+      actor_user_id: stringOrNull(payload.actor_user_id),
+      actor: this.userLabel(stringOrNull(payload.actor_user_id)),
+      from_roles: event.event_type === "core.user.created" ? [] : fromRoles,
+      to_roles: event.event_type === "core.user.created" ? roleArray(payload.roles, user.roles) : toRoles,
+      remarks: stringOrNull(payload.remarks),
+      source_event_type: event.event_type,
+      created_at: event.created_at
+    };
+  }
+
+  private presentCurrentRoleHistory(user: CoreUser) {
+    return {
+      id: `current:${user.id}`,
+      event_id: null as string | null,
+      user_id: user.id,
+      employee_code: user.employee_code,
+      actor_user_id: null,
+      actor: "System",
+      from_roles: [],
+      to_roles: user.roles,
+      remarks: "Current active role assignment." as string | null,
+      source_event_type: "core.user.current_roles",
+      created_at: nowIso()
+    };
+  }
+
+  private presentAuditEvent(user: CoreUser, event: OutboxEvent) {
+    const payload = event.payload;
+    return {
+      id: event.event_id,
+      event_id: event.event_id,
+      user_id: user.id,
+      employee_code: user.employee_code,
+      event_type: event.event_type,
+      action: auditAction(event.event_type),
+      actor_user_id: stringOrNull(payload.actor_user_id),
+      actor: this.userLabel(stringOrNull(payload.actor_user_id)),
+      remarks: stringOrNull(payload.remarks ?? payload.reason),
+      metadata: redactedAuditMetadata(payload),
+      created_at: event.created_at
+    };
+  }
+
+  private presentImportJob(event: OutboxEvent) {
+    const payload = event.payload;
+    const actorUserId = stringOrNull(payload.actor_user_id);
+    return {
+      job_id: event.aggregate_id,
+      event_id: event.event_id,
+      status: stringValue(payload.status, event.status),
+      outbox_status: event.status,
+      dry_run: Boolean(payload.dry_run),
+      accepted_rows: numberValue(payload.accepted_rows),
+      rejected_rows: numberValue(payload.rejected_rows),
+      row_errors: Array.isArray(payload.row_errors) ? payload.row_errors : [],
+      created_users: Array.isArray(payload.created_users) ? payload.created_users : [],
+      file: {
+        document_id: stringOrNull(payload.document_id),
+        file_name: stringOrNull(payload.file_name)
+      },
+      mapping: recordValue(payload.mapping),
+      created_by_user_id: actorUserId,
+      created_by: this.userLabel(actorUserId),
+      adapter: "outbox-queued-placeholder",
+      created_at: event.created_at,
+      updated_at: event.published_at ?? event.failed_at ?? event.created_at
+    };
+  }
+
+  private presentExportJob(event: OutboxEvent) {
+    const payload = event.payload;
+    const actorUserId = stringOrNull(payload.actor_user_id);
+    return {
+      job_id: event.aggregate_id,
+      export_id: event.aggregate_id,
+      event_id: event.event_id,
+      status: stringValue(payload.status, event.status),
+      outbox_status: event.status,
+      format: stringValue(payload.format, "csv"),
+      filters: recordValue(payload.filters),
+      columns: Array.isArray(payload.columns) ? payload.columns.filter((column) => typeof column === "string") : defaultEmployeeExportColumns,
+      download_document_id: null,
+      download_url: null,
+      created_by_user_id: actorUserId,
+      created_by: this.userLabel(actorUserId),
+      adapter: "outbox-queued-placeholder",
+      created_at: event.created_at,
+      updated_at: event.published_at ?? event.failed_at ?? event.created_at
+    };
+  }
+
+  private userLabel(userId: string | null): string {
+    if (!userId) {
+      return "System";
+    }
+    const user = this.repository.findUser(userId);
+    return user ? `${user.employee_code} - ${user.full_name}` : userId;
+  }
 }
 
 function hierarchyDepth(path: string): number {
@@ -857,6 +1090,16 @@ function requirePeopleManager(actor: AuthUser): void {
   if (!actor.roles.some((role) => role === Roles.Admin || role === Roles.HRManager)) {
     throw forbidden("Only Admin and HR Manager users can manage employee profiles.");
   }
+}
+
+function requireEmployeeExportAccess(actor: AuthUser): void {
+  if (!actor.roles.some((role) => role === Roles.Admin || role === Roles.HRManager || role === Roles.Auditor)) {
+    throw forbidden("Only Admin, HR Manager, and Auditor users can export employee profiles.");
+  }
+}
+
+function canReadSensitiveUserTimeline(actor: AuthUser, user: CoreUser): boolean {
+  return hasPrivilegedProfileRead(actor) || actor.id === user.id;
 }
 
 function requireCanAssignRoles(actor: AuthUser, roles: readonly RoleKey[], target?: CoreUser): void {
@@ -950,4 +1193,93 @@ function toDesignationReference(designation: Designation): DesignationReference 
 
 function appliedFilters(params: UserDirectoryQuery): string[] {
   return ["q", "department_id", "designation_id", "role", "employment_status", "manager_user_id", "login_state"].filter((key) => Boolean(params[key as keyof UserDirectoryQuery]));
+}
+
+const defaultEmployeeExportColumns = [
+  "employee_code",
+  "full_name",
+  "email",
+  "department",
+  "designation",
+  "manager",
+  "employment_status",
+  "login_state",
+  "roles",
+  "joined_on"
+];
+
+function pageWithSummary<T>(items: T[], page: number, pageSize: number, summary: Record<string, unknown>) {
+  const start = (page - 1) * pageSize;
+  return {
+    items: items.slice(start, start + pageSize),
+    page,
+    page_size: pageSize,
+    total: items.length,
+    summary
+  };
+}
+
+function sortByCreatedAt<T extends { created_at: string }>(rows: T[], sort = "-created_at"): T[] {
+  const descending = sort !== "created_at";
+  return [...rows].sort((left, right) => {
+    const compared = left.created_at.localeCompare(right.created_at);
+    return descending ? -compared : compared;
+  });
+}
+
+function roleArray(value: unknown, fallback: readonly RoleKey[] = []): RoleKey[] {
+  if (!Array.isArray(value)) {
+    return [...fallback];
+  }
+  return value.filter((role): role is RoleKey => typeof role === "string" && allowedRoleKeys.includes(role as RoleKey));
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function redactedAuditMetadata(payload: Record<string, unknown>): Record<string, unknown> {
+  const safe: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (/token|secret|password|hash/iu.test(key)) {
+      continue;
+    }
+    safe[key] = value;
+  }
+  return safe;
+}
+
+function auditAction(eventType: string): string {
+  switch (eventType) {
+    case "core.user.created":
+      return "Profile created";
+    case "core.user.updated":
+      return "Profile updated";
+    case "core.user.activated":
+      return "Employee activated";
+    case "core.user.deactivated":
+      return "Employee deactivated";
+    case "core.user.terminated":
+      return "Employee terminated";
+    case "core.user.login_disabled":
+      return "Login disabled";
+    case "core.user.login_setup_requested":
+      return "Login setup requested";
+    case "core.user.roles_replaced":
+      return "Roles updated";
+    default:
+      return eventType;
+  }
 }

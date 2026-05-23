@@ -34,6 +34,11 @@ const userListQuerySchema = paginationQuerySchema.extend({
 });
 
 const dateSchema = z.iso.date();
+const auditQuerySchema = paginationQuerySchema.extend({
+  event_type: z.string().min(1).max(120).optional(),
+  date_from: dateSchema.optional(),
+  date_to: dateSchema.optional()
+});
 const expectedVersionSchema = z.object({
   expected_version: z.number().int().positive()
 });
@@ -83,6 +88,22 @@ const loginBodySchema = expectedVersionSchema.extend({
 const rolesBodySchema = expectedVersionSchema.extend({
   roles: z.array(roleSchema).min(1),
   remarks: z.string().max(1000).optional()
+});
+
+const importBodySchema = z.object({
+  document_id: z.uuid().optional(),
+  file_name: z.string().min(1).max(240).optional(),
+  dry_run: z.boolean().optional(),
+  mapping: z.record(z.string(), z.string()).optional()
+}).refine((value) => Boolean(value.document_id || value.file_name), {
+  message: "document_id or file_name is required.",
+  path: ["document_id"]
+});
+
+const exportBodySchema = z.object({
+  format: z.enum(["csv", "xlsx"]).default("csv"),
+  filters: z.record(z.string(), z.unknown()).default({}),
+  columns: z.array(z.string().min(1).max(80)).max(80).optional()
 });
 
 export const coreRoutes: FastifyPluginAsync = async (fastify) => {
@@ -179,6 +200,53 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
     const body = rolesBodySchema.parse(request.body);
     const service = new CoreService(fastify.store);
     return service.replaceRoles(request.actor, params.id, body);
+  });
+
+  fastify.get("/users/:id/roles/history", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = z.object({ id: z.uuid() }).parse(request.params);
+    const query = paginationQuerySchema.parse(request.query);
+    const service = new CoreService(fastify.store);
+    return service.roleHistory(request.actor, params.id, query);
+  });
+
+  fastify.get("/users/:id/audit", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = z.object({ id: z.uuid() }).parse(request.params);
+    const query = auditQuerySchema.parse(request.query);
+    const service = new CoreService(fastify.store);
+    return service.auditTrail(request.actor, params.id, query);
+  });
+
+  fastify.post("/users/imports", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const body = importBodySchema.parse(request.body);
+    const service = new CoreService(fastify.store);
+    return service.createImportJob(request.actor, body);
+  });
+
+  fastify.get("/users/imports/:job_id", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = z.object({ job_id: z.uuid() }).parse(request.params);
+    const service = new CoreService(fastify.store);
+    return service.getImportJob(request.actor, params.job_id);
+  });
+
+  fastify.post("/users/exports", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const body = exportBodySchema.parse(request.body);
+    const service = new CoreService(fastify.store);
+    return service.createExportJob(request.actor, body);
   });
 
   fastify.get("/users/:id/subtree", async (request) => {
