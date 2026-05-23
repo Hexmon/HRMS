@@ -177,8 +177,8 @@ Frontend:
 | --- | --- | --- |
 | Helpdesk backend | `feat(helpdesk): implement helpdesk APIs` | Committed in `hrms_backend` as `504da18` |
 | Helpdesk frontend | `feat(helpdesk): connect helpdesk screens to backend APIs` | Committed in `hrms-client` as `50412ce` |
-| Notifications backend | `feat(notifications): implement notification feed APIs` | Pending commit |
-| Notifications frontend | `feat(notifications): connect topbar notifications to backend APIs` | Pending commit |
+| Notifications backend | `feat(notifications): implement notification feed APIs` | Committed in `hrms_backend` as `75525cc` |
+| Notifications frontend | `feat(notifications): connect topbar notifications to backend APIs` | Committed in `hrms-client` as `4ae6531` |
 
 ## Next Steps
 
