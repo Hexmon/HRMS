@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ROLE_MAP, type Role } from "@/lib/auth";
@@ -33,12 +34,13 @@ export function DashboardHero({
   activeRole: Role;
   actions: HeroAction[];
 }) {
-  const greeting =
-    new Date().getHours() < 12
-      ? "Good morning"
-      : new Date().getHours() < 18
-        ? "Good afternoon"
-        : "Good evening";
+  const [greeting, setGreeting] = useState("Good day");
+  const displayName = user.name.trim() || user.email.split("@")[0] || "there";
+
+  useEffect(() => {
+    setGreeting(getGreetingForLocalTimeZone());
+  }, []);
+
   return (
     <Card className="overflow-hidden rounded-3xl border-border/60 p-0 shadow-sm">
       <div className="relative p-6 sm:p-8" style={{ background: "var(--gradient-hero)" }}>
@@ -48,7 +50,7 @@ export function DashboardHero({
               {ROLE_MAP[activeRole].label} workspace
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
-              {greeting}, {user.name.split(" ")[0]} 👋
+              {greeting}, {displayName}
             </h1>
             <p className="mt-1 max-w-xl text-sm text-muted-foreground">
               {ROLE_MAP[activeRole].description}
@@ -75,6 +77,32 @@ export function DashboardHero({
       </div>
     </Card>
   );
+}
+
+function getGreetingForLocalTimeZone(date = new Date()): string {
+  const timeZone =
+    typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+  const hour = timeZone ? hourInTimeZone(date, timeZone) : date.getHours();
+
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 17) return "Good afternoon";
+  if (hour >= 17 && hour < 22) return "Good evening";
+  return "Good night";
+}
+
+function hourInTimeZone(date: Date, timeZone: string): number {
+  try {
+    const formattedHour = new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      hourCycle: "h23",
+      timeZone,
+    }).format(date);
+    const hour = Number.parseInt(formattedHour, 10);
+
+    return Number.isFinite(hour) ? hour : date.getHours();
+  } catch {
+    return date.getHours();
+  }
 }
 
 // ----- Small chart helpers (consistent palette) -----
