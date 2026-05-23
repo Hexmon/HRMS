@@ -442,7 +442,7 @@ Frontend:
 | Admin notification channels task sheet | `docs(admin): record notification channel settings completion` | Committed in `hrms_backend` as `bbed1e6` |
 | Admin audit log backend | `feat(admin): implement audit log API` | Committed in `hrms_backend` as `4029ec4` |
 | Admin audit log frontend | `feat(admin): connect audit log to backend API` | Committed in `hrms-client` as `7b05ee4` |
-| Admin audit log task sheet | `docs(admin): record audit log completion` | Pending commit |
+| Admin audit log task sheet | `docs(admin): record audit log completion` | Committed in `hrms_backend` as `8985eac` |
 
 ## Next Steps
 
