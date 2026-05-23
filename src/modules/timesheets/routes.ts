@@ -37,6 +37,22 @@ const timesheetApproverQueueQuerySchema = paginationQuerySchema.extend({
   billable: booleanQuerySchema.optional()
 });
 
+const timesheetAnalyticsQuerySchema = paginationQuerySchema.extend({
+  date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
+  date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
+  cycle_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
+  cycle_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
+  project_id: z.uuid().optional(),
+  project_code: z.string().min(1).optional(),
+  user_id: z.uuid().optional(),
+  group_by: z.enum(["employee", "project", "department", "week"]).optional()
+});
+
+const timesheetSelectorsQuerySchema = z.object({
+  include: z.string().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional()
+});
+
 export const timesheetRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/work-segments", async (request) => {
     if (!request.actor) {
@@ -74,6 +90,46 @@ export const timesheetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const query = timesheetApproverQueueQuerySchema.parse(request.query);
     return new TimesheetService(fastify.store).approverQueue(request.actor, query);
+  });
+
+  fastify.get("/projects/summary", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const query = timesheetAnalyticsQuerySchema.parse(request.query);
+    return new TimesheetService(fastify.store).projectSummary(request.actor, query);
+  });
+
+  fastify.get("/missing-submissions", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const query = timesheetAnalyticsQuerySchema.parse(request.query);
+    return new TimesheetService(fastify.store).missingSubmissions(request.actor, query);
+  });
+
+  fastify.get("/productivity-summary", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const query = timesheetAnalyticsQuerySchema.parse(request.query);
+    return new TimesheetService(fastify.store).productivitySummary(request.actor, query);
+  });
+
+  fastify.get("/selectors", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const query = timesheetSelectorsQuerySchema.parse(request.query);
+    return new TimesheetService(fastify.store).selectors(request.actor, query);
+  });
+
+  fastify.get("/submissions/:id", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = idParamSchema.parse(request.params);
+    return new TimesheetService(fastify.store).submissionDetail(request.actor, params.id);
   });
 
   fastify.post("/submissions/:id/approve", async (request) => {

@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { AuthUser, CoreUser, TimesheetSubmission, UUID } from "#shared";
-import { addMoney, Roles, TimesheetStatuses } from "#shared";
+import type { AuthUser, CoreUser, ProjectRecord, TimesheetSubmission, UUID } from "#shared";
+import { addMoney, EmploymentStatuses, ProjectMemberStatuses, ProjectStatuses, Roles, TimesheetStatuses } from "#shared";
 import type { MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
-import { badRequest, conflict, missingRemarks } from "../../platform/errors.js";
+import { badRequest, conflict, forbidden, missingRemarks } from "../../platform/errors.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { CoreService } from "../core/service.js";
 import { timesheetEvents } from "./events.js";
@@ -21,6 +21,24 @@ export interface TimesheetQueueQuery {
   cycle_end?: string;
   project_code?: string;
   billable?: boolean;
+}
+
+export interface TimesheetAnalyticsQuery {
+  page: number;
+  page_size: number;
+  date_from?: string;
+  date_to?: string;
+  cycle_start?: string;
+  cycle_end?: string;
+  project_id?: UUID;
+  project_code?: string;
+  user_id?: UUID;
+  group_by?: "employee" | "project" | "department" | "week";
+}
+
+export interface TimesheetSelectorsQuery {
+  include?: string;
+  date?: string;
 }
 
 type TimesheetActionRecord = MemoryDataStore["timesheetActions"][number];
@@ -68,6 +86,19 @@ function workdaysInclusive(start: string, end: string): number {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return days;
+}
+
+function weekStartForDate(value: string): string {
+  const date = dateUtc(value);
+  const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - daysSinceMonday);
+  return date.toISOString().slice(0, 10);
+}
+
+function weekEndForStart(value: string): string {
+  const date = dateUtc(value);
+  date.setUTCDate(date.getUTCDate() + 6);
+  return date.toISOString().slice(0, 10);
 }
 
 export class TimesheetService {
@@ -210,6 +241,220 @@ export class TimesheetService {
         filters_applied: this.appliedQueueFilters(query),
         sort: query.sort ?? "cycle_start"
       }
+    };
+  }
+
+  submissionDetail(actor: AuthUser, id: UUID) {
+    const submission = this.repository.findSubmission(id);
+    this.assertCanSeeSubmission(actor, submission);
+    const segments = this.segmentsForSubmission(submission).map((segment) => this.presentSegment(segment));
+    return {
+      ...this.presentSubmission(submission, actor),
+      segments,
+      workflow_history: this.decisionHistory(id),
+      last_decision: this.lastDecision(id)
+    };
+  }
+
+  projectSummary(actor: AuthUser, query: TimesheetAnalyticsQuery) {
+    const visibleUserIds = this.visibleUserIds(actor);
+    const selectedProjectCode = this.resolveProjectCode(query.project_id, query.project_code);
+    const projects = this.visibleProjects(actor)
+      .filter((project) => !selectedProjectCode || project.project_code === selectedProjectCode)
+      .sort((left, right) => left.project_code.localeCompare(right.project_code));
+    const items = projects.map((project) => {
+      const members = this.store.projectMembers
+        .filter(
+          (member) =>
+            member.project_id === project.id &&
+            member.status !== ProjectMemberStatuses.Removed &&
+            visibleUserIds.has(member.employee_user_id)
+        )
+        .map((member) => {
+          const user = this.userFor(member.employee_user_id);
+          const segments = this.filteredSegments(query).filter(
+            (segment) => segment.project_code === project.project_code && segment.employee_user_id === member.employee_user_id
+          );
+          const submission = this.submissionForUserCycle(member.employee_user_id, this.cycleStart(query), this.cycleEnd(query));
+          const total = addMoney(segments.map((segment) => segment.hours));
+          const billable = addMoney(segments.filter((segment) => segment.billable).map((segment) => segment.hours));
+          const nonBillable = addMoney(segments.filter((segment) => !segment.billable).map((segment) => segment.hours));
+          return {
+            id: member.id,
+            user: this.userSummary(user),
+            employee_user_id: member.employee_user_id,
+            project_role: member.project_role,
+            allocation_percent: member.allocation_percent,
+            billable: member.billable,
+            total_hours: total,
+            billable_hours: billable,
+            non_billable_hours: nonBillable,
+            submitted: Boolean(submission && submission.status !== TimesheetStatuses.Draft),
+            submission_id: submission?.id ?? null,
+            submission_status: submission?.status ?? null,
+            expected_hours: this.expectedHoursForCycle(query),
+            missing_hours: toFixedHours(Math.max(0, decimal(this.expectedHoursForCycle(query)) - decimal(total)))
+          };
+        });
+      const segments = this.filteredSegments(query).filter((segment) => segment.project_code === project.project_code);
+      const total = addMoney(segments.map((segment) => segment.hours));
+      const billable = addMoney(segments.filter((segment) => segment.billable).map((segment) => segment.hours));
+      return {
+        project: this.projectSummaryRef(project),
+        cycle: { start: this.cycleStart(query), end: this.cycleEnd(query) },
+        members,
+        totals: {
+          member_count: members.length,
+          submitted_count: members.filter((member) => member.submitted).length,
+          missing_count: members.filter((member) => !member.submitted).length,
+          total_hours: total,
+          billable_hours: billable,
+          non_billable_hours: toFixedHours(decimal(total) - decimal(billable))
+        }
+      };
+    });
+    const result = page(items, query.page, query.page_size);
+    return {
+      ...result,
+      totals: {
+        projects: items.length,
+        total_hours: addMoney(items.map((item) => item.totals.total_hours)),
+        billable_hours: addMoney(items.map((item) => item.totals.billable_hours)),
+        missing_submissions: items.reduce((sum, item) => sum + item.totals.missing_count, 0)
+      }
+    };
+  }
+
+  missingSubmissions(actor: AuthUser, query: TimesheetAnalyticsQuery) {
+    const visibleUserIds = this.visibleUserIds(actor);
+    const users = this.store.users
+      .filter((user) => visibleUserIds.has(user.id) && !user.deleted_at && user.employment_status === EmploymentStatuses.Active)
+      .filter((user) => !query.user_id || user.id === query.user_id)
+      .sort((left, right) => left.employee_code.localeCompare(right.employee_code));
+    const cycleStart = this.cycleStart(query);
+    const cycleEnd = this.cycleEnd(query);
+    const expectedHours = this.expectedHoursForCycle(query);
+    const items = users
+      .map((user) => {
+        const segments = this.filteredSegments({ ...query, user_id: user.id, cycle_start: cycleStart, cycle_end: cycleEnd });
+        const submittedHours = addMoney(segments.map((segment) => segment.hours));
+        const submission = this.submissionForUserCycle(user.id, cycleStart, cycleEnd);
+        const missingHours = toFixedHours(Math.max(0, decimal(expectedHours) - decimal(submittedHours)));
+        return {
+          id: submission?.id ?? `missing:${user.id}:${cycleStart}`,
+          user: this.userSummary(user),
+          employee_user_id: user.id,
+          manager: user.manager_user_id ? this.userSummary(this.userFor(user.manager_user_id)) : null,
+          cycle: { start: cycleStart, end: cycleEnd, expected_hours: expectedHours },
+          submitted_hours: submittedHours,
+          missing_hours: missingHours,
+          status: submission ? (decimal(missingHours) > 0 ? "under_submitted" : "submitted") : "missing",
+          submission_id: submission?.id ?? null,
+          submission_status: submission?.status ?? null,
+          reminder_state: {
+            can_send_reminder: actor.id !== user.id,
+            reminder_count: 0,
+            last_reminded_at: null
+          }
+        };
+      })
+      .filter((item) => item.status !== "submitted");
+    return {
+      ...page(items, query.page, query.page_size),
+      summary: {
+        cycle_start: cycleStart,
+        cycle_end: cycleEnd,
+        expected_hours: expectedHours,
+        missing_count: items.filter((item) => item.status === "missing").length,
+        under_submitted_count: items.filter((item) => item.status === "under_submitted").length
+      }
+    };
+  }
+
+  productivitySummary(actor: AuthUser, query: TimesheetAnalyticsQuery) {
+    const segments = this.filteredSegments(query).filter((segment) => this.visibleUserIds(actor).has(segment.employee_user_id));
+    const submissions = this.visibleSubmissions(actor, query);
+    const total = addMoney(segments.map((segment) => segment.hours));
+    const billable = addMoney(segments.filter((segment) => segment.billable).map((segment) => segment.hours));
+    const nonBillable = toFixedHours(decimal(total) - decimal(billable));
+    const approved = submissions.filter((submission) => submission.status === TimesheetStatuses.Approved).length;
+    const returned = submissions.filter((submission) => submission.status === TimesheetStatuses.Returned).length;
+    const rejected = submissions.filter((submission) => submission.status === TimesheetStatuses.Rejected).length;
+    const grouped = this.groupProductivity(segments, query.group_by ?? "employee");
+    return {
+      cards: {
+        total_hours: total,
+        billable_hours: billable,
+        non_billable_hours: nonBillable,
+        billable_percent: decimal(total) > 0 ? Math.round((decimal(billable) / decimal(total)) * 100) : 0,
+        submission_count: submissions.length,
+        approved_count: approved,
+        returned_count: returned,
+        rejected_count: rejected
+      },
+      series: this.productivitySeries(segments),
+      breakdown: grouped,
+      filters: {
+        date_from: this.dateFrom(query),
+        date_to: this.dateTo(query),
+        project_code: this.resolveProjectCode(query.project_id, query.project_code),
+        user_id: query.user_id ?? null,
+        group_by: query.group_by ?? "employee"
+      }
+    };
+  }
+
+  selectors(actor: AuthUser, query: TimesheetSelectorsQuery) {
+    const visibleUserIds = this.visibleUserIds(actor);
+    const projects = this.visibleProjects(actor)
+      .filter((project) => new Set<string>([ProjectStatuses.Planned, ProjectStatuses.Active, ProjectStatuses.OnHold]).has(project.status))
+      .map((project) => ({
+        id: project.id,
+        project_code: project.project_code,
+        code: project.project_code,
+        name: project.name,
+        client_name: project.client_name,
+        manager: this.userSummary(this.userFor(project.manager_user_id)),
+        members: this.store.projectMembers
+          .filter((member) => member.project_id === project.id && visibleUserIds.has(member.employee_user_id) && member.status !== ProjectMemberStatuses.Removed)
+          .map((member) => ({
+            id: member.id,
+            employee_user_id: member.employee_user_id,
+            user: this.userSummary(this.userFor(member.employee_user_id)),
+            project_role: member.project_role,
+            allocation_percent: member.allocation_percent,
+            billable: member.billable
+          }))
+      }));
+    const projectCodes = new Set(projects.map((project) => project.project_code));
+    const tasks = unique([
+      ...this.store.projectMilestones
+        .filter((milestone) => projects.some((project) => project.id === milestone.project_id))
+        .map((milestone) => milestone.name),
+      ...this.store.workSegments
+        .filter((segment) => !segment.deleted_at && (!segment.project_code || projectCodes.has(segment.project_code)))
+        .map((segment) => segment.task_code)
+    ]).map((task) => ({ task_code: task, name: task }));
+    const cycles = unique([
+      ...this.store.timesheetSubmissions.map((submission) => submission.cycle_start),
+      weekStartForDate(query.date ?? nowIso().slice(0, 10))
+    ]).map((start) => ({ cycle_start: start, cycle_end: weekEndForStart(start), expected_hours: toFixedHours(workdaysInclusive(start, weekEndForStart(start)) * 8) }));
+    const me = this.userFor(actor.id);
+    const manager = me?.manager_user_id ? this.userFor(me.manager_user_id) : null;
+    const admins = this.store.users.filter((user) => user.roles.includes(Roles.Admin) && !user.deleted_at);
+    return {
+      projects,
+      tasks,
+      cycles,
+      approvers: [manager, ...admins].filter((user): user is CoreUser => Boolean(user)).map((user) => this.userSummary(user)),
+      workflow_definitions: this.store.workflowDefinitions,
+      rules: {
+        default_billable: true,
+        max_daily_hours: 24,
+        target_weekly_hours: 40,
+        active_workflow_id: this.repository.activeWorkflow().id
+      },
+      include: query.include ? query.include.split(",").map((item) => item.trim()).filter(Boolean) : []
     };
   }
 
@@ -375,7 +620,7 @@ export class TimesheetService {
         total_days: daysInclusive(submission.cycle_start, submission.cycle_end),
         expected_work_days: workdaysInclusive(submission.cycle_start, submission.cycle_end)
       },
-      project_summary: this.projectSummary(segments),
+      project_summary: this.submissionProjectSummary(segments),
       hours_summary: {
         submitted_hours: submission.total_hours,
         expected_hours: expectedHours,
@@ -397,6 +642,20 @@ export class TimesheetService {
     };
   }
 
+  private presentSegment(segment: WorkSegment) {
+    const employee = this.userFor(segment.employee_user_id);
+    const project = segment.project_code
+      ? this.store.projects.find((candidate) => candidate.project_code === segment.project_code && !candidate.deleted_at)
+      : null;
+    return {
+      ...segment,
+      employee: this.userSummary(employee),
+      project: project ? this.projectSummaryRef(project) : null,
+      project_name: project?.name ?? segment.project_code,
+      week_start: weekStartForDate(segment.work_date)
+    };
+  }
+
   private queueContext(submission: TimesheetSubmission, actor: AuthUser) {
     const expectedHours = this.expectedHours(submission);
     return {
@@ -412,7 +671,7 @@ export class TimesheetService {
     };
   }
 
-  private projectSummary(segments: WorkSegment[]) {
+  private submissionProjectSummary(segments: WorkSegment[]) {
     const projectCodes = unique(segments.map((segment) => segment.project_code));
     return {
       project_codes: projectCodes,
@@ -434,6 +693,19 @@ export class TimesheetService {
     };
   }
 
+  private projectSummaryRef(project: ProjectRecord) {
+    return {
+      id: project.id,
+      project_code: project.project_code,
+      code: project.project_code,
+      name: project.name,
+      client_name: project.client_name,
+      status: project.status,
+      manager_user_id: project.manager_user_id,
+      manager: this.userSummary(this.userFor(project.manager_user_id))
+    };
+  }
+
   private segmentsForSubmission(submission: TimesheetSubmission): WorkSegment[] {
     return this.store.workSegments.filter(
       (segment) =>
@@ -442,6 +714,172 @@ export class TimesheetService {
         segment.work_date >= submission.cycle_start &&
         segment.work_date <= submission.cycle_end
     );
+  }
+
+  private filteredSegments(query: Partial<TimesheetAnalyticsQuery>): WorkSegment[] {
+    const from = this.dateFrom(query);
+    const to = this.dateTo(query);
+    const projectCode = this.resolveProjectCode(query.project_id, query.project_code);
+    return this.store.workSegments.filter((segment) => {
+      if (segment.deleted_at) return false;
+      if (segment.work_date < from || segment.work_date > to) return false;
+      if (query.user_id && segment.employee_user_id !== query.user_id) return false;
+      if (projectCode && segment.project_code !== projectCode) return false;
+      return true;
+    });
+  }
+
+  private visibleSubmissions(actor: AuthUser, query: Partial<TimesheetAnalyticsQuery>): TimesheetSubmission[] {
+    const visibleUserIds = this.visibleUserIds(actor);
+    const from = this.cycleStart(query);
+    const to = this.cycleEnd(query);
+    return this.store.timesheetSubmissions.filter((submission) => {
+      if (submission.deleted_at) return false;
+      if (!visibleUserIds.has(submission.employee_user_id)) return false;
+      if (query.user_id && submission.employee_user_id !== query.user_id) return false;
+      if (submission.cycle_end < from || submission.cycle_start > to) return false;
+      const projectCode = this.resolveProjectCode(query.project_id, query.project_code);
+      if (projectCode && !this.segmentsForSubmission(submission).some((segment) => segment.project_code === projectCode)) return false;
+      return true;
+    });
+  }
+
+  private submissionForUserCycle(userId: UUID, cycleStart: string, cycleEnd: string): TimesheetSubmission | null {
+    return this.store.timesheetSubmissions.find(
+      (submission) =>
+        submission.employee_user_id === userId &&
+        submission.cycle_start === cycleStart &&
+        submission.cycle_end === cycleEnd &&
+        !submission.deleted_at
+    ) ?? null;
+  }
+
+  private visibleProjects(actor: AuthUser): ProjectRecord[] {
+    return this.store.projects.filter((project) => {
+      if (project.deleted_at) return false;
+      if (this.isPrivileged(actor)) return true;
+      if (project.manager_user_id === actor.id) return true;
+      return this.store.projectMembers.some(
+        (member) => member.project_id === project.id && member.employee_user_id === actor.id && member.status !== ProjectMemberStatuses.Removed
+      );
+    });
+  }
+
+  private visibleUserIds(actor: AuthUser): Set<UUID> {
+    if (this.isPrivileged(actor)) {
+      return new Set(this.store.users.filter((user) => !user.deleted_at).map((user) => user.id));
+    }
+    const ids = new Set<UUID>([actor.id]);
+    for (const user of this.store.users) {
+      if (!user.deleted_at && user.manager_user_id === actor.id) {
+        ids.add(user.id);
+      }
+    }
+    for (const project of this.store.projects) {
+      if (project.deleted_at || project.manager_user_id !== actor.id) continue;
+      for (const member of this.store.projectMembers) {
+        if (member.project_id === project.id && member.status !== ProjectMemberStatuses.Removed) {
+          ids.add(member.employee_user_id);
+        }
+      }
+    }
+    return ids;
+  }
+
+  private assertCanSeeSubmission(actor: AuthUser, submission: TimesheetSubmission): void {
+    if (submission.current_approver_user_id === actor.id || this.visibleUserIds(actor).has(submission.employee_user_id)) {
+      return;
+    }
+    throw forbidden("Timesheet submission is outside the actor's scope.");
+  }
+
+  private isPrivileged(actor: AuthUser): boolean {
+    return actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.HRManager) || actor.roles.includes(Roles.Auditor);
+  }
+
+  private dateFrom(query: Partial<TimesheetAnalyticsQuery>): string {
+    return query.date_from ?? query.cycle_start ?? weekStartForDate(nowIso().slice(0, 10));
+  }
+
+  private dateTo(query: Partial<TimesheetAnalyticsQuery>): string {
+    return query.date_to ?? query.cycle_end ?? weekEndForStart(this.dateFrom(query));
+  }
+
+  private cycleStart(query: Partial<TimesheetAnalyticsQuery>): string {
+    return query.cycle_start ?? query.date_from ?? weekStartForDate(nowIso().slice(0, 10));
+  }
+
+  private cycleEnd(query: Partial<TimesheetAnalyticsQuery>): string {
+    return query.cycle_end ?? query.date_to ?? weekEndForStart(this.cycleStart(query));
+  }
+
+  private expectedHoursForCycle(query: Partial<TimesheetAnalyticsQuery>): string {
+    return toFixedHours(workdaysInclusive(this.cycleStart(query), this.cycleEnd(query)) * 8);
+  }
+
+  private resolveProjectCode(projectId?: UUID, projectCode?: string): string | undefined {
+    if (projectCode) return projectCode;
+    if (!projectId) return undefined;
+    return this.store.projects.find((project) => project.id === projectId && !project.deleted_at)?.project_code;
+  }
+
+  private groupProductivity(segments: WorkSegment[], groupBy: "employee" | "project" | "department" | "week") {
+    const grouped = new Map<string, { label: string; total: number; billable: number; nonBillable: number; meta: Record<string, unknown> }>();
+    for (const segment of segments) {
+      const user = this.userFor(segment.employee_user_id);
+      const department = user?.department_id ? this.store.departments.find((candidate) => candidate.id === user.department_id) : null;
+      const project = segment.project_code ? this.store.projects.find((candidate) => candidate.project_code === segment.project_code && !candidate.deleted_at) : null;
+      const key =
+        groupBy === "project"
+          ? (segment.project_code ?? "unassigned")
+          : groupBy === "department"
+            ? (department?.id ?? "unassigned")
+            : groupBy === "week"
+              ? weekStartForDate(segment.work_date)
+              : segment.employee_user_id;
+      const label =
+        groupBy === "project"
+          ? `${segment.project_code ?? "Unassigned"}${project ? ` - ${project.name}` : ""}`
+          : groupBy === "department"
+            ? (department?.name ?? "Unassigned")
+            : groupBy === "week"
+              ? `Week of ${weekStartForDate(segment.work_date)}`
+              : (user?.full_name ?? segment.employee_user_id);
+      const current = grouped.get(key) ?? { label, total: 0, billable: 0, nonBillable: 0, meta: {} };
+      current.total += decimal(segment.hours);
+      if (segment.billable) current.billable += decimal(segment.hours);
+      else current.nonBillable += decimal(segment.hours);
+      current.meta = { group_by: groupBy, key };
+      grouped.set(key, current);
+    }
+    return Array.from(grouped.entries()).map(([id, item]) => ({
+      id,
+      label: item.label,
+      total_hours: toFixedHours(item.total),
+      billable_hours: toFixedHours(item.billable),
+      non_billable_hours: toFixedHours(item.nonBillable),
+      billable_percent: item.total > 0 ? Math.round((item.billable / item.total) * 100) : 0,
+      ...item.meta
+    }));
+  }
+
+  private productivitySeries(segments: WorkSegment[]) {
+    const byDate = new Map<string, { total: number; billable: number; nonBillable: number }>();
+    for (const segment of segments) {
+      const current = byDate.get(segment.work_date) ?? { total: 0, billable: 0, nonBillable: 0 };
+      current.total += decimal(segment.hours);
+      if (segment.billable) current.billable += decimal(segment.hours);
+      else current.nonBillable += decimal(segment.hours);
+      byDate.set(segment.work_date, current);
+    }
+    return Array.from(byDate.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([dateValue, item]) => ({
+        date: dateValue,
+        total_hours: toFixedHours(item.total),
+        billable_hours: toFixedHours(item.billable),
+        non_billable_hours: toFixedHours(item.nonBillable)
+      }));
   }
 
   private decisionHistory(submissionId: UUID) {

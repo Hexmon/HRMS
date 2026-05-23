@@ -1787,6 +1787,30 @@ const timesheetApproverQueueQuerySchema = {
   }
 };
 
+const timesheetAnalyticsQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    date_from: date("Start date", "2026-05-04"),
+    date_to: date("End date", "2026-05-08"),
+    cycle_start: date("Timesheet cycle start", "2026-05-04"),
+    cycle_end: date("Timesheet cycle end", "2026-05-08"),
+    project_id: uuid("Project UUID"),
+    project_code: { type: "string", minLength: 1, example: "PRJ-100" },
+    user_id: uuid("Employee user UUID"),
+    group_by: { type: "string", enum: ["employee", "project", "department", "week"], example: "employee" }
+  }
+};
+
+const timesheetSelectorsQuerySchema = {
+  type: "object",
+  properties: {
+    include: { type: "string", description: "Comma-separated selector groups to include.", example: "projects,tasks,cycles,approvers,rules" },
+    date: date("Context date for generated cycle selectors", "2026-05-04")
+  },
+  additionalProperties: false
+};
+
 const timesheetUserSummarySchema = {
   type: "object",
   required: ["id", "employee_code", "full_name"],
@@ -1944,6 +1968,64 @@ const timesheetDecisionResponseSchema = {
     decision: { type: "string", enum: ["approve", "return", "reject"], example: "approve" },
     audit_event: timesheetActionSchema,
     workflow_history: { type: "array", items: timesheetActionSchema }
+  },
+  additionalProperties: true
+};
+
+const timesheetSubmissionDetailResponseSchema = {
+  ...timesheetSubmissionResponseSchema,
+  required: [...(timesheetSubmissionResponseSchema.required as string[]), "segments", "workflow_history", "last_decision"],
+  properties: {
+    ...timesheetSubmissionResponseSchema.properties,
+    segments: { type: "array", items: { type: "object", additionalProperties: true } },
+    workflow_history: { type: "array", items: timesheetActionSchema },
+    last_decision: { ...timesheetActionSchema, nullable: true }
+  },
+  additionalProperties: true
+};
+
+const timesheetProjectSummaryResponseSchema = {
+  ...paginated({ type: "object", additionalProperties: true }),
+  required: ["items", "page", "page_size", "total", "totals"],
+  properties: {
+    ...paginated({ type: "object", additionalProperties: true }).properties,
+    totals: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const timesheetMissingSubmissionsResponseSchema = {
+  ...paginated({ type: "object", additionalProperties: true }),
+  required: ["items", "page", "page_size", "total", "summary"],
+  properties: {
+    ...paginated({ type: "object", additionalProperties: true }).properties,
+    summary: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const timesheetProductivitySummaryResponseSchema = {
+  type: "object",
+  required: ["cards", "series", "breakdown", "filters"],
+  properties: {
+    cards: { type: "object", additionalProperties: true },
+    series: { type: "array", items: { type: "object", additionalProperties: true } },
+    breakdown: { type: "array", items: { type: "object", additionalProperties: true } },
+    filters: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const timesheetSelectorsResponseSchema = {
+  type: "object",
+  required: ["projects", "tasks", "cycles", "approvers", "workflow_definitions", "rules"],
+  properties: {
+    projects: { type: "array", items: { type: "object", additionalProperties: true } },
+    tasks: { type: "array", items: { type: "object", additionalProperties: true } },
+    cycles: { type: "array", items: { type: "object", additionalProperties: true } },
+    approvers: { type: "array", items: timesheetUserSummarySchema },
+    workflow_definitions: { type: "array", items: { type: "object", additionalProperties: true } },
+    rules: { type: "object", additionalProperties: true }
   },
   additionalProperties: true
 };
@@ -2962,6 +3044,11 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/timesheets/submissions": operation("Timesheets", "Submit timesheet cycle", "Submits a timesheet cycle for approval.", { body: { type: "object", required: ["cycle_start", "cycle_end"], properties: { cycle_start: date("Cycle start", "2026-06-01"), cycle_end: date("Cycle end", "2026-06-07") } }, response200: { type: "object", additionalProperties: true } }),
   "GET /api/v1/timesheets/submissions/my": operation("Timesheets", "My timesheet submissions", "Lists authenticated employee timesheet submissions.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
   "GET /api/v1/timesheets/queue/approver": operation("Timesheets", "Approver queue", "Timesheet approval queue for the authenticated approver with compact project/member metadata, cycle hours, expected-hours context, decision history, and admin override visibility. Omit status for active pending approvals; Admin can use status to inspect returned/rejected history.", { querystring: timesheetApproverQueueQuerySchema, response200: timesheetApproverQueueResponseSchema }),
+  "GET /api/v1/timesheets/projects/summary": operation("Timesheets", "Project timesheet summary", "Returns project-level timesheet rollups, member submitted/missing state, billable split, and cycle totals for the actor's visible project scope.", { querystring: timesheetAnalyticsQuerySchema, response200: timesheetProjectSummaryResponseSchema }),
+  "GET /api/v1/timesheets/missing-submissions": operation("Timesheets", "Missing timesheet submissions", "Returns visible employees with missing or under-submitted timesheet cycles, including manager and reminder context.", { querystring: timesheetAnalyticsQuerySchema, response200: timesheetMissingSubmissionsResponseSchema }),
+  "GET /api/v1/timesheets/productivity-summary": operation("Timesheets", "Timesheet productivity summary", "Returns backend-derived productivity cards, time series, and breakdown rows grouped by employee, project, department, or week.", { querystring: timesheetAnalyticsQuerySchema, response200: timesheetProductivitySummaryResponseSchema }),
+  "GET /api/v1/timesheets/selectors": operation("Timesheets", "Timesheet selectors", "Returns visible projects, task selectors, cycles, approvers, workflow definitions, and rules for timesheet forms.", { querystring: timesheetSelectorsQuerySchema, response200: timesheetSelectorsResponseSchema }),
+  "GET /api/v1/timesheets/submissions/{id}": operation("Timesheets", "Timesheet submission detail", "Returns one visible submission with segments, project/member/hour metadata, workflow history, and latest decision.", { params: idParamSchema, response200: timesheetSubmissionDetailResponseSchema }),
   "POST /api/v1/timesheets/submissions/{id}/approve": operation("Timesheets", "Timesheet decision", "Approves, rejects, or returns a timesheet submission with OCC expected_version. Reject/return require remarks. The response preserves top-level submission fields and adds previous_status, next_status, audit_event, workflow_history, member/project/hour metadata, and allowed next actions.", { params: idParamSchema, body: { type: "object", required: ["decision", "expected_version"], properties: { decision: { type: "string", enum: ["approve", "reject", "return"], example: "approve" }, remarks: { type: "string", description: "Required for reject/return decisions. Trimmed before storage.", example: "Approved." }, expected_version: { type: "integer", minimum: 1, example: 1 } } }, response200: timesheetDecisionResponseSchema }),
   "GET /api/v1/timesheets/workflow-definitions": operation("Timesheets", "List workflow definitions", "Lists timesheet workflow definitions.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
   "POST /api/v1/timesheets/workflow-definitions": operation("Admin / Configuration", "Upsert workflow definition", "Creates or updates a timesheet workflow definition. Admin role required by backend policy.", { body: { type: "object", required: ["name", "definition"], properties: { name: { type: "string", example: "Default Manager Approval" }, definition: { type: "object", required: ["approver_strategy"], properties: { approver_strategy: { type: "string", enum: ["ltree_manager", "project_manager", "hr_manager"], example: "ltree_manager" }, require_billable_review: { type: "boolean", default: false } } } } }, response200: { type: "object", additionalProperties: true } })

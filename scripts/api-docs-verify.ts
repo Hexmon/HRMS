@@ -202,6 +202,8 @@ const listOperations = new Set([
   "GET /api/v1/timesheets/work-segments",
   "GET /api/v1/timesheets/submissions/my",
   "GET /api/v1/timesheets/queue/approver",
+  "GET /api/v1/timesheets/projects/summary",
+  "GET /api/v1/timesheets/missing-submissions",
   "GET /api/v1/timesheets/workflow-definitions",
   "GET /api/v1/attendance/punches/my",
   "GET /api/v1/attendance/summary/my",

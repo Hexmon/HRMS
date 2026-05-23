@@ -117,6 +117,11 @@ const expectedOperations = [
   "GET /api/v1/reports/expenses/payments",
   "GET /api/v1/reports/expenses/register",
   "GET /api/v1/timesheets/queue/approver",
+  "GET /api/v1/timesheets/missing-submissions",
+  "GET /api/v1/timesheets/productivity-summary",
+  "GET /api/v1/timesheets/projects/summary",
+  "GET /api/v1/timesheets/selectors",
+  "GET /api/v1/timesheets/submissions/{id}",
   "GET /api/v1/timesheets/submissions/my",
   "GET /api/v1/timesheets/work-segments",
   "GET /api/v1/timesheets/workflow-definitions",
@@ -367,6 +372,8 @@ const listOperations = [
   "GET /api/v1/timesheets/work-segments",
   "GET /api/v1/timesheets/submissions/my",
   "GET /api/v1/timesheets/queue/approver",
+  "GET /api/v1/timesheets/projects/summary",
+  "GET /api/v1/timesheets/missing-submissions",
   "GET /api/v1/timesheets/workflow-definitions",
   "GET /api/v1/attendance/punches/my",
   "GET /api/v1/attendance/summary/my",
@@ -588,7 +595,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(165);
+    expect(rows.length).toBe(170);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

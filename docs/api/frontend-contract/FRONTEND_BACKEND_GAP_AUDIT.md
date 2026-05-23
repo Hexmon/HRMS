@@ -11,9 +11,9 @@ This audit maps the current Hawkaii HRMS frontend to the custom backend contract
 
 ## API Count Summary
 
-Current documented backend contract: **165 operations** in `openapi.json` after Phase 4 Asset additions API completion.
+Current documented backend contract: **170 operations** in `openapi.json` after Phase 4 Timesheet enhancements API completion.
 
-- **163** operations are under `/api/v1/**`.
+- **168** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
 - **0** documented backend operations currently need deletion from the OpenAPI pack because Reviewer/Director APIs are not present there.
 
@@ -21,11 +21,11 @@ Disjoint implementation counts for backend planning:
 
 | Category | Count | Meaning |
 | --- | ---: | --- |
-| Existing APIs ready to integrate as-is | 165 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
+| Existing APIs ready to integrate as-is | 170 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
 | Existing APIs to update in place | 0 | Phase 1A-1C existing API expansions have landed; new gaps should be added as explicit new endpoints. |
 | Existing APIs to delete | 0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
-| New APIs remaining to add | 50 | Remaining first-pass count needed after Phase 4 Asset additions API completion. |
-| Target contract size after additions | 215 | `165 current + 50 remaining`; Asset additions added 10 operations after UI audit confirmed request, acknowledgement, maintenance, vendor, and recovery needs. |
+| New APIs remaining to add | 45 | Remaining first-pass count needed after Phase 4 Timesheet enhancements API completion. |
+| Target contract size after additions | 215 | `170 current + 45 remaining`; Timesheet enhancements added 5 operations after UI audit confirmed project summary, missing submission, productivity, detail, and selector needs. |
 
 Existing APIs updated in place during earlier phases:
 
@@ -53,7 +53,7 @@ Minimum new API operation count by frontend area:
 | EMS | 2 | Primary profile, profile requests, letters, policies, generic requests, and HR queues are implemented; EMS-specific document wrapper endpoints remain. |
 | Attendance | 3 | Daily calendar endpoint, manager queue alias if needed by UI, reports/exports. Punches, monthly calendar, summaries, regularization submit/list/decision, and exceptions are implemented. |
 | Leave/WFH | 1 | Primary balances, leave apply/cancel/decision, WFH apply/decision, HR monitor, and holiday list/upsert are implemented; export/report job endpoint remains. |
-| Timesheets | 5 | Project aggregations, missing submissions, productivity summaries, submission detail, selector metadata. |
+| Timesheets | 0 | Work segments, submissions, approver queue, decisions, workflow definitions, project aggregations, missing submissions, productivity summaries, submission detail, and selector metadata are implemented. |
 | Projects/utilization | 0 | Project CRUD, members, allocations, modules/milestones, project documents, project summaries, and utilization/bench/overload analytics are implemented. |
 | Expenses/finance | 4 | Expense metadata/policy requirements, dashboard summary, withdraw, clarification thread. |
 | Assets | 0 | Requests, decisions, cancellation, acknowledgements, maintenance, vendor views, and recovery queues are implemented; asset reports remain in Reports. |
@@ -61,7 +61,7 @@ Minimum new API operation count by frontend area:
 | Reports | 10 | HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, export list/detail beyond existing expense exports. |
 | Admin settings | 20 | Company profile, master data, RBAC, workflows, policies, email templates, notification channels, security settings, audit logs. |
 | Notifications | 0 | Feed, unread count, mark read, and mark all read are implemented; notification channel preferences remain in Admin settings. |
-| **Total remaining** | **50** | Remaining operation count for full visible frontend coverage after Phase 4 Asset additions. |
+| **Total remaining** | **45** | Remaining operation count for full visible frontend coverage after Phase 4 Timesheet enhancements. |
 
 ## Expense Flow Alignment
 
@@ -97,7 +97,7 @@ Remove:
 | EMS                        | `/ems/*`                                                                                                    | Profile, profile update requests, HR profile queue/decisions, generic employee requests, HR request queue, HR letters, policy acknowledgements, and Documents APIs for document list/download/verify. | EMS-specific employee document wrapper endpoints, onboarding/probation/exits/policy management/letter generation admin workflows.                                                 |
 | Attendance                 | `/attendance/*`                                                                                             | Punches, my punch list, my/team summaries, monthly calendar, regularization submit/list/decision, and exceptions. | Daily calendar alias if required, manager queue alias if required, attendance reports/exports.                                                                                    |
 | Leave/WFH                  | `/leave-wfh/*`                                                                                              | Balances, apply leave, apply WFH, cancel leave, manager decisions, HR monitor, holiday list, and holiday upsert. | Leave/WFH export/report job and later reporting parity.                                                                                                                          |
-| Timesheets                 | `/timesheet/*`                                                                                              | Work segments, submissions, approver queue, workflow definitions.            | Project view aggregations, missing submissions, productivity summaries, richer rejection/return remarks, project-selector metadata.                                               |
+| Timesheets                 | `/timesheet/*`                                                                                              | Work segments, submissions, approver queue, workflow definitions, project summaries, missing submissions, productivity summary, submission detail, and selectors. | Timesheet report export jobs and broader report parity remain in the Reports phase.                                                                                                |
 | Projects/utilization       | `/projects`, `/projects/:id`, `/team-utilization`                                                           | Project CRUD, members, allocations, modules/milestones, project documents, project summary, and team utilization. | Project report parity, timesheet submission detail, document upload/attach UX, and e2e/user-flow coverage.                                                                        |
 | Expenses/finance           | `/expenses/*`                                                                                               | Good baseline coverage.                                                      | Keep current Manager -> Finance contract; add frontend report shapes that match current expense dashboard cards and registers.                                                    |
 | Assets                     | `/assets/*`                                                                                                 | Inventory, detail, assign, return, QR scan, license APIs, termination event, requests, acknowledgements, maintenance records, vendor views, and recovery queues.                       | Asset report endpoint parity remains planned under Reports.                                                                                                                     |

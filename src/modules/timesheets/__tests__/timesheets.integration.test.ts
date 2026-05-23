@@ -224,4 +224,89 @@ describe("timesheets", () => {
     expect(adminRejectedView.statusCode).toBe(200);
     expect(adminRejectedView.json().items.map((item: { id: string }) => item.id)).toContain(rejectedSubmission.id);
   });
+
+  it("returns project rollups, missing submissions, productivity, selectors, and submission detail", async () => {
+    const employee = await loginAs(app, "E1");
+    const manager = await loginAs(app, "D1");
+    const admin = await loginAs(app, "ADM");
+
+    await createSegment(employee.token, {
+      work_date: "2026-06-01",
+      project_code: "HAW-HRMS",
+      task_code: "API",
+      hours: "8.00",
+      billable: false,
+      description: "Timesheet enhancements"
+    });
+    await createSegment(employee.token, {
+      work_date: "2026-06-02",
+      project_code: "HAW-HRMS",
+      task_code: "QA",
+      hours: "4.00",
+      billable: true
+    });
+    const submission = await submitCycle(employee.token, "2026-06-01", "2026-06-07");
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/v1/timesheets/submissions/${submission.id}`,
+      headers: authHeader(manager.token)
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({
+      id: submission.id,
+      employee: { employee_code: "E1" },
+      hours_summary: { submitted_hours: "12.00", expected_hours: "40.00" }
+    });
+    expect(detail.json().segments).toHaveLength(2);
+    expect(detail.json().workflow_history.map((action: { decision: string }) => action.decision)).toEqual(["submitted"]);
+
+    const projectSummary = await app.inject({
+      method: "GET",
+      url: "/api/v1/timesheets/projects/summary?page=1&page_size=10&cycle_start=2026-06-01&cycle_end=2026-06-07&project_code=HAW-HRMS",
+      headers: authHeader(manager.token)
+    });
+    expect(projectSummary.statusCode).toBe(200);
+    const projectBody = projectSummary.json();
+    expect(projectBody.items[0]).toMatchObject({
+      project: { project_code: "HAW-HRMS" },
+      totals: { total_hours: "12.00", billable_hours: "4.00", missing_count: 1 }
+    });
+    expect(projectBody.items[0].members.map((member: { user: { employee_code: string } }) => member.user.employee_code)).toEqual(expect.arrayContaining(["E1", "E2"]));
+
+    const missing = await app.inject({
+      method: "GET",
+      url: "/api/v1/timesheets/missing-submissions?page=1&page_size=10&cycle_start=2026-06-01&cycle_end=2026-06-07",
+      headers: authHeader(manager.token)
+    });
+    expect(missing.statusCode).toBe(200);
+    expect(missing.json().summary).toMatchObject({ expected_hours: "40.00" });
+    expect(missing.json().items.map((item: { user: { employee_code: string }; status: string }) => [item.user.employee_code, item.status])).toEqual(
+      expect.arrayContaining([
+        ["E1", "under_submitted"],
+        ["E2", "missing"]
+      ])
+    );
+
+    const productivity = await app.inject({
+      method: "GET",
+      url: "/api/v1/timesheets/productivity-summary?date_from=2026-06-01&date_to=2026-06-07&project_code=HAW-HRMS&group_by=project",
+      headers: authHeader(admin.token)
+    });
+    expect(productivity.statusCode).toBe(200);
+    expect(productivity.json()).toMatchObject({
+      cards: { total_hours: "12.00", billable_hours: "4.00", non_billable_hours: "8.00", billable_percent: 33 }
+    });
+    expect(productivity.json().breakdown[0]).toMatchObject({ id: "HAW-HRMS", total_hours: "12.00" });
+
+    const selectors = await app.inject({
+      method: "GET",
+      url: "/api/v1/timesheets/selectors?include=projects,tasks,cycles,approvers,rules&date=2026-06-01",
+      headers: authHeader(employee.token)
+    });
+    expect(selectors.statusCode).toBe(200);
+    expect(selectors.json().projects.map((project: { project_code: string }) => project.project_code)).toContain("HAW-HRMS");
+    expect(selectors.json().tasks.map((task: { task_code: string }) => task.task_code)).toEqual(expect.arrayContaining(["API", "QA"]));
+    expect(selectors.json().rules).toMatchObject({ target_weekly_hours: 40 });
+  });
 });
