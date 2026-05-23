@@ -299,8 +299,8 @@ Frontend:
 | DB verifier fix | `fix(db): make cross-schema verifier use test env` | Committed in `hrms_backend` as `0bfa017` |
 | Expense enhancements backend | `feat(expenses): implement metadata summary withdraw and clarifications` | Committed in `hrms_backend` as `1fea48a` |
 | Expense enhancements frontend | `feat(expenses): connect metadata summary and clarification flows` | Committed in `hrms-client` as `61ac090` |
-| Admin company profile backend | `feat(admin): implement company profile settings APIs` | Pending commit |
-| Admin company profile frontend | `feat(admin): connect company settings to backend API` | Pending commit |
+| Admin company profile backend | `feat(admin): implement company profile settings APIs` | Committed in `hrms_backend` as `64ee990` |
+| Admin company profile frontend | `feat(admin): connect company settings to backend API` | Committed in `hrms-client` as `0808920` |
 
 ## Next Steps
 
