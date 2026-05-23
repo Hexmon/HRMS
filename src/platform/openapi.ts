@@ -858,6 +858,101 @@ const adminEmailTemplateUpdateBody = {
   additionalProperties: false
 };
 
+const adminNotificationEventKeys = [
+  "employee_invited",
+  "leave_requested",
+  "timesheet_submitted",
+  "expense_submitted",
+  "payment_released",
+  "asset_assigned",
+  "ticket_assigned",
+  "sla_breached"
+] as const;
+
+const adminNotificationChannelSchema = {
+  type: "object",
+  required: [
+    "id",
+    "event_key",
+    "key",
+    "module",
+    "label",
+    "in_app_enabled",
+    "inApp",
+    "email_enabled",
+    "email",
+    "push_enabled",
+    "push",
+    "status",
+    "active",
+    "updated_at",
+    "version"
+  ],
+  properties: {
+    id: uuid("Admin notification channel UUID"),
+    event_key: { type: "string", enum: [...adminNotificationEventKeys], example: "leave_requested" },
+    key: { type: "string", enum: [...adminNotificationEventKeys], example: "leave_requested" },
+    module: { type: "string", example: "leave_wfh" },
+    label: { type: "string", example: "Leave requested" },
+    in_app_enabled: { type: "boolean", example: true },
+    inApp: { type: "boolean", example: true },
+    email_enabled: { type: "boolean", example: true },
+    email: { type: "boolean", example: true },
+    push_enabled: { type: "boolean", example: false },
+    push: { type: "boolean", example: false },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    active: { type: "boolean", example: true },
+    updated_at: dateTime("Admin notification channel update timestamp"),
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminNotificationChannelsResponse = {
+  type: "object",
+  required: ["items", "channels", "events", "versions", "version"],
+  properties: {
+    items: { type: "array", items: adminNotificationChannelSchema },
+    channels: { type: "array", items: adminNotificationChannelSchema },
+    events: { type: "array", items: adminNotificationChannelSchema },
+    versions: {
+      type: "object",
+      additionalProperties: { type: "integer", minimum: 1 },
+      example: { leave_requested: 1, expense_submitted: 1 }
+    },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminNotificationChannelInputSchema = {
+  type: "object",
+  properties: {
+    event_key: { type: "string", enum: [...adminNotificationEventKeys], example: "leave_requested" },
+    key: { type: "string", enum: [...adminNotificationEventKeys], example: "leave_requested" },
+    label: { type: "string", minLength: 2, maxLength: 160, example: "Leave requested" },
+    in_app_enabled: { type: "boolean", example: true },
+    inApp: { type: "boolean", example: true },
+    email_enabled: { type: "boolean", example: true },
+    email: { type: "boolean", example: true },
+    push_enabled: { type: "boolean", example: false },
+    push: { type: "boolean", example: false },
+    active: { type: "boolean", example: true },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" }
+  },
+  additionalProperties: false
+};
+
+const adminNotificationChannelsUpdateBody = {
+  type: "object",
+  required: ["channels", "expected_version"],
+  properties: {
+    channels: { type: "array", minItems: 1, maxItems: 8, items: adminNotificationChannelInputSchema },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
 const userReferenceSchema = {
   type: "object",
   required: ["id", "employee_code", "full_name"],
@@ -3713,6 +3808,30 @@ const routeDocs: Record<string, RouteSchema> = {
         properties: { template: adminEmailTemplateSchema, version: { type: "integer", example: 2 } },
         additionalProperties: false
       }
+    }
+  ),
+  "GET /api/v1/admin/notification-channels": operation(
+    "Admin / Configuration",
+    "List admin notification channels",
+    "Lists Admin Settings notification event channel preferences. This records configured channels only; provider secrets and runtime delivery filtering remain in later production hardening.",
+    {
+      querystring: {
+        type: "object",
+        properties: {
+          module: { type: "string", example: "leave_wfh" },
+          active_only: { type: "boolean", example: true }
+        }
+      },
+      response200: adminNotificationChannelsResponse
+    }
+  ),
+  "PUT /api/v1/admin/notification-channels": operation(
+    "Admin / Configuration",
+    "Update admin notification channels",
+    "Updates Admin Settings notification event channel preferences with optimistic concurrency. This does not expose SMTP, push, or provider secrets.",
+    {
+      body: adminNotificationChannelsUpdateBody,
+      response200: adminNotificationChannelsResponse
     }
   ),
   "GET /api/v1/platform/finance-governance": operation(

@@ -103,6 +103,19 @@ export const AdminEmailTemplateKeys = [
 
 export type AdminEmailTemplateKey = (typeof AdminEmailTemplateKeys)[number];
 
+export const AdminNotificationEventKeys = [
+  "employee_invited",
+  "leave_requested",
+  "timesheet_submitted",
+  "expense_submitted",
+  "payment_released",
+  "asset_assigned",
+  "ticket_assigned",
+  "sla_breached"
+] as const;
+
+export type AdminNotificationEventKey = (typeof AdminNotificationEventKeys)[number];
+
 export const EmploymentStatuses = {
   Active: "active",
   Inactive: "inactive",

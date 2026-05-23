@@ -309,6 +309,28 @@ export const adminEmailTemplates = platform.table(
   ]
 );
 
+export const adminNotificationChannels = platform.table(
+  "admin_notification_channels",
+  {
+    id: uuidPk.defaultRandom(),
+    eventKey: text("event_key").notNull(),
+    module: text("module").notNull(),
+    label: text("label").notNull(),
+    inAppEnabled: boolean("in_app_enabled").notNull().default(true),
+    emailEnabled: boolean("email_enabled").notNull().default(true),
+    pushEnabled: boolean("push_enabled").notNull().default(false),
+    status: text("status").notNull().default("active"),
+    createdAt,
+    updatedAt,
+    deletedAt,
+    version
+  },
+  (table) => [
+    uniqueIndex("platform_admin_notification_channels_key_uq").on(table.eventKey),
+    index("platform_admin_notification_channels_module_status_idx").on(table.module, table.status)
+  ]
+);
+
 export const processedEvents = platform.table("processed_events", {
   consumerName: text("consumer_name").notNull(),
   eventId: uuid("event_id").notNull(),
@@ -1326,6 +1348,7 @@ export const schema = {
   adminWorkflows,
   adminPolicies,
   adminEmailTemplates,
+  adminNotificationChannels,
   processedEvents,
   expenseTickets,
   expenseLineItems,

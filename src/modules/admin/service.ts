@@ -1,4 +1,5 @@
 import {
+  AdminNotificationEventKeys,
   AdminPolicyKeys,
   AdminWorkflowApproverTypes,
   RbacPermissionActions,
@@ -6,6 +7,8 @@ import {
   Roles,
   type AdminEmailTemplateKey,
   type AdminEmailTemplateRecord,
+  type AdminNotificationChannelRecord,
+  type AdminNotificationEventKey,
   type AdminPolicyConfigRecord,
   type AdminPolicyKey,
   type AdminWorkflowConfigRecord,
@@ -23,6 +26,9 @@ import { AdminRepository } from "./repository.js";
 import type {
   AdminEmailTemplatesQuery,
   AdminEmailTemplateUpdateInput,
+  AdminNotificationChannelInput,
+  AdminNotificationChannelsQuery,
+  AdminNotificationChannelsUpdateInput,
   AdminPoliciesQuery,
   AdminPolicyUpdateInput,
   AdminWorkflowStageInput,
@@ -40,7 +46,7 @@ import type {
   RbacRolesQuery,
   RbacRoleUpdateInput
 } from "./schemas.js";
-import { assertCanManageAdminSettings, assertCanManageEmailTemplates, assertCanManageMasterData, assertCanManagePolicySettings, assertCanManageRbac, assertCanManageWorkflowSettings } from "./policy.js";
+import { assertCanManageAdminSettings, assertCanManageEmailTemplates, assertCanManageMasterData, assertCanManageNotificationChannels, assertCanManagePolicySettings, assertCanManageRbac, assertCanManageWorkflowSettings } from "./policy.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 
 function page<T>(items: readonly T[], pageNumber = 1, pageSize = 25): Paginated<T> {
@@ -126,6 +132,24 @@ export class AdminService {
     };
   }
 
+  listAdminNotificationChannels(actor: AuthUser, query: AdminNotificationChannelsQuery): AdminNotificationChannelListResponse {
+    assertCanManageNotificationChannels(actor);
+    const moduleFilter = query.module?.trim().toLowerCase();
+    const channels = this.repository
+      .listAdminNotificationChannels()
+      .filter((channel) => !moduleFilter || channel.module.toLowerCase() === moduleFilter || channel.event_key.toLowerCase() === moduleFilter)
+      .filter((channel) => !query.active_only || channel.status === "active")
+      .sort((a, b) => adminNotificationSortOrder(a.event_key) - adminNotificationSortOrder(b.event_key))
+      .map((channel) => presentAdminNotificationChannel(channel));
+    return {
+      items: channels,
+      channels,
+      events: channels,
+      versions: Object.fromEntries(channels.map((channel) => [channel.event_key, channel.version])),
+      version: maxAdminNotificationVersion(channels)
+    };
+  }
+
   updateAdminWorkflow(actor: AuthUser, workflowKey: AdminWorkflowKey, input: AdminWorkflowUpdateInput): AdminWorkflowMutationResponse {
     assertCanManageWorkflowSettings(actor);
     const stages = input.stages ? normalizeWorkflowStages(input.stages, workflowKey) : undefined;
@@ -194,6 +218,42 @@ export class AdminService {
       idempotencyKey: `admin.email_template.updated:${template.id}:${template.version}`
     });
     return { template: presentAdminEmailTemplate(template), version: template.version };
+  }
+
+  updateAdminNotificationChannels(actor: AuthUser, input: AdminNotificationChannelsUpdateInput): AdminNotificationChannelListResponse {
+    assertCanManageNotificationChannels(actor);
+    const normalizedChannels = input.channels.map((channel) => normalizeNotificationChannelInput(channel));
+    const channels = this.repository.updateAdminNotificationChannels({
+      channels: normalizedChannels,
+      expected_version: input.expected_version
+    });
+    const aggregateId =
+      channels.find((channel) => channel.event_key === normalizedChannels[0]?.event_key)?.id ??
+      channels[0]?.id;
+    if (!aggregateId) {
+      throw badRequest("No notification channels are available to update.", { field: "channels" });
+    }
+    appendOutboxEvent(this.store, {
+      aggregateType: "admin_notification_channels",
+      aggregateId,
+      eventType: "admin.notification_channels.updated",
+      payload: {
+        actor_user_id: actor.id,
+        event_keys: normalizedChannels.map((channel) => channel.event_key),
+        changed_count: normalizedChannels.length
+      },
+      idempotencyKey: `admin.notification_channels.updated:${input.expected_version}:${normalizedChannels.map((channel) => channel.event_key).join(",")}`
+    });
+    const presented = channels
+      .sort((a, b) => adminNotificationSortOrder(a.event_key) - adminNotificationSortOrder(b.event_key))
+      .map((channel) => presentAdminNotificationChannel(channel));
+    return {
+      items: presented,
+      channels: presented,
+      events: presented,
+      versions: Object.fromEntries(presented.map((channel) => [channel.event_key, channel.version])),
+      version: maxAdminNotificationVersion(presented)
+    };
   }
 
   listRbacRoles(actor: AuthUser, query: RbacRolesQuery): Paginated<RbacRoleResponse> {
@@ -592,6 +652,32 @@ export interface AdminEmailTemplateMutationResponse {
   version: number;
 }
 
+export interface AdminNotificationChannelResponse {
+  id: string;
+  event_key: AdminNotificationEventKey;
+  key: AdminNotificationEventKey;
+  module: string;
+  label: string;
+  in_app_enabled: boolean;
+  inApp: boolean;
+  email_enabled: boolean;
+  email: boolean;
+  push_enabled: boolean;
+  push: boolean;
+  status: "active" | "inactive";
+  active: boolean;
+  updated_at: string;
+  version: number;
+}
+
+export interface AdminNotificationChannelListResponse {
+  items: AdminNotificationChannelResponse[];
+  channels: AdminNotificationChannelResponse[];
+  events: AdminNotificationChannelResponse[];
+  versions: Record<string, number>;
+  version: number;
+}
+
 export interface CompanyProfileResponse {
   id: string;
   company_name: string;
@@ -734,6 +820,26 @@ function presentAdminEmailTemplate(template: AdminEmailTemplateRecord): AdminEma
   };
 }
 
+function presentAdminNotificationChannel(channel: AdminNotificationChannelRecord): AdminNotificationChannelResponse {
+  return {
+    id: channel.id,
+    event_key: channel.event_key,
+    key: channel.event_key,
+    module: channel.module,
+    label: channel.label,
+    in_app_enabled: channel.in_app_enabled,
+    inApp: channel.in_app_enabled,
+    email_enabled: channel.email_enabled,
+    email: channel.email_enabled,
+    push_enabled: channel.push_enabled,
+    push: channel.push_enabled,
+    status: channel.status,
+    active: channel.status === "active",
+    updated_at: channel.updated_at,
+    version: channel.version
+  };
+}
+
 function normalizeWorkflowStages(stages: readonly AdminWorkflowStageInput[], workflowKey: AdminWorkflowKey): AdminWorkflowStageRecord[] {
   const seen = new Set<string>();
   return stages.map((stage, index) => {
@@ -765,6 +871,29 @@ function normalizeWorkflowStages(stages: readonly AdminWorkflowStageInput[], wor
 
 function adminWorkflowSortOrder(workflowKey: AdminWorkflowKey): number {
   return ["leave", "wfh", "timesheet", "expense", "asset_request", "helpdesk_escalation"].indexOf(workflowKey);
+}
+
+function adminNotificationSortOrder(eventKey: AdminNotificationEventKey): number {
+  return AdminNotificationEventKeys.indexOf(eventKey);
+}
+
+function normalizeNotificationChannelInput(channel: AdminNotificationChannelInput) {
+  const eventKey = channel.event_key ?? channel.key;
+  if (!eventKey || !AdminNotificationEventKeys.includes(eventKey)) {
+    throw badRequest("Notification event key is required.", { field: "event_key" });
+  }
+  return {
+    event_key: eventKey,
+    label: channel.label,
+    in_app_enabled: channel.in_app_enabled ?? channel.inApp,
+    email_enabled: channel.email_enabled ?? channel.email,
+    push_enabled: channel.push_enabled ?? channel.push,
+    status: channel.status ?? (channel.active === undefined ? undefined : channel.active ? "active" : "inactive")
+  };
+}
+
+function maxAdminNotificationVersion(channels: readonly { version: number }[]): number {
+  return Math.max(1, ...channels.map((channel) => channel.version));
 }
 
 function normalizeAdminPolicyConfig(

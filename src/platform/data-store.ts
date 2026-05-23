@@ -37,6 +37,7 @@ import type {
   ProjectMilestoneRecord,
   ProjectRecord,
   AdminEmailTemplateRecord,
+  AdminNotificationChannelRecord,
   AdminPolicyConfigRecord,
   AdminWorkflowConfigRecord,
   RbacRolePermissionRecord,
@@ -71,6 +72,8 @@ import {
   ProjectTypes,
   AdminEmailTemplateKeys,
   type AdminEmailTemplateKey,
+  AdminNotificationEventKeys,
+  type AdminNotificationEventKey,
   AdminPolicyKeys,
   type AdminPolicyKey,
   AdminWorkflowApproverTypes,
@@ -341,6 +344,7 @@ export interface DataStore {
   adminWorkflows: AdminWorkflowConfigRecord[];
   adminPolicies: AdminPolicyConfigRecord[];
   adminEmailTemplates: AdminEmailTemplateRecord[];
+  adminNotificationChannels: AdminNotificationChannelRecord[];
   users: CoreUser[];
   userCredentials: UserCredentialRecord[];
   authTokens: AuthTokenRecord[];
@@ -875,12 +879,51 @@ export function buildDefaultAdminEmailTemplates(created: string): AdminEmailTemp
     }));
 }
 
+export function buildDefaultAdminNotificationChannels(created: string): AdminNotificationChannelRecord[] {
+  const defaults: Array<{
+    key: AdminNotificationEventKey;
+    module: string;
+    label: string;
+    inApp: boolean;
+    email: boolean;
+    push: boolean;
+  }> = [
+    { key: "employee_invited", module: "auth", label: "Employee invited", inApp: true, email: true, push: false },
+    { key: "leave_requested", module: "leave_wfh", label: "Leave requested", inApp: true, email: true, push: false },
+    { key: "timesheet_submitted", module: "timesheets", label: "Timesheet submitted", inApp: true, email: false, push: false },
+    { key: "expense_submitted", module: "expenses", label: "Expense submitted", inApp: true, email: true, push: false },
+    { key: "payment_released", module: "expenses", label: "Payment released", inApp: true, email: true, push: false },
+    { key: "asset_assigned", module: "assets", label: "Asset assigned", inApp: true, email: true, push: false },
+    { key: "ticket_assigned", module: "helpdesk", label: "Helpdesk ticket assigned", inApp: true, email: true, push: false },
+    { key: "sla_breached", module: "helpdesk", label: "SLA breached", inApp: true, email: true, push: true }
+  ];
+
+  const allowedKeys = new Set(AdminNotificationEventKeys);
+  return defaults
+    .filter((channel) => allowedKeys.has(channel.key))
+    .map((channel) => ({
+      id: uuidFromName(`admin-notification-channel-${channel.key}`),
+      event_key: channel.key,
+      module: channel.module,
+      label: channel.label,
+      in_app_enabled: channel.inApp,
+      email_enabled: channel.email,
+      push_enabled: channel.push,
+      status: "active",
+      created_at: created,
+      updated_at: created,
+      deleted_at: null,
+      version: 1
+    }));
+}
+
 export function createMemoryDataStore(): MemoryDataStore {
   const created = nowIso();
   const defaultRbac = buildDefaultRbac(created);
   const defaultAdminWorkflows = buildDefaultAdminWorkflows(created);
   const defaultAdminPolicies = buildDefaultAdminPolicies(created);
   const defaultAdminEmailTemplates = buildDefaultAdminEmailTemplates(created);
+  const defaultAdminNotificationChannels = buildDefaultAdminNotificationChannels(created);
   const departments: Department[] = [
     {
       id: seedIds.departmentSales,
@@ -1641,6 +1684,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     adminWorkflows: defaultAdminWorkflows,
     adminPolicies: defaultAdminPolicies,
     adminEmailTemplates: defaultAdminEmailTemplates,
+    adminNotificationChannels: defaultAdminNotificationChannels,
     users,
     userCredentials,
     authTokens: [],

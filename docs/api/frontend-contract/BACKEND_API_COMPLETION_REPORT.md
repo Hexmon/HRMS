@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 193 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 195 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 23 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 216 | Regenerate frontend client only after each backend phase lands. | `193 current + 23 remaining`; Admin email template list/update APIs are now available. |
+| Planned new APIs | 22 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 217 | Regenerate frontend client only after each backend phase lands. | `195 current + 22 remaining`; Admin notification channel read/update APIs are now available, and the target increased by one UI-required read endpoint. |
 
 ## Development Phases
 
@@ -26,7 +26,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Module tag | Operations | Ready surface |
 | --- | ---: | --- |
-| Admin / Configuration | 25 | Company profile read/update, department/designation master-data management, RBAC role/permission configuration, workflow configuration, policy configuration, email template configuration, finance governance, manager backups, and timesheet workflow definition upsert. |
+| Admin / Configuration | 27 | Company profile read/update, department/designation master-data management, RBAC role/permission configuration, workflow configuration, policy configuration, email template configuration, notification channel configuration, finance governance, manager backups, and timesheet workflow definition upsert. |
 | Assets | 19 | Inventory, detail, assignment/return, QR scan, license lifecycle, employee termination event, requests, acknowledgements, maintenance, vendors, and recovery queue. |
 | Auth & Sessions | 11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
 | Core / Employees & Hierarchy | 11 | User list/detail/subtree, org selectors, employee create/update, lifecycle activation/deactivation, login setup/disable, and role replacement. |
@@ -79,7 +79,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **23**.
+Total remaining planned new operations: **22**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -264,7 +264,7 @@ Total remaining planned new operations: **23**.
 | GET | `/api/v1/reports/exports` | `/reports/exports` | List export jobs. | Authenticated; jobs scoped by creator/role. | page, page_size, status, report_type | items[], pagination | 403 out-of-scope. | Planned / Not Implemented |
 | GET | `/api/v1/reports/exports/{id}` | `/reports/exports/:id` | Get export job detail and backend download reference when ready. | Creator, Admin, or Auditor by scope. | Path id | job, status, download_document_id or download_url token via document API | 404 unknown; do not expose storage credentials. | Planned / Not Implemented |
 
-### Admin Settings (20 planned APIs)
+### Admin Settings (21 planned APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -287,7 +287,8 @@ Total remaining planned new operations: **23**.
 | PUT | `/api/v1/admin/policies/{policy_key}` | `/admin-settings/policies` | Update policy. | Admin/module owner. | policy config, expected_version | policy, version | 409 stale/invalid policy. | Implemented in Phase 5 Admin policies |
 | GET | `/api/v1/admin/email-templates` | `/admin-settings/templates` | List email templates. | Admin. | module optional, locale optional | templates[] | Do not return SMTP secrets. | Implemented in Phase 5 Admin email templates |
 | PUT | `/api/v1/admin/email-templates/{template_key}` | `/admin-settings/templates` | Update email template subject/body/status. | Admin. | template fields, expected_version | template, version | 409 stale template version; no SMTP secrets. | Implemented in Phase 5 Admin email templates |
-| PUT | `/api/v1/admin/notification-channels` | `/admin-settings/notifications` | Update notification channel settings. | Admin. | channels config, expected_version | channels, version | 409 stale/invalid channel config. | Planned / Not Implemented |
+| GET | `/api/v1/admin/notification-channels` | `/admin-settings/notifications` | List notification channel settings. | Admin. | module optional, active_only optional | channels, events, versions | Do not return provider secrets. | Implemented in Phase 5 Admin notification channels |
+| PUT | `/api/v1/admin/notification-channels` | `/admin-settings/notifications` | Update notification channel settings. | Admin. | channels config, expected_version | channels, version | 409 stale/invalid channel config. | Implemented in Phase 5 Admin notification channels |
 | GET | `/api/v1/admin/audit-log` | `/admin-settings/audit` | Admin settings audit log. | Admin/auditor. | page, page_size, module, actor_user_id, date_range | items[], pagination | Redact secrets; 403 non-auditor/admin. | Planned / Not Implemented |
 
 ### Notifications (4 implemented APIs)

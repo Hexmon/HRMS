@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AdminEmailTemplateKeys, AdminPolicyKeys, AdminWorkflowApproverTypes, AdminWorkflowKeys } from "#shared";
+import { AdminEmailTemplateKeys, AdminNotificationEventKeys, AdminPolicyKeys, AdminWorkflowApproverTypes, AdminWorkflowKeys } from "#shared";
 
 export const masterDataQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -55,6 +55,11 @@ export const adminEmailTemplatesQuerySchema = z.object({
   active_only: z.coerce.boolean().optional()
 });
 
+export const adminNotificationChannelsQuerySchema = z.object({
+  module: z.string().max(80).optional(),
+  active_only: z.coerce.boolean().optional()
+});
+
 const workflowStageSchema = z.object({
   id: z.string().min(1).max(80).optional(),
   order: z.number().int().min(1).max(20).optional(),
@@ -106,6 +111,25 @@ export const adminEmailTemplateUpdateSchema = z.object({
 
 export const emailTemplateKeyParamSchema = z.object({
   template_key: z.enum(AdminEmailTemplateKeys)
+});
+
+const adminNotificationChannelInputSchema = z.object({
+  event_key: z.enum(AdminNotificationEventKeys).optional(),
+  key: z.enum(AdminNotificationEventKeys).optional(),
+  label: z.string().min(2).max(160).optional(),
+  in_app_enabled: z.boolean().optional(),
+  inApp: z.boolean().optional(),
+  email_enabled: z.boolean().optional(),
+  email: z.boolean().optional(),
+  push_enabled: z.boolean().optional(),
+  push: z.boolean().optional(),
+  active: z.boolean().optional(),
+  status: z.enum(["active", "inactive"]).optional()
+});
+
+export const adminNotificationChannelsUpdateSchema = z.object({
+  channels: z.array(adminNotificationChannelInputSchema).min(1).max(AdminNotificationEventKeys.length),
+  expected_version: z.number().int().min(1)
 });
 
 const statusSchema = z.enum(["active", "inactive"]);
@@ -176,6 +200,9 @@ export type AdminPoliciesQuery = z.infer<typeof adminPoliciesQuerySchema>;
 export type AdminPolicyUpdateInput = z.infer<typeof adminPolicyUpdateSchema>;
 export type AdminEmailTemplatesQuery = z.infer<typeof adminEmailTemplatesQuerySchema>;
 export type AdminEmailTemplateUpdateInput = z.infer<typeof adminEmailTemplateUpdateSchema>;
+export type AdminNotificationChannelsQuery = z.infer<typeof adminNotificationChannelsQuerySchema>;
+export type AdminNotificationChannelsUpdateInput = z.infer<typeof adminNotificationChannelsUpdateSchema>;
+export type AdminNotificationChannelInput = z.infer<typeof adminNotificationChannelInputSchema>;
 export type DepartmentCreateInput = z.infer<typeof departmentCreateSchema>;
 export type DepartmentUpdateInput = z.infer<typeof departmentUpdateSchema>;
 export type DesignationCreateInput = z.infer<typeof designationCreateSchema>;

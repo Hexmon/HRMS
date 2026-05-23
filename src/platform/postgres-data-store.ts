@@ -37,6 +37,7 @@ import type {
   ProjectMilestoneRecord,
   ProjectRecord,
   AdminEmailTemplateRecord,
+  AdminNotificationChannelRecord,
   AdminPolicyConfigRecord,
   AdminWorkflowConfigRecord,
   TimesheetSubmission,
@@ -124,6 +125,7 @@ const resetTables = [
   "expenses.expense_line_items",
   "expenses.expense_tickets",
   "platform.processed_events",
+  "platform.admin_notification_channels",
   "platform.admin_email_templates",
   "platform.admin_policies",
   "platform.admin_workflows",
@@ -182,6 +184,7 @@ function copyData(target: DataStore, source: DataStore): void {
   target.adminWorkflows = source.adminWorkflows;
   target.adminPolicies = source.adminPolicies;
   target.adminEmailTemplates = source.adminEmailTemplates;
+  target.adminNotificationChannels = source.adminNotificationChannels;
   target.users = source.users;
   target.userCredentials = source.userCredentials;
   target.authTokens = source.authTokens;
@@ -319,6 +322,7 @@ class PostgresPersistence {
       loaded.adminWorkflows = await this.loadAdminWorkflows(client);
       loaded.adminPolicies = await this.loadAdminPolicies(client);
       loaded.adminEmailTemplates = await this.loadAdminEmailTemplates(client);
+      loaded.adminNotificationChannels = await this.loadAdminNotificationChannels(client);
       loaded.users = await this.loadUsers(client);
       loaded.userCredentials = await this.loadUserCredentials(client);
       loaded.authTokens = await this.loadAuthTokens(client);
@@ -515,6 +519,28 @@ class PostgresPersistence {
       subject: row.subject,
       body: row.body,
       locale: row.locale,
+      status: row.status,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+      version: row.version
+    }));
+  }
+
+  private async loadAdminNotificationChannels(client: PoolClient): Promise<AdminNotificationChannelRecord[]> {
+    const { rows } = await client.query(`
+      SELECT id, event_key, module, label, in_app_enabled, email_enabled, push_enabled, status, created_at, updated_at, deleted_at, version
+      FROM platform.admin_notification_channels
+      ORDER BY event_key
+    `);
+    return rows.map((row) => ({
+      id: row.id,
+      event_key: row.event_key,
+      module: row.module,
+      label: row.label,
+      in_app_enabled: row.in_app_enabled,
+      email_enabled: row.email_enabled,
+      push_enabled: row.push_enabled,
       status: row.status,
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
@@ -1781,6 +1807,34 @@ class PostgresPersistence {
           template.updated_at,
           template.deleted_at,
           template.version
+        ]
+      );
+    }
+    for (const channel of this.store.adminNotificationChannels) {
+      await client.query(
+        `INSERT INTO platform.admin_notification_channels (
+          id, event_key, module, label, in_app_enabled, email_enabled, push_enabled, status, created_at, updated_at, deleted_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (event_key) DO UPDATE
+        SET module = EXCLUDED.module, label = EXCLUDED.label,
+            in_app_enabled = EXCLUDED.in_app_enabled, email_enabled = EXCLUDED.email_enabled,
+            push_enabled = EXCLUDED.push_enabled, status = EXCLUDED.status,
+            updated_at = EXCLUDED.updated_at, deleted_at = EXCLUDED.deleted_at,
+            version = EXCLUDED.version`,
+        [
+          channel.id,
+          channel.event_key,
+          channel.module,
+          channel.label,
+          channel.in_app_enabled,
+          channel.email_enabled,
+          channel.push_enabled,
+          channel.status,
+          channel.created_at,
+          channel.updated_at,
+          channel.deleted_at,
+          channel.version
         ]
       );
     }

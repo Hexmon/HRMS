@@ -5,6 +5,8 @@ import { AdminService } from "./service.js";
 import {
   adminEmailTemplatesQuerySchema,
   adminEmailTemplateUpdateSchema,
+  adminNotificationChannelsQuerySchema,
+  adminNotificationChannelsUpdateSchema,
   adminPoliciesQuerySchema,
   adminPolicyUpdateSchema,
   adminWorkflowUpdateSchema,
@@ -188,6 +190,22 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor,
       params.template_key,
       adminEmailTemplateUpdateSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/notification-channels", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).listAdminNotificationChannels(
+      request.actor,
+      adminNotificationChannelsQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.put("/notification-channels", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).updateAdminNotificationChannels(
+      request.actor,
+      adminNotificationChannelsUpdateSchema.parse(request.body)
     );
   });
 };

@@ -27,6 +27,7 @@ import type {
   ProjectStatus,
   ProjectType,
   AdminEmailTemplateKey,
+  AdminNotificationEventKey,
   AdminPolicyKey,
   AdminWorkflowApproverType,
   AdminWorkflowKey,
@@ -150,6 +151,21 @@ export interface AdminEmailTemplateRecord {
   subject: string;
   body: string;
   locale: string;
+  status: "active" | "inactive";
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+  version: number;
+}
+
+export interface AdminNotificationChannelRecord {
+  id: UUID;
+  event_key: AdminNotificationEventKey;
+  module: string;
+  label: string;
+  in_app_enabled: boolean;
+  email_enabled: boolean;
+  push_enabled: boolean;
   status: "active" | "inactive";
   created_at: ISODateTime;
   updated_at: ISODateTime;

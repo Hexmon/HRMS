@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { Department, Designation, AdminEmailTemplateRecord, AdminPolicyConfigRecord, AdminWorkflowConfigRecord, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
+import type { Department, Designation, AdminEmailTemplateRecord, AdminNotificationChannelRecord, AdminPolicyConfigRecord, AdminWorkflowConfigRecord, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
 import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
-import { buildDefaultAdminEmailTemplates, buildDefaultAdminPolicies, buildDefaultAdminWorkflows, nowIso } from "../../platform/data-store.js";
+import { buildDefaultAdminEmailTemplates, buildDefaultAdminNotificationChannels, buildDefaultAdminPolicies, buildDefaultAdminWorkflows, nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 import type {
   CompanyProfileUpdateInput,
@@ -32,6 +32,11 @@ export class AdminRepository {
     return this.store.adminEmailTemplates.filter((template) => !template.deleted_at);
   }
 
+  listAdminNotificationChannels(): AdminNotificationChannelRecord[] {
+    this.ensureAdminNotificationChannels();
+    return this.store.adminNotificationChannels.filter((channel) => !channel.deleted_at);
+  }
+
   adminWorkflowByKey(workflowKey: string): AdminWorkflowConfigRecord {
     this.ensureAdminWorkflows();
     const workflow = this.store.adminWorkflows.find((candidate) => candidate.workflow_key === workflowKey && !candidate.deleted_at);
@@ -51,6 +56,13 @@ export class AdminRepository {
     const template = this.store.adminEmailTemplates.find((candidate) => candidate.template_key === templateKey && !candidate.deleted_at);
     if (!template) throw notFound("Admin email template not found", { template_key: templateKey });
     return template;
+  }
+
+  adminNotificationChannelByKey(eventKey: string): AdminNotificationChannelRecord {
+    this.ensureAdminNotificationChannels();
+    const channel = this.store.adminNotificationChannels.find((candidate) => candidate.event_key === eventKey && !candidate.deleted_at);
+    if (!channel) throw notFound("Admin notification channel not found", { event_key: eventKey });
+    return channel;
   }
 
   updateAdminWorkflow(workflowKey: string, input: AdminWorkflowUpdateData): AdminWorkflowConfigRecord {
@@ -107,6 +119,30 @@ export class AdminRepository {
     template.updated_at = nowIso();
     template.version += 1;
     return template;
+  }
+
+  updateAdminNotificationChannels(input: AdminNotificationChannelUpdateData): AdminNotificationChannelRecord[] {
+    this.ensureAdminNotificationChannels();
+    const currentVersion = maxAdminNotificationChannelVersion(this.store.adminNotificationChannels);
+    if (currentVersion !== input.expected_version) {
+      throw conflict("Admin notification channels were modified by another actor.", {
+        aggregate: "admin_notification_channels",
+        expected_version: input.expected_version,
+        current_version: currentVersion
+      });
+    }
+    const now = nowIso();
+    for (const patch of input.channels) {
+      const channel = this.adminNotificationChannelByKey(patch.event_key);
+      if (patch.label) channel.label = patch.label.trim();
+      if (patch.in_app_enabled !== undefined) channel.in_app_enabled = patch.in_app_enabled;
+      if (patch.email_enabled !== undefined) channel.email_enabled = patch.email_enabled;
+      if (patch.push_enabled !== undefined) channel.push_enabled = patch.push_enabled;
+      if (patch.status) channel.status = patch.status;
+      channel.updated_at = now;
+      channel.version += 1;
+    }
+    return this.listAdminNotificationChannels();
   }
 
   getCurrentCompanyProfile(): CompanyProfileRecord {
@@ -376,6 +412,12 @@ export class AdminRepository {
     const missingDefaults = buildDefaultAdminEmailTemplates(nowIso()).filter((template) => !existingKeys.has(template.template_key));
     this.store.adminEmailTemplates.push(...missingDefaults);
   }
+
+  private ensureAdminNotificationChannels(): void {
+    const existingKeys = new Set(this.store.adminNotificationChannels.filter((channel) => !channel.deleted_at).map((channel) => channel.event_key));
+    const missingDefaults = buildDefaultAdminNotificationChannels(nowIso()).filter((channel) => !existingKeys.has(channel.event_key));
+    this.store.adminNotificationChannels.push(...missingDefaults);
+  }
 }
 
 export interface AdminWorkflowUpdateData {
@@ -399,6 +441,22 @@ export interface AdminEmailTemplateUpdateData {
   locale?: string;
   status?: "active" | "inactive";
   expected_version: number;
+}
+
+export interface AdminNotificationChannelUpdateData {
+  channels: Array<{
+    event_key: string;
+    label?: string;
+    in_app_enabled?: boolean;
+    email_enabled?: boolean;
+    push_enabled?: boolean;
+    status?: "active" | "inactive";
+  }>;
+  expected_version: number;
+}
+
+function maxAdminNotificationChannelVersion(channels: AdminNotificationChannelRecord[]): number {
+  return Math.max(1, ...channels.filter((channel) => !channel.deleted_at).map((channel) => channel.version));
 }
 
 function defaultCompanyProfile(): CompanyProfileRecord {
