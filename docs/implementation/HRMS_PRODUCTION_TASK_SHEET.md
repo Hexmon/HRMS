@@ -423,7 +423,7 @@ Frontend:
 | Admin email templates task sheet | `docs(admin): record email template settings completion` | Committed in `hrms_backend` as `08b851e` |
 | Admin notification channels backend | `feat(admin): implement notification channel settings APIs` | Committed in `hrms_backend` as `0a2a25f` |
 | Admin notification channels frontend | `feat(admin): connect notification settings to backend API` | Committed in `hrms-client` as `3b7d24c` |
-| Admin notification channels task sheet | `docs(admin): record notification channel settings completion` | Pending commit in this run |
+| Admin notification channels task sheet | `docs(admin): record notification channel settings completion` | Committed in `hrms_backend` as `bbed1e6` |
 
 ## Next Steps
 
