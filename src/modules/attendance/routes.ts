@@ -14,6 +14,7 @@ const isoDateQuerySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
 const monthQuerySchema = z.string().regex(/^\d{4}-\d{2}$/u);
 
 const attendanceQuerySchema = paginationQuerySchema.extend({
+  date: isoDateQuerySchema.optional(),
   date_from: isoDateQuerySchema.optional(),
   date_to: isoDateQuerySchema.optional(),
   month: monthQuerySchema.optional(),
@@ -21,6 +22,11 @@ const attendanceQuerySchema = paginationQuerySchema.extend({
   department_id: z.uuid().optional(),
   status: z.string().optional(),
   exception_type: z.enum(["late", "missing_punch", "absent", "early_out", "correction"]).optional()
+});
+const attendanceExportSchema = z.object({
+  filters: z.record(z.string(), z.unknown()).optional(),
+  columns: z.array(z.string().min(1).max(80)).max(80).optional(),
+  format: z.enum(["csv", "xlsx", "json"]).optional()
 });
 
 export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
@@ -74,6 +80,16 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     );
   });
 
+  fastify.get("/calendar/daily", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new AttendanceService(fastify.store).dailyCalendar(
+      request.actor,
+      attendanceQuerySchema.parse(request.query)
+    );
+  });
+
   fastify.post("/regularizations", async (request) => {
     if (!request.actor) {
       throw unauthorized();
@@ -89,6 +105,16 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     return new AttendanceService(fastify.store).myRegularizations(
+      request.actor,
+      attendanceQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.get("/regularizations/queue/manager", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new AttendanceService(fastify.store).managerRegularizationQueue(
       request.actor,
       attendanceQuerySchema.parse(request.query)
     );
@@ -113,6 +139,16 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     return new AttendanceService(fastify.store).exceptions(
       request.actor,
       attendanceQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.post("/exports", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new AttendanceService(fastify.store).createExportJob(
+      request.actor,
+      attendanceExportSchema.parse(request.body ?? {})
     );
   });
 };

@@ -6,7 +6,8 @@ export const attendanceEvents = {
   RegularizationSubmitted: "attendance.regularization_submitted",
   RegularizationApproved: "attendance.regularization_approved",
   RegularizationReturned: "attendance.regularization_returned",
-  RegularizationRejected: "attendance.regularization_rejected"
+  RegularizationRejected: "attendance.regularization_rejected",
+  ExportRequested: "attendance.export_requested"
 } as const;
 
 export function appendAttendanceOutboxEvent(

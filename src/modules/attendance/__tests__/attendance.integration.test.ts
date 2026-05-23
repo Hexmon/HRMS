@@ -87,6 +87,21 @@ describe("attendance", () => {
     expect(teamSummary.statusCode).toBe(200);
     expect(teamSummary.json().totals.total).toBeGreaterThanOrEqual(2);
     expect(teamSummary.json().department_summary[0]).toHaveProperty("attendance_percent");
+
+    const dailyCalendar = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/calendar/daily?date=2026-05-20&page=1&page_size=10",
+      headers: authHeader(manager.token)
+    });
+    expect(dailyCalendar.statusCode).toBe(200);
+    expect(dailyCalendar.json()).toMatchObject({
+      date: "2026-05-20",
+      page: 1,
+      page_size: 10
+    });
+    expect(dailyCalendar.json().items.some((item: { employee_user_id: string }) => item.employee_user_id === employee.user.id)).toBe(true);
+    expect(dailyCalendar.json().summary.late).toBeGreaterThanOrEqual(1);
+    expect(dailyCalendar.json().totals.total).toBeGreaterThanOrEqual(2);
   });
 
   it("submits and approves regularization with manager scope, OCC, and exception visibility", async () => {
@@ -128,6 +143,26 @@ describe("attendance", () => {
       can_decide: true
     });
 
+    const managerQueue = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/regularizations/queue/manager?date_from=2026-05-21&date_to=2026-05-21&page=1&page_size=10",
+      headers: authHeader(manager.token)
+    });
+    expect(managerQueue.statusCode).toBe(200);
+    expect(managerQueue.json().items[0]).toMatchObject({
+      id: request.json().id,
+      status: "pending",
+      current_approver_user_id: manager.user.id
+    });
+    expect(managerQueue.json().queue_counts.pending).toBeGreaterThanOrEqual(1);
+
+    const nonManagerQueue = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/regularizations/queue/manager?date_from=2026-05-21&date_to=2026-05-21&page=1&page_size=10",
+      headers: authHeader(otherEmployee.token)
+    });
+    expect(nonManagerQueue.statusCode).toBe(403);
+
     const wrongApprover = await app.inject({
       method: "POST",
       url: `/api/v1/attendance/regularizations/${request.json().id}/decision`,
@@ -167,5 +202,40 @@ describe("attendance", () => {
     expect(calendar.statusCode).toBe(200);
     const day = calendar.json().calendar_days.find((item: { work_date: string }) => item.work_date === "2026-05-21");
     expect(day).toMatchObject({ status: "present", regularization_status: "approved" });
+  });
+
+  it("queues attendance exports for HR/Admin/Auditor roles only", async () => {
+    const admin = await loginAs(app, "ADM");
+    const employee = await loginAs(app, "E1");
+
+    const exportJob = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/exports",
+      headers: authHeader(admin.token),
+      payload: {
+        filters: { date_from: "2026-05-01", date_to: "2026-05-31" },
+        columns: ["employee_code", "employee", "date", "status"],
+        format: "csv"
+      }
+    });
+    expect(exportJob.statusCode).toBe(200);
+    expect(exportJob.json()).toMatchObject({
+      status: "queued",
+      format: "csv",
+      adapter: "outbox-queued-placeholder",
+      download_document_id: null
+    });
+    expect(app.store.outbox.some((event) => event.event_type === "attendance.export_requested" && event.aggregate_id === exportJob.json().job_id)).toBe(true);
+
+    const forbiddenExport = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/exports",
+      headers: authHeader(employee.token),
+      payload: {
+        filters: { date_from: "2026-05-01", date_to: "2026-05-31" },
+        format: "csv"
+      }
+    });
+    expect(forbiddenExport.statusCode).toBe(403);
   });
 });

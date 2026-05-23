@@ -63,10 +63,12 @@ const expectedOperations = [
   "GET /api/v1/assets/vendors",
   "GET /api/v1/assets/{id}",
   "GET /api/v1/assets/{id}/maintenance",
+  "GET /api/v1/attendance/calendar/daily",
   "GET /api/v1/attendance/calendar/monthly",
   "GET /api/v1/attendance/exceptions",
   "GET /api/v1/attendance/punches/my",
   "GET /api/v1/attendance/regularizations/my",
+  "GET /api/v1/attendance/regularizations/queue/manager",
   "GET /api/v1/attendance/summary/my",
   "GET /api/v1/attendance/summary/team",
   "GET /api/v1/auth/me",
@@ -176,6 +178,7 @@ const expectedOperations = [
   "POST /api/v1/assets/{id}/maintenance",
   "POST /api/v1/assets/{id}/return",
   "POST /api/v1/attendance/punches",
+  "POST /api/v1/attendance/exports",
   "POST /api/v1/attendance/regularizations",
   "POST /api/v1/attendance/regularizations/{id}/decision",
   "POST /api/v1/auth/email-verifications/resend",
@@ -326,6 +329,7 @@ const bodyRequiredOperations = [
   "POST /api/v1/timesheets/submissions/{id}/approve",
   "POST /api/v1/timesheets/workflow-definitions",
   "POST /api/v1/attendance/punches",
+  "POST /api/v1/attendance/exports",
   "POST /api/v1/attendance/regularizations",
   "POST /api/v1/attendance/regularizations/{id}/decision",
   "POST /api/v1/leave/requests",
@@ -463,8 +467,10 @@ const listOperations = [
   "GET /api/v1/attendance/punches/my",
   "GET /api/v1/attendance/summary/my",
   "GET /api/v1/attendance/summary/team",
+  "GET /api/v1/attendance/calendar/daily",
   "GET /api/v1/attendance/calendar/monthly",
   "GET /api/v1/attendance/regularizations/my",
+  "GET /api/v1/attendance/regularizations/queue/manager",
   "GET /api/v1/attendance/exceptions",
   "GET /api/v1/leave/balances/my",
   "GET /api/v1/leave/balances/{user_id}",
@@ -681,7 +687,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(213);
+    expect(rows.length).toBe(216);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

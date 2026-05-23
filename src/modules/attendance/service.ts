@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   AttendanceDayRecord,
   AttendancePunch,
@@ -16,7 +17,7 @@ import {
 } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
-import { badRequest, conflict, missingRemarks, notFound } from "../../platform/errors.js";
+import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
 import { CoreService } from "../core/service.js";
 import { appendAttendanceOutboxEvent, attendanceEvents } from "./events.js";
 import {
@@ -31,6 +32,7 @@ export interface AttendancePageQuery {
   page: number;
   page_size: number;
   sort?: string;
+  date?: string;
   date_from?: string;
   date_to?: string;
   month?: string;
@@ -38,6 +40,12 @@ export interface AttendancePageQuery {
   department_id?: UUID;
   status?: string;
   exception_type?: string;
+}
+
+export interface AttendanceExportInput {
+  filters?: Record<string, unknown>;
+  columns?: string[];
+  format?: "csv" | "xlsx" | "json";
 }
 
 function page<T>(items: T[], pageNumber: number, pageSize: number) {
@@ -237,6 +245,49 @@ export class AttendanceService {
     };
   }
 
+  dailyCalendar(actor: AuthUser, query: AttendancePageQuery) {
+    const date = query.date ?? query.date_from ?? todayDate();
+    const users = query.user_id ? [this.requireUser(query.user_id)] : this.visibleUsers(actor, query.department_id);
+    for (const user of users) {
+      assertCanSeeAttendanceUser(actor, user);
+    }
+    const activeUsers = users.filter((user) => user.employment_status === EmploymentStatuses.Active);
+    const userIds = new Set(activeUsers.map((user) => user.id));
+    const records = activeUsers.map((user) => this.getOrSynthesizeDay(user.id, date));
+    const regularizations = this.repository.listRegularizations({
+      userIds,
+      dateFrom: date,
+      dateTo: date
+    });
+    const regularizationByUser = new Map(regularizations.map((request) => [request.employee_user_id, request]));
+    const items = records
+      .map((record) => {
+        const user = activeUsers.find((candidate) => candidate.id === record.employee_user_id);
+        const request = regularizationByUser.get(record.employee_user_id);
+        return {
+          ...this.presentDay(record),
+          employee: userLabel(user),
+          regularization: request ? this.presentRegularization(request) : null,
+          regularization_pending: request?.status === AttendanceRegularizationStatuses.Pending,
+          can_decide_regularization: Boolean(
+            request &&
+            request.status === AttendanceRegularizationStatuses.Pending &&
+            actor.id !== request.employee_user_id &&
+            (canSeeAllAttendance(actor) || request.current_approver_user_id === actor.id)
+          )
+        };
+      })
+      .sort((a, b) => a.employee.employee_code.localeCompare(b.employee.employee_code));
+    return {
+      ...page(items, query.page, query.page_size),
+      generated_at: nowIso(),
+      date,
+      summary: this.daySummary(records),
+      exceptions: this.exceptions(actor, { ...query, page: 1, page_size: 20, date_from: date, date_to: date }).items,
+      totals: this.teamTotals(records, activeUsers.length)
+    };
+  }
+
   createRegularization(
     actor: AuthUser,
     input: {
@@ -281,6 +332,24 @@ export class AttendanceService {
       dateTo: range.to
     });
     return page(requests.map((request) => this.presentRegularization(request)), query.page, query.page_size);
+  }
+
+  managerRegularizationQueue(actor: AuthUser, query: AttendancePageQuery) {
+    if (!canSeeAllAttendance(actor) && !this.hasVisibleSubordinates(actor)) {
+      throw forbidden("Only managers, HR, Admin, or Auditor users can read attendance regularization queues.");
+    }
+    const range = dateRange(query);
+    const visibleUsers = this.visibleUsers(actor, query.department_id).filter((user) => user.id !== actor.id);
+    const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
+    const scoped = this.repository
+      .listRegularizations({ userIds: visibleUserIds, dateFrom: range.from, dateTo: range.to })
+      .filter((request) => canSeeAllAttendance(actor) || request.current_approver_user_id === actor.id);
+    const status = query.status ?? AttendanceRegularizationStatuses.Pending;
+    const filtered = scoped.filter((request) => !status || request.status === status);
+    return {
+      ...page(filtered.map((request) => this.presentRegularization(request)), query.page, query.page_size),
+      queue_counts: this.regularizationQueueCounts(scoped)
+    };
   }
 
   exceptions(actor: AuthUser, query: AttendancePageQuery) {
@@ -384,6 +453,43 @@ export class AttendanceService {
       previous_status: previousStatus,
       next_status: nextStatus,
       day_status: this.presentDay(day)
+    };
+  }
+
+  createExportJob(actor: AuthUser, input: AttendanceExportInput) {
+    if (!canSeeAllAttendance(actor)) {
+      throw forbidden("Only HR, Admin, or Auditor users can export attendance data.");
+    }
+    const jobId = randomUUID();
+    const format = input.format ?? "csv";
+    const columns = input.columns?.length
+      ? input.columns
+      : ["employee_code", "employee", "date", "status", "in_time", "out_time", "hours"];
+    const filters = input.filters ?? {};
+    const createdAt = nowIso();
+    appendAttendanceOutboxEvent(this.store, {
+      aggregateId: jobId,
+      eventType: attendanceEvents.ExportRequested,
+      payload: {
+        job_id: jobId,
+        requested_by_user_id: actor.id,
+        filters,
+        columns,
+        format,
+        adapter: "outbox-queued-placeholder"
+      },
+      idempotencyKey: `attendance.export.requested:${jobId}`
+    });
+    return {
+      job_id: jobId,
+      status: "queued",
+      format,
+      filters,
+      columns,
+      requested_by_user_id: actor.id,
+      created_at: createdAt,
+      adapter: "outbox-queued-placeholder",
+      download_document_id: null
     };
   }
 
@@ -573,6 +679,25 @@ export class AttendanceService {
       }
       return true;
     });
+  }
+
+  private hasVisibleSubordinates(actor: AuthUser): boolean {
+    return this.store.users.some(
+      (user) =>
+        user.id !== actor.id &&
+        !user.deleted_at &&
+        user.hierarchy_path.startsWith(`${actor.hierarchy_path}.`)
+    );
+  }
+
+  private regularizationQueueCounts(requests: AttendanceRegularizationRequest[]) {
+    return {
+      total: requests.length,
+      pending: requests.filter((request) => request.status === AttendanceRegularizationStatuses.Pending).length,
+      approved: requests.filter((request) => request.status === AttendanceRegularizationStatuses.Approved).length,
+      returned: requests.filter((request) => request.status === AttendanceRegularizationStatuses.Returned).length,
+      rejected: requests.filter((request) => request.status === AttendanceRegularizationStatuses.Rejected).length
+    };
   }
 
   private requireUser(userId: UUID): CoreUser {

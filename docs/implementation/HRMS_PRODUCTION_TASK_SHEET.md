@@ -4,17 +4,17 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 5 EMS document wrapper slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, and employee/core backlog additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 5 Attendance backlog slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, and EMS document wrappers. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 213 implemented operations across 188 paths |
-| Planned operations remaining | 4 |
+| Backend OpenAPI | 216 implemented operations across 191 paths |
+| Planned operations remaining | 1 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
-| Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
+| Attendance backend/frontend | Completed for punches, my/team summary, daily/monthly calendar, exceptions, regularization request/manager queue/decision, and export job metadata |
 | Leave/WFH/Holidays backend/frontend | Completed for balances, leave requests, WFH requests, manager decisions, HR monitor, holidays, and visible frontend routes |
 | EMS backend | Implemented for profile, profile change requests, HR profile decisions, employee document wrappers, generic service requests, HR service queue, letters, and policy acknowledgements |
 | EMS frontend | Integrated in `hrms-client` for dashboard profile signals, profile, employee document listing/downloads, requests, letters, policies, and HR admin profile/letter queues |
@@ -116,6 +116,26 @@ This versioned report captures the completed Phase 5 EMS document wrapper slice 
 | Frontend integration | Added EMS document API adapter/hooks and connected `/ems/documents` to the employee-scoped wrapper in API mode | Download URLs continue to use existing Documents APIs; Upload/Replace no longer show fake success in API mode because no file selection UI exists yet |
 | Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
 | Contract docs | Backend generated OpenAPI/frontend contract now contains 213 operations across 188 paths; frontend contract snapshots were synced from backend | Planned operations remaining drop from 6 to 4 |
+
+## Attendance Backlog Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Current roadmap position | The remaining planned operation list is down to 4; the next group is the three Attendance completion endpoints | Implement Attendance before the final Leave/WFH export endpoint |
+| Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` lists `GET /api/v1/attendance/calendar/daily`, `GET /api/v1/attendance/regularizations/queue/manager`, and `POST /api/v1/attendance/exports` as planned | Add routes, service methods, OpenAPI docs, contract coverage, and attendance integration tests |
+| Existing backend support | Attendance already has punches, my/team summaries, monthly calendar, my regularizations, regularization decisions, exceptions, permissions, and outbox events | Reuse existing day synthesis, visible-user scoping, regularization repository, and outbox job metadata patterns |
+| Frontend routes | `/attendance/calendar` uses monthly calendar; `/attendance/exceptions` uses exceptions for HR queues; `/reports/attendance` uses the Reports summary API plus local CSV export | Add Attendance domain adapters/hooks for the new endpoints; avoid broad UI rewrites unless a visible screen directly needs the new route |
+| Export behavior | Existing report exports are queued metadata backed by outbox rather than generated files | Attendance export should follow the same queued metadata pattern and defer document-backed file generation/download to production hardening |
+
+## Attendance Backlog Completion
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Backend APIs | Added `GET /api/v1/attendance/calendar/daily`, `GET /api/v1/attendance/regularizations/queue/manager`, and `POST /api/v1/attendance/exports` | Daily calendar reuses existing day synthesis and visibility policy; manager queue scopes pending regularizations to assigned managers or HR/Admin/Auditor; exports queue outbox metadata only |
+| Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, attendance integration test, and `pnpm test:contracts` passed | Non-escalated DB/tsx runs were sandbox-blocked and passed when rerun with local QA infra access |
+| Frontend integration | Added Attendance domain API methods/hooks for the daily calendar, manager queue, and export job endpoints | Existing visible routes already use monthly calendar, exceptions, and Reports APIs; no extra screen rewrite was required for these completion aliases |
+| Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
+| Contract docs | Backend generated OpenAPI/frontend contract now contains 216 operations across 191 paths | Planned operations remaining drop from 4 to 1; the remaining planned endpoint is `POST /api/v1/leave-wfh/exports` |
 
 ## Admin Notification Channels Discovery
 
@@ -387,6 +407,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Employee/core backlog | Integrate frontend employee screens | Completed in `hrms-client` | Completed for employee profile role history/audit reads and API-backed employee export job queueing | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/core/*`, `src/routes/_app/employees.tsx`, `src/routes/_app/employees.$id.tsx`, frontend API docs | `feat(employees): connect employee history and export APIs` |
 | 5 | EMS document wrappers | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, EMS integration test, `pnpm test:contracts` | Passed. OpenAPI generated 213 operations across 188 paths. Non-escalated `tsx`/DB/Docker runs were sandbox-blocked and passed when rerun with local QA infra access. | `src/modules/ems/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(ems): add employee document wrapper APIs` |
 | 5 | EMS document wrappers | Integrate frontend EMS documents screen | Completed in `hrms-client` | Completed for `/ems/documents` list/download behavior in API mode; upload/replace stays blocked in API mode until a file picker/form flow exists | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/ems/*`, `src/routes/_app/ems.documents.tsx`, frontend API docs | `feat(ems): connect document screen to backend wrappers` |
+| 5 | Attendance backlog | Implement completion APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, attendance integration test, `pnpm test:contracts` | Passed. OpenAPI generated 216 operations across 191 paths. Non-escalated DB/tsx runs were sandbox-blocked and passed when rerun with local QA infra access. | `src/modules/attendance/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(attendance): complete daily queue and export APIs` |
+| 5 | Attendance backlog | Add frontend adapters/hooks | Completed in `hrms-client` | Completed for domain-level access to daily calendar, manager regularization queue, and export job APIs | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/attendance/*`, frontend API docs after sync | `feat(attendance): add completion endpoint adapters` |
 
 ## Remaining Blockers
 
@@ -401,7 +423,6 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | P1 | Full asset vendor CRUD, warranty automation, and recovery settlement workflow remain planned for admin/operational hardening |
 | P1 | Project-specific reports and project document upload/attach UX remain planned |
 | P1 | Full document-backed report export file generation/download remains production hardening; report export jobs currently persist queued metadata |
-| P1 | Attendance daily detail, manager queue alias, and export endpoint remain planned |
 | P1 | Leave/WFH export endpoint remains planned |
 | P1 | Admin master-data tabs beyond departments/designations remain deferred until backend APIs are defined |
 | P1 | Dynamic RBAC runtime enforcement and custom-role assignment to employees remain deferred; this slice persists Admin Settings RBAC configuration only |
@@ -416,10 +437,11 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 213 operation frontend contract after EMS document wrappers
+- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 216 operation frontend contract after Attendance backlog completion
 - `pnpm api:docs:verify`: passed
 - `pnpm api:consumer:verify`: passed with escalation due `tsx` IPC sandboxing
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
+- `pnpm exec vitest run --project integration src/modules/attendance/__tests__/attendance.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 - `pnpm exec vitest run --project integration src/modules/ems/__tests__/ems.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 - `pnpm exec vitest run --project integration src/modules/core/__tests__/core.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 - `pnpm test:contracts`: passed, 13 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
@@ -429,7 +451,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 188 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 191 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -485,6 +507,8 @@ Frontend:
 - Non-expense Reports are read-only summaries derived from already implemented module stores; they do not introduce new source-of-truth workflow tables.
 - Report export create/list/detail currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
 - Frontend report routes use the backend in API mode and keep local/mock aggregation only when API mode is disabled.
+- Attendance daily calendar and manager regularization queue are added as backend completion endpoints/adapters; existing visible attendance routes already use monthly calendar, exceptions, and Reports APIs, so no route layout rewrite was required.
+- Attendance export create currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
 
 ## Commit Messages
 
@@ -535,7 +559,7 @@ Frontend:
 
 ## Next Steps
 
-1. Phase 5 EMS document wrappers are implemented, frontend-integrated for the visible EMS documents list/download flow, and validated.
-2. Backend OpenAPI now has 213 operations across 188 paths; planned operations remaining are 4.
-3. Employee import/export jobs and EMS/report export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
-4. Next roadmap scope: implement the remaining Attendance daily/manager-queue/export endpoints, then Leave/WFH export. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
+1. Phase 5 Attendance backlog endpoints are implemented, frontend adapters/hooks are available, and validation passed.
+2. Backend OpenAPI now has 216 operations across 191 paths; planned operations remaining are 1.
+3. Employee import/export jobs and EMS/report/attendance export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
+4. Next roadmap scope: implement the remaining `POST /api/v1/leave-wfh/exports` endpoint. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.

@@ -1786,6 +1786,7 @@ const attendanceQuerySchema = {
   ...paginationQuerySchema,
   properties: {
     ...paginationQuerySchema.properties,
+    date: date("Single date filter", "2026-05-20"),
     date_from: date("Start date filter", "2026-05-01"),
     date_to: date("End date filter", "2026-05-31"),
     month: { type: "string", pattern: "^\\d{4}-\\d{2}$", example: "2026-05" },
@@ -1893,6 +1894,19 @@ const attendanceCalendarSchema = {
   },
   additionalProperties: true
 };
+const attendanceDailyCalendarSchema = {
+  ...paginated(attendanceDaySchema),
+  required: ["items", "page", "page_size", "total", "generated_at", "date", "summary", "exceptions", "totals"],
+  properties: {
+    ...(paginated(attendanceDaySchema).properties as RouteSchema),
+    generated_at: dateTime("Daily calendar generation timestamp"),
+    date: date("Attendance date"),
+    summary: { type: "object", additionalProperties: true },
+    exceptions: { type: "array", items: { type: "object", additionalProperties: true } },
+    totals: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
 
 const attendanceRegularizationCreateBody = {
   type: "object",
@@ -1939,6 +1953,29 @@ const attendanceRegularizationSchema = {
     current_approver_user_id: { ...uuid("Current approver user UUID"), nullable: true },
     decision_remarks: { type: "string", nullable: true },
     version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+const attendanceExportBody = {
+  type: "object",
+  properties: {
+    filters: { type: "object", additionalProperties: true },
+    columns: { type: "array", maxItems: 80, items: { type: "string", maxLength: 80 }, example: ["employee_code", "employee", "date", "status"] },
+    format: { type: "string", enum: ["csv", "xlsx", "json"], default: "csv", example: "csv" }
+  },
+  additionalProperties: false
+};
+const attendanceExportResponseSchema = {
+  type: "object",
+  required: ["job_id", "status", "format", "filters", "columns", "created_at"],
+  properties: {
+    job_id: uuid("Attendance export job UUID"),
+    status: { type: "string", enum: ["queued"], example: "queued" },
+    format: { type: "string", enum: ["csv", "xlsx", "json"], example: "csv" },
+    filters: { type: "object", additionalProperties: true },
+    columns: { type: "array", items: { type: "string" } },
+    created_at: dateTime("Export job creation timestamp"),
+    download_document_id: { ...uuid("Generated document UUID"), nullable: true }
   },
   additionalProperties: true
 };
@@ -3631,6 +3668,12 @@ const routeDocs: Record<string, RouteSchema> = {
     "Returns a monthly attendance calendar for self or an in-scope employee. HR, Admin, and Auditor can view all employees; managers can view their hierarchy.",
     { querystring: attendanceQuerySchema, response200: attendanceCalendarSchema }
   ),
+  "GET /api/v1/attendance/calendar/daily": operation(
+    "Attendance",
+    "Daily attendance calendar",
+    "Returns day-level attendance records for self, a selected in-scope employee, or a visible team with regularization flags and compact exceptions.",
+    { querystring: attendanceQuerySchema, response200: attendanceDailyCalendarSchema }
+  ),
   "POST /api/v1/attendance/regularizations": operation(
     "Attendance",
     "Submit attendance regularization",
@@ -3643,6 +3686,12 @@ const routeDocs: Record<string, RouteSchema> = {
     "Lists authenticated employee regularization requests with status and date filters.",
     { querystring: attendanceQuerySchema, response200: paginated(attendanceRegularizationSchema) }
   ),
+  "GET /api/v1/attendance/regularizations/queue/manager": operation(
+    "Attendance",
+    "Manager regularization queue",
+    "Lists attendance regularization requests assigned to the authenticated manager, or all in-scope requests for HR/Admin/Auditor monitor views.",
+    { querystring: attendanceQuerySchema, response200: { ...paginated(attendanceRegularizationSchema), additionalProperties: true } }
+  ),
   "POST /api/v1/attendance/regularizations/{id}/decision": operation(
     "Attendance",
     "Decide attendance regularization",
@@ -3654,6 +3703,12 @@ const routeDocs: Record<string, RouteSchema> = {
     "Attendance exceptions",
     "Lists late, missing punch, absent, early-out, and correction exceptions visible to HR/Admin/Auditor or a reporting manager.",
     { querystring: attendanceQuerySchema, response200: { ...paginated({ type: "object", additionalProperties: true }), additionalProperties: true } }
+  ),
+  "POST /api/v1/attendance/exports": operation(
+    "Attendance",
+    "Create attendance export job",
+    "Creates queued attendance export metadata for HR/Admin/Auditor users. Actual file rendering and download document attachment remain production hardening.",
+    { body: attendanceExportBody, response200: attendanceExportResponseSchema }
   ),
   "GET /api/v1/leave/balances/my": operation(
     "Leave / WFH / Holidays",
