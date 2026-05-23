@@ -558,7 +558,7 @@ Frontend:
 | EMS document wrappers task sheet | `docs(ems): record document wrapper completion` | Committed in `hrms_backend` as `c5e4b89` |
 | Attendance backlog backend | `feat(attendance): complete daily queue and export APIs` | Committed in `hrms_backend` as `51a166c` |
 | Attendance backlog frontend | `feat(attendance): add completion endpoint adapters` | Committed in `hrms-client` as `36c47e6` |
-| Attendance backlog task sheet | `docs(attendance): record backlog completion` | Pending commit |
+| Attendance backlog task sheet | `docs(attendance): record backlog completion` | Committed in `hrms_backend` as `e280dea` |
 
 ## Next Steps
 
