@@ -3,6 +3,7 @@ import { queryKeys, queryTimings } from "@/shared/query";
 import { emsApi } from "./api";
 import type {
   EmsDecisionBody,
+  EmsDocumentUploadBody,
   EmsProfileChangeBody,
   EmsProfilePatchBody,
   EmsQuery,
@@ -78,6 +79,20 @@ export function useEmsPolicies(query: EmsQuery = {}, enabled = true) {
   });
 }
 
+export function useEmsEmployeeDocuments(
+  userId: string | undefined,
+  query: EmsQuery & { document_type?: string } = {},
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.list("ems", "employee-documents", { userId, ...query }),
+    queryFn: () => emsApi.listEmployeeDocuments(userId as string, query),
+    enabled: enabled && Boolean(userId),
+    staleTime: queryTimings.listStaleMs,
+    placeholderData: keepPreviousData,
+  });
+}
+
 export function useEmsProfilePatchMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -108,6 +123,18 @@ export function useEmsRequestMutation() {
   return useMutation({
     mutationFn: (input: EmsRequestCreateBody) => emsApi.createRequest(input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
+  });
+}
+
+export function useEmsDocumentMutation(userId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EmsDocumentUploadBody) =>
+      emsApi.attachEmployeeDocument(userId as string, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") });
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("documents") });
+    },
   });
 }
 

@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui-kit";
 import { toast } from "sonner";
 import { FileText, Upload, Download, Eye, RefreshCw, AlertCircle } from "lucide-react";
-import { documentsApi, mapApiDocuments, type DocumentUiRecord } from "@/domains/documents";
-import { isUuid, pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
-import { queryKeys, queryTimings } from "@/shared/query";
+import { documentsApi, mapApiDocuments } from "@/domains/documents";
+import { useEmsEmployeeDocuments } from "@/domains/ems";
+import { useAuth } from "@/lib/auth";
+import { isUuid, pageItems, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/ems/documents")({
   component: MyDocuments,
@@ -85,18 +85,10 @@ function statusToBadge(s: DocStatus) {
 }
 
 function MyDocuments() {
+  const { user } = useAuth();
   const apiEnabled = useApiRouteEnabled(["/ems", "/documents"]);
-  const documentsQuery = useQuery({
-    queryKey: queryKeys.list("documents", "ems-documents", { page_size: 100 }),
-    queryFn: () =>
-      withApiFallback(
-        async () => mapApiDocuments(pageItems(await documentsApi.list({ page_size: 100 }))),
-        () => DOCS as DocumentUiRecord[],
-      ),
-    enabled: apiEnabled,
-    staleTime: queryTimings.listStaleMs,
-  });
-  const docs = apiEnabled ? (documentsQuery.data ?? []) : DOCS;
+  const documentsQuery = useEmsEmployeeDocuments(user?.id, { page: 1, page_size: 100 }, apiEnabled);
+  const docs = apiEnabled ? mapApiDocuments(pageItems(documentsQuery.data)) : DOCS;
   const loading = apiEnabled && documentsQuery.isLoading;
   const error = documentsQuery.error instanceof Error ? documentsQuery.error : null;
 
@@ -161,7 +153,11 @@ function MyDocuments() {
                     <Button
                       size="sm"
                       className="rounded-full"
-                      onClick={() => toast.success("Upload dialog opened")}
+                      onClick={() =>
+                        apiEnabled
+                          ? toast.error("Document upload needs a file selection flow.")
+                          : toast.success("Upload dialog opened")
+                      }
                     >
                       <Upload className="mr-1.5 h-3.5 w-3.5" /> Upload
                     </Button>
@@ -187,7 +183,11 @@ function MyDocuments() {
                         size="sm"
                         variant="ghost"
                         className="rounded-full"
-                        onClick={() => toast("Replace flow")}
+                        onClick={() =>
+                          apiEnabled
+                            ? toast.error("Document replacement needs a file selection flow.")
+                            : toast("Replace flow")
+                        }
                       >
                         <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Replace
                       </Button>

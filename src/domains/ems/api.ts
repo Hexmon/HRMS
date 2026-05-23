@@ -46,6 +46,15 @@ export interface EmsRequestCreateBody extends ApiRecord {
   document_ids?: string[];
 }
 
+export interface EmsDocumentUploadBody extends ApiRecord {
+  classification: "normal" | "finance" | "medical" | "compensation" | "legal" | "audit";
+  document_type: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  checksum_sha256?: string;
+}
+
 export const emsApi = {
   profile() {
     return apiRequest<ApiRecord>("/api/v1/ems/profile/me");
@@ -105,6 +114,18 @@ export const emsApi = {
   },
   acknowledgePolicy(id: string, input: ExpectedVersionBody) {
     return apiRequest<ApiRecord>(`/api/v1/ems/policies/${id}/acknowledge`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  listEmployeeDocuments(userId: string, query: PageQuery & { document_type?: string } = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord> & { document_summary?: ApiRecord }>(
+      `/api/v1/ems/employees/${userId}/documents`,
+      { query },
+    );
+  },
+  attachEmployeeDocument(userId: string, input: EmsDocumentUploadBody) {
+    return apiRequest<ApiRecord>(`/api/v1/ems/employees/${userId}/documents`, {
       method: "POST",
       body: input,
     });
