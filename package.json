@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "api:frontend-contract:route-coverage": "node scripts/frontend-contract-route-coverage.mjs",
-    "api:implemented-route-guard": "node scripts/api-implemented-route-guard.mjs"
+    "api:implemented-route-guard": "node scripts/api-implemented-route-guard.mjs",
+    "api:production-config-guard": "node scripts/production-config-guard.mjs"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
