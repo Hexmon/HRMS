@@ -572,8 +572,8 @@ Frontend:
 | Attendance backlog backend | `feat(attendance): complete daily queue and export APIs` | Committed in `hrms_backend` as `51a166c` |
 | Attendance backlog frontend | `feat(attendance): add completion endpoint adapters` | Committed in `hrms-client` as `36c47e6` |
 | Attendance backlog task sheet | `docs(attendance): record backlog completion` | Committed in `hrms_backend` as `e280dea` |
-| Leave/WFH export backend | `feat(leave): implement leave WFH export API` | Pending commit |
-| Leave/WFH export frontend | `feat(leave): connect Leave WFH export action` | Pending commit |
+| Leave/WFH export backend | `feat(leave): implement leave WFH export API` | Committed in `hrms_backend` as `c30c814` |
+| Leave/WFH export frontend | `feat(leave): connect Leave WFH export action` | Committed in `hrms-client` as `fd197b0` |
 | Leave/WFH export task sheet | `docs(leave): record export completion` | Pending commit |
 
 ## Next Steps
