@@ -20,6 +20,30 @@ pnpm release:seed
 pnpm dev
 ```
 
+Local document uploads are Cloudinary-backed. The default local/test examples use mock Cloudinary uploads so development can run without real Cloudinary credentials:
+
+```env
+OBJECT_STORAGE_PROVIDER=cloudinary
+CLOUDINARY_CLOUD_NAME=local-cloudinary-mock
+CLOUDINARY_API_KEY=local-cloudinary-key
+CLOUDINARY_API_SECRET=local-cloudinary-secret
+CLOUDINARY_FOLDER=hawkaii-hrms-dev
+CLOUDINARY_RESOURCE_TYPE=auto
+CLOUDINARY_UPLOAD_TRANSFORMATION=q_auto:eco,f_auto
+CLOUDINARY_MOCK_UPLOADS=true
+```
+
+For real local or production uploads, set real Cloudinary dashboard values and disable mock uploads:
+
+```env
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+CLOUDINARY_MOCK_UPLOADS=false
+```
+
+Do not expose `CLOUDINARY_API_SECRET` to the frontend. Files are uploaded to the backend first; the backend signs and stores them in Cloudinary. MinIO is no longer part of the runtime.
+
 API endpoints:
 
 - API: `http://localhost:3001`
@@ -68,4 +92,4 @@ pnpm verify:scalability
 pnpm verify:regression
 ```
 
-Integration tests require PostgreSQL, Valkey, and MinIO. Use `pnpm test:infra:up` before `pnpm test:integration` or point `.env.test` to your own services.
+Integration tests require PostgreSQL and Valkey. Use `pnpm test:infra:up` before `pnpm test:integration` or point `.env.test` to your own services. Document storage tests use `CLOUDINARY_MOCK_UPLOADS=true` unless you explicitly configure real Cloudinary credentials.
