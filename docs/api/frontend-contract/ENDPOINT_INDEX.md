@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 165
+Documented operations: 170
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -5365,6 +5365,284 @@ Success body highlights:
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
 - Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/timesheets/projects/summary
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Project timesheet summary                                                                     |
+| Frontend use | Work segment entry, submissions, approver queue, decisions, and workflow definition admin.    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Employees manage own work; configured approvers action queues; Admin manages definitions.     |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `cycle_start` | query | no | string<date> | - |
+| `cycle_end` | query | no | string<date> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `project_code` | query | no | string | minLength 1 |
+| `user_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("employee", "project", "department", "week") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+| `totals`    | object          | required | -         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/timesheets/missing-submissions
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Missing timesheet submissions                                                                 |
+| Frontend use | Work segment entry, submissions, approver queue, decisions, and workflow definition admin.    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Employees manage own work; configured approvers action queues; Admin manages definitions.     |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `cycle_start` | query | no | string<date> | - |
+| `cycle_end` | query | no | string<date> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `project_code` | query | no | string | minLength 1 |
+| `user_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("employee", "project", "department", "week") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+| `summary`   | object          | required | -         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/timesheets/productivity-summary
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Timesheet productivity summary                                                                |
+| Frontend use | Work segment entry, submissions, approver queue, decisions, and workflow definition admin.    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Employees manage own work; configured approvers action queues; Admin manages definitions.     |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `cycle_start` | query | no | string<date> | - |
+| `cycle_end` | query | no | string<date> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `project_code` | query | no | string | minLength 1 |
+| `user_id` | query | no | string<uuid> | - |
+| `group_by` | query | no | string enum("employee", "project", "department", "week") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes |
+| ----------- | --------------- | -------- | ----- |
+| `cards`     | object          | required | -     |
+| `series`    | array of object | required | -     |
+| `breakdown` | array of object | required | -     |
+| `filters`   | object          | required | -     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/timesheets/selectors
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Timesheet selectors                                                                           |
+| Frontend use | Work segment entry, submissions, approver queue, decisions, and workflow definition admin.    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Employees manage own work; configured approvers action queues; Admin manages definitions.     |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `include` | query | no | string | - |
+| `date` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field                  | Type            | Required | Notes |
+| ---------------------- | --------------- | -------- | ----- |
+| `projects`             | array of object | required | -     |
+| `tasks`                | array of object | required | -     |
+| `cycles`               | array of object | required | -     |
+| `approvers`            | array of object | required | -     |
+| `workflow_definitions` | array of object | required | -     |
+| `rules`                | object          | required | -     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/timesheets/submissions/{id}
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Timesheet submission detail                                                                   |
+| Frontend use | Work segment entry, submissions, approver queue, decisions, and workflow definition admin.    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Employees manage own work; configured approvers action queues; Admin manages definitions.     |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field                      | Type                                                                                      | Required           | Notes                                                                                |
+| -------------------------- | ----------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------ |
+| `id`                       | string<uuid>                                                                              | required           | Timesheet submission UUID                                                            |
+| `employee_user_id`         | string<uuid>                                                                              | required           | Employee/member UUID                                                                 |
+| `cycle_start`              | string<date>                                                                              | required           | Cycle start                                                                          |
+| `cycle_end`                | string<date>                                                                              | required           | Cycle end                                                                            |
+| `status`                   | string enum("Draft", "Submitted", "Pending Approval", "Approved", "Returned", "Rejected") | required           | -                                                                                    |
+| `total_hours`              | string                                                                                    | required           | Submitted total hours; pattern ^-?\d{1,12}(\.\d{1,2})?$                              |
+| `workflow_definition_id`   | string<uuid>                                                                              | optional           | Workflow definition UUID                                                             |
+| `workflow_snapshot`        | object                                                                                    | optional           | -                                                                                    |
+| `current_approver_user_id` | string<uuid>                                                                              | optional, nullable | Current approver UUID                                                                |
+| `version`                  | integer                                                                                   | required           | minimum 1                                                                            |
+| `employee`                 | object                                                                                    | required, nullable | -                                                                                    |
+| `member`                   | object                                                                                    | required           | Employee/member profile, department/designation, member_role, and manager reference. |
+| `cycle`                    | object                                                                                    | required           | -                                                                                    |
+| `project_summary`          | object                                                                                    | required           | -                                                                                    |
+| `hours_summary`            | object                                                                                    | required           | -                                                                                    |
+| `workflow_metadata`        | object                                                                                    | required           | -                                                                                    |
+| `segments`                 | array of object                                                                           | required           | -                                                                                    |
+| `workflow_history`         | array of object                                                                           | required           | -                                                                                    |
+| `last_decision`            | object                                                                                    | required, nullable | -                                                                                    |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
 ### POST /api/v1/timesheets/submissions/{id}/approve

@@ -25,6 +25,8 @@ import { useAuth } from "@/lib/auth";
 import { useEmployees } from "@/lib/employees-store";
 import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
+import { useTimesheetSelectors } from "@/domains/timesheets";
+import { asArray, asRecord, isApiEnabled, text } from "@/shared/api";
 import {
   TIMESHEET_STATUS_LABEL,
   startOfWeek,
@@ -69,6 +71,7 @@ function MyTimesheetPage() {
   const { projects } = useProjects();
   const { entries, weeks, loading, error, saveWeekEntries, ensureWeek, setWeekStatus } =
     useTimesheets();
+  const apiMode = isApiEnabled();
   const [savingAction, setSavingAction] = useState<"draft" | "submit" | null>(null);
 
   // Identify current employee from user (fall back to demo employee)
@@ -104,6 +107,28 @@ function MyTimesheetPage() {
     () => Array.from({ length: 7 }, (_, i) => isoDate(addDays(new Date(weekStart), i))),
     [weekStart],
   );
+
+  const selectorsQuery = useTimesheetSelectors(
+    { include: "projects,tasks,cycles,approvers,rules", date: weekStart },
+    apiMode,
+  );
+
+  const selectorProjects = useMemo(() => {
+    const tasks = asArray(asRecord(selectorsQuery.data).tasks).map((value) => ({
+      name: text(asRecord(value).name ?? asRecord(value).task_code, "General"),
+    }));
+    return asArray(asRecord(selectorsQuery.data).projects).map((value) => {
+      const row = asRecord(value);
+      return {
+        id: text(row.id, text(row.project_code, "project")),
+        code: text(row.project_code ?? row.code, "PROJECT"),
+        name: text(row.name, "Project"),
+        modules: tasks.length ? tasks : [{ name: "General" }],
+      };
+    });
+  }, [selectorsQuery.data]);
+
+  const timesheetProjects = selectorProjects.length ? selectorProjects : myProjects;
 
   const week = useMemo(
     () => ensureWeek(me.id, me.name, me.department, weekStart),
@@ -168,11 +193,11 @@ function MyTimesheetPage() {
   }, [rows, weekDays]);
 
   const addRow = () => {
-    if (myProjects.length === 0) {
+    if (timesheetProjects.length === 0) {
       toast.error("No projects assigned", { description: "Ask your PM to add you to a project." });
       return;
     }
-    const p = myProjects[0];
+    const p = timesheetProjects[0];
     setRows((r) => [
       ...r,
       {
@@ -211,7 +236,9 @@ function MyTimesheetPage() {
   const persistRows = async (status: "draft" | "pending") => {
     const nextEntries: Array<Omit<TimesheetEntry, "id">> = [];
     rows.forEach((r) => {
-      const project = projects.find((p) => p.id === r.projectId);
+      const project =
+        timesheetProjects.find((p) => p.id === r.projectId) ??
+        projects.find((p) => p.id === r.projectId);
       if (!project) return;
       weekDays.forEach((d) => {
         const h = Number(r.hours[d]) || 0;
@@ -339,6 +366,14 @@ function MyTimesheetPage() {
           <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
         </Card>
       )}
+      {selectorsQuery.error instanceof Error && (
+        <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
+          <p className="text-sm font-semibold text-destructive">
+            Timesheet selectors API unavailable
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{selectorsQuery.error.message}</p>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -448,7 +483,7 @@ function MyTimesheetPage() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {myProjects.map((p) => (
+                              {timesheetProjects.map((p) => (
                                 <SelectItem key={p.id} value={p.id}>
                                   {p.code} · {p.name}
                                 </SelectItem>

@@ -8,11 +8,9 @@ export const UPDATE_NEEDED_OPERATIONS = [
   "GET /api/v1/reports/expenses/finance-dashboard",
   "GET /api/v1/reports/expenses/finance-history",
   "GET /api/v1/reports/expenses/register",
-  "GET /api/v1/timesheets/queue/approver",
-  "POST /api/v1/timesheets/submissions/{id}/approve",
 ] as const;
 
 export const READY_API_OPERATION_COUNT = 57;
 export const UPDATE_NEEDED_OPERATION_COUNT = UPDATE_NEEDED_OPERATIONS.length;
-export const NEW_BACKEND_OPERATION_COUNT = 146;
+export const NEW_BACKEND_OPERATION_COUNT = 151;
 export const DELETE_OPERATION_COUNT = 0;

@@ -4,6 +4,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ReportShell } from "@/components/reports/report-shell";
 import { StatusBadge, type Column } from "@/components/ui-kit";
 import { useTimesheets } from "@/lib/timesheets-store";
+import { useTimesheetProductivitySummary, useTimesheetProjectSummary } from "@/domains/timesheets";
+import { asArray, asRecord, isApiEnabled, numberValue, pageItems, text } from "@/shared/api";
 import {
   TIMESHEET_STATUS_LABEL,
   type TimesheetEntry,
@@ -15,6 +17,15 @@ export const Route = createFileRoute("/_app/reports/timesheet")({ component: Tim
 
 function TimesheetReports() {
   const { entries, weeks } = useTimesheets();
+  const apiMode = isApiEnabled();
+  const productivityQuery = useTimesheetProductivitySummary(
+    { date_from: "2026-01-01", date_to: "2026-12-31", group_by: "employee" },
+    apiMode,
+  );
+  const projectSummaryQuery = useTimesheetProjectSummary(
+    { page: 1, page_size: 100, date_from: "2026-01-01", date_to: "2026-12-31" },
+    apiMode,
+  );
 
   const filterEntries = (
     f: { from: string; to: string; department: string; employee: string; status: string },
@@ -96,6 +107,20 @@ function TimesheetReports() {
   ];
 
   const productivity = useMemo(() => {
+    if (apiMode && productivityQuery.data) {
+      return asArray(asRecord(productivityQuery.data).breakdown).map((value) => {
+        const row = asRecord(value);
+        const hours = numberValue(row.total_hours, 0);
+        const billable = numberValue(row.billable_hours, 0);
+        return {
+          id: text(row.id, text(row.label, "employee")),
+          employee: text(row.label, "Employee"),
+          hours,
+          billable,
+          util: numberValue(row.billable_percent, hours ? Math.round((billable / hours) * 100) : 0),
+        };
+      });
+    }
     const m = new Map<string, { hours: number; billable: number }>();
     for (const e of entries) {
       const cur = m.get(e.employeeName) ?? { hours: 0, billable: 0 };
@@ -110,9 +135,23 @@ function TimesheetReports() {
       billable: v.billable,
       util: v.hours ? Math.round((v.billable / v.hours) * 100) : 0,
     }));
-  }, [entries]);
+  }, [apiMode, entries, productivityQuery.data]);
 
   const projectHours = useMemo(() => {
+    if (apiMode && projectSummaryQuery.data) {
+      return pageItems(projectSummaryQuery.data).map((value) => {
+        const row = asRecord(value);
+        const project = asRecord(row.project);
+        const totals = asRecord(row.totals);
+        return {
+          id: text(project.project_code, text(project.id, "project")),
+          code: text(project.project_code, "PROJECT"),
+          project: text(project.name, "Project"),
+          hours: numberValue(totals.total_hours, 0),
+          billable: numberValue(totals.billable_hours, 0),
+        };
+      });
+    }
     const m = new Map<string, { hours: number; billable: number; project: string }>();
     for (const e of entries) {
       const k = e.projectCode;
@@ -128,7 +167,7 @@ function TimesheetReports() {
       hours: v.hours,
       billable: v.billable,
     }));
-  }, [entries]);
+  }, [apiMode, entries, projectSummaryQuery.data]);
 
   const statusOptions = Object.entries(TIMESHEET_STATUS_LABEL).map(([value, label]) => ({
     value,

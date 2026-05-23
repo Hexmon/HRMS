@@ -27,6 +27,8 @@ import { useEmployees } from "@/lib/employees-store";
 import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { TIMESHEET_STATUS_LABEL, type TimesheetWeek, DEMO_LAST_WEEK } from "@/lib/mock/timesheets";
+import { useTimesheetMissingSubmissions } from "@/domains/timesheets";
+import { asRecord, isApiEnabled, numberValue, pageItems, text } from "@/shared/api";
 import {
   CheckCircle2,
   XCircle,
@@ -58,11 +60,22 @@ interface Row {
 
 const TARGET = 40;
 
+function cycleEnd(weekStart: string): string {
+  const date = new Date(`${weekStart}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 6);
+  return date.toISOString().slice(0, 10);
+}
+
 function ApprovalsPage() {
   const { user, activeRole } = useAuth();
   const { employees } = useEmployees();
   const { projects } = useProjects();
   const { entries, weeks, loading, error, isApiBacked, setWeekStatus } = useTimesheets();
+  const apiMode = isApiEnabled();
+  const missingQuery = useTimesheetMissingSubmissions(
+    { page: 1, page_size: 100, cycle_start: DEMO_LAST_WEEK, cycle_end: cycleEnd(DEMO_LAST_WEEK) },
+    apiMode,
+  );
 
   const isAdmin = activeRole === "main_admin" || activeRole === "hr_admin";
 
@@ -118,7 +131,7 @@ function ApprovalsPage() {
     .map(buildRow);
 
   // Missing: scoped employees who have no week record for last week
-  const missing: Row[] = useMemo(() => {
+  const localMissing: Row[] = useMemo(() => {
     const submittedIds = new Set(
       scopedWeeks.filter((w) => w.weekStart === DEMO_LAST_WEEK).map((w) => w.employeeId),
     );
@@ -141,6 +154,31 @@ function ApprovalsPage() {
         status: "draft" as const,
       }));
   }, [scopedEmployees, scopedWeeks]);
+
+  const apiMissing: Row[] = useMemo(
+    () =>
+      pageItems(missingQuery.data).map((value) => {
+        const row = asRecord(value);
+        const userRecord = asRecord(row.user);
+        const cycle = asRecord(row.cycle);
+        return {
+          id: text(row.id, `missing_${text(row.employee_user_id, "employee")}`),
+          weekId: text(row.submission_id),
+          employeeId: text(userRecord.employee_code ?? row.employee_user_id, "EMP"),
+          employeeName: text(userRecord.full_name, "Employee"),
+          department: text(asRecord(userRecord.department).name, "General"),
+          weekStart: text(cycle.start, DEMO_LAST_WEEK),
+          total: numberValue(row.submitted_hours, 0),
+          billable: 0,
+          missing: numberValue(row.missing_hours, TARGET),
+          status: "draft" as const,
+        };
+      }),
+    [missingQuery.data],
+  );
+
+  const missing = apiMode && missingQuery.data ? apiMissing : localMissing;
+  const missingLoading = loading || (apiMode && missingQuery.isLoading);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rejectFor, setRejectFor] = useState<Row | null>(null);
@@ -347,6 +385,14 @@ function ApprovalsPage() {
           <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
         </Card>
       )}
+      {missingQuery.error instanceof Error && (
+        <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
+          <p className="text-sm font-semibold text-destructive">
+            Missing submissions API unavailable
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{missingQuery.error.message}</p>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
@@ -458,7 +504,7 @@ function ApprovalsPage() {
         </TabsContent>
 
         <TabsContent value="missing">
-          {missing.length === 0 ? (
+          {missing.length === 0 && !missingLoading ? (
             <Card className="rounded-2xl border-border/60 p-10">
               <EmptyState
                 icon={CheckCircle2}
@@ -471,7 +517,7 @@ function ApprovalsPage() {
               columns={buildColumns(missing, false, false)}
               rows={missing}
               searchKeys={["employeeName", "department"]}
-              loading={loading}
+              loading={missingLoading}
               emptyTitle="No missing submissions"
             />
           )}

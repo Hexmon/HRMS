@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -21,6 +21,16 @@ import { useAuth } from "@/lib/auth";
 import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { DEMO_LAST_WEEK } from "@/lib/mock/timesheets";
+import { useTimesheetProjectSummary } from "@/domains/timesheets";
+import {
+  asArray,
+  asRecord,
+  isApiEnabled,
+  isUuid,
+  numberValue,
+  pageItems,
+  text,
+} from "@/shared/api";
 import { Briefcase, Clock, DollarSign, AlertTriangle, Activity } from "lucide-react";
 
 export const Route = createFileRoute("/_app/timesheet/projects")({
@@ -37,10 +47,17 @@ interface MemberRow {
   submitted: boolean;
 }
 
+function cycleEnd(weekStart: string): string {
+  const date = new Date(`${weekStart}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 6);
+  return date.toISOString().slice(0, 10);
+}
+
 function ProjectViewPage() {
   const { user, activeRole } = useAuth();
   const { projects } = useProjects();
   const { entries, weeks, loading, error } = useTimesheets();
+  const apiMode = isApiEnabled();
 
   const isAdmin = activeRole === "main_admin";
   const myProjects = useMemo(
@@ -53,6 +70,22 @@ function ProjectViewPage() {
 
   const project = myProjects.find((p) => p.id === projectId);
 
+  useEffect(() => {
+    if (!projectId && myProjects[0]) setProjectId(myProjects[0].id);
+  }, [myProjects, projectId]);
+
+  const summaryQuery = useTimesheetProjectSummary(
+    {
+      page: 1,
+      page_size: 50,
+      cycle_start: weekStart,
+      cycle_end: cycleEnd(weekStart),
+      ...(project?.code ? { project_code: project.code } : {}),
+      ...(projectId && isUuid(projectId) ? { project_id: projectId } : {}),
+    },
+    apiMode && Boolean(project),
+  );
+
   const weekOptions = useMemo(() => {
     const set = new Set(weeks.map((w) => w.weekStart));
     return Array.from(set).sort().reverse();
@@ -64,6 +97,32 @@ function ProjectViewPage() {
   );
 
   const memberRows: MemberRow[] = useMemo(() => {
+    if (apiMode) {
+      const item = asRecord(
+        pageItems(summaryQuery.data).find((row) => {
+          const projectRecord = asRecord(asRecord(row).project);
+          return (
+            text(projectRecord.id) === projectId ||
+            text(projectRecord.project_code) === project?.code
+          );
+        }) ?? pageItems(summaryQuery.data)[0],
+      );
+      return asArray(item.members).map((value) => {
+        const row = asRecord(value);
+        const userRecord = asRecord(row.user);
+        const total = numberValue(row.total_hours, 0);
+        const billable = numberValue(row.billable_hours, 0);
+        return {
+          id: text(row.id, text(userRecord.id, "member")),
+          name: text(userRecord.full_name, "Employee"),
+          employeeId: text(userRecord.employee_code ?? row.employee_user_id, "EMP"),
+          total,
+          billable,
+          nonBillable: numberValue(row.non_billable_hours, Math.max(0, total - billable)),
+          submitted: Boolean(row.submitted),
+        };
+      });
+    }
     if (!project) return [];
     return project.members.map((m) => {
       const mEntries = projectEntries.filter((e) => e.employeeId === m.employeeId);
@@ -85,7 +144,7 @@ function ProjectViewPage() {
         submitted,
       };
     });
-  }, [project, projectEntries, weeks, weekStart]);
+  }, [apiMode, project, projectEntries, projectId, summaryQuery.data, weeks, weekStart]);
 
   const totals = useMemo(() => {
     const total = memberRows.reduce((s, r) => s + r.total, 0);
@@ -207,6 +266,12 @@ function ProjectViewPage() {
           <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
         </Card>
       )}
+      {summaryQuery.error instanceof Error && (
+        <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
+          <p className="text-sm font-semibold text-destructive">Project summary API unavailable</p>
+          <p className="mt-1 text-xs text-muted-foreground">{summaryQuery.error.message}</p>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
@@ -243,7 +308,7 @@ function ProjectViewPage() {
         columns={cols}
         rows={memberRows}
         searchKeys={["name", "employeeId"]}
-        loading={loading}
+        loading={loading || (apiMode && summaryQuery.isLoading)}
         emptyTitle="No team members"
       />
     </div>
