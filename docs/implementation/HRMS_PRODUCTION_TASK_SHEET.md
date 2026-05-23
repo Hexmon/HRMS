@@ -587,7 +587,7 @@ Frontend:
 | Leave/WFH export backend | `feat(leave): implement leave WFH export API` | Committed in `hrms_backend` as `c30c814` |
 | Leave/WFH export frontend | `feat(leave): connect Leave WFH export action` | Committed in `hrms-client` as `fd197b0` |
 | Leave/WFH export task sheet | `docs(leave): record export completion` | Committed in `hrms_backend` as `4328b28` |
-| Phase 6 verification guardrails | `chore(verify): harden production readiness checks` | Pending commit |
+| Phase 6 verification guardrails | `chore(verify): harden production readiness checks` | Committed in `hrms_backend` as `0a7f47b` |
 
 ## Next Steps
 
