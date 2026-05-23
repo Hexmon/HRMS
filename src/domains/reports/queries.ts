@@ -2,7 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryKeys, queryTimings } from "@/shared/query";
 import { reportsApi, type ReportParams } from "./api";
 
-const defaultParams = { page: 1, page_size: 500 };
+const defaultParams = { page: 1, page_size: 100 };
 
 export function useHrEmployeeReport(enabled = true, params: ReportParams = defaultParams) {
   return useQuery({
