@@ -17,6 +17,7 @@ import {
   type AuthUser,
   type Department,
   type Designation,
+  type OutboxEvent,
   type RbacPermissionDefinition,
   type RbacRoleRecord
 } from "#shared";
@@ -29,6 +30,7 @@ import type {
   AdminNotificationChannelInput,
   AdminNotificationChannelsQuery,
   AdminNotificationChannelsUpdateInput,
+  AdminAuditLogQuery,
   AdminPoliciesQuery,
   AdminPolicyUpdateInput,
   AdminWorkflowStageInput,
@@ -46,7 +48,7 @@ import type {
   RbacRolesQuery,
   RbacRoleUpdateInput
 } from "./schemas.js";
-import { assertCanManageAdminSettings, assertCanManageEmailTemplates, assertCanManageMasterData, assertCanManageNotificationChannels, assertCanManagePolicySettings, assertCanManageRbac, assertCanManageWorkflowSettings } from "./policy.js";
+import { assertCanManageAdminSettings, assertCanManageEmailTemplates, assertCanManageMasterData, assertCanManageNotificationChannels, assertCanManagePolicySettings, assertCanManageRbac, assertCanManageWorkflowSettings, assertCanReadAdminAuditLog } from "./policy.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 
 function page<T>(items: readonly T[], pageNumber = 1, pageSize = 25): Paginated<T> {
@@ -254,6 +256,22 @@ export class AdminService {
       versions: Object.fromEntries(presented.map((channel) => [channel.event_key, channel.version])),
       version: maxAdminNotificationVersion(presented)
     };
+  }
+
+  listAdminAuditLog(actor: AuthUser, query: AdminAuditLogQuery): Paginated<AdminAuditLogEntryResponse> {
+    assertCanReadAdminAuditLog(actor);
+    const moduleFilter = query.module?.trim().toLowerCase();
+    const from = query.from ?? query.date_from;
+    const to = query.to ?? query.date_to;
+    const rows = this.store.outbox
+      .filter((event) => event.event_type.startsWith("admin."))
+      .filter((event) => !moduleFilter || moduleForAdminEvent(event).toLowerCase().includes(moduleFilter) || event.event_type.toLowerCase().includes(moduleFilter))
+      .filter((event) => !query.actor_user_id || actorUserIdForEvent(event) === query.actor_user_id)
+      .filter((event) => !from || event.created_at >= from)
+      .filter((event) => !to || event.created_at <= to)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id)
+      .map((event) => presentAdminAuditLogEntry(this.store, event));
+    return page(rows, query.page, query.page_size);
   }
 
   listRbacRoles(actor: AuthUser, query: RbacRolesQuery): Paginated<RbacRoleResponse> {
@@ -678,6 +696,23 @@ export interface AdminNotificationChannelListResponse {
   version: number;
 }
 
+export interface AdminAuditLogEntryResponse {
+  id: string;
+  event_id: string;
+  actor: string;
+  actor_user_id: string | null;
+  action: string;
+  event_type: string;
+  target: string;
+  module: string;
+  aggregate_type: string;
+  aggregate_id: string;
+  status: string;
+  at: string;
+  created_at: string;
+  ip: string;
+}
+
 export interface CompanyProfileResponse {
   id: string;
   company_name: string;
@@ -840,6 +875,27 @@ function presentAdminNotificationChannel(channel: AdminNotificationChannelRecord
   };
 }
 
+function presentAdminAuditLogEntry(store: MemoryDataStore, event: OutboxEvent): AdminAuditLogEntryResponse {
+  const actorUserId = actorUserIdForEvent(event);
+  const actor = actorUserId ? store.users.find((user) => user.id === actorUserId && !user.deleted_at) : undefined;
+  return {
+    id: `AL-${event.id}`,
+    event_id: event.event_id,
+    actor: actor ? `${actor.employee_code} - ${actor.full_name}` : actorUserId ?? "System",
+    actor_user_id: actorUserId,
+    action: event.event_type,
+    event_type: event.event_type,
+    target: targetForAdminEvent(event),
+    module: moduleForAdminEvent(event),
+    aggregate_type: event.aggregate_type,
+    aggregate_id: event.aggregate_id,
+    status: event.status,
+    at: event.created_at,
+    created_at: event.created_at,
+    ip: typeof event.payload.ip === "string" ? event.payload.ip : "server"
+  };
+}
+
 function normalizeWorkflowStages(stages: readonly AdminWorkflowStageInput[], workflowKey: AdminWorkflowKey): AdminWorkflowStageRecord[] {
   const seen = new Set<string>();
   return stages.map((stage, index) => {
@@ -894,6 +950,37 @@ function normalizeNotificationChannelInput(channel: AdminNotificationChannelInpu
 
 function maxAdminNotificationVersion(channels: readonly { version: number }[]): number {
   return Math.max(1, ...channels.map((channel) => channel.version));
+}
+
+function actorUserIdForEvent(event: OutboxEvent): string | null {
+  return typeof event.payload.actor_user_id === "string" ? event.payload.actor_user_id : null;
+}
+
+function moduleForAdminEvent(event: OutboxEvent): string {
+  if (event.event_type.includes("company_profile")) return "Company";
+  if (event.event_type.includes("rbac")) return "RBAC";
+  if (event.event_type.includes("master_data")) return "Master Data";
+  if (event.event_type.includes("workflow")) return "Workflows";
+  if (event.event_type.includes("policy")) return "Policies";
+  if (event.event_type.includes("email_template")) return "Email Templates";
+  if (event.event_type.includes("notification_channels")) return "Notifications";
+  return "Admin Settings";
+}
+
+function targetForAdminEvent(event: OutboxEvent): string {
+  const payload = event.payload;
+  const candidates = [
+    payload.company_name,
+    payload.role_key,
+    payload.department_code,
+    payload.designation_code,
+    payload.workflow_key,
+    payload.policy_key,
+    payload.template_key,
+    Array.isArray(payload.event_keys) ? payload.event_keys.join(", ") : undefined
+  ];
+  const value = candidates.find((candidate) => typeof candidate === "string" && candidate.trim());
+  return typeof value === "string" ? value : `${event.aggregate_type}:${event.aggregate_id}`;
 }
 
 function normalizeAdminPolicyConfig(

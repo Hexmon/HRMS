@@ -7,13 +7,13 @@ This audit maps the current Hawkaii HRMS frontend to the custom backend contract
 - The app is a mock-first HRMS frontend. Most business state is in `src/lib/*-store.tsx` and `src/lib/mock/`.
 - The visible product surface includes auth/onboarding, dashboard, employees, EMS, attendance, leave/WFH, timesheets, projects, utilization, expenses, assets, helpdesk, reports, admin settings, and developer handoff.
 - Existing backend handoff coverage is strongest for auth/session, core user hierarchy, expenses, finance, documents, assets, timesheets, attendance basics, primary leave/WFH/holiday workflows, primary EMS self-service workflows, project portfolio/utilization, expense reports, health, and OpenAPI tooling.
-- Full frontend coverage requires additional API groups for EMS admin/document wrappers, attendance reports/exports, leave/WFH export/reporting, project reports/detail hardening, admin security/audit settings, dashboard role widgets, and non-expense reports.
+- Full frontend coverage requires additional API groups for EMS admin/document wrappers, attendance reports/exports, leave/WFH export/reporting, project reports/detail hardening, admin security settings, dashboard role widgets, and non-expense reports.
 
 ## API Count Summary
 
-Current documented backend contract: **195 operations** in `openapi.json` after Phase 5 Admin notification channel API completion.
+Current documented backend contract: **196 operations** in `openapi.json` after Phase 5 Admin audit-log API completion.
 
-- **193** operations are under `/api/v1/**`.
+- **194** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
 - **0** documented backend operations currently need deletion from the OpenAPI pack because Reviewer/Director APIs are not present there.
 
@@ -21,11 +21,11 @@ Disjoint implementation counts for backend planning:
 
 | Category | Count | Meaning |
 | --- | ---: | --- |
-| Existing APIs ready to integrate as-is | 195 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
+| Existing APIs ready to integrate as-is | 196 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
 | Existing APIs to update in place | 0 | Phase 1A-1C existing API expansions have landed; new gaps should be added as explicit new endpoints. |
 | Existing APIs to delete | 0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
-| New APIs remaining to add | 22 | Remaining first-pass count needed after Phase 5 Admin notification channel API completion. |
-| Target contract size after additions | 217 | `195 current + 22 remaining`; Admin notification channel read was added because the visible UI must load current settings before toggles can save. |
+| New APIs remaining to add | 21 | Remaining first-pass count needed after Phase 5 Admin audit-log API completion. |
+| Target contract size after additions | 217 | `196 current + 21 remaining`; Admin audit log is now implemented from durable admin outbox events. |
 
 Existing APIs updated in place during earlier phases:
 
@@ -59,9 +59,9 @@ Minimum new API operation count by frontend area:
 | Assets | 0 | Requests, decisions, cancellation, acknowledgements, maintenance, vendor views, and recovery queues are implemented; asset reports remain in Reports. |
 | Helpdesk | 0 | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report are implemented. |
 | Reports | 10 | HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, export list/detail beyond existing expense exports. |
-| Admin settings | 1 | Company profile, department/designation master data, RBAC role/permission configuration, workflow configuration, policy configuration, email template list/update, and notification channel list/update are implemented; audit logs remain planned, while security settings still need a concrete backend contract. |
+| Admin settings | 0 | Company profile, department/designation master data, RBAC role/permission configuration, workflow configuration, policy configuration, email template list/update, notification channel list/update, and audit log are implemented; security settings still need a concrete backend contract before counting/implementation. |
 | Notifications | 0 | Feed, unread count, mark read, and mark all read are implemented; Admin notification channel preferences are implemented under Admin settings. |
-| **Total remaining** | **22** | Remaining operation count for full visible frontend coverage after Phase 5 Admin notification channels. |
+| **Total remaining** | **21** | Remaining operation count for full visible frontend coverage after Phase 5 Admin audit log. |
 
 ## Expense Flow Alignment
 
@@ -103,7 +103,7 @@ Remove:
 | Assets                     | `/assets/*`                                                                                                 | Inventory, detail, assign, return, QR scan, license APIs, termination event, requests, acknowledgements, maintenance records, vendor views, and recovery queues.                       | Asset report endpoint parity remains planned under Reports.                                                                                                                     |
 | Helpdesk                   | `/helpdesk/*`                                                                                               | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report. | Broader helpdesk summary report remains planned under non-expense reports.                                                                                                      |
 | Reports                    | `/reports/*`                                                                                                | Expense reports and export jobs.                                             | HR, attendance, leave/WFH, project, timesheet, asset, helpdesk, and audit reports with pagination/filter/export parity.                                                           |
-| Admin settings             | `/admin-settings/*`                                                                                         | Company profile, department/designation master data, RBAC roles/permissions, workflow configs, policies, email templates, notification channels, finance governance, manager backups, timesheet workflow definitions. | Security settings and audit logs.                      |
+| Admin settings             | `/admin-settings/*`                                                                                         | Company profile, department/designation master data, RBAC roles/permissions, workflow configs, policies, email templates, notification channels, audit log, finance governance, manager backups, timesheet workflow definitions. | Security settings contract/runtime enforcement decision.                      |
 | Notifications              | Topbar notification panel                                                                                   | Notification feed, unread count, mark read, mark all read, and Admin notification channel preferences.               | Runtime notification delivery-provider enforcement remains production hardening.                                                                                                  |
 
 ## Integration Changes For Frontend

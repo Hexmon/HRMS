@@ -35,3 +35,8 @@ export function assertCanManageNotificationChannels(actor: AuthUser): void {
   if (actor.roles.includes(Roles.Admin)) return;
   throw forbidden("Only Admin can manage notification channels");
 }
+
+export function assertCanReadAdminAuditLog(actor: AuthUser): void {
+  if (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor)) return;
+  throw forbidden("Only Admin or Auditor can read admin audit logs");
+}

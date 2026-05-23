@@ -46,6 +46,7 @@ const localDemoPassword = getLocalDemoPassword();
 
 const expectedOperations = [
   "DELETE /api/v1/manager-backups/{id}",
+  "GET /api/v1/admin/audit-log",
   "GET /api/v1/admin/company-profile",
   "GET /api/v1/admin/email-templates",
   "GET /api/v1/admin/master-data/departments",
@@ -401,6 +402,7 @@ const listOperations = [
   "GET /api/v1/admin/master-data/departments",
   "GET /api/v1/admin/master-data/designations",
   "GET /api/v1/admin/rbac/roles",
+  "GET /api/v1/admin/audit-log",
   "GET /api/v1/expenses/my",
   "GET /api/v1/expenses/queue/manager",
   "GET /api/v1/expenses/queue/finance",
@@ -647,7 +649,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(195);
+    expect(rows.length).toBe(196);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

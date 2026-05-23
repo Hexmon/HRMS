@@ -60,6 +60,17 @@ export const adminNotificationChannelsQuerySchema = z.object({
   active_only: z.coerce.boolean().optional()
 });
 
+export const adminAuditLogQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  page_size: z.coerce.number().int().min(1).max(100).default(25),
+  module: z.string().max(80).optional(),
+  actor_user_id: z.uuid().optional(),
+  from: z.string().max(40).optional(),
+  to: z.string().max(40).optional(),
+  date_from: z.string().max(40).optional(),
+  date_to: z.string().max(40).optional()
+});
+
 const workflowStageSchema = z.object({
   id: z.string().min(1).max(80).optional(),
   order: z.number().int().min(1).max(20).optional(),
@@ -203,6 +214,7 @@ export type AdminEmailTemplateUpdateInput = z.infer<typeof adminEmailTemplateUpd
 export type AdminNotificationChannelsQuery = z.infer<typeof adminNotificationChannelsQuerySchema>;
 export type AdminNotificationChannelsUpdateInput = z.infer<typeof adminNotificationChannelsUpdateSchema>;
 export type AdminNotificationChannelInput = z.infer<typeof adminNotificationChannelInputSchema>;
+export type AdminAuditLogQuery = z.infer<typeof adminAuditLogQuerySchema>;
 export type DepartmentCreateInput = z.infer<typeof departmentCreateSchema>;
 export type DepartmentUpdateInput = z.infer<typeof departmentUpdateSchema>;
 export type DesignationCreateInput = z.infer<typeof designationCreateSchema>;

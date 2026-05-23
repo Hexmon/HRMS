@@ -953,6 +953,56 @@ const adminNotificationChannelsUpdateBody = {
   additionalProperties: false
 };
 
+const adminAuditLogQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    module: { type: "string", example: "RBAC" },
+    actor_user_id: uuid("Filter by actor user UUID"),
+    from: dateTime("Filter from timestamp"),
+    to: dateTime("Filter to timestamp"),
+    date_from: dateTime("Filter from timestamp alias"),
+    date_to: dateTime("Filter to timestamp alias")
+  }
+};
+
+const adminAuditLogEntrySchema = {
+  type: "object",
+  required: [
+    "id",
+    "event_id",
+    "actor",
+    "actor_user_id",
+    "action",
+    "event_type",
+    "target",
+    "module",
+    "aggregate_type",
+    "aggregate_id",
+    "status",
+    "at",
+    "created_at",
+    "ip"
+  ],
+  properties: {
+    id: { type: "string", example: "AL-1001" },
+    event_id: uuid("Outbox event UUID"),
+    actor: { type: "string", example: "ADM - HR Admin" },
+    actor_user_id: { ...uuid("Actor user UUID"), nullable: true },
+    action: { type: "string", example: "admin.rbac.role.updated" },
+    event_type: { type: "string", example: "admin.rbac.role.updated" },
+    target: { type: "string", example: "Finance Manager" },
+    module: { type: "string", example: "RBAC" },
+    aggregate_type: { type: "string", example: "rbac_role" },
+    aggregate_id: uuid("Aggregate UUID"),
+    status: { type: "string", example: "pending" },
+    at: dateTime("Audit event timestamp"),
+    created_at: dateTime("Audit event creation timestamp"),
+    ip: { type: "string", example: "server" }
+  },
+  additionalProperties: false
+};
+
 const userReferenceSchema = {
   type: "object",
   required: ["id", "employee_code", "full_name"],
@@ -3832,6 +3882,15 @@ const routeDocs: Record<string, RouteSchema> = {
     {
       body: adminNotificationChannelsUpdateBody,
       response200: adminNotificationChannelsResponse
+    }
+  ),
+  "GET /api/v1/admin/audit-log": operation(
+    "Admin / Configuration",
+    "Admin settings audit log",
+    "Lists Admin Settings audit entries derived from durable admin outbox events. Secret values are redacted because payloads expose only event metadata.",
+    {
+      querystring: adminAuditLogQuerySchema,
+      response200: paginated(adminAuditLogEntrySchema)
     }
   ),
   "GET /api/v1/platform/finance-governance": operation(

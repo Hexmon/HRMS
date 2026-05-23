@@ -3,6 +3,7 @@ import { z } from "zod";
 import { unauthorized } from "../../platform/errors.js";
 import { AdminService } from "./service.js";
 import {
+  adminAuditLogQuerySchema,
   adminEmailTemplatesQuerySchema,
   adminEmailTemplateUpdateSchema,
   adminNotificationChannelsQuerySchema,
@@ -206,6 +207,14 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
     return new AdminService(fastify.store).updateAdminNotificationChannels(
       request.actor,
       adminNotificationChannelsUpdateSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/audit-log", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).listAdminAuditLog(
+      request.actor,
+      adminAuditLogQuerySchema.parse(request.query)
     );
   });
 };
