@@ -4,14 +4,14 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 4 Timesheet enhancement slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, and Asset workflow additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 4 Expense enhancement slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, and Timesheet enhancement additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 170 implemented operations across 152 paths |
-| Planned operations remaining | 45 |
+| Backend OpenAPI | 174 implemented operations across 156 paths |
+| Planned operations remaining | 41 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
@@ -28,6 +28,8 @@ This versioned report captures the completed Phase 4 Timesheet enhancement slice
 | Asset workflow frontend | Integrated in `hrms-client` asset store/API mode for visible asset request, acknowledgement, maintenance, vendor, and recovery queue flows |
 | Timesheet enhancements backend | Implemented for project summaries, missing submissions, productivity summary, submission detail, and selectors |
 | Timesheet enhancements frontend | Integrated in `hrms-client` for project timesheet view, missing submission queue/report inputs, productivity/project report rollups, and form selectors in API mode |
+| Expense enhancements backend | Implemented for metadata, dashboard summary, requester withdraw, and clarification thread |
+| Expense enhancements frontend | Integrated in `hrms-client` for create-form metadata, expense dashboard summary cards, withdraw actions, and clarification comments in API mode |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Helpdesk Discovery
@@ -130,6 +132,26 @@ Deferred from this Helpdesk slice: category mutation endpoints and broader `/api
 | `GET` | `/api/v1/timesheets/submissions/{id}` | Domain adapter/detail-ready workflow | Returns visible submission detail, segments, workflow history, and latest decision |
 | `GET` | `/api/v1/timesheets/selectors` | `/timesheet` forms | Returns visible projects, task selectors, cycles, approvers, workflow definitions, and rules |
 
+## Expense Enhancements Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Existing backend | `src/modules/expenses` already implements create, my list, detail, submit, manager queue/decision, finance queue/detail/decision/payment/bills/settlement, document verification, timeline, audit, and expense reports | Extend the existing module with the 4 planned read/mutation endpoints rather than replacing workflow behavior |
+| Planned contract gap | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` lists 4 Expenses/Finance additions: metadata, dashboard summary, withdraw, and clarification thread | Implement those endpoints under `/api/v1/expenses/*` with OpenAPI docs/tests |
+| Frontend routes | `hrms-client/src/routes/_app/expenses*.tsx` exposes dashboard cards, create form selectors, my expenses withdraw action, detail comments tab, manager review, finance queue, register, and reports | Wire metadata, dashboard summary, withdraw, and comments/clarifications through the expense domain adapter in API mode |
+| Current frontend data source | Expense create/list/manager/finance workflow has API calls in API mode, but dashboard cards are client-aggregated, withdraw is local-only, comments are local-only, and form metadata is static/free text | Replace production-critical local behavior with backend APIs while keeping existing non-production fallback path |
+| Persistence | Expense audit logs are already durable in memory/Postgres and include event payload JSON | Store clarification thread entries as expense audit events to avoid a new table for this small slice |
+| Risks | Existing frontend maps backend `Cancelled` to closed, while the UI has a separate `withdrawn` status | Update frontend mapping when withdraw API is integrated |
+
+## Expense Enhancements API Inventory
+
+| Method | Path | Frontend usage | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/expenses/metadata` | `/expenses/create` selectors/forms | Returns expense types, subtype groups, payment types, currencies, document requirements, policy hints, and project/client selector metadata |
+| `GET` | `/api/v1/expenses/dashboard-summary` | `/expenses` dashboard | Returns role-aware cards, queue counts, aging buckets, totals, and compact rows derived from visible expense tickets |
+| `POST` | `/api/v1/expenses/{id}/withdraw` | `/expenses/my`, `/expenses/$id` requester action | Requester-only withdrawal for draft, submitted, pending-manager, or manager-returned tickets with OCC and remarks policy |
+| `POST` | `/api/v1/expenses/{id}/clarifications` | `/expenses/$id` comments/clarification tab | Appends a durable clarification message and returns the current object-scoped thread |
+
 ## Projects / Utilization API Inventory
 
 | Method | Path | Frontend usage | Notes |
@@ -172,6 +194,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 4 | Asset workflows | Integrate frontend asset screens | Completed in `hrms-client` | Completed for requests, acknowledgements, maintenance, vendors, and recovery queue in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/assets/*`, `src/lib/assets-store.tsx`, `src/lib/mock/assets.ts`, frontend API docs | `feat(assets): connect asset workflow screens to backend APIs` |
 | 4 | Timesheet enhancements | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, timesheets integration test, `pnpm test:contracts` | Passed. OpenAPI generated 170 operations across 152 paths. Non-escalated DB/tsx runs were sandbox-blocked; reruns with local QA infra access passed. | `src/modules/timesheets/*`, OpenAPI/docs/contracts | `feat(timesheets): implement timesheet analytics APIs` |
 | 4 | Timesheet enhancements | Integrate frontend timesheet screens | Completed in `hrms-client` | Completed for project view, missing submission queue, productivity/project report rollups, and form selectors in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/timesheets/*`, `src/routes/_app/timesheet*.tsx`, `src/routes/_app/reports.timesheet.tsx`, frontend API docs | `feat(timesheets): connect timesheet analytics screens to backend APIs` |
+| 4 | Expense enhancements | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, expense integration test, `pnpm test:contracts` | Passed. OpenAPI generated 174 operations across 156 paths. Non-escalated DB/tsx runs were sandbox-blocked; reruns with local QA infra access passed. | `src/modules/expenses/*`, OpenAPI/docs/contracts | `feat(expenses): implement metadata summary withdraw and clarifications` |
+| 4 | Expense enhancements | Integrate frontend expense screens | Completed in `hrms-client` | Completed for create metadata, dashboard summary, withdraw action, and clarification comments in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/expenses/*`, `src/lib/expenses-store.tsx`, expense routes, frontend API docs | `feat(expenses): connect metadata summary and clarification flows` |
 
 ## Remaining Blockers
 
@@ -199,10 +223,10 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed; generated 170 operation frontend contract
+- `pnpm api:docs:generate`: passed; generated 174 operation frontend contract
 - `pnpm api:docs:verify`: passed
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
-- `pnpm exec vitest run --project integration src/modules/timesheets/__tests__/timesheets.integration.test.ts`: passed, 3 tests
+- `pnpm exec vitest run --project integration src/modules/expenses/__tests__/expense.integration.test.ts`: passed, 5 tests
 - `pnpm test:contracts`: passed, 13 tests
 
 Frontend:
@@ -210,7 +234,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 152 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 156 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -231,6 +255,9 @@ Frontend:
 - Asset recovery queue is read-only in this slice and derives from assigned assets owned by inactive/terminated users; settlement workflows remain deferred.
 - Timesheet enhancements intentionally add read-oriented analytics/selector endpoints only; existing segment, submission, and approval mutation behavior remains unchanged.
 - Timesheet report exports remain client-side until the broader Reports phase adds export job/list/detail APIs.
+- Expense clarification messages are persisted as durable expense audit events for this slice; a dedicated clarification table is deferred unless richer threaded features are required later.
+- Expense withdrawal maps backend `Cancelled` to frontend `withdrawn`; withdrawal is limited to requester-owned draft, submitted, pending-manager, or manager-returned tickets.
+- Expense dashboard summary returns compact role-aware cards and rows; detailed accounting reports remain under the existing expense report endpoints and broader Reports phase.
 
 ## Commit Messages
 
@@ -245,10 +272,12 @@ Frontend:
 | Timesheet enhancements backend | `feat(timesheets): implement timesheet analytics APIs` | Committed in `hrms_backend` as `b67fa38` |
 | Timesheet enhancements frontend | `feat(timesheets): connect timesheet analytics screens to backend APIs` | Committed in `hrms-client` as `c256ff0` |
 | DB verifier fix | `fix(db): make cross-schema verifier use test env` | Committed in `hrms_backend` as `0bfa017` |
+| Expense enhancements backend | `feat(expenses): implement metadata summary withdraw and clarifications` | Committed in `hrms_backend` as `1fea48a` |
+| Expense enhancements frontend | `feat(expenses): connect metadata summary and clarification flows` | Committed in `hrms-client` as `61ac090` |
 
 ## Next Steps
 
-1. Phase 4 Timesheet enhancements are implemented, frontend-integrated, and validated for project summaries, missing submissions, productivity summary, submission detail, and selectors.
-2. Backend OpenAPI now has 170 operations across 152 paths; planned operations remaining are 45.
-3. Timesheet analytics and selector behavior uses backend APIs in API mode; explicit non-production fallback remains available only through the existing config path.
-4. Next Phase 4 scope: Expense metadata, dashboard summary, withdraw, and clarification thread additions.
+1. Phase 4 Expense enhancements are implemented, frontend-integrated, and validated for metadata, dashboard summary, withdrawal, and clarification thread behavior.
+2. Backend OpenAPI now has 174 operations across 156 paths; planned operations remaining are 41.
+3. Expense create metadata, dashboard cards, withdrawal, and detail comments use backend APIs in API mode; explicit non-production fallback remains available only through the existing config path.
+4. Next roadmap scope: Phase 5 Admin settings, RBAC, reports beyond expenses, and audit hardening.
