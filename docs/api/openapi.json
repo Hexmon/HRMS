@@ -76268,6 +76268,867 @@
         }
       }
     },
+    "/api/v1/admin/company-profile": {
+      "get": {
+        "summary": "Read company profile",
+        "tags": ["Admin / Configuration"],
+        "description": "Returns the active company profile and operational settings used by Admin Settings. Admin role is required.",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "company_name",
+                    "company_slug",
+                    "timezone",
+                    "locale",
+                    "currency",
+                    "fiscal_year_start_month",
+                    "working_week",
+                    "work_hours_per_day",
+                    "status",
+                    "updated_at",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Company profile UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "company_name": {
+                      "type": "string",
+                      "example": "Hawkaii HRMS"
+                    },
+                    "company_slug": {
+                      "type": "string",
+                      "example": "hawkaii-hrms"
+                    },
+                    "name": {
+                      "type": "string",
+                      "example": "Hawkaii HRMS"
+                    },
+                    "website": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "https://hawkaii.com"
+                    },
+                    "industry": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "Software / SaaS"
+                    },
+                    "address": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "Bengaluru"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "example": "Asia/Kolkata"
+                    },
+                    "locale": {
+                      "type": "string",
+                      "example": "en-IN"
+                    },
+                    "currency": {
+                      "type": "string",
+                      "example": "INR"
+                    },
+                    "fiscal_year_start_month": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 12,
+                      "example": 4
+                    },
+                    "financial_year_start": {
+                      "type": "string",
+                      "example": "April"
+                    },
+                    "working_week": {
+                      "type": "string",
+                      "example": "Mon-Fri"
+                    },
+                    "work_hours_per_day": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 24,
+                      "example": 8
+                    },
+                    "work_hours": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 24,
+                      "example": 8
+                    },
+                    "logo_label": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "HK"
+                    },
+                    "logoLabel": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "HK"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["pending", "active", "inactive"],
+                      "example": "active"
+                    },
+                    "bootstrap_completed_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Bootstrap completion timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
+                      "nullable": true
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Last update timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update company profile",
+        "tags": ["Admin / Configuration"],
+        "description": "Updates company profile and locale/fiscal settings with optimistic concurrency. Admin role is required and the company slug remains stable.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["expected_version"],
+                "properties": {
+                  "company_name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160,
+                    "example": "Hawkaii HRMS India"
+                  },
+                  "website": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 240,
+                    "example": "https://hawkaii.com"
+                  },
+                  "industry": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 160,
+                    "example": "Software / SaaS"
+                  },
+                  "address": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 1000,
+                    "example": "Bengaluru"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 80,
+                    "example": "Asia/Kolkata"
+                  },
+                  "locale": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 20,
+                    "example": "en-IN"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 64,
+                    "example": "INR"
+                  },
+                  "fiscal_year_start_month": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 12,
+                    "example": 4
+                  },
+                  "working_week": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 40,
+                    "example": "Mon-Fri"
+                  },
+                  "work_hours_per_day": {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 24,
+                    "example": 8
+                  },
+                  "logo_label": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 8,
+                    "example": "HK"
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "company_name",
+                    "company_slug",
+                    "timezone",
+                    "locale",
+                    "currency",
+                    "fiscal_year_start_month",
+                    "working_week",
+                    "work_hours_per_day",
+                    "status",
+                    "updated_at",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Company profile UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "company_name": {
+                      "type": "string",
+                      "example": "Hawkaii HRMS"
+                    },
+                    "company_slug": {
+                      "type": "string",
+                      "example": "hawkaii-hrms"
+                    },
+                    "name": {
+                      "type": "string",
+                      "example": "Hawkaii HRMS"
+                    },
+                    "website": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "https://hawkaii.com"
+                    },
+                    "industry": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "Software / SaaS"
+                    },
+                    "address": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "Bengaluru"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "example": "Asia/Kolkata"
+                    },
+                    "locale": {
+                      "type": "string",
+                      "example": "en-IN"
+                    },
+                    "currency": {
+                      "type": "string",
+                      "example": "INR"
+                    },
+                    "fiscal_year_start_month": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 12,
+                      "example": 4
+                    },
+                    "financial_year_start": {
+                      "type": "string",
+                      "example": "April"
+                    },
+                    "working_week": {
+                      "type": "string",
+                      "example": "Mon-Fri"
+                    },
+                    "work_hours_per_day": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 24,
+                      "example": 8
+                    },
+                    "work_hours": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 24,
+                      "example": 8
+                    },
+                    "logo_label": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "HK"
+                    },
+                    "logoLabel": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "HK"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["pending", "active", "inactive"],
+                      "example": "active"
+                    },
+                    "bootstrap_completed_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Bootstrap completion timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
+                      "nullable": true
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Last update timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/openapi.json": {
       "get": {
         "summary": "OpenAPI JSON",

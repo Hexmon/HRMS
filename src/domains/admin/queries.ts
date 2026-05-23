@@ -1,6 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys, queryTimings } from "@/shared/query";
-import { adminApi } from "./api";
+import { adminApi, type CompanyProfileUpdateInput } from "./api";
+
+export function useCompanyProfile(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.detail("admin", "company-profile", "current"),
+    queryFn: () => adminApi.getCompanyProfile(),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useUpdateCompanyProfileMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CompanyProfileUpdateInput) => adminApi.updateCompanyProfile(input),
+    onSuccess: (profile) => {
+      queryClient.setQueryData(queryKeys.detail("admin", "company-profile", "current"), profile);
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") });
+    },
+  });
+}
 
 export function useFinanceGovernance(enabled = true) {
   return useQuery({
