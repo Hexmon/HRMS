@@ -3286,6 +3286,79 @@ const helpdeskQuerySchema = {
   }
 };
 
+const helpdeskSubCategorySchema = {
+  type: "object",
+  required: ["key", "label"],
+  properties: {
+    key: { type: "string", minLength: 1, maxLength: 80, example: "vpn" },
+    label: { type: "string", minLength: 1, maxLength: 120, example: "VPN / Network" }
+  },
+  additionalProperties: false
+};
+
+const helpdeskCategorySchema = {
+  type: "object",
+  required: ["id", "category_key", "label", "team", "active", "sub_categories", "version"],
+  properties: {
+    id: uuid("Helpdesk category UUID"),
+    category_key: { type: "string", enum: ["IT", "HR", "Finance", "Admin", "Assets", "Project Support"], example: "IT" },
+    label: { type: "string", example: "IT Support" },
+    default_assignee_user_id: { ...uuid("Default assignee user UUID"), nullable: true },
+    default_assignee_name: { type: "string", nullable: true, example: "Asset Manager" },
+    default_assignee_role: { type: "string", nullable: true, example: "asset_manager" },
+    team: { type: "string", example: "IT Operations" },
+    active: { type: "boolean", example: true },
+    sub_categories: { type: "array", items: helpdeskSubCategorySchema },
+    version: { type: "integer", minimum: 1, example: 2 },
+    created_at: dateTime("Category creation time"),
+    updated_at: dateTime("Category update time"),
+    sla: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const helpdeskCategoryCreateBody = {
+  type: "object",
+  required: ["category_key", "label", "team"],
+  properties: {
+    category_key: { type: "string", enum: ["IT", "HR", "Finance", "Admin", "Assets", "Project Support"], example: "IT" },
+    label: { type: "string", minLength: 1, maxLength: 120, example: "IT Support" },
+    default_assignee_user_id: { ...uuid("Default assignee user UUID"), nullable: true },
+    default_assignee_name: { type: "string", nullable: true, example: "Asset Manager" },
+    default_assignee_role: { type: "string", nullable: true, example: "asset_manager" },
+    team: { type: "string", minLength: 1, maxLength: 120, example: "IT Operations" },
+    active: { type: "boolean", default: true, example: true },
+    sub_categories: { type: "array", maxItems: 40, items: helpdeskSubCategorySchema }
+  },
+  additionalProperties: false
+};
+
+const helpdeskCategoryUpdateBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    label: { type: "string", minLength: 1, maxLength: 120, example: "IT Support" },
+    default_assignee_user_id: { ...uuid("Default assignee user UUID"), nullable: true },
+    default_assignee_name: { type: "string", nullable: true, example: "Asset Manager" },
+    default_assignee_role: { type: "string", nullable: true, example: "asset_manager" },
+    team: { type: "string", minLength: 1, maxLength: 120, example: "IT Operations" },
+    active: { type: "boolean", example: false },
+    sub_categories: { type: "array", maxItems: 40, items: helpdeskSubCategorySchema },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const helpdeskCategoryMutationResponse = {
+  type: "object",
+  required: ["category", "version"],
+  properties: {
+    category: helpdeskCategorySchema,
+    version: { type: "integer", minimum: 1, example: 2 }
+  },
+  additionalProperties: false
+};
+
 const helpdeskTicketBody = {
   type: "object",
   required: ["subject", "description"],
@@ -3675,7 +3748,9 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/helpdesk/tickets/{id}/resolve": operation("Helpdesk", "Resolve helpdesk ticket", "Resolves an open ticket with resolution notes, sets resolved timestamp, and preserves SLA metadata.", { params: idParamSchema, body: helpdeskResolveBody, response200: helpdeskMutationResponse }),
   "POST /api/v1/helpdesk/tickets/{id}/close": operation("Helpdesk", "Close helpdesk ticket", "Closes a resolved ticket by requester or agent with optimistic concurrency protection.", { params: idParamSchema, body: helpdeskCloseBody, response200: helpdeskMutationResponse }),
   "POST /api/v1/helpdesk/tickets/{id}/reopen": operation("Helpdesk", "Reopen helpdesk ticket", "Reopens a resolved or closed ticket with a requester/agent reason and increments reopen count.", { params: idParamSchema, body: helpdeskReopenBody, response200: helpdeskMutationResponse }),
-  "GET /api/v1/helpdesk/categories": operation("Helpdesk", "List helpdesk categories", "Returns active ticket categories, default routing metadata, sub-categories, and SLA hints used by the raise-ticket flow.", { querystring: helpdeskQuerySchema, response200: { type: "object", required: ["categories", "sla"], properties: { categories: { type: "array", items: { type: "object", additionalProperties: true } }, sla: { type: "object", additionalProperties: true }, actor_scope: { type: "string", example: "requester" } }, additionalProperties: true } }),
+  "GET /api/v1/helpdesk/categories": operation("Helpdesk", "List helpdesk categories", "Returns active ticket categories, default routing metadata, sub-categories, and SLA hints used by the raise-ticket flow.", { querystring: helpdeskQuerySchema, response200: { type: "object", required: ["categories", "sla"], properties: { categories: { type: "array", items: helpdeskCategorySchema }, sla: { type: "object", additionalProperties: true }, actor_scope: { type: "string", example: "requester" } }, additionalProperties: true } }),
+  "POST /api/v1/helpdesk/categories": operation("Helpdesk", "Create helpdesk category", "Creates a helpdesk category configuration for scoped helpdesk managers. Category keys use the current supported category set so ticket routing remains compatible with role scopes.", { body: helpdeskCategoryCreateBody, response200: helpdeskCategoryMutationResponse }),
+  "PATCH /api/v1/helpdesk/categories/{id}": operation("Helpdesk", "Update helpdesk category", "Updates helpdesk category routing, active status, and sub-categories with optimistic concurrency.", { params: idParamSchema, body: helpdeskCategoryUpdateBody, response200: helpdeskCategoryMutationResponse }),
   "GET /api/v1/helpdesk/sla-report": operation("Helpdesk", "Helpdesk SLA report", "Returns SLA compliance rows and totals for helpdesk managers, admins, and auditors.", { querystring: helpdeskQuerySchema, response200: { ...paginated({ type: "object", additionalProperties: true }), additionalProperties: true } }),
   "GET /api/v1/notifications": operation("Notifications", "List notifications", "Lists authenticated user notifications for the topbar panel with pagination, unread-only, and type/category filtering.", { querystring: notificationsQuerySchema, response200: paginated(notificationSchema) }),
   "GET /api/v1/notifications/unread-count": operation("Notifications", "Unread notification count", "Returns the authenticated user's unread notification count for the topbar badge.", { response200: { type: "object", required: ["unread_count"], properties: { unread_count: { type: "integer", minimum: 0, example: 2 }, latest_created_at: dateTime("Latest unread notification timestamp") }, additionalProperties: false } }),

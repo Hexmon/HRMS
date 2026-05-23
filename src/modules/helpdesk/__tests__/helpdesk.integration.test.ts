@@ -28,6 +28,54 @@ describe("helpdesk", () => {
     });
     expect(categories.statusCode).toBe(200);
     expect(categories.json().categories.map((category: { category_key: string }) => category.category_key)).toContain("IT");
+    const itCategory = categories.json().categories.find((category: { category_key: string }) => category.category_key === "IT");
+    expect(itCategory).toBeTruthy();
+
+    const requesterCategoryPatch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/helpdesk/categories/${itCategory.id}`,
+      headers: authHeader(requester.token),
+      payload: {
+        label: "IT Support Desk",
+        expected_version: itCategory.version
+      }
+    });
+    expect(requesterCategoryPatch.statusCode).toBe(403);
+
+    const categoryPatch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/helpdesk/categories/${itCategory.id}`,
+      headers: authHeader(admin.token),
+      payload: {
+        label: "IT Support Desk",
+        team: "IT Operations",
+        active: true,
+        sub_categories: [
+          { key: "vpn", label: "VPN / Network" },
+          { key: "device", label: "Device support" }
+        ],
+        expected_version: itCategory.version
+      }
+    });
+    expect(categoryPatch.statusCode).toBe(200);
+    expect(categoryPatch.json().category).toMatchObject({
+      category_key: "IT",
+      label: "IT Support Desk",
+      active: true,
+      version: itCategory.version + 1
+    });
+
+    const duplicateCategory = await app.inject({
+      method: "POST",
+      url: "/api/v1/helpdesk/categories",
+      headers: authHeader(admin.token),
+      payload: {
+        category_key: "IT",
+        label: "Duplicate IT",
+        team: "IT Operations"
+      }
+    });
+    expect(duplicateCategory.statusCode).toBe(409);
 
     const create = await app.inject({
       method: "POST",

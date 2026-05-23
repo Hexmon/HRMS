@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 217
+Documented operations: 219
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -12126,6 +12126,118 @@ Success body highlights:
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
 - Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/categories
+
+| Field | Contract |
+|---|---|
+| Purpose | Create helpdesk category |
+| Frontend use | Create helpdesk category |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `category_key` | string enum("IT", "HR", "Finance", "Admin", "Assets", "Project Support") | required | - |
+| `label` | string | required | minLength 1 |
+| `default_assignee_user_id` | string<uuid> | optional, nullable | Default assignee user UUID |
+| `default_assignee_name` | string | optional, nullable | - |
+| `default_assignee_role` | string | optional, nullable | - |
+| `team` | string | required | minLength 1 |
+| `active` | boolean | optional | default true |
+| `sub_categories` | array of object | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `category` | object | required | - |
+| `version` | integer | required | minimum 1 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PATCH /api/v1/helpdesk/categories/{id}
+
+| Field | Contract |
+|---|---|
+| Purpose | Update helpdesk category |
+| Frontend use | Update helpdesk category |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `label` | string | optional | minLength 1 |
+| `default_assignee_user_id` | string<uuid> | optional, nullable | Default assignee user UUID |
+| `default_assignee_name` | string | optional, nullable | - |
+| `default_assignee_role` | string | optional, nullable | - |
+| `team` | string | optional | minLength 1 |
+| `active` | boolean | optional | - |
+| `sub_categories` | array of object | optional | - |
+| `expected_version` | integer | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `category` | object | required | - |
+| `version` | integer | required | minimum 1 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
 ### GET /api/v1/helpdesk/sla-report

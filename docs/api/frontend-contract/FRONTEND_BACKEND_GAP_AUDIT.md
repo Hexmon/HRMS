@@ -11,9 +11,9 @@ This audit maps the current Hawkaii HRMS frontend to the custom backend contract
 
 ## API Count Summary
 
-Current documented backend contract: **217 operations** in `openapi.json` after Phase 5 Leave/WFH export completion.
+Current documented backend contract: **219 operations** in `openapi.json` after Phase 6 Helpdesk category configuration completion.
 
-- **215** operations are under `/api/v1/**`.
+- **217** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
 - **0** documented backend operations currently need deletion from the OpenAPI pack because Reviewer/Director APIs are not present there.
 
@@ -21,11 +21,11 @@ Disjoint implementation counts for backend planning:
 
 | Category | Count | Meaning |
 | --- | ---: | --- |
-| Existing APIs ready to integrate as-is | 217 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
+| Existing APIs ready to integrate as-is | 219 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
 | Existing APIs to update in place | 0 | Phase 1A-1C existing API expansions have landed; new gaps should be added as explicit new endpoints. |
 | Existing APIs to delete | 0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
 | New APIs remaining to add | 0 | No first-pass visible frontend API gaps remain in this contract pack. |
-| Target contract size after additions | 217 | First-pass visible frontend contract is complete at 217 operations. |
+| Target contract size after additions | 219 | First-pass visible frontend contract is complete at 219 operations. |
 
 Existing APIs updated in place during earlier phases:
 

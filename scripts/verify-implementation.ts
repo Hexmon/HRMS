@@ -92,8 +92,8 @@ function verifyMutatingRoutesAreGuarded(): void {
 function verifyContractCompletion(): void {
   const openApi = JSON.parse(read("docs/api/openapi.json")) as OpenApiDocument;
   const operations = collectOperations(openApi);
-  if (operations.length < 217) {
-    violations.push(`OpenAPI operation count regressed below 217; found ${operations.length}`);
+  if (operations.length < 219) {
+    violations.push(`OpenAPI operation count regressed below 219; found ${operations.length}`);
   }
 
   const sourceOpenApi = read("docs/api/openapi.json");

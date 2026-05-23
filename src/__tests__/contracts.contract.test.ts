@@ -221,6 +221,8 @@ const expectedOperations = [
   "POST /api/v1/expenses/{id}/settlement",
   "POST /api/v1/expenses/{id}/submit",
   "POST /api/v1/expenses/{id}/withdraw",
+  "PATCH /api/v1/helpdesk/categories/{id}",
+  "POST /api/v1/helpdesk/categories",
   "PATCH /api/v1/helpdesk/tickets/{id}",
   "POST /api/v1/helpdesk/tickets",
   "POST /api/v1/helpdesk/tickets/{id}/assign",
@@ -353,6 +355,8 @@ const bodyRequiredOperations = [
   "PATCH /api/v1/projects/{id}/members/{member_id}",
   "POST /api/v1/projects/{id}/allocations",
   "POST /api/v1/projects/{id}/milestones",
+  "POST /api/v1/helpdesk/categories",
+  "PATCH /api/v1/helpdesk/categories/{id}",
   "POST /api/v1/helpdesk/tickets",
   "PATCH /api/v1/helpdesk/tickets/{id}",
   "PUT /api/v1/admin/company-profile",
@@ -401,6 +405,7 @@ const occOperations = [
   "PATCH /api/v1/projects/{id}/members/{member_id}",
   "POST /api/v1/projects/{id}/allocations",
   "POST /api/v1/projects/{id}/milestones",
+  "PATCH /api/v1/helpdesk/categories/{id}",
   "PATCH /api/v1/helpdesk/tickets/{id}",
   "POST /api/v1/helpdesk/tickets/{id}/comments",
   "POST /api/v1/helpdesk/tickets/{id}/internal-notes",
@@ -689,7 +694,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(217);
+    expect(rows.length).toBe(219);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

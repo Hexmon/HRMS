@@ -59,6 +59,39 @@ const helpdeskQuerySchema = paginationQuerySchema.extend({
   date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional()
 });
 
+const helpdeskCategoryKeySchema = z.enum([
+  HelpdeskTicketCategories.IT,
+  HelpdeskTicketCategories.HR,
+  HelpdeskTicketCategories.Finance,
+  HelpdeskTicketCategories.Admin,
+  HelpdeskTicketCategories.Assets,
+  HelpdeskTicketCategories.ProjectSupport
+]);
+const helpdeskSubCategorySchema = z.object({
+  key: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(120)
+});
+const helpdeskCategoryCreateSchema = z.object({
+  category_key: helpdeskCategoryKeySchema,
+  label: z.string().trim().min(1).max(120),
+  default_assignee_user_id: z.uuid().nullable().optional(),
+  default_assignee_name: z.string().trim().max(160).nullable().optional(),
+  default_assignee_role: z.string().trim().max(120).nullable().optional(),
+  team: z.string().trim().min(1).max(120),
+  active: z.boolean().default(true),
+  sub_categories: z.array(helpdeskSubCategorySchema).max(40).default([])
+});
+const helpdeskCategoryUpdateSchema = z.object({
+  expected_version: z.number().int().min(1),
+  label: z.string().trim().min(1).max(120).optional(),
+  default_assignee_user_id: z.uuid().nullable().optional(),
+  default_assignee_name: z.string().trim().max(160).nullable().optional(),
+  default_assignee_role: z.string().trim().max(120).nullable().optional(),
+  team: z.string().trim().min(1).max(120).optional(),
+  active: z.boolean().optional(),
+  sub_categories: z.array(helpdeskSubCategorySchema).max(40).optional()
+});
+
 export const helpdeskRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/helpdesk/tickets", async (request) => {
     if (!request.actor) throw unauthorized();
@@ -187,6 +220,24 @@ export const helpdeskRoutes: FastifyPluginAsync = async (fastify) => {
     return new HelpdeskService(fastify.store).categories(
       request.actor,
       helpdeskQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.post("/helpdesk/categories", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new HelpdeskService(fastify.store).createCategory(
+      request.actor,
+      helpdeskCategoryCreateSchema.parse(request.body)
+    );
+  });
+
+  fastify.patch("/helpdesk/categories/:id", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = idParamSchema.parse(request.params);
+    return new HelpdeskService(fastify.store).updateCategory(
+      request.actor,
+      params.id,
+      helpdeskCategoryUpdateSchema.parse(request.body)
     );
   });
 

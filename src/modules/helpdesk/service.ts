@@ -1,6 +1,7 @@
 import type {
   AuthUser,
   CoreUser,
+  HelpdeskCategory,
   HelpdeskAssignInput,
   HelpdeskAttachmentInput,
   HelpdeskCloseInput,
@@ -38,6 +39,28 @@ export interface HelpdeskQuery {
   search?: string;
   date_from?: string;
   date_to?: string;
+}
+
+export interface HelpdeskCategoryCreateInput {
+  category_key: HelpdeskTicketCategory;
+  label: string;
+  default_assignee_user_id?: UUID | null;
+  default_assignee_name?: string | null;
+  default_assignee_role?: string | null;
+  team: string;
+  active?: boolean;
+  sub_categories?: Array<{ key: string; label: string }>;
+}
+
+export interface HelpdeskCategoryUpdateInput {
+  expected_version: number;
+  label?: string;
+  default_assignee_user_id?: UUID | null;
+  default_assignee_name?: string | null;
+  default_assignee_role?: string | null;
+  team?: string;
+  active?: boolean;
+  sub_categories?: Array<{ key: string; label: string }>;
 }
 
 type SlaState = "on_track" | "near_breach" | "breached" | "met";
@@ -356,13 +379,46 @@ export class HelpdeskService {
 
   categories(actor: AuthUser, query: HelpdeskQuery) {
     return {
-      categories: this.repository.listCategories(query.active_only ?? true).map((category) => ({
-        ...category,
-        sla: SLA_MATRIX
-      })),
+      categories: this.repository.listCategories(query.active_only ?? true).map((category) => this.presentCategory(category)),
       sla: SLA_MATRIX,
       actor_scope: canManageHelpdesk(actor) ? "agent" : "requester"
     };
+  }
+
+  createCategory(actor: AuthUser, input: HelpdeskCategoryCreateInput) {
+    this.requireCategoryManager(actor);
+    const assignee = input.default_assignee_user_id ? this.requireActiveUser(input.default_assignee_user_id) : null;
+    const category = this.repository.addCategory({
+      category_key: input.category_key,
+      label: input.label,
+      default_assignee_user_id: assignee?.id ?? null,
+      default_assignee_name: assignee?.full_name ?? input.default_assignee_name ?? null,
+      default_assignee_role: assignee?.roles[0] ?? input.default_assignee_role ?? null,
+      team: input.team,
+      active: input.active ?? true,
+      sub_categories: normalizeSubCategories(input.sub_categories)
+    });
+    return { category: this.presentCategory(category), version: category.version };
+  }
+
+  updateCategory(actor: AuthUser, idOrKey: UUID | HelpdeskTicketCategory, input: HelpdeskCategoryUpdateInput) {
+    this.requireCategoryManager(actor);
+    const assignee = input.default_assignee_user_id ? this.requireActiveUser(input.default_assignee_user_id) : null;
+    const category = this.repository.updateCategoryVersioned(idOrKey, input.expected_version, (target) => {
+      if (input.label !== undefined) target.label = input.label;
+      if (input.team !== undefined) target.team = input.team;
+      if (input.active !== undefined) target.active = input.active;
+      if (input.sub_categories !== undefined) target.sub_categories = normalizeSubCategories(input.sub_categories);
+      if (input.default_assignee_user_id !== undefined) {
+        target.default_assignee_user_id = assignee?.id ?? null;
+        target.default_assignee_name = assignee?.full_name ?? input.default_assignee_name ?? null;
+        target.default_assignee_role = assignee?.roles[0] ?? input.default_assignee_role ?? null;
+      } else {
+        if (input.default_assignee_name !== undefined) target.default_assignee_name = input.default_assignee_name;
+        if (input.default_assignee_role !== undefined) target.default_assignee_role = input.default_assignee_role;
+      }
+    });
+    return { category: this.presentCategory(category), version: category.version };
   }
 
   slaReport(actor: AuthUser, query: HelpdeskQuery) {
@@ -400,6 +456,12 @@ export class HelpdeskService {
     }
   }
 
+  private requireCategoryManager(actor: AuthUser): void {
+    if (!canManageHelpdesk(actor)) {
+      throw forbidden("Only helpdesk managers can configure categories.");
+    }
+  }
+
   private requireActiveUser(userId: UUID): CoreUser {
     const user = this.store.users.find((candidate) => candidate.id === userId && !candidate.deleted_at);
     if (!user || user.employment_status !== EmploymentStatuses.Active) {
@@ -420,6 +482,13 @@ export class HelpdeskService {
 
   private documentFileName(documentId: UUID): string {
     return this.store.documents.find((document) => document.id === documentId)?.file_name ?? `document-${documentId}.pdf`;
+  }
+
+  private presentCategory(category: HelpdeskCategory) {
+    return {
+      ...category,
+      sla: SLA_MATRIX
+    };
   }
 
   private queueCounts(tickets: HelpdeskTicket[]) {
@@ -531,4 +600,17 @@ export class HelpdeskService {
       attachment_type: attachment.attachment_type
     };
   }
+}
+
+function normalizeSubCategories(input: Array<{ key: string; label: string }> | undefined): Array<{ key: string; label: string }> {
+  const seen = new Set<string>();
+  const result: Array<{ key: string; label: string }> = [];
+  for (const item of input ?? []) {
+    const key = item.key.trim();
+    const label = item.label.trim();
+    if (!key || !label || seen.has(key)) continue;
+    seen.add(key);
+    result.push({ key, label });
+  }
+  return result;
 }

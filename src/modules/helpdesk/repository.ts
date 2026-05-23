@@ -53,6 +53,34 @@ export class HelpdeskRepository {
       .sort((a, b) => a.category_key.localeCompare(b.category_key));
   }
 
+  addCategory(input: Omit<HelpdeskCategory, "id" | "version" | "created_at" | "updated_at" | "deleted_at">): HelpdeskCategory {
+    if (this.store.helpdeskCategories.some((category) => !category.deleted_at && category.category_key === input.category_key)) {
+      throw conflict("Helpdesk category key already exists.", { category_key: input.category_key });
+    }
+    const now = nowIso();
+    const category: HelpdeskCategory = {
+      id: randomUUID(),
+      version: 1,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+      ...input
+    };
+    this.store.helpdeskCategories.push(category);
+    return category;
+  }
+
+  updateCategoryVersioned(idOrKey: UUID | HelpdeskTicketCategory, expectedVersion: number, mutator: (category: HelpdeskCategory) => void): HelpdeskCategory {
+    const category = this.findCategory(idOrKey);
+    if (category.version !== expectedVersion) {
+      throw conflict("Helpdesk category was modified by another actor.", { aggregate: "helpdesk_category", id: category.id });
+    }
+    mutator(category);
+    category.version += 1;
+    category.updated_at = nowIso();
+    return category;
+  }
+
   addTicket(input: Omit<HelpdeskTicket, "id" | "ticket_no" | "version" | "created_at" | "updated_at" | "deleted_at">): HelpdeskTicket {
     const now = nowIso();
     const ticket: HelpdeskTicket = {
