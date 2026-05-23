@@ -51,11 +51,11 @@ export async function createGeneratedExportDocument(
   });
   const checksum = createHash("sha256").update(rendered).digest("hex");
 
-  await store.objectStorage.putObject(storageKey, rendered, {
+  const stored = await store.objectStorage.putObject(storageKey, rendered, {
     "content-type": mimeType,
-    "x-amz-meta-document-id": documentId,
-    "x-amz-meta-export-type": input.businessObjectType,
-    "x-amz-meta-report-type": input.reportType
+    "x-hrms-document-id": documentId,
+    "x-hrms-export-type": input.businessObjectType,
+    "x-hrms-report-type": input.reportType
   });
 
   const document: DocumentMetadata = {
@@ -80,9 +80,14 @@ export async function createGeneratedExportDocument(
       row_count: input.rows.length,
       columns: input.columns,
       filters: input.filters ?? {},
-      storage: "s3-compatible",
+      storage: "cloudinary",
       storage_adapter: store.objectStorage.kind,
-      bucket: store.objectStorage.bucket
+      folder: store.objectStorage.bucket,
+      cloudinary_public_id: stored.publicId ?? null,
+      cloudinary_resource_type: stored.resourceType ?? null,
+      cloudinary_url: stored.url ?? null,
+      cloudinary_upload_compressed: stored.compressed ?? false,
+      stored_size_bytes: stored.size
     },
     created_by_user_id: input.actor.id,
     created_at: now,

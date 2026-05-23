@@ -860,8 +860,8 @@ describe("API contracts", () => {
     const serialized = JSON.stringify(spec);
 
     expect(serialized).not.toMatch(/JWT_(ACCESS|REFRESH)_SECRET/iu);
-    expect(serialized).not.toMatch(/OBJECT_STORAGE_SECRET_KEY|MINIO_ROOT_PASSWORD|VALKEY_PASSWORD/iu);
-    expect(serialized).not.toMatch(/minioadmin|postgres:\/\/postgres:postgres/iu);
+    expect(serialized).not.toMatch(/CLOUDINARY_API_SECRET|VALKEY_PASSWORD/iu);
+    expect(serialized).not.toMatch(/postgres:\/\/postgres:postgres/iu);
 
     const packageJson = readFileSync(join(process.cwd(), "package.json"), "utf8");
     expect(packageJson).not.toMatch(/"(?:next|react|react-dom)"\s*:/u);

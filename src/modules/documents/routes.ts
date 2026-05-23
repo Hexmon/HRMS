@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { documentUploadSchema, paginationQuerySchema } from "#shared";
 import { unauthorized } from "../../platform/errors.js";
@@ -15,8 +15,12 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    const body = documentUploadSchema.parse(request.body);
-    return new DocumentService(fastify.store).upload(request.actor, body);
+    const upload = await parseDocumentUpload(request);
+    const body = documentUploadSchema.parse(upload.fields);
+    return new DocumentService(fastify.store).upload(request.actor, {
+      ...body,
+      file_buffer: upload.fileBuffer
+    });
   });
 
   fastify.post("/expenses/:id/documents", async (request) => {
@@ -24,13 +28,15 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
+    const upload = await parseDocumentUpload(request);
     const body = documentUploadSchema
       .omit({ business_object_type: true, business_object_id: true })
-      .parse(request.body);
+      .parse(upload.fields);
     return new DocumentService(fastify.store).upload(request.actor, {
       ...body,
       business_object_type: "expense_ticket",
-      business_object_id: params.id
+      business_object_id: params.id,
+      file_buffer: upload.fileBuffer
     });
   });
 
@@ -75,3 +81,29 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     return new DocumentService(fastify.store).accessLog(request.actor, params.id, query.page, query.page_size);
   });
 };
+
+async function parseDocumentUpload(request: FastifyRequest): Promise<{
+  fields: Record<string, unknown>;
+  fileBuffer?: Buffer;
+}> {
+  if (!request.isMultipart()) {
+    return { fields: request.body as Record<string, unknown> };
+  }
+
+  const fields: Record<string, unknown> = {};
+  let fileBuffer: Buffer | undefined;
+  for await (const part of request.parts()) {
+    if (part.type === "file") {
+      fileBuffer = await part.toBuffer();
+      fields.file_name ??= part.filename;
+      fields.mime_type ??= part.mimetype;
+      fields.size_bytes = fileBuffer.length;
+      continue;
+    }
+    fields[part.fieldname] = part.value;
+  }
+  if (typeof fields.size_bytes === "string") {
+    fields.size_bytes = Number(fields.size_bytes);
+  }
+  return { fields, fileBuffer };
+}

@@ -83,6 +83,7 @@ import {
   RbacPermissionGroups
 } from "#shared";
 import { MemorySessionStore, getLocalDemoPassword, hashPasswordSync, type SessionStore } from "#auth";
+import { getReleaseSeedEmails } from "./seed-personas.js";
 
 export interface NotificationRecord {
   id: UUID;
@@ -320,10 +321,18 @@ export interface LicenseActivation {
   updated_at: string;
 }
 
+export interface ObjectStoragePutResult {
+  size: number;
+  url?: string;
+  publicId?: string;
+  resourceType?: "image" | "raw" | "video";
+  compressed?: boolean;
+}
+
 export interface ObjectStoragePort {
-  readonly kind: "memory" | "minio";
+  readonly kind: "memory" | "cloudinary";
   readonly bucket: string;
-  putObject(key: string, body: Buffer, metadata?: Record<string, string>): Promise<void>;
+  putObject(key: string, body: Buffer, metadata?: Record<string, string>): Promise<ObjectStoragePutResult>;
   presignedGetUrl(key: string, expiresInSeconds: number): Promise<string>;
   statObject(key: string): Promise<{ size: number } | null>;
   removeObject(key: string): Promise<void>;
@@ -919,6 +928,7 @@ export function buildDefaultAdminNotificationChannels(created: string): AdminNot
 
 export function createMemoryDataStore(): MemoryDataStore {
   const created = nowIso();
+  const releaseSeedEmails = getReleaseSeedEmails();
   const defaultRbac = buildDefaultRbac(created);
   const defaultAdminWorkflows = buildDefaultAdminWorkflows(created);
   const defaultAdminPolicies = buildDefaultAdminPolicies(created);
@@ -990,7 +1000,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     makeUser({
       id: seedIds.executive,
       employeeCode: "S1",
-      email: "executive@example.test",
+      email: releaseSeedEmails.director,
       name: "Sales Executive",
       departmentId: seedIds.departmentSales,
       designationId: seedIds.designationExecutive,
@@ -1001,7 +1011,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     makeUser({
       id: seedIds.manager,
       employeeCode: "D1",
-      email: "manager@example.test",
+      email: releaseSeedEmails.reviewer,
       name: "Manager D1",
       departmentId: seedIds.departmentSales,
       designationId: seedIds.designationManager,
@@ -1012,7 +1022,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     makeUser({
       id: seedIds.employee1,
       employeeCode: "E1",
-      email: "e1@example.test",
+      email: releaseSeedEmails.employee1,
       name: "Employee E1",
       departmentId: seedIds.departmentSales,
       designationId: seedIds.designationEmployee,
@@ -1023,7 +1033,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     makeUser({
       id: seedIds.employee2,
       employeeCode: "E2",
-      email: "e2@example.test",
+      email: releaseSeedEmails.employee2,
       name: "Employee E2",
       departmentId: seedIds.departmentSales,
       designationId: seedIds.designationEmployee,
@@ -1034,7 +1044,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     makeUser({
       id: seedIds.employee3,
       employeeCode: "E3",
-      email: "e3@example.test",
+      email: releaseSeedEmails.employee3,
       name: "Employee E3",
       departmentId: seedIds.departmentSales,
       designationId: seedIds.designationEmployee,
@@ -1045,7 +1055,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     makeUser({
       id: seedIds.financeManager,
       employeeCode: "N1",
-      email: "finance@example.test",
+      email: releaseSeedEmails.financeManager,
       name: "Finance Manager N1",
       departmentId: seedIds.departmentFinance,
       designationId: seedIds.designationFinance,
@@ -1056,7 +1066,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     makeUser({
       id: seedIds.alternateFinance,
       employeeCode: "N2",
-      email: "finance2@example.test",
+      email: releaseSeedEmails.alternateFinance,
       name: "Alternate Finance N2",
       departmentId: seedIds.departmentFinance,
       designationId: seedIds.designationFinance,
@@ -1067,7 +1077,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     makeUser({
       id: seedIds.admin,
       employeeCode: "ADM",
-      email: "admin@example.test",
+      email: releaseSeedEmails.admin,
       name: "Admin User",
       departmentId: seedIds.departmentFinance,
       designationId: seedIds.designationFinance,
@@ -1078,7 +1088,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     makeUser({
       id: seedIds.auditor,
       employeeCode: "AUD",
-      email: "auditor@example.test",
+      email: releaseSeedEmails.auditor,
       name: "Auditor User",
       departmentId: seedIds.departmentFinance,
       designationId: seedIds.designationFinance,
@@ -1089,7 +1099,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     makeUser({
       id: seedIds.assetManager,
       employeeCode: "AST",
-      email: "assets@example.test",
+      email: releaseSeedEmails.assetManager,
       name: "Asset Manager",
       departmentId: seedIds.departmentFinance,
       designationId: seedIds.designationFinance,

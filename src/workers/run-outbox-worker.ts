@@ -19,11 +19,13 @@ const store = await createPostgresDataStore({
   databaseUrl,
   valkeyUrl,
   objectStorage: {
-    endpoint: process.env.OBJECT_STORAGE_ENDPOINT ?? "http://localhost:9000",
-    accessKey: process.env.OBJECT_STORAGE_ACCESS_KEY ?? "minioadmin",
-    secretKey: process.env.OBJECT_STORAGE_SECRET_KEY ?? "minioadmin",
-    bucket: process.env.OBJECT_STORAGE_BUCKET ?? "hrms-documents",
-    region: process.env.OBJECT_STORAGE_REGION ?? "us-east-1"
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? "local-cloudinary-mock",
+    apiKey: process.env.CLOUDINARY_API_KEY ?? "local-cloudinary-key",
+    apiSecret: process.env.CLOUDINARY_API_SECRET ?? "local-cloudinary-secret",
+    folder: process.env.CLOUDINARY_FOLDER ?? "hawkaii-hrms",
+    resourceType: (process.env.CLOUDINARY_RESOURCE_TYPE as "auto" | "image" | "raw" | "video" | undefined) ?? "auto",
+    uploadTransformation: process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
+    mockUploads: process.env.CLOUDINARY_MOCK_UPLOADS === "true"
   },
   seedIfEmpty: false
 });

@@ -35,12 +35,9 @@ function record(name: string, status: Status, evidence: string): void {
 
 function redactText(text: string): string {
   return text
-    .replace(/minioadmin(?::minioadmin)?/giu, "[REDACTED]")
     .replace(/postgres:\/\/postgres:postgres/giu, "postgres://[REDACTED]")
     .replace(/(JWT_(?:ACCESS|REFRESH)_SECRET=)[^\s]+/giu, "$1[REDACTED]")
-    .replace(/(OBJECT_STORAGE_SECRET_KEY=)[^\s]+/giu, "$1[REDACTED]")
-    .replace(/(MINIO_ROOT_PASSWORD=)[^\s]+/giu, "$1[REDACTED]")
-    .replace(/MINIO_ROOT_(?:USER|PASSWORD)/giu, "[REDACTED_ENV]");
+    .replace(/(CLOUDINARY_API_SECRET=)[^\s]+/giu, "$1[REDACTED]");
 }
 
 function command(args: string[]): { status: number | null; output: string } {
@@ -101,7 +98,7 @@ writeFileSync(join(reportDir, "compose-ps.json"), `${ps.output}\n`);
 if (ps.status !== 0) {
   record("docker compose ps", "fail", ps.output);
 } else {
-  const requiredRunning = ["postgres", "valkey", "minio", apiService, outboxWorkerService];
+  const requiredRunning = ["postgres", "valkey", apiService, outboxWorkerService];
   const missing = requiredRunning.filter((service) => !ps.output.includes(`"Service":"${service}"`));
   const notRunning = requiredRunning.filter((service) => {
     const match = new RegExp(`"Service":"${service}"[\\s\\S]*?"State":"([^"]+)"`, "u").exec(ps.output);

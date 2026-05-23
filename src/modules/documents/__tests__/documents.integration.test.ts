@@ -33,7 +33,7 @@ describe("document management integration", () => {
       }
     });
     expect(upload.statusCode).toBe(200);
-    expect(upload.json().metadata.storage_adapter).toBe("minio");
+    expect(upload.json().metadata.storage_adapter).toBe("cloudinary");
     await expect(app.store.objectStorage?.statObject(upload.json().storage_key)).resolves.toMatchObject({
       size: expect.any(Number)
     });
@@ -51,7 +51,7 @@ describe("document management integration", () => {
       headers: authHeader(admin.token)
     });
     expect(allowed.statusCode).toBe(200);
-    expect(allowed.json().url).toContain("X-Amz-Signature");
+    expect(allowed.json().url).toContain("cloudinary");
 
     const accessLog = await app.inject({
       method: "GET",

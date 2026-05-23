@@ -222,7 +222,7 @@ describe("attendance", () => {
     expect(exportJob.json()).toMatchObject({
       status: "ready",
       format: "csv",
-      adapter: "minio-generated-csv",
+      adapter: "cloudinary-generated-csv",
       download_document_id: expect.any(String)
     });
     await expect(app.store.objectStorage?.statObject(app.store.documents.find((document) => document.id === exportJob.json().download_document_id)?.storage_key ?? "")).resolves.toMatchObject({

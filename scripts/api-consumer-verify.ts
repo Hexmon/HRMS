@@ -234,8 +234,7 @@ function verifyNoSecrets(): void {
   const roots = ["docs/api"];
   const forbidden = [
     /JWT_(ACCESS|REFRESH)_SECRET\s*=/iu,
-    /OBJECT_STORAGE_SECRET_KEY\s*=/iu,
-    /MINIO_ROOT_PASSWORD\s*=/iu,
+    /CLOUDINARY_API_SECRET\s*=/iu,
     /VALKEY_PASSWORD\s*=/iu,
     /postgres:\/\/postgres:postgres/iu,
     /postgres(?:ql)?:\/\/[^\s"'`]+/iu,

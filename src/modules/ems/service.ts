@@ -18,7 +18,7 @@ import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
 import { canAccessDocument } from "../documents/policy.js";
-import { DocumentService, type DocumentUploadInput } from "../documents/service.js";
+import { DocumentService, type DocumentUploadBody } from "../documents/service.js";
 import { appendEmsOutboxEvent, emsEvents } from "./events.js";
 import { assertCanDecideProfileChange, assertCanManageEms, assertCanSeeEmsUser, canManageEms } from "./policy.js";
 import { EmsRepository } from "./repository.js";
@@ -36,7 +36,7 @@ export interface EmsDocumentQuery extends Pick<EmsQuery, "page" | "page_size"> {
   document_type?: string;
 }
 
-export type EmsDocumentUploadInput = Omit<DocumentUploadInput, "business_object_type" | "business_object_id">;
+export type EmsDocumentUploadInput = Omit<DocumentUploadBody, "business_object_type" | "business_object_id">;
 
 const FIELD_LABELS: Record<string, string> = {
   personal_email: "Personal email",

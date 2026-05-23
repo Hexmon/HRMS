@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   documentUploadSchema,
@@ -152,10 +152,40 @@ export const emsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/ems/employees/:user_id/documents", async (request) => {
     if (!request.actor) throw unauthorized();
     const params = userIdParamSchema.parse(request.params);
+    const upload = await parseEmsDocumentUpload(request);
     return new EmsService(fastify.store).attachEmployeeDocument(
       request.actor,
       params.user_id,
-      emsDocumentUploadSchema.parse(request.body)
+      {
+        ...emsDocumentUploadSchema.parse(upload.fields),
+        file_buffer: upload.fileBuffer
+      }
     );
   });
 };
+
+async function parseEmsDocumentUpload(request: FastifyRequest): Promise<{
+  fields: Record<string, unknown>;
+  fileBuffer?: Buffer;
+}> {
+  if (!request.isMultipart()) {
+    return { fields: request.body as Record<string, unknown> };
+  }
+
+  const fields: Record<string, unknown> = {};
+  let fileBuffer: Buffer | undefined;
+  for await (const part of request.parts()) {
+    if (part.type === "file") {
+      fileBuffer = await part.toBuffer();
+      fields.file_name ??= part.filename;
+      fields.mime_type ??= part.mimetype;
+      fields.size_bytes = fileBuffer.length;
+      continue;
+    }
+    fields[part.fieldname] = part.value;
+  }
+  if (typeof fields.size_bytes === "string") {
+    fields.size_bytes = Number(fields.size_bytes);
+  }
+  return { fields, fileBuffer };
+}

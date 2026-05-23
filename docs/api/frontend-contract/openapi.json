@@ -14876,7 +14876,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "minio-generated-csv"
+                      "example": "cloudinary-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -28596,7 +28596,7 @@
         "tags": [
           "Documents"
         ],
-        "description": "Creates secure document metadata and stores the file through the backend S3-compatible object storage adapter. Object-storage credentials are never exposed.",
+        "description": "Creates secure document metadata and stores the file through the backend Cloudinary object storage adapter. Object-storage credentials are never exposed.",
         "requestBody": {
           "required": true,
           "content": {
@@ -42217,7 +42217,7 @@
                           },
                           "adapter": {
                             "type": "string",
-                            "example": "minio-generated-csv"
+                            "example": "cloudinary-generated-csv"
                           },
                           "file_name": {
                             "type": "string",
@@ -42683,7 +42683,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "minio-generated-csv"
+                      "example": "cloudinary-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -43115,7 +43115,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "minio-generated-csv"
+                      "example": "cloudinary-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -64559,7 +64559,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "minio-generated-csv"
+                      "example": "cloudinary-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -70447,7 +70447,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "minio-generated-csv"
+                      "example": "cloudinary-generated-csv"
                     },
                     "file_name": {
                       "type": "string",

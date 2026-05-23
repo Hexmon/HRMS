@@ -5,10 +5,12 @@ import { Client } from "pg";
 import { getLocalDemoPassword, hashPasswordSync } from "#auth";
 import { AssetStatuses, EmploymentStatuses, ExpenseSubTypes, Roles } from "#shared";
 import { seedIds } from "../src/platform/data-store.js";
+import { getQaSeedEmails } from "../src/platform/seed-personas.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 
 loadRuntimeEnv();
 const localDemoPassword = getLocalDemoPassword();
+const qaSeedEmails = getQaSeedEmails();
 
 const reportDir = process.env.HRMS_REPORT_DIR ?? "docs/qa/runs/qa-readiness";
 mkdirSync(reportDir, { recursive: true });
@@ -63,10 +65,10 @@ try {
   );
 
   const users = [
-    [ids.hrManager, "HRM", "hrm@example.test", "HR Manager", ids.departmentHr, ids.designationHrManager, null, "CEO.HR.HRM", Roles.HRManager, EmploymentStatuses.Active],
-    [ids.normalManager, "MGR", "manager@example.test", "Normal Manager", seedIds.departmentSales, ids.designationManager, seedIds.director, "CEO.SALES.S1.MGR", Roles.Reviewer, EmploymentStatuses.Active],
-    [ids.unauthorizedEmployee, "U1", "unauthorized@example.test", "Unauthorized Employee", seedIds.departmentSales, seedIds.designationEmployee, ids.normalManager, "CEO.SALES.S1.MGR.U1", Roles.Employee, EmploymentStatuses.Active],
-    [ids.timesheetApprover, "TSA", "timesheet.approver@example.test", "Timesheet Approver", seedIds.departmentSales, seedIds.designationReviewer, seedIds.director, "CEO.SALES.S1.TSA", Roles.Reviewer, EmploymentStatuses.Active]
+    [ids.hrManager, "HRM", qaSeedEmails.hrManager, "HR Manager", ids.departmentHr, ids.designationHrManager, null, "CEO.HR.HRM", Roles.HRManager, EmploymentStatuses.Active],
+    [ids.normalManager, "MGR", qaSeedEmails.normalManager, "Normal Manager", seedIds.departmentSales, ids.designationManager, seedIds.director, "CEO.SALES.S1.MGR", Roles.Reviewer, EmploymentStatuses.Active],
+    [ids.unauthorizedEmployee, "U1", qaSeedEmails.unauthorizedEmployee, "Unauthorized Employee", seedIds.departmentSales, seedIds.designationEmployee, ids.normalManager, "CEO.SALES.S1.MGR.U1", Roles.Employee, EmploymentStatuses.Active],
+    [ids.timesheetApprover, "TSA", qaSeedEmails.timesheetApprover, "Timesheet Approver", seedIds.departmentSales, seedIds.designationReviewer, seedIds.director, "CEO.SALES.S1.TSA", Roles.Reviewer, EmploymentStatuses.Active]
   ];
 
   for (const user of users) {

@@ -184,7 +184,7 @@ describe("production user-flow smoke", () => {
     expect(reportExport).toMatchObject({
       report_type: "projects/summary",
       status: "ready",
-      adapter: "minio-generated-csv",
+      adapter: "cloudinary-generated-csv",
       download_document_id: expect.any(String)
     });
   });

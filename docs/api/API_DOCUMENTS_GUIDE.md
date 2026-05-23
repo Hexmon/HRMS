@@ -2,7 +2,7 @@
 
 Date: 2026-05-01
 
-Documents are metadata-first and object-storage-backed. API consumers never receive storage credentials.
+Documents are Cloudinary-backed through the backend storage adapter. API consumers never receive storage credentials.
 
 ## List Documents
 
@@ -16,9 +16,11 @@ Optional filters:
 - `business_object_type`
 - `business_object_id`
 
-## Upload Metadata
+## Upload Documents
 
 `POST /api/v1/documents`
+
+The endpoint accepts JSON metadata for generated/backend documents and `multipart/form-data` with a `file` field for browser uploads. Image files should be compressed by the frontend before upload; the backend also requests Cloudinary upload-time quality optimization.
 
 ```json
 {

@@ -144,11 +144,13 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
     databaseUrl: config.DATABASE_URL,
     valkeyUrl: config.VALKEY_URL,
     objectStorage: {
-      endpoint: config.OBJECT_STORAGE_ENDPOINT,
-      accessKey: config.OBJECT_STORAGE_ACCESS_KEY,
-      secretKey: config.OBJECT_STORAGE_SECRET_KEY,
-      bucket: config.OBJECT_STORAGE_BUCKET,
-      region: config.OBJECT_STORAGE_REGION
+      cloudName: config.CLOUDINARY_CLOUD_NAME,
+      apiKey: config.CLOUDINARY_API_KEY,
+      apiSecret: config.CLOUDINARY_API_SECRET,
+      folder: config.CLOUDINARY_FOLDER,
+      resourceType: config.CLOUDINARY_RESOURCE_TYPE,
+      uploadTransformation: config.CLOUDINARY_UPLOAD_TRANSFORMATION,
+      mockUploads: config.CLOUDINARY_MOCK_UPLOADS
     },
     seedIfEmpty: options.seedIfEmpty ?? true
   });

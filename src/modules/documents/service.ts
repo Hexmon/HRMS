@@ -11,6 +11,9 @@ import { canAccessDocument } from "./policy.js";
 import { DocumentRepository } from "./repository.js";
 
 export type DocumentUploadInput = z.infer<typeof documentUploadSchema>;
+export type DocumentUploadBody = DocumentUploadInput & {
+  file_buffer?: Buffer;
+};
 export type DocumentListQuery = z.infer<typeof paginationQuerySchema> & {
   business_object_type?: string;
   business_object_id?: UUID;
@@ -23,7 +26,7 @@ export class DocumentService {
     this.repository = new DocumentRepository(store);
   }
 
-  async upload(actor: AuthUser, input: DocumentUploadInput): Promise<DocumentMetadata> {
+  async upload(actor: AuthUser, input: DocumentUploadBody): Promise<DocumentMetadata> {
     const now = nowIso();
     const storageKey = makeStorageKey({
       actor,
@@ -45,9 +48,9 @@ export class DocumentService {
       size_bytes: input.size_bytes,
       checksum_sha256: input.checksum_sha256 ?? null,
       metadata: {
-        storage: "s3-compatible",
+        storage: "cloudinary",
         storage_adapter: this.store.objectStorage?.kind ?? "unconfigured",
-        bucket: this.store.objectStorage?.bucket ?? null
+        folder: this.store.objectStorage?.bucket ?? null
       },
       created_by_user_id: actor.id,
       created_at: now,
@@ -58,10 +61,10 @@ export class DocumentService {
       this.log(actor, document.id, "upload", "denied", "classification_policy");
       throw forbidden("You cannot upload this document classification");
     }
-    if (!this.store.objectStorage || this.store.objectStorage.kind !== "minio") {
+    if (!this.store.objectStorage || this.store.objectStorage.kind !== "cloudinary") {
       throw forbidden("Document object storage adapter is not configured for release acceptance");
     }
-    const body = Buffer.from(
+    const body = input.file_buffer ?? Buffer.from(
       JSON.stringify({
         document_id: document.id,
         file_name: document.file_name,
@@ -70,10 +73,19 @@ export class DocumentService {
         checksum_sha256: document.checksum_sha256
       })
     );
-    await this.store.objectStorage.putObject(document.storage_key, body, {
+    const stored = await this.store.objectStorage.putObject(document.storage_key, body, {
       "content-type": document.mime_type,
-      "x-amz-meta-document-id": document.id
+      "x-hrms-document-id": document.id
     });
+    document.metadata = {
+      ...document.metadata,
+      cloudinary_public_id: stored.publicId ?? null,
+      cloudinary_resource_type: stored.resourceType ?? null,
+      cloudinary_url: stored.url ?? null,
+      cloudinary_upload_compressed: stored.compressed ?? false,
+      original_size_bytes: input.file_buffer ? input.size_bytes : null,
+      stored_size_bytes: stored.size
+    };
     this.repository.insert(document);
     this.store.documentVersions.push({
       id: randomUUID(),
@@ -126,12 +138,13 @@ export class DocumentService {
       throw forbidden("Document access denied");
     }
     this.log(actor, id, "download-url", "allowed", null);
-    if (!this.store.objectStorage || this.store.objectStorage.kind !== "minio") {
+    if (!this.store.objectStorage || this.store.objectStorage.kind !== "cloudinary") {
       throw forbidden("Document object storage adapter is not configured for release acceptance");
     }
+    const cloudinaryUrl = typeof document.metadata.cloudinary_url === "string" ? document.metadata.cloudinary_url : "";
     return {
       document_id: id,
-      url: await this.store.objectStorage.presignedGetUrl(document.storage_key, 900),
+      url: cloudinaryUrl || await this.store.objectStorage.presignedGetUrl(document.storage_key, 900),
       expires_in_seconds: 900
     };
   }

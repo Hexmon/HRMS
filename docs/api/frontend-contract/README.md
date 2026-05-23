@@ -30,7 +30,7 @@ Production base URLs must come from environment/config. Do not hard-code localho
 
 - All business routes are under `/api/v1`; health also exposes `/health/live` and `/health/ready`.
 - Browser clients may use the HttpOnly session cookie. API/mobile clients should send `Authorization: Bearer <access_token>`.
-- Frontend clients must call Fastify APIs only. Do not access PostgreSQL, Valkey, MinIO/S3, Drizzle, or migrations.
+- Frontend clients must call Fastify APIs only. Do not access PostgreSQL, Valkey, Cloudinary, Drizzle, or migrations.
 - Money values are strings, timestamps are ISO 8601, and UUIDs are strings.
 - List views must use backend pagination.
 - Workflow mutations use `expected_version`; handle `409` by refetching latest state.

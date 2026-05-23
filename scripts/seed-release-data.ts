@@ -2,10 +2,12 @@ import { Client } from "pg";
 import { getLocalDemoPassword, hashPasswordSync } from "#auth";
 import { AssetStatuses, EmploymentStatuses, Roles } from "#shared";
 import { seedIds } from "../src/platform/data-store.js";
+import { getReleaseSeedEmails } from "../src/platform/seed-personas.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 
 loadRuntimeEnv();
 const localDemoPassword = getLocalDemoPassword();
+const seedEmails = getReleaseSeedEmails();
 
 const client = new Client({ connectionString: requireEnv("DATABASE_URL") });
 await client.connect();
@@ -37,16 +39,16 @@ try {
   );
 
   const users = [
-    [seedIds.director, "S1", "director@example.test", "Sales Director", seedIds.departmentSales, seedIds.designationDirector, null, "CEO.SALES.S1", Roles.Director, EmploymentStatuses.Active],
-    [seedIds.reviewer, "D1", "reviewer@example.test", "Reviewer D1", seedIds.departmentSales, seedIds.designationReviewer, seedIds.director, "CEO.SALES.S1.D1", Roles.Reviewer, EmploymentStatuses.Active],
-    [seedIds.employee1, "E1", "e1@example.test", "Employee E1", seedIds.departmentSales, seedIds.designationEmployee, seedIds.reviewer, "CEO.SALES.S1.D1.E1", Roles.Employee, EmploymentStatuses.Active],
-    [seedIds.employee2, "E2", "e2@example.test", "Employee E2", seedIds.departmentSales, seedIds.designationEmployee, seedIds.reviewer, "CEO.SALES.S1.D1.E2", Roles.Employee, EmploymentStatuses.Active],
-    [seedIds.employee3, "E3", "e3@example.test", "Terminated Employee E3", seedIds.departmentSales, seedIds.designationEmployee, seedIds.reviewer, "CEO.SALES.S1.D1.E3", Roles.Employee, EmploymentStatuses.Terminated],
-    [seedIds.financeManager, "N1", "finance@example.test", "Finance Manager N1", seedIds.departmentFinance, seedIds.designationFinance, null, "CEO.FIN.N1", Roles.FinanceManager, EmploymentStatuses.Active],
-    [seedIds.alternateFinance, "N2", "finance2@example.test", "Alternate Finance N2", seedIds.departmentFinance, seedIds.designationFinance, seedIds.financeManager, "CEO.FIN.N1.N2", Roles.FinanceManager, EmploymentStatuses.Active],
-    [seedIds.admin, "ADM", "admin@example.test", "HR Admin", seedIds.departmentFinance, seedIds.designationFinance, null, "CEO.ADM", Roles.Admin, EmploymentStatuses.Active],
-    [seedIds.auditor, "AUD", "auditor@example.test", "Normal Manager/Auditor", seedIds.departmentFinance, seedIds.designationFinance, null, "CEO.AUD", Roles.Auditor, EmploymentStatuses.Active],
-    [seedIds.assetManager, "AST", "assets@example.test", "Asset Manager", seedIds.departmentFinance, seedIds.designationFinance, null, "CEO.AST", Roles.AssetManager, EmploymentStatuses.Active]
+    [seedIds.director, "S1", seedEmails.director, "Sales Director", seedIds.departmentSales, seedIds.designationDirector, null, "CEO.SALES.S1", Roles.Director, EmploymentStatuses.Active],
+    [seedIds.reviewer, "D1", seedEmails.reviewer, "Reviewer D1", seedIds.departmentSales, seedIds.designationReviewer, seedIds.director, "CEO.SALES.S1.D1", Roles.Reviewer, EmploymentStatuses.Active],
+    [seedIds.employee1, "E1", seedEmails.employee1, "Employee E1", seedIds.departmentSales, seedIds.designationEmployee, seedIds.reviewer, "CEO.SALES.S1.D1.E1", Roles.Employee, EmploymentStatuses.Active],
+    [seedIds.employee2, "E2", seedEmails.employee2, "Employee E2", seedIds.departmentSales, seedIds.designationEmployee, seedIds.reviewer, "CEO.SALES.S1.D1.E2", Roles.Employee, EmploymentStatuses.Active],
+    [seedIds.employee3, "E3", seedEmails.employee3, "Terminated Employee E3", seedIds.departmentSales, seedIds.designationEmployee, seedIds.reviewer, "CEO.SALES.S1.D1.E3", Roles.Employee, EmploymentStatuses.Terminated],
+    [seedIds.financeManager, "N1", seedEmails.financeManager, "Finance Manager N1", seedIds.departmentFinance, seedIds.designationFinance, null, "CEO.FIN.N1", Roles.FinanceManager, EmploymentStatuses.Active],
+    [seedIds.alternateFinance, "N2", seedEmails.alternateFinance, "Alternate Finance N2", seedIds.departmentFinance, seedIds.designationFinance, seedIds.financeManager, "CEO.FIN.N1.N2", Roles.FinanceManager, EmploymentStatuses.Active],
+    [seedIds.admin, "ADM", seedEmails.admin, "HR Admin", seedIds.departmentFinance, seedIds.designationFinance, null, "CEO.ADM", Roles.Admin, EmploymentStatuses.Active],
+    [seedIds.auditor, "AUD", seedEmails.auditor, "Normal Manager/Auditor", seedIds.departmentFinance, seedIds.designationFinance, null, "CEO.AUD", Roles.Auditor, EmploymentStatuses.Active],
+    [seedIds.assetManager, "AST", seedEmails.assetManager, "Asset Manager", seedIds.departmentFinance, seedIds.designationFinance, null, "CEO.AST", Roles.AssetManager, EmploymentStatuses.Active]
   ];
 
   for (const user of users) {

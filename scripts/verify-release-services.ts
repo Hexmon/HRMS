@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Redis as Valkey } from "iovalkey";
-import { Client as MinioClient } from "minio";
+import { CloudinaryObjectStorage } from "../src/platform/object-storage.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 import { fail } from "./lib.js";
 
@@ -38,33 +38,24 @@ try {
 }
 
 try {
-  const endpoint = new URL(requireEnv("OBJECT_STORAGE_ENDPOINT"));
-  const minio = new MinioClient({
-    endPoint: endpoint.hostname,
-    port: endpoint.port ? Number(endpoint.port) : endpoint.protocol === "https:" ? 443 : 80,
-    useSSL: endpoint.protocol === "https:",
-    accessKey: requireEnv("OBJECT_STORAGE_ACCESS_KEY"),
-    secretKey: requireEnv("OBJECT_STORAGE_SECRET_KEY"),
-    region: process.env.OBJECT_STORAGE_REGION
+  const storage = new CloudinaryObjectStorage({
+    cloudName: requireEnv("CLOUDINARY_CLOUD_NAME"),
+    apiKey: requireEnv("CLOUDINARY_API_KEY"),
+    apiSecret: requireEnv("CLOUDINARY_API_SECRET"),
+    folder: process.env.CLOUDINARY_FOLDER ?? "hawkaii-hrms",
+    resourceType: (process.env.CLOUDINARY_RESOURCE_TYPE as "auto" | "image" | "raw" | "video" | undefined) ?? "auto",
+    uploadTransformation: process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
+    mockUploads: process.env.CLOUDINARY_MOCK_UPLOADS === "true"
   });
-  const bucket = requireEnv("OBJECT_STORAGE_BUCKET");
-  const exists = await minio.bucketExists(bucket).catch(() => false);
-  if (!exists) {
-    await minio.makeBucket(bucket, process.env.OBJECT_STORAGE_REGION ?? "us-east-1");
-  }
   const key = `release-acceptance/smoke-${Date.now()}.txt`;
   const payload = Buffer.from("hrms release acceptance object storage smoke test\n", "utf8");
-  await minio.putObject(bucket, key, payload, payload.length, {
+  await storage.putObject(key, payload, {
     "content-type": "text/plain"
   });
-  const objectStream = await minio.getObject(bucket, key);
-  await new Promise<void>((resolve, reject) => {
-    objectStream.on("data", () => undefined);
-    objectStream.on("end", resolve);
-    objectStream.on("error", reject);
-  });
-  await minio.removeObject(bucket, key);
-  notes.push(`MinIO bucket ${bucket} put/get/delete passed`);
+  const stat = await storage.statObject(key);
+  if (!stat) failures.push("Cloudinary smoke object was not readable after upload");
+  await storage.removeObject(key);
+  notes.push(`Cloudinary folder ${storage.bucket} put/stat/delete passed`);
 } catch (error) {
   failures.push(`Object storage verification failed: ${error instanceof Error ? error.message : String(error)}`);
 }
@@ -79,7 +70,7 @@ const result = {
 writeFileSync(join(releaseDir, "service-verification.json"), `${JSON.stringify(result, null, 2)}\n`);
 
 if (failures.length > 0) {
-  fail(`Valkey/MinIO verification failed:\n${failures.join("\n")}`);
+  fail(`Valkey/Cloudinary verification failed:\n${failures.join("\n")}`);
 }
 
-console.log("Valkey and MinIO release verification passed.");
+console.log("Valkey and Cloudinary release verification passed.");

@@ -4,7 +4,7 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 6 backup/restore scripts, observability, deployment/security hardening, Helpdesk category configuration, export-file generation, EMS document upload-picker, and browser e2e hardening slices after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, Leave/WFH export completion, verification guardrails, and API/browser e2e baselines. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 6 backup/restore scripts, observability, deployment/security hardening, Cloudinary document storage migration, Helpdesk category configuration, export-file generation, EMS document upload-picker, and browser e2e hardening slices after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, Leave/WFH export completion, verification guardrails, and API/browser e2e baselines. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
@@ -47,6 +47,9 @@ This versioned report captures the completed Phase 6 backup/restore scripts, obs
 | Phase 6 browser e2e baseline | Completed Playwright smoke coverage in `hrms-client` for API-mode login, notification panel, employee self-service routes, HR/admin routes, reports/settings, projects, and team utilization |
 | Phase 6 browser e2e hardening | Completed Playwright coverage for API-backed Helpdesk ticket creation, mobile authenticated shell navigation, and generated report export download handoff across all report routes |
 | Phase 6 export generation | Completed document-backed export generation for employee/core CSV, report CSV, and attendance/Leave-WFH CSV/JSON export APIs; frontend employee, Leave/WFH monitor, and route-wide ReportShell exports now open generated document downloads when returned |
+| Phase 6 Cloudinary document storage | Replaced MinIO/S3-compatible runtime wiring with Cloudinary-backed storage, removed MinIO compose services/dependency, added Cloudinary env keys, kept local/test mock uploads out of production, and added multipart file upload support for Documents/EMS wrappers |
+| Frontend expense create UX | Removed the visible Tax amount input from `/expenses/create`; created line items now use quantity times unit cost in the create-form total |
+| Frontend EMS document upload UX | EMS documents now send real `multipart/form-data` file payloads and compress image uploads in the browser before backend upload |
 | Phase 6 Helpdesk category configuration | Completed Admin/support-scoped Helpdesk category create/update/toggle APIs and connected the `/helpdesk/categories` UI actions to those APIs in API mode |
 | Phase 6 deployment/security hardening | Completed baseline backend security headers, production CORS allowlisting, compose CORS env wiring, deployment verifier service-name alignment, and production-safe logger configuration |
 | Phase 6 backup/restore scripts | Added PostgreSQL custom-format backup and guarded restore scripts plus package commands; live backup execution still requires PostgreSQL client tools on the operator host |
@@ -190,7 +193,7 @@ This versioned report captures the completed Phase 6 backup/restore scripts, obs
 | Area | Completed fact | Notes |
 | --- | --- | --- |
 | Backend export generation | Added `src/platform/generated-exports.ts` and wired employee/core, report, attendance, and Leave/WFH export APIs to create supported-format document records through the configured object-storage adapter | Existing outbox events are still emitted for audit/retry visibility; unsupported XLSX requests remain queued metadata with `xlsx-renderer-pending` until a workbook renderer is selected |
-| Backend download handoff | Export responses now return `status: "ready"`, `adapter: "minio-generated-csv"`, `download_document_id`, file name, row count, size bytes, and generated timestamp for supported formats | Secure download still goes through `POST /api/v1/documents/{id}/download-url`; object-storage credentials are not exposed |
+| Backend download handoff | Export responses now return `status: "ready"`, `adapter: "cloudinary-generated-csv"`, `download_document_id`, file name, row count, size bytes, and generated timestamp for supported formats | Secure download still goes through `POST /api/v1/documents/{id}/download-url`; object-storage credentials are not exposed |
 | Frontend export handoff | `/employees`, `/leave-wfh/monitor`, and route-wide `/reports/*` `ReportShell` export buttons now request a Documents API download URL when a backend export response includes `download_document_id` | Local CSV generation remains only for API-disabled development mode; browser e2e should still add explicit download assertions |
 | Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, report/core/attendance/Leave-WFH integration tests, `pnpm test:contracts`, and `pnpm test:e2e` passed | The first combined integration command was stopped after stalling on shared DB resets; the same affected suites passed one at a time with verbose output |
 | Frontend validation | `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, production config guard, implemented-route guard, route coverage, and `pnpm build` passed | Lint keeps 39 existing Fast Refresh warnings; build exits 0 with the existing chunk-size and Wrangler log warnings |
@@ -693,6 +696,8 @@ Frontend:
 | Phase 6 deployment/security hardening | `chore(security): harden API headers and production CORS` | Committed in `hrms_backend` as `4c7dc45` |
 | Phase 6 observability hardening | `chore(observability): configure production-safe API logging` | Committed in `hrms_backend` as `1e8b365` |
 | Phase 6 backup/restore scripts | `chore(ops): add database backup and restore scripts` | Committed in `hrms_backend` as `6a1f1c5` |
+| Cloudinary document storage backend | `feat(documents): migrate storage to Cloudinary` | Pending commit in `hrms_backend` |
+| Expense/document upload frontend | `feat(documents): compress uploads and simplify expense create` | Pending commit in `hrms-client` |
 
 ## Next Steps
 

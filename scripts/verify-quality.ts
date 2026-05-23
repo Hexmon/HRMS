@@ -101,7 +101,7 @@ for (const file of walkFiles("src", (path) => path.endsWith(".integration.test.t
   const rel = relativePath(file);
   const content = read(file);
   if (content.includes("createMemoryDataStore") || /buildApp\(\)/u.test(content)) {
-    violations.push(`${rel}: integration tests must use real PostgreSQL/Valkey/MinIO infrastructure`);
+    violations.push(`${rel}: integration tests must use real PostgreSQL/Valkey/Cloudinary infrastructure`);
   }
 }
 

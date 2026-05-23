@@ -453,10 +453,8 @@ function verifyNoSecrets(spec: OpenApiDocument): void {
   const serialized = JSON.stringify(spec);
   const forbiddenPatterns = [
     /JWT_(ACCESS|REFRESH)_SECRET/iu,
-    /OBJECT_STORAGE_SECRET_KEY/iu,
-    /MINIO_ROOT_PASSWORD/iu,
+    /CLOUDINARY_API_SECRET/iu,
     /VALKEY_PASSWORD/iu,
-    /minioadmin/iu,
     /postgres:\/\/postgres:postgres/iu
   ];
   for (const pattern of forbiddenPatterns) {

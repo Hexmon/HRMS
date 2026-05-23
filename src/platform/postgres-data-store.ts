@@ -60,17 +60,19 @@ import {
   type WorkflowDefinitionRecord,
   createMemoryDataStore
 } from "./data-store.js";
-import { MinioObjectStorage } from "./object-storage.js";
+import { CloudinaryObjectStorage } from "./object-storage.js";
 
 export interface PostgresDataStoreOptions {
   databaseUrl: string;
   valkeyUrl: string;
   objectStorage: {
-    endpoint: string;
-    accessKey: string;
-    secretKey: string;
-    bucket: string;
-    region: string;
+    cloudName: string;
+    apiKey: string;
+    apiSecret: string;
+    folder: string;
+    resourceType: "auto" | "image" | "raw" | "video";
+    uploadTransformation?: string;
+    mockUploads: boolean;
   };
   seedIfEmpty?: boolean;
 }
@@ -278,8 +280,8 @@ export async function resetPostgresDatabase(databaseUrl: string): Promise<void> 
 
 export async function createPostgresDataStore(options: PostgresDataStoreOptions): Promise<DataStore> {
   const pool = new Pool({ connectionString: options.databaseUrl });
-  const objectStorage = new MinioObjectStorage(options.objectStorage);
-  await objectStorage.ensureBucket();
+  const objectStorage = new CloudinaryObjectStorage(options.objectStorage);
+  await objectStorage.ensureReady();
 
   const store = createMemoryDataStore();
   store.kind = "postgres";
