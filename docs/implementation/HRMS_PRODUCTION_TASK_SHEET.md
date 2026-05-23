@@ -4,7 +4,7 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 5 Leave/WFH export slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, and Attendance backlog completion. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 6 API e2e baseline after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, and Leave/WFH export completion. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
@@ -43,6 +43,7 @@ This versioned report captures the completed Phase 5 Leave/WFH export slice afte
 | Employee/core backlog backend | Completed for role assignment history, profile audit trail, employee import job metadata/status, and employee export job metadata APIs |
 | Employee/core backlog frontend | Integrated in `hrms-client` for employee profile role history/audit tabs and API-backed employee export job queueing |
 | Phase 6 verification guardrails | Hardened backend implementation and scalability checks now cover the full module set, 217-operation contract floor, zero planned API backlog, synced frontend contract JSON, critical queue/report indexes, and frontend production API/mock fallback config |
+| Phase 6 API e2e baseline | Completed backend API-level user-flow smoke for auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Audit Log Discovery
@@ -157,6 +158,15 @@ This versioned report captures the completed Phase 5 Leave/WFH export slice afte
 | Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, and `pnpm verify:scalability` passed | The two verifier scripts needed escalation only because `tsx` IPC pipe creation is blocked in the sandbox |
 | Frontend production config guard | `hrms-client/scripts/production-config-guard.mjs` verifies production mode forces `mockFallback=false`, API mode defaults enabled, and env files do not set `VITE_API_MOCK_FALLBACK=true` or `VITE_API_ENABLED=false` | Added package script `pnpm api:production-config-guard` for repeatable frontend validation |
 | Frontend validation | `pnpm api:production-config-guard`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, and route coverage passed | Lint still reports the existing 39 Fast Refresh warnings |
+
+## Phase 6 API E2E Baseline
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| API e2e smoke | Added `src/__tests__/production-user-flows.e2e.test.ts` to exercise key employee, manager, admin, and reporting workflows through the Fastify API against QA infra | Covers login/session, employee directory/detail, timesheet segment/submission, expense creation, dashboard approvals, attendance check-in/check-out, leave approval, EMS profile-change approval, project/member/utilization, helpdesk ticket creation, notifications read state, report summaries, and report export queue metadata |
+| Seeded actors | Uses local demo credentials for employee, peer, and admin; manager uses the seeded `D1` helper session | The `reviewer@example.test` email/password path is not active in the current QA seed, so the smoke test uses the existing test helper for manager context instead of changing auth seed behavior |
+| Backend validation | `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`, and `pnpm lint` passed | First two e2e runs exposed seed/session and display-status expectations; the test was corrected to match current production API behavior before the passing run |
+| Deferred coverage | Browser-level frontend e2e and real document-backed export file generation/download remain Phase 6 hardening work | The new smoke test is API-level coverage, not a replacement for Playwright/browser coverage |
 
 ## Admin Notification Channels Discovery
 
@@ -434,16 +444,15 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Leave/WFH export | Connect monitor export | Completed in `hrms-client` | Completed for `/leave-wfh/monitor` export job queueing in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/leave-wfh/*`, `src/routes/_app/leave-wfh.monitor.tsx`, frontend API docs after sync | `feat(leave): connect Leave WFH export action` |
 | 6 | Production hardening guardrails | Harden backend verification scripts | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, `pnpm verify:scalability` | Passed. `verify:implementation` now guards the full 217-operation contract completion state and `verify:scalability` checks critical indexes across all implemented modules. | `scripts/verify-implementation.ts`, `scripts/verify-scalability.ts` | `chore(verify): harden production readiness checks` |
 | 6 | Production API config | Guard frontend production API/mock fallback config | N/A | Completed in `hrms-client` | `pnpm api:production-config-guard`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage | Passed. Lint has the existing 39 Fast Refresh warnings and no new errors. | `hrms-client/package.json`, `hrms-client/scripts/production-config-guard.mjs` | `chore(frontend): guard production API config` |
+| 6 | API e2e baseline | Add cross-module backend API user-flow smoke | Completed | N/A | `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`, `pnpm lint` | Passed. Covers auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata. | `src/__tests__/production-user-flows.e2e.test.ts`, task sheet | `test(e2e): add production user-flow smoke` |
 
 ## Remaining Blockers
 
 | Priority | Blocker |
 | --- | --- |
-| P1 | No frontend e2e/user-flow baseline for EMS, Leave/WFH/Holidays, or Attendance |
+| P1 | Browser-level frontend e2e/user-flow baseline is still missing for Attendance, Leave/WFH, EMS, Projects, Helpdesk, Notifications/topbar read-state, reports, and admin flows; backend API smoke coverage now exists |
 | P1 | EMS document Upload/Replace still needs a real file selection/form flow; API mode now blocks fake success instead of pretending to upload |
 | P1 | EMS onboarding, probation, exits, policy management, and letter generation admin actions remain static until broader HR/admin modules exist |
-| P1 | No frontend e2e/user-flow baseline for EMS, Leave/WFH/Holidays, Attendance, Projects, or Helpdesk |
-| P1 | No frontend e2e/user-flow baseline for Notifications/topbar read-state behavior |
 | P1 | Helpdesk category create/update/toggle endpoints remain planned for admin/settings phase; API mode surfaces this as an error instead of mutating local state |
 | P1 | Full asset vendor CRUD, warranty automation, and recovery settlement workflow remain planned for admin/operational hardening |
 | P1 | Project-specific reports and project document upload/attach UX remain planned |
@@ -461,6 +470,7 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
+- `pnpm test:e2e`: passed, 1 API-level production user-flow smoke test covering auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata
 - `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 217 operation frontend contract after Leave/WFH export completion
 - `pnpm api:docs:verify`: passed
 - `pnpm api:consumer:verify`: passed with escalation due `tsx` IPC sandboxing
@@ -538,6 +548,7 @@ Frontend:
 - Attendance daily calendar and manager regularization queue are added as backend completion endpoints/adapters; existing visible attendance routes already use monthly calendar, exceptions, and Reports APIs, so no route layout rewrite was required.
 - Attendance export create currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
 - Leave/WFH export create currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
+- The Phase 6 API e2e smoke uses local demo password login for employee, peer, and admin actors, and uses the existing seeded `D1` test helper session for manager context because the reviewer email/password account is not active in the current QA seed.
 
 ## Commit Messages
 
@@ -593,11 +604,12 @@ Frontend:
 | Leave/WFH export task sheet | `docs(leave): record export completion` | Committed in `hrms_backend` as `4328b28` |
 | Phase 6 verification guardrails | `chore(verify): harden production readiness checks` | Committed in `hrms_backend` as `0a7f47b` |
 | Phase 6 frontend production config guard | `chore(frontend): guard production API config` | Committed in `hrms-client` as `0e5d958` |
+| Phase 6 API e2e baseline | `test(e2e): add production user-flow smoke` | Committed in `hrms_backend` as `e799b34` |
 
 ## Next Steps
 
-1. Phase 5 Leave/WFH export is implemented, `/leave-wfh/monitor` queues backend export jobs in API mode, and validation passed.
+1. Phase 6 API e2e baseline is implemented for core cross-module backend API user flows and validation passed.
 2. Backend OpenAPI now has 217 operations across 192 paths; planned operations remaining are 0.
 3. Phase 6 verification guardrails are hardened for full-module implementation coverage, zero planned API backlog, frontend contract sync, critical migration index coverage, and frontend production API/mock fallback config.
 4. Employee import/export jobs and EMS/report/attendance/leave-WFH export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
-5. Next roadmap scope: continue Phase 6 with e2e/user-flow baseline, production API/mock fallback verification, export worker/file generation decisions, deployment checks, security headers/CORS/rate limiting, observability, backup/restore, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
+5. Next roadmap scope: continue Phase 6 with browser-level frontend e2e/user-flow baseline, export worker/file generation decisions, deployment checks, security headers/CORS/rate limiting, observability, backup/restore, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
