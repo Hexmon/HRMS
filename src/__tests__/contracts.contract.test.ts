@@ -536,6 +536,56 @@ describe("API contracts", () => {
     expect(docs.headers["content-type"]).toContain("text/html");
   });
 
+  it("sets baseline security headers and enforces production CORS allowlist", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
+    process.env.NODE_ENV = "production";
+    process.env.CORS_ALLOWED_ORIGINS = "https://hrms.example.com";
+    const secureApp = await buildApp({ dataStore: createMemoryDataStore(), rateLimit: false });
+    try {
+      await secureApp.ready();
+      const health = await secureApp.inject({ method: "GET", url: "/health/live" });
+      expect(health.headers["x-content-type-options"]).toBe("nosniff");
+      expect(health.headers["x-frame-options"]).toBe("DENY");
+      expect(health.headers["referrer-policy"]).toBe("no-referrer");
+      expect(health.headers["permissions-policy"]).toContain("camera=()");
+      expect(health.headers["strict-transport-security"]).toContain("max-age=15552000");
+
+      const allowedPreflight = await secureApp.inject({
+        method: "OPTIONS",
+        url: "/api/v1/auth/login",
+        headers: {
+          origin: "https://hrms.example.com",
+          "access-control-request-method": "POST"
+        }
+      });
+      expect(allowedPreflight.headers["access-control-allow-origin"]).toBe("https://hrms.example.com");
+      expect(allowedPreflight.headers["access-control-allow-credentials"]).toBe("true");
+
+      const deniedPreflight = await secureApp.inject({
+        method: "OPTIONS",
+        url: "/api/v1/auth/login",
+        headers: {
+          origin: "https://evil.example.com",
+          "access-control-request-method": "POST"
+        }
+      });
+      expect(deniedPreflight.headers["access-control-allow-origin"]).toBeUndefined();
+    } finally {
+      await secureApp.close();
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+      if (previousAllowedOrigins === undefined) {
+        delete process.env.CORS_ALLOWED_ORIGINS;
+      } else {
+        process.env.CORS_ALLOWED_ORIGINS = previousAllowedOrigins;
+      }
+    }
+  });
+
   it("returns typed OCC errors", async () => {
     const response = await app.inject({
       method: "GET",

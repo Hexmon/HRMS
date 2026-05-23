@@ -18,6 +18,7 @@ const configSchema = z.object({
   OBJECT_STORAGE_BUCKET: z.string().default("hrms-documents"),
   OBJECT_STORAGE_REGION: z.string().default("us-east-1"),
   API_BASE_URL: z.string().default("http://localhost:3001"),
+  CORS_ALLOWED_ORIGINS: z.string().default(""),
   RATE_LIMIT_ENABLED: z.coerce.boolean().default(true),
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(60),
   RATE_LIMIT_READ_MAX: z.coerce.number().int().min(1).default(120),

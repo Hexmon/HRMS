@@ -14,6 +14,9 @@ const composeFiles = (process.env.HRMS_COMPOSE_FILES ?? "infra/docker/docker-com
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
+const apiService = process.env.HRMS_COMPOSE_API_SERVICE ?? "hawkaii-hrms-api";
+const migrateService = process.env.HRMS_COMPOSE_MIGRATE_SERVICE ?? "hawkaii-hrms-migrate";
+const outboxWorkerService = process.env.HRMS_COMPOSE_OUTBOX_WORKER_SERVICE ?? "hawkaii-hrms-outbox-worker";
 mkdirSync(reportDir, { recursive: true });
 
 type Status = "pass" | "fail";
@@ -98,13 +101,13 @@ writeFileSync(join(reportDir, "compose-ps.json"), `${ps.output}\n`);
 if (ps.status !== 0) {
   record("docker compose ps", "fail", ps.output);
 } else {
-  const requiredRunning = ["postgres", "valkey", "minio", "api", "outbox-worker"];
+  const requiredRunning = ["postgres", "valkey", "minio", apiService, outboxWorkerService];
   const missing = requiredRunning.filter((service) => !ps.output.includes(`"Service":"${service}"`));
   const notRunning = requiredRunning.filter((service) => {
     const match = new RegExp(`"Service":"${service}"[\\s\\S]*?"State":"([^"]+)"`, "u").exec(ps.output);
     return match ? match[1] !== "running" : true;
   });
-  const migrateOk = /"Service":"migrate"[\s\S]*?"ExitCode":0/u.test(ps.output);
+  const migrateOk = new RegExp(`"Service":"${migrateService}"[\\s\\S]*?"ExitCode":0`, "u").test(ps.output);
   record(
     "docker compose backend services",
     missing.length === 0 && notRunning.length === 0 && migrateOk ? "pass" : "fail",

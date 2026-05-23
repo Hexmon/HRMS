@@ -21,6 +21,7 @@ declare module "fastify" {
       OBJECT_STORAGE_BUCKET: string;
       OBJECT_STORAGE_REGION: string;
       API_BASE_URL: string;
+      CORS_ALLOWED_ORIGINS: string;
       RATE_LIMIT_ENABLED: boolean;
       RATE_LIMIT_WINDOW_SECONDS: number;
       RATE_LIMIT_READ_MAX: number;

@@ -15,6 +15,7 @@ import { compressionPlugin } from "./plugins/compress.js";
 import { cookiesPlugin } from "./plugins/cookies.js";
 import { authPlugin } from "./plugins/auth.js";
 import { rateLimitPlugin } from "./plugins/rate-limit.js";
+import { securityHeadersPlugin } from "./plugins/security-headers.js";
 import healthModule from "./modules/health/index.js";
 import authModule from "./modules/auth/index.js";
 import coreModule from "./modules/core/index.js";
@@ -78,7 +79,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
   await app.register(requestContextPlugin);
   await app.register(errorsPlugin);
-  await app.register(cors, { origin: true, credentials: true });
+  await app.register(securityHeadersPlugin);
+  await app.register(cors, corsOptions(app.config));
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   await app.register(compressionPlugin);
   await app.register(cookiesPlugin);
@@ -150,4 +152,27 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
     },
     seedIfEmpty: options.seedIfEmpty ?? true
   });
+}
+
+function corsOptions(config: FastifyInstance["config"]): Parameters<typeof cors>[1] {
+  const allowedOrigins = config.CORS_ALLOWED_ORIGINS
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (allowedOrigins.length === 0 && config.NODE_ENV !== "production") {
+    return { origin: true, credentials: true };
+  }
+
+  const allowed = new Set(allowedOrigins);
+  return {
+    credentials: true,
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, false);
+        return;
+      }
+      callback(null, allowed.has(origin));
+    }
+  };
 }
