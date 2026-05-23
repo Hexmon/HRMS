@@ -4,14 +4,14 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 5 Admin policy configuration slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, and Admin workflow additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 5 Admin email template configuration slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, and Admin policy additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 191 implemented operations across 169 paths |
-| Planned operations remaining | 24 |
+| Backend OpenAPI | 193 implemented operations across 171 paths |
+| Planned operations remaining | 23 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
@@ -35,6 +35,7 @@ This versioned report captures the completed Phase 5 Admin policy configuration 
 | Admin RBAC | Completed for persistent RBAC role/permission configuration APIs and `/admin-settings/roles` frontend API-mode integration |
 | Admin workflow configurations | Completed for Admin-only workflow config list/update APIs and `/admin-settings/workflows` frontend API-mode integration |
 | Admin policies | Completed for Admin-only policy config list/update APIs and `/admin-settings/policies` frontend API-mode integration |
+| Admin email templates | Completed for Admin-only email template list/update APIs and `/admin-settings/email-templates` frontend API-mode integration |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Company Profile Discovery
@@ -285,6 +286,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Admin workflow configurations | Integrate frontend workflow screen | Completed in `hrms-client` | Completed for `/admin-settings/workflows` list/edit/save in API mode; local workflow store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.workflows.tsx`, frontend API docs | `feat(admin): connect workflow settings to backend API` |
 | 5 | Admin policies | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, admin policy integration test, `pnpm test:contracts` | Passed. OpenAPI generated 191 operations across 169 paths. One contract rerun was needed after removing the non-paginated policy list from the pagination-only assertion. | `src/modules/admin/*`, `src/db/migrations/0014_admin_policies.sql`, `src/shared/constants.ts`, `src/shared/types.ts`, `src/db/schema.ts`, store persistence, OpenAPI/docs/contracts | `feat(admin): implement policy settings APIs` |
 | 5 | Admin policies | Integrate frontend policies screen | Completed in `hrms-client` | Completed for `/admin-settings/policies` list/edit/save in API mode; local policy store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.policies.tsx`, frontend API docs | `feat(admin): connect policy settings to backend API` |
+| 5 | Admin email templates | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, admin email-template integration test, `pnpm test:contracts` | Passed. OpenAPI generated 193 operations across 171 paths. The update endpoint was added because the visible email-template UI has save/toggle behavior. | `src/modules/admin/*`, `src/db/migrations/0015_admin_email_templates.sql`, `src/shared/constants.ts`, `src/shared/types.ts`, `src/db/schema.ts`, store persistence, OpenAPI/docs/contracts | `feat(admin): implement email template settings APIs` |
+| 5 | Admin email templates | Integrate frontend email-template screen | Completed in `hrms-client` | Completed for `/admin-settings/email-templates` list/edit/save/toggle in API mode; local template store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.email-templates.tsx`, frontend API docs | `feat(admin): connect email templates to backend API` |
 
 ## Remaining Blockers
 
@@ -304,7 +307,7 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | P1 | Leave/WFH export/report endpoint remains planned for reports/admin phase |
 | P1 | Admin master-data tabs beyond departments/designations remain deferred until backend APIs are defined |
 | P1 | Dynamic RBAC runtime enforcement and custom-role assignment to employees remain deferred; this slice persists Admin Settings RBAC configuration only |
-| P1 | Admin email templates, notification channels, security settings, and audit logs remain planned |
+| P1 | Admin notification channels, security settings, and audit logs remain planned |
 | P2 | Frontend lint keeps 39 existing Fast Refresh warnings |
 | P2 | Frontend build keeps chunk-size/Wrangler log warnings but exits successfully |
 
@@ -315,10 +318,10 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 191 operation frontend contract after Admin policies
+- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 193 operation frontend contract after Admin email templates
 - `pnpm api:docs:verify`: passed
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
-- `pnpm exec vitest run --project integration src/modules/admin/__tests__/admin-policies.integration.test.ts`: passed, 2 tests
+- `pnpm exec vitest run --project integration src/modules/admin/__tests__/admin-email-templates.integration.test.ts`: passed, 2 tests
 - `pnpm test:contracts`: passed, 13 tests
 
 Frontend:
@@ -326,7 +329,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 169 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 171 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -368,6 +371,9 @@ Frontend:
 - Admin policies persist the visible Admin Settings policy values without changing existing runtime enforcement inside attendance, leave/WFH, timesheets, expenses, assets, or helpdesk in this slice.
 - Policy config is validated against the current visible UI fields and merged with the existing policy config on update.
 - `/admin-settings/policies` uses backend APIs in API mode for list/edit/save behavior and keeps localStorage policy state only when API mode is disabled.
+- Admin email templates persist the visible Admin Settings template subject, body, active status, locale, and metadata without adding SMTP/provider delivery configuration in this slice.
+- The `PUT /api/v1/admin/email-templates/{template_key}` endpoint was added because the current frontend UI has visible save/toggle behavior, even though the old backlog only listed the read endpoint.
+- `/admin-settings/email-templates` uses backend APIs in API mode for list/edit/save behavior and keeps localStorage template state only when API mode is disabled.
 
 ## Commit Messages
 
@@ -396,11 +402,14 @@ Frontend:
 | Admin workflow task sheet | `docs(admin): record workflow settings completion` | Committed in `hrms_backend` as `21df259` |
 | Admin policy backend | `feat(admin): implement policy settings APIs` | Committed in `hrms_backend` as `441648a` |
 | Admin policy frontend | `feat(admin): connect policy settings to backend API` | Committed in `hrms-client` as `d0091d0` |
-| Admin policy task sheet | `docs(admin): record policy settings completion` | Pending commit in this run |
+| Admin policy task sheet | `docs(admin): record policy settings completion` | Committed in `hrms_backend` as `28d2402` |
+| Admin email templates backend | `feat(admin): implement email template settings APIs` | Committed in `hrms_backend` as `6778966` |
+| Admin email templates frontend | `feat(admin): connect email templates to backend API` | Committed in `hrms-client` as `fd991af` |
+| Admin email templates task sheet | `docs(admin): record email template settings completion` | Committed in `hrms_backend` as `6e6f41b` |
 
 ## Next Steps
 
-1. Phase 5 Admin policies are implemented, frontend-integrated, and validated for policy list/edit/save behavior.
-2. Backend OpenAPI now has 191 operations across 169 paths; planned operations remaining are 24.
-3. `/admin-settings/policies` uses backend APIs in API mode; runtime policy enforcement adoption remains explicitly deferred to a later feature-policy migration.
-4. Next roadmap scope: Phase 5 Admin email templates.
+1. Phase 5 Admin email templates are implemented, frontend-integrated, and validated for template list/edit/save/toggle behavior.
+2. Backend OpenAPI now has 193 operations across 171 paths; planned operations remaining are 23.
+3. `/admin-settings/email-templates` uses backend APIs in API mode; provider/channel delivery configuration remains explicitly deferred.
+4. Next roadmap scope: Phase 5 Admin notification channels.
