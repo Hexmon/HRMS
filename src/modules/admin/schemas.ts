@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AdminWorkflowApproverTypes, AdminWorkflowKeys } from "#shared";
+import { AdminPolicyKeys, AdminWorkflowApproverTypes, AdminWorkflowKeys } from "#shared";
 
 export const masterDataQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -44,6 +44,11 @@ export const adminWorkflowsQuerySchema = z.object({
   module: z.string().max(80).optional()
 });
 
+export const adminPoliciesQuerySchema = z.object({
+  module: z.string().max(80).optional(),
+  active_only: z.coerce.boolean().optional()
+});
+
 const workflowStageSchema = z.object({
   id: z.string().min(1).max(80).optional(),
   order: z.number().int().min(1).max(20).optional(),
@@ -67,6 +72,20 @@ export const adminWorkflowUpdateSchema = z.object({
 
 export const workflowKeyParamSchema = z.object({
   workflow_key: z.enum(AdminWorkflowKeys)
+});
+
+const policyConfigValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+export const adminPolicyUpdateSchema = z.object({
+  label: z.string().min(2).max(160).optional(),
+  active: z.boolean().optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  config: z.record(z.string(), policyConfigValueSchema).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export const policyKeyParamSchema = z.object({
+  policy_key: z.enum(AdminPolicyKeys)
 });
 
 const statusSchema = z.enum(["active", "inactive"]);
@@ -133,6 +152,8 @@ export type RbacRolePermissionsReplaceInput = z.infer<typeof rbacRolePermissions
 export type AdminWorkflowsQuery = z.infer<typeof adminWorkflowsQuerySchema>;
 export type AdminWorkflowUpdateInput = z.infer<typeof adminWorkflowUpdateSchema>;
 export type AdminWorkflowStageInput = z.infer<typeof workflowStageSchema>;
+export type AdminPoliciesQuery = z.infer<typeof adminPoliciesQuerySchema>;
+export type AdminPolicyUpdateInput = z.infer<typeof adminPolicyUpdateSchema>;
 export type DepartmentCreateInput = z.infer<typeof departmentCreateSchema>;
 export type DepartmentUpdateInput = z.infer<typeof departmentUpdateSchema>;
 export type DesignationCreateInput = z.infer<typeof designationCreateSchema>;

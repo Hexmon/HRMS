@@ -36,6 +36,7 @@ import type {
   ProjectMemberRecord,
   ProjectMilestoneRecord,
   ProjectRecord,
+  AdminPolicyConfigRecord,
   AdminWorkflowConfigRecord,
   TimesheetSubmission,
   WfhRequest
@@ -122,6 +123,7 @@ const resetTables = [
   "expenses.expense_line_items",
   "expenses.expense_tickets",
   "platform.processed_events",
+  "platform.admin_policies",
   "platform.admin_workflows",
   "platform.notifications",
   "platform.outbox_events",
@@ -176,6 +178,7 @@ function copyData(target: DataStore, source: DataStore): void {
   target.rbacRoles = source.rbacRoles;
   target.rbacRolePermissions = source.rbacRolePermissions;
   target.adminWorkflows = source.adminWorkflows;
+  target.adminPolicies = source.adminPolicies;
   target.users = source.users;
   target.userCredentials = source.userCredentials;
   target.authTokens = source.authTokens;
@@ -311,6 +314,7 @@ class PostgresPersistence {
       loaded.rbacRoles = await this.loadRbacRoles(client);
       loaded.rbacRolePermissions = await this.loadRbacRolePermissions(client);
       loaded.adminWorkflows = await this.loadAdminWorkflows(client);
+      loaded.adminPolicies = await this.loadAdminPolicies(client);
       loaded.users = await this.loadUsers(client);
       loaded.userCredentials = await this.loadUserCredentials(client);
       loaded.authTokens = await this.loadAuthTokens(client);
@@ -466,6 +470,26 @@ class PostgresPersistence {
       label: row.label,
       status: row.status,
       stages: Array.isArray(row.stages) ? row.stages : [],
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+      version: row.version
+    }));
+  }
+
+  private async loadAdminPolicies(client: PoolClient): Promise<AdminPolicyConfigRecord[]> {
+    const { rows } = await client.query(`
+      SELECT id, policy_key, module, label, status, config, created_at, updated_at, deleted_at, version
+      FROM platform.admin_policies
+      ORDER BY policy_key
+    `);
+    return rows.map((row) => ({
+      id: row.id,
+      policy_key: row.policy_key,
+      module: row.module,
+      label: row.label,
+      status: row.status,
+      config: json(row.config),
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
       deleted_at: asIsoOrNull(row.deleted_at),
@@ -1680,6 +1704,30 @@ class PostgresPersistence {
           workflow.updated_at,
           workflow.deleted_at,
           workflow.version
+        ]
+      );
+    }
+    for (const policy of this.store.adminPolicies) {
+      await client.query(
+        `INSERT INTO platform.admin_policies (
+          id, policy_key, module, label, status, config, created_at, updated_at, deleted_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+        ON CONFLICT (policy_key) DO UPDATE
+        SET module = EXCLUDED.module, label = EXCLUDED.label, status = EXCLUDED.status,
+            config = EXCLUDED.config, updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version`,
+        [
+          policy.id,
+          policy.policy_key,
+          policy.module,
+          policy.label,
+          policy.status,
+          JSON.stringify(policy.config),
+          policy.created_at,
+          policy.updated_at,
+          policy.deleted_at,
+          policy.version
         ]
       );
     }

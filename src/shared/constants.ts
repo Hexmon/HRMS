@@ -80,6 +80,17 @@ export const AdminWorkflowApproverTypes = [
 
 export type AdminWorkflowApproverType = (typeof AdminWorkflowApproverTypes)[number];
 
+export const AdminPolicyKeys = [
+  "attendance",
+  "leave",
+  "timesheet",
+  "expense",
+  "asset",
+  "sla"
+] as const;
+
+export type AdminPolicyKey = (typeof AdminPolicyKeys)[number];
+
 export const EmploymentStatuses = {
   Active: "active",
   Inactive: "inactive",

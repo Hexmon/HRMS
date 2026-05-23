@@ -3,6 +3,8 @@ import { z } from "zod";
 import { unauthorized } from "../../platform/errors.js";
 import { AdminService } from "./service.js";
 import {
+  adminPoliciesQuerySchema,
+  adminPolicyUpdateSchema,
   adminWorkflowUpdateSchema,
   adminWorkflowsQuerySchema,
   companyProfileUpdateSchema,
@@ -16,6 +18,7 @@ import {
   rbacRolePermissionsReplaceSchema,
   rbacRolesQuerySchema,
   rbacRoleUpdateSchema,
+  policyKeyParamSchema,
   workflowKeyParamSchema
 } from "./schemas.js";
 
@@ -146,6 +149,24 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor,
       params.workflow_key,
       adminWorkflowUpdateSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/policies", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).listAdminPolicies(
+      request.actor,
+      adminPoliciesQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.put("/policies/:policy_key", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = policyKeyParamSchema.parse(request.params);
+    return new AdminService(fastify.store).updateAdminPolicy(
+      request.actor,
+      params.policy_key,
+      adminPolicyUpdateSchema.parse(request.body)
     );
   });
 };

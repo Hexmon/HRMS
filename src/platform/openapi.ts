@@ -66,6 +66,18 @@ const workflowKeyParamSchema = {
   }
 };
 
+const policyKeyParamSchema = {
+  type: "object",
+  required: ["policy_key"],
+  properties: {
+    policy_key: {
+      type: "string",
+      enum: ["attendance", "leave", "timesheet", "expense", "asset", "sla"],
+      example: "attendance"
+    }
+  }
+};
+
 const expenseDocumentParamSchema = {
   type: "object",
   required: ["id", "documentId"],
@@ -754,6 +766,45 @@ const adminWorkflowUpdateBody = {
         },
         additionalProperties: false
       }
+    },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminPolicySchema = {
+  type: "object",
+  required: ["id", "policy_key", "key", "module", "label", "status", "active", "config", "updated_at", "version"],
+  properties: {
+    id: uuid("Admin policy configuration UUID"),
+    policy_key: { type: "string", enum: ["attendance", "leave", "timesheet", "expense", "asset", "sla"], example: "attendance" },
+    key: { type: "string", enum: ["attendance", "leave", "timesheet", "expense", "asset", "sla"], example: "attendance" },
+    module: { type: "string", example: "attendance" },
+    label: { type: "string", example: "Attendance policy" },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    active: { type: "boolean", example: true },
+    config: {
+      type: "object",
+      additionalProperties: { anyOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }, { type: "null" }] },
+      example: { graceMinutes: 10, allowRegularization: true }
+    },
+    updated_at: dateTime("Admin policy update timestamp"),
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminPolicyUpdateBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    label: { type: "string", minLength: 2, maxLength: 160, example: "Attendance policy" },
+    active: { type: "boolean", example: true },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    config: {
+      type: "object",
+      additionalProperties: { anyOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }, { type: "null" }] },
+      example: { graceMinutes: 15, allowRegularization: true }
     },
     expected_version: { type: "integer", minimum: 1, example: 1 }
   },
@@ -3526,6 +3577,49 @@ const routeDocs: Record<string, RouteSchema> = {
         type: "object",
         required: ["workflow", "version"],
         properties: { workflow: adminWorkflowSchema, version: { type: "integer", example: 2 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "GET /api/v1/admin/policies": operation(
+    "Admin / Configuration",
+    "List admin policy configurations",
+    "Lists persistent Admin Settings policy configuration. This slice records policy values without changing existing feature-specific runtime enforcement.",
+    {
+      querystring: {
+        type: "object",
+        properties: {
+          module: { type: "string", example: "attendance" },
+          active_only: { type: "boolean", example: true }
+        }
+      },
+      response200: {
+        type: "object",
+        required: ["items", "policies", "versions"],
+        properties: {
+          items: { type: "array", items: adminPolicySchema },
+          policies: { type: "array", items: adminPolicySchema },
+          versions: {
+            type: "object",
+            additionalProperties: { type: "integer", minimum: 1 },
+            example: { attendance: 1, leave: 1 }
+          }
+        },
+        additionalProperties: false
+      }
+    }
+  ),
+  "PUT /api/v1/admin/policies/{policy_key}": operation(
+    "Admin / Configuration",
+    "Update admin policy configuration",
+    "Updates one Admin Settings policy configuration with optimistic concurrency. Runtime policy enforcement remains owned by each feature module until the later policy migration.",
+    {
+      params: policyKeyParamSchema,
+      body: adminPolicyUpdateBody,
+      response200: {
+        type: "object",
+        required: ["policy", "version"],
+        properties: { policy: adminPolicySchema, version: { type: "integer", example: 2 } },
         additionalProperties: false
       }
     }

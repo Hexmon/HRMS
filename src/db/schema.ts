@@ -267,6 +267,26 @@ export const adminWorkflows = platform.table(
   ]
 );
 
+export const adminPolicies = platform.table(
+  "admin_policies",
+  {
+    id: uuidPk.defaultRandom(),
+    policyKey: text("policy_key").notNull(),
+    module: text("module").notNull(),
+    label: text("label").notNull(),
+    status: text("status").notNull().default("active"),
+    config: jsonb("config").notNull().default({}),
+    createdAt,
+    updatedAt,
+    deletedAt,
+    version
+  },
+  (table) => [
+    uniqueIndex("platform_admin_policies_key_uq").on(table.policyKey),
+    index("platform_admin_policies_module_status_idx").on(table.module, table.status)
+  ]
+);
+
 export const processedEvents = platform.table("processed_events", {
   consumerName: text("consumer_name").notNull(),
   eventId: uuid("event_id").notNull(),
@@ -1282,6 +1302,7 @@ export const schema = {
   outboxEvents,
   notifications,
   adminWorkflows,
+  adminPolicies,
   processedEvents,
   expenseTickets,
   expenseLineItems,

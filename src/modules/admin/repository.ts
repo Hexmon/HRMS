@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { Department, Designation, AdminWorkflowConfigRecord, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
+import type { Department, Designation, AdminPolicyConfigRecord, AdminWorkflowConfigRecord, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
 import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
-import { buildDefaultAdminWorkflows, nowIso } from "../../platform/data-store.js";
+import { buildDefaultAdminPolicies, buildDefaultAdminWorkflows, nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 import type {
   CompanyProfileUpdateInput,
@@ -22,11 +22,23 @@ export class AdminRepository {
     return this.store.adminWorkflows.filter((workflow) => !workflow.deleted_at);
   }
 
+  listAdminPolicies(): AdminPolicyConfigRecord[] {
+    this.ensureAdminPolicies();
+    return this.store.adminPolicies.filter((policy) => !policy.deleted_at);
+  }
+
   adminWorkflowByKey(workflowKey: string): AdminWorkflowConfigRecord {
     this.ensureAdminWorkflows();
     const workflow = this.store.adminWorkflows.find((candidate) => candidate.workflow_key === workflowKey && !candidate.deleted_at);
     if (!workflow) throw notFound("Admin workflow configuration not found", { workflow_key: workflowKey });
     return workflow;
+  }
+
+  adminPolicyByKey(policyKey: string): AdminPolicyConfigRecord {
+    this.ensureAdminPolicies();
+    const policy = this.store.adminPolicies.find((candidate) => candidate.policy_key === policyKey && !candidate.deleted_at);
+    if (!policy) throw notFound("Admin policy configuration not found", { policy_key: policyKey });
+    return policy;
   }
 
   updateAdminWorkflow(workflowKey: string, input: AdminWorkflowUpdateData): AdminWorkflowConfigRecord {
@@ -45,6 +57,24 @@ export class AdminRepository {
     workflow.updated_at = nowIso();
     workflow.version += 1;
     return workflow;
+  }
+
+  updateAdminPolicy(policyKey: string, input: AdminPolicyUpdateData): AdminPolicyConfigRecord {
+    const policy = this.adminPolicyByKey(policyKey);
+    if (policy.version !== input.expected_version) {
+      throw conflict("Admin policy configuration was modified by another actor.", {
+        aggregate: "admin_policy",
+        policy_key: policyKey,
+        expected_version: input.expected_version,
+        current_version: policy.version
+      });
+    }
+    if (input.label) policy.label = input.label.trim();
+    if (input.status) policy.status = input.status;
+    if (input.config) policy.config = input.config;
+    policy.updated_at = nowIso();
+    policy.version += 1;
+    return policy;
   }
 
   getCurrentCompanyProfile(): CompanyProfileRecord {
@@ -302,12 +332,25 @@ export class AdminRepository {
     const missingDefaults = buildDefaultAdminWorkflows(nowIso()).filter((workflow) => !existingKeys.has(workflow.workflow_key));
     this.store.adminWorkflows.push(...missingDefaults);
   }
+
+  private ensureAdminPolicies(): void {
+    const existingKeys = new Set(this.store.adminPolicies.filter((policy) => !policy.deleted_at).map((policy) => policy.policy_key));
+    const missingDefaults = buildDefaultAdminPolicies(nowIso()).filter((policy) => !existingKeys.has(policy.policy_key));
+    this.store.adminPolicies.push(...missingDefaults);
+  }
 }
 
 export interface AdminWorkflowUpdateData {
   label?: string;
   status?: "active" | "inactive";
   stages?: AdminWorkflowConfigRecord["stages"];
+  expected_version: number;
+}
+
+export interface AdminPolicyUpdateData {
+  label?: string;
+  status?: "active" | "inactive";
+  config?: Record<string, unknown>;
   expected_version: number;
 }
 

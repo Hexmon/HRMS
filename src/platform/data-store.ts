@@ -36,6 +36,7 @@ import type {
   ProjectMemberRecord,
   ProjectMilestoneRecord,
   ProjectRecord,
+  AdminPolicyConfigRecord,
   AdminWorkflowConfigRecord,
   RbacRolePermissionRecord,
   RbacRoleRecord,
@@ -67,6 +68,8 @@ import {
   ProjectPriorities,
   ProjectStatuses,
   ProjectTypes,
+  AdminPolicyKeys,
+  type AdminPolicyKey,
   AdminWorkflowApproverTypes,
   AdminWorkflowKeys,
   type AdminWorkflowKey,
@@ -333,6 +336,7 @@ export interface DataStore {
   rbacRoles: RbacRoleRecord[];
   rbacRolePermissions: RbacRolePermissionRecord[];
   adminWorkflows: AdminWorkflowConfigRecord[];
+  adminPolicies: AdminPolicyConfigRecord[];
   users: CoreUser[];
   userCredentials: UserCredentialRecord[];
   authTokens: AuthTokenRecord[];
@@ -692,10 +696,108 @@ export function buildDefaultAdminWorkflows(created: string): AdminWorkflowConfig
   }));
 }
 
+export function buildDefaultAdminPolicies(created: string): AdminPolicyConfigRecord[] {
+  const defaults: Array<{
+    key: AdminPolicyKey;
+    module: string;
+    label: string;
+    config: Record<string, unknown>;
+  }> = [
+    {
+      key: "attendance",
+      module: "attendance",
+      label: "Attendance policy",
+      config: {
+        graceMinutes: 10,
+        halfDayAfterMinutes: 240,
+        autoMarkAbsentMinutes: 480,
+        allowRegularization: true
+      }
+    },
+    {
+      key: "leave",
+      module: "leave_wfh",
+      label: "Leave policy",
+      config: {
+        casualPerYear: 12,
+        sickPerYear: 10,
+        earnedPerYear: 18,
+        carryForwardCap: 30,
+        encashmentAllowed: true
+      }
+    },
+    {
+      key: "timesheet",
+      module: "timesheets",
+      label: "Timesheet policy",
+      config: {
+        weeklyHours: 40,
+        minDailyHours: 6,
+        submitBy: "Monday 11:00 AM",
+        lockAfterApproval: true
+      }
+    },
+    {
+      key: "expense",
+      module: "expenses",
+      label: "Expense policy",
+      config: {
+        perDayLimit: 5000,
+        receiptMandatoryAbove: 500,
+        selfApprovalAllowed: false,
+        autoEscalateDays: 3
+      }
+    },
+    {
+      key: "asset",
+      module: "assets",
+      label: "Asset policy",
+      config: {
+        damagePenalty: true,
+        mandatoryAck: true,
+        returnSlaDays: 5,
+        warrantyAlertDays: 60
+      }
+    },
+    {
+      key: "sla",
+      module: "helpdesk",
+      label: "Helpdesk SLA",
+      config: {
+        urgentResponseHrs: 1,
+        urgentResolveHrs: 4,
+        highResponseHrs: 4,
+        highResolveHrs: 24,
+        normalResponseHrs: 8,
+        normalResolveHrs: 48,
+        lowResponseHrs: 24,
+        lowResolveHrs: 96
+      }
+    }
+  ];
+
+  const allowedKeys = new Set(AdminPolicyKeys);
+  return defaults
+    .filter((policy) => allowedKeys.has(policy.key))
+    .map((policy) => ({
+      id: uuidFromName(`admin-policy-${policy.key}`),
+      policy_key: policy.key,
+      module: policy.module,
+      label: policy.label,
+      status: "active",
+      config: policy.config,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null,
+      version: 1
+    }));
+}
+
 export function createMemoryDataStore(): MemoryDataStore {
   const created = nowIso();
   const defaultRbac = buildDefaultRbac(created);
   const defaultAdminWorkflows = buildDefaultAdminWorkflows(created);
+  const defaultAdminPolicies = buildDefaultAdminPolicies(created);
   const departments: Department[] = [
     {
       id: seedIds.departmentSales,
@@ -1454,6 +1556,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     rbacRoles: defaultRbac.roles,
     rbacRolePermissions: defaultRbac.permissions,
     adminWorkflows: defaultAdminWorkflows,
+    adminPolicies: defaultAdminPolicies,
     users,
     userCredentials,
     authTokens: [],

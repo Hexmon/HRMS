@@ -1,8 +1,11 @@
 import {
+  AdminPolicyKeys,
   AdminWorkflowApproverTypes,
   RbacPermissionActions,
   RbacPermissionGroups,
   Roles,
+  type AdminPolicyConfigRecord,
+  type AdminPolicyKey,
   type AdminWorkflowConfigRecord,
   type AdminWorkflowKey,
   type AdminWorkflowStageRecord,
@@ -16,6 +19,8 @@ import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-
 import { appendOutboxEvent } from "../expenses/events.js";
 import { AdminRepository } from "./repository.js";
 import type {
+  AdminPoliciesQuery,
+  AdminPolicyUpdateInput,
   AdminWorkflowStageInput,
   AdminWorkflowUpdateInput,
   AdminWorkflowsQuery,
@@ -31,7 +36,7 @@ import type {
   RbacRolesQuery,
   RbacRoleUpdateInput
 } from "./schemas.js";
-import { assertCanManageAdminSettings, assertCanManageMasterData, assertCanManageRbac, assertCanManageWorkflowSettings } from "./policy.js";
+import { assertCanManageAdminSettings, assertCanManageMasterData, assertCanManagePolicySettings, assertCanManageRbac, assertCanManageWorkflowSettings } from "./policy.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 
 function page<T>(items: readonly T[], pageNumber = 1, pageSize = 25): Paginated<T> {
@@ -83,6 +88,22 @@ export class AdminService {
     };
   }
 
+  listAdminPolicies(actor: AuthUser, query: AdminPoliciesQuery): AdminPolicyListResponse {
+    assertCanManagePolicySettings(actor);
+    const moduleFilter = query.module?.trim().toLowerCase();
+    const policies = this.repository
+      .listAdminPolicies()
+      .filter((policy) => !moduleFilter || policy.module.toLowerCase() === moduleFilter || policy.policy_key.toLowerCase() === moduleFilter)
+      .filter((policy) => !query.active_only || policy.status === "active")
+      .sort((a, b) => adminPolicySortOrder(a.policy_key) - adminPolicySortOrder(b.policy_key))
+      .map((policy) => presentAdminPolicy(policy));
+    return {
+      items: policies,
+      policies,
+      versions: Object.fromEntries(policies.map((policy) => [policy.policy_key, policy.version]))
+    };
+  }
+
   updateAdminWorkflow(actor: AuthUser, workflowKey: AdminWorkflowKey, input: AdminWorkflowUpdateInput): AdminWorkflowMutationResponse {
     assertCanManageWorkflowSettings(actor);
     const stages = input.stages ? normalizeWorkflowStages(input.stages, workflowKey) : undefined;
@@ -104,6 +125,29 @@ export class AdminService {
       idempotencyKey: `admin.workflow.updated:${workflow.id}:${workflow.version}`
     });
     return { workflow: presentAdminWorkflow(workflow), version: workflow.version };
+  }
+
+  updateAdminPolicy(actor: AuthUser, policyKey: AdminPolicyKey, input: AdminPolicyUpdateInput): AdminPolicyMutationResponse {
+    assertCanManagePolicySettings(actor);
+    const current = this.repository.adminPolicyByKey(policyKey);
+    const policy = this.repository.updateAdminPolicy(policyKey, {
+      label: input.label,
+      status: input.status ?? (input.active === undefined ? undefined : input.active ? "active" : "inactive"),
+      config: input.config ? normalizeAdminPolicyConfig(policyKey, current.config, input.config) : undefined,
+      expected_version: input.expected_version
+    });
+    appendOutboxEvent(this.store, {
+      aggregateType: "admin_policy",
+      aggregateId: policy.id,
+      eventType: "admin.policy.updated",
+      payload: {
+        actor_user_id: actor.id,
+        policy_key: policy.policy_key,
+        changed_fields: Object.keys(input).filter((field) => field !== "expected_version")
+      },
+      idempotencyKey: `admin.policy.updated:${policy.id}:${policy.version}`
+    });
+    return { policy: presentAdminPolicy(policy), version: policy.version };
   }
 
   listRbacRoles(actor: AuthUser, query: RbacRolesQuery): Paginated<RbacRoleResponse> {
@@ -452,6 +496,30 @@ export interface AdminWorkflowMutationResponse {
   version: number;
 }
 
+export interface AdminPolicyResponse {
+  id: string;
+  policy_key: AdminPolicyKey;
+  key: AdminPolicyKey;
+  module: string;
+  label: string;
+  status: "active" | "inactive";
+  active: boolean;
+  config: Record<string, unknown>;
+  updated_at: string;
+  version: number;
+}
+
+export interface AdminPolicyListResponse {
+  items: AdminPolicyResponse[];
+  policies: AdminPolicyResponse[];
+  versions: Record<string, number>;
+}
+
+export interface AdminPolicyMutationResponse {
+  policy: AdminPolicyResponse;
+  version: number;
+}
+
 export interface CompanyProfileResponse {
   id: string;
   company_name: string;
@@ -562,6 +630,21 @@ function presentAdminWorkflow(workflow: AdminWorkflowConfigRecord): AdminWorkflo
   };
 }
 
+function presentAdminPolicy(policy: AdminPolicyConfigRecord): AdminPolicyResponse {
+  return {
+    id: policy.id,
+    policy_key: policy.policy_key,
+    key: policy.policy_key,
+    module: policy.module,
+    label: policy.label,
+    status: policy.status,
+    active: policy.status === "active",
+    config: policy.config,
+    updated_at: policy.updated_at,
+    version: policy.version
+  };
+}
+
 function normalizeWorkflowStages(stages: readonly AdminWorkflowStageInput[], workflowKey: AdminWorkflowKey): AdminWorkflowStageRecord[] {
   const seen = new Set<string>();
   return stages.map((stage, index) => {
@@ -593,6 +676,58 @@ function normalizeWorkflowStages(stages: readonly AdminWorkflowStageInput[], wor
 
 function adminWorkflowSortOrder(workflowKey: AdminWorkflowKey): number {
   return ["leave", "wfh", "timesheet", "expense", "asset_request", "helpdesk_escalation"].indexOf(workflowKey);
+}
+
+function normalizeAdminPolicyConfig(
+  policyKey: AdminPolicyKey,
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const allowedKeys = adminPolicyConfigKeys(policyKey);
+  const next = { ...current };
+  for (const [key, value] of Object.entries(patch)) {
+    if (!allowedKeys.has(key)) {
+      throw badRequest("Unknown policy configuration field.", { policy_key: policyKey, field: key });
+    }
+    if (typeof value === "number" && (!Number.isFinite(value) || value < 0)) {
+      throw badRequest("Policy number values must be finite and non-negative.", { policy_key: policyKey, field: key });
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        throw badRequest("Policy text values cannot be blank.", { policy_key: policyKey, field: key });
+      }
+      next[key] = trimmed;
+    } else {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
+function adminPolicyConfigKeys(policyKey: AdminPolicyKey): Set<string> {
+  const fields: Record<AdminPolicyKey, string[]> = {
+    attendance: ["graceMinutes", "halfDayAfterMinutes", "autoMarkAbsentMinutes", "allowRegularization"],
+    leave: ["casualPerYear", "sickPerYear", "earnedPerYear", "carryForwardCap", "encashmentAllowed"],
+    timesheet: ["weeklyHours", "minDailyHours", "submitBy", "lockAfterApproval"],
+    expense: ["perDayLimit", "receiptMandatoryAbove", "selfApprovalAllowed", "autoEscalateDays"],
+    asset: ["damagePenalty", "mandatoryAck", "returnSlaDays", "warrantyAlertDays"],
+    sla: [
+      "urgentResponseHrs",
+      "urgentResolveHrs",
+      "highResponseHrs",
+      "highResolveHrs",
+      "normalResponseHrs",
+      "normalResolveHrs",
+      "lowResponseHrs",
+      "lowResolveHrs"
+    ]
+  };
+  return new Set(fields[policyKey]);
+}
+
+function adminPolicySortOrder(policyKey: AdminPolicyKey): number {
+  return AdminPolicyKeys.indexOf(policyKey);
 }
 
 function monthName(month: number): string {

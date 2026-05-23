@@ -26,6 +26,7 @@ import type {
   ProjectPriority,
   ProjectStatus,
   ProjectType,
+  AdminPolicyKey,
   AdminWorkflowApproverType,
   AdminWorkflowKey,
   RbacPermissionAction,
@@ -121,6 +122,19 @@ export interface AdminWorkflowConfigRecord {
   label: string;
   status: "active" | "inactive";
   stages: AdminWorkflowStageRecord[];
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+  version: number;
+}
+
+export interface AdminPolicyConfigRecord {
+  id: UUID;
+  policy_key: AdminPolicyKey;
+  module: string;
+  label: string;
+  status: "active" | "inactive";
+  config: Record<string, unknown>;
   created_at: ISODateTime;
   updated_at: ISODateTime;
   deleted_at: ISODateTime | null;
