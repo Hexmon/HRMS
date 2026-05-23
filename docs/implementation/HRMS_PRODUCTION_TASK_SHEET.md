@@ -4,14 +4,14 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 4 Expense enhancement slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, and Timesheet enhancement additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 5 Admin company profile/settings slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, and Expense enhancement additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 174 implemented operations across 156 paths |
-| Planned operations remaining | 41 |
+| Backend OpenAPI | 176 implemented operations across 157 paths |
+| Planned operations remaining | 39 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
@@ -30,7 +30,19 @@ This versioned report captures the completed Phase 4 Expense enhancement slice a
 | Timesheet enhancements frontend | Integrated in `hrms-client` for project timesheet view, missing submission queue/report inputs, productivity/project report rollups, and form selectors in API mode |
 | Expense enhancements backend | Implemented for metadata, dashboard summary, requester withdraw, and clarification thread |
 | Expense enhancements frontend | Integrated in `hrms-client` for create-form metadata, expense dashboard summary cards, withdraw actions, and clarification comments in API mode |
+| Admin company profile/settings | Completed for Admin-only company profile read/update API and `/admin-settings/company` frontend API-mode integration |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
+
+## Admin Company Profile Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Frontend route | `hrms-client/src/routes/_app/admin-settings.company.tsx` renders the Company settings form for name, website, industry, address, timezone, currency, fiscal-year start, working week, work hours, and logo label | Replace production-critical local save with backend-backed read/update in API mode |
+| Current data source | `hrms-client/src/lib/admin-settings-store.tsx` initializes company settings from `localStorage` key `hawkaii_admin_company_v1` and `DEFAULT_COMPANY` | Keep local storage behavior only when the backend API is disabled or explicit non-production fallback is active |
+| Existing frontend API domain | `hrms-client/src/domains/admin/api.ts` only covers finance governance, manager backups, and timesheet workflow definition calls | Add company profile read/update adapter and React Query hooks |
+| Existing backend data | `platform.company_profiles` exists from onboarding with core fields: company name, slug, timezone, locale, fiscal-year month, status, bootstrap timestamps, and version | Extend the table/model with settings needed by the active Company UI while preserving existing auth/onboarding behavior |
+| Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` lists `GET /api/v1/admin/company-profile` and `PUT /api/v1/admin/company-profile` as planned | Implement these two endpoints with Admin-only access, OCC on update, OpenAPI docs, and integration tests |
+| Risks | Existing seeded local stores can have no persisted company profile because auth falls back to a default context | Admin profile service should create/return a safe default read model when no profile exists, then persist on update |
 
 ## Helpdesk Discovery
 
@@ -152,6 +164,13 @@ Deferred from this Helpdesk slice: category mutation endpoints and broader `/api
 | `POST` | `/api/v1/expenses/{id}/withdraw` | `/expenses/my`, `/expenses/$id` requester action | Requester-only withdrawal for draft, submitted, pending-manager, or manager-returned tickets with OCC and remarks policy |
 | `POST` | `/api/v1/expenses/{id}/clarifications` | `/expenses/$id` comments/clarification tab | Appends a durable clarification message and returns the current object-scoped thread |
 
+## Admin Company Profile API Inventory
+
+| Method | Path | Frontend usage | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/admin/company-profile` | `/admin-settings/company` initial form load | Returns active company profile, locale/fiscal settings, working week, work hours, logo label, and version |
+| `PUT` | `/api/v1/admin/company-profile` | `/admin-settings/company` save action | Admin-only optimistic-concurrency update for company profile/settings while keeping company slug stable |
+
 ## Projects / Utilization API Inventory
 
 | Method | Path | Frontend usage | Notes |
@@ -196,6 +215,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 4 | Timesheet enhancements | Integrate frontend timesheet screens | Completed in `hrms-client` | Completed for project view, missing submission queue, productivity/project report rollups, and form selectors in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/timesheets/*`, `src/routes/_app/timesheet*.tsx`, `src/routes/_app/reports.timesheet.tsx`, frontend API docs | `feat(timesheets): connect timesheet analytics screens to backend APIs` |
 | 4 | Expense enhancements | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, expense integration test, `pnpm test:contracts` | Passed. OpenAPI generated 174 operations across 156 paths. Non-escalated DB/tsx runs were sandbox-blocked; reruns with local QA infra access passed. | `src/modules/expenses/*`, OpenAPI/docs/contracts | `feat(expenses): implement metadata summary withdraw and clarifications` |
 | 4 | Expense enhancements | Integrate frontend expense screens | Completed in `hrms-client` | Completed for create metadata, dashboard summary, withdraw action, and clarification comments in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/expenses/*`, `src/lib/expenses-store.tsx`, expense routes, frontend API docs | `feat(expenses): connect metadata summary and clarification flows` |
+| 5 | Admin company profile/settings | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, admin company integration test, `pnpm test:contracts` | Passed. OpenAPI generated 176 operations across 157 paths. Non-escalated tsx/DB runs were sandbox-blocked; reruns with local QA infra access passed. | `src/modules/admin/*`, `src/db/migrations/0010_admin_company_profile.sql`, company profile persistence/model, OpenAPI/docs/contracts | `feat(admin): implement company profile settings APIs` |
+| 5 | Admin company profile/settings | Integrate frontend company settings screen | Completed in `hrms-client` | Completed for `/admin-settings/company` read/update in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.company.tsx`, frontend API docs | `feat(admin): connect company settings to backend API` |
 
 ## Remaining Blockers
 
@@ -223,10 +244,10 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed; generated 174 operation frontend contract
+- `pnpm api:docs:generate`: passed; generated 176 operation frontend contract after Admin company profile
 - `pnpm api:docs:verify`: passed
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
-- `pnpm exec vitest run --project integration src/modules/expenses/__tests__/expense.integration.test.ts`: passed, 5 tests
+- `pnpm exec vitest run --project integration src/modules/admin/__tests__/admin-company.integration.test.ts`: passed, 1 test
 - `pnpm test:contracts`: passed, 13 tests
 
 Frontend:
@@ -234,7 +255,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 156 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 157 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -258,6 +279,10 @@ Frontend:
 - Expense clarification messages are persisted as durable expense audit events for this slice; a dedicated clarification table is deferred unless richer threaded features are required later.
 - Expense withdrawal maps backend `Cancelled` to frontend `withdrawn`; withdrawal is limited to requester-owned draft, submitted, pending-manager, or manager-returned tickets.
 - Expense dashboard summary returns compact role-aware cards and rows; detailed accounting reports remain under the existing expense report endpoints and broader Reports phase.
+- Admin company profile extends the existing onboarding `platform.company_profiles` table so auth/company bootstrap state remains the source for tenant identity.
+- Admin company profile updates emit `admin.company_profile.updated` outbox events as the durable audit hook until the broader Admin audit log API is implemented.
+- Company profile updates intentionally keep `company_slug` stable; display/profile fields can change without migrating tenant identifiers.
+- `/admin-settings/company` uses the backend in API mode and keeps localStorage only for API-disabled development.
 
 ## Commit Messages
 
@@ -274,10 +299,12 @@ Frontend:
 | DB verifier fix | `fix(db): make cross-schema verifier use test env` | Committed in `hrms_backend` as `0bfa017` |
 | Expense enhancements backend | `feat(expenses): implement metadata summary withdraw and clarifications` | Committed in `hrms_backend` as `1fea48a` |
 | Expense enhancements frontend | `feat(expenses): connect metadata summary and clarification flows` | Committed in `hrms-client` as `61ac090` |
+| Admin company profile backend | `feat(admin): implement company profile settings APIs` | Pending commit |
+| Admin company profile frontend | `feat(admin): connect company settings to backend API` | Pending commit |
 
 ## Next Steps
 
-1. Phase 4 Expense enhancements are implemented, frontend-integrated, and validated for metadata, dashboard summary, withdrawal, and clarification thread behavior.
-2. Backend OpenAPI now has 174 operations across 156 paths; planned operations remaining are 41.
-3. Expense create metadata, dashboard cards, withdrawal, and detail comments use backend APIs in API mode; explicit non-production fallback remains available only through the existing config path.
-4. Next roadmap scope: Phase 5 Admin settings, RBAC, reports beyond expenses, and audit hardening.
+1. Phase 5 Admin company profile/settings is implemented, frontend-integrated, and validated for company settings read/update behavior.
+2. Backend OpenAPI now has 176 operations across 157 paths; planned operations remaining are 39.
+3. `/admin-settings/company` uses backend APIs in API mode; explicit local fallback remains available only when the backend API is disabled.
+4. Next roadmap scope: Phase 5 master data APIs for departments/designations and related Admin Settings frontend integration.

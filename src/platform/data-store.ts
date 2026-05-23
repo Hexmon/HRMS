@@ -156,9 +156,16 @@ export interface CompanyProfileRecord {
   id: UUID;
   company_name: string;
   company_slug: string;
+  website: string | null;
+  industry: string | null;
+  address: string | null;
   timezone: string;
   locale: string;
+  currency: string;
   fiscal_year_start_month: number;
+  working_week: string;
+  work_hours_per_day: number;
+  logo_label: string | null;
   status: "pending" | "active" | "inactive";
   bootstrap_completed_at: string | null;
   created_at: string;

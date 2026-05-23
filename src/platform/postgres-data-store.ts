@@ -476,7 +476,9 @@ class PostgresPersistence {
 
   private async loadCompanyProfiles(client: PoolClient): Promise<CompanyProfileRecord[]> {
     const { rows } = await client.query(`
-      SELECT id, company_name, company_slug, timezone, locale, fiscal_year_start_month, status, bootstrap_completed_at, created_at, updated_at, version
+      SELECT id, company_name, company_slug, website, industry, address, timezone, locale, currency,
+        fiscal_year_start_month, working_week, work_hours_per_day, logo_label,
+        status, bootstrap_completed_at, created_at, updated_at, version
       FROM platform.company_profiles
       ORDER BY created_at, id
     `);
@@ -484,9 +486,16 @@ class PostgresPersistence {
       id: row.id,
       company_name: row.company_name,
       company_slug: row.company_slug,
+      website: row.website,
+      industry: row.industry,
+      address: row.address,
       timezone: row.timezone,
       locale: row.locale,
+      currency: row.currency,
       fiscal_year_start_month: row.fiscal_year_start_month,
+      working_week: row.working_week,
+      work_hours_per_day: Number(row.work_hours_per_day),
+      logo_label: row.logo_label,
       status: row.status,
       bootstrap_completed_at: asIsoOrNull(row.bootstrap_completed_at),
       created_at: asIso(row.created_at),
@@ -1522,22 +1531,34 @@ class PostgresPersistence {
     for (const company of this.store.companyProfiles) {
       await client.query(
         `INSERT INTO platform.company_profiles (
-          id, company_name, company_slug, timezone, locale, fiscal_year_start_month,
+          id, company_name, company_slug, website, industry, address, timezone, locale, currency,
+          fiscal_year_start_month, working_week, work_hours_per_day, logo_label,
           status, bootstrap_completed_at, created_at, updated_at, version
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         ON CONFLICT (id) DO UPDATE
-        SET company_name = EXCLUDED.company_name, timezone = EXCLUDED.timezone,
-            locale = EXCLUDED.locale, fiscal_year_start_month = EXCLUDED.fiscal_year_start_month,
+        SET company_name = EXCLUDED.company_name, website = EXCLUDED.website,
+            industry = EXCLUDED.industry, address = EXCLUDED.address, timezone = EXCLUDED.timezone,
+            locale = EXCLUDED.locale, currency = EXCLUDED.currency,
+            fiscal_year_start_month = EXCLUDED.fiscal_year_start_month,
+            working_week = EXCLUDED.working_week, work_hours_per_day = EXCLUDED.work_hours_per_day,
+            logo_label = EXCLUDED.logo_label,
             status = EXCLUDED.status, bootstrap_completed_at = EXCLUDED.bootstrap_completed_at,
             updated_at = EXCLUDED.updated_at, version = EXCLUDED.version`,
         [
           company.id,
           company.company_name,
           company.company_slug,
+          company.website,
+          company.industry,
+          company.address,
           company.timezone,
           company.locale,
+          company.currency,
           company.fiscal_year_start_month,
+          company.working_week,
+          company.work_hours_per_day,
+          company.logo_label,
           company.status,
           company.bootstrap_completed_at,
           company.created_at,

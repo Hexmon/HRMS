@@ -425,6 +425,68 @@ const authSessionContextSchema = {
   additionalProperties: false
 };
 
+const adminCompanyProfileSchema = {
+  type: "object",
+  required: [
+    "id",
+    "company_name",
+    "company_slug",
+    "timezone",
+    "locale",
+    "currency",
+    "fiscal_year_start_month",
+    "working_week",
+    "work_hours_per_day",
+    "status",
+    "updated_at",
+    "version"
+  ],
+  properties: {
+    id: uuid("Company profile UUID"),
+    company_name: { type: "string", example: "Hawkaii HRMS" },
+    company_slug: { type: "string", example: "hawkaii-hrms" },
+    name: { type: "string", example: "Hawkaii HRMS" },
+    website: { type: "string", nullable: true, example: "https://hawkaii.com" },
+    industry: { type: "string", nullable: true, example: "Software / SaaS" },
+    address: { type: "string", nullable: true, example: "Bengaluru" },
+    timezone: { type: "string", example: "Asia/Kolkata" },
+    locale: { type: "string", example: "en-IN" },
+    currency: { type: "string", example: "INR" },
+    fiscal_year_start_month: { type: "integer", minimum: 1, maximum: 12, example: 4 },
+    financial_year_start: { type: "string", example: "April" },
+    working_week: { type: "string", example: "Mon-Fri" },
+    work_hours_per_day: { type: "number", minimum: 1, maximum: 24, example: 8 },
+    work_hours: { type: "number", minimum: 1, maximum: 24, example: 8 },
+    logo_label: { type: "string", nullable: true, example: "HK" },
+    logoLabel: { type: "string", nullable: true, example: "HK" },
+    status: { type: "string", enum: ["pending", "active", "inactive"], example: "active" },
+    bootstrap_completed_at: { ...dateTime("Bootstrap completion timestamp"), nullable: true },
+    updated_at: dateTime("Last update timestamp"),
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const adminCompanyProfileUpdateBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    company_name: { type: "string", minLength: 2, maxLength: 160, example: "Hawkaii HRMS India" },
+    website: { type: "string", nullable: true, maxLength: 240, example: "https://hawkaii.com" },
+    industry: { type: "string", nullable: true, maxLength: 160, example: "Software / SaaS" },
+    address: { type: "string", nullable: true, maxLength: 1000, example: "Bengaluru" },
+    timezone: { type: "string", minLength: 2, maxLength: 80, example: "Asia/Kolkata" },
+    locale: { type: "string", minLength: 2, maxLength: 20, example: "en-IN" },
+    currency: { type: "string", minLength: 2, maxLength: 64, example: "INR" },
+    fiscal_year_start_month: { type: "integer", minimum: 1, maximum: 12, example: 4 },
+    working_week: { type: "string", minLength: 3, maxLength: 40, example: "Mon-Fri" },
+    work_hours_per_day: { type: "number", minimum: 1, maximum: 24, example: 8 },
+    logo_label: { type: "string", nullable: true, maxLength: 8, example: "HK" },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
 const userReferenceSchema = {
   type: "object",
   required: ["id", "employee_code", "full_name"],
@@ -3000,6 +3062,18 @@ const routeDocs: Record<string, RouteSchema> = {
     "Acknowledge EMS policy",
     "Acknowledges the current active version of a policy for the authenticated employee with optimistic concurrency.",
     { params: idParamSchema, body: expectedVersionBodySchema, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/admin/company-profile": operation(
+    "Admin / Configuration",
+    "Read company profile",
+    "Returns the active company profile and operational settings used by Admin Settings. Admin role is required.",
+    { response200: adminCompanyProfileSchema }
+  ),
+  "PUT /api/v1/admin/company-profile": operation(
+    "Admin / Configuration",
+    "Update company profile",
+    "Updates company profile and locale/fiscal settings with optimistic concurrency. Admin role is required and the company slug remains stable.",
+    { body: adminCompanyProfileUpdateBody, response200: adminCompanyProfileSchema }
   ),
   "GET /api/v1/platform/finance-governance": operation(
     "Admin / Configuration",

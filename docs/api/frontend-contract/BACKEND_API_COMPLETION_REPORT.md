@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 174 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 176 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 41 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `174 current + 41 remaining`; Expense enhancements added metadata, dashboard summary, withdraw, and clarification APIs. |
+| Planned new APIs | 39 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `176 current + 39 remaining`; Admin company profile added company settings read/update APIs. |
 
 ## Development Phases
 
@@ -26,7 +26,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Module tag | Operations | Ready surface |
 | --- | ---: | --- |
-| Admin / Configuration | 6 | Finance governance, manager backups, and timesheet workflow definition upsert. |
+| Admin / Configuration | 8 | Company profile read/update, finance governance, manager backups, and timesheet workflow definition upsert. |
 | Assets | 19 | Inventory, detail, assignment/return, QR scan, license lifecycle, employee termination event, requests, acknowledgements, maintenance, vendors, and recovery queue. |
 | Auth & Sessions | 11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
 | Core / Employees & Hierarchy | 11 | User list/detail/subtree, org selectors, employee create/update, lifecycle activation/deactivation, login setup/disable, and role replacement. |
@@ -79,7 +79,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **41**.
+Total remaining planned new operations: **39**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -268,8 +268,8 @@ Total remaining planned new operations: **41**.
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GET | `/api/v1/admin/company-profile` | `/admin-settings/company` | Return company profile/settings. | Admin only. | None | company profile, fiscal settings, locale, version | 403 non-admin. | Planned / Not Implemented |
-| PUT | `/api/v1/admin/company-profile` | `/admin-settings/company` | Update company profile/settings. | Admin only. | company fields, expected_version | company profile, version | 409 stale version; audit required. | Planned / Not Implemented |
+| GET | `/api/v1/admin/company-profile` | `/admin-settings/company` | Return company profile/settings. | Admin only. | None | company profile, fiscal settings, locale, version | 403 non-admin. | Implemented in Phase 5 Admin company profile |
+| PUT | `/api/v1/admin/company-profile` | `/admin-settings/company` | Update company profile/settings. | Admin only. | company fields, expected_version | company profile, version | 409 stale version; audit required. | Implemented in Phase 5 Admin company profile |
 | GET | `/api/v1/admin/master-data/departments` | `/admin-settings/master-data` | List departments. | Admin/HR. | page, page_size, active_only, search | items[], pagination | Shared errors. | Planned / Not Implemented |
 | POST | `/api/v1/admin/master-data/departments` | `/admin-settings/master-data` | Create department. | Admin/HR. | name, code, parent_id optional | department, version | 409 duplicate code. | Planned / Not Implemented |
 | PATCH | `/api/v1/admin/master-data/departments/{id}` | `/admin-settings/master-data` | Update department. | Admin/HR. | fields, expected_version | department, version | 409 stale version/active references. | Planned / Not Implemented |

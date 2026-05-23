@@ -46,6 +46,7 @@ const localDemoPassword = getLocalDemoPassword();
 
 const expectedOperations = [
   "DELETE /api/v1/manager-backups/{id}",
+  "GET /api/v1/admin/company-profile",
   "GET /api/v1/assets/",
   "GET /api/v1/assets/recovery-queue",
   "GET /api/v1/assets/requests/my",
@@ -216,6 +217,7 @@ const expectedOperations = [
   "POST /api/v1/timesheets/workflow-definitions",
   "POST /api/v1/wfh/requests",
   "POST /api/v1/wfh/requests/{id}/decision",
+  "PUT /api/v1/admin/company-profile",
   "PUT /api/v1/holidays/{id}",
   "PUT /api/v1/core/users/{id}/roles",
   "PUT /api/v1/platform/finance-governance"
@@ -230,6 +232,7 @@ const bodyRequiredOperations = [
   "POST /api/v1/auth/verify-email",
   "POST /api/v1/auth/signup",
   "PATCH /api/v1/auth/session/preference",
+  "PUT /api/v1/admin/company-profile",
   "POST /api/v1/auth/login",
   "POST /api/v1/core/users",
   "PATCH /api/v1/core/users/{id}",
@@ -295,6 +298,7 @@ const bodyRequiredOperations = [
   "POST /api/v1/projects/{id}/milestones",
   "POST /api/v1/helpdesk/tickets",
   "PATCH /api/v1/helpdesk/tickets/{id}",
+  "PUT /api/v1/admin/company-profile",
   "POST /api/v1/helpdesk/tickets/{id}/comments",
   "POST /api/v1/helpdesk/tickets/{id}/internal-notes",
   "POST /api/v1/helpdesk/tickets/{id}/attachments",
@@ -602,7 +606,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(174);
+    expect(rows.length).toBe(176);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);
