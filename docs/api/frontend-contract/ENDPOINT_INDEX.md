@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 136
+Documented operations: 151
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -7777,6 +7777,930 @@ No request body.
 Success body highlights:
 
 Schema: `object`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+## Helpdesk
+
+Backend-owned API group.
+
+### GET /api/v1/helpdesk/tickets
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | List helpdesk tickets                                                                         |
+| Frontend use | List helpdesk tickets                                                                         |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("new", "assigned", "in_progress", "on_hold", "resolved", "closed", "reopened", "escalated") | - |
+| `priority` | query | no | string enum("Low", "Medium", "High", "Urgent") | - |
+| `category_id` | query | no | string<uuid> | - |
+| `category_key` | query | no | string enum("IT", "HR", "Finance", "Admin", "Assets", "Project Support") | - |
+| `assignee_id` | query | no | string<uuid> | - |
+| `requester_id` | query | no | string<uuid> | - |
+| `active_only` | query | no | boolean | - |
+| `search` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/tickets
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Create helpdesk ticket                                                                        |
+| Frontend use | Create helpdesk ticket                                                                        |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field                | Type                                                                     | Required | Notes                  |
+| -------------------- | ------------------------------------------------------------------------ | -------- | ---------------------- |
+| `category_id`        | string<uuid>                                                             | optional | Helpdesk category UUID |
+| `category_key`       | string enum("IT", "HR", "Finance", "Admin", "Assets", "Project Support") | optional | -                      |
+| `subject`            | string                                                                   | required | minLength 3            |
+| `description`        | string                                                                   | required | minLength 3            |
+| `sub_category`       | string                                                                   | optional | -                      |
+| `priority`           | string enum("Low", "Medium", "High", "Urgent")                           | optional | default "Medium"       |
+| `document_ids`       | array of string<uuid>                                                    | optional | -                      |
+| `attachment_name`    | string                                                                   | optional | -                      |
+| `related_asset_id`   | string                                                                   | optional | -                      |
+| `related_project_id` | string                                                                   | optional | -                      |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/helpdesk/tickets/{id}
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Helpdesk ticket detail                                                                        |
+| Frontend use | Helpdesk ticket detail                                                                        |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field                  | Type              | Required           | Notes                            |
+| ---------------------- | ----------------- | ------------------ | -------------------------------- |
+| `id`                   | string<uuid>      | required           | Helpdesk ticket UUID             |
+| `ticket_no`            | string            | required           | -                                |
+| `display_id`           | string            | optional           | -                                |
+| `subject`              | string            | required           | -                                |
+| `description`          | string            | optional           | -                                |
+| `category_id`          | string<uuid>      | optional           | Helpdesk category UUID           |
+| `category_key`         | string            | required           | -                                |
+| `category`             | object            | optional           | -                                |
+| `sub_category`         | string            | optional, nullable | -                                |
+| `priority`             | string            | required           | -                                |
+| `status`               | string            | required           | -                                |
+| `requester_user_id`    | string<uuid>      | required           | Requester user UUID              |
+| `requester_name`       | string            | optional           | -                                |
+| `requester_email`      | string            | optional, nullable | -                                |
+| `requester_department` | string            | optional, nullable | -                                |
+| `assignee_user_id`     | string<uuid>      | optional           | Assigned agent user UUID         |
+| `assignee_name`        | string            | optional, nullable | -                                |
+| `assignee_role`        | string            | optional, nullable | -                                |
+| `first_response_at`    | string<date-time> | optional           | First public agent response time |
+| `resolved_at`          | string<date-time> | optional           | Resolution time                  |
+| `closed_at`            | string<date-time> | optional           | Closure time                     |
+| `resolution`           | string            | optional, nullable | -                                |
+| `reopen_count`         | integer           | optional           | minimum 0                        |
+| `escalated`            | boolean           | optional           | -                                |
+| `sla`                  | object            | optional           | -                                |
+| `counts`               | object            | optional           | -                                |
+| `comments`             | array of object   | optional           | -                                |
+| `attachments`          | array of object   | optional           | -                                |
+| `events`               | array of object   | optional           | -                                |
+| `version`              | integer           | required           | minimum 1                        |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PATCH /api/v1/helpdesk/tickets/{id}
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Update helpdesk ticket                                                                        |
+| Frontend use | Update helpdesk ticket                                                                        |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field                | Type                                                                     | Required | Notes                  |
+| -------------------- | ------------------------------------------------------------------------ | -------- | ---------------------- |
+| `category_id`        | string<uuid>                                                             | optional | Helpdesk category UUID |
+| `category_key`       | string enum("IT", "HR", "Finance", "Admin", "Assets", "Project Support") | optional | -                      |
+| `subject`            | string                                                                   | optional | minLength 3            |
+| `description`        | string                                                                   | optional | minLength 3            |
+| `sub_category`       | string                                                                   | optional | -                      |
+| `priority`           | string enum("Low", "Medium", "High", "Urgent")                           | optional | default "Medium"       |
+| `document_ids`       | array of string<uuid>                                                    | optional | -                      |
+| `attachment_name`    | string                                                                   | optional | -                      |
+| `related_asset_id`   | string                                                                   | optional | -                      |
+| `related_project_id` | string                                                                   | optional | -                      |
+| `expected_version`   | integer                                                                  | required | minimum 1              |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/tickets/{id}/comments
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Add public ticket comment                                                                     |
+| Frontend use | Add public ticket comment                                                                     |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type                  | Required | Notes       |
+| ------------------ | --------------------- | -------- | ----------- |
+| `message`          | string                | required | minLength 1 |
+| `document_ids`     | array of string<uuid> | optional | -           |
+| `expected_version` | integer               | optional | minimum 1   |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/tickets/{id}/internal-notes
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Add internal ticket note                                                                      |
+| Frontend use | Add internal ticket note                                                                      |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type                  | Required | Notes       |
+| ------------------ | --------------------- | -------- | ----------- |
+| `message`          | string                | required | minLength 1 |
+| `document_ids`     | array of string<uuid> | optional | -           |
+| `expected_version` | integer               | optional | minimum 1   |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/tickets/{id}/attachments
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Attach helpdesk document                                                                      |
+| Frontend use | Attach helpdesk document                                                                      |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type         | Required | Notes                         |
+| ------------------ | ------------ | -------- | ----------------------------- |
+| `document_id`      | string<uuid> | optional | Document UUID                 |
+| `attachment_type`  | string       | optional | default "supporting_document" |
+| `file_name`        | string       | optional | -                             |
+| `size_text`        | string       | optional | -                             |
+| `expected_version` | integer      | optional | minimum 1                     |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/tickets/{id}/assign
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Assign helpdesk ticket                                                                        |
+| Frontend use | Assign helpdesk ticket                                                                        |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type         | Required | Notes              |
+| ------------------ | ------------ | -------- | ------------------ |
+| `assignee_user_id` | string<uuid> | required | Assignee user UUID |
+| `remarks`          | string       | optional | -                  |
+| `expected_version` | integer      | required | minimum 1          |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/tickets/{id}/priority
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Change helpdesk priority                                                                      |
+| Frontend use | Change helpdesk priority                                                                      |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type                                           | Required | Notes     |
+| ------------------ | ---------------------------------------------- | -------- | --------- |
+| `priority`         | string enum("Low", "Medium", "High", "Urgent") | required | -         |
+| `remarks`          | string                                         | optional | -         |
+| `expected_version` | integer                                        | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/tickets/{id}/status
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Change helpdesk status                                                                        |
+| Frontend use | Change helpdesk status                                                                        |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type                                                                              | Required | Notes     |
+| ------------------ | --------------------------------------------------------------------------------- | -------- | --------- |
+| `status`           | string enum("new", "assigned", "in_progress", "on_hold", "reopened", "escalated") | required | -         |
+| `remarks`          | string                                                                            | optional | -         |
+| `expected_version` | integer                                                                           | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/tickets/{id}/resolve
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Resolve helpdesk ticket                                                                       |
+| Frontend use | Resolve helpdesk ticket                                                                       |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type                  | Required | Notes       |
+| ------------------ | --------------------- | -------- | ----------- |
+| `resolution`       | string                | required | minLength 3 |
+| `document_ids`     | array of string<uuid> | optional | -           |
+| `expected_version` | integer               | required | minimum 1   |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/tickets/{id}/close
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Close helpdesk ticket                                                                         |
+| Frontend use | Close helpdesk ticket                                                                         |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type    | Required | Notes     |
+| ------------------ | ------- | -------- | --------- |
+| `satisfaction`     | integer | optional | minimum 1 |
+| `remarks`          | string  | optional | -         |
+| `expected_version` | integer | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/helpdesk/tickets/{id}/reopen
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Reopen helpdesk ticket                                                                        |
+| Frontend use | Reopen helpdesk ticket                                                                        |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field              | Type    | Required | Notes       |
+| ------------------ | ------- | -------- | ----------- |
+| `reason`           | string  | required | minLength 3 |
+| `expected_version` | integer | required | minimum 1   |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field            | Type              | Required | Notes           |
+| ---------------- | ----------------- | -------- | --------------- |
+| `ticket`         | object            | required | -               |
+| `version`        | integer           | required | minimum 1       |
+| `ticket_version` | integer           | optional | minimum 1       |
+| `comment`        | object            | optional | -               |
+| `note`           | object            | optional | -               |
+| `attachment`     | object            | optional | -               |
+| `sla`            | object            | optional | -               |
+| `resolved_at`    | string<date-time> | optional | Resolution time |
+| `closed_at`      | string<date-time> | optional | Closure time    |
+| `reopened_at`    | string<date-time> | optional | Reopen time     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/helpdesk/categories
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | List helpdesk categories                                                                      |
+| Frontend use | List helpdesk categories                                                                      |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("new", "assigned", "in_progress", "on_hold", "resolved", "closed", "reopened", "escalated") | - |
+| `priority` | query | no | string enum("Low", "Medium", "High", "Urgent") | - |
+| `category_id` | query | no | string<uuid> | - |
+| `category_key` | query | no | string enum("IT", "HR", "Finance", "Admin", "Assets", "Project Support") | - |
+| `assignee_id` | query | no | string<uuid> | - |
+| `requester_id` | query | no | string<uuid> | - |
+| `active_only` | query | no | boolean | - |
+| `search` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field         | Type            | Required | Notes |
+| ------------- | --------------- | -------- | ----- |
+| `categories`  | array of object | required | -     |
+| `sla`         | object          | required | -     |
+| `actor_scope` | string          | optional | -     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/helpdesk/sla-report
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Helpdesk SLA report                                                                           |
+| Frontend use | Helpdesk SLA report                                                                           |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Backend RBAC/ABAC decides access.                                                             |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `status` | query | no | string enum("new", "assigned", "in_progress", "on_hold", "resolved", "closed", "reopened", "escalated") | - |
+| `priority` | query | no | string enum("Low", "Medium", "High", "Urgent") | - |
+| `category_id` | query | no | string<uuid> | - |
+| `category_key` | query | no | string enum("IT", "HR", "Finance", "Admin", "Assets", "Project Support") | - |
+| `assignee_id` | query | no | string<uuid> | - |
+| `requester_id` | query | no | string<uuid> | - |
+| `active_only` | query | no | boolean | - |
+| `search` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
 
 **Frontend behavior notes**
 

@@ -104,18 +104,29 @@ function TicketDetailScreen() {
   const canManage = isAgent || isAssignee;
   const isClosed = t.status === "closed";
 
+  const runAction = (work: () => void | Promise<void>, success: string) => {
+    void Promise.resolve()
+      .then(work)
+      .then(() => toast.success(success))
+      .catch((error) =>
+        toast.error(error instanceof Error ? error.message : "Helpdesk action failed"),
+      );
+  };
+
   const submitComment = () => {
     if (!comment.trim()) return toast.error("Add a message");
-    addComment(t.id, comment.trim(), actor, activeRole ?? undefined, internal);
+    runAction(
+      () => addComment(t.id, comment.trim(), actor, activeRole ?? undefined, internal),
+      internal ? "Internal note added" : "Comment added",
+    );
     setComment("");
     setInternal(false);
   };
 
   const submitAttachment = () => {
     if (!attachName.trim()) return;
-    addAttachment(t.id, attachName.trim(), actor);
+    runAction(() => addAttachment(t.id, attachName.trim(), actor), "Attachment added");
     setAttachName("");
-    toast.success("Attachment added");
   };
 
   return (
@@ -356,16 +367,14 @@ function TicketDetailScreen() {
                 <PriorityChanger
                   current={t.priority}
                   onChange={(p) => {
-                    changePriority(t.id, p, actor);
-                    toast.success("Priority updated");
+                    runAction(() => changePriority(t.id, p, actor), "Priority updated");
                   }}
                 />
                 <AssignDialog
                   current={t.assignee}
                   options={employees.map((e) => ({ name: e.name, role: e.designation }))}
                   onAssign={(name, role) => {
-                    assign(t.id, name, role, actor);
-                    toast.success("Assigned to " + name);
+                    runAction(() => assign(t.id, name, role, actor), "Assigned to " + name);
                   }}
                 />
                 {t.status !== "in_progress" && t.status !== "resolved" && (
@@ -374,8 +383,7 @@ function TicketDetailScreen() {
                     className="w-full justify-start"
                     size="sm"
                     onClick={() => {
-                      setStatus(t.id, "in_progress", actor);
-                      toast.success("Marked in progress");
+                      runAction(() => setStatus(t.id, "in_progress", actor), "Marked in progress");
                     }}
                   >
                     <Activity className="mr-2 h-3.5 w-3.5" /> Mark in progress
@@ -387,8 +395,10 @@ function TicketDetailScreen() {
                     className="w-full justify-start"
                     size="sm"
                     onClick={() => {
-                      setStatus(t.id, "on_hold", actor);
-                      toast.success("Put on hold");
+                      runAction(
+                        () => setStatus(t.id, "on_hold", actor, "Put on hold from frontend"),
+                        "Put on hold",
+                      );
                     }}
                   >
                     <Clock className="mr-2 h-3.5 w-3.5" /> Put on hold
@@ -396,14 +406,12 @@ function TicketDetailScreen() {
                 )}
                 <ResolveDialog
                   onResolve={(r) => {
-                    resolve(t.id, r, actor);
-                    toast.success("Ticket resolved");
+                    runAction(() => resolve(t.id, r, actor), "Ticket resolved");
                   }}
                 />
                 <EscalateDialog
                   onEscalate={(r) => {
-                    escalate(t.id, r, actor);
-                    toast.success("Ticket escalated");
+                    runAction(() => escalate(t.id, r, actor), "Ticket escalated");
                   }}
                 />
               </>
@@ -414,8 +422,7 @@ function TicketDetailScreen() {
                 className="w-full justify-start"
                 size="sm"
                 onClick={() => {
-                  close(t.id, actor);
-                  toast.success("Ticket closed");
+                  runAction(() => close(t.id, actor), "Ticket closed");
                 }}
               >
                 <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Close ticket
@@ -424,8 +431,7 @@ function TicketDetailScreen() {
             {(isOwner || canManage) && (t.status === "resolved" || t.status === "closed") && (
               <ReopenDialog
                 onReopen={(r) => {
-                  reopen(t.id, r, actor);
-                  toast.success("Ticket reopened");
+                  runAction(() => reopen(t.id, r, actor), "Ticket reopened");
                 }}
               />
             )}

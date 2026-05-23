@@ -44,6 +44,8 @@ export interface SubCategory {
 
 export interface CategoryConfig {
   key: TicketCategory;
+  apiId?: string;
+  version?: number;
   label: string;
   defaultAssignee: string;
   defaultAssigneeRole: string;
@@ -151,9 +153,12 @@ export const CATEGORIES: CategoryConfig[] = [
 
 export interface Ticket {
   id: string;
+  apiId?: string;
+  version?: number;
   subject: string;
   description: string;
   category: TicketCategory;
+  categoryApiId?: string;
   subCategory: string;
   priority: TicketPriority;
   status: TicketStatus;
@@ -162,6 +167,7 @@ export interface Ticket {
   raisedByEmail?: string;
   raisedByDept?: string;
   assignee?: string;
+  assigneeUserId?: string;
   assigneeRole?: string;
   createdAt: string;
   updatedAt: string;

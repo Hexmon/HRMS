@@ -1,4 +1,15 @@
 import * as React from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  helpdeskApi,
+  mapApiCategories,
+  mapApiTicket,
+  mapApiTickets,
+  type HelpdeskTicketCreateBody,
+} from "@/domains/helpdesk";
+import { pageItems, useApiRouteEnabled, withApiFallback, type ApiRecord } from "@/shared/api";
+import { queryKeys, queryTimings } from "@/shared/query";
+import { useEmployees } from "@/lib/employees-store";
 import {
   TICKETS as SEED_TICKETS,
   CATEGORIES as SEED_CATEGORIES,
@@ -58,24 +69,37 @@ export interface NewTicketInput {
 interface Ctx {
   tickets: Ticket[];
   categories: CategoryConfig[];
-  createTicket: (input: NewTicketInput) => Ticket;
+  loading: boolean;
+  error: Error | null;
+  isApiBacked: boolean;
+  createTicket: (input: NewTicketInput) => Ticket | Promise<Ticket>;
   addComment: (
     id: string,
     body: string,
     author: string,
     authorRole?: string,
     internal?: boolean,
-  ) => void;
-  addAttachment: (id: string, name: string, by: string) => void;
-  changePriority: (id: string, priority: TicketPriority, actor: string) => void;
-  assign: (id: string, assignee: string, assigneeRole: string | undefined, actor: string) => void;
-  setStatus: (id: string, status: TicketStatus, actor: string, note?: string) => void;
-  resolve: (id: string, resolution: string, actor: string) => void;
-  close: (id: string, actor: string) => void;
-  reopen: (id: string, reason: string, actor: string) => void;
-  escalate: (id: string, reason: string, actor: string) => void;
-  upsertCategory: (c: CategoryConfig) => void;
-  toggleCategory: (key: string, active: boolean) => void;
+  ) => void | Promise<void>;
+  addAttachment: (id: string, name: string, by: string) => void | Promise<void>;
+  changePriority: (id: string, priority: TicketPriority, actor: string) => void | Promise<void>;
+  assign: (
+    id: string,
+    assignee: string,
+    assigneeRole: string | undefined,
+    actor: string,
+  ) => void | Promise<void>;
+  setStatus: (
+    id: string,
+    status: TicketStatus,
+    actor: string,
+    note?: string,
+  ) => void | Promise<void>;
+  resolve: (id: string, resolution: string, actor: string) => void | Promise<void>;
+  close: (id: string, actor: string) => void | Promise<void>;
+  reopen: (id: string, reason: string, actor: string) => void | Promise<void>;
+  escalate: (id: string, reason: string, actor: string) => void | Promise<void>;
+  upsertCategory: (c: CategoryConfig) => void | Promise<void>;
+  toggleCategory: (key: string, active: boolean) => void | Promise<void>;
   reset: () => void;
 }
 
@@ -84,6 +108,9 @@ const Ctx_ = React.createContext<Ctx | null>(null);
 export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
   const [tickets, setTickets] = React.useState<Ticket[]>(SEED_TICKETS);
   const [categories, setCategories] = React.useState<CategoryConfig[]>(SEED_CATEGORIES);
+  const { employees } = useEmployees();
+  const queryClient = useQueryClient();
+  const apiEnabled = useApiRouteEnabled(["/helpdesk", "/reports/helpdesk"]);
 
   React.useEffect(() => {
     setTickets(ls.get(T_KEY, SEED_TICKETS));
@@ -99,11 +126,70 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     ls.set(C_KEY, next);
   };
 
+  const apiTicketsQuery = useQuery({
+    queryKey: queryKeys.list("helpdesk", "tickets", { page_size: 100 }),
+    queryFn: () =>
+      withApiFallback(
+        async () => mapApiTickets(pageItems(await helpdeskApi.list({ page_size: 100 })), tickets),
+        () => tickets,
+      ),
+    enabled: apiEnabled,
+    staleTime: queryTimings.listStaleMs,
+  });
+
+  const apiCategoriesQuery = useQuery({
+    queryKey: queryKeys.list("helpdesk", "categories", { active_only: false }),
+    queryFn: () =>
+      withApiFallback(
+        async () => {
+          const response = await helpdeskApi.categories({ active_only: false });
+          const items = Array.isArray((response as ApiRecord).categories)
+            ? ((response as ApiRecord).categories as unknown[])
+            : [];
+          return mapApiCategories(items, categories);
+        },
+        () => categories,
+      ),
+    enabled: apiEnabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+
+  const visibleTickets = apiEnabled ? (apiTicketsQuery.data ?? []) : tickets;
+  const visibleCategories = apiEnabled ? (apiCategoriesQuery.data ?? []) : categories;
+  const apiError =
+    (apiTicketsQuery.error instanceof Error && apiTicketsQuery.error) ||
+    (apiCategoriesQuery.error instanceof Error && apiCategoriesQuery.error) ||
+    null;
+
+  const invalidate = async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.domain("helpdesk") });
+  };
+
+  const findTicket = (id: string) =>
+    visibleTickets.find((ticket) => ticket.id === id || ticket.apiId === id);
+
+  const expectedVersion = (id: string) => findTicket(id)?.version ?? 1;
+  const apiTicketId = (id: string) => findTicket(id)?.apiId ?? id;
+
+  const resolveEmployeeUserId = (name: string): string => {
+    const employee = employees.find(
+      (candidate) =>
+        candidate.name === name ||
+        candidate.email === name ||
+        candidate.id === name ||
+        candidate.apiId === name,
+    );
+    if (!employee?.apiId) {
+      throw new Error(`${name} must be selected from backend employees before assignment.`);
+    }
+    return employee.apiId;
+  };
+
   const update = (id: string, mut: (t: Ticket) => Ticket) => {
     persistT(tickets.map((t) => (t.id === id ? { ...mut(t), updatedAt: now() } : t)));
   };
 
-  const createTicket: Ctx["createTicket"] = (input) => {
+  const localCreateTicket: Ctx["createTicket"] = (input) => {
     const cfg = categories.find((c) => c.key === input.category);
     const max = tickets.reduce((m, t) => {
       const n = parseInt(t.id.replace(/\D/g, ""), 10);
@@ -153,7 +239,33 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     return t;
   };
 
-  const addComment: Ctx["addComment"] = (id, body, author, authorRole, internal) => {
+  const createTicket: Ctx["createTicket"] = async (input) => {
+    if (!apiEnabled) return localCreateTicket(input);
+    const cfg = visibleCategories.find((category) => category.key === input.category);
+    const body: HelpdeskTicketCreateBody = {
+      category_id: cfg?.apiId,
+      category_key: cfg?.apiId ? undefined : input.category,
+      subject: input.subject,
+      description: input.description,
+      sub_category: input.subCategory,
+      priority: input.priority,
+      attachment_name: input.attachmentName,
+      related_asset_id: input.relatedAssetId,
+      related_project_id: input.relatedProjectId,
+    };
+    const response = await helpdeskApi.create(body);
+    await invalidate();
+    return mapApiTicket((response as ApiRecord).ticket);
+  };
+
+  const addComment: Ctx["addComment"] = async (id, body, author, authorRole, internal) => {
+    if (apiEnabled) {
+      const input = { message: body, expected_version: expectedVersion(id) };
+      if (internal) await helpdeskApi.addInternalNote(apiTicketId(id), input);
+      else await helpdeskApi.addComment(apiTicketId(id), input);
+      await invalidate();
+      return;
+    }
     update(id, (t) => {
       const isFirstResponse = !t.firstResponseAt && author !== t.raisedBy;
       const c: TicketComment = { id: "c_" + uid(), at: now(), author, authorRole, body, internal };
@@ -166,7 +278,16 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const addAttachment: Ctx["addAttachment"] = (id, name, by) => {
+  const addAttachment: Ctx["addAttachment"] = async (id, name, by) => {
+    if (apiEnabled) {
+      await helpdeskApi.addAttachment(apiTicketId(id), {
+        file_name: name,
+        attachment_type: "supporting_document",
+        expected_version: expectedVersion(id),
+      });
+      await invalidate();
+      return;
+    }
     update(id, (t) => ({
       ...t,
       attachments: [...t.attachments, { id: "f_" + uid(), name, size: "—", by, at: now() }],
@@ -174,7 +295,16 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const changePriority: Ctx["changePriority"] = (id, priority, actor) => {
+  const changePriority: Ctx["changePriority"] = async (id, priority, actor) => {
+    if (apiEnabled) {
+      await helpdeskApi.changePriority(apiTicketId(id), {
+        priority,
+        remarks: priority === "Urgent" ? "Escalated from frontend action" : undefined,
+        expected_version: expectedVersion(id),
+      });
+      await invalidate();
+      return;
+    }
     update(id, (t) => ({
       ...t,
       priority,
@@ -182,7 +312,16 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const assign: Ctx["assign"] = (id, assignee, assigneeRole, actor) => {
+  const assign: Ctx["assign"] = async (id, assignee, assigneeRole, actor) => {
+    if (apiEnabled) {
+      await helpdeskApi.assign(apiTicketId(id), {
+        assignee_user_id: resolveEmployeeUserId(assignee),
+        remarks: `Assigned by ${actor}`,
+        expected_version: expectedVersion(id),
+      });
+      await invalidate();
+      return;
+    }
     update(id, (t) => ({
       ...t,
       assignee,
@@ -192,7 +331,16 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const setStatus: Ctx["setStatus"] = (id, status, actor, note) => {
+  const setStatus: Ctx["setStatus"] = async (id, status, actor, note) => {
+    if (apiEnabled) {
+      await helpdeskApi.setStatus(apiTicketId(id), {
+        status,
+        remarks: note || (status === "on_hold" ? "Updated from frontend action" : undefined),
+        expected_version: expectedVersion(id),
+      });
+      await invalidate();
+      return;
+    }
     update(id, (t) => ({
       ...t,
       status,
@@ -200,7 +348,15 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const resolve: Ctx["resolve"] = (id, resolution, actor) => {
+  const resolve: Ctx["resolve"] = async (id, resolution, actor) => {
+    if (apiEnabled) {
+      await helpdeskApi.resolve(apiTicketId(id), {
+        resolution,
+        expected_version: expectedVersion(id),
+      });
+      await invalidate();
+      return;
+    }
     update(id, (t) => ({
       ...t,
       status: "resolved",
@@ -210,7 +366,15 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const close: Ctx["close"] = (id, actor) => {
+  const close: Ctx["close"] = async (id, actor) => {
+    if (apiEnabled) {
+      await helpdeskApi.close(apiTicketId(id), {
+        remarks: `Closed by ${actor}`,
+        expected_version: expectedVersion(id),
+      });
+      await invalidate();
+      return;
+    }
     update(id, (t) => ({
       ...t,
       status: "closed",
@@ -219,7 +383,15 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const reopen: Ctx["reopen"] = (id, reason, actor) => {
+  const reopen: Ctx["reopen"] = async (id, reason, actor) => {
+    if (apiEnabled) {
+      await helpdeskApi.reopen(apiTicketId(id), {
+        reason,
+        expected_version: expectedVersion(id),
+      });
+      await invalidate();
+      return;
+    }
     update(id, (t) => ({
       ...t,
       status: "reopened",
@@ -230,7 +402,16 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const escalate: Ctx["escalate"] = (id, reason, actor) => {
+  const escalate: Ctx["escalate"] = async (id, reason, actor) => {
+    if (apiEnabled) {
+      await helpdeskApi.setStatus(apiTicketId(id), {
+        status: "escalated",
+        remarks: reason,
+        expected_version: expectedVersion(id),
+      });
+      await invalidate();
+      return;
+    }
     update(id, (t) => ({
       ...t,
       escalated: true,
@@ -240,13 +421,19 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const upsertCategory: Ctx["upsertCategory"] = (c) => {
+  const upsertCategory: Ctx["upsertCategory"] = async (c) => {
+    if (apiEnabled) {
+      throw new Error("Helpdesk category editing needs a backend admin settings API.");
+    }
     const idx = categories.findIndex((x) => x.key === c.key);
     if (idx === -1) persistC([...categories, c]);
     else persistC(categories.map((x) => (x.key === c.key ? c : x)));
   };
 
-  const toggleCategory: Ctx["toggleCategory"] = (key, active) => {
+  const toggleCategory: Ctx["toggleCategory"] = async (key, active) => {
+    if (apiEnabled) {
+      throw new Error("Helpdesk category toggles need a backend admin settings API.");
+    }
     persistC(categories.map((c) => (c.key === key ? { ...c, active } : c)));
   };
 
@@ -258,8 +445,11 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx_.Provider
       value={{
-        tickets,
-        categories,
+        tickets: visibleTickets,
+        categories: visibleCategories,
+        loading: apiEnabled && (apiTicketsQuery.isLoading || apiCategoriesQuery.isLoading),
+        error: apiError,
+        isApiBacked: apiEnabled,
         createTicket,
         addComment,
         addAttachment,
@@ -286,7 +476,6 @@ export function useHelpdesk() {
   return c;
 }
 
-// ---- role helpers ----
 export const HELPDESK_AGENT_ROLES = [
   "main_admin",
   "helpdesk_agent",

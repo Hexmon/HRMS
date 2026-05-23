@@ -16,6 +16,14 @@ export const Route = createFileRoute("/_app/helpdesk/categories")({ component: C
 function CategoriesScreen() {
   const { categories, upsertCategory, toggleCategory } = useHelpdesk();
   const [editing, setEditing] = useState<CategoryConfig | null>(null);
+  const runAction = (work: () => void | Promise<void>, success: string) => {
+    void Promise.resolve()
+      .then(work)
+      .then(() => toast.success(success))
+      .catch((error) =>
+        toast.error(error instanceof Error ? error.message : "Category update failed"),
+      );
+  };
 
   return (
     <div className="space-y-5">
@@ -56,8 +64,10 @@ function CategoriesScreen() {
                 <Switch
                   checked={c.active}
                   onCheckedChange={(v) => {
-                    toggleCategory(c.key, v);
-                    toast.success(v ? "Category enabled" : "Category disabled");
+                    runAction(
+                      () => toggleCategory(c.key, v),
+                      v ? "Category enabled" : "Category disabled",
+                    );
                   }}
                 />
                 <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>
@@ -99,8 +109,7 @@ function CategoriesScreen() {
           initial={editing}
           onClose={() => setEditing(null)}
           onSave={(c) => {
-            upsertCategory(c);
-            toast.success("Category saved");
+            runAction(() => upsertCategory(c), "Category saved");
             setEditing(null);
           }}
         />

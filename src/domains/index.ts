@@ -7,6 +7,7 @@ export * from "./dashboard";
 export * from "./documents";
 export * from "./ems";
 export * from "./expenses";
+export * from "./helpdesk";
 export * from "./leave-wfh";
 export * from "./platform";
 export * from "./projects";

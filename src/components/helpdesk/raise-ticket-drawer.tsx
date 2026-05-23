@@ -55,28 +55,34 @@ export function RaiseTicketDrawer({ open, onOpenChange, defaultCategory }: Props
     setAttachmentName("");
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!subject.trim() || !description.trim()) {
       toast.error("Subject and description are required");
       return;
     }
-    const t = createTicket({
-      subject: subject.trim(),
-      description: description.trim(),
-      category,
-      subCategory: subCategory || cfg?.subCategories[0]?.key || "",
-      priority,
-      raisedBy: user?.name ?? "Anonymous",
-      raisedByEmail: user?.email,
-      raisedByDept: user?.department,
-      relatedAssetId: relatedAssetId || undefined,
-      relatedProjectId: relatedProjectId || undefined,
-      attachmentName: attachmentName || undefined,
-    });
-    toast.success("Ticket created", { description: `${t.id} routed to ${t.assignee ?? "queue"}.` });
-    reset();
-    onOpenChange(false);
-    navigate({ to: "/helpdesk/$id", params: { id: t.id } });
+    try {
+      const t = await createTicket({
+        subject: subject.trim(),
+        description: description.trim(),
+        category,
+        subCategory: subCategory || cfg?.subCategories[0]?.key || "",
+        priority,
+        raisedBy: user?.name ?? "Anonymous",
+        raisedByEmail: user?.email,
+        raisedByDept: user?.department,
+        relatedAssetId: relatedAssetId || undefined,
+        relatedProjectId: relatedProjectId || undefined,
+        attachmentName: attachmentName || undefined,
+      });
+      toast.success("Ticket created", {
+        description: `${t.id} routed to ${t.assignee ?? "queue"}.`,
+      });
+      reset();
+      onOpenChange(false);
+      navigate({ to: "/helpdesk/$id", params: { id: t.id } });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to create ticket");
+    }
   };
 
   return (
