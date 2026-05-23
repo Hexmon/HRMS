@@ -499,8 +499,8 @@ Frontend:
 | Non-expense Reports backend | `feat(reports): implement non-expense report APIs` | Committed in `hrms_backend` as `ae8f0d2` |
 | Non-expense Reports frontend | `feat(reports): connect non-expense report screens to backend APIs` | Committed in `hrms-client` as `d8c25a7` |
 | Non-expense Reports task sheet | `docs(reports): record non-expense reports completion` | Committed in `hrms_backend` as `fb5564c` |
-| Employee/core backlog backend | `feat(core): implement employee history import and export APIs` | Pending commit |
-| Employee/core backlog frontend | `feat(employees): connect employee history and export APIs` | Pending commit |
+| Employee/core backlog backend | `feat(core): implement employee history import and export APIs` | Committed in `hrms_backend` as `89e8548` |
+| Employee/core backlog frontend | `feat(employees): connect employee history and export APIs` | Committed in `hrms-client` as `9972127` |
 | Employee/core backlog task sheet | `docs(core): record employee core backlog completion` | Pending commit |
 
 ## Next Steps
