@@ -44,6 +44,7 @@ This versioned report captures the completed Phase 6 API e2e baseline after Dash
 | Employee/core backlog frontend | Integrated in `hrms-client` for employee profile role history/audit tabs and API-backed employee export job queueing |
 | Phase 6 verification guardrails | Hardened backend implementation and scalability checks now cover the full module set, 217-operation contract floor, zero planned API backlog, synced frontend contract JSON, critical queue/report indexes, and frontend production API/mock fallback config |
 | Phase 6 API e2e baseline | Completed backend API-level user-flow smoke for auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata |
+| Phase 6 browser e2e baseline | Completed Playwright smoke coverage in `hrms-client` for API-mode login, notification panel, employee self-service routes, HR/admin routes, reports/settings, projects, and team utilization |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Audit Log Discovery
@@ -167,6 +168,15 @@ This versioned report captures the completed Phase 6 API e2e baseline after Dash
 | Seeded actors | Uses local demo credentials for employee, peer, and admin; manager uses the seeded `D1` helper session | The `reviewer@example.test` email/password path is not active in the current QA seed, so the smoke test uses the existing test helper for manager context instead of changing auth seed behavior |
 | Backend validation | `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`, and `pnpm lint` passed | First two e2e runs exposed seed/session and display-status expectations; the test was corrected to match current production API behavior before the passing run |
 | Deferred coverage | Browser-level frontend e2e and real document-backed export file generation/download remain Phase 6 hardening work | The new smoke test is API-level coverage, not a replacement for Playwright/browser coverage |
+
+## Phase 6 Browser E2E Baseline
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Playwright setup | Added `@playwright/test`, `playwright.config.ts`, and `pnpm test:e2e` scripts in `hrms-client` | The config starts the frontend in API mode with `VITE_API_ENABLED=true` and `VITE_API_MOCK_FALLBACK=false`; backend API must be running at `E2E_API_BASE_URL` |
+| Browser smoke | Added `e2e/production-smoke.spec.ts` | Covers UI login, API-ready indicator, notification popover, employee self-service routes, HR/admin route rendering, Reports/Admin Settings, Projects, and Team Utilization |
+| Frontend validation | `pnpm test:e2e`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, production config guard, and `pnpm build` passed | Playwright ran against QA infra plus a live backend server. Lint keeps 39 existing Fast Refresh warnings; build keeps existing chunk-size/Wrangler log warnings |
+| Deferred coverage | Browser e2e is smoke-level only | Deeper create/approve/export mutation flows, mobile viewport coverage, upload flows, and provider-backed export/download coverage remain production hardening |
 
 ## Admin Notification Channels Discovery
 
@@ -445,12 +455,13 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 6 | Production hardening guardrails | Harden backend verification scripts | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, `pnpm verify:scalability` | Passed. `verify:implementation` now guards the full 217-operation contract completion state and `verify:scalability` checks critical indexes across all implemented modules. | `scripts/verify-implementation.ts`, `scripts/verify-scalability.ts` | `chore(verify): harden production readiness checks` |
 | 6 | Production API config | Guard frontend production API/mock fallback config | N/A | Completed in `hrms-client` | `pnpm api:production-config-guard`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage | Passed. Lint has the existing 39 Fast Refresh warnings and no new errors. | `hrms-client/package.json`, `hrms-client/scripts/production-config-guard.mjs` | `chore(frontend): guard production API config` |
 | 6 | API e2e baseline | Add cross-module backend API user-flow smoke | Completed | N/A | `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`, `pnpm lint` | Passed. Covers auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata. | `src/__tests__/production-user-flows.e2e.test.ts`, task sheet | `test(e2e): add production user-flow smoke` |
+| 6 | Browser e2e baseline | Add Playwright smoke for API-mode frontend routes | N/A | Completed in `hrms-client` | `pnpm test:e2e`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, `pnpm api:implemented-route-guard`, `pnpm api:frontend-contract:route-coverage`, `pnpm api:production-config-guard`, `pnpm build` | Passed. Browser smoke uses QA backend API mode with mock fallback disabled and covers employee, HR/admin, projects/utilization, and notification surfaces. | `hrms-client/e2e/*`, `playwright.config.ts`, package/lockfile, ESLint config, `.gitignore`, task sheet | `test(e2e): add frontend browser smoke baseline` |
 
 ## Remaining Blockers
 
 | Priority | Blocker |
 | --- | --- |
-| P1 | Browser-level frontend e2e/user-flow baseline is still missing for Attendance, Leave/WFH, EMS, Projects, Helpdesk, Notifications/topbar read-state, reports, and admin flows; backend API smoke coverage now exists |
+| P1 | Browser-level e2e coverage is smoke-level only; create/approve/export mutation flows, mobile viewport coverage, upload flows, and provider-backed export/download checks remain production hardening |
 | P1 | EMS document Upload/Replace still needs a real file selection/form flow; API mode now blocks fake success instead of pretending to upload |
 | P1 | EMS onboarding, probation, exits, policy management, and letter generation admin actions remain static until broader HR/admin modules exist |
 | P1 | Helpdesk category create/update/toggle endpoints remain planned for admin/settings phase; API mode surfaces this as an error instead of mutating local state |
@@ -491,6 +502,7 @@ Frontend:
 - `pnpm api:production-config-guard`: passed; production mock fallback is disabled and API mode is required
 - `pnpm api:implemented-route-guard`: passed, 59 files against 192 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
+- `pnpm test:e2e`: passed, 3 Playwright Chromium tests against QA backend API mode; first runs exposed login hydration and full-page reload assumptions that were fixed in the test flow
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
 ## Assumptions
@@ -549,6 +561,7 @@ Frontend:
 - Attendance export create currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
 - Leave/WFH export create currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
 - The Phase 6 API e2e smoke uses local demo password login for employee, peer, and admin actors, and uses the existing seeded `D1` test helper session for manager context because the reviewer email/password account is not active in the current QA seed.
+- The Phase 6 browser e2e smoke waits for client hydration before UI login and uses client-side navigation after login because the current frontend stores the bearer token in memory; full-page route reload auth persistence remains a separate hardening consideration.
 
 ## Commit Messages
 
@@ -605,11 +618,12 @@ Frontend:
 | Phase 6 verification guardrails | `chore(verify): harden production readiness checks` | Committed in `hrms_backend` as `0a7f47b` |
 | Phase 6 frontend production config guard | `chore(frontend): guard production API config` | Committed in `hrms-client` as `0e5d958` |
 | Phase 6 API e2e baseline | `test(e2e): add production user-flow smoke` | Committed in `hrms_backend` as `e799b34` |
+| Phase 6 browser e2e baseline | `test(e2e): add frontend browser smoke baseline` | Committed in `hrms-client` as `436df10` |
 
 ## Next Steps
 
-1. Phase 6 API e2e baseline is implemented for core cross-module backend API user flows and validation passed.
+1. Phase 6 API and browser e2e baselines are implemented for core backend API user flows and frontend API-mode route smoke coverage.
 2. Backend OpenAPI now has 217 operations across 192 paths; planned operations remaining are 0.
 3. Phase 6 verification guardrails are hardened for full-module implementation coverage, zero planned API backlog, frontend contract sync, critical migration index coverage, and frontend production API/mock fallback config.
 4. Employee import/export jobs and EMS/report/attendance/leave-WFH export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
-5. Next roadmap scope: continue Phase 6 with browser-level frontend e2e/user-flow baseline, export worker/file generation decisions, deployment checks, security headers/CORS/rate limiting, observability, backup/restore, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
+5. Next roadmap scope: continue Phase 6 with export worker/file generation decisions, deployment checks, security headers/CORS/rate limiting, observability, backup/restore, deeper browser mutation/mobile coverage, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
