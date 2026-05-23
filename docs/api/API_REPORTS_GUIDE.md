@@ -29,8 +29,12 @@ Finance analytics powers the enterprise cockpit and includes summary counts, cha
 
 ```json
 {
-  "format": "csv"
+  "report_type": "hr/employees",
+  "format": "csv",
+  "filters": {
+    "status": "active"
+  }
 }
 ```
 
-The current adapter is a local placeholder. Real accounting export target is HIR-004 and must not be enabled without a production finance decision.
+CSV report exports now generate a document-backed export in object storage and return `download_document_id` for secure download through the Documents API. XLSX workbook rendering, scheduled reports, retention policy automation, and external accounting-provider export targets remain production hardening/HIR scope.

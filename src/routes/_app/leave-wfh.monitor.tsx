@@ -22,6 +22,7 @@ import {
   useLeaveWfhMonitor,
   type LeaveWfhStatus,
 } from "@/domains/leave-wfh";
+import { documentsApi } from "@/domains/documents";
 import { isApiEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/leave-wfh/monitor")({
@@ -95,7 +96,15 @@ function MonitorPage() {
           format: "csv",
         });
         const jobId = typeof job.job_id === "string" ? job.job_id.slice(0, 8) : "created";
-        toast.success(`Export queued (${jobId})`);
+        if (typeof job.download_document_id === "string" && job.download_document_id) {
+          const download = await documentsApi.createDownloadUrl(job.download_document_id);
+          if (typeof download.url === "string" && download.url) {
+            window.open(download.url, "_blank", "noopener,noreferrer");
+          }
+          toast.success(`Export ready (${jobId})`);
+        } else {
+          toast.success(`Export queued (${jobId})`);
+        }
       } catch (error) {
         toast.error(errorMessage(error));
       }
