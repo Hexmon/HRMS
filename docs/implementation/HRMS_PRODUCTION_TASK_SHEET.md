@@ -4,14 +4,14 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 5 Admin audit-log slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, and Admin notification channel additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 5 non-expense Reports slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, and Admin audit-log additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 196 implemented operations across 173 paths |
-| Planned operations remaining | 21 |
+| Backend OpenAPI | 206 implemented operations across 182 paths |
+| Planned operations remaining | 11 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
@@ -38,6 +38,8 @@ This versioned report captures the completed Phase 5 Admin audit-log slice after
 | Admin email templates | Completed for Admin-only email template list/update APIs and `/admin-settings/email-templates` frontend API-mode integration |
 | Admin notification channels | Completed for Admin-only notification channel list/update APIs and `/admin-settings/notifications` frontend API-mode integration |
 | Admin audit log | Completed for Admin/Auditor audit-log read API and `/admin-settings/audit` frontend API-mode integration |
+| Non-expense Reports backend | Completed for HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, export list, and export detail report APIs |
+| Non-expense Reports frontend | Integrated in `hrms-client` for HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes in API mode |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Audit Log Discovery
@@ -49,6 +51,27 @@ This versioned report captures the completed Phase 5 Admin audit-log slice after
 | Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` listed `GET /api/v1/admin/audit-log` as planned | Implement the read endpoint with Admin/Auditor access, pagination, filters, OpenAPI docs, and integration tests |
 | Existing backend support | Admin settings mutations already append durable `admin.*` outbox events | Derive the audit-log read model from admin outbox events instead of adding a second audit table |
 | Deferred scope | Broader cross-module audit reports, export jobs, and runtime security-setting enforcement remain outside this slice | Keep this endpoint scoped to Admin Settings audit visibility |
+
+## Non-Expense Reports Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Current roadmap position | Admin security settings is blocked by the missing contract/runtime enforcement decision; the next unblocked task sheet scope is non-expense Reports | Implement the documented Reports Beyond Expenses contract before returning to blocked Admin security settings |
+| Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` lists 10 planned report operations: HR employees, attendance summary, leave/WFH summary, projects summary, timesheets summary, assets summary, helpdesk summary, cross-module audit, export list, and export detail | Add those operations under `/api/v1/reports/*` with OpenAPI docs and integration coverage |
+| Existing backend support | `src/modules/reports` already provides expense reports and `POST /api/v1/reports/exports`; source data exists in Core, Attendance, Leave/WFH, Projects, Timesheets, Assets, Helpdesk, expense audit logs, and Outbox | Extend the existing reports module with read-only non-expense summaries; use existing outbox events as durable export job records instead of introducing a separate export table |
+| Frontend report routes | `hrms-client/src/routes/_app/reports*.tsx` covers HR, attendance, leave, projects, timesheet, expenses, assets, helpdesk, and audit reports | Replace production-critical mock/local aggregation on non-expense report routes with backend report adapters in API mode |
+| Current frontend data source | HR/attendance/audit reports still derive from mock/local stores or deterministic local synthesis; projects/assets/helpdesk/timesheet reports partially derive from stores that are already API-backed in API mode | Add report domain hooks and wire visible non-expense report routes to backend summaries while keeping local behavior only when API mode is disabled |
+| Deferred scope | Real file generation/download, scheduled reports, security settings, report-builder UX, and e2e coverage are not represented in the current contract | Keep export jobs as queued metadata backed by outbox; full document-backed export generation remains production hardening |
+
+## Non-Expense Reports Completion
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Backend APIs | Added `GET /api/v1/reports/hr/employees`, `/attendance/summary`, `/leave-wfh/summary`, `/projects/summary`, `/timesheets/summary`, `/assets/summary`, `/helpdesk/summary`, `/audit`, `/exports`, and `/exports/{id}` | Export create/list/detail is queued metadata backed by existing outbox events; real document generation/download remains production hardening |
+| Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, reports integration test, and `pnpm test:contracts` passed | One first contract run failed because it was run in parallel with another DB-resetting integration test; rerun alone passed |
+| Frontend integration | Added report domain API/hooks and connected HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes to `/api/v1/reports/*` in API mode | API-disabled development keeps the existing local/mock report derivations |
+| Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
+| Contract docs | Backend and frontend contract docs now show 206 implemented operations and 11 planned operations remaining | `Reports & Analytics` now counts 15 implemented operations |
 
 ## Admin Notification Channels Discovery
 
@@ -103,7 +126,7 @@ This versioned report captures the completed Phase 5 Admin audit-log slice after
 | `GET` | `/api/v1/helpdesk/categories` | Helpdesk category screens and ticket form | Lists active/inactive category metadata and SLA hints |
 | `GET` | `/api/v1/helpdesk/sla-report` | Helpdesk SLA/report screens | Returns SLA rollups and per-category/assignee report rows |
 
-Deferred from this Helpdesk slice: category mutation endpoints and broader `/api/v1/reports/helpdesk/summary` remain planned for later admin/report phases. In API mode, category edit/toggle UI reports that backend category management is not available yet instead of silently mutating local state.
+Deferred from this Helpdesk slice: category mutation endpoints remain planned for later admin/settings category management. Broader `/api/v1/reports/helpdesk/summary` was completed later in the non-expense Reports slice. In API mode, category edit/toggle UI reports that backend category management is not available yet instead of silently mutating local state.
 
 ## Notifications Discovery
 
@@ -314,6 +337,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Admin notification channels | Integrate frontend notifications screen | Completed in `hrms-client` | Completed for `/admin-settings/notifications` list/toggle/save in API mode; local notification store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.notifications.tsx`, frontend API docs | `feat(admin): connect notification settings to backend API` |
 | 5 | Admin audit log | Implement backend API | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, admin audit-log integration test, `pnpm test:contracts` | Passed. OpenAPI generated 196 operations across 173 paths. The audit read model is derived from existing durable admin outbox events. | `src/modules/admin/*`, OpenAPI/docs/contracts, admin audit-log integration test | `feat(admin): implement audit log API` |
 | 5 | Admin audit log | Integrate frontend audit screen | Completed in `hrms-client` | Completed for `/admin-settings/audit` read/filter display in API mode; local audit store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.audit.tsx`, frontend API docs | `feat(admin): connect audit log to backend API` |
+| 5 | Non-expense Reports | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, reports integration test, `pnpm test:contracts` | Passed. OpenAPI generated 206 operations across 182 paths. First contract run failed due a parallel DB reset with the reports integration test; rerun alone passed. | `src/modules/reports/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(reports): implement non-expense report APIs` |
+| 5 | Non-expense Reports | Integrate frontend report screens | Completed in `hrms-client` | Completed for HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/reports/*`, `src/routes/_app/reports*.tsx`, frontend API docs | `feat(reports): connect non-expense report screens to backend APIs` |
 
 ## Remaining Blockers
 
@@ -325,11 +350,11 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | P1 | No frontend e2e/user-flow baseline for EMS, Leave/WFH/Holidays, Attendance, Projects, or Helpdesk |
 | P1 | No frontend e2e/user-flow baseline for Notifications/topbar read-state behavior |
 | P1 | Helpdesk category create/update/toggle endpoints remain planned for admin/settings phase; API mode surfaces this as an error instead of mutating local state |
-| P1 | Full asset vendor CRUD, warranty automation, recovery settlement workflow, and asset reports remain planned for admin/report hardening |
+| P1 | Full asset vendor CRUD, warranty automation, and recovery settlement workflow remain planned for admin/operational hardening |
 | P1 | Project-specific reports and project document upload/attach UX remain planned |
-| P1 | Timesheet export jobs and full report parity remain planned for the Reports phase |
-| P1 | Attendance daily detail, manager queue alias, export/report endpoints, and richer attendance reports remain planned |
-| P1 | Leave/WFH export/report endpoint remains planned for reports/admin phase |
+| P1 | Full document-backed report export file generation/download remains production hardening; report export jobs currently persist queued metadata |
+| P1 | Attendance daily detail, manager queue alias, and export endpoint remain planned |
+| P1 | Leave/WFH export endpoint remains planned |
 | P1 | Admin master-data tabs beyond departments/designations remain deferred until backend APIs are defined |
 | P1 | Dynamic RBAC runtime enforcement and custom-role assignment to employees remain deferred; this slice persists Admin Settings RBAC configuration only |
 | P1 | Admin security settings remain planned and need a concrete backend contract/runtime enforcement decision |
@@ -343,18 +368,18 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 196 operation frontend contract after Admin audit log
+- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 206 operation frontend contract after non-expense Reports
 - `pnpm api:docs:verify`: passed
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
-- `pnpm exec vitest run --project integration src/modules/admin/__tests__/admin-audit-log.integration.test.ts`: passed, 1 test
-- `pnpm test:contracts`: passed, 13 tests
+- `pnpm exec vitest run --project integration src/modules/reports/__tests__/reports.integration.test.ts`: passed, 2 tests
+- `pnpm test:contracts`: passed, 13 tests; one earlier parallel run failed due concurrent DB reset and passed when rerun alone
 
 Frontend:
 
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 173 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 182 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -374,10 +399,10 @@ Frontend:
 - Asset vendor support is read-only in this slice because the current visible frontend needs vendor cards/selectors; vendor CRUD remains in admin hardening.
 - Asset recovery queue is read-only in this slice and derives from assigned assets owned by inactive/terminated users; settlement workflows remain deferred.
 - Timesheet enhancements intentionally add read-oriented analytics/selector endpoints only; existing segment, submission, and approval mutation behavior remains unchanged.
-- Timesheet report exports remain client-side until the broader Reports phase adds export job/list/detail APIs.
+- Timesheet report routes now use the Reports summary API in API mode; document-backed timesheet export files remain production hardening.
 - Expense clarification messages are persisted as durable expense audit events for this slice; a dedicated clarification table is deferred unless richer threaded features are required later.
 - Expense withdrawal maps backend `Cancelled` to frontend `withdrawn`; withdrawal is limited to requester-owned draft, submitted, pending-manager, or manager-returned tickets.
-- Expense dashboard summary returns compact role-aware cards and rows; detailed accounting reports remain under the existing expense report endpoints and broader Reports phase.
+- Expense dashboard summary returns compact role-aware cards and rows; detailed accounting reports remain under the existing expense report endpoints.
 - Admin company profile extends the existing onboarding `platform.company_profiles` table so auth/company bootstrap state remains the source for tenant identity.
 - Admin company profile updates emit `admin.company_profile.updated` outbox events as the durable audit hook until the broader Admin audit log API is implemented.
 - Company profile updates intentionally keep `company_slug` stable; display/profile fields can change without migrating tenant identifiers.
@@ -403,8 +428,11 @@ Frontend:
 - The `GET /api/v1/admin/notification-channels` endpoint was added because the current frontend UI must load current channel settings before saving toggle changes, even though the old backlog only listed the update endpoint.
 - `/admin-settings/notifications` uses backend APIs in API mode for list/toggle/save behavior and keeps localStorage notification settings only when API mode is disabled.
 - Admin audit log is derived from durable admin outbox events instead of a new audit table so existing Admin Settings mutation audit hooks remain the source of truth.
-- Admin audit log exposes admin event metadata and target labels only; broader cross-module audit reporting and export jobs remain in the Reports phase.
 - `/admin-settings/audit` uses the backend API in API mode and keeps the local audit store only when API mode is disabled.
+- Cross-module audit reporting is now available through `/api/v1/reports/audit`; `/admin-settings/audit` remains scoped to Admin Settings audit visibility.
+- Non-expense Reports are read-only summaries derived from already implemented module stores; they do not introduce new source-of-truth workflow tables.
+- Report export create/list/detail currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
+- Frontend report routes use the backend in API mode and keep local/mock aggregation only when API mode is disabled.
 
 ## Commit Messages
 
@@ -443,10 +471,13 @@ Frontend:
 | Admin audit log backend | `feat(admin): implement audit log API` | Committed in `hrms_backend` as `4029ec4` |
 | Admin audit log frontend | `feat(admin): connect audit log to backend API` | Committed in `hrms-client` as `7b05ee4` |
 | Admin audit log task sheet | `docs(admin): record audit log completion` | Committed in `hrms_backend` as `8985eac` |
+| Non-expense Reports backend | `feat(reports): implement non-expense report APIs` | Committed in `hrms_backend` as `ae8f0d2` |
+| Non-expense Reports frontend | `feat(reports): connect non-expense report screens to backend APIs` | Committed in `hrms-client` as `d8c25a7` |
+| Non-expense Reports task sheet | `docs(reports): record non-expense reports completion` | Pending commit in `hrms_backend` |
 
 ## Next Steps
 
-1. Phase 5 Admin audit log is implemented, frontend-integrated, and validated for Admin/Auditor read behavior.
-2. Backend OpenAPI now has 196 operations across 173 paths; planned operations remaining are 21.
-3. `/admin-settings/audit` uses backend APIs in API mode; broader audit exports/reports remain explicitly deferred to the Reports phase.
-4. Next roadmap scope: Admin security settings requires a concrete backend contract/runtime enforcement decision before implementation; otherwise continue with non-expense Reports.
+1. Phase 5 non-expense Reports is implemented, frontend-integrated, and validated for visible report routes.
+2. Backend OpenAPI now has 206 operations across 182 paths; planned operations remaining are 11.
+3. Report export jobs are queued metadata only; document-backed export generation/download remains production hardening.
+4. Next roadmap scope: address the remaining 11 planned operations, starting with employee role history/audit/import/export or EMS document wrappers. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
