@@ -4,14 +4,14 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 5 Admin company profile/settings slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, and Expense enhancement additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 5 Admin master data slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, and Admin company profile additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 176 implemented operations across 157 paths |
-| Planned operations remaining | 39 |
+| Backend OpenAPI | 182 implemented operations across 161 paths |
+| Planned operations remaining | 33 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
@@ -31,6 +31,7 @@ This versioned report captures the completed Phase 5 Admin company profile/setti
 | Expense enhancements backend | Implemented for metadata, dashboard summary, requester withdraw, and clarification thread |
 | Expense enhancements frontend | Integrated in `hrms-client` for create-form metadata, expense dashboard summary cards, withdraw actions, and clarification comments in API mode |
 | Admin company profile/settings | Completed for Admin-only company profile read/update API and `/admin-settings/company` frontend API-mode integration |
+| Admin master data | Completed for department/designation list/create/update APIs and `/admin-settings/master-data` frontend API-mode integration for those two master groups |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Company Profile Discovery
@@ -171,6 +172,28 @@ Deferred from this Helpdesk slice: category mutation endpoints and broader `/api
 | `GET` | `/api/v1/admin/company-profile` | `/admin-settings/company` initial form load | Returns active company profile, locale/fiscal settings, working week, work hours, logo label, and version |
 | `PUT` | `/api/v1/admin/company-profile` | `/admin-settings/company` save action | Admin-only optimistic-concurrency update for company profile/settings while keeping company slug stable |
 
+## Admin Master Data Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` lists six planned Admin Settings endpoints for departments/designations only: list, create, and patch for each resource | Implement the six planned endpoints under `/api/v1/admin/master-data/*`; do not invent APIs for other master-data tabs in this slice |
+| Existing backend model | `core.departments` and `core.designations` already exist and are exposed read-only through `/api/v1/core/master-data/org-selectors`; they do not yet expose admin mutation APIs | Reuse the existing core data model, add version columns for optimistic concurrency, and emit admin master-data outbox events |
+| Frontend route | `hrms-client/src/routes/_app/admin-settings.master-data.tsx` shows ten tabs, but only `departments` and `designations` have planned backend endpoints | Connect departments/designations to backend APIs in API mode; keep unsupported tabs local/deferred and avoid silently claiming production persistence |
+| Current frontend data source | `hrms-client/src/lib/admin-settings-store.tsx` persists master rows in `localStorage` key `hawkaii_admin_masters_v1` | Replace production-critical department/designation local mutations with backend-backed list/create/update/toggle behavior |
+| Visible actions | The UI supports list/search, add, edit, activate/deactivate, and delete | Map delete/deactivate behavior to versioned `PATCH status=inactive`; no hard-delete endpoint is planned |
+| Deferred scope | Employment types, work locations, shifts, leave types, expense categories, asset categories, helpdesk categories, and project roles do not have planned APIs in the current contract | Leave these tabs deferred until later Admin/policy modules define persistent backend behavior |
+
+## Admin Master Data API Inventory
+
+| Method | Path | Frontend usage | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/admin/master-data/departments` | `/admin-settings/master-data` departments tab | Lists departments with pagination, search, and active-only filtering |
+| `POST` | `/api/v1/admin/master-data/departments` | `/admin-settings/master-data` add department action | Creates a department with duplicate-code protection |
+| `PATCH` | `/api/v1/admin/master-data/departments/{id}` | `/admin-settings/master-data` edit/activate/deactivate department actions | Versioned update; deactivation is blocked while active employees reference the department |
+| `GET` | `/api/v1/admin/master-data/designations` | `/admin-settings/master-data` designations tab | Lists designations with pagination, search, and active-only filtering |
+| `POST` | `/api/v1/admin/master-data/designations` | `/admin-settings/master-data` add designation action | Creates a designation with duplicate-code protection |
+| `PATCH` | `/api/v1/admin/master-data/designations/{id}` | `/admin-settings/master-data` edit/activate/deactivate designation actions | Versioned update; deactivation is blocked while active employees reference the designation |
+
 ## Projects / Utilization API Inventory
 
 | Method | Path | Frontend usage | Notes |
@@ -217,6 +240,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 4 | Expense enhancements | Integrate frontend expense screens | Completed in `hrms-client` | Completed for create metadata, dashboard summary, withdraw action, and clarification comments in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/expenses/*`, `src/lib/expenses-store.tsx`, expense routes, frontend API docs | `feat(expenses): connect metadata summary and clarification flows` |
 | 5 | Admin company profile/settings | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, admin company integration test, `pnpm test:contracts` | Passed. OpenAPI generated 176 operations across 157 paths. Non-escalated tsx/DB runs were sandbox-blocked; reruns with local QA infra access passed. | `src/modules/admin/*`, `src/db/migrations/0010_admin_company_profile.sql`, company profile persistence/model, OpenAPI/docs/contracts | `feat(admin): implement company profile settings APIs` |
 | 5 | Admin company profile/settings | Integrate frontend company settings screen | Completed in `hrms-client` | Completed for `/admin-settings/company` read/update in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.company.tsx`, frontend API docs | `feat(admin): connect company settings to backend API` |
+| 5 | Admin master data | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, admin master-data integration test, `pnpm test:contracts` | Passed. OpenAPI generated 182 operations across 161 paths. Non-escalated tsx/DB runs were sandbox-blocked; reruns with local QA infra access passed. | `src/modules/admin/*`, `src/db/migrations/0011_admin_master_data.sql`, `src/shared/types.ts`, `src/db/schema.ts`, core persistence, OpenAPI/docs/contracts | `feat(admin): implement master data settings APIs` |
+| 5 | Admin master data | Integrate frontend master-data screen | Completed in `hrms-client` | Completed for `/admin-settings/master-data` departments/designations in API mode; unsupported master groups are explicitly deferred in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.master-data.tsx`, frontend API docs | `feat(admin): connect master data settings to backend API` |
 
 ## Remaining Blockers
 
@@ -234,6 +259,7 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | P1 | Timesheet export jobs and full report parity remain planned for the Reports phase |
 | P1 | Attendance daily detail, manager queue alias, export/report endpoints, and richer attendance reports remain planned |
 | P1 | Leave/WFH export/report endpoint remains planned for reports/admin phase |
+| P1 | Admin master-data tabs beyond departments/designations remain deferred until backend APIs are defined |
 | P2 | Frontend lint keeps 39 existing Fast Refresh warnings |
 | P2 | Frontend build keeps chunk-size/Wrangler log warnings but exits successfully |
 
@@ -244,10 +270,10 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed; generated 176 operation frontend contract after Admin company profile
+- `pnpm api:docs:generate`: passed; generated 182 operation frontend contract after Admin master data
 - `pnpm api:docs:verify`: passed
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
-- `pnpm exec vitest run --project integration src/modules/admin/__tests__/admin-company.integration.test.ts`: passed, 1 test
+- `pnpm exec vitest run --project integration src/modules/admin/__tests__/admin-master-data.integration.test.ts`: passed, 2 tests
 - `pnpm test:contracts`: passed, 13 tests
 
 Frontend:
@@ -255,7 +281,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 157 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 161 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -283,6 +309,10 @@ Frontend:
 - Admin company profile updates emit `admin.company_profile.updated` outbox events as the durable audit hook until the broader Admin audit log API is implemented.
 - Company profile updates intentionally keep `company_slug` stable; display/profile fields can change without migrating tenant identifiers.
 - `/admin-settings/company` uses the backend in API mode and keeps localStorage only for API-disabled development.
+- Admin master data implements departments/designations only because those are the only planned master-data endpoints in the current contract.
+- Department/designation delete UI behavior maps to versioned deactivation; hard delete is not exposed.
+- Department/designation deactivation is blocked while active employees reference the row to avoid breaking employee/org selectors.
+- Unsupported Admin master-data tabs are disabled in API mode instead of silently persisting local-only production data.
 
 ## Commit Messages
 
@@ -301,10 +331,12 @@ Frontend:
 | Expense enhancements frontend | `feat(expenses): connect metadata summary and clarification flows` | Committed in `hrms-client` as `61ac090` |
 | Admin company profile backend | `feat(admin): implement company profile settings APIs` | Committed in `hrms_backend` as `64ee990` |
 | Admin company profile frontend | `feat(admin): connect company settings to backend API` | Committed in `hrms-client` as `0808920` |
+| Admin master data backend | `feat(admin): implement master data settings APIs` | Committed in `hrms_backend` as `1e1904c` |
+| Admin master data frontend | `feat(admin): connect master data settings to backend API` | Committed in `hrms-client` as `8ffaaab` |
 
 ## Next Steps
 
-1. Phase 5 Admin company profile/settings is implemented, frontend-integrated, and validated for company settings read/update behavior.
-2. Backend OpenAPI now has 176 operations across 157 paths; planned operations remaining are 39.
-3. `/admin-settings/company` uses backend APIs in API mode; explicit local fallback remains available only when the backend API is disabled.
-4. Next roadmap scope: Phase 5 master data APIs for departments/designations and related Admin Settings frontend integration.
+1. Phase 5 Admin master data is implemented, frontend-integrated, and validated for department/designation list/create/update behavior.
+2. Backend OpenAPI now has 182 operations across 161 paths; planned operations remaining are 33.
+3. `/admin-settings/master-data` uses backend APIs for departments/designations in API mode; unsupported master groups are explicitly deferred instead of mutating local-only production data.
+4. Next roadmap scope: Phase 5 RBAC roles/permissions.
