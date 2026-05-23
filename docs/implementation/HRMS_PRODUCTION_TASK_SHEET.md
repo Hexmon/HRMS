@@ -4,20 +4,20 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 5 employee/core backlog slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, and non-expense Reports additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 5 EMS document wrapper slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, and employee/core backlog additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 211 implemented operations across 187 paths |
-| Planned operations remaining | 6 |
+| Backend OpenAPI | 213 implemented operations across 188 paths |
+| Planned operations remaining | 4 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
 | Leave/WFH/Holidays backend/frontend | Completed for balances, leave requests, WFH requests, manager decisions, HR monitor, holidays, and visible frontend routes |
-| EMS backend | Implemented for profile, profile change requests, HR profile decisions, generic service requests, HR service queue, letters, and policy acknowledgements |
-| EMS frontend | Integrated in `hrms-client` for dashboard profile signals, profile, requests, letters, policies, and HR admin profile/letter queues |
+| EMS backend | Implemented for profile, profile change requests, HR profile decisions, employee document wrappers, generic service requests, HR service queue, letters, and policy acknowledgements |
+| EMS frontend | Integrated in `hrms-client` for dashboard profile signals, profile, employee document listing/downloads, requests, letters, policies, and HR admin profile/letter queues |
 | Projects/utilization backend | Implemented for project CRUD, members, allocations, milestones/modules, project documents, project summary, and team utilization |
 | Projects/utilization frontend | Integrated in `hrms-client` for `/projects`, `/projects/$id`, and `/team-utilization` in API mode |
 | Helpdesk backend | Implemented for ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report |
@@ -94,6 +94,28 @@ This versioned report captures the completed Phase 5 employee/core backlog slice
 | Frontend integration | Added Core API hooks for role history, audit, and export job creation; `/employees/$id` now reads role/audit data from backend in API mode; `/employees` queues backend export jobs when API-backed | API-disabled development keeps local role/audit arrays and local CSV export |
 | Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
 | Contract docs | Backend generated OpenAPI/frontend contract now contains 211 operations; frontend contract snapshots were synced from backend | Planned operations remaining drop from 11 to 6 |
+
+## EMS Document Wrapper Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Current roadmap position | The remaining planned operation list is down to 6; the next unblocked group is the two EMS employee document wrapper operations | Implement the wrappers before Attendance aliases/export and Leave/WFH export |
+| Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` lists `GET /api/v1/ems/employees/{user_id}/documents` and `POST /api/v1/ems/employees/{user_id}/documents` as planned | Add EMS routes, service methods, OpenAPI docs, contract coverage, and EMS integration tests |
+| Existing backend support | `DocumentService` already owns object storage, metadata, classification policy, download URLs, verification, and document access logs | Reuse Documents as the source of truth; do not add a parallel EMS document table |
+| Object identity | Existing document tests and QA scripts use `business_object_type = "employee"` with `business_object_id` set to the employee user id | EMS wrapper should scope employee documents through that existing object identity |
+| Frontend route | `hrms-client/src/routes/_app/ems.documents.tsx` currently lists all visible documents through `documentsApi.list({ page_size: 100 })` and downloads through Documents APIs | Replace the list with the EMS employee wrapper in API mode; keep download through Documents APIs |
+| Upload UI | The visible EMS document route has placeholder Upload/Replace buttons only; there is no file/input flow wired to backend upload | Add frontend adapter/hook for the POST wrapper, but do not invent a new upload UI in this slice |
+| Access policy | EMS policy allows self, HR/Admin, Auditor, and scoped reporting hierarchy to see EMS users; Documents policy still controls classification read/download rules | Wrapper must require EMS employee visibility and then rely on Documents classification policy for returned documents |
+
+## EMS Document Wrapper Completion
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Backend APIs | Added `GET /api/v1/ems/employees/{user_id}/documents` and `POST /api/v1/ems/employees/{user_id}/documents` | Wrappers reuse the existing Documents module/object storage with `business_object_type = "employee"` and path `user_id` as the business object id |
+| Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, EMS integration test, and `pnpm test:contracts` passed | Non-escalated `tsx`/DB/Docker runs were sandbox-blocked and passed when rerun with local QA infra access |
+| Frontend integration | Added EMS document API adapter/hooks and connected `/ems/documents` to the employee-scoped wrapper in API mode | Download URLs continue to use existing Documents APIs; Upload/Replace no longer show fake success in API mode because no file selection UI exists yet |
+| Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
+| Contract docs | Backend generated OpenAPI/frontend contract now contains 213 operations across 188 paths; frontend contract snapshots were synced from backend | Planned operations remaining drop from 6 to 4 |
 
 ## Admin Notification Channels Discovery
 
@@ -363,13 +385,15 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Non-expense Reports | Integrate frontend report screens | Completed in `hrms-client` | Completed for HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/reports/*`, `src/routes/_app/reports*.tsx`, frontend API docs | `feat(reports): connect non-expense report screens to backend APIs` |
 | 5 | Employee/core backlog | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, core integration test, `pnpm test:contracts` | Passed. OpenAPI generated 211 operations across 187 paths. Non-escalated `tsx`/DB runs were sandbox-blocked and passed when rerun with local QA infra access. | `src/modules/core/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(core): implement employee history import and export APIs` |
 | 5 | Employee/core backlog | Integrate frontend employee screens | Completed in `hrms-client` | Completed for employee profile role history/audit reads and API-backed employee export job queueing | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/core/*`, `src/routes/_app/employees.tsx`, `src/routes/_app/employees.$id.tsx`, frontend API docs | `feat(employees): connect employee history and export APIs` |
+| 5 | EMS document wrappers | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, EMS integration test, `pnpm test:contracts` | Passed. OpenAPI generated 213 operations across 188 paths. Non-escalated `tsx`/DB/Docker runs were sandbox-blocked and passed when rerun with local QA infra access. | `src/modules/ems/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(ems): add employee document wrapper APIs` |
+| 5 | EMS document wrappers | Integrate frontend EMS documents screen | Completed in `hrms-client` | Completed for `/ems/documents` list/download behavior in API mode; upload/replace stays blocked in API mode until a file picker/form flow exists | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/ems/*`, `src/routes/_app/ems.documents.tsx`, frontend API docs | `feat(ems): connect document screen to backend wrappers` |
 
 ## Remaining Blockers
 
 | Priority | Blocker |
 | --- | --- |
 | P1 | No frontend e2e/user-flow baseline for EMS, Leave/WFH/Holidays, or Attendance |
-| P1 | EMS-specific document wrapper APIs remain planned; visible EMS document screens continue using the existing Documents APIs |
+| P1 | EMS document Upload/Replace still needs a real file selection/form flow; API mode now blocks fake success instead of pretending to upload |
 | P1 | EMS onboarding, probation, exits, policy management, and letter generation admin actions remain static until broader HR/admin modules exist |
 | P1 | No frontend e2e/user-flow baseline for EMS, Leave/WFH/Holidays, Attendance, Projects, or Helpdesk |
 | P1 | No frontend e2e/user-flow baseline for Notifications/topbar read-state behavior |
@@ -392,10 +416,11 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 211 operation frontend contract after employee/core backlog
+- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 213 operation frontend contract after EMS document wrappers
 - `pnpm api:docs:verify`: passed
 - `pnpm api:consumer:verify`: passed with escalation due `tsx` IPC sandboxing
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
+- `pnpm exec vitest run --project integration src/modules/ems/__tests__/ems.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 - `pnpm exec vitest run --project integration src/modules/core/__tests__/core.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 - `pnpm test:contracts`: passed, 13 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 
@@ -404,7 +429,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 187 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 188 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -413,7 +438,9 @@ Frontend:
 - EMS profile change requests intentionally model one field per request because the current UI submits one selected field at a time.
 - EMS decisions use status values (`approved`, `returned`, `rejected`) rather than leave/WFH action verbs.
 - EMS generic service requests support create/list/HR queue only in this slice; assignment and closure workflows stay planned for later HR operations.
-- EMS-specific employee document wrapper endpoints are deferred because the current EMS document UI already uses the backend Documents APIs for list/download/verify.
+- EMS employee document wrappers reuse the existing Documents module and `business_object_type = "employee"` instead of adding a parallel EMS document table.
+- EMS document downloads, verification, access logs, and object-storage behavior remain owned by the existing Documents APIs.
+- EMS document Upload/Replace buttons stay blocked in API mode until a real file selection/form flow is added; local/demo mode keeps the legacy placeholder behavior.
 - EMS admin onboarding, probation, exits, policy management, and letter generation tabs remain non-production placeholders until their backend modules are defined.
 - Projects list responses intentionally include members, allocations, milestones/modules, documents, and summary by default so the existing project store can hydrate visible screens without adding a generated client layer.
 - Project document APIs list documents already attached to `business_object_type = "project"`; upload/attach UX remains part of later document hardening.
@@ -501,11 +528,14 @@ Frontend:
 | Non-expense Reports task sheet | `docs(reports): record non-expense reports completion` | Committed in `hrms_backend` as `fb5564c` |
 | Employee/core backlog backend | `feat(core): implement employee history import and export APIs` | Committed in `hrms_backend` as `89e8548` |
 | Employee/core backlog frontend | `feat(employees): connect employee history and export APIs` | Committed in `hrms-client` as `9972127` |
-| Employee/core backlog task sheet | `docs(core): record employee core backlog completion` | Pending commit |
+| Employee/core backlog task sheet | `docs(core): record employee core backlog completion` | Committed in `hrms_backend` as `edd2e72` |
+| EMS document wrappers backend | `feat(ems): add employee document wrapper APIs` | Committed in `hrms_backend` as `166f664` |
+| EMS document wrappers frontend | `feat(ems): connect document screen to backend wrappers` | Committed in `hrms-client` as `4efbbdf` |
+| EMS document wrappers task sheet | `docs(ems): record document wrapper completion` | Pending commit |
 
 ## Next Steps
 
-1. Phase 5 employee/core backlog is implemented, frontend-integrated for visible employee history/export flows, and validated.
-2. Backend OpenAPI now has 211 operations across 187 paths; planned operations remaining are 6.
-3. Employee import/export jobs are queued metadata only; actual import parsing/user creation and document-backed export generation/download remain production hardening.
-4. Next roadmap scope: address the remaining 6 planned operations, starting with EMS document wrappers, then Attendance daily/manager-queue/export, then Leave/WFH export. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
+1. Phase 5 EMS document wrappers are implemented, frontend-integrated for the visible EMS documents list/download flow, and validated.
+2. Backend OpenAPI now has 213 operations across 188 paths; planned operations remaining are 4.
+3. Employee import/export jobs and EMS/report export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
+4. Next roadmap scope: implement the remaining Attendance daily/manager-queue/export endpoints, then Leave/WFH export. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
