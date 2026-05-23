@@ -124,7 +124,8 @@ const bodyRequiredOperations = new Set([
   "POST /api/v1/helpdesk/tickets/{id}/status",
   "POST /api/v1/helpdesk/tickets/{id}/resolve",
   "POST /api/v1/helpdesk/tickets/{id}/close",
-  "POST /api/v1/helpdesk/tickets/{id}/reopen"
+  "POST /api/v1/helpdesk/tickets/{id}/reopen",
+  "POST /api/v1/notifications/{id}/read"
 ]);
 
 const occOperations = new Set([
@@ -162,7 +163,8 @@ const occOperations = new Set([
   "POST /api/v1/helpdesk/tickets/{id}/status",
   "POST /api/v1/helpdesk/tickets/{id}/resolve",
   "POST /api/v1/helpdesk/tickets/{id}/close",
-  "POST /api/v1/helpdesk/tickets/{id}/reopen"
+  "POST /api/v1/helpdesk/tickets/{id}/reopen",
+  "POST /api/v1/notifications/{id}/read"
 ]);
 
 const listOperations = new Set([
@@ -215,7 +217,8 @@ const listOperations = new Set([
   "GET /api/v1/team-utilization/summary",
   "GET /api/v1/helpdesk/tickets",
   "GET /api/v1/helpdesk/categories",
-  "GET /api/v1/helpdesk/sla-report"
+  "GET /api/v1/helpdesk/sla-report",
+  "GET /api/v1/notifications"
 ]);
 
 process.env.HRMS_ALLOW_MEMORY_STORE ??= "true";

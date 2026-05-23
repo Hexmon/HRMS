@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 151 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 155 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 64 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `151 current + 64 remaining`; Helpdesk added 15 operations after UI audit confirmed ticket, queue, lifecycle, category, and SLA needs. |
+| Planned new APIs | 60 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `155 current + 60 remaining`; Notifications added 4 operations for the topbar feed, unread badge, and read-state mutations. |
 
 ## Development Phases
 
@@ -44,6 +44,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | EMS | 13 | Employee profile, profile change requests and HR decisions, generic employee requests and HR queue, letters, and policy acknowledgements. |
 | Projects / Utilization | 15 | Project CRUD, members, allocations, milestones/modules, project documents, project summary, and team utilization analytics. |
 | Helpdesk | 15 | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report. |
+| Notifications | 4 | Authenticated user notification feed, unread badge count, mark-read, and mark-all-read operations. |
 
 P0 frontend integration can start with these operations only. The authoritative machine-readable list remains `docs/api/frontend-contract/openapi.json`.
 
@@ -78,7 +79,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **64**.
+Total remaining planned new operations: **60**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -288,14 +289,14 @@ Total remaining planned new operations: **64**.
 | PUT | `/api/v1/admin/notification-channels` | `/admin-settings/notifications` | Update notification channel settings. | Admin. | channels config, expected_version | channels, version | 409 stale/invalid channel config. | Planned / Not Implemented |
 | GET | `/api/v1/admin/audit-log` | `/admin-settings/audit` | Admin settings audit log. | Admin/auditor. | page, page_size, module, actor_user_id, date_range | items[], pagination | Redact secrets; 403 non-auditor/admin. | Planned / Not Implemented |
 
-### Notifications (4 planned APIs)
+### Notifications (4 implemented APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GET | `/api/v1/notifications` | `topbar notification panel` | List user notifications. | Authenticated user. | page, page_size, unread_only, type | items[], pagination | Shared errors; no polling faster than product policy. | Planned / Not Implemented |
-| GET | `/api/v1/notifications/unread-count` | `topbar notification badge` | Return unread notification count. | Authenticated user. | None | unread_count, latest_created_at | Shared errors; lightweight endpoint. | Planned / Not Implemented |
-| POST | `/api/v1/notifications/{id}/read` | `topbar notification panel` | Mark one notification as read. | Notification owner only. | Path id; expected_version optional | notification, unread_count | 404 if not owned; 409 stale if versioned. | Planned / Not Implemented |
-| POST | `/api/v1/notifications/read-all` | `topbar notification panel` | Mark all visible notifications as read. | Authenticated user. | type optional, before optional | updated_count, unread_count | Shared errors; rate-limited. | Planned / Not Implemented |
+| GET | `/api/v1/notifications` | `topbar notification panel` | List user notifications. | Authenticated user. | page, page_size, unread_only, type | items[], pagination | Shared errors; no polling faster than product policy. | Implemented in Phase 4 Notifications |
+| GET | `/api/v1/notifications/unread-count` | `topbar notification badge` | Return unread notification count. | Authenticated user. | None | unread_count, latest_created_at | Shared errors; lightweight endpoint. | Implemented in Phase 4 Notifications |
+| POST | `/api/v1/notifications/{id}/read` | `topbar notification panel` | Mark one notification as read. | Notification owner only. | Path id; expected_version optional | notification, unread_count | 404 if not owned; 409 stale if versioned. | Implemented in Phase 4 Notifications |
+| POST | `/api/v1/notifications/read-all` | `topbar notification panel` | Mark all visible notifications as read. | Authenticated user. | type optional, before optional | updated_count, unread_count | Shared errors; rate-limited. | Implemented in Phase 4 Notifications |
 
 ## Frontend Integration Guidance
 

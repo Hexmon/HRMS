@@ -204,6 +204,26 @@ export const outboxEvents = platform.table(
   ]
 );
 
+export const notifications = platform.table(
+  "notifications",
+  {
+    id: uuidPk.defaultRandom(),
+    actorUserId: uuid("actor_user_id"),
+    targetUserId: uuid("target_user_id"),
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    status: text("status").notNull().default("pending"),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt
+  },
+  (table) => [
+    index("platform_notifications_target_status_idx").on(table.targetUserId, table.status, table.createdAt),
+    index("platform_notifications_type_idx").on(table.eventType, table.createdAt)
+  ]
+);
+
 export const processedEvents = platform.table("processed_events", {
   consumerName: text("consumer_name").notNull(),
   eventId: uuid("event_id").notNull(),
@@ -1126,6 +1146,7 @@ export const schema = {
   userCredentials,
   idempotencyKeys,
   outboxEvents,
+  notifications,
   processedEvents,
   expenseTickets,
   expenseLineItems,

@@ -90,6 +90,8 @@ const expectedOperations = [
   "GET /api/v1/leave/requests/my",
   "GET /api/v1/leave/requests/queue/manager",
   "GET /api/v1/manager-backups",
+  "GET /api/v1/notifications",
+  "GET /api/v1/notifications/unread-count",
   "GET /api/v1/openapi.json",
   "GET /api/v1/platform/finance-governance",
   "GET /api/v1/projects",
@@ -178,6 +180,8 @@ const expectedOperations = [
   "POST /api/v1/leave/requests/{id}/cancel",
   "POST /api/v1/leave/requests/{id}/decision",
   "POST /api/v1/manager-backups",
+  "POST /api/v1/notifications/read-all",
+  "POST /api/v1/notifications/{id}/read",
   "POST /api/v1/onboarding/company-bootstrap",
   "PATCH /api/v1/projects/{id}",
   "POST /api/v1/projects",
@@ -274,6 +278,8 @@ const bodyRequiredOperations = [
   "POST /api/v1/helpdesk/tickets/{id}/resolve",
   "POST /api/v1/helpdesk/tickets/{id}/close",
   "POST /api/v1/helpdesk/tickets/{id}/reopen",
+  "POST /api/v1/notifications/{id}/read",
+  "POST /api/v1/notifications/read-all",
   "POST /api/v1/manager-backups",
   "POST /api/v1/reports/exports",
   "PUT /api/v1/platform/finance-governance"
@@ -313,6 +319,7 @@ const occOperations = [
   "POST /api/v1/helpdesk/tickets/{id}/resolve",
   "POST /api/v1/helpdesk/tickets/{id}/close",
   "POST /api/v1/helpdesk/tickets/{id}/reopen",
+  "POST /api/v1/notifications/{id}/read",
   "DELETE /api/v1/manager-backups/{id}"
 ];
 
@@ -365,7 +372,8 @@ const listOperations = [
   "GET /api/v1/team-utilization/summary",
   "GET /api/v1/helpdesk/tickets",
   "GET /api/v1/helpdesk/categories",
-  "GET /api/v1/helpdesk/sla-report"
+  "GET /api/v1/helpdesk/sla-report",
+  "GET /api/v1/notifications"
 ];
 
 describe("API contracts", () => {
@@ -556,7 +564,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(151);
+    expect(rows.length).toBe(155);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

@@ -963,6 +963,7 @@ export class ExpenseService {
     eventType: string,
     payload: Record<string, unknown>
   ): void {
+    const createdAt = nowIso();
     this.store.notifications.push({
       id: randomUUID(),
       actor_user_id: actorUserId,
@@ -970,7 +971,10 @@ export class ExpenseService {
       event_type: eventType,
       payload,
       status: "pending",
-      created_at: nowIso()
+      read_at: null,
+      version: 1,
+      created_at: createdAt,
+      updated_at: createdAt
     });
   }
 }

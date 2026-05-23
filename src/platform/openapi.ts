@@ -2315,6 +2315,75 @@ const helpdeskMutationResponse = {
   additionalProperties: true
 };
 
+const notificationsQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    unread_only: { type: "boolean", example: true },
+    type: { type: "string", maxLength: 80, example: "approval" }
+  }
+};
+
+const notificationSchema = {
+  type: "object",
+  required: ["id", "type", "title", "description", "category", "read", "status", "created_at", "version"],
+  properties: {
+    id: uuid("Notification UUID"),
+    type: { type: "string", example: "expense.submitted" },
+    title: { type: "string", example: "Timesheet submitted" },
+    description: { type: "string", example: "Employee E1 submitted the current week for approval." },
+    category: { type: "string", enum: ["approval", "mention", "system", "alert"], example: "approval" },
+    action_url: { type: "string", nullable: true, example: "/timesheet/approvals" },
+    actor_user_id: uuid("Actor user UUID"),
+    actor_name: { type: "string", nullable: true, example: "Employee E1" },
+    target_user_id: uuid("Target user UUID"),
+    read: { type: "boolean", example: false },
+    status: { type: "string", enum: ["pending", "sent", "dead_letter"], example: "pending" },
+    read_at: dateTime("Read timestamp"),
+    created_at: dateTime("Created timestamp"),
+    updated_at: dateTime("Updated timestamp"),
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const notificationMarkReadBody = {
+  type: "object",
+  properties: {
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const notificationReadAllBody = {
+  type: "object",
+  properties: {
+    type: { type: "string", maxLength: 80, example: "approval" },
+    before: dateTime("Only notifications created before this timestamp")
+  },
+  additionalProperties: false
+};
+
+const notificationMarkReadResponse = {
+  type: "object",
+  required: ["notification", "unread_count"],
+  properties: {
+    notification: notificationSchema,
+    unread_count: { type: "integer", minimum: 0, example: 2 }
+  },
+  additionalProperties: false
+};
+
+const notificationReadAllResponse = {
+  type: "object",
+  required: ["updated_count", "unread_count"],
+  properties: {
+    updated_count: { type: "integer", minimum: 0, example: 3 },
+    unread_count: { type: "integer", minimum: 0, example: 0 }
+  },
+  additionalProperties: false
+};
+
 const documentUploadBody = {
   type: "object",
   required: ["business_object_type", "business_object_id", "classification", "document_type", "file_name", "mime_type", "size_bytes"],
@@ -2455,6 +2524,10 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/helpdesk/tickets/{id}/reopen": operation("Helpdesk", "Reopen helpdesk ticket", "Reopens a resolved or closed ticket with a requester/agent reason and increments reopen count.", { params: idParamSchema, body: helpdeskReopenBody, response200: helpdeskMutationResponse }),
   "GET /api/v1/helpdesk/categories": operation("Helpdesk", "List helpdesk categories", "Returns active ticket categories, default routing metadata, sub-categories, and SLA hints used by the raise-ticket flow.", { querystring: helpdeskQuerySchema, response200: { type: "object", required: ["categories", "sla"], properties: { categories: { type: "array", items: { type: "object", additionalProperties: true } }, sla: { type: "object", additionalProperties: true }, actor_scope: { type: "string", example: "requester" } }, additionalProperties: true } }),
   "GET /api/v1/helpdesk/sla-report": operation("Helpdesk", "Helpdesk SLA report", "Returns SLA compliance rows and totals for helpdesk managers, admins, and auditors.", { querystring: helpdeskQuerySchema, response200: { ...paginated({ type: "object", additionalProperties: true }), additionalProperties: true } }),
+  "GET /api/v1/notifications": operation("Notifications", "List notifications", "Lists authenticated user notifications for the topbar panel with pagination, unread-only, and type/category filtering.", { querystring: notificationsQuerySchema, response200: paginated(notificationSchema) }),
+  "GET /api/v1/notifications/unread-count": operation("Notifications", "Unread notification count", "Returns the authenticated user's unread notification count for the topbar badge.", { response200: { type: "object", required: ["unread_count"], properties: { unread_count: { type: "integer", minimum: 0, example: 2 }, latest_created_at: dateTime("Latest unread notification timestamp") }, additionalProperties: false } }),
+  "POST /api/v1/notifications/{id}/read": operation("Notifications", "Mark notification read", "Marks one owned notification as read. `expected_version` is optional for topbar interactions but enforces OCC when supplied.", { params: idParamSchema, body: notificationMarkReadBody, response200: notificationMarkReadResponse }),
+  "POST /api/v1/notifications/read-all": operation("Notifications", "Mark all notifications read", "Marks all visible unread notifications as read, optionally scoped by type/category or timestamp.", { body: notificationReadAllBody, response200: notificationReadAllResponse }),
   "POST /api/v1/attendance/punches": operation(
     "Attendance",
     "Record punch",
@@ -2812,7 +2885,7 @@ export const openApiTags = [
   { name: "Projects / Utilization", description: "Project CRUD, delivery team allocation, milestones, project summaries, and utilization analytics." },
   { name: "Helpdesk", description: "Ticket creation, support queue, comments, attachments, assignment, SLA tracking, and ticket lifecycle workflow." },
   { name: "Reports & Analytics", description: "Role-scoped expense registers and export readiness." },
-  { name: "Notifications", description: "Notification contracts are emitted by backend workflows; no public endpoint is exposed in this delivery." },
+  { name: "Notifications", description: "User notification feed, unread badge count, and read-state mutations." },
   { name: "Outbox / Platform Events", description: "Transactional outbox and protected local event consumer contracts." },
   { name: "Admin / Configuration", description: "Administrative configuration endpoints." }
 ];

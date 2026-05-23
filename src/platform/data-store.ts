@@ -74,7 +74,10 @@ export interface NotificationRecord {
   event_type: string;
   payload: Record<string, unknown>;
   status: "pending" | "sent" | "dead_letter";
+  read_at: string | null;
+  version: number;
   created_at: string;
+  updated_at: string;
 }
 
 export interface ExpenseApprovalRecord {
@@ -1109,6 +1112,59 @@ export function createMemoryDataStore(): MemoryDataStore {
       created_at: created
     }
   ];
+  const notifications: NotificationRecord[] = [
+    {
+      id: uuidFromName("notification-e1-helpdesk-ticket"),
+      actor_user_id: seedIds.assetManager,
+      target_user_id: seedIds.employee1,
+      event_type: "helpdesk.ticket_assigned",
+      payload: {
+        title: "High priority ticket update",
+        description: "TKT-12001 - VPN connectivity issue is assigned and in progress.",
+        category: "alert",
+        action_url: "/helpdesk/TKT-12001"
+      },
+      status: "pending",
+      read_at: null,
+      version: 1,
+      created_at: created,
+      updated_at: created
+    },
+    {
+      id: uuidFromName("notification-manager-timesheet"),
+      actor_user_id: seedIds.employee1,
+      target_user_id: seedIds.manager,
+      event_type: "timesheet.submitted",
+      payload: {
+        title: "Timesheet submitted",
+        description: "Employee E1 submitted the current week for approval.",
+        category: "approval",
+        action_url: "/timesheet/approvals"
+      },
+      status: "pending",
+      read_at: null,
+      version: 1,
+      created_at: created,
+      updated_at: created
+    },
+    {
+      id: uuidFromName("notification-finance-expense-paid"),
+      actor_user_id: seedIds.financeManager,
+      target_user_id: seedIds.employee2,
+      event_type: "expense.payment_released",
+      payload: {
+        title: "Expense paid",
+        description: "Your reimbursement has been released by Finance.",
+        category: "system",
+        action_url: "/expenses/my"
+      },
+      status: "sent",
+      read_at: created,
+      version: 1,
+      created_at: created,
+      updated_at: created
+    }
+  ];
   return {
     kind: "memory",
     departments,
@@ -1129,7 +1185,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     documents: [],
     documentVersions: [],
     documentAccessLogs: [],
-    notifications: [],
+    notifications,
     outbox: [],
     assets: [
       {

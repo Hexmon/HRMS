@@ -117,6 +117,7 @@ const resetTables = [
   "expenses.expense_line_items",
   "expenses.expense_tickets",
   "platform.processed_events",
+  "platform.notifications",
   "platform.outbox_events",
   "platform.idempotency_keys",
   "platform.user_sessions",
@@ -309,6 +310,7 @@ class PostgresPersistence {
       loaded.documents = await this.loadDocuments(client);
       loaded.documentVersions = await this.loadDocumentVersions(client);
       loaded.documentAccessLogs = await this.loadDocumentAccessLogs(client);
+      loaded.notifications = await this.loadNotifications(client);
       loaded.outbox = await this.loadOutbox(client);
       loaded.assets = await this.loadAssets(client);
       loaded.assetAssignments = await this.loadAssetAssignments(client);
@@ -720,6 +722,22 @@ class PostgresPersistence {
       decision: row.decision,
       reason: row.reason,
       created_at: asIso(row.created_at)
+    }));
+  }
+
+  private async loadNotifications(client: PoolClient): Promise<NotificationRecord[]> {
+    const { rows } = await client.query("SELECT * FROM platform.notifications ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      actor_user_id: row.actor_user_id,
+      target_user_id: row.target_user_id,
+      event_type: row.event_type,
+      payload: json(row.payload),
+      status: row.status,
+      read_at: asIsoOrNull(row.read_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at)
     }));
   }
 
@@ -1534,6 +1552,35 @@ class PostgresPersistence {
           config.updated_at,
           config.deleted_at,
           config.version
+        ]
+      );
+    }
+    for (const notification of this.store.notifications) {
+      await client.query(
+        `INSERT INTO platform.notifications (
+          id, actor_user_id, target_user_id, event_type, payload, status, read_at, version, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)
+        ON CONFLICT (id) DO UPDATE
+        SET actor_user_id = EXCLUDED.actor_user_id,
+            target_user_id = EXCLUDED.target_user_id,
+            event_type = EXCLUDED.event_type,
+            payload = EXCLUDED.payload,
+            status = EXCLUDED.status,
+            read_at = EXCLUDED.read_at,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at`,
+        [
+          notification.id,
+          notification.actor_user_id,
+          notification.target_user_id,
+          notification.event_type,
+          JSON.stringify(notification.payload),
+          notification.status,
+          notification.read_at,
+          notification.version,
+          notification.created_at,
+          notification.updated_at
         ]
       );
     }
