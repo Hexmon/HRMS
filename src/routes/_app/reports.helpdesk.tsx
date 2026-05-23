@@ -6,11 +6,17 @@ import { StatusBadge, type Column } from "@/components/ui-kit";
 import { useHelpdesk } from "@/lib/helpdesk-store";
 import { computeSla, type Ticket } from "@/lib/mock/helpdesk";
 import { inDateRange } from "@/lib/reports/utils";
+import { useHelpdeskReport } from "@/domains/reports/queries";
+import { asArray, asRecord, numberValue, text, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/reports/helpdesk")({ component: HelpdeskReports });
 
 function HelpdeskReports() {
   const { tickets } = useHelpdesk();
+  const apiMode = useApiRouteEnabled(["/reports"]);
+  const reportQuery = useHelpdeskReport(apiMode);
+  const report = asRecord(reportQuery.data);
+  const sourceTickets = apiMode ? (reportQuery.data?.items ?? []).map(ticketFromApi) : tickets;
 
   const filter = (
     rows: Ticket[],
@@ -73,14 +79,26 @@ function HelpdeskReports() {
     "reopened",
     "escalated",
   ].map((s) => ({ value: s, label: s }));
-  const employeePool = Array.from(new Set(tickets.map((t) => t.raisedBy)));
+  const employeePool = Array.from(new Set(sourceTickets.map((t) => t.raisedBy)));
 
   const agentRows = useMemo(() => {
+    if (apiMode) {
+      return asArray(report.agent_rows).map((value) => {
+        const row = asRecord(value);
+        return {
+          id: text(row.id, text(row.agent)),
+          agent: text(row.agent, "Unassigned"),
+          total: numberValue(row.total),
+          resolved: numberValue(row.resolved),
+          avgH: numberValue(row.avgH, numberValue(row.avg_resolution_hours)),
+        };
+      });
+    }
     const m = new Map<
       string,
       { total: number; resolved: number; sumH: number; resolvedCount: number }
     >();
-    for (const t of tickets) {
+    for (const t of sourceTickets) {
       if (!t.assignee) continue;
       const cur = m.get(t.assignee) ?? { total: 0, resolved: 0, sumH: 0, resolvedCount: 0 };
       cur.total += 1;
@@ -98,39 +116,72 @@ function HelpdeskReports() {
       resolved: v.resolved,
       avgH: v.resolvedCount ? Math.round((v.sumH / v.resolvedCount) * 10) / 10 : 0,
     }));
-  }, [tickets]);
+  }, [apiMode, report.agent_rows, sourceTickets]);
 
   const categoryRows = useMemo(() => {
+    if (apiMode) {
+      return asArray(report.category_rows).map((value) => {
+        const row = asRecord(value);
+        const category = text(row.label, text(row.category));
+        return { id: category, category, count: numberValue(row.count) };
+      });
+    }
     const m = new Map<string, number>();
-    for (const t of tickets) m.set(t.category, (m.get(t.category) ?? 0) + 1);
+    for (const t of sourceTickets) m.set(t.category, (m.get(t.category) ?? 0) + 1);
     return Array.from(m.entries()).map(([category, count]) => ({ id: category, category, count }));
-  }, [tickets]);
+  }, [apiMode, report.category_rows, sourceTickets]);
 
   const employeeRows = useMemo(() => {
+    if (apiMode) {
+      return asArray(report.employee_rows).map((value) => {
+        const row = asRecord(value);
+        const employee = text(row.label, text(row.employee));
+        return { id: employee, employee, count: numberValue(row.count) };
+      });
+    }
     const m = new Map<string, number>();
-    for (const t of tickets) m.set(t.raisedBy, (m.get(t.raisedBy) ?? 0) + 1);
+    for (const t of sourceTickets) m.set(t.raisedBy, (m.get(t.raisedBy) ?? 0) + 1);
     return Array.from(m.entries()).map(([employee, count]) => ({ id: employee, employee, count }));
-  }, [tickets]);
+  }, [apiMode, report.employee_rows, sourceTickets]);
 
-  const resolutionRows = useMemo(
-    () =>
-      tickets
-        .filter((t) => t.resolvedAt)
-        .map((t) => ({
-          id: t.id,
-          ticket: t.id,
-          subject: t.subject,
-          category: t.category,
-          priority: t.priority,
-          assignee: t.assignee ?? "—",
-          hours:
-            Math.round(
-              ((new Date(t.resolvedAt!).getTime() - new Date(t.createdAt).getTime()) / 3600000) *
-                10,
-            ) / 10,
-        })),
-    [tickets],
-  );
+  const resolutionRows = useMemo(() => {
+    if (apiMode) {
+      return asArray(report.resolution_rows).map((value) => {
+        const row = asRecord(value);
+        return {
+          id: text(row.id),
+          ticket: text(row.ticket),
+          subject: text(row.subject),
+          category: text(row.category),
+          priority: text(row.priority),
+          assignee: text(row.assignee, "—"),
+          hours: numberValue(row.hours),
+        };
+      });
+    }
+    return sourceTickets
+      .filter((t) => t.resolvedAt)
+      .map((t) => ({
+        id: t.id,
+        ticket: t.id,
+        subject: t.subject,
+        category: t.category,
+        priority: t.priority,
+        assignee: t.assignee ?? "—",
+        hours:
+          Math.round(
+            ((new Date(t.resolvedAt!).getTime() - new Date(t.createdAt).getTime()) / 3600000) * 10,
+          ) / 10,
+      }));
+  }, [apiMode, report.resolution_rows, sourceTickets]);
+
+  if (apiMode && reportQuery.isLoading) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading helpdesk reports...</div>;
+  }
+
+  if (apiMode && reportQuery.error instanceof Error) {
+    return <div className="p-6 text-sm text-destructive">{reportQuery.error.message}</div>;
+  }
 
   return (
     <Tabs defaultValue="open">
@@ -156,7 +207,7 @@ function HelpdeskReports() {
           }}
           build={(f) =>
             filter(
-              tickets.filter((t) => !["closed", "resolved"].includes(t.status)),
+              sourceTickets.filter((t) => !["closed", "resolved"].includes(t.status)),
               f,
             )
           }
@@ -172,7 +223,7 @@ function HelpdeskReports() {
           description="Open tickets that have breached SLA."
           build={(f) =>
             filter(
-              tickets.filter(
+              sourceTickets.filter(
                 (t) =>
                   !["closed", "resolved"].includes(t.status) && computeSla(t).worst === "breached",
               ),
@@ -304,4 +355,65 @@ function HelpdeskReports() {
       </TabsContent>
     </Tabs>
   );
+}
+
+function ticketFromApi(value: unknown): Ticket {
+  const row = asRecord(value);
+  const status = normalizeTicketStatus(text(row.status, "new"));
+  return {
+    id: text(row.ticket_no, text(row.id)),
+    apiId: text(row.id),
+    subject: text(row.subject),
+    description: "",
+    category: normalizeCategory(text(row.category, "IT")),
+    categoryApiId: text(row.category_id),
+    subCategory: "",
+    priority: normalizePriority(text(row.priority, "Medium")),
+    status,
+    raisedBy: text(row.requester),
+    raisedById: text(row.requester_user_id),
+    raisedByDept: text(row.requester_department),
+    assignee: text(row.assignee),
+    assigneeUserId: text(row.assignee_user_id),
+    createdAt: text(row.created_at),
+    updatedAt: text(row.closed_at, text(row.resolved_at, text(row.created_at))),
+    resolvedAt: text(row.resolved_at) || undefined,
+    closedAt: text(row.closed_at) || undefined,
+    reopenCount: 0,
+    escalated: row.breached === true || status === "escalated",
+    comments: [],
+    attachments: [],
+    events: [],
+  };
+}
+
+function normalizeCategory(value: string): Ticket["category"] {
+  const allowed: Ticket["category"][] = [
+    "IT",
+    "HR",
+    "Finance",
+    "Admin",
+    "Assets",
+    "Project Support",
+  ];
+  return allowed.includes(value as Ticket["category"]) ? (value as Ticket["category"]) : "IT";
+}
+
+function normalizePriority(value: string): Ticket["priority"] {
+  const allowed: Ticket["priority"][] = ["Low", "Medium", "High", "Urgent"];
+  return allowed.includes(value as Ticket["priority"]) ? (value as Ticket["priority"]) : "Medium";
+}
+
+function normalizeTicketStatus(value: string): Ticket["status"] {
+  const allowed: Ticket["status"][] = [
+    "new",
+    "assigned",
+    "in_progress",
+    "on_hold",
+    "resolved",
+    "closed",
+    "reopened",
+    "escalated",
+  ];
+  return allowed.includes(value as Ticket["status"]) ? (value as Ticket["status"]) : "new";
 }

@@ -6,8 +6,10 @@ import { StatusBadge, type Column } from "@/components/ui-kit";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { useTimesheetProductivitySummary, useTimesheetProjectSummary } from "@/domains/timesheets";
 import { asArray, asRecord, isApiEnabled, numberValue, pageItems, text } from "@/shared/api";
+import { useTimesheetsReport } from "@/domains/reports/queries";
 import {
   TIMESHEET_STATUS_LABEL,
+  type TimesheetEntryStatus,
   type TimesheetEntry,
   type TimesheetWeek,
 } from "@/lib/mock/timesheets";
@@ -18,6 +20,7 @@ export const Route = createFileRoute("/_app/reports/timesheet")({ component: Tim
 function TimesheetReports() {
   const { entries, weeks } = useTimesheets();
   const apiMode = isApiEnabled();
+  const reportQuery = useTimesheetsReport(apiMode);
   const productivityQuery = useTimesheetProductivitySummary(
     { date_from: "2026-01-01", date_to: "2026-12-31", group_by: "employee" },
     apiMode,
@@ -26,15 +29,20 @@ function TimesheetReports() {
     { page: 1, page_size: 100, date_from: "2026-01-01", date_to: "2026-12-31" },
     apiMode,
   );
+  const report = asRecord(reportQuery.data);
+  const sourceWeeks = apiMode ? (reportQuery.data?.items ?? []).map(weekFromReportApi) : weeks;
+  const sourceEntries = apiMode ? (reportQuery.data?.items ?? []).map(entryFromReportApi) : entries;
 
   const filterEntries = (
     f: { from: string; to: string; department: string; employee: string; status: string },
     status?: string[],
   ) =>
-    entries.filter((e) => {
+    sourceEntries.filter((e) => {
       if (!inDateRange(e.date, f.from, f.to)) return false;
       if (f.employee !== "all" && e.employeeName !== f.employee) return false;
-      const week = weeks.find((w) => w.employeeId === e.employeeId && w.weekStart === e.weekStart);
+      const week = sourceWeeks.find(
+        (w) => w.employeeId === e.employeeId && w.weekStart === e.weekStart,
+      );
       if (status && week && !status.includes(week.status)) return false;
       if (f.department !== "all" && week && week.department !== f.department) return false;
       return true;
@@ -107,6 +115,19 @@ function TimesheetReports() {
   ];
 
   const productivity = useMemo(() => {
+    if (apiMode && asArray(report.productivity_rows).length > 0) {
+      return asArray(report.productivity_rows).map((value) => {
+        const row = asRecord(value);
+        const hours = numberValue(row.total_hours);
+        return {
+          id: text(row.id, text(row.employee)),
+          employee: text(row.employee),
+          hours,
+          billable: Math.round((hours * numberValue(row.billable_mix)) / 1000) / 10,
+          util: numberValue(row.billable_mix),
+        };
+      });
+    }
     if (apiMode && productivityQuery.data) {
       return asArray(asRecord(productivityQuery.data).breakdown).map((value) => {
         const row = asRecord(value);
@@ -122,7 +143,7 @@ function TimesheetReports() {
       });
     }
     const m = new Map<string, { hours: number; billable: number }>();
-    for (const e of entries) {
+    for (const e of sourceEntries) {
       const cur = m.get(e.employeeName) ?? { hours: 0, billable: 0 };
       cur.hours += e.hours;
       if (e.billable) cur.billable += e.hours;
@@ -135,9 +156,21 @@ function TimesheetReports() {
       billable: v.billable,
       util: v.hours ? Math.round((v.billable / v.hours) * 100) : 0,
     }));
-  }, [apiMode, entries, productivityQuery.data]);
+  }, [apiMode, productivityQuery.data, report.productivity_rows, sourceEntries]);
 
   const projectHours = useMemo(() => {
+    if (apiMode && asArray(report.project_rows).length > 0) {
+      return asArray(report.project_rows).map((value) => {
+        const row = asRecord(value);
+        return {
+          id: text(row.id, text(row.label)),
+          code: text(row.label, "PROJECT"),
+          project: text(row.label, "Project"),
+          hours: numberValue(row.value),
+          billable: 0,
+        };
+      });
+    }
     if (apiMode && projectSummaryQuery.data) {
       return pageItems(projectSummaryQuery.data).map((value) => {
         const row = asRecord(value);
@@ -153,7 +186,7 @@ function TimesheetReports() {
       });
     }
     const m = new Map<string, { hours: number; billable: number; project: string }>();
-    for (const e of entries) {
+    for (const e of sourceEntries) {
       const k = e.projectCode;
       const cur = m.get(k) ?? { hours: 0, billable: 0, project: e.projectName };
       cur.hours += e.hours;
@@ -167,13 +200,27 @@ function TimesheetReports() {
       hours: v.hours,
       billable: v.billable,
     }));
-  }, [apiMode, entries, projectSummaryQuery.data]);
+  }, [apiMode, projectSummaryQuery.data, report.project_rows, sourceEntries]);
 
   const statusOptions = Object.entries(TIMESHEET_STATUS_LABEL).map(([value, label]) => ({
     value,
     label,
   }));
-  const employeePool = Array.from(new Set(entries.map((e) => e.employeeName)));
+  const reportEmployeePool = Array.from(new Set(sourceEntries.map((e) => e.employeeName)));
+
+  if (
+    apiMode &&
+    (reportQuery.isLoading || productivityQuery.isLoading || projectSummaryQuery.isLoading)
+  ) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading timesheet reports...</div>;
+  }
+
+  if (apiMode) {
+    const error = reportQuery.error ?? productivityQuery.error ?? projectSummaryQuery.error;
+    if (error instanceof Error) {
+      return <div className="p-6 text-sm text-destructive">{error.message}</div>;
+    }
+  }
 
   return (
     <Tabs defaultValue="missing">
@@ -193,10 +240,10 @@ function TimesheetReports() {
           facets={{
             showDepartment: true,
             showEmployee: true,
-            employeePool: Array.from(new Set(weeks.map((w) => w.employeeName))),
+            employeePool: Array.from(new Set(sourceWeeks.map((w) => w.employeeName))),
           }}
           build={(f) =>
-            weeks.filter(
+            sourceWeeks.filter(
               (w) =>
                 w.status === "draft" &&
                 (f.department === "all" || w.department === f.department) &&
@@ -218,7 +265,7 @@ function TimesheetReports() {
             showEmployee: true,
             showStatus: true,
             statusOptions,
-            employeePool,
+            employeePool: reportEmployeePool,
           }}
           build={(f) => filterEntries(f, ["submitted", "pending"])}
           columns={entryCols}
@@ -231,7 +278,7 @@ function TimesheetReports() {
         <ReportShell
           title="Approved Hours"
           description="Approved entries by employee and project."
-          facets={{ showDepartment: true, showEmployee: true, employeePool }}
+          facets={{ showDepartment: true, showEmployee: true, employeePool: reportEmployeePool }}
           build={(f) => filterEntries(f, ["approved"])}
           columns={entryCols}
           searchKeys={["employeeName", "projectCode"]}
@@ -245,7 +292,7 @@ function TimesheetReports() {
           description="Weeks rejected or returned by managers."
           facets={{ showDepartment: true }}
           build={(f) =>
-            weeks.filter(
+            sourceWeeks.filter(
               (w) =>
                 (w.status === "rejected" || w.status === "returned") &&
                 (f.department === "all" || w.department === f.department),
@@ -322,4 +369,49 @@ function TimesheetReports() {
       </TabsContent>
     </Tabs>
   );
+}
+
+function weekFromReportApi(value: unknown): TimesheetWeek {
+  const row = asRecord(value);
+  return {
+    id: text(row.id),
+    employeeId: text(row.employee_user_id),
+    employeeName: text(row.employee),
+    department: text(row.department, "—"),
+    weekStart: text(row.cycle_start),
+    status: normalizeTimesheetStatus(text(row.status)),
+    version: numberValue(row.version, 1),
+    totalHours: numberValue(row.total_hours),
+    billableHours: numberValue(row.billable_hours),
+    nonBillableHours: numberValue(row.non_billable_hours),
+    submittedAt: text(row.updated_at),
+  };
+}
+
+function entryFromReportApi(value: unknown): TimesheetEntry {
+  const row = asRecord(value);
+  return {
+    id: `${text(row.id)}-summary`,
+    employeeId: text(row.employee_user_id),
+    employeeName: text(row.employee),
+    weekStart: text(row.cycle_start),
+    date: text(row.cycle_end, text(row.cycle_start)),
+    projectId: "summary",
+    projectCode: "SUMMARY",
+    projectName: `${numberValue(row.project_count)} project(s)`,
+    task: "Timesheet cycle summary",
+    billable: numberValue(row.billable_hours) > 0,
+    hours: numberValue(row.total_hours),
+    description: text(row.status),
+  };
+}
+
+function normalizeTimesheetStatus(value: string): TimesheetEntryStatus {
+  const normalized = value.toLowerCase().replace(/\s+/g, "_");
+  if (normalized.includes("approved")) return "approved";
+  if (normalized.includes("rejected")) return "rejected";
+  if (normalized.includes("returned")) return "returned";
+  if (normalized.includes("pending")) return "pending";
+  if (normalized.includes("submitted")) return "submitted";
+  return "draft";
 }

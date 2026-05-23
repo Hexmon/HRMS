@@ -11,6 +11,8 @@ import {
   type ProjectMember,
 } from "@/lib/mock/projects";
 import { inDateRange } from "@/lib/reports/utils";
+import { useProjectsReport } from "@/domains/reports/queries";
+import { asArray, asRecord, numberValue, text, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/reports/projects")({ component: ProjectReports });
 
@@ -36,38 +38,46 @@ interface HistoryRow {
 
 function ProjectReports() {
   const { projects } = useProjects();
+  const apiMode = useApiRouteEnabled(["/reports"]);
+  const reportQuery = useProjectsReport(apiMode);
+  const report = asRecord(reportQuery.data);
+  const sourceProjects = apiMode ? (reportQuery.data?.items ?? []).map(projectFromApi) : projects;
 
   const allocations: AllocRow[] = useMemo(
     () =>
-      projects.flatMap((p) =>
-        p.members.map((m: ProjectMember) => ({
-          id: p.id + "-" + m.id,
-          project: p.name,
-          code: p.code,
-          employee: m.name,
-          role: m.role,
-          allocation: m.allocation,
-          billable: m.billable,
-          manager: p.manager,
-        })),
-      ),
-    [projects],
+      apiMode
+        ? asArray(report.allocation_rows).map(allocationFromApi)
+        : sourceProjects.flatMap((p) =>
+            p.members.map((m: ProjectMember) => ({
+              id: p.id + "-" + m.id,
+              project: p.name,
+              code: p.code,
+              employee: m.name,
+              role: m.role,
+              allocation: m.allocation,
+              billable: m.billable,
+              manager: p.manager,
+            })),
+          ),
+    [apiMode, report.allocation_rows, sourceProjects],
   );
 
   const history: HistoryRow[] = useMemo(
     () =>
-      projects.flatMap((p) =>
-        p.members.map((m) => ({
-          id: p.id + "-h-" + m.id,
-          employee: m.name,
-          project: p.name,
-          code: p.code,
-          role: m.role,
-          from: m.startDate,
-          to: m.endDate,
-        })),
-      ),
-    [projects],
+      apiMode
+        ? asArray(report.history_rows).map(historyFromApi)
+        : sourceProjects.flatMap((p) =>
+            p.members.map((m) => ({
+              id: p.id + "-h-" + m.id,
+              employee: m.name,
+              project: p.name,
+              code: p.code,
+              role: m.role,
+              from: m.startDate,
+              to: m.endDate,
+            })),
+          ),
+    [apiMode, report.history_rows, sourceProjects],
   );
 
   const utilizationRows = useMemo(() => {
@@ -78,6 +88,7 @@ function ProjectReports() {
       if (a.billable) cur.billable += a.allocation;
       m.set(a.employee, cur);
     }
+    if (apiMode) return asArray(report.utilization_rows).map(utilizationFromApi);
     return Array.from(m.entries()).map(([e, v]) => ({
       id: e,
       employee: e,
@@ -85,7 +96,15 @@ function ProjectReports() {
       billable: v.billable,
       mix: v.used ? Math.round((v.billable / v.used) * 100) : 0,
     }));
-  }, [allocations]);
+  }, [allocations, apiMode, report.utilization_rows]);
+
+  if (apiMode && reportQuery.isLoading) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading project reports...</div>;
+  }
+
+  if (apiMode && reportQuery.error instanceof Error) {
+    return <div className="p-6 text-sm text-destructive">{reportQuery.error.message}</div>;
+  }
 
   const projCols: Column<Project>[] = [
     {
@@ -129,7 +148,7 @@ function ProjectReports() {
   ];
 
   const filterProjects = (f: { from: string; to: string; department: string; status: string }) =>
-    projects.filter((p) => {
+    sourceProjects.filter((p) => {
       if (!inDateRange(p.startDate, undefined, f.to) || !inDateRange(p.endDate, f.from, undefined))
         return false;
       if (f.department !== "all" && p.department !== f.department) return false;
@@ -158,10 +177,10 @@ function ProjectReports() {
           description="Every project across the organisation."
           facets={{ showDepartment: true, showStatus: true, statusOptions }}
           summary={[
-            { label: "Projects", value: projects.length, tone: "info" },
+            { label: "Projects", value: sourceProjects.length, tone: "info" },
             {
               label: "Active",
-              value: projects.filter((p) => p.status === "active").length,
+              value: sourceProjects.filter((p) => p.status === "active").length,
               tone: "success",
             },
           ]}
@@ -314,7 +333,7 @@ function ProjectReports() {
           title="Billable vs Non-Billable"
           description="Project-level split of billable vs non-billable allocation."
           build={() =>
-            projects.map((p) => {
+            sourceProjects.map((p) => {
               const total = p.members.reduce((s, m) => s + m.allocation, 0);
               const bill = p.members
                 .filter((m) => m.billable)
@@ -367,15 +386,17 @@ function ProjectReports() {
           title="Project Cost Summary"
           description="Estimated cost per project based on team allocation and standard monthly capacity."
           build={() =>
-            projects.map((p) => ({
-              id: p.id,
-              code: p.code,
-              name: p.name,
-              client: p.client,
-              team: p.members.length,
-              estCost: p.members.length * 16000,
-              status: p.status,
-            }))
+            apiMode && asArray(report.cost_rows).length > 0
+              ? asArray(report.cost_rows).map(costFromApi)
+              : sourceProjects.map((p) => ({
+                  id: p.id,
+                  code: p.code,
+                  name: p.name,
+                  client: p.client,
+                  team: p.members.length,
+                  estCost: p.members.length * 16000,
+                  status: p.status,
+                }))
           }
           columns={[
             {
@@ -417,4 +438,91 @@ function ProjectReports() {
       </TabsContent>
     </Tabs>
   );
+}
+
+function projectFromApi(value: unknown): Project {
+  const row = asRecord(value);
+  const status = text(row.status, "planned");
+  return {
+    id: text(row.id),
+    version: numberValue(row.version, 1),
+    code: text(row.code),
+    name: text(row.name),
+    client: text(row.client),
+    type: text(row.project_type, "client") as Project["type"],
+    billingType: text(row.billing, "fixed") as Project["billingType"],
+    manager: text(row.manager),
+    managerUserId: text(row.manager_user_id),
+    startDate: text(row.start_date),
+    endDate: text(row.end_date),
+    status: (status === "archived" ? "completed" : status) as Project["status"],
+    health: text(row.health, "green") as Project["health"],
+    description: "",
+    estimatedHours: numberValue(row.estimated_hours),
+    actualHours: numberValue(row.actual_hours),
+    estimatedBudget: numberValue(row.estimated_budget),
+    actualSpend: numberValue(row.actual_spend),
+    techStack: [],
+    priority: text(row.priority, "medium") as Project["priority"],
+    costCenter: "",
+    department: text(row.department, "—"),
+    departmentId: text(row.department_id),
+    members: [],
+    modules: [],
+    documents: [],
+    audit: [],
+  };
+}
+
+function allocationFromApi(value: unknown): AllocRow {
+  const row = asRecord(value);
+  return {
+    id: text(row.id),
+    project: text(row.project),
+    code: text(row.code),
+    employee: text(row.employee),
+    role: text(row.role),
+    allocation: numberValue(row.allocation),
+    billable: row.billable === true,
+    manager: text(row.manager),
+  };
+}
+
+function historyFromApi(value: unknown): HistoryRow {
+  const row = asRecord(value);
+  return {
+    id: text(row.id),
+    employee: text(row.employee),
+    project: text(row.project),
+    code: text(row.code),
+    role: text(row.role),
+    from: text(row.from),
+    to: text(row.to),
+  };
+}
+
+function utilizationFromApi(value: unknown) {
+  const row = asRecord(value);
+  return {
+    id: text(row.id, text(row.employee)),
+    employee: text(row.employee),
+    used: numberValue(row.used),
+    billable: numberValue(row.billable),
+    mix: numberValue(row.mix),
+  };
+}
+
+function costFromApi(value: unknown) {
+  const row = asRecord(value);
+  return {
+    id: text(row.id),
+    code: text(row.code),
+    name: text(row.name),
+    client: text(row.client),
+    team: numberValue(row.team),
+    estCost: numberValue(row.estimated_budget),
+    status: (text(row.status, "planned") === "archived"
+      ? "completed"
+      : text(row.status, "planned")) as Project["status"],
+  };
 }

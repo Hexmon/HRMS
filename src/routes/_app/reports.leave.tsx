@@ -11,11 +11,48 @@ import {
   type Holiday,
 } from "@/lib/leave-store";
 import { inDateRange } from "@/lib/reports/utils";
+import { useLeaveWfhReport } from "@/domains/reports/queries";
+import { asArray, asRecord, numberValue, text, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/reports/leave")({ component: LeaveReports });
 
 function LeaveReports() {
   const { requests } = useLeave();
+  const apiMode = useApiRouteEnabled(["/reports"]);
+  const reportQuery = useLeaveWfhReport(apiMode);
+  const report = asRecord(reportQuery.data);
+  const sourceRequests = apiMode
+    ? (reportQuery.data?.items ?? []).map(leaveRequestFromApi)
+    : requests;
+  const apiBalanceRows = asArray(report.balance_rows).map((value) => {
+    const row = asRecord(value);
+    const leaveType = text(row.leave_type, text(row.type)) as keyof typeof LEAVE_TYPE_LABEL;
+    return {
+      id: text(row.id, leaveType),
+      type: LEAVE_TYPE_LABEL[leaveType] ?? text(row.type),
+      used: numberValue(row.used),
+      total: numberValue(row.total),
+      remaining: row.remaining === null ? 0 : numberValue(row.remaining),
+    };
+  });
+  const apiHolidayRows = asArray(report.holiday_rows).map((value) => {
+    const row = asRecord(value);
+    return {
+      id: text(row.id),
+      name: text(row.name),
+      date: text(row.date),
+      region: text(row.region),
+      optional: row.optional === true,
+    } satisfies Holiday;
+  });
+
+  if (apiMode && reportQuery.isLoading) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading leave reports...</div>;
+  }
+
+  if (apiMode && reportQuery.error instanceof Error) {
+    return <div className="p-6 text-sm text-destructive">{reportQuery.error.message}</div>;
+  }
 
   const filter = (
     rows: LeaveRequest[],
@@ -77,13 +114,16 @@ function LeaveReports() {
     "cancelled",
   ].map((s) => ({ value: s, label: s.replace("_", " ") }));
 
-  const balanceRows = LEAVE_BALANCES.map((b) => ({
-    id: b.type,
-    type: LEAVE_TYPE_LABEL[b.type],
-    used: b.used,
-    total: b.total,
-    remaining: b.total - b.used,
-  }));
+  const balanceRows =
+    apiMode && apiBalanceRows.length > 0
+      ? apiBalanceRows
+      : LEAVE_BALANCES.map((b) => ({
+          id: b.type,
+          type: LEAVE_TYPE_LABEL[b.type],
+          used: b.used,
+          total: b.total,
+          remaining: b.total - b.used,
+        }));
 
   return (
     <Tabs defaultValue="balance">
@@ -136,16 +176,16 @@ function LeaveReports() {
             showEmployee: true,
             showStatus: true,
             statusOptions,
-            employeePool: Array.from(new Set(requests.map((r) => r.employee))),
+            employeePool: Array.from(new Set(sourceRequests.map((r) => r.employee))),
           }}
           summary={[
             {
               label: "Applications",
-              value: requests.filter((r) => r.kind === "leave").length,
+              value: sourceRequests.filter((r) => r.kind === "leave").length,
               tone: "info",
             },
           ]}
-          build={(f) => filter(requests, f, "leave")}
+          build={(f) => filter(sourceRequests, f, "leave")}
           columns={cols}
           searchKeys={["employee", "id"]}
           exportName="leave-applied"
@@ -161,23 +201,23 @@ function LeaveReports() {
             showEmployee: true,
             showStatus: true,
             statusOptions,
-            employeePool: Array.from(new Set(requests.map((r) => r.employee))),
+            employeePool: Array.from(new Set(sourceRequests.map((r) => r.employee))),
           }}
           summary={[
             {
               label: "Approved",
-              value: requests.filter((r) => r.status === "approved").length,
+              value: sourceRequests.filter((r) => r.status === "approved").length,
               tone: "success",
             },
             {
               label: "Rejected",
-              value: requests.filter((r) => r.status === "rejected").length,
+              value: sourceRequests.filter((r) => r.status === "rejected").length,
               tone: "destructive",
             },
           ]}
           build={(f) =>
             filter(
-              requests.filter((r) => r.status === "approved" || r.status === "rejected"),
+              sourceRequests.filter((r) => r.status === "approved" || r.status === "rejected"),
               f,
             )
           }
@@ -196,9 +236,9 @@ function LeaveReports() {
             showEmployee: true,
             showStatus: true,
             statusOptions,
-            employeePool: Array.from(new Set(requests.map((r) => r.employee))),
+            employeePool: Array.from(new Set(sourceRequests.map((r) => r.employee))),
           }}
-          build={(f) => filter(requests, f, "wfh")}
+          build={(f) => filter(sourceRequests, f, "wfh")}
           columns={cols}
           searchKeys={["employee", "id"]}
           exportName="wfh"
@@ -209,7 +249,9 @@ function LeaveReports() {
         <ReportShell
           title="Holiday Calendar"
           description="Public and optional holidays for the year."
-          build={() => HOLIDAYS as Holiday[]}
+          build={() =>
+            apiMode && apiHolidayRows.length > 0 ? apiHolidayRows : (HOLIDAYS as Holiday[])
+          }
           columns={[
             {
               key: "name",
@@ -243,4 +285,28 @@ function LeaveReports() {
       </TabsContent>
     </Tabs>
   );
+}
+
+function leaveRequestFromApi(value: unknown): LeaveRequest {
+  const row = asRecord(value);
+  const kind = text(row.kind, "leave") as LeaveRequest["kind"];
+  return {
+    id: text(row.request_code, text(row.id)),
+    kind,
+    employee: text(row.employee),
+    department: text(row.department, "—"),
+    manager: "—",
+    leaveType:
+      kind === "leave" ? (text(row.leave_type, "casual") as LeaveRequest["leaveType"]) : undefined,
+    fromDate: text(row.from_date),
+    toDate: text(row.to_date),
+    halfDay: false,
+    duration: numberValue(row.duration),
+    reason: "",
+    projectRef: text(row.project_ref),
+    status: text(row.status, "pending_manager") as LeaveRequest["status"],
+    remarks: text(row.decision_remarks),
+    createdAt: text(row.created_at),
+    expectedVersion: numberValue(row.version, 1),
+  };
 }

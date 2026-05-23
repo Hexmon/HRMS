@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 196
+Documented operations: 206
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -5420,6 +5420,598 @@ Success body highlights:
 - Closed expense tickets are read-only unless a future correction API explicitly allows edits.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
+### GET /api/v1/reports/hr/employees
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | HR employee report                                                                            |
+| Frontend use | Report tables, filters, analytics panels, and export jobs.                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Role-scoped report datasets; finance/audit reports require finance/admin/auditor scope.       |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `assigned_to_user_id` | query | no | string<uuid> | - |
+| `actor_user_id` | query | no | string<uuid> | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+| `client` | query | no | string | - |
+| `category_id` | query | no | string<uuid> | - |
+| `module` | query | no | string | - |
+| `action` | query | no | string | - |
+| `report_type` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+| `totals`    | object          | required | -         |
+| `filters`   | object          | required | -         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/reports/attendance/summary
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Attendance report                                                                             |
+| Frontend use | Report tables, filters, analytics panels, and export jobs.                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Role-scoped report datasets; finance/audit reports require finance/admin/auditor scope.       |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `assigned_to_user_id` | query | no | string<uuid> | - |
+| `actor_user_id` | query | no | string<uuid> | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+| `client` | query | no | string | - |
+| `category_id` | query | no | string<uuid> | - |
+| `module` | query | no | string | - |
+| `action` | query | no | string | - |
+| `report_type` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+| `totals`    | object          | required | -         |
+| `filters`   | object          | required | -         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/reports/leave-wfh/summary
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Leave and WFH report                                                                          |
+| Frontend use | Report tables, filters, analytics panels, and export jobs.                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Role-scoped report datasets; finance/audit reports require finance/admin/auditor scope.       |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `assigned_to_user_id` | query | no | string<uuid> | - |
+| `actor_user_id` | query | no | string<uuid> | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+| `client` | query | no | string | - |
+| `category_id` | query | no | string<uuid> | - |
+| `module` | query | no | string | - |
+| `action` | query | no | string | - |
+| `report_type` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+| `totals`    | object          | required | -         |
+| `filters`   | object          | required | -         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/reports/projects/summary
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Project portfolio report                                                                      |
+| Frontend use | Report tables, filters, analytics panels, and export jobs.                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Role-scoped report datasets; finance/audit reports require finance/admin/auditor scope.       |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `assigned_to_user_id` | query | no | string<uuid> | - |
+| `actor_user_id` | query | no | string<uuid> | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+| `client` | query | no | string | - |
+| `category_id` | query | no | string<uuid> | - |
+| `module` | query | no | string | - |
+| `action` | query | no | string | - |
+| `report_type` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+| `totals`    | object          | required | -         |
+| `filters`   | object          | required | -         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/reports/timesheets/summary
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Timesheet report                                                                              |
+| Frontend use | Report tables, filters, analytics panels, and export jobs.                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Role-scoped report datasets; finance/audit reports require finance/admin/auditor scope.       |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `assigned_to_user_id` | query | no | string<uuid> | - |
+| `actor_user_id` | query | no | string<uuid> | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+| `client` | query | no | string | - |
+| `category_id` | query | no | string<uuid> | - |
+| `module` | query | no | string | - |
+| `action` | query | no | string | - |
+| `report_type` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+| `totals`    | object          | required | -         |
+| `filters`   | object          | required | -         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/reports/assets/summary
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Asset report                                                                                  |
+| Frontend use | Report tables, filters, analytics panels, and export jobs.                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Role-scoped report datasets; finance/audit reports require finance/admin/auditor scope.       |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `assigned_to_user_id` | query | no | string<uuid> | - |
+| `actor_user_id` | query | no | string<uuid> | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+| `client` | query | no | string | - |
+| `category_id` | query | no | string<uuid> | - |
+| `module` | query | no | string | - |
+| `action` | query | no | string | - |
+| `report_type` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+| `totals`    | object          | required | -         |
+| `filters`   | object          | required | -         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/reports/helpdesk/summary
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Helpdesk report                                                                               |
+| Frontend use | Report tables, filters, analytics panels, and export jobs.                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Role-scoped report datasets; finance/audit reports require finance/admin/auditor scope.       |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `assigned_to_user_id` | query | no | string<uuid> | - |
+| `actor_user_id` | query | no | string<uuid> | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+| `client` | query | no | string | - |
+| `category_id` | query | no | string<uuid> | - |
+| `module` | query | no | string | - |
+| `action` | query | no | string | - |
+| `report_type` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+| `totals`    | object          | required | -         |
+| `filters`   | object          | required | -         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/reports/audit
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Cross-module audit report                                                                     |
+| Frontend use | Report tables, filters, analytics panels, and export jobs.                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Role-scoped report datasets; finance/audit reports require finance/admin/auditor scope.       |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `assigned_to_user_id` | query | no | string<uuid> | - |
+| `actor_user_id` | query | no | string<uuid> | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+| `client` | query | no | string | - |
+| `category_id` | query | no | string<uuid> | - |
+| `module` | query | no | string | - |
+| `action` | query | no | string | - |
+| `report_type` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+| `totals`    | object          | required | -         |
+| `filters`   | object          | required | -         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/reports/exports
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | List export jobs                                                                              |
+| Frontend use | Report tables, filters, analytics panels, and export jobs.                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Role-scoped report datasets; finance/audit reports require finance/admin/auditor scope.       |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `department_id` | query | no | string<uuid> | - |
+| `user_id` | query | no | string<uuid> | - |
+| `employee_user_id` | query | no | string<uuid> | - |
+| `project_id` | query | no | string<uuid> | - |
+| `assigned_to_user_id` | query | no | string<uuid> | - |
+| `actor_user_id` | query | no | string<uuid> | - |
+| `status` | query | no | string | - |
+| `type` | query | no | string | - |
+| `request_kind` | query | no | string enum("leave", "wfh") | - |
+| `client` | query | no | string | - |
+| `category_id` | query | no | string<uuid> | - |
+| `module` | query | no | string | - |
+| `action` | query | no | string | - |
+| `report_type` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
 ### POST /api/v1/reports/exports
 
 | Field        | Contract                                                                                      |
@@ -5439,9 +6031,11 @@ Content type: `application/json`
 
 Required: yes
 
-| Field    | Type                       | Required | Notes         |
-| -------- | -------------------------- | -------- | ------------- |
-| `format` | string enum("csv", "xlsx") | optional | default "csv" |
+| Field         | Type                       | Required | Notes             |
+| ------------- | -------------------------- | -------- | ----------------- |
+| `format`      | string enum("csv", "xlsx") | optional | default "csv"     |
+| `report_type` | string                     | optional | default "expense" |
+| `filters`     | object                     | optional | -                 |
 
 **Responses**
 | Status | Meaning |
@@ -5457,12 +6051,79 @@ Required: yes
 
 Success body highlights:
 
-| Field       | Type   | Required | Notes |
-| ----------- | ------ | -------- | ----- |
-| `export_id` | string | required | -     |
-| `format`    | string | required | -     |
-| `status`    | string | required | -     |
-| `adapter`   | string | required | -     |
+| Field                  | Type                       | Required           | Notes                   |
+| ---------------------- | -------------------------- | ------------------ | ----------------------- |
+| `id`                   | string<uuid>               | required           | Export job UUID         |
+| `export_id`            | string<uuid>               | required           | Export job UUID         |
+| `event_id`             | string<uuid>               | required           | Outbox event UUID       |
+| `report_type`          | string                     | required           | -                       |
+| `format`               | string enum("csv", "xlsx") | required           | -                       |
+| `status`               | string                     | required           | -                       |
+| `outbox_status`        | string                     | optional           | -                       |
+| `created_by_user_id`   | string<uuid>               | optional, nullable | Creator UUID            |
+| `created_by`           | string                     | optional, nullable | -                       |
+| `filters`              | object                     | optional           | -                       |
+| `download_document_id` | string<uuid>               | optional, nullable | Generated document UUID |
+| `download_url`         | string                     | optional, nullable | -                       |
+| `adapter`              | string                     | optional           | -                       |
+| `created_at`           | string<date-time>          | required           | Created timestamp       |
+| `updated_at`           | string<date-time>          | required           | Updated timestamp       |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/reports/exports/{id}
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Get export job                                                                                |
+| Frontend use | Report tables, filters, analytics panels, and export jobs.                                    |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Role-scoped report datasets; finance/audit reports require finance/admin/auditor scope.       |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field                  | Type                       | Required           | Notes                   |
+| ---------------------- | -------------------------- | ------------------ | ----------------------- |
+| `id`                   | string<uuid>               | required           | Export job UUID         |
+| `export_id`            | string<uuid>               | required           | Export job UUID         |
+| `event_id`             | string<uuid>               | required           | Outbox event UUID       |
+| `report_type`          | string                     | required           | -                       |
+| `format`               | string enum("csv", "xlsx") | required           | -                       |
+| `status`               | string                     | required           | -                       |
+| `outbox_status`        | string                     | optional           | -                       |
+| `created_by_user_id`   | string<uuid>               | optional, nullable | Creator UUID            |
+| `created_by`           | string                     | optional, nullable | -                       |
+| `filters`              | object                     | optional           | -                       |
+| `download_document_id` | string<uuid>               | optional, nullable | Generated document UUID |
+| `download_url`         | string                     | optional, nullable | -                       |
+| `adapter`              | string                     | optional           | -                       |
+| `created_at`           | string<date-time>          | required           | Created timestamp       |
+| `updated_at`           | string<date-time>          | required           | Updated timestamp       |
 
 **Frontend behavior notes**
 

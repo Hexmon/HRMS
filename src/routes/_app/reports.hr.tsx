@@ -7,11 +7,19 @@ import { useEmployees } from "@/lib/employees-store";
 import { ROLE_LABELS } from "@/lib/auth";
 import { inDateRange } from "@/lib/reports/utils";
 import type { Employee } from "@/lib/mock/employees";
+import { useHrEmployeeReport } from "@/domains/reports/queries";
+import { asArray, asRecord, boolValue, text, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/reports/hr")({ component: HrReports });
 
 function HrReports() {
   const { employees, departments } = useEmployees();
+  const apiMode = useApiRouteEnabled(["/reports"]);
+  const reportQuery = useHrEmployeeReport(apiMode);
+  const reportEmployees = apiMode
+    ? (reportQuery.data?.items ?? []).map(employeeFromApi)
+    : employees;
+  const sourceEmployees = apiMode ? reportEmployees : employees;
 
   const empCols: Column<Employee>[] = [
     {
@@ -52,7 +60,7 @@ function HrReports() {
     f: { from: string; to: string; department: string; employee: string; status: string },
     dateField?: keyof Employee,
   ) =>
-    employees.filter((e) => {
+    sourceEmployees.filter((e) => {
       if (f.department !== "all" && e.department !== f.department) return false;
       if (f.employee !== "all" && e.name !== f.employee) return false;
       if (f.status !== "all" && e.status !== f.status) return false;
@@ -73,18 +81,18 @@ function HrReports() {
 
   const deptHeadcount = useMemo(() => {
     const m = new Map<string, number>();
-    for (const e of employees) m.set(e.department, (m.get(e.department) ?? 0) + 1);
+    for (const e of sourceEmployees) m.set(e.department, (m.get(e.department) ?? 0) + 1);
     return Array.from(m.entries()).map(([dept, count]) => ({ id: dept, dept, count }));
-  }, [employees]);
+  }, [sourceEmployees]);
 
   const desigHeadcount = useMemo(() => {
     const m = new Map<string, number>();
-    for (const e of employees) m.set(e.designation, (m.get(e.designation) ?? 0) + 1);
+    for (const e of sourceEmployees) m.set(e.designation, (m.get(e.designation) ?? 0) + 1);
     return Array.from(m.entries()).map(([d, c]) => ({ id: d, designation: d, count: c }));
-  }, [employees]);
+  }, [sourceEmployees]);
 
   const roleAccess = useMemo(() => {
-    return employees.map((e) => ({
+    return sourceEmployees.map((e) => ({
       id: e.id,
       name: e.name,
       department: e.department,
@@ -92,7 +100,15 @@ function HrReports() {
       loginEnabled: e.loginEnabled,
       lastLoginAt: e.lastLoginAt ?? "—",
     }));
-  }, [employees]);
+  }, [sourceEmployees]);
+
+  if (apiMode && reportQuery.isLoading) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading HR reports...</div>;
+  }
+
+  if (apiMode && reportQuery.error instanceof Error) {
+    return <div className="p-6 text-sm text-destructive">{reportQuery.error.message}</div>;
+  }
 
   return (
     <Tabs defaultValue="master">
@@ -113,17 +129,18 @@ function HrReports() {
           description="Complete directory of employees with department, designation, and status."
           facets={{ showDepartment: true, showEmployee: true, showStatus: true, statusOptions }}
           summary={[
-            { label: "Total employees", value: employees.length, tone: "info" },
+            { label: "Total employees", value: sourceEmployees.length, tone: "info" },
             {
               label: "Active",
-              value: employees.filter((e) => e.status === "active" || e.status === "confirmed")
-                .length,
+              value: sourceEmployees.filter(
+                (e) => e.status === "active" || e.status === "confirmed",
+              ).length,
               tone: "success",
             },
             { label: "Departments", value: departments.length },
             {
               label: "On notice",
-              value: employees.filter((e) => e.status === "notice_period").length,
+              value: sourceEmployees.filter((e) => e.status === "notice_period").length,
               tone: "warning",
             },
           ]}
@@ -142,7 +159,8 @@ function HrReports() {
           summary={[
             {
               label: "Joiners in range",
-              value: employees.filter((e) => inDateRange(e.joinedAt, undefined, undefined)).length,
+              value: sourceEmployees.filter((e) => inDateRange(e.joinedAt, undefined, undefined))
+                .length,
               tone: "info",
             },
           ]}
@@ -161,12 +179,12 @@ function HrReports() {
           summary={[
             {
               label: "Exited",
-              value: employees.filter((e) => e.status === "exited").length,
+              value: sourceEmployees.filter((e) => e.status === "exited").length,
               tone: "destructive",
             },
             {
               label: "Serving notice",
-              value: employees.filter((e) => e.status === "notice_period").length,
+              value: sourceEmployees.filter((e) => e.status === "notice_period").length,
               tone: "warning",
             },
           ]}
@@ -277,12 +295,12 @@ function HrReports() {
           summary={[
             {
               label: "Onboarding",
-              value: employees.filter((e) => e.status === "onboarding").length,
+              value: sourceEmployees.filter((e) => e.status === "onboarding").length,
               tone: "info",
             },
             {
               label: "Invited",
-              value: employees.filter((e) => e.status === "invited").length,
+              value: sourceEmployees.filter((e) => e.status === "invited").length,
               tone: "info",
             },
           ]}
@@ -315,4 +333,38 @@ function HrReports() {
       </TabsContent>
     </Tabs>
   );
+}
+
+function employeeFromApi(value: unknown): Employee {
+  const record = asRecord(value);
+  const roles = asArray(record.roles)
+    .map((role) => text(role))
+    .filter(Boolean);
+  const fullName = text(record.full_name);
+  const [firstName = fullName, ...restName] = fullName.split(" ").filter(Boolean);
+  return {
+    id: text(record.employee_code, text(record.id)),
+    apiId: text(record.id),
+    firstName,
+    lastName: restName.join(" ") || "—",
+    name: fullName,
+    email: text(record.email),
+    phone: "",
+    designation: text(record.designation_title),
+    department: text(record.department_name),
+    manager: text(record.manager_label, "—"),
+    location: text(record.location, "—"),
+    workMode: "office",
+    status: text(record.status, "active") as Employee["status"],
+    employmentType: "full_time",
+    joinedAt: text(record.joined_on, ""),
+    noticeDays: Number(record.notice_days ?? 0),
+    shift: "General",
+    systemRoles: roles,
+    loginEnabled: boolValue(record.login_enabled),
+    lastLoginAt: text(record.last_login_at, "—"),
+    audit: [],
+    roleHistory: [],
+    documents: [],
+  };
 }

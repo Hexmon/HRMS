@@ -5,6 +5,8 @@ import { ReportShell } from "@/components/reports/report-shell";
 import { StatusBadge, type Column } from "@/components/ui-kit";
 import { useEmployees } from "@/lib/employees-store";
 import { inDateRange } from "@/lib/reports/utils";
+import { useAttendanceReport } from "@/domains/reports/queries";
+import { asRecord, numberValue, text, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/reports/attendance")({ component: AttendanceReports });
 
@@ -77,11 +79,22 @@ function buildAttendance(employees: { id: string; name: string; department: stri
 
 function AttendanceReports() {
   const { employees } = useEmployees();
-  const all = useMemo(
+  const apiMode = useApiRouteEnabled(["/reports"]);
+  const reportQuery = useAttendanceReport(apiMode);
+  const localRows = useMemo(
     () =>
       buildAttendance(employees.map((e) => ({ id: e.id, name: e.name, department: e.department }))),
     [employees],
   );
+  const all = apiMode ? (reportQuery.data?.items ?? []).map(attendanceFromApi) : localRows;
+
+  if (apiMode && reportQuery.isLoading) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading attendance reports...</div>;
+  }
+
+  if (apiMode && reportQuery.error instanceof Error) {
+    return <div className="p-6 text-sm text-destructive">{reportQuery.error.message}</div>;
+  }
 
   const baseFilter = (
     rows: AttRow[],
@@ -253,6 +266,21 @@ function AttendanceReports() {
       </TabsContent>
     </Tabs>
   );
+}
+
+function attendanceFromApi(value: unknown): AttRow {
+  const record = asRecord(value);
+  return {
+    id: text(record.id),
+    date: text(record.date),
+    employee: text(record.employee),
+    department: text(record.department, "—"),
+    status: text(record.status, "present") as AttRow["status"],
+    inTime: text(record.in_time),
+    outTime: text(record.out_time),
+    hours: numberValue(record.hours),
+    note: text(record.note),
+  };
 }
 
 function MonthlySummary({ all }: { all: AttRow[] }) {

@@ -6,8 +6,10 @@ import { type Column } from "@/components/ui-kit";
 import { useEmployees } from "@/lib/employees-store";
 import { useExpenses } from "@/lib/expenses-store";
 import { useAssets } from "@/lib/assets-store";
-import { AUDIT_LOGS, type AuditLogEntry } from "@/lib/mock/audit-logs";
+import { AUDIT_LOGS } from "@/lib/mock/audit-logs";
 import { inDateRange } from "@/lib/reports/utils";
+import { useAuditReport } from "@/domains/reports/queries";
+import { asRecord, text, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/reports/audit")({ component: AuditReports });
 
@@ -25,6 +27,8 @@ function AuditReports() {
   const { employees } = useEmployees();
   const { tickets } = useExpenses();
   const { assets } = useAssets();
+  const apiMode = useApiRouteEnabled(["/reports"]);
+  const reportQuery = useAuditReport(apiMode);
 
   const profileChanges: FlatAudit[] = useMemo(
     () =>
@@ -105,10 +109,34 @@ function AuditReports() {
     [assets],
   );
 
+  const loginAudit: FlatAudit[] = useMemo(
+    () =>
+      AUDIT_LOGS.map((entry) => ({
+        id: entry.id,
+        at: entry.at,
+        actor: entry.actor,
+        action: entry.action,
+        module: entry.module,
+        target: entry.target,
+        remarks: entry.ip,
+      })),
+    [],
+  );
+
+  const apiAuditRows = useMemo(
+    () => (reportQuery.data?.items ?? []).map(flatAuditFromApi),
+    [reportQuery.data?.items],
+  );
+
   const filter = (rows: FlatAudit[], f: { from: string; to: string }) =>
     rows
       .filter((r) => inDateRange(r.at.slice(0, 10), f.from, f.to))
       .sort((a, b) => (a.at < b.at ? 1 : -1));
+
+  const moduleRows = (fallback: FlatAudit[], match: RegExp) =>
+    apiMode
+      ? apiAuditRows.filter((row) => match.test(`${row.module} ${row.action}`.toLowerCase()))
+      : fallback;
 
   const cols: Column<FlatAudit>[] = [
     {
@@ -137,18 +165,13 @@ function AuditReports() {
     },
   ];
 
-  const loginCols: Column<AuditLogEntry>[] = [
-    { key: "at", header: "When", render: (r) => <span className="font-mono text-xs">{r.at}</span> },
-    { key: "actor", header: "User", render: (r) => <span className="font-medium">{r.actor}</span> },
-    { key: "action", header: "Action", render: (r) => <span className="text-sm">{r.action}</span> },
-    { key: "module", header: "Module", render: (r) => <span className="text-sm">{r.module}</span> },
-    {
-      key: "target",
-      header: "Target",
-      render: (r) => <span className="font-mono text-xs">{r.target}</span>,
-    },
-    { key: "ip", header: "IP", render: (r) => <span className="font-mono text-xs">{r.ip}</span> },
-  ];
+  if (apiMode && reportQuery.isLoading) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading audit reports...</div>;
+  }
+
+  if (apiMode && reportQuery.error instanceof Error) {
+    return <div className="p-6 text-sm text-destructive">{reportQuery.error.message}</div>;
+  }
 
   return (
     <Tabs defaultValue="login">
@@ -165,8 +188,8 @@ function AuditReports() {
         <ReportShell
           title="Login Audit"
           description="System access events from the audit log."
-          build={() => AUDIT_LOGS}
-          columns={loginCols}
+          build={(f) => filter(moduleRows(loginAudit, /auth|login|session/), f)}
+          columns={cols}
           searchKeys={["actor", "module", "target", "action"]}
           exportName="login-audit"
         />
@@ -176,7 +199,7 @@ function AuditReports() {
         <ReportShell
           title="Role Change Audit"
           description="Every change to an employee's system roles."
-          build={(f) => filter(roleChanges, f)}
+          build={(f) => filter(moduleRows(roleChanges, /role|rbac/), f)}
           columns={cols}
           searchKeys={["actor", "target", "action"]}
           exportName="role-change-audit"
@@ -187,7 +210,7 @@ function AuditReports() {
         <ReportShell
           title="Profile Change Audit"
           description="Updates to employee profile data."
-          build={(f) => filter(profileChanges, f)}
+          build={(f) => filter(moduleRows(profileChanges, /employee|profile|ems/), f)}
           columns={cols}
           searchKeys={["actor", "target", "action"]}
           exportName="profile-audit"
@@ -198,7 +221,7 @@ function AuditReports() {
         <ReportShell
           title="Approval Audit"
           description="Approval events across expense workflows."
-          build={(f) => filter(approvalEvents, f)}
+          build={(f) => filter(moduleRows(approvalEvents, /approval|workflow/), f)}
           columns={cols}
           searchKeys={["actor", "target"]}
           exportName="approval-audit"
@@ -209,7 +232,7 @@ function AuditReports() {
         <ReportShell
           title="Expense Audit"
           description="Audit trail across expense tickets."
-          build={(f) => filter(expenseAudit, f)}
+          build={(f) => filter(moduleRows(expenseAudit, /expense/), f)}
           columns={cols}
           searchKeys={["actor", "target"]}
           exportName="expense-audit"
@@ -220,7 +243,7 @@ function AuditReports() {
         <ReportShell
           title="Asset Audit"
           description="Lifecycle events across all assets."
-          build={(f) => filter(assetAudit, f)}
+          build={(f) => filter(moduleRows(assetAudit, /asset/), f)}
           columns={cols}
           searchKeys={["actor", "target"]}
           exportName="asset-audit"
@@ -228,4 +251,17 @@ function AuditReports() {
       </TabsContent>
     </Tabs>
   );
+}
+
+function flatAuditFromApi(value: unknown): FlatAudit {
+  const row = asRecord(value);
+  return {
+    id: text(row.id),
+    at: text(row.at),
+    actor: text(row.actor, "System"),
+    action: text(row.action),
+    module: text(row.module, "System"),
+    target: text(row.target),
+    remarks: text(row.remarks),
+  };
 }

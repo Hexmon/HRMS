@@ -5,11 +5,25 @@ import { StatusBadge, type Column } from "@/components/ui-kit";
 import { useAssets, warrantyDaysLeft } from "@/lib/assets-store";
 import type { Asset } from "@/lib/mock/assets";
 import { inDateRange } from "@/lib/reports/utils";
+import { useAssetsReport } from "@/domains/reports/queries";
+import { asArray, asRecord, numberValue, text, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/reports/assets")({ component: AssetReports });
 
 function AssetReports() {
   const { assets } = useAssets();
+  const apiMode = useApiRouteEnabled(["/reports"]);
+  const reportQuery = useAssetsReport(apiMode);
+  const report = asRecord(reportQuery.data);
+  const sourceAssets = apiMode ? (reportQuery.data?.items ?? []).map(assetFromApi) : assets;
+
+  if (apiMode && reportQuery.isLoading) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading asset reports...</div>;
+  }
+
+  if (apiMode && reportQuery.error instanceof Error) {
+    return <div className="p-6 text-sm text-destructive">{reportQuery.error.message}</div>;
+  }
 
   const cols: Column<Asset>[] = [
     {
@@ -64,21 +78,23 @@ function AssetReports() {
       return true;
     });
   const employeePool = Array.from(
-    new Set(assets.map((a) => a.assignedTo).filter(Boolean) as string[]),
+    new Set(sourceAssets.map((a) => a.assignedTo).filter(Boolean) as string[]),
   );
 
-  const maintenance = assets.flatMap((a) =>
-    a.maintenance.map((m) => ({
-      id: a.id + "-" + m.id,
-      asset: a.id,
-      brand: `${a.brand} ${a.model}`,
-      type: m.type,
-      date: m.date,
-      vendor: m.vendor ?? "—",
-      cost: m.cost ?? 0,
-      notes: m.notes ?? "",
-    })),
-  );
+  const maintenance = apiMode
+    ? asArray(report.maintenance_rows).map(maintenanceFromApi)
+    : sourceAssets.flatMap((a) =>
+        a.maintenance.map((m) => ({
+          id: a.id + "-" + m.id,
+          asset: a.id,
+          brand: `${a.brand} ${a.model}`,
+          type: m.type,
+          date: m.date,
+          vendor: m.vendor ?? "—",
+          cost: m.cost ?? 0,
+          notes: m.notes ?? "",
+        })),
+      );
 
   return (
     <Tabs defaultValue="inventory">
@@ -97,20 +113,23 @@ function AssetReports() {
           description="Every asset across the workspace."
           facets={{ showStatus: true, statusOptions, showEmployee: true, employeePool }}
           summary={[
-            { label: "Assets", value: assets.length, tone: "info" },
+            { label: "Assets", value: sourceAssets.length, tone: "info" },
             {
               label: "Assigned",
-              value: assets.filter((a) => a.status === "assigned").length,
+              value: sourceAssets.filter((a) => a.status === "assigned").length,
               tone: "success",
             },
-            { label: "Available", value: assets.filter((a) => a.status === "available").length },
+            {
+              label: "Available",
+              value: sourceAssets.filter((a) => a.status === "available").length,
+            },
             {
               label: "In repair",
-              value: assets.filter((a) => a.status === "repair").length,
+              value: sourceAssets.filter((a) => a.status === "repair").length,
               tone: "warning",
             },
           ]}
-          build={(f) => filter(assets, f)}
+          build={(f) => filter(sourceAssets, f)}
           columns={cols}
           searchKeys={["id", "serial", "brand", "model", "assignedTo"]}
           exportName="asset-inventory"
@@ -124,7 +143,7 @@ function AssetReports() {
           facets={{ showEmployee: true, employeePool }}
           build={(f) =>
             filter(
-              assets.filter((a) => a.status === "assigned"),
+              sourceAssets.filter((a) => a.status === "assigned"),
               f,
             )
           }
@@ -139,7 +158,7 @@ function AssetReports() {
           title="Asset Recovery Pending"
           description="Assets to be recovered from notice / exited employees."
           build={() =>
-            assets.filter(
+            sourceAssets.filter(
               (a) =>
                 a.status === "assigned" &&
                 a.expectedReturn &&
@@ -159,7 +178,7 @@ function AssetReports() {
           summary={[
             {
               label: "Expiring ≤60d",
-              value: assets.filter((a) => {
+              value: sourceAssets.filter((a) => {
                 const d = warrantyDaysLeft(a.warrantyExpiry);
                 return d >= 0 && d <= 60;
               }).length,
@@ -167,11 +186,11 @@ function AssetReports() {
             },
             {
               label: "Expired",
-              value: assets.filter((a) => warrantyDaysLeft(a.warrantyExpiry) < 0).length,
+              value: sourceAssets.filter((a) => warrantyDaysLeft(a.warrantyExpiry) < 0).length,
               tone: "destructive",
             },
           ]}
-          build={() => assets.filter((a) => warrantyDaysLeft(a.warrantyExpiry) <= 60)}
+          build={() => sourceAssets.filter((a) => warrantyDaysLeft(a.warrantyExpiry) <= 60)}
           columns={[
             ...cols,
             {
@@ -198,7 +217,7 @@ function AssetReports() {
         <ReportShell
           title="Damaged / Lost Assets"
           description="Assets marked lost or damaged."
-          build={() => assets.filter((a) => a.status === "lost" || a.status === "damaged")}
+          build={() => sourceAssets.filter((a) => a.status === "lost" || a.status === "damaged")}
           columns={cols}
           searchKeys={["id", "brand"]}
           exportName="damaged-lost-assets"
@@ -253,4 +272,53 @@ function AssetReports() {
       </TabsContent>
     </Tabs>
   );
+}
+
+function assetFromApi(value: unknown): Asset {
+  const row = asRecord(value);
+  return {
+    id: text(row.asset_code, text(row.id)),
+    type: text(row.type),
+    category: "Hardware",
+    brand: text(row.brand, text(row.name)),
+    model: text(row.model),
+    serial: text(row.serial_no),
+    purchaseDate: text(row.created_at).slice(0, 10),
+    vendor: "",
+    invoiceNumber: "",
+    warrantyExpiry: text(row.warranty_expiry, "2099-12-31"),
+    cost: 0,
+    location: text(row.location, "—"),
+    condition: "good",
+    status: assetStatusFromApi(text(row.status)),
+    assignedTo: text(row.assigned_to),
+    assignedToId: text(row.assigned_to_user_id),
+    history: [],
+    maintenance: [],
+    documents: [],
+    audit: [],
+  };
+}
+
+function maintenanceFromApi(value: unknown) {
+  const row = asRecord(value);
+  return {
+    id: text(row.id),
+    asset: text(row.asset_code, text(row.asset_id)),
+    brand: text(row.asset),
+    type: text(row.type),
+    date: text(row.date),
+    vendor: text(row.vendor, "—"),
+    cost: numberValue(row.cost),
+    notes: text(row.notes),
+  };
+}
+
+function assetStatusFromApi(status: string): Asset["status"] {
+  if (status === "Assigned") return "assigned";
+  if (status === "In Stock" || status === "Returned" || status === "Procured") return "available";
+  if (status === "In Maintenance" || status === "Return Pending") return "repair";
+  if (status === "Lost/Stolen") return "lost";
+  if (status === "Retired") return "retired";
+  return "available";
 }
