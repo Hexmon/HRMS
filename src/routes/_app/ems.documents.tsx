@@ -1,11 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useRef, useState, type ChangeEvent } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui-kit";
 import { toast } from "sonner";
 import { FileText, Upload, Download, Eye, RefreshCw, AlertCircle } from "lucide-react";
 import { documentsApi, mapApiDocuments } from "@/domains/documents";
-import { useEmsEmployeeDocuments } from "@/domains/ems";
+import {
+  type EmsDocumentUploadBody,
+  useEmsDocumentMutation,
+  useEmsEmployeeDocuments,
+} from "@/domains/ems";
 import { useAuth } from "@/lib/auth";
 import { isUuid, pageItems, useApiRouteEnabled } from "@/shared/api";
 
@@ -87,7 +92,10 @@ function statusToBadge(s: DocStatus) {
 function MyDocuments() {
   const { user } = useAuth();
   const apiEnabled = useApiRouteEnabled(["/ems", "/documents"]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadTarget, setUploadTarget] = useState<Doc | null>(null);
   const documentsQuery = useEmsEmployeeDocuments(user?.id, { page: 1, page_size: 100 }, apiEnabled);
+  const uploadMutation = useEmsDocumentMutation(user?.id);
   const docs = apiEnabled ? mapApiDocuments(pageItems(documentsQuery.data)) : DOCS;
   const loading = apiEnabled && documentsQuery.isLoading;
   const error = documentsQuery.error instanceof Error ? documentsQuery.error : null;
@@ -107,11 +115,71 @@ function MyDocuments() {
     }
   }
 
+  function startUpload(document?: Doc) {
+    if (!apiEnabled) {
+      toast.success(document ? "Replace flow" : "Upload dialog opened");
+      return;
+    }
+    if (!user?.id) {
+      toast.error("User session is not ready.");
+      return;
+    }
+    setUploadTarget(document ?? null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  }
+
+  async function uploadSelectedFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size <= 0) {
+      toast.error("Selected file is empty.");
+      return;
+    }
+
+    const target = uploadTarget;
+    try {
+      await uploadMutation.mutateAsync({
+        classification: classificationFor(target),
+        document_type: documentTypeFor(target),
+        file_name: file.name,
+        mime_type: file.type || "application/octet-stream",
+        size_bytes: file.size,
+      });
+      toast.success(target ? "Replacement uploaded" : "Document uploaded", {
+        description: `${file.name} is pending verification.`,
+      });
+      setUploadTarget(null);
+    } catch (uploadError) {
+      toast.error(uploadError instanceof Error ? uploadError.message : "Document upload failed.");
+    }
+  }
+
   return (
     <div className="space-y-4 pt-4">
-      <p className="text-sm text-muted-foreground">
-        Upload, replace, and track verification status of your personal documents.
-      </p>
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="sr-only"
+        onChange={(event) => void uploadSelectedFile(event)}
+      />
+
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Upload, replace, and track verification status of your personal documents.
+        </p>
+        <Button
+          size="sm"
+          className="rounded-full"
+          onClick={() => startUpload()}
+          disabled={apiEnabled && uploadMutation.isPending}
+        >
+          <Upload className="mr-1.5 h-3.5 w-3.5" />
+          {apiEnabled && uploadMutation.isPending ? "Uploading" : "Upload document"}
+        </Button>
+      </div>
 
       {error && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
@@ -153,11 +221,8 @@ function MyDocuments() {
                     <Button
                       size="sm"
                       className="rounded-full"
-                      onClick={() =>
-                        apiEnabled
-                          ? toast.error("Document upload needs a file selection flow.")
-                          : toast.success("Upload dialog opened")
-                      }
+                      onClick={() => startUpload(d)}
+                      disabled={apiEnabled && uploadMutation.isPending}
                     >
                       <Upload className="mr-1.5 h-3.5 w-3.5" /> Upload
                     </Button>
@@ -167,7 +232,7 @@ function MyDocuments() {
                         size="sm"
                         variant="outline"
                         className="rounded-full"
-                        onClick={() => toast("Opening preview...")}
+                        onClick={() => void downloadDocument(d)}
                       >
                         <Eye className="mr-1.5 h-3.5 w-3.5" /> View
                       </Button>
@@ -183,11 +248,8 @@ function MyDocuments() {
                         size="sm"
                         variant="ghost"
                         className="rounded-full"
-                        onClick={() =>
-                          apiEnabled
-                            ? toast.error("Document replacement needs a file selection flow.")
-                            : toast("Replace flow")
-                        }
+                        onClick={() => startUpload(d)}
+                        disabled={apiEnabled && uploadMutation.isPending}
                       >
                         <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Replace
                       </Button>
@@ -198,5 +260,30 @@ function MyDocuments() {
             ))}
       </div>
     </div>
+  );
+}
+
+function documentTypeFor(document: Doc | null): string {
+  return slug(document?.category || document?.name || "employee_document");
+}
+
+function classificationFor(document: Doc | null): EmsDocumentUploadBody["classification"] {
+  const value = `${document?.category ?? ""} ${document?.name ?? ""}`.toLowerCase();
+  if (value.includes("medical")) return "medical";
+  if (value.includes("compensation") || value.includes("salary") || value.includes("payroll")) {
+    return "compensation";
+  }
+  if (value.includes("legal")) return "legal";
+  if (value.includes("finance") || value.includes("tax")) return "finance";
+  return "normal";
+}
+
+function slug(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, "_")
+      .replace(/^_+|_+$/gu, "")
+      .slice(0, 80) || "employee_document"
   );
 }
