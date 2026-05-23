@@ -4,14 +4,14 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 5 Admin RBAC slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, and Admin master data additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 5 Admin workflow configuration slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, and Admin RBAC additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 187 implemented operations across 165 paths |
-| Planned operations remaining | 28 |
+| Backend OpenAPI | 189 implemented operations across 167 paths |
+| Planned operations remaining | 26 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
@@ -33,6 +33,7 @@ This versioned report captures the completed Phase 5 Admin RBAC slice after Dash
 | Admin company profile/settings | Completed for Admin-only company profile read/update API and `/admin-settings/company` frontend API-mode integration |
 | Admin master data | Completed for department/designation list/create/update APIs and `/admin-settings/master-data` frontend API-mode integration for those two master groups |
 | Admin RBAC | Completed for persistent RBAC role/permission configuration APIs and `/admin-settings/roles` frontend API-mode integration |
+| Admin workflow configurations | Completed for Admin-only workflow config list/update APIs and `/admin-settings/workflows` frontend API-mode integration |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Company Profile Discovery
@@ -218,6 +219,17 @@ Deferred from this Helpdesk slice: category mutation endpoints and broader `/api
 
 Deferred from this RBAC slice: edited permission matrices are persisted for Admin Settings configuration but runtime authorization still uses the existing fixed backend role and permission policy. Migrating route/API enforcement and employee custom-role assignment to dynamic RBAC is a later security architecture slice.
 
+## Admin Workflow Config Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Frontend route | `hrms-client/src/routes/_app/admin-settings.workflows.tsx` renders Approval Workflows for leave, WFH, timesheet, expense, asset request, and helpdesk escalation | Replace localStorage-only workflow configuration with backend-backed reads/saves in API mode |
+| Current data source | `hrms-client/src/lib/admin-settings-store.tsx` persists workflows to `hawkaii_admin_workflows_v1` with active flags and linear stage lists | Keep local behavior only when API mode is disabled |
+| Visible actions | Toggle workflow active/disabled, add/remove stages, change approver type/value, edit escalation days, and toggle mandatory rejection remarks | Implement list/update APIs that persist full workflow configuration with OCC |
+| Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` lists `GET /api/v1/admin/workflows` and `PUT /api/v1/admin/workflows/{workflow_key}` | Implement these two endpoints with Admin-only access, OpenAPI docs, persistence, and integration tests |
+| Existing backend behavior | Runtime workflow decisions are still implemented inside each feature module; the Admin settings screen currently has no backend persistence | Persist configuration for Admin Settings without changing feature runtime approval routing in this slice |
+| Risks | Current UI stage IDs are client-generated and not tied to live approval engines | Normalize stage shape on the backend and document runtime enforcement as deferred |
+
 ## Projects / Utilization API Inventory
 
 | Method | Path | Frontend usage | Notes |
@@ -268,6 +280,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Admin master data | Integrate frontend master-data screen | Completed in `hrms-client` | Completed for `/admin-settings/master-data` departments/designations in API mode; unsupported master groups are explicitly deferred in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.master-data.tsx`, frontend API docs | `feat(admin): connect master data settings to backend API` |
 | 5 | Admin RBAC | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, admin RBAC integration test, `pnpm test:contracts` | Passed. OpenAPI generated 187 operations across 165 paths. Non-escalated tsx/DB runs were sandbox-blocked; reruns with local QA infra access passed. | `src/modules/admin/*`, `src/db/migrations/0012_admin_rbac.sql`, `src/shared/constants.ts`, `src/shared/types.ts`, `src/db/schema.ts`, store persistence, OpenAPI/docs/contracts | `feat(admin): implement RBAC settings APIs` |
 | 5 | Admin RBAC | Integrate frontend roles screen | Completed in `hrms-client` | Completed for `/admin-settings/roles` list/create/update/permission replacement in API mode; local store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.roles.tsx`, frontend API docs | `feat(admin): connect RBAC settings to backend API` |
+| 5 | Admin workflow configurations | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, admin workflow integration test, `pnpm test:contracts` | Passed. OpenAPI generated 189 operations across 167 paths. Non-escalated tsx/DB runs were sandbox-blocked; reruns with local QA infra access passed. | `src/modules/admin/*`, `src/db/migrations/0013_admin_workflows.sql`, `src/shared/constants.ts`, `src/shared/types.ts`, `src/db/schema.ts`, store persistence, OpenAPI/docs/contracts | `feat(admin): implement workflow settings APIs` |
+| 5 | Admin workflow configurations | Integrate frontend workflow screen | Completed in `hrms-client` | Completed for `/admin-settings/workflows` list/edit/save in API mode; local workflow store remains only for API-disabled development | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/admin/*`, `src/routes/_app/admin-settings.workflows.tsx`, frontend API docs | `feat(admin): connect workflow settings to backend API` |
 
 ## Remaining Blockers
 
@@ -287,7 +301,7 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | P1 | Leave/WFH export/report endpoint remains planned for reports/admin phase |
 | P1 | Admin master-data tabs beyond departments/designations remain deferred until backend APIs are defined |
 | P1 | Dynamic RBAC runtime enforcement and custom-role assignment to employees remain deferred; this slice persists Admin Settings RBAC configuration only |
-| P1 | Admin workflow configs, policies, email templates, notification channels, security settings, and audit logs remain planned |
+| P1 | Admin policies, email templates, notification channels, security settings, and audit logs remain planned |
 | P2 | Frontend lint keeps 39 existing Fast Refresh warnings |
 | P2 | Frontend build keeps chunk-size/Wrangler log warnings but exits successfully |
 
@@ -298,10 +312,10 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 187 operation frontend contract after Admin RBAC
+- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 189 operation frontend contract after Admin workflows
 - `pnpm api:docs:verify`: passed
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
-- `pnpm exec vitest run --project integration src/modules/admin/__tests__/admin-rbac.integration.test.ts`: passed, 3 tests
+- `pnpm exec vitest run --project integration src/modules/admin/__tests__/admin-workflows.integration.test.ts`: passed, 2 tests
 - `pnpm test:contracts`: passed, 13 tests
 
 Frontend:
@@ -309,7 +323,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 165 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 167 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -345,6 +359,9 @@ Frontend:
 - Built-in Admin role permissions are protected from replacement, and the Admin role cannot be deactivated.
 - Custom RBAC roles can be created and configured, but assigning those custom roles to users and enforcing them at runtime requires a later RBAC policy migration.
 - `/admin-settings/roles` uses backend APIs in API mode for role list/create/update/permission replacement and keeps localStorage role state only when API mode is disabled.
+- Admin workflow configurations persist approval-stage settings for the Admin Settings UI without changing existing runtime approval engines in leave, WFH, timesheets, expenses, assets, or helpdesk in this slice.
+- Workflow stage IDs remain client/backend configuration identifiers; runtime workflow history continues to use each feature module's existing records.
+- `/admin-settings/workflows` uses backend APIs in API mode for list/edit/save behavior and keeps localStorage workflow state only when API mode is disabled.
 
 ## Commit Messages
 
@@ -367,11 +384,14 @@ Frontend:
 | Admin master data frontend | `feat(admin): connect master data settings to backend API` | Committed in `hrms-client` as `8ffaaab` |
 | Admin RBAC backend | `feat(admin): implement RBAC settings APIs` | Committed in `hrms_backend` as `bff0a60` |
 | Admin RBAC frontend | `feat(admin): connect RBAC settings to backend API` | Committed in `hrms-client` as `998c312` |
-| Admin RBAC task sheet | `docs(admin): record RBAC completion` | Pending commit in this run |
+| Admin RBAC task sheet | `docs(admin): record RBAC completion` | Committed in `hrms_backend` as `34ddf95` |
+| Admin workflow backend | `feat(admin): implement workflow settings APIs` | Committed in `hrms_backend` as `34b1633` |
+| Admin workflow frontend | `feat(admin): connect workflow settings to backend API` | Committed in `hrms-client` as `56b749c` |
+| Admin workflow task sheet | `docs(admin): record workflow settings completion` | Pending commit in this run |
 
 ## Next Steps
 
-1. Phase 5 Admin RBAC is implemented, frontend-integrated, and validated for role list/create/update and permission replacement behavior.
-2. Backend OpenAPI now has 187 operations across 165 paths; planned operations remaining are 28.
-3. `/admin-settings/roles` uses backend APIs in API mode; unsupported runtime dynamic enforcement and employee custom-role assignment remain explicitly deferred.
-4. Next roadmap scope: Phase 5 Admin workflow configurations.
+1. Phase 5 Admin workflow configurations are implemented, frontend-integrated, and validated for workflow list/edit/save behavior.
+2. Backend OpenAPI now has 189 operations across 167 paths; planned operations remaining are 26.
+3. `/admin-settings/workflows` uses backend APIs in API mode; runtime approval-engine adoption remains explicitly deferred to a later workflow policy migration.
+4. Next roadmap scope: Phase 5 Admin policies.
