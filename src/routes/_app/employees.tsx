@@ -27,6 +27,7 @@ import {
   type EmploymentType,
 } from "@/lib/mock/employees";
 import { EmployeeFormDrawer } from "@/components/employees/employee-form-drawer";
+import { useCreateUserExportMutation } from "@/domains/core";
 import {
   Users,
   UserCheck,
@@ -49,10 +50,11 @@ export const Route = createFileRoute("/_app/employees")({
 });
 
 function EmployeesPage() {
-  const { employees, departments, designations, setStatus, setLogin, loading, error } =
+  const { employees, departments, designations, setStatus, setLogin, loading, error, isApiBacked } =
     useEmployees();
   const { activeRole, user } = useAuth();
   const navigate = useNavigate();
+  const exportMutation = useCreateUserExportMutation();
 
   const isMain = activeRole === "main_admin";
   const isHr = activeRole === "hr_admin";
@@ -109,7 +111,7 @@ function EmployeesPage() {
   };
   const goProfile = (id: string) => navigate({ to: "/employees/$id", params: { id } });
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const headers = [
       "ID",
       "Name",
@@ -122,6 +124,30 @@ function EmployeesPage() {
       "Login",
       "Joined",
     ];
+    if (isApiBacked) {
+      try {
+        const job = await exportMutation.mutateAsync({
+          format: "csv",
+          filters: {
+            department: dept !== "all" ? dept : undefined,
+            designation: desg !== "all" ? desg : undefined,
+            status: status !== "all" ? status : undefined,
+            employment_type: empType !== "all" ? empType : undefined,
+            login_enabled: login !== "all" ? login === "true" : undefined,
+          },
+          columns: headers.map((header) => header.toLowerCase().replace(/\s+/g, "_")),
+        });
+        const jobId = String(job.job_id ?? job.export_id ?? "queued");
+        toast.success("Export job queued", {
+          description: `Employee export ${jobId.slice(0, 8)} is ready for the export worker.`,
+        });
+      } catch {
+        toast.error("Export failed", {
+          description: "Employee export could not be queued by the backend.",
+        });
+      }
+      return;
+    }
     const rows = filtered.map((e) =>
       [
         e.id,
@@ -246,8 +272,9 @@ function EmployeesPage() {
               size="sm"
               icon={<Download className="h-4 w-4" />}
               onClick={handleExport}
+              disabled={exportMutation.isPending}
             >
-              Export
+              {exportMutation.isPending ? "Queueing..." : "Export"}
             </ActionButton>
             {canEdit && (
               <ActionButton size="sm" icon={<Plus className="h-4 w-4" />} onClick={openAdd}>

@@ -1,5 +1,5 @@
-import { asRecord, dateText, text, boolValue, type ApiRecord } from "@/shared/api";
-import type { Employee } from "@/lib/mock/employees";
+import { asArray, asRecord, dateText, text, boolValue, type ApiRecord } from "@/shared/api";
+import type { AuditEntry, Employee, RoleHistoryEntry } from "@/lib/mock/employees";
 
 function splitName(fullName: string) {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
@@ -15,7 +15,7 @@ function nestedText(row: ApiRecord, key: string, childKey: string): unknown {
   return (value as ApiRecord)[childKey];
 }
 
-function mapRole(value: unknown): string {
+export function mapBackendRoleToUiRole(value: unknown): string {
   const normalized = text(value)
     .trim()
     .toLowerCase()
@@ -58,7 +58,7 @@ export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee
   const split = splitName(name);
   const roleValues = Array.isArray(row.role_labels) ? row.role_labels : row.roles;
   const roles = Array.isArray(roleValues)
-    ? roleValues.map(mapRole).filter(Boolean)
+    ? roleValues.map(mapBackendRoleToUiRole).filter(Boolean)
     : (fallback?.systemRoles ?? ["employee"]);
 
   return {
@@ -113,6 +113,34 @@ export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee
     audit: fallback?.audit ?? [],
     documents: fallback?.documents ?? [],
   };
+}
+
+export function mapApiRoleHistoryEntries(values: unknown[]): RoleHistoryEntry[] {
+  return values.map((value) => {
+    const row = asRecord(value);
+    const remarks = text(row.remarks);
+    return {
+      at: dateText(row.created_at),
+      actor: text(row.actor, "System"),
+      from: asArray(row.from_roles).map(mapBackendRoleToUiRole).filter(Boolean),
+      to: asArray(row.to_roles).map(mapBackendRoleToUiRole).filter(Boolean),
+      remarks: remarks || undefined,
+    };
+  });
+}
+
+export function mapApiAuditEntries(values: unknown[]): AuditEntry[] {
+  return values.map((value) => {
+    const row = asRecord(value);
+    const remarks = text(row.remarks);
+    return {
+      id: text(row.id ?? row.event_id, "audit-api"),
+      at: dateText(row.created_at),
+      actor: text(row.actor, "System"),
+      action: text(row.action ?? row.event_type, "Audit event"),
+      remarks: remarks || undefined,
+    };
+  });
 }
 
 export function mapApiUsersToEmployees(values: unknown[], fallbacks: Employee[]): Employee[] {

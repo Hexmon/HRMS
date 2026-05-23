@@ -44,6 +44,26 @@ export const coreApi = {
   replaceRoles(id: string, input: ExpectedVersionBody & { roles: string[] }) {
     return apiRequest<ApiRecord>(`/api/v1/core/users/${id}/roles`, { method: "PUT", body: input });
   },
+  getUserRoleHistory(id: string, query: PageQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord>>(`/api/v1/core/users/${id}/roles/history`, {
+      query,
+    });
+  },
+  getUserAudit(
+    id: string,
+    query: PageQuery & { event_type?: string; date_from?: string; date_to?: string } = {},
+  ) {
+    return apiRequest<PaginatedResponse<ApiRecord>>(`/api/v1/core/users/${id}/audit`, { query });
+  },
+  createUserImport(input: ApiRecord) {
+    return apiRequest<ApiRecord>("/api/v1/core/users/imports", { method: "POST", body: input });
+  },
+  getUserImport(jobId: string) {
+    return apiRequest<ApiRecord>(`/api/v1/core/users/imports/${jobId}`);
+  },
+  createUserExport(input: ApiRecord) {
+    return apiRequest<ApiRecord>("/api/v1/core/users/exports", { method: "POST", body: input });
+  },
   getUserSubtree(id: string) {
     return apiRequest<ApiRecord>(`/api/v1/core/users/${id}/subtree`);
   },

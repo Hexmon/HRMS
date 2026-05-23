@@ -20,8 +20,16 @@ import {
   type EmployeeDocument,
 } from "@/lib/mock/employees";
 import { EmployeeFormDrawer } from "@/components/employees/employee-form-drawer";
-import { coreApi, mapApiUserToEmployee } from "@/domains/core";
+import {
+  coreApi,
+  mapApiAuditEntries,
+  mapApiRoleHistoryEntries,
+  mapApiUserToEmployee,
+  useUserAudit,
+  useUserRoleHistory,
+} from "@/domains/core";
 import { queryKeys, queryTimings } from "@/shared/query";
+import { pageItems } from "@/shared/api";
 import {
   ArrowLeft,
   Briefcase,
@@ -64,6 +72,9 @@ function EmployeeProfilePage() {
   const navigate = useNavigate();
   const { employees, setLogin, setRoles, setStatus, loading, error } = useEmployees();
   const { activeRole, user } = useAuth();
+  const isMain = activeRole === "main_admin";
+  const isHr = activeRole === "hr_admin";
+  const canEdit = isMain || isHr;
   const employeeFromList = employees.find((e) => e.id === id);
   const detailQuery = useQuery({
     queryKey: queryKeys.detail("core", "user", employeeFromList?.apiId ?? id),
@@ -80,6 +91,15 @@ function EmployeeProfilePage() {
     enabled: Boolean(employeeFromList?.apiId),
     staleTime: queryTimings.detailStaleMs,
   });
+  const canReadSensitiveTimeline = canEdit || user?.email === employeeFromList?.email;
+  const roleHistoryQuery = useUserRoleHistory(
+    employeeFromList?.apiId,
+    Boolean(employeeFromList?.apiId && canReadSensitiveTimeline),
+  );
+  const auditQuery = useUserAudit(
+    employeeFromList?.apiId,
+    Boolean(employeeFromList?.apiId && canReadSensitiveTimeline),
+  );
   const employee = detailQuery.data
     ? mapApiUserToEmployee(detailQuery.data, employeeFromList)
     : employeeFromList;
@@ -89,11 +109,14 @@ function EmployeeProfilePage() {
       : typeof subtreeQuery.data?.total === "number"
         ? subtreeQuery.data.total
         : undefined;
+  const roleHistory = roleHistoryQuery.data
+    ? mapApiRoleHistoryEntries(pageItems(roleHistoryQuery.data))
+    : (employee?.roleHistory ?? []);
+  const auditEntries = auditQuery.data
+    ? mapApiAuditEntries(pageItems(auditQuery.data))
+    : (employee?.audit ?? []);
   const [editOpen, setEditOpen] = useState(false);
 
-  const isMain = activeRole === "main_admin";
-  const isHr = activeRole === "hr_admin";
-  const canEdit = isMain || isHr;
   const isOwner = user?.email === employee?.email;
   const isManagerOf = activeRole === "manager" && employee?.manager === user?.name;
   const canView = canEdit || isOwner || isManagerOf;
@@ -276,6 +299,9 @@ function EmployeeProfilePage() {
               setRoles(employee.id, rs);
               toast.success("Roles updated");
             }}
+            roleHistory={roleHistory}
+            historyLoading={roleHistoryQuery.isLoading}
+            historyError={roleHistoryQuery.error instanceof Error ? roleHistoryQuery.error : null}
           />
         </TabsContent>
 
@@ -309,7 +335,11 @@ function EmployeeProfilePage() {
         </TabsContent>
 
         <TabsContent value="audit" className="mt-5 space-y-4">
-          <AuditTab employee={employee} />
+          <AuditTab
+            entries={auditEntries}
+            loading={auditQuery.isLoading}
+            error={auditQuery.error instanceof Error ? auditQuery.error : null}
+          />
         </TabsContent>
       </Tabs>
 
@@ -456,11 +486,17 @@ function AccessTab({
   canEdit,
   onToggleLogin,
   onSaveRoles,
+  roleHistory,
+  historyLoading,
+  historyError,
 }: {
   employee: Employee;
   canEdit: boolean;
   onToggleLogin: (c: boolean) => void;
   onSaveRoles: (roles: string[]) => void;
+  roleHistory: Employee["roleHistory"];
+  historyLoading: boolean;
+  historyError: Error | null;
 }) {
   const [draft, setDraft] = useState<string[]>(employee.systemRoles);
   const dirty = draft.join(",") !== employee.systemRoles.join(",");
@@ -550,24 +586,37 @@ function AccessTab({
 
         <h3 className="mt-5 text-sm font-semibold">Role change history</h3>
         <ul className="mt-3 space-y-3">
-          {employee.roleHistory.map((h, i) => (
-            <li key={i} className="flex items-start gap-2.5">
-              <div className="mt-1 grid h-6 w-6 place-items-center rounded-full bg-primary-soft text-primary">
-                <ShieldCheck className="h-3 w-3" />
-              </div>
-              <div className="flex-1 text-xs">
-                <p className="font-medium">
-                  {h.from.length === 0
-                    ? "Initial"
-                    : h.from.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")}{" "}
-                  → {h.to.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")}
-                </p>
-                <p className="text-muted-foreground">
-                  {h.actor} • {formatDateTime(h.at)}
-                </p>
-              </div>
+          {historyLoading && (
+            <li className="text-xs text-muted-foreground">Loading role history...</li>
+          )}
+          {historyError && (
+            <li className="text-xs text-destructive">
+              Role history could not be loaded from the backend.
             </li>
-          ))}
+          )}
+          {!historyLoading && !historyError && roleHistory.length === 0 && (
+            <li className="text-xs text-muted-foreground">No role changes recorded yet.</li>
+          )}
+          {!historyLoading &&
+            !historyError &&
+            roleHistory.map((h, i) => (
+              <li key={i} className="flex items-start gap-2.5">
+                <div className="mt-1 grid h-6 w-6 place-items-center rounded-full bg-primary-soft text-primary">
+                  <ShieldCheck className="h-3 w-3" />
+                </div>
+                <div className="flex-1 text-xs">
+                  <p className="font-medium">
+                    {h.from.length === 0
+                      ? "Initial"
+                      : h.from.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")}{" "}
+                    → {h.to.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")}
+                  </p>
+                  <p className="text-muted-foreground">
+                    {h.actor} • {formatDateTime(h.at)}
+                  </p>
+                </div>
+              </li>
+            ))}
         </ul>
       </Card>
     </div>
@@ -722,23 +771,39 @@ function ModulePreview({
   );
 }
 
-function AuditTab({ employee }: { employee: Employee }) {
+function AuditTab({
+  entries,
+  loading,
+  error,
+}: {
+  entries: Employee["audit"];
+  loading: boolean;
+  error: Error | null;
+}) {
   return (
     <Card className="rounded-2xl border-border/60 p-5">
       <h3 className="text-sm font-semibold">Audit trail</h3>
       <p className="text-xs text-muted-foreground">Every change made to this profile.</p>
       <ol className="mt-5 relative ml-2 border-l border-border">
-        {employee.audit.map((a) => (
-          <li key={a.id} className="mb-5 ml-4">
-            <div className="absolute -left-[5px] mt-1 grid h-2.5 w-2.5 place-items-center rounded-full bg-primary" />
-            <p className="text-sm font-medium">{a.action}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {a.actor} • {formatDateTime(a.at)}
-            </p>
-            {a.remarks && <p className="mt-1 text-xs text-muted-foreground">{a.remarks}</p>}
+        {loading && <li className="ml-4 text-xs text-muted-foreground">Loading audit trail...</li>}
+        {error && (
+          <li className="ml-4 text-xs text-destructive">
+            Audit trail could not be loaded from the backend.
           </li>
-        ))}
-        {employee.audit.length === 0 && (
+        )}
+        {!loading &&
+          !error &&
+          entries.map((a) => (
+            <li key={a.id} className="mb-5 ml-4">
+              <div className="absolute -left-[5px] mt-1 grid h-2.5 w-2.5 place-items-center rounded-full bg-primary" />
+              <p className="text-sm font-medium">{a.action}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {a.actor} • {formatDateTime(a.at)}
+              </p>
+              {a.remarks && <p className="mt-1 text-xs text-muted-foreground">{a.remarks}</p>}
+            </li>
+          ))}
+        {!loading && !error && entries.length === 0 && (
           <li className="ml-4 text-xs text-muted-foreground">No changes recorded yet.</li>
         )}
       </ol>

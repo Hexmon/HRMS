@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 206
+Documented operations: 211
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -1543,6 +1543,292 @@ Success body highlights:
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
 - OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/core/users/{id}/roles/history
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Role assignment history                                                                       |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context.                                  |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy.                     |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/core/users/{id}/audit
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Employee audit trail                                                                          |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context.                                  |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy.                     |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `event_type` | query | no | string | - |
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field       | Type            | Required | Notes     |
+| ----------- | --------------- | -------- | --------- |
+| `items`     | array of object | required | -         |
+| `page`      | integer         | required | minimum 1 |
+| `page_size` | integer         | required | minimum 1 |
+| `total`     | integer         | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/core/users/imports
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Create employee import job                                                                    |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context.                                  |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy.                     |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field         | Type         | Required | Notes                                  |
+| ------------- | ------------ | -------- | -------------------------------------- |
+| `document_id` | string<uuid> | optional | Uploaded employee import document UUID |
+| `file_name`   | string       | optional | minLength 1                            |
+| `dry_run`     | boolean      | optional | -                                      |
+| `mapping`     | object       | optional | -                                      |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field                | Type              | Required           | Notes                    |
+| -------------------- | ----------------- | ------------------ | ------------------------ |
+| `job_id`             | string<uuid>      | required           | Employee import job UUID |
+| `event_id`           | string<uuid>      | required           | Source outbox event UUID |
+| `status`             | string            | required           | -                        |
+| `outbox_status`      | string            | optional           | -                        |
+| `dry_run`            | boolean           | required           | -                        |
+| `accepted_rows`      | integer           | required           | minimum 0                |
+| `rejected_rows`      | integer           | required           | minimum 0                |
+| `row_errors`         | array of object   | required           | -                        |
+| `created_users`      | array of object   | required           | -                        |
+| `file`               | object            | required           | -                        |
+| `mapping`            | object            | required           | -                        |
+| `created_by_user_id` | string<uuid>      | optional, nullable | Actor user UUID          |
+| `created_by`         | string            | required           | -                        |
+| `adapter`            | string            | required           | -                        |
+| `created_at`         | string<date-time> | required           | Job creation timestamp   |
+| `updated_at`         | string<date-time> | required           | Job update timestamp     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/core/users/imports/{job_id}
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Get employee import job                                                                       |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context.                                  |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy.                     |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `job_id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field                | Type              | Required           | Notes                    |
+| -------------------- | ----------------- | ------------------ | ------------------------ |
+| `job_id`             | string<uuid>      | required           | Employee import job UUID |
+| `event_id`           | string<uuid>      | required           | Source outbox event UUID |
+| `status`             | string            | required           | -                        |
+| `outbox_status`      | string            | optional           | -                        |
+| `dry_run`            | boolean           | required           | -                        |
+| `accepted_rows`      | integer           | required           | minimum 0                |
+| `rejected_rows`      | integer           | required           | minimum 0                |
+| `row_errors`         | array of object   | required           | -                        |
+| `created_users`      | array of object   | required           | -                        |
+| `file`               | object            | required           | -                        |
+| `mapping`            | object            | required           | -                        |
+| `created_by_user_id` | string<uuid>      | optional, nullable | Actor user UUID          |
+| `created_by`         | string            | required           | -                        |
+| `adapter`            | string            | required           | -                        |
+| `created_at`         | string<date-time> | required           | Job creation timestamp   |
+| `updated_at`         | string<date-time> | required           | Job update timestamp     |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/core/users/exports
+
+| Field        | Contract                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| Purpose      | Create employee export job                                                                    |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context.                                  |
+| Auth         | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope  | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy.                     |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field     | Type                       | Required | Notes         |
+| --------- | -------------------------- | -------- | ------------- |
+| `format`  | string enum("csv", "xlsx") | optional | default "csv" |
+| `filters` | object                     | optional | -             |
+| `columns` | array of string            | optional | -             |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field                  | Type                       | Required           | Notes                        |
+| ---------------------- | -------------------------- | ------------------ | ---------------------------- |
+| `job_id`               | string<uuid>               | required           | Employee export job UUID     |
+| `export_id`            | string<uuid>               | required           | Employee export job UUID     |
+| `event_id`             | string<uuid>               | required           | Source outbox event UUID     |
+| `status`               | string                     | required           | -                            |
+| `outbox_status`        | string                     | optional           | -                            |
+| `format`               | string enum("csv", "xlsx") | required           | -                            |
+| `filters`              | object                     | required           | -                            |
+| `columns`              | array of string            | required           | -                            |
+| `download_document_id` | string<uuid>               | optional, nullable | Document UUID once generated |
+| `download_url`         | string                     | optional, nullable | -                            |
+| `created_by_user_id`   | string<uuid>               | optional, nullable | Actor user UUID              |
+| `created_by`           | string                     | required           | -                            |
+| `adapter`              | string                     | required           | -                            |
+| `created_at`           | string<date-time>          | required           | Job creation timestamp       |
+| `updated_at`           | string<date-time>          | required           | Job update timestamp         |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
 ### GET /api/v1/core/users/{id}/subtree
