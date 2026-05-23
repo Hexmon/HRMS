@@ -188,6 +188,70 @@ export interface AssetStateEventRecord {
   created_at: string;
 }
 
+export interface AssetRequestRecord {
+  id: UUID;
+  request_code: string;
+  requester_user_id: UUID;
+  request_type: "new" | "replacement" | "repair" | "return";
+  asset_type: string;
+  asset_id: UUID | null;
+  reason: string;
+  priority: "low" | "medium" | "high" | "urgent";
+  needed_by: string | null;
+  preferred_specs: Record<string, unknown>;
+  status: "pending" | "approved" | "rejected" | "returned" | "fulfilled" | "cancelled";
+  decision_by_user_id: UUID | null;
+  decision_at: string | null;
+  decision_remarks: string | null;
+  assigned_asset_id: UUID | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface AssetAcknowledgementRecord {
+  id: UUID;
+  asset_id: UUID;
+  employee_user_id: UUID;
+  assignment_id: UUID | null;
+  acknowledgement_type: "received" | "returned";
+  status: "pending" | "acknowledged";
+  acknowledged_at: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssetMaintenanceRecord {
+  id: UUID;
+  asset_id: UUID;
+  maintenance_type: "repair" | "preventive" | "warranty" | "inspection" | "other";
+  vendor_id: UUID | null;
+  cost: string | null;
+  started_on: string;
+  completed_on: string | null;
+  status: "scheduled" | "in_progress" | "completed" | "cancelled";
+  notes: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface AssetVendorRecord {
+  id: UUID;
+  name: string;
+  status: "active" | "inactive";
+  contact_email: string | null;
+  phone: string | null;
+  metadata: Record<string, unknown>;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export interface WorkSegment {
   id: UUID;
   employee_user_id: UUID;
@@ -272,6 +336,10 @@ export interface DataStore {
   assets: AssetRecord[];
   assetAssignments: AssetAssignmentRecord[];
   assetStateEvents: AssetStateEventRecord[];
+  assetRequests: AssetRequestRecord[];
+  assetAcknowledgements: AssetAcknowledgementRecord[];
+  assetMaintenanceRecords: AssetMaintenanceRecord[];
+  assetVendors: AssetVendorRecord[];
   assetRecoveryTickets: Array<{
     id: UUID;
     employee_user_id: UUID;
@@ -1206,6 +1274,23 @@ export function createMemoryDataStore(): MemoryDataStore {
     ],
     assetAssignments: [],
     assetStateEvents: [],
+    assetRequests: [],
+    assetAcknowledgements: [],
+    assetMaintenanceRecords: [],
+    assetVendors: [
+      {
+        id: uuidFromName("asset-vendor-lenovo"),
+        name: "Lenovo India",
+        status: "active",
+        contact_email: "support@lenovo.example.test",
+        phone: null,
+        metadata: { warranty_partner: true },
+        version: 1,
+        created_at: created,
+        updated_at: created,
+        deleted_at: null
+      }
+    ],
     assetRecoveryTickets: [],
     licenseEntitlements: [
       {

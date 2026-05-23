@@ -830,6 +830,95 @@ const assetSchema = {
   additionalProperties: true
 };
 
+const assetRequestSchema = {
+  type: "object",
+  required: ["id", "request_code", "requester_user_id", "request_type", "asset_type", "reason", "priority", "status", "version", "created_at"],
+  properties: {
+    id: uuid("Asset request UUID"),
+    request_code: { type: "string", example: "REQ-401" },
+    requester_user_id: uuid("Requester user UUID"),
+    requester_name: { type: "string", nullable: true, example: "Employee E1" },
+    request_type: { type: "string", enum: ["new", "replacement", "repair", "return"], example: "new" },
+    asset_type: { type: "string", example: "Laptop" },
+    asset_id: { ...uuid("Related asset UUID"), nullable: true },
+    reason: { type: "string", example: "Project onboarding" },
+    priority: { type: "string", enum: ["low", "medium", "high", "urgent"], example: "medium" },
+    needed_by: { type: "string", format: "date", nullable: true, example: "2026-06-01" },
+    preferred_specs: { type: "object", additionalProperties: true },
+    status: { type: "string", enum: ["pending", "approved", "rejected", "returned", "fulfilled", "cancelled"], example: "pending" },
+    decision_by_user_id: { ...uuid("Decision actor UUID"), nullable: true },
+    decision_by_name: { type: "string", nullable: true, example: "Asset Manager" },
+    decision_at: dateTime("Decision timestamp"),
+    decision_remarks: { type: "string", nullable: true, example: "Approved." },
+    assigned_asset_id: { ...uuid("Assigned asset UUID"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 },
+    created_at: dateTime("Created timestamp"),
+    updated_at: dateTime("Updated timestamp")
+  },
+  additionalProperties: true
+};
+
+const assetRequestBodySchema = {
+  type: "object",
+  required: ["request_type", "asset_type", "reason"],
+  properties: {
+    request_type: { type: "string", enum: ["new", "replacement", "repair", "return"], example: "new" },
+    asset_type: { type: "string", minLength: 1, maxLength: 80, example: "Laptop" },
+    asset_id: { ...uuid("Related asset UUID"), nullable: true },
+    reason: { type: "string", minLength: 3, maxLength: 2000, example: "Project onboarding" },
+    priority: { type: "string", enum: ["low", "medium", "high", "urgent"], example: "medium" },
+    needed_by: { type: "string", format: "date", nullable: true, example: "2026-06-01" },
+    preferred_specs: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: false
+};
+
+const assetRequestDecisionBodySchema = {
+  type: "object",
+  required: ["decision", "expected_version"],
+  properties: {
+    decision: { type: "string", enum: ["approved", "rejected", "returned", "fulfilled"], example: "approved" },
+    remarks: { type: "string", nullable: true, example: "Approved for onboarding." },
+    expected_version: { type: "integer", minimum: 1, example: 1 },
+    asset_id: { ...uuid("Assigned asset UUID"), nullable: true }
+  },
+  additionalProperties: false
+};
+
+const assetMaintenanceSchema = {
+  type: "object",
+  required: ["id", "asset_id", "maintenance_type", "started_on", "status", "version"],
+  properties: {
+    id: uuid("Maintenance record UUID"),
+    asset_id: uuid("Asset UUID"),
+    maintenance_type: { type: "string", enum: ["repair", "preventive", "warranty", "inspection", "other"], example: "repair" },
+    vendor_id: { ...uuid("Vendor UUID"), nullable: true },
+    vendor_name: { type: "string", nullable: true, example: "Lenovo India" },
+    cost: { type: "string", nullable: true, example: "1200.00" },
+    started_on: { type: "string", format: "date", example: "2026-05-23" },
+    completed_on: { type: "string", format: "date", nullable: true, example: "2026-05-24" },
+    status: { type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], example: "in_progress" },
+    notes: { type: "string", nullable: true, example: "Keyboard replacement." },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const assetVendorSchema = {
+  type: "object",
+  required: ["id", "name", "status", "version"],
+  properties: {
+    id: uuid("Vendor UUID"),
+    name: { type: "string", example: "Lenovo India" },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    contact_email: { type: "string", nullable: true, example: "support@lenovo.example.test" },
+    phone: { type: "string", nullable: true, example: "+91-00000-00000" },
+    metadata: { type: "object", additionalProperties: true },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
 const documentSchema = {
   type: "object",
   required: ["id", "business_object_type", "business_object_id", "classification", "document_type"],
@@ -2857,6 +2946,16 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/assets/licenses/validate": operation("Assets", "Validate license", "Validates software license binding for a hardware fingerprint.", { body: { type: "object", required: ["product_id", "hardware_fingerprint"], properties: { product_id: uuid("Software product UUID"), hardware_fingerprint: { type: "string", minLength: 8, example: "HW-FINGERPRINT-001" } } }, response200: { type: "object", additionalProperties: true } }),
   "POST /api/v1/assets/licenses/revoke": operation("Assets", "Revoke license/device", "Revokes a hardware fingerprint or compromised key/device binding.", { body: { type: "object", required: ["hardware_fingerprint"], properties: { hardware_fingerprint: { type: "string", minLength: 8, example: "HW-FINGERPRINT-001" } } }, response200: { type: "object", additionalProperties: true } }),
   "POST /api/v1/assets/events/employee-terminated": operation("Outbox / Platform Events", "Consume employee terminated event", "Protected local event consumer that moves assigned assets into recovery workflow when an employee is terminated.", { body: { type: "object", required: ["employee_user_id"], properties: { employee_user_id: uuid("Terminated employee UUID") } }, response200: { type: "object", additionalProperties: true } }),
+  "POST /api/v1/assets/requests": operation("Assets", "Create asset request", "Creates an authenticated employee asset request for new, replacement, repair, or return needs.", { body: assetRequestBodySchema, response200: { type: "object", required: ["request", "version"], properties: { request: assetRequestSchema, version: { type: "integer", minimum: 1, example: 1 } }, additionalProperties: false } }),
+  "GET /api/v1/assets/requests/my": operation("Assets", "List my asset requests", "Lists asset requests raised by the authenticated employee.", { querystring: paginationQuerySchema, response200: paginated(assetRequestSchema) }),
+  "GET /api/v1/assets/requests/queue": operation("Assets", "Asset request queue", "Lists asset requests for Asset/Admin actors with queue counts.", { querystring: paginationQuerySchema, response200: { ...paginated(assetRequestSchema), additionalProperties: true } }),
+  "POST /api/v1/assets/requests/{id}/decision": operation("Assets", "Decide asset request", "Approves, rejects, returns, or fulfills an asset request with OCC expected_version.", { params: idParamSchema, body: assetRequestDecisionBodySchema, response200: { type: "object", required: ["request", "version"], properties: { request: assetRequestSchema, assigned_asset: { ...assetSchema, nullable: true }, version: { type: "integer", minimum: 1, example: 2 } }, additionalProperties: true } }),
+  "POST /api/v1/assets/requests/{id}/cancel": operation("Assets", "Cancel asset request", "Cancels a requester-owned pending asset request with OCC expected_version.", { params: idParamSchema, body: expectedVersionBodySchema, response200: { type: "object", required: ["request", "version"], properties: { request: assetRequestSchema, version: { type: "integer", minimum: 1, example: 2 } }, additionalProperties: false } }),
+  "POST /api/v1/assets/{id}/acknowledgements": operation("Assets", "Acknowledge asset handover", "Marks an assigned asset as received or returned by the assigned employee.", { params: idParamSchema, body: { type: "object", required: ["acknowledgement_type", "expected_version"], properties: { acknowledgement_type: { type: "string", enum: ["received", "returned"], example: "received" }, expected_version: { type: "integer", minimum: 1, example: 1 } }, additionalProperties: false }, response200: { type: "object", required: ["asset", "acknowledgement", "version"], properties: { asset: assetSchema, acknowledgement: { type: "object", additionalProperties: true }, version: { type: "integer", minimum: 1, example: 2 } }, additionalProperties: false } }),
+  "GET /api/v1/assets/{id}/maintenance": operation("Assets", "List asset maintenance", "Lists maintenance records for an asset.", { params: idParamSchema, querystring: paginationQuerySchema, response200: paginated(assetMaintenanceSchema) }),
+  "POST /api/v1/assets/{id}/maintenance": operation("Assets", "Create asset maintenance", "Creates a maintenance, warranty, repair, or inspection record and updates asset state with OCC expected_version.", { params: idParamSchema, body: { type: "object", required: ["maintenance_type", "started_on", "expected_version"], properties: { maintenance_type: { type: "string", enum: ["repair", "preventive", "warranty", "inspection", "other"], example: "repair" }, vendor_id: { ...uuid("Vendor UUID"), nullable: true }, cost: { type: "string", nullable: true, example: "1200.00" }, started_on: { type: "string", format: "date", example: "2026-05-23" }, completed_on: { type: "string", format: "date", nullable: true, example: "2026-05-24" }, status: { type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], example: "in_progress" }, notes: { type: "string", nullable: true, example: "Keyboard replacement." }, expected_version: { type: "integer", minimum: 1, example: 1 } }, additionalProperties: false }, response200: { type: "object", required: ["maintenance", "asset", "asset_version"], properties: { maintenance: assetMaintenanceSchema, asset: assetSchema, asset_version: { type: "integer", minimum: 1, example: 2 } }, additionalProperties: false } }),
+  "GET /api/v1/assets/vendors": operation("Assets", "List asset vendors", "Lists asset vendors, warranty partners, and selector metadata for asset workflows.", { querystring: paginationQuerySchema, response200: paginated(assetVendorSchema) }),
+  "GET /api/v1/assets/recovery-queue": operation("Assets", "Asset recovery queue", "Lists assets pending recovery from offboarding or termination events.", { querystring: paginationQuerySchema, response200: { ...paginated({ type: "object", additionalProperties: true }), additionalProperties: true } }),
 
   "POST /api/v1/timesheets/work-segments": operation("Timesheets", "Create work segment", "Creates or updates a daily work segment for the authenticated employee.", { body: { type: "object", required: ["work_date", "hours"], properties: { work_date: date("Work date", "2026-06-01"), project_code: { type: "string", example: "QA-PRJ-001" }, task_code: { type: "string", example: "QA-TASK-001" }, hours: money("Hours as fixed precision decimal", "8.00"), description: { type: "string", example: "Implementation work" }, billable: { type: "boolean", default: false, example: true } } }, response200: { type: "object", additionalProperties: true } }),
   "GET /api/v1/timesheets/work-segments": operation("Timesheets", "List work segments", "Paginated work segment list scoped by actor.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),

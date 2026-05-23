@@ -687,6 +687,96 @@ export const assetRecoveryTickets = assets.table("asset_recovery_tickets", {
   updatedAt
 });
 
+export const assetRequests = assets.table(
+  "asset_requests",
+  {
+    id: uuidPk.defaultRandom(),
+    requestCode: text("request_code").notNull(),
+    requesterUserId: uuid("requester_user_id").notNull(),
+    requestType: text("request_type").notNull(),
+    assetType: text("asset_type").notNull(),
+    assetId: uuid("asset_id"),
+    reason: text("reason").notNull(),
+    priority: text("priority").notNull(),
+    neededBy: date("needed_by"),
+    preferredSpecs: jsonb("preferred_specs").notNull().default({}),
+    status: text("status").notNull(),
+    decisionByUserId: uuid("decision_by_user_id"),
+    decisionAt: timestamp("decision_at", { withTimezone: true }),
+    decisionRemarks: text("decision_remarks"),
+    assignedAssetId: uuid("assigned_asset_id"),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("asset_requests_request_code_uq").on(table.requestCode),
+    index("asset_requests_requester_status_idx").on(table.requesterUserId, table.status, table.createdAt),
+    index("asset_requests_status_priority_idx").on(table.status, table.priority, table.createdAt)
+  ]
+);
+
+export const assetAcknowledgements = assets.table(
+  "asset_acknowledgements",
+  {
+    id: uuidPk.defaultRandom(),
+    assetId: uuid("asset_id").notNull(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    assignmentId: uuid("assignment_id"),
+    acknowledgementType: text("acknowledgement_type").notNull(),
+    status: text("status").notNull(),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt
+  },
+  (table) => [
+    index("asset_ack_asset_employee_idx").on(table.assetId, table.employeeUserId, table.status),
+    index("asset_ack_assignment_idx").on(table.assignmentId)
+  ]
+);
+
+export const assetMaintenanceRecords = assets.table(
+  "asset_maintenance_records",
+  {
+    id: uuidPk.defaultRandom(),
+    assetId: uuid("asset_id").notNull(),
+    maintenanceType: text("maintenance_type").notNull(),
+    vendorId: uuid("vendor_id"),
+    cost: numeric("cost", { precision: 14, scale: 2 }),
+    startedOn: date("started_on").notNull(),
+    completedOn: date("completed_on"),
+    status: text("status").notNull(),
+    notes: text("notes"),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    index("asset_maintenance_asset_status_idx").on(table.assetId, table.status, table.startedOn),
+    index("asset_maintenance_vendor_idx").on(table.vendorId)
+  ]
+);
+
+export const softwareVendors = assets.table(
+  "software_vendors",
+  {
+    id: uuidPk.defaultRandom(),
+    name: text("name").notNull(),
+    status: text("status").notNull().default("active"),
+    contactEmail: text("contact_email"),
+    phone: text("phone"),
+    metadata: jsonb("metadata").notNull().default({}),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [uniqueIndex("software_vendors_name_uq").on(table.name)]
+);
+
 export const licenseEntitlements = assets.table("license_entitlements", {
   id: uuidPk.defaultRandom(),
   productId: uuid("product_id").notNull(),
@@ -1162,6 +1252,10 @@ export const schema = {
   docAccessLogs,
   assetRecords,
   assetAssignments,
+  assetRequests,
+  assetAcknowledgements,
+  assetMaintenanceRecords,
+  softwareVendors,
   assetRecoveryTickets,
   licenseEntitlements,
   licenseActivations,

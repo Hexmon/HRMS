@@ -47,7 +47,12 @@ const localDemoPassword = getLocalDemoPassword();
 const expectedOperations = [
   "DELETE /api/v1/manager-backups/{id}",
   "GET /api/v1/assets/",
+  "GET /api/v1/assets/recovery-queue",
+  "GET /api/v1/assets/requests/my",
+  "GET /api/v1/assets/requests/queue",
+  "GET /api/v1/assets/vendors",
   "GET /api/v1/assets/{id}",
+  "GET /api/v1/assets/{id}/maintenance",
   "GET /api/v1/attendance/calendar/monthly",
   "GET /api/v1/attendance/exceptions",
   "GET /api/v1/attendance/punches/my",
@@ -128,8 +133,13 @@ const expectedOperations = [
   "POST /api/v1/assets/licenses/activate",
   "POST /api/v1/assets/licenses/revoke",
   "POST /api/v1/assets/licenses/validate",
+  "POST /api/v1/assets/requests",
+  "POST /api/v1/assets/requests/{id}/cancel",
+  "POST /api/v1/assets/requests/{id}/decision",
   "POST /api/v1/assets/scan/{qr_hash}",
+  "POST /api/v1/assets/{id}/acknowledgements",
   "POST /api/v1/assets/{id}/assign",
+  "POST /api/v1/assets/{id}/maintenance",
   "POST /api/v1/assets/{id}/return",
   "POST /api/v1/attendance/punches",
   "POST /api/v1/attendance/regularizations",
@@ -241,6 +251,11 @@ const bodyRequiredOperations = [
   "POST /api/v1/assets/licenses/activate",
   "POST /api/v1/assets/licenses/revoke",
   "POST /api/v1/assets/licenses/validate",
+  "POST /api/v1/assets/requests",
+  "POST /api/v1/assets/requests/{id}/cancel",
+  "POST /api/v1/assets/requests/{id}/decision",
+  "POST /api/v1/assets/{id}/acknowledgements",
+  "POST /api/v1/assets/{id}/maintenance",
   "POST /api/v1/timesheets/work-segments",
   "POST /api/v1/timesheets/submissions",
   "POST /api/v1/timesheets/submissions/{id}/approve",
@@ -292,7 +307,11 @@ const occOperations = [
   "POST /api/v1/expenses/{id}/finance/payment",
   "POST /api/v1/expenses/{id}/settlement",
   "POST /api/v1/assets/{id}/assign",
+  "POST /api/v1/assets/{id}/acknowledgements",
+  "POST /api/v1/assets/{id}/maintenance",
   "POST /api/v1/assets/{id}/return",
+  "POST /api/v1/assets/requests/{id}/cancel",
+  "POST /api/v1/assets/requests/{id}/decision",
   "POST /api/v1/timesheets/submissions/{id}/approve",
   "POST /api/v1/attendance/regularizations/{id}/decision",
   "POST /api/v1/leave/requests/{id}/decision",
@@ -340,6 +359,11 @@ const listOperations = [
   "GET /api/v1/reports/expenses/payments",
   "GET /api/v1/reports/expenses/audit",
   "GET /api/v1/assets/",
+  "GET /api/v1/assets/recovery-queue",
+  "GET /api/v1/assets/requests/my",
+  "GET /api/v1/assets/requests/queue",
+  "GET /api/v1/assets/vendors",
+  "GET /api/v1/assets/{id}/maintenance",
   "GET /api/v1/timesheets/work-segments",
   "GET /api/v1/timesheets/submissions/my",
   "GET /api/v1/timesheets/queue/approver",
@@ -564,7 +588,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(155);
+    expect(rows.length).toBe(165);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

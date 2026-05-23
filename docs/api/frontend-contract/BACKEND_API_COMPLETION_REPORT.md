@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 155 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 165 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 60 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `155 current + 60 remaining`; Notifications added 4 operations for the topbar feed, unread badge, and read-state mutations. |
+| Planned new APIs | 50 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `165 current + 50 remaining`; Asset additions added 10 operations for requests, acknowledgements, maintenance, vendors, and recovery queue. |
 
 ## Development Phases
 
@@ -27,7 +27,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Module tag | Operations | Ready surface |
 | --- | ---: | --- |
 | Admin / Configuration | 6 | Finance governance, manager backups, and timesheet workflow definition upsert. |
-| Assets | 9 | Inventory, detail, assignment/return, QR scan, license lifecycle, and employee termination event. |
+| Assets | 19 | Inventory, detail, assignment/return, QR scan, license lifecycle, employee termination event, requests, acknowledgements, maintenance, vendors, and recovery queue. |
 | Auth & Sessions | 11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
 | Core / Employees & Hierarchy | 11 | User list/detail/subtree, org selectors, employee create/update, lifecycle activation/deactivation, login setup/disable, and role replacement. |
 | Dashboard | 1 | Role-scoped summary derived from implemented Core, Expenses, Documents, Assets, Timesheets, Attendance, Notifications, and Outbox data. |
@@ -79,7 +79,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **60**.
+Total remaining planned new operations: **50**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -214,20 +214,20 @@ Total remaining planned new operations: **60**.
 | POST | `/api/v1/expenses/{id}/withdraw` | `/expenses/:id` | Withdraw requester-owned draft/submitted/returned expense when policy allows. | Requester only; self-processing rule still applies to approvals. | Path id; remarks, expected_version | expense, version, timeline_event | 409 invalid status/stale version; remarks may be required after submission. | Planned / Not Implemented |
 | POST | `/api/v1/expenses/{id}/clarifications` | `/expenses/:id/clarifications` | Append clarification message and return current thread. | Requester, assigned manager, finance/admin by scope. | Path id; message, document_ids[], expected_version optional | clarification, thread[], expense_version | 403 out-of-scope; 409 if expense closed/read-only. | Planned / Not Implemented |
 
-### Assets Additions (10 planned APIs)
+### Assets Additions (10 implemented APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/api/v1/assets/requests` | `/assets/requests/new` | Create asset request. | Authenticated employee or manager on behalf if allowed. | asset_type, reason, needed_by, preferred_specs | request_id, status, version | 409 duplicate pending request if policy blocks. | Planned / Not Implemented |
-| GET | `/api/v1/assets/requests/my` | `/assets/requests` | List own asset requests. | Authenticated employee. | page, page_size, status, type | items[], pagination | Shared errors. | Planned / Not Implemented |
-| GET | `/api/v1/assets/requests/queue` | `/assets/admin/requests` | Asset admin request queue. | Asset admin/Admin. | page, page_size, status, type, department_id | items[], pagination, queue_counts | 403 non-asset-admin; paginated. | Planned / Not Implemented |
-| POST | `/api/v1/assets/requests/{id}/decision` | `/assets/admin/requests/:id` | Approve, reject, or return asset request. | Asset admin/Admin; requester self-decision blocked. | decision, remarks, expected_version, asset_id optional | request, assigned_asset optional, version | remarks required for reject/return; 409 stale version. | Planned / Not Implemented |
-| POST | `/api/v1/assets/requests/{id}/cancel` | `/assets/requests/:id` | Cancel own pending asset request. | Requester only. | remarks, expected_version | request, version | 409 already decided or stale version. | Planned / Not Implemented |
-| POST | `/api/v1/assets/{id}/acknowledgements` | `/assets/my/:id` | Employee acknowledges received/returned asset. | Assigned employee. | acknowledgement_type, expected_version | asset, acknowledgement, version | 409 wrong state/stale version. | Planned / Not Implemented |
-| GET | `/api/v1/assets/{id}/maintenance` | `/assets/:id/maintenance` | List asset maintenance records. | Asset admin/Admin; assigned user limited view. | page, page_size, status | items[], pagination | 403 restricted asset. | Planned / Not Implemented |
-| POST | `/api/v1/assets/{id}/maintenance` | `/assets/:id/maintenance` | Create maintenance record. | Asset admin/Admin. | maintenance_type, vendor_id, cost, dates, notes, expected_version | maintenance, asset_version | 409 stale asset version; money as string. | Planned / Not Implemented |
-| GET | `/api/v1/assets/vendors` | `/assets/vendors` | List asset vendors and warranty selectors. | Asset admin/Admin. | page, page_size, active_only, search | items[], pagination | Shared errors; selector-friendly. | Planned / Not Implemented |
-| GET | `/api/v1/assets/recovery-queue` | `/assets/recovery` | List assets pending recovery from offboarding/termination. | Asset admin/HR/Admin. | page, page_size, user_id, status | items[], pagination, totals | 403 out-of-scope; integrates with employee termination events. | Planned / Not Implemented |
+| POST | `/api/v1/assets/requests` | `/assets/requests/new` | Create asset request. | Authenticated employee or manager on behalf if allowed. | asset_type, reason, needed_by, preferred_specs | request_id, status, version | 409 duplicate pending request if policy blocks. | Implemented in Phase 4 Assets |
+| GET | `/api/v1/assets/requests/my` | `/assets/requests` | List own asset requests. | Authenticated employee. | page, page_size, status, type | items[], pagination | Shared errors. | Implemented in Phase 4 Assets |
+| GET | `/api/v1/assets/requests/queue` | `/assets/admin/requests` | Asset admin request queue. | Asset admin/Admin. | page, page_size, status, type, department_id | items[], pagination, queue_counts | 403 non-asset-admin; paginated. | Implemented in Phase 4 Assets |
+| POST | `/api/v1/assets/requests/{id}/decision` | `/assets/admin/requests/:id` | Approve, reject, or return asset request. | Asset admin/Admin; requester self-decision blocked. | decision, remarks, expected_version, asset_id optional | request, assigned_asset optional, version | remarks required for reject/return; 409 stale version. | Implemented in Phase 4 Assets |
+| POST | `/api/v1/assets/requests/{id}/cancel` | `/assets/requests/:id` | Cancel own pending asset request. | Requester only. | remarks, expected_version | request, version | 409 already decided or stale version. | Implemented in Phase 4 Assets |
+| POST | `/api/v1/assets/{id}/acknowledgements` | `/assets/my/:id` | Employee acknowledges received/returned asset. | Assigned employee. | acknowledgement_type, expected_version | asset, acknowledgement, version | 409 wrong state/stale version. | Implemented in Phase 4 Assets |
+| GET | `/api/v1/assets/{id}/maintenance` | `/assets/:id/maintenance` | List asset maintenance records. | Asset admin/Admin; assigned user limited view. | page, page_size, status | items[], pagination | 403 restricted asset. | Implemented in Phase 4 Assets |
+| POST | `/api/v1/assets/{id}/maintenance` | `/assets/:id/maintenance` | Create maintenance record. | Asset admin/Admin. | maintenance_type, vendor_id, cost, dates, notes, expected_version | maintenance, asset_version | 409 stale asset version; money as string. | Implemented in Phase 4 Assets |
+| GET | `/api/v1/assets/vendors` | `/assets/vendors` | List asset vendors and warranty selectors. | Asset admin/Admin. | page, page_size, active_only, search | items[], pagination | Shared errors; selector-friendly. | Implemented in Phase 4 Assets |
+| GET | `/api/v1/assets/recovery-queue` | `/assets/recovery` | List assets pending recovery from offboarding/termination. | Asset admin/HR/Admin. | page, page_size, user_id, status | items[], pagination, totals | 403 out-of-scope; integrates with employee termination events. | Implemented in Phase 4 Assets |
 
 ### Helpdesk (15 implemented APIs)
 

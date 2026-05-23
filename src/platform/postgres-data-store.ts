@@ -100,9 +100,13 @@ const resetTables = [
   "assets.compromised_keys",
   "assets.license_activations",
   "assets.license_entitlements",
+  "assets.asset_maintenance_records",
+  "assets.asset_acknowledgements",
+  "assets.asset_requests",
   "assets.asset_recovery_tickets",
   "assets.asset_state_events",
   "assets.asset_assignments",
+  "assets.software_vendors",
   "assets.assets",
   "documents.doc_access_logs",
   "documents.doc_permissions",
@@ -187,6 +191,10 @@ function copyData(target: DataStore, source: DataStore): void {
   target.assets = source.assets;
   target.assetAssignments = source.assetAssignments;
   target.assetStateEvents = source.assetStateEvents;
+  target.assetRequests = source.assetRequests;
+  target.assetAcknowledgements = source.assetAcknowledgements;
+  target.assetMaintenanceRecords = source.assetMaintenanceRecords;
+  target.assetVendors = source.assetVendors;
   target.assetRecoveryTickets = source.assetRecoveryTickets;
   target.licenseEntitlements = source.licenseEntitlements;
   target.licenseActivations = source.licenseActivations;
@@ -315,6 +323,10 @@ class PostgresPersistence {
       loaded.assets = await this.loadAssets(client);
       loaded.assetAssignments = await this.loadAssetAssignments(client);
       loaded.assetStateEvents = await this.loadAssetStateEvents(client);
+      loaded.assetRequests = await this.loadAssetRequests(client);
+      loaded.assetAcknowledgements = await this.loadAssetAcknowledgements(client);
+      loaded.assetMaintenanceRecords = await this.loadAssetMaintenanceRecords(client);
+      loaded.assetVendors = await this.loadAssetVendors(client);
       loaded.assetRecoveryTickets = await this.loadAssetRecoveryTickets(client);
       loaded.licenseEntitlements = await this.loadLicenseEntitlements(client);
       loaded.licenseActivations = await this.loadLicenseActivations(client);
@@ -804,6 +816,82 @@ class PostgresPersistence {
       event_type: row.event_type,
       payload: json(row.payload),
       created_at: asIso(row.created_at)
+    }));
+  }
+
+  private async loadAssetRequests(client: PoolClient): Promise<DataStore["assetRequests"]> {
+    const { rows } = await client.query("SELECT * FROM assets.asset_requests ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      request_code: row.request_code,
+      requester_user_id: row.requester_user_id,
+      request_type: row.request_type,
+      asset_type: row.asset_type,
+      asset_id: row.asset_id,
+      reason: row.reason,
+      priority: row.priority,
+      needed_by: asDateOrNull(row.needed_by),
+      preferred_specs: json(row.preferred_specs),
+      status: row.status,
+      decision_by_user_id: row.decision_by_user_id,
+      decision_at: asIsoOrNull(row.decision_at),
+      decision_remarks: row.decision_remarks,
+      assigned_asset_id: row.assigned_asset_id,
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadAssetAcknowledgements(client: PoolClient): Promise<DataStore["assetAcknowledgements"]> {
+    const { rows } = await client.query("SELECT * FROM assets.asset_acknowledgements ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      asset_id: row.asset_id,
+      employee_user_id: row.employee_user_id,
+      assignment_id: row.assignment_id,
+      acknowledgement_type: row.acknowledgement_type,
+      status: row.status,
+      acknowledged_at: asIsoOrNull(row.acknowledged_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at)
+    }));
+  }
+
+  private async loadAssetMaintenanceRecords(client: PoolClient): Promise<DataStore["assetMaintenanceRecords"]> {
+    const { rows } = await client.query("SELECT * FROM assets.asset_maintenance_records ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      asset_id: row.asset_id,
+      maintenance_type: row.maintenance_type,
+      vendor_id: row.vendor_id,
+      cost: asMoney(row.cost),
+      started_on: asDate(row.started_on),
+      completed_on: asDateOrNull(row.completed_on),
+      status: row.status,
+      notes: row.notes,
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadAssetVendors(client: PoolClient): Promise<DataStore["assetVendors"]> {
+    const { rows } = await client.query("SELECT * FROM assets.software_vendors ORDER BY name, id");
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      status: row.status ?? "active",
+      contact_email: row.contact_email,
+      phone: row.phone,
+      metadata: json(row.metadata),
+      version: row.version ?? 1,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at ?? row.created_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
     }));
   }
 
@@ -1953,6 +2041,117 @@ class PostgresPersistence {
          VALUES ($1, $2, $3, $4, $5::jsonb, $6)
          ON CONFLICT (id) DO NOTHING`,
         [event.id, event.asset_id, event.actor_user_id, event.event_type, JSON.stringify(event.payload), event.created_at]
+      );
+    }
+    for (const request of this.store.assetRequests) {
+      await client.query(
+        `INSERT INTO assets.asset_requests (
+          id, request_code, requester_user_id, request_type, asset_type, asset_id, reason, priority,
+          needed_by, preferred_specs, status, decision_by_user_id, decision_at, decision_remarks,
+          assigned_asset_id, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        ON CONFLICT (id) DO UPDATE
+        SET status = EXCLUDED.status, decision_by_user_id = EXCLUDED.decision_by_user_id,
+            decision_at = EXCLUDED.decision_at, decision_remarks = EXCLUDED.decision_remarks,
+            assigned_asset_id = EXCLUDED.assigned_asset_id, version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at, deleted_at = EXCLUDED.deleted_at`,
+        [
+          request.id,
+          request.request_code,
+          request.requester_user_id,
+          request.request_type,
+          request.asset_type,
+          request.asset_id,
+          request.reason,
+          request.priority,
+          request.needed_by,
+          JSON.stringify(request.preferred_specs),
+          request.status,
+          request.decision_by_user_id,
+          request.decision_at,
+          request.decision_remarks,
+          request.assigned_asset_id,
+          request.version,
+          request.created_at,
+          request.updated_at,
+          request.deleted_at
+        ]
+      );
+    }
+    for (const acknowledgement of this.store.assetAcknowledgements) {
+      await client.query(
+        `INSERT INTO assets.asset_acknowledgements (
+          id, asset_id, employee_user_id, assignment_id, acknowledgement_type, status,
+          acknowledged_at, version, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ON CONFLICT (id) DO UPDATE
+        SET status = EXCLUDED.status, acknowledged_at = EXCLUDED.acknowledged_at,
+            version = EXCLUDED.version, updated_at = EXCLUDED.updated_at`,
+        [
+          acknowledgement.id,
+          acknowledgement.asset_id,
+          acknowledgement.employee_user_id,
+          acknowledgement.assignment_id,
+          acknowledgement.acknowledgement_type,
+          acknowledgement.status,
+          acknowledgement.acknowledged_at,
+          acknowledgement.version,
+          acknowledgement.created_at,
+          acknowledgement.updated_at
+        ]
+      );
+    }
+    for (const maintenance of this.store.assetMaintenanceRecords) {
+      await client.query(
+        `INSERT INTO assets.asset_maintenance_records (
+          id, asset_id, maintenance_type, vendor_id, cost, started_on, completed_on,
+          status, notes, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (id) DO UPDATE
+        SET status = EXCLUDED.status, completed_on = EXCLUDED.completed_on, notes = EXCLUDED.notes,
+            version = EXCLUDED.version, updated_at = EXCLUDED.updated_at, deleted_at = EXCLUDED.deleted_at`,
+        [
+          maintenance.id,
+          maintenance.asset_id,
+          maintenance.maintenance_type,
+          maintenance.vendor_id,
+          maintenance.cost,
+          maintenance.started_on,
+          maintenance.completed_on,
+          maintenance.status,
+          maintenance.notes,
+          maintenance.version,
+          maintenance.created_at,
+          maintenance.updated_at,
+          maintenance.deleted_at
+        ]
+      );
+    }
+    for (const vendor of this.store.assetVendors) {
+      await client.query(
+        `INSERT INTO assets.software_vendors (
+          id, name, status, contact_email, phone, metadata, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+        ON CONFLICT (id) DO UPDATE
+        SET name = EXCLUDED.name, status = EXCLUDED.status, contact_email = EXCLUDED.contact_email,
+            phone = EXCLUDED.phone, metadata = EXCLUDED.metadata, version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at, deleted_at = EXCLUDED.deleted_at`,
+        [
+          vendor.id,
+          vendor.name,
+          vendor.status,
+          vendor.contact_email,
+          vendor.phone,
+          JSON.stringify(vendor.metadata),
+          vendor.version,
+          vendor.created_at,
+          vendor.updated_at,
+          vendor.deleted_at
+        ]
       );
     }
     for (const ticket of this.store.assetRecoveryTickets) {
