@@ -158,7 +158,7 @@ Settlement:
 - `GET /api/v1/reports/expenses/audit`
 - `POST /api/v1/reports/exports`
 
-Accounting export is a placeholder/readiness surface. A real export provider remains HIR-004.
+CSV report exports generate backend document records through object storage and return a `download_document_id`. External accounting-provider exports and XLSX workbook rendering remain HIR-004.
 
 ## Error Handling
 

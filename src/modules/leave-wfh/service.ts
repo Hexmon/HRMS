@@ -25,6 +25,7 @@ import {
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
+import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
 import { AttendanceRepository } from "../attendance/repository.js";
 import { CoreService } from "../core/service.js";
 import { appendLeaveWfhOutboxEvent, leaveWfhEvents } from "./events.js";
@@ -454,7 +455,7 @@ export class LeaveWfhService {
     return { holiday: this.presentHoliday(holiday), version: holiday.version };
   }
 
-  createExportJob(actor: AuthUser, input: LeaveWfhExportInput) {
+  async createExportJob(actor: AuthUser, input: LeaveWfhExportInput) {
     if (!canMonitorLeaveWfh(actor)) {
       throw forbidden("Only HR, Admin, or Auditor users can export Leave/WFH data.");
     }
@@ -465,6 +466,18 @@ export class LeaveWfhService {
       : ["employee_code", "employee", "department", "kind", "type", "date_from", "date_to", "duration", "status"];
     const filters = input.filters ?? {};
     const createdAt = nowIso();
+    const rows = this.exportRows(actor, filters);
+    const generated = await createGeneratedExportDocument(this.store, {
+      actor,
+      businessObjectType: "leave_wfh_export",
+      businessObjectId: jobId,
+      reportType: "leave-wfh",
+      format: format as GeneratedExportFormat,
+      rows,
+      columns,
+      filters,
+      filePrefix: "leave-wfh-export"
+    });
     appendLeaveWfhOutboxEvent(this.store, {
       aggregateType: "leave_wfh_export",
       aggregateId: jobId,
@@ -475,21 +488,58 @@ export class LeaveWfhService {
         filters,
         columns,
         format,
-        adapter: "outbox-queued-placeholder"
+        status: generated.status,
+        adapter: generated.adapter,
+        download_document_id: generated.download_document_id,
+        download_url: generated.download_url,
+        file_name: generated.file_name,
+        row_count: generated.row_count,
+        size_bytes: generated.size_bytes,
+        generated_at: generated.generated_at
       },
       idempotencyKey: `leave_wfh.export.requested:${jobId}`
     });
     return {
       job_id: jobId,
-      status: "queued",
+      status: generated.status,
       format,
       filters,
       columns,
       requested_by_user_id: actor.id,
       created_at: createdAt,
-      adapter: "outbox-queued-placeholder",
-      download_document_id: null
+      adapter: generated.adapter,
+      download_document_id: generated.download_document_id,
+      download_url: generated.download_url,
+      file_name: generated.file_name,
+      row_count: generated.row_count,
+      size_bytes: generated.size_bytes,
+      generated_at: generated.generated_at
     };
+  }
+
+  private exportRows(actor: AuthUser, filters: Record<string, unknown>): Array<Record<string, unknown>> {
+    const query: LeaveWfhQuery = {
+      page: 1,
+      page_size: exportPageSize(filters),
+      status: textFilter(filters.status),
+      date_from: textFilter(filters.date_from),
+      date_to: textFilter(filters.date_to),
+      user_id: textFilter(filters.user_id),
+      department_id: textFilter(filters.department_id),
+      request_kind: filters.request_kind === "leave" || filters.request_kind === "wfh" ? filters.request_kind : undefined
+    };
+    const monitor = this.hrMonitor(actor, query);
+    return monitor.items.map((item) => {
+      const row = item as Record<string, unknown>;
+      return {
+        ...row,
+        type: typeof row.leave_type === "string" ? row.leave_type : row.kind,
+        from: row.date_from,
+        to: row.date_to,
+        date_from: row.date_from,
+        date_to: row.date_to
+      };
+    });
   }
 
   private assertNoOverlap(userId: UUID, dateFrom: string, dateTo: string): void {
@@ -673,4 +723,16 @@ function eventForWfhDecision(decision: LeaveWfhDecisionInput["decision"]) {
     return leaveWfhEvents.WfhRejected;
   }
   return leaveWfhEvents.WfhReturned;
+}
+
+function textFilter(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function exportPageSize(filters: Record<string, unknown>): number {
+  const raw = typeof filters.page_size === "number" ? filters.page_size : Number(filters.page_size);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return 5000;
+  }
+  return Math.min(Math.trunc(raw), 10000);
 }

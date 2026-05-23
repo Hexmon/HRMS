@@ -1303,7 +1303,7 @@ const coreUserExportJobSchema = {
     job_id: uuid("Employee export job UUID"),
     export_id: uuid("Employee export job UUID"),
     event_id: uuid("Source outbox event UUID"),
-    status: { type: "string", example: "queued" },
+    status: { type: "string", example: "ready" },
     outbox_status: { type: "string", example: "pending" },
     format: { type: "string", enum: ["csv", "xlsx"], example: "csv" },
     filters: { type: "object", additionalProperties: true },
@@ -1312,7 +1312,11 @@ const coreUserExportJobSchema = {
     download_url: { type: "string", nullable: true },
     created_by_user_id: { ...uuid("Actor user UUID"), nullable: true },
     created_by: { type: "string", example: "ADM - Priya Menon" },
-    adapter: { type: "string", example: "outbox-queued-placeholder" },
+    adapter: { type: "string", example: "minio-generated-csv" },
+    file_name: { type: "string", nullable: true, example: "employee-export-2026-05-23.csv" },
+    row_count: { type: "integer", minimum: 0, example: 25 },
+    size_bytes: { type: "integer", nullable: true, minimum: 0, example: 2048 },
+    generated_at: { ...dateTime("Export file generation timestamp"), nullable: true },
     created_at: dateTime("Job creation timestamp"),
     updated_at: dateTime("Job update timestamp")
   },
@@ -1970,12 +1974,18 @@ const attendanceExportResponseSchema = {
   required: ["job_id", "status", "format", "filters", "columns", "created_at"],
   properties: {
     job_id: uuid("Attendance export job UUID"),
-    status: { type: "string", enum: ["queued"], example: "queued" },
+    status: { type: "string", enum: ["queued", "ready"], example: "ready" },
     format: { type: "string", enum: ["csv", "xlsx", "json"], example: "csv" },
     filters: { type: "object", additionalProperties: true },
     columns: { type: "array", items: { type: "string" } },
     created_at: dateTime("Export job creation timestamp"),
-    download_document_id: { ...uuid("Generated document UUID"), nullable: true }
+    download_document_id: { ...uuid("Generated document UUID"), nullable: true },
+    download_url: { type: "string", nullable: true },
+    adapter: { type: "string", example: "minio-generated-csv" },
+    file_name: { type: "string", nullable: true, example: "attendance-export-2026-05-23.csv" },
+    row_count: { type: "integer", minimum: 0, example: 25 },
+    size_bytes: { type: "integer", nullable: true, minimum: 0, example: 2048 },
+    generated_at: { ...dateTime("Export file generation timestamp"), nullable: true }
   },
   additionalProperties: true
 };
@@ -2144,12 +2154,18 @@ const leaveWfhExportResponseSchema = {
   required: ["job_id", "status", "format", "filters", "columns", "created_at"],
   properties: {
     job_id: uuid("Leave/WFH export job UUID"),
-    status: { type: "string", enum: ["queued"], example: "queued" },
+    status: { type: "string", enum: ["queued", "ready"], example: "ready" },
     format: { type: "string", enum: ["csv", "xlsx", "json"], example: "csv" },
     filters: { type: "object", additionalProperties: true },
     columns: { type: "array", items: { type: "string" } },
     created_at: dateTime("Export job creation timestamp"),
-    download_document_id: { ...uuid("Generated document UUID"), nullable: true }
+    download_document_id: { ...uuid("Generated document UUID"), nullable: true },
+    download_url: { type: "string", nullable: true },
+    adapter: { type: "string", example: "minio-generated-csv" },
+    file_name: { type: "string", nullable: true, example: "leave-wfh-export-2026-05-23.csv" },
+    row_count: { type: "integer", minimum: 0, example: 25 },
+    size_bytes: { type: "integer", nullable: true, minimum: 0, example: 2048 },
+    generated_at: { ...dateTime("Export file generation timestamp"), nullable: true }
   },
   additionalProperties: true
 };
@@ -2616,14 +2632,18 @@ const reportExportJobSchema = {
     event_id: uuid("Outbox event UUID"),
     report_type: { type: "string", example: "attendance" },
     format: { type: "string", enum: ["csv", "xlsx"], example: "csv" },
-    status: { type: "string", example: "queued" },
+    status: { type: "string", example: "ready" },
     outbox_status: { type: "string", example: "pending" },
     created_by_user_id: { ...uuid("Creator UUID"), nullable: true },
     created_by: { type: "string", nullable: true, example: "ADM - HR Admin" },
     filters: { type: "object", additionalProperties: true },
     download_document_id: { ...uuid("Generated document UUID"), nullable: true },
     download_url: { type: "string", nullable: true },
-    adapter: { type: "string", example: "outbox-queued-placeholder" },
+    adapter: { type: "string", example: "minio-generated-csv" },
+    file_name: { type: "string", nullable: true, example: "report-hr-employees-2026-05-23.csv" },
+    row_count: { type: "integer", minimum: 0, example: 25 },
+    size_bytes: { type: "integer", nullable: true, minimum: 0, example: 2048 },
+    generated_at: { ...dateTime("Export file generation timestamp"), nullable: true },
     created_at: dateTime("Created timestamp"),
     updated_at: dateTime("Updated timestamp")
   },
@@ -3614,7 +3634,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/core/users/{id}/audit": operation("Core / Employees & Hierarchy", "Employee audit trail", "Returns profile, lifecycle, login, and role audit events for an employee. Secret/token-like payload keys are redacted before returning metadata.", { params: idParamSchema, querystring: coreUserAuditQuerySchema, response200: { ...paginated(coreUserAuditEntrySchema), additionalProperties: true } }),
   "POST /api/v1/core/users/imports": operation("Core / Employees & Hierarchy", "Create employee import job", "Queues an employee import job from an uploaded document reference or file metadata. This slice records durable job metadata in the transactional outbox; row parsing and generated user creation remain production hardening work.", { body: coreUserImportBodySchema, response200: coreUserImportJobSchema }),
   "GET /api/v1/core/users/imports/{job_id}": operation("Core / Employees & Hierarchy", "Get employee import job", "Returns an employee import job status, counts, row errors, and created-user preview from durable outbox metadata.", { params: coreImportJobParamSchema, response200: coreUserImportJobSchema }),
-  "POST /api/v1/core/users/exports": operation("Core / Employees & Hierarchy", "Create employee export job", "Queues an employee export job for HR/Admin/Auditor users. Real file generation/download is represented by nullable document/download references until the export worker is implemented.", { body: coreUserExportBodySchema, response200: coreUserExportJobSchema }),
+  "POST /api/v1/core/users/exports": operation("Core / Employees & Hierarchy", "Create employee export job", "Creates a CSV employee export document for HR/Admin/Auditor users when object storage is configured. XLSX remains queued metadata until the workbook renderer is implemented.", { body: coreUserExportBodySchema, response200: coreUserExportJobSchema }),
   "GET /api/v1/core/users/{id}/subtree": operation(
     "Core / Employees & Hierarchy",
     "Hierarchy subordinate subtree",
@@ -3730,7 +3750,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/attendance/exports": operation(
     "Attendance",
     "Create attendance export job",
-    "Creates queued attendance export metadata for HR/Admin/Auditor users. Actual file rendering and download document attachment remain production hardening.",
+    "Creates CSV/JSON attendance export documents for HR/Admin/Auditor users when object storage is configured. XLSX remains queued metadata until the workbook renderer is implemented.",
     { body: attendanceExportBody, response200: attendanceExportResponseSchema }
   ),
   "GET /api/v1/leave/balances/my": operation(
@@ -3808,7 +3828,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/leave-wfh/exports": operation(
     "Leave / WFH / Holidays",
     "Create Leave/WFH export job",
-    "Creates queued Leave/WFH export metadata for HR/Admin/Auditor users. Actual file rendering and download document attachment remain production hardening.",
+    "Creates CSV/JSON Leave/WFH export documents for HR/Admin/Auditor users when object storage is configured. XLSX remains queued metadata until the workbook renderer is implemented.",
     { body: leaveWfhExportBody, response200: leaveWfhExportResponseSchema }
   ),
   "GET /api/v1/holidays": operation(
@@ -4353,8 +4373,8 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/helpdesk/summary": operation("Reports & Analytics", "Helpdesk report", "Helpdesk report rows with open/closed/SLA rollups, agent performance, category, employee, and resolution rows.", { querystring: reportSummaryQuerySchema, response200: genericReportSummarySchema }),
   "GET /api/v1/reports/audit": operation("Reports & Analytics", "Cross-module audit report", "Admin/Auditor cross-module audit report assembled from expense audit logs, outbox events, asset events, and helpdesk events.", { querystring: reportSummaryQuerySchema, response200: genericReportSummarySchema }),
   "GET /api/v1/reports/exports": operation("Reports & Analytics", "List export jobs", "Lists report export jobs backed by durable outbox events. Admin/Auditor can see all; other users see their own jobs.", { querystring: reportSummaryQuerySchema, response200: paginated(reportExportJobSchema) }),
-  "GET /api/v1/reports/exports/{id}": operation("Reports & Analytics", "Get export job", "Returns one report export job and generated document/download placeholders when available.", { params: idParamSchema, response200: reportExportJobSchema }),
-  "POST /api/v1/reports/exports": operation("Reports & Analytics", "Create export job", "Creates a CSV/XLSX export job backed by durable outbox metadata. Real file generation/download remains production hardening.", { body: reportExportCreateBodySchema, response200: reportExportJobSchema }),
+  "GET /api/v1/reports/exports/{id}": operation("Reports & Analytics", "Get export job", "Returns one report export job and generated document reference when available.", { params: idParamSchema, response200: reportExportJobSchema }),
+  "POST /api/v1/reports/exports": operation("Reports & Analytics", "Create export job", "Creates a CSV report export document backed by object storage and durable outbox metadata. XLSX remains queued metadata until the workbook renderer is implemented.", { body: reportExportCreateBodySchema, response200: reportExportJobSchema }),
 
   "POST /api/v1/assets/": operation("Assets", "Create asset", "Creates an asset inventory record. Asset/Admin role required.", { body: { type: "object", required: ["asset_code", "asset_type", "name"], properties: { asset_code: { type: "string", example: "LAP-001" }, asset_type: { type: "string", example: "Laptop" }, name: { type: "string", example: "ThinkPad T-Series" }, serial_no: { type: "string", example: "SN-001" } } }, response200: assetSchema }),
   "GET /api/v1/assets/": operation("Assets", "List assets", "Paginated asset inventory list.", { querystring: paginationQuerySchema, response200: paginated(assetSchema) }),

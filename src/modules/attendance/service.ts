@@ -18,6 +18,7 @@ import {
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
+import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
 import { CoreService } from "../core/service.js";
 import { appendAttendanceOutboxEvent, attendanceEvents } from "./events.js";
 import {
@@ -456,7 +457,7 @@ export class AttendanceService {
     };
   }
 
-  createExportJob(actor: AuthUser, input: AttendanceExportInput) {
+  async createExportJob(actor: AuthUser, input: AttendanceExportInput) {
     if (!canSeeAllAttendance(actor)) {
       throw forbidden("Only HR, Admin, or Auditor users can export attendance data.");
     }
@@ -467,6 +468,18 @@ export class AttendanceService {
       : ["employee_code", "employee", "date", "status", "in_time", "out_time", "hours"];
     const filters = input.filters ?? {};
     const createdAt = nowIso();
+    const rows = this.exportRows(filters);
+    const generated = await createGeneratedExportDocument(this.store, {
+      actor,
+      businessObjectType: "attendance_export",
+      businessObjectId: jobId,
+      reportType: "attendance",
+      format: format as GeneratedExportFormat,
+      rows,
+      columns,
+      filters,
+      filePrefix: "attendance-export"
+    });
     appendAttendanceOutboxEvent(this.store, {
       aggregateId: jobId,
       eventType: attendanceEvents.ExportRequested,
@@ -476,21 +489,70 @@ export class AttendanceService {
         filters,
         columns,
         format,
-        adapter: "outbox-queued-placeholder"
+        status: generated.status,
+        adapter: generated.adapter,
+        download_document_id: generated.download_document_id,
+        download_url: generated.download_url,
+        file_name: generated.file_name,
+        row_count: generated.row_count,
+        size_bytes: generated.size_bytes,
+        generated_at: generated.generated_at
       },
       idempotencyKey: `attendance.export.requested:${jobId}`
     });
     return {
       job_id: jobId,
-      status: "queued",
+      status: generated.status,
       format,
       filters,
       columns,
       requested_by_user_id: actor.id,
       created_at: createdAt,
-      adapter: "outbox-queued-placeholder",
-      download_document_id: null
+      adapter: generated.adapter,
+      download_document_id: generated.download_document_id,
+      download_url: generated.download_url,
+      file_name: generated.file_name,
+      row_count: generated.row_count,
+      size_bytes: generated.size_bytes,
+      generated_at: generated.generated_at
     };
+  }
+
+  private exportRows(filters: Record<string, unknown>): Array<Record<string, unknown>> {
+    return this.store.attendanceDayRecords
+      .filter((record) => !record.deleted_at)
+      .filter((record) => !textFilter(filters.user_id) || record.employee_user_id === textFilter(filters.user_id))
+      .filter((record) => !textFilter(filters.employee_user_id) || record.employee_user_id === textFilter(filters.employee_user_id))
+      .filter((record) => !textFilter(filters.status) || record.status === textFilter(filters.status))
+      .filter((record) => !textFilter(filters.date_from) || record.work_date >= textFilter(filters.date_from)!)
+      .filter((record) => !textFilter(filters.date_to) || record.work_date <= textFilter(filters.date_to)!)
+      .filter((record) => {
+        const user = this.store.users.find((candidate) => candidate.id === record.employee_user_id);
+        return !textFilter(filters.department_id) || user?.department_id === textFilter(filters.department_id);
+      })
+      .sort((left, right) => right.work_date.localeCompare(left.work_date))
+      .map((record) => {
+        const user = this.store.users.find((candidate) => candidate.id === record.employee_user_id);
+        const department = user ? this.store.departments.find((candidate) => candidate.id === user.department_id) : null;
+        return {
+          id: record.id,
+          employee_user_id: record.employee_user_id,
+          employee_code: user?.employee_code ?? "",
+          employee: user?.full_name ?? record.employee_user_id,
+          department: department?.name ?? "",
+          date: record.work_date,
+          work_date: record.work_date,
+          status: record.status,
+          in_time: record.first_check_in?.slice(11, 16) ?? "",
+          out_time: record.last_check_out?.slice(11, 16) ?? "",
+          hours: Math.round((record.work_minutes / 60) * 100) / 100,
+          late_minutes: record.late_minutes,
+          early_out_minutes: record.early_out_minutes,
+          work_mode: record.work_mode ?? "",
+          exception_type: record.exception_type ?? "",
+          note: record.note ?? ""
+        };
+      });
   }
 
   private nextAllowedActions(punches: AttendancePunch[]): AttendancePunchEventType[] {
@@ -820,4 +882,8 @@ function datesInclusive(from: string, to: string): string[] {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return dates;
+}
+
+function textFilter(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
 }

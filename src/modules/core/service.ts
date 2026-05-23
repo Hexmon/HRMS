@@ -4,6 +4,7 @@ import { EmploymentStatuses, Roles } from "#shared";
 import { badRequest, conflict, forbidden, notFound } from "../../platform/errors.js";
 import type { AuthTokenRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
+import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
 import { appendCoreOutboxEvent } from "./events.js";
 import { CoreRepository } from "./repository.js";
 
@@ -550,9 +551,22 @@ export class CoreService {
     return this.presentImportJob(event);
   }
 
-  createExportJob(actor: AuthUser, input: UserExportInput) {
+  async createExportJob(actor: AuthUser, input: UserExportInput) {
     requireEmployeeExportAccess(actor);
     const jobId = randomUUID();
+    const columns = input.columns ?? defaultEmployeeExportColumns;
+    const rows = this.exportUserRows(input.filters, columns);
+    const generated = await createGeneratedExportDocument(this.store, {
+      actor,
+      businessObjectType: "core_user_export",
+      businessObjectId: jobId,
+      reportType: "core/users",
+      format: input.format as GeneratedExportFormat,
+      rows,
+      columns,
+      filters: input.filters,
+      filePrefix: "employee-export"
+    });
     const event = appendCoreOutboxEvent(this.store, {
       aggregateType: "core.user_export",
       aggregateId: jobId,
@@ -561,8 +575,15 @@ export class CoreService {
         actor_user_id: actor.id,
         format: input.format,
         filters: input.filters,
-        columns: input.columns ?? defaultEmployeeExportColumns,
-        status: "queued"
+        columns,
+        status: generated.status,
+        adapter: generated.adapter,
+        download_document_id: generated.download_document_id,
+        download_url: generated.download_url,
+        file_name: generated.file_name,
+        row_count: generated.row_count,
+        size_bytes: generated.size_bytes,
+        generated_at: generated.generated_at
       },
       idempotencyKey: `core.users.export_requested:${jobId}`
     });
@@ -1058,14 +1079,71 @@ export class CoreService {
       format: stringValue(payload.format, "csv"),
       filters: recordValue(payload.filters),
       columns: Array.isArray(payload.columns) ? payload.columns.filter((column) => typeof column === "string") : defaultEmployeeExportColumns,
-      download_document_id: null,
-      download_url: null,
+      download_document_id: stringOrNull(payload.download_document_id),
+      download_url: stringOrNull(payload.download_url),
       created_by_user_id: actorUserId,
       created_by: this.userLabel(actorUserId),
-      adapter: "outbox-queued-placeholder",
+      adapter: stringValue(payload.adapter, "outbox-queued-placeholder"),
+      file_name: stringOrNull(payload.file_name),
+      row_count: numberValue(payload.row_count),
+      size_bytes: numberOrNull(payload.size_bytes),
+      generated_at: stringOrNull(payload.generated_at),
       created_at: event.created_at,
       updated_at: event.published_at ?? event.failed_at ?? event.created_at
     };
+  }
+
+  private exportUserRows(filters: Record<string, unknown>, columns: readonly string[]): Array<Record<string, unknown>> {
+    const include = new Set(columns);
+    const wants = (key: string) => include.size === 0 || include.has(key);
+    return this.store.users
+      .filter((user) => !user.deleted_at)
+      .filter((user) => !textFilter(filters.department_id) || user.department_id === textFilter(filters.department_id))
+      .filter((user) => !textFilter(filters.designation_id) || user.designation_id === textFilter(filters.designation_id))
+      .filter((user) => {
+        const departmentName = textFilter(filters.department);
+        if (!departmentName) return true;
+        const department = this.store.departments.find((candidate) => candidate.id === user.department_id);
+        return department?.name === departmentName;
+      })
+      .filter((user) => {
+        const designationTitle = textFilter(filters.designation);
+        if (!designationTitle) return true;
+        const designation = this.store.designations.find((candidate) => candidate.id === user.designation_id);
+        return designation?.title === designationTitle;
+      })
+      .filter((user) => !textFilter(filters.status) || user.employment_status === textFilter(filters.status))
+      .filter((user) => !textFilter(filters.employment_status) || user.employment_status === textFilter(filters.employment_status))
+      .filter((user) => !textFilter(filters.role) || user.roles.includes(textFilter(filters.role) as RoleKey))
+      .filter((user) => {
+        if (typeof filters.login_enabled !== "boolean") return true;
+        return this.loginState(user.id) === "enabled" ? filters.login_enabled : !filters.login_enabled;
+      })
+      .map((user) => {
+        const detail = this.toListItem(user);
+        const row: Record<string, unknown> = {
+          id: detail.id,
+          employee_code: detail.employee_code,
+          name: detail.full_name,
+          full_name: detail.full_name,
+          email: detail.email,
+          department: detail.department?.name ?? "",
+          designation: detail.designation?.title ?? "",
+          manager: detail.manager?.full_name ?? "",
+          type: "",
+          employment_status: detail.employment_status,
+          status: detail.employment_status,
+          login_state: detail.login_state,
+          login: detail.login_state,
+          roles: detail.roles.join(", "),
+          joined: detail.joined_on ?? "",
+          joined_on: detail.joined_on ?? ""
+        };
+        if (include.size === 0) {
+          return row;
+        }
+        return Object.fromEntries(Object.entries(row).filter(([key]) => wants(key)));
+      });
   }
 
   private userLabel(userId: string | null): string {
@@ -1244,6 +1322,14 @@ function stringValue(value: unknown, fallback: string): string {
 
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function textFilter(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function recordValue(value: unknown): Record<string, unknown> {

@@ -144,7 +144,7 @@ describe("non-expense reports", () => {
     await app?.close();
   });
 
-  it("returns non-expense summary reports and outbox-backed export jobs", async () => {
+  it("returns non-expense summary reports and document-backed export jobs", async () => {
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
 
@@ -189,8 +189,12 @@ describe("non-expense reports", () => {
     expect(createExport.json()).toMatchObject({
       report_type: "hr/employees",
       format: "csv",
-      status: "queued",
-      adapter: "outbox-queued-placeholder"
+      status: "ready",
+      adapter: "minio-generated-csv",
+      download_document_id: expect.any(String)
+    });
+    await expect(app.store.objectStorage?.statObject(app.store.documents.find((document) => document.id === createExport.json().download_document_id)?.storage_key ?? "")).resolves.toMatchObject({
+      size: expect.any(Number)
     });
 
     const listExports = await app.inject({
@@ -215,6 +219,7 @@ describe("non-expense reports", () => {
     });
     expect(detail.statusCode).toBe(200);
     expect(detail.json().event_id).toBe(createExport.json().event_id);
+    expect(detail.json().download_document_id).toBe(createExport.json().download_document_id);
 
     const audit = await app.inject({
       method: "GET",

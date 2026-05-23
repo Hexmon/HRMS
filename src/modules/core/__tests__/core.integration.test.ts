@@ -287,9 +287,13 @@ describe("core hierarchy API", () => {
     });
     expect(exportJob.statusCode).toBe(200);
     expect(exportJob.json()).toMatchObject({
-      status: "queued",
+      status: "ready",
       format: "csv",
-      adapter: "outbox-queued-placeholder"
+      adapter: "minio-generated-csv",
+      download_document_id: expect.any(String)
+    });
+    await expect(app.store.objectStorage?.statObject(app.store.documents.find((document) => document.id === exportJob.json().download_document_id)?.storage_key ?? "")).resolves.toMatchObject({
+      size: expect.any(Number)
     });
 
     const forbiddenExport = await app.inject({

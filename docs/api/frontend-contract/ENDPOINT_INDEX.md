@@ -1824,6 +1824,10 @@ Success body highlights:
 | `created_by_user_id` | string<uuid> | optional, nullable | Actor user UUID |
 | `created_by` | string | required | - |
 | `adapter` | string | required | - |
+| `file_name` | string | optional, nullable | - |
+| `row_count` | integer | optional | minimum 0 |
+| `size_bytes` | integer | optional, nullable | minimum 0 |
+| `generated_at` | string<date-time> | optional, nullable | Export file generation timestamp |
 | `created_at` | string<date-time> | required | Job creation timestamp |
 | `updated_at` | string<date-time> | required | Job update timestamp |
 
@@ -6356,6 +6360,10 @@ Success body highlights:
 | `download_document_id` | string<uuid> | optional, nullable | Generated document UUID |
 | `download_url` | string | optional, nullable | - |
 | `adapter` | string | optional | - |
+| `file_name` | string | optional, nullable | - |
+| `row_count` | integer | optional | minimum 0 |
+| `size_bytes` | integer | optional, nullable | minimum 0 |
+| `generated_at` | string<date-time> | optional, nullable | Export file generation timestamp |
 | `created_at` | string<date-time> | required | Created timestamp |
 | `updated_at` | string<date-time> | required | Updated timestamp |
 
@@ -6412,6 +6420,10 @@ Success body highlights:
 | `download_document_id` | string<uuid> | optional, nullable | Generated document UUID |
 | `download_url` | string | optional, nullable | - |
 | `adapter` | string | optional | - |
+| `file_name` | string | optional, nullable | - |
+| `row_count` | integer | optional | minimum 0 |
+| `size_bytes` | integer | optional, nullable | minimum 0 |
+| `generated_at` | string<date-time> | optional, nullable | Export file generation timestamp |
 | `created_at` | string<date-time> | required | Created timestamp |
 | `updated_at` | string<date-time> | required | Updated timestamp |
 
@@ -8746,12 +8758,18 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `job_id` | string<uuid> | required | Attendance export job UUID |
-| `status` | string enum("queued") | required | - |
+| `status` | string enum("queued", "ready") | required | - |
 | `format` | string enum("csv", "xlsx", "json") | required | - |
 | `filters` | object | required | - |
 | `columns` | array of string | required | - |
 | `created_at` | string<date-time> | required | Export job creation timestamp |
 | `download_document_id` | string<uuid> | optional, nullable | Generated document UUID |
+| `download_url` | string | optional, nullable | - |
+| `adapter` | string | optional | - |
+| `file_name` | string | optional, nullable | - |
+| `row_count` | integer | optional | minimum 0 |
+| `size_bytes` | integer | optional, nullable | minimum 0 |
+| `generated_at` | string<date-time> | optional, nullable | Export file generation timestamp |
 
 **Frontend behavior notes**
 
@@ -9447,12 +9465,18 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `job_id` | string<uuid> | required | Leave/WFH export job UUID |
-| `status` | string enum("queued") | required | - |
+| `status` | string enum("queued", "ready") | required | - |
 | `format` | string enum("csv", "xlsx", "json") | required | - |
 | `filters` | object | required | - |
 | `columns` | array of string | required | - |
 | `created_at` | string<date-time> | required | Export job creation timestamp |
 | `download_document_id` | string<uuid> | optional, nullable | Generated document UUID |
+| `download_url` | string | optional, nullable | - |
+| `adapter` | string | optional | - |
+| `file_name` | string | optional, nullable | - |
+| `row_count` | integer | optional | minimum 0 |
+| `size_bytes` | integer | optional, nullable | minimum 0 |
+| `generated_at` | string<date-time> | optional, nullable | Export file generation timestamp |
 
 **Frontend behavior notes**
 

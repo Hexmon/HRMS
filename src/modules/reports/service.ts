@@ -5,6 +5,7 @@ import type { ExpenseApprovalRecord, MemoryDataStore } from "../../platform/data
 import { ReportRepository } from "./repository.js";
 import { assertReportRole } from "./policy.js";
 import { forbidden, notFound } from "../../platform/errors.js";
+import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { canSeeProject } from "../projects/policy.js";
 
@@ -752,8 +753,21 @@ export class ReportService {
     });
   }
 
-  createExport(actor: AuthUser, input: { format: "csv" | "xlsx"; report_type: string; filters: Record<string, unknown> }) {
+  async createExport(actor: AuthUser, input: { format: "csv" | "xlsx"; report_type: string; filters: Record<string, unknown> }) {
     const aggregateId = randomUUID();
+    const rows = this.exportRows(actor, input.report_type, input.filters);
+    const columns = exportColumns(rows);
+    const generated = await createGeneratedExportDocument(this.store, {
+      actor,
+      businessObjectType: "report_export",
+      businessObjectId: aggregateId,
+      reportType: input.report_type,
+      format: input.format as GeneratedExportFormat,
+      rows,
+      columns,
+      filters: input.filters,
+      filePrefix: `report-${input.report_type}`
+    });
     const event = appendOutboxEvent(this.store, {
       aggregateType: "report_export",
       aggregateId,
@@ -763,7 +777,14 @@ export class ReportService {
         report_type: input.report_type,
         format: input.format,
         filters: input.filters,
-        status: "queued"
+        status: generated.status,
+        adapter: generated.adapter,
+        download_document_id: generated.download_document_id,
+        download_url: generated.download_url,
+        file_name: generated.file_name,
+        row_count: generated.row_count,
+        size_bytes: generated.size_bytes,
+        generated_at: generated.generated_at
       },
       idempotencyKey: `report-export:${aggregateId}`
     });
@@ -941,11 +962,105 @@ export class ReportService {
       created_by_user_id: typeof event.payload.actor_user_id === "string" ? event.payload.actor_user_id : null,
       created_by: typeof event.payload.actor_user_id === "string" ? this.userLabel(event.payload.actor_user_id) : "System",
       filters: typeof event.payload.filters === "object" && event.payload.filters !== null ? event.payload.filters : {},
-      download_document_id: null,
-      download_url: null,
-      adapter: "outbox-queued-placeholder",
+      download_document_id: stringOrNull(event.payload.download_document_id),
+      download_url: stringOrNull(event.payload.download_url),
+      adapter: typeof event.payload.adapter === "string" ? event.payload.adapter : "outbox-queued-placeholder",
+      file_name: stringOrNull(event.payload.file_name),
+      row_count: numberValue(event.payload.row_count),
+      size_bytes: numberOrNull(event.payload.size_bytes),
+      generated_at: stringOrNull(event.payload.generated_at),
       created_at: event.created_at,
       updated_at: event.published_at ?? event.failed_at ?? event.created_at
+    };
+  }
+
+  private exportRows(actor: AuthUser, reportType: string, filters: Record<string, unknown>): Array<Record<string, unknown>> {
+    const summaryQuery = this.exportSummaryQuery(filters);
+    const expenseQuery = this.exportExpenseQuery(filters);
+    const result = (() => {
+      switch (reportType.trim().toLowerCase()) {
+        case "hr":
+        case "hr/employees":
+          return this.hrEmployees(actor, summaryQuery);
+        case "attendance":
+        case "attendance/summary":
+          return this.attendanceSummary(actor, summaryQuery);
+        case "leave":
+        case "leave-wfh":
+        case "leave-wfh/summary":
+          return this.leaveWfhSummary(actor, summaryQuery);
+        case "projects":
+        case "projects/summary":
+          return this.projectsSummary(actor, summaryQuery);
+        case "timesheets":
+        case "timesheets/summary":
+          return this.timesheetsSummary(actor, summaryQuery);
+        case "assets":
+        case "assets/summary":
+          return this.assetsSummary(actor, summaryQuery);
+        case "helpdesk":
+        case "helpdesk/summary":
+          return this.helpdeskSummary(actor, summaryQuery);
+        case "audit":
+          return this.auditReport(actor, summaryQuery);
+        case "expenses/my":
+          return this.myExpenses(actor, expenseQuery);
+        case "expenses/manager-queue":
+          return this.managerQueue(actor, expenseQuery);
+        case "expenses/manager-history":
+          return this.managerHistory(actor, expenseQuery);
+        case "expenses/finance-dashboard":
+          return this.financeDashboard(actor, expenseQuery);
+        case "expenses/finance-history":
+          return this.financeHistory(actor, expenseQuery);
+        case "expense":
+        case "expenses":
+        case "expenses/register":
+        default:
+          return this.register(actor, expenseQuery);
+      }
+    })();
+    return Array.isArray(result.items) ? result.items.map((row) => recordRow(row)) : [];
+  }
+
+  private exportSummaryQuery(filters: Record<string, unknown>): ReportSummaryQuery {
+    return {
+      page: 1,
+      page_size: exportPageSize(filters),
+      department_id: textOrUndefined(filters.department_id),
+      user_id: textOrUndefined(filters.user_id),
+      employee_user_id: textOrUndefined(filters.employee_user_id),
+      project_id: textOrUndefined(filters.project_id),
+      assigned_to_user_id: textOrUndefined(filters.assigned_to_user_id),
+      actor_user_id: textOrUndefined(filters.actor_user_id),
+      status: textOrUndefined(filters.status),
+      type: textOrUndefined(filters.type),
+      request_kind: filters.request_kind === "leave" || filters.request_kind === "wfh" ? filters.request_kind : undefined,
+      client: textOrUndefined(filters.client),
+      category_id: textOrUndefined(filters.category_id),
+      module: textOrUndefined(filters.module),
+      action: textOrUndefined(filters.action),
+      report_type: textOrUndefined(filters.report_type),
+      date_from: textOrUndefined(filters.date_from),
+      date_to: textOrUndefined(filters.date_to)
+    };
+  }
+
+  private exportExpenseQuery(filters: Record<string, unknown>): ExpenseReportQuery {
+    return {
+      page: 1,
+      page_size: exportPageSize(filters),
+      status: textOrUndefined(filters.status),
+      expense_type: textOrUndefined(filters.expense_type),
+      expense_sub_type: textOrUndefined(filters.expense_sub_type),
+      payment_type: textOrUndefined(filters.payment_type),
+      department_id: textOrUndefined(filters.department_id),
+      requester_user_id: textOrUndefined(filters.requester_user_id),
+      manager_user_id: textOrUndefined(filters.manager_user_id),
+      finance_user_id: textOrUndefined(filters.finance_user_id),
+      date_from: textOrUndefined(filters.date_from),
+      date_to: textOrUndefined(filters.date_to),
+      document_status: exportDocumentStatus(filters.document_status)
     };
   }
 
@@ -1483,4 +1598,46 @@ function actionRequiredBy(ticket: ExpenseTicket): "requester" | "manager" | "fin
 
 function hasStatus(ticket: ExpenseTicket, statuses: readonly string[]): boolean {
   return statuses.includes(ticket.status);
+}
+
+function recordRow(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function exportColumns(rows: readonly Record<string, unknown>[]): string[] {
+  const columns = new Set<string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      columns.add(key);
+    }
+  }
+  return [...columns];
+}
+
+function exportPageSize(filters: Record<string, unknown>): number {
+  const raw = typeof filters.page_size === "number" ? filters.page_size : Number(filters.page_size);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return 5000;
+  }
+  return Math.min(Math.trunc(raw), 10000);
+}
+
+function textOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function exportDocumentStatus(value: unknown): ExpenseReportQuery["document_status"] {
+  return value === "complete" || value === "missing" || value === "pending" || value === "not_required" ? value : "any";
 }

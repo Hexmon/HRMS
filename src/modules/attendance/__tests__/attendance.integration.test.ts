@@ -204,7 +204,7 @@ describe("attendance", () => {
     expect(day).toMatchObject({ status: "present", regularization_status: "approved" });
   });
 
-  it("queues attendance exports for HR/Admin/Auditor roles only", async () => {
+  it("creates document-backed attendance exports for HR/Admin/Auditor roles only", async () => {
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
 
@@ -220,10 +220,13 @@ describe("attendance", () => {
     });
     expect(exportJob.statusCode).toBe(200);
     expect(exportJob.json()).toMatchObject({
-      status: "queued",
+      status: "ready",
       format: "csv",
-      adapter: "outbox-queued-placeholder",
-      download_document_id: null
+      adapter: "minio-generated-csv",
+      download_document_id: expect.any(String)
+    });
+    await expect(app.store.objectStorage?.statObject(app.store.documents.find((document) => document.id === exportJob.json().download_document_id)?.storage_key ?? "")).resolves.toMatchObject({
+      size: expect.any(Number)
     });
     expect(app.store.outbox.some((event) => event.event_type === "attendance.export_requested" && event.aggregate_id === exportJob.json().job_id)).toBe(true);
 

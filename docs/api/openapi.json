@@ -14735,7 +14735,7 @@
         "tags": [
           "Core / Employees & Hierarchy"
         ],
-        "description": "Queues an employee export job for HR/Admin/Auditor users. Real file generation/download is represented by nullable document/download references until the export worker is implemented.",
+        "description": "Creates a CSV employee export document for HR/Admin/Auditor users when object storage is configured. XLSX remains queued metadata until the workbook renderer is implemented.",
         "requestBody": {
           "required": true,
           "content": {
@@ -14828,7 +14828,7 @@
                     },
                     "status": {
                       "type": "string",
-                      "example": "queued"
+                      "example": "ready"
                     },
                     "outbox_status": {
                       "type": "string",
@@ -14876,7 +14876,30 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "outbox-queued-placeholder"
+                      "example": "minio-generated-csv"
+                    },
+                    "file_name": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "employee-export-2026-05-23.csv"
+                    },
+                    "row_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 25
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "nullable": true,
+                      "minimum": 0,
+                      "example": 2048
+                    },
+                    "generated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Export file generation timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
+                      "nullable": true
                     },
                     "created_at": {
                       "type": "string",
@@ -42159,7 +42182,7 @@
                           },
                           "status": {
                             "type": "string",
-                            "example": "queued"
+                            "example": "ready"
                           },
                           "outbox_status": {
                             "type": "string",
@@ -42194,7 +42217,30 @@
                           },
                           "adapter": {
                             "type": "string",
-                            "example": "outbox-queued-placeholder"
+                            "example": "minio-generated-csv"
+                          },
+                          "file_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "report-hr-employees-2026-05-23.csv"
+                          },
+                          "row_count": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "example": 25
+                          },
+                          "size_bytes": {
+                            "type": "integer",
+                            "nullable": true,
+                            "minimum": 0,
+                            "example": 2048
+                          },
+                          "generated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Export file generation timestamp",
+                            "example": "2026-05-04T10:00:00.000Z",
+                            "nullable": true
                           },
                           "created_at": {
                             "type": "string",
@@ -42513,7 +42559,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Creates a CSV/XLSX export job backed by durable outbox metadata. Real file generation/download remains production hardening.",
+        "description": "Creates a CSV report export document backed by object storage and durable outbox metadata. XLSX remains queued metadata until the workbook renderer is implemented.",
         "requestBody": {
           "required": true,
           "content": {
@@ -42602,7 +42648,7 @@
                     },
                     "status": {
                       "type": "string",
-                      "example": "queued"
+                      "example": "ready"
                     },
                     "outbox_status": {
                       "type": "string",
@@ -42637,7 +42683,30 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "outbox-queued-placeholder"
+                      "example": "minio-generated-csv"
+                    },
+                    "file_name": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "report-hr-employees-2026-05-23.csv"
+                    },
+                    "row_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 25
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "nullable": true,
+                      "minimum": 0,
+                      "example": 2048
+                    },
+                    "generated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Export file generation timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
+                      "nullable": true
                     },
                     "created_at": {
                       "type": "string",
@@ -42939,7 +43008,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Returns one report export job and generated document/download placeholders when available.",
+        "description": "Returns one report export job and generated document reference when available.",
         "parameters": [
           {
             "schema": {
@@ -43011,7 +43080,7 @@
                     },
                     "status": {
                       "type": "string",
-                      "example": "queued"
+                      "example": "ready"
                     },
                     "outbox_status": {
                       "type": "string",
@@ -43046,7 +43115,30 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "outbox-queued-placeholder"
+                      "example": "minio-generated-csv"
+                    },
+                    "file_name": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "report-hr-employees-2026-05-23.csv"
+                    },
+                    "row_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 25
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "nullable": true,
+                      "minimum": 0,
+                      "example": 2048
+                    },
+                    "generated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Export file generation timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
+                      "nullable": true
                     },
                     "created_at": {
                       "type": "string",
@@ -64349,7 +64441,7 @@
         "tags": [
           "Attendance"
         ],
-        "description": "Creates queued attendance export metadata for HR/Admin/Auditor users. Actual file rendering and download document attachment remain production hardening.",
+        "description": "Creates CSV/JSON attendance export documents for HR/Admin/Auditor users when object storage is configured. XLSX remains queued metadata until the workbook renderer is implemented.",
         "requestBody": {
           "required": true,
           "content": {
@@ -64424,9 +64516,10 @@
                     "status": {
                       "type": "string",
                       "enum": [
-                        "queued"
+                        "queued",
+                        "ready"
                       ],
-                      "example": "queued"
+                      "example": "ready"
                     },
                     "format": {
                       "type": "string",
@@ -64458,6 +64551,37 @@
                       "format": "uuid",
                       "description": "Generated document UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "download_url": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "adapter": {
+                      "type": "string",
+                      "example": "minio-generated-csv"
+                    },
+                    "file_name": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "attendance-export-2026-05-23.csv"
+                    },
+                    "row_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 25
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "nullable": true,
+                      "minimum": 0,
+                      "example": 2048
+                    },
+                    "generated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Export file generation timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
                       "nullable": true
                     }
                   },
@@ -70203,7 +70327,7 @@
         "tags": [
           "Leave / WFH / Holidays"
         ],
-        "description": "Creates queued Leave/WFH export metadata for HR/Admin/Auditor users. Actual file rendering and download document attachment remain production hardening.",
+        "description": "Creates CSV/JSON Leave/WFH export documents for HR/Admin/Auditor users when object storage is configured. XLSX remains queued metadata until the workbook renderer is implemented.",
         "requestBody": {
           "required": true,
           "content": {
@@ -70280,9 +70404,10 @@
                     "status": {
                       "type": "string",
                       "enum": [
-                        "queued"
+                        "queued",
+                        "ready"
                       ],
-                      "example": "queued"
+                      "example": "ready"
                     },
                     "format": {
                       "type": "string",
@@ -70314,6 +70439,37 @@
                       "format": "uuid",
                       "description": "Generated document UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
+                    "download_url": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "adapter": {
+                      "type": "string",
+                      "example": "minio-generated-csv"
+                    },
+                    "file_name": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "leave-wfh-export-2026-05-23.csv"
+                    },
+                    "row_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 25
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "nullable": true,
+                      "minimum": 0,
+                      "example": 2048
+                    },
+                    "generated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Export file generation timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
                       "nullable": true
                     }
                   },

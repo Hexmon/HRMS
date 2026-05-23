@@ -225,10 +225,13 @@ describe("leave / WFH / holidays", () => {
     });
     expect(exportJob.statusCode).toBe(200);
     expect(exportJob.json()).toMatchObject({
-      status: "queued",
+      status: "ready",
       format: "csv",
-      adapter: "outbox-queued-placeholder",
-      download_document_id: null
+      adapter: "minio-generated-csv",
+      download_document_id: expect.any(String)
+    });
+    await expect(app.store.objectStorage?.statObject(app.store.documents.find((document) => document.id === exportJob.json().download_document_id)?.storage_key ?? "")).resolves.toMatchObject({
+      size: expect.any(Number)
     });
     expect(app.store.outbox.some((event) => event.event_type === "leave_wfh.export_requested" && event.aggregate_id === exportJob.json().job_id)).toBe(true);
 
