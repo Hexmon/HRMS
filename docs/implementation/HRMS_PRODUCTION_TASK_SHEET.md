@@ -405,7 +405,7 @@ Frontend:
 | Admin policy task sheet | `docs(admin): record policy settings completion` | Committed in `hrms_backend` as `28d2402` |
 | Admin email templates backend | `feat(admin): implement email template settings APIs` | Committed in `hrms_backend` as `6778966` |
 | Admin email templates frontend | `feat(admin): connect email templates to backend API` | Committed in `hrms-client` as `fd991af` |
-| Admin email templates task sheet | `docs(admin): record email template settings completion` | Committed in `hrms_backend` as `6e6f41b` |
+| Admin email templates task sheet | `docs(admin): record email template settings completion` | Committed in `hrms_backend` as `08b851e` |
 
 ## Next Steps
 
