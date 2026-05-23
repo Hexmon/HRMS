@@ -4,6 +4,7 @@ import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } fro
 export type AttendancePunchEventType = "check_in" | "break_start" | "break_end" | "check_out";
 
 export interface AttendanceQuery extends PageQuery {
+  date?: string;
   date_from?: string;
   date_to?: string;
   month?: string;
@@ -35,6 +36,12 @@ export interface AttendanceRegularizationDecisionBody extends ExpectedVersionBod
   remarks?: string;
 }
 
+export interface AttendanceExportBody extends ApiRecord {
+  filters?: ApiRecord;
+  columns?: string[];
+  format?: "csv" | "xlsx" | "json";
+}
+
 export const attendanceApi = {
   punch(input: AttendancePunchBody) {
     return apiRequest<ApiRecord>("/api/v1/attendance/punches", {
@@ -54,6 +61,15 @@ export const attendanceApi = {
   monthlyCalendar(query: AttendanceQuery = {}) {
     return apiRequest<ApiRecord>("/api/v1/attendance/calendar/monthly", { query });
   },
+  dailyCalendar(query: AttendanceQuery = {}) {
+    return apiRequest<
+      PaginatedResponse<ApiRecord> & {
+        summary?: ApiRecord;
+        exceptions?: ApiRecord[];
+        totals?: ApiRecord;
+      }
+    >("/api/v1/attendance/calendar/daily", { query });
+  },
   createRegularization(input: AttendanceRegularizationBody) {
     return apiRequest<ApiRecord>("/api/v1/attendance/regularizations", {
       method: "POST",
@@ -64,6 +80,12 @@ export const attendanceApi = {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/attendance/regularizations/my", {
       query,
     });
+  },
+  managerRegularizationQueue(query: AttendanceQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord> & { queue_counts?: ApiRecord }>(
+      "/api/v1/attendance/regularizations/queue/manager",
+      { query },
+    );
   },
   decideRegularization(id: string, input: AttendanceRegularizationDecisionBody) {
     return apiRequest<ApiRecord>(`/api/v1/attendance/regularizations/${id}/decision`, {
@@ -76,5 +98,11 @@ export const attendanceApi = {
       "/api/v1/attendance/exceptions",
       { query },
     );
+  },
+  createExport(input: AttendanceExportBody) {
+    return apiRequest<ApiRecord>("/api/v1/attendance/exports", {
+      method: "POST",
+      body: input,
+    });
   },
 };
