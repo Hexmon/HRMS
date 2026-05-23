@@ -555,7 +555,10 @@ Frontend:
 | Employee/core backlog task sheet | `docs(core): record employee core backlog completion` | Committed in `hrms_backend` as `edd2e72` |
 | EMS document wrappers backend | `feat(ems): add employee document wrapper APIs` | Committed in `hrms_backend` as `166f664` |
 | EMS document wrappers frontend | `feat(ems): connect document screen to backend wrappers` | Committed in `hrms-client` as `4efbbdf` |
-| EMS document wrappers task sheet | `docs(ems): record document wrapper completion` | Pending commit |
+| EMS document wrappers task sheet | `docs(ems): record document wrapper completion` | Committed in `hrms_backend` as `c5e4b89` |
+| Attendance backlog backend | `feat(attendance): complete daily queue and export APIs` | Committed in `hrms_backend` as `51a166c` |
+| Attendance backlog frontend | `feat(attendance): add completion endpoint adapters` | Committed in `hrms-client` as `36c47e6` |
+| Attendance backlog task sheet | `docs(attendance): record backlog completion` | Pending commit |
 
 ## Next Steps
 
