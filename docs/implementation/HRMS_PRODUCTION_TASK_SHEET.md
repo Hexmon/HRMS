@@ -4,14 +4,14 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 4 Notifications slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, and Helpdesk. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 4 Asset workflow additions after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, and Notifications. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 155 implemented operations across 138 paths |
-| Planned operations remaining | 60 |
+| Backend OpenAPI | 165 implemented operations across 147 paths |
+| Planned operations remaining | 50 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
@@ -24,6 +24,8 @@ This versioned report captures the completed Phase 4 Notifications slice after D
 | Helpdesk frontend | Integrated in `hrms-client` for Helpdesk dashboard, my tickets, agent queue, ticket detail, categories, SLA, and reports in API mode |
 | Notifications backend | Implemented for authenticated feed, unread count, mark-read, and mark-all-read |
 | Notifications frontend | Integrated in `hrms-client` topbar notification panel in API mode |
+| Asset workflow backend | Implemented for asset requests, approvals, cancellations, acknowledgements, maintenance records, vendors, and recovery queue |
+| Asset workflow frontend | Integrated in `hrms-client` asset store/API mode for visible asset request, acknowledgement, maintenance, vendor, and recovery queue flows |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Helpdesk Discovery
@@ -80,6 +82,31 @@ Deferred from this Helpdesk slice: category mutation endpoints and broader `/api
 | `POST` | `/api/v1/notifications/{id}/read` | Clicking an unread notification | Owner-scoped read-state mutation with optional `expected_version` OCC |
 | `POST` | `/api/v1/notifications/read-all` | Mark all read action | Marks all visible unread notifications read, optionally filtered by type or timestamp |
 
+## Asset Workflow Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Frontend routes | `hrms-client/src/routes/_app/assets*.tsx` exposes inventory, my assets, requests, returns/recovery, warranty/vendors, and detail/maintenance views | Replace production-critical mock/local request, acknowledgement, maintenance, vendor, and recovery behavior with backend APIs in API mode |
+| Current data source before slice | `hrms-client/src/lib/assets-store.tsx` hydrated assets from existing backend APIs but kept requests, acknowledgements, maintenance additions, vendors, and recovery rows in local/mock state | Add backend endpoints and map visible UI actions through `src/domains/assets/api.ts` |
+| Visible actions | Request asset, approve/reject/fulfill/cancel requests, acknowledge assignment, add maintenance, list vendors, and review recovery queue | Implement a minimal workflow slice with OCC on request decisions/cancellations |
+| Existing backend support | Base asset inventory, assignment, return, and license APIs already existed | Extend, do not replace, the existing assets module and persistence model |
+| Deferred scope | Full vendor CRUD, warranty renewal automation, recovery settlement workflow, and asset reports are broader admin/report features | Keep these planned for Phase 5/report hardening unless current UI requires them |
+
+## Asset Workflow API Inventory
+
+| Method | Path | Frontend usage | Notes |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/assets/requests` | `/assets/requests` request form | Creates a requester-scoped asset request |
+| `GET` | `/api/v1/assets/requests/my` | `/assets/requests` employee view | Lists the signed-in user's asset requests |
+| `GET` | `/api/v1/assets/requests/queue` | `/assets/requests` asset admin queue | Lists approval/fulfillment queue rows |
+| `POST` | `/api/v1/assets/requests/{id}/decision` | Asset manager approval/rejection/fulfillment controls | Versioned request decision with optional remarks and assigned asset |
+| `POST` | `/api/v1/assets/requests/{id}/cancel` | Requester cancellation | Versioned cancellation for pending requests |
+| `POST` | `/api/v1/assets/{id}/acknowledgements` | `/assets/my` acknowledgement action | Records asset assignment acknowledgement |
+| `GET` | `/api/v1/assets/{id}/maintenance` | `/assets/$id` maintenance tab | Lists asset maintenance records |
+| `POST` | `/api/v1/assets/{id}/maintenance` | `/assets/$id` maintenance entry form | Adds a maintenance record and updates asset status when applicable |
+| `GET` | `/api/v1/assets/vendors` | `/assets/warranty` vendor selector/cards | Lists software/hardware vendor metadata |
+| `GET` | `/api/v1/assets/recovery-queue` | `/assets/returns` recovery queue | Lists assets assigned to inactive or terminated users |
+
 ## Projects / Utilization API Inventory
 
 | Method | Path | Frontend usage | Notes |
@@ -118,6 +145,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 4 | Helpdesk | Integrate frontend routes | Completed in `hrms-client` | Completed for `/helpdesk`, `/helpdesk/my`, `/helpdesk/queue`, `/helpdesk/$id`, `/helpdesk/categories`, `/helpdesk/sla`, and `/helpdesk/reports` | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/helpdesk/*`, `src/lib/helpdesk-store.tsx`, Helpdesk routes/components, frontend API docs | `feat(helpdesk): connect helpdesk screens to backend APIs` |
 | 4 | Notifications | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, Notifications integration test, `pnpm test:contracts` | Passed. Non-escalated DB/tsx runs were sandbox-blocked; reruns with local QA infra access passed. | `src/modules/notifications/*`, `src/db/migrations/0008_notifications.sql`, `src/db/schema.ts`, store persistence, OpenAPI/docs/contracts | `feat(notifications): implement notification feed APIs` |
 | 4 | Notifications | Integrate topbar panel | Completed in `hrms-client` | Completed for the topbar notification panel in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/notifications/*`, `src/components/ui-kit/notification-panel.tsx`, `src/lib/mock/notifications.ts`, frontend API docs | `feat(notifications): connect topbar notifications to backend APIs` |
+| 4 | Asset workflows | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, assets integration test, `pnpm test:contracts` | Passed. OpenAPI generated 165 operations across 147 paths. | `src/db/migrations/0009_asset_workflows.sql`, `src/modules/assets/*`, `src/db/schema.ts`, store persistence, OpenAPI/docs/contracts | `feat(assets): implement asset workflow APIs` |
+| 4 | Asset workflows | Integrate frontend asset screens | Completed in `hrms-client` | Completed for requests, acknowledgements, maintenance, vendors, and recovery queue in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/assets/*`, `src/lib/assets-store.tsx`, `src/lib/mock/assets.ts`, frontend API docs | `feat(assets): connect asset workflow screens to backend APIs` |
 
 ## Remaining Blockers
 
@@ -130,6 +159,7 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | P1 | No frontend e2e/user-flow baseline for Notifications/topbar read-state behavior |
 | P1 | Helpdesk category create/update/toggle endpoints remain planned for admin/settings phase; API mode surfaces this as an error instead of mutating local state |
 | P1 | Admin notification channel/event preferences remain planned for Admin settings |
+| P1 | Full asset vendor CRUD, warranty automation, recovery settlement workflow, and asset reports remain planned for admin/report hardening |
 | P1 | Project-specific reports, timesheet submission detail, and project document upload/attach UX remain planned |
 | P1 | Attendance daily detail, manager queue alias, export/report endpoints, and richer attendance reports remain planned |
 | P1 | Leave/WFH export/report endpoint remains planned for reports/admin phase |
@@ -143,10 +173,10 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed; generated 155 operation frontend contract
+- `pnpm api:docs:generate`: passed; generated 165 operation frontend contract
 - `pnpm api:docs:verify`: passed
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
-- `pnpm exec vitest run --project integration src/modules/notifications/__tests__/notifications.integration.test.ts`: passed, 1 test
+- `pnpm exec vitest run --project integration src/modules/assets/__tests__/assets.integration.test.ts`: passed, 3 tests
 - `pnpm test:contracts`: passed, 13 tests
 
 Frontend:
@@ -154,7 +184,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 138 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 147 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -170,6 +200,9 @@ Frontend:
 - Helpdesk category mutation is intentionally not implemented in this slice because the verified planned contract includes `GET /api/v1/helpdesk/categories` only. Category edit/toggle actions stay deferred to admin/settings category management.
 - Helpdesk attachment APIs accept document references only; real upload/replace remains part of the existing Documents/upload hardening work.
 - Notifications read-state is scoped to the topbar feed; admin notification channel preferences remain deferred to the Admin settings phase.
+- Asset workflow requests intentionally extend the existing asset module rather than creating a separate module so base inventory, assignment, return, and license behavior remain unchanged.
+- Asset vendor support is read-only in this slice because the current visible frontend needs vendor cards/selectors; vendor CRUD remains in admin hardening.
+- Asset recovery queue is read-only in this slice and derives from assigned assets owned by inactive/terminated users; settlement workflows remain deferred.
 
 ## Commit Messages
 
@@ -179,10 +212,12 @@ Frontend:
 | Helpdesk frontend | `feat(helpdesk): connect helpdesk screens to backend APIs` | Committed in `hrms-client` as `50412ce` |
 | Notifications backend | `feat(notifications): implement notification feed APIs` | Committed in `hrms_backend` as `75525cc` |
 | Notifications frontend | `feat(notifications): connect topbar notifications to backend APIs` | Committed in `hrms-client` as `4ae6531` |
+| Asset workflows backend | `feat(assets): implement asset workflow APIs` | Committed in `hrms_backend` as `bfc719f` |
+| Asset workflows frontend | `feat(assets): connect asset workflow screens to backend APIs` | Committed in `hrms-client` as `6989a2f` |
 
 ## Next Steps
 
-1. Phase 4 Notifications is implemented, frontend-integrated, and validated for the topbar feed vertical slice.
-2. Backend OpenAPI now has 155 operations across 138 paths; planned operations remaining are 60.
-3. The topbar notification feed, unread badge, mark-read, and mark-all-read behavior use backend APIs in API mode; explicit non-production fallback remains available only through the existing config path.
-4. Next Phase 4 scope: Asset request, acknowledgement, maintenance, vendor, warranty, and recovery queue additions.
+1. Phase 4 Asset workflow additions are implemented, frontend-integrated, and validated for the visible asset request, acknowledgement, maintenance, vendor, and recovery queue vertical slice.
+2. Backend OpenAPI now has 165 operations across 147 paths; planned operations remaining are 50.
+3. Asset workflow behavior uses backend APIs in API mode; explicit non-production fallback remains available only through the existing config path.
+4. Next Phase 4 scope: Timesheet project summaries, submission detail, productivity, missing submission, and selector additions.
