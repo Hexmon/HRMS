@@ -128,6 +128,16 @@ const expectedOperations = [
   "GET /api/v1/reports/expenses/my",
   "GET /api/v1/reports/expenses/payments",
   "GET /api/v1/reports/expenses/register",
+  "GET /api/v1/reports/assets/summary",
+  "GET /api/v1/reports/attendance/summary",
+  "GET /api/v1/reports/audit",
+  "GET /api/v1/reports/exports",
+  "GET /api/v1/reports/exports/{id}",
+  "GET /api/v1/reports/helpdesk/summary",
+  "GET /api/v1/reports/hr/employees",
+  "GET /api/v1/reports/leave-wfh/summary",
+  "GET /api/v1/reports/projects/summary",
+  "GET /api/v1/reports/timesheets/summary",
   "GET /api/v1/timesheets/queue/approver",
   "GET /api/v1/timesheets/missing-submissions",
   "GET /api/v1/timesheets/productivity-summary",
@@ -417,6 +427,15 @@ const listOperations = [
   "GET /api/v1/reports/expenses/advance-aging",
   "GET /api/v1/reports/expenses/payments",
   "GET /api/v1/reports/expenses/audit",
+  "GET /api/v1/reports/assets/summary",
+  "GET /api/v1/reports/attendance/summary",
+  "GET /api/v1/reports/audit",
+  "GET /api/v1/reports/exports",
+  "GET /api/v1/reports/helpdesk/summary",
+  "GET /api/v1/reports/hr/employees",
+  "GET /api/v1/reports/leave-wfh/summary",
+  "GET /api/v1/reports/projects/summary",
+  "GET /api/v1/reports/timesheets/summary",
   "GET /api/v1/assets/",
   "GET /api/v1/assets/recovery-queue",
   "GET /api/v1/assets/requests/my",
@@ -649,7 +668,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(196);
+    expect(rows.length).toBe(206);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

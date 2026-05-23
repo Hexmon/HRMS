@@ -131,3 +131,104 @@ describe("expanded expense reports", () => {
     expect(analytics.json().exception_counts.missing_documents).toBe(1);
   });
 });
+
+describe("non-expense reports", () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    app = await buildRealApp();
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app?.close();
+  });
+
+  it("returns non-expense summary reports and outbox-backed export jobs", async () => {
+    const admin = await loginAs(app, "ADM");
+    const employee = await loginAs(app, "E1");
+
+    const forbiddenHr = await app.inject({
+      method: "GET",
+      url: "/api/v1/reports/hr/employees",
+      headers: authHeader(employee.token)
+    });
+    expect(forbiddenHr.statusCode).toBe(403);
+
+    for (const url of [
+      "/api/v1/reports/hr/employees?page=1&page_size=10",
+      "/api/v1/reports/attendance/summary?page=1&page_size=10",
+      "/api/v1/reports/leave-wfh/summary?page=1&page_size=10",
+      "/api/v1/reports/projects/summary?page=1&page_size=10",
+      "/api/v1/reports/timesheets/summary?page=1&page_size=10",
+      "/api/v1/reports/assets/summary?page=1&page_size=10",
+      "/api/v1/reports/helpdesk/summary?page=1&page_size=10"
+    ]) {
+      const response = await app.inject({
+        method: "GET",
+        url,
+        headers: authHeader(admin.token)
+      });
+      expect(response.statusCode, url).toBe(200);
+      expect(response.json()).toMatchObject({ page: 1, page_size: 10 });
+      expect(response.json().totals, url).toBeDefined();
+      expect(response.json().filters, url).toBeDefined();
+    }
+
+    const createExport = await app.inject({
+      method: "POST",
+      url: "/api/v1/reports/exports",
+      headers: authHeader(admin.token),
+      payload: {
+        report_type: "hr/employees",
+        format: "csv",
+        filters: { status: "active" }
+      }
+    });
+    expect(createExport.statusCode).toBe(200);
+    expect(createExport.json()).toMatchObject({
+      report_type: "hr/employees",
+      format: "csv",
+      status: "queued",
+      adapter: "outbox-queued-placeholder"
+    });
+
+    const listExports = await app.inject({
+      method: "GET",
+      url: "/api/v1/reports/exports?page=1&page_size=10&report_type=hr/employees",
+      headers: authHeader(admin.token)
+    });
+    expect(listExports.statusCode).toBe(200);
+    expect(listExports.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: createExport.json().id,
+          report_type: "hr/employees"
+        })
+      ])
+    );
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/v1/reports/exports/${createExport.json().id}`,
+      headers: authHeader(admin.token)
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().event_id).toBe(createExport.json().event_id);
+
+    const audit = await app.inject({
+      method: "GET",
+      url: "/api/v1/reports/audit?page=1&page_size=10&module=reports",
+      headers: authHeader(admin.token)
+    });
+    expect(audit.statusCode).toBe(200);
+    expect(audit.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "reports.export.requested",
+          module: "Reports"
+        })
+      ])
+    );
+  });
+});

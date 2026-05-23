@@ -2351,6 +2351,76 @@ const financeAnalyticsSchema = {
   additionalProperties: true
 };
 
+const reportSummaryQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    department_id: uuid("Department filter UUID"),
+    user_id: uuid("User filter UUID"),
+    employee_user_id: uuid("Employee user filter UUID"),
+    project_id: uuid("Project filter UUID"),
+    assigned_to_user_id: uuid("Assigned user filter UUID"),
+    actor_user_id: uuid("Audit actor filter UUID"),
+    status: { type: "string", example: "active" },
+    type: { type: "string", example: "Laptop" },
+    request_kind: { type: "string", enum: ["leave", "wfh"], example: "leave" },
+    client: { type: "string", example: "Acme" },
+    category_id: uuid("Helpdesk category UUID"),
+    module: { type: "string", example: "Admin" },
+    action: { type: "string", example: "updated" },
+    report_type: { type: "string", example: "attendance" },
+    date_from: date("Lower date filter"),
+    date_to: date("Upper date filter")
+  }
+};
+
+const genericReportSummarySchema = {
+  type: "object",
+  required: ["items", "page", "page_size", "total", "totals", "filters"],
+  properties: {
+    items: { type: "array", items: { type: "object", additionalProperties: true } },
+    page: { type: "integer", minimum: 1, example: 1 },
+    page_size: { type: "integer", minimum: 1, example: 25 },
+    total: { type: "integer", minimum: 0, example: 12 },
+    totals: { type: "object", additionalProperties: true },
+    filters: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const reportExportJobSchema = {
+  type: "object",
+  required: ["id", "export_id", "event_id", "report_type", "format", "status", "created_at", "updated_at"],
+  properties: {
+    id: uuid("Export job UUID"),
+    export_id: uuid("Export job UUID"),
+    event_id: uuid("Outbox event UUID"),
+    report_type: { type: "string", example: "attendance" },
+    format: { type: "string", enum: ["csv", "xlsx"], example: "csv" },
+    status: { type: "string", example: "queued" },
+    outbox_status: { type: "string", example: "pending" },
+    created_by_user_id: { ...uuid("Creator UUID"), nullable: true },
+    created_by: { type: "string", nullable: true, example: "ADM - HR Admin" },
+    filters: { type: "object", additionalProperties: true },
+    download_document_id: { ...uuid("Generated document UUID"), nullable: true },
+    download_url: { type: "string", nullable: true },
+    adapter: { type: "string", example: "outbox-queued-placeholder" },
+    created_at: dateTime("Created timestamp"),
+    updated_at: dateTime("Updated timestamp")
+  },
+  additionalProperties: true
+};
+
+const reportExportCreateBodySchema = {
+  type: "object",
+  properties: {
+    format: { type: "string", enum: ["csv", "xlsx"], default: "csv" },
+    report_type: { type: "string", default: "expense", example: "attendance" },
+    filters: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: false
+};
+
 
 const timesheetApproverQueueQuerySchema = {
   ...paginationQuerySchema,
@@ -3998,7 +4068,17 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/expenses/advance-aging": operation("Finance Management", "Advance aging report", "Finance report of open advances awaiting bills, settlement, adjustment, or closure.", { querystring: paginationQuerySchema, response200: paginated(ticketSchema) }),
   "GET /api/v1/reports/expenses/payments": operation("Finance Management", "Payment register", "Finance payment release register with ticket context.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
   "GET /api/v1/reports/expenses/audit": operation("Finance Management", "Finance audit report", "Read-only audit report for Finance/Auditor/Admin roles.", { querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
-  "POST /api/v1/reports/exports": operation("Reports & Analytics", "Create export job", "Creates a CSV/XLSX export placeholder job. Real accounting export target remains HIR-004 and provider-not-configured outside local demo.", { body: { type: "object", properties: { format: { type: "string", enum: ["csv", "xlsx"], default: "csv" } } }, response200: { type: "object", required: ["export_id", "format", "status", "adapter"], properties: { export_id: { type: "string", example: "export-1777630981" }, format: { type: "string", example: "csv" }, status: { type: "string", example: "queued" }, adapter: { type: "string", example: "csv-xlsx-placeholder" } } } }),
+  "GET /api/v1/reports/hr/employees": operation("Reports & Analytics", "HR employee report", "HR/Admin/Auditor employee master report with headcount, department/designation breakdowns, role access rows, and filters.", { querystring: reportSummaryQuerySchema, response200: genericReportSummarySchema }),
+  "GET /api/v1/reports/attendance/summary": operation("Reports & Analytics", "Attendance report", "Attendance report rows for daily status, work hours, late/early exceptions, and department/status rollups.", { querystring: reportSummaryQuerySchema, response200: genericReportSummarySchema }),
+  "GET /api/v1/reports/leave-wfh/summary": operation("Reports & Analytics", "Leave and WFH report", "Leave/WFH report rows with balances, holidays, request status breakdowns, and duration totals.", { querystring: reportSummaryQuerySchema, response200: genericReportSummarySchema }),
+  "GET /api/v1/reports/projects/summary": operation("Reports & Analytics", "Project portfolio report", "Project report rows with allocations, utilization, assignment history, and cost rollups.", { querystring: reportSummaryQuerySchema, response200: genericReportSummarySchema }),
+  "GET /api/v1/reports/timesheets/summary": operation("Reports & Analytics", "Timesheet report", "Timesheet report rows with submitted hours, billable mix, project rollups, and productivity rows.", { querystring: reportSummaryQuerySchema, response200: genericReportSummarySchema }),
+  "GET /api/v1/reports/assets/summary": operation("Reports & Analytics", "Asset report", "Asset report rows with inventory status, maintenance history, recovery queue, and type/status breakdowns.", { querystring: reportSummaryQuerySchema, response200: genericReportSummarySchema }),
+  "GET /api/v1/reports/helpdesk/summary": operation("Reports & Analytics", "Helpdesk report", "Helpdesk report rows with open/closed/SLA rollups, agent performance, category, employee, and resolution rows.", { querystring: reportSummaryQuerySchema, response200: genericReportSummarySchema }),
+  "GET /api/v1/reports/audit": operation("Reports & Analytics", "Cross-module audit report", "Admin/Auditor cross-module audit report assembled from expense audit logs, outbox events, asset events, and helpdesk events.", { querystring: reportSummaryQuerySchema, response200: genericReportSummarySchema }),
+  "GET /api/v1/reports/exports": operation("Reports & Analytics", "List export jobs", "Lists report export jobs backed by durable outbox events. Admin/Auditor can see all; other users see their own jobs.", { querystring: reportSummaryQuerySchema, response200: paginated(reportExportJobSchema) }),
+  "GET /api/v1/reports/exports/{id}": operation("Reports & Analytics", "Get export job", "Returns one report export job and generated document/download placeholders when available.", { params: idParamSchema, response200: reportExportJobSchema }),
+  "POST /api/v1/reports/exports": operation("Reports & Analytics", "Create export job", "Creates a CSV/XLSX export job backed by durable outbox metadata. Real file generation/download remains production hardening.", { body: reportExportCreateBodySchema, response200: reportExportJobSchema }),
 
   "POST /api/v1/assets/": operation("Assets", "Create asset", "Creates an asset inventory record. Asset/Admin role required.", { body: { type: "object", required: ["asset_code", "asset_type", "name"], properties: { asset_code: { type: "string", example: "LAP-001" }, asset_type: { type: "string", example: "Laptop" }, name: { type: "string", example: "ThinkPad T-Series" }, serial_no: { type: "string", example: "SN-001" } } }, response200: assetSchema }),
   "GET /api/v1/assets/": operation("Assets", "List assets", "Paginated asset inventory list.", { querystring: paginationQuerySchema, response200: paginated(assetSchema) }),

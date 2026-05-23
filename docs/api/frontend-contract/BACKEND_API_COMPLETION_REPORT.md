@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 196 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 206 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 21 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 217 | Regenerate frontend client only after each backend phase lands. | `196 current + 21 remaining`; Admin audit-log read API is now available. |
+| Planned new APIs | 11 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 217 | Regenerate frontend client only after each backend phase lands. | `206 current + 11 remaining`; non-expense report APIs are now available. |
 
 ## Development Phases
 
@@ -37,7 +37,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Finance Management | 13 | Finance queue/detail/approval/payment/bills/settlement/audit and finance reports. |
 | Outbox / Platform Events | 1 | Asset employee-terminated event consumer endpoint. |
 | Platform / Health | 5 | Unversioned/versioned health plus OpenAPI JSON. |
-| Reports & Analytics | 5 | Expense requester/manager/register reports and export creation. |
+| Reports & Analytics | 15 | Expense requester/manager/register reports, HR/attendance/leave/project/timesheet/asset/helpdesk/audit summaries, and export creation/list/detail. |
 | Timesheets | 12 | Work segments, submissions, approver queue, decisions, workflow definitions, project summaries, missing submissions, productivity summary, submission detail, and selectors. |
 | Attendance | 9 | Punches, my punch list, my/team summaries, monthly calendar, regularization submit/list/decision, and exception queue. |
 | Leave / WFH / Holidays | 14 | Leave balances, leave apply/cancel/decision queues, WFH apply/decision queues, HR monitor, and holiday list/upsert. |
@@ -79,7 +79,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **21**.
+Total remaining planned new operations: **11**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -249,20 +249,20 @@ Total remaining planned new operations: **21**.
 | GET | `/api/v1/helpdesk/categories` | `/helpdesk/new` | Return ticket categories and SLA hints. | Authenticated employee. | active_only, parent_id optional | categories[], SLA hints | Shared errors; cacheable. | Implemented in Phase 4 Helpdesk |
 | GET | `/api/v1/helpdesk/sla-report` | `/helpdesk/reports` | Return SLA compliance report. | Helpdesk lead/Admin/auditor. | date_range, category_id, assignee_id, page, page_size | items[], totals, pagination | 403 restricted report; paginated. | Implemented in Phase 4 Helpdesk |
 
-### Reports Beyond Expenses (10 planned APIs)
+### Reports Beyond Expenses (10 implemented APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GET | `/api/v1/reports/hr/employees` | `/reports/hr` | HR employee report. | HR/Admin/auditor. | page, page_size, department_id, status, date_range | items[], totals, pagination | 403 restricted report. | Planned / Not Implemented |
-| GET | `/api/v1/reports/attendance/summary` | `/reports/attendance` | Attendance report. | HR/Admin/auditor/manager scoped. | page, page_size, date_range, department_id, user_id | items[], totals, pagination | 403 out-of-scope. | Planned / Not Implemented |
-| GET | `/api/v1/reports/leave-wfh/summary` | `/reports/leave-wfh` | Leave and WFH report. | HR/Admin/auditor/manager scoped. | page, page_size, date_range, status, request_kind | items[], totals, pagination | Shared errors. | Planned / Not Implemented |
-| GET | `/api/v1/reports/projects/summary` | `/reports/projects` | Project portfolio report. | PM/Admin/auditor by scope. | page, page_size, status, client, date_range | items[], totals, pagination | Money as strings; 403 restricted portfolio. | Planned / Not Implemented |
-| GET | `/api/v1/reports/timesheets/summary` | `/reports/timesheets` | Timesheet report. | Manager/HR/Admin/auditor scoped. | page, page_size, date_range, project_id, user_id | items[], totals, pagination | Shared errors; hours decimal strings or numbers by schema decision. | Planned / Not Implemented |
-| GET | `/api/v1/reports/assets/summary` | `/reports/assets` | Asset report. | Asset admin/Admin/auditor. | page, page_size, status, type, assigned_to_user_id | items[], totals, pagination | Shared errors. | Planned / Not Implemented |
-| GET | `/api/v1/reports/helpdesk/summary` | `/reports/helpdesk` | Helpdesk report. | Helpdesk lead/Admin/auditor. | page, page_size, date_range, category_id, status | items[], totals, pagination | Shared errors. | Planned / Not Implemented |
-| GET | `/api/v1/reports/audit` | `/reports/audit` | Cross-module audit report. | Auditor/Admin only. | page, page_size, actor_user_id, module, action, date_range | items[], pagination | 403 non-auditor; redact secrets. | Planned / Not Implemented |
-| GET | `/api/v1/reports/exports` | `/reports/exports` | List export jobs. | Authenticated; jobs scoped by creator/role. | page, page_size, status, report_type | items[], pagination | 403 out-of-scope. | Planned / Not Implemented |
-| GET | `/api/v1/reports/exports/{id}` | `/reports/exports/:id` | Get export job detail and backend download reference when ready. | Creator, Admin, or Auditor by scope. | Path id | job, status, download_document_id or download_url token via document API | 404 unknown; do not expose storage credentials. | Planned / Not Implemented |
+| GET | `/api/v1/reports/hr/employees` | `/reports/hr` | HR employee report. | HR/Admin/auditor. | page, page_size, department_id, status, date_range | items[], totals, pagination | 403 restricted report. | Implemented in Phase 5 Reports |
+| GET | `/api/v1/reports/attendance/summary` | `/reports/attendance` | Attendance report. | HR/Admin/auditor/manager scoped. | page, page_size, date_range, department_id, user_id | items[], totals, pagination | 403 out-of-scope. | Implemented in Phase 5 Reports |
+| GET | `/api/v1/reports/leave-wfh/summary` | `/reports/leave-wfh` | Leave and WFH report. | HR/Admin/auditor/manager scoped. | page, page_size, date_range, status, request_kind | items[], totals, pagination | Shared errors. | Implemented in Phase 5 Reports |
+| GET | `/api/v1/reports/projects/summary` | `/reports/projects` | Project portfolio report. | PM/Admin/auditor by scope. | page, page_size, status, client, date_range | items[], totals, pagination | Money as strings; 403 restricted portfolio. | Implemented in Phase 5 Reports |
+| GET | `/api/v1/reports/timesheets/summary` | `/reports/timesheets` | Timesheet report. | Manager/HR/Admin/auditor scoped. | page, page_size, date_range, project_id, user_id | items[], totals, pagination | Shared errors; hours decimal strings or numbers by schema decision. | Implemented in Phase 5 Reports |
+| GET | `/api/v1/reports/assets/summary` | `/reports/assets` | Asset report. | Asset admin/Admin/auditor. | page, page_size, status, type, assigned_to_user_id | items[], totals, pagination | Shared errors. | Implemented in Phase 5 Reports |
+| GET | `/api/v1/reports/helpdesk/summary` | `/reports/helpdesk` | Helpdesk report. | Helpdesk lead/Admin/auditor. | page, page_size, date_range, category_id, status | items[], totals, pagination | Shared errors. | Implemented in Phase 5 Reports |
+| GET | `/api/v1/reports/audit` | `/reports/audit` | Cross-module audit report. | Auditor/Admin only. | page, page_size, actor_user_id, module, action, date_range | items[], pagination | 403 non-auditor; redact secrets. | Implemented in Phase 5 Reports |
+| GET | `/api/v1/reports/exports` | `/reports/exports` | List export jobs. | Authenticated; jobs scoped by creator/role. | page, page_size, status, report_type | items[], pagination | 403 out-of-scope. | Implemented in Phase 5 Reports |
+| GET | `/api/v1/reports/exports/{id}` | `/reports/exports/:id` | Get export job detail and backend download reference when ready. | Creator, Admin, or Auditor by scope. | Path id | job, status, download_document_id or download_url token via document API | 404 unknown; do not expose storage credentials. | Implemented in Phase 5 Reports |
 
 ### Admin Settings (21 planned APIs)
 

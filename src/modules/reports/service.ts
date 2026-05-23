@@ -1,8 +1,12 @@
-import type { AuthUser, ExpensePayment, ExpenseTicket, UUID } from "#shared";
-import { addMoney, compareMoney, ExpenseStatuses, Roles, RequiredDocumentsByExpenseSubType } from "#shared";
+import { randomUUID } from "node:crypto";
+import type { AuthUser, CoreUser, ExpensePayment, ExpenseTicket, OutboxEvent, ProjectRecord, UUID } from "#shared";
+import { addMoney, AssetStatuses, compareMoney, ExpenseStatuses, HelpdeskTicketStatuses, ProjectMemberStatuses, ProjectStatuses, Roles, RequiredDocumentsByExpenseSubType } from "#shared";
 import type { ExpenseApprovalRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { ReportRepository } from "./repository.js";
 import { assertReportRole } from "./policy.js";
+import { forbidden, notFound } from "../../platform/errors.js";
+import { appendOutboxEvent } from "../expenses/events.js";
+import { canSeeProject } from "../projects/policy.js";
 
 export interface ExpenseReportQuery {
   page: number;
@@ -19,6 +23,27 @@ export interface ExpenseReportQuery {
   date_from?: string;
   date_to?: string;
   document_status?: "any" | "complete" | "missing" | "pending" | "not_required";
+}
+
+export interface ReportSummaryQuery {
+  page: number;
+  page_size: number;
+  status?: string;
+  type?: string;
+  request_kind?: "leave" | "wfh";
+  department_id?: UUID;
+  user_id?: UUID;
+  employee_user_id?: UUID;
+  project_id?: UUID;
+  assigned_to_user_id?: UUID;
+  actor_user_id?: UUID;
+  client?: string;
+  category_id?: UUID;
+  module?: string;
+  action?: string;
+  report_type?: string;
+  date_from?: string;
+  date_to?: string;
 }
 
 function page<T>(items: T[], pageNumber: number, pageSize: number) {
@@ -317,13 +342,610 @@ export class ReportService {
     return page(this.repository.audits(), pageNumber, pageSize);
   }
 
-  createExport(actor: AuthUser, format: "csv" | "xlsx") {
-    assertReportRole(actor, [Roles.FinanceManager, Roles.Admin]);
+  hrEmployees(actor: AuthUser, query: ReportSummaryQuery) {
+    assertReportRole(actor, [Roles.HRManager, Roles.Admin, Roles.Auditor]);
+    const rows = this.store.users
+      .filter((user) => !user.deleted_at)
+      .filter((user) => !query.department_id || user.department_id === query.department_id)
+      .filter((user) => !query.status || user.employment_status === query.status)
+      .filter((user) => !query.date_from || !user.joined_on || user.joined_on >= query.date_from)
+      .filter((user) => !query.date_to || !user.joined_on || user.joined_on <= query.date_to)
+      .map((user) => this.presentEmployeeReportRow(user));
+    return pageWithMeta(rows, query.page, query.page_size, {
+      totals: {
+        employees: rows.length,
+        active: rows.filter((row) => row.status === "active").length,
+        inactive: rows.filter((row) => row.status !== "active").length,
+        departments: new Set(rows.map((row) => row.department_id)).size
+      },
+      department_headcount: groupCount(rows, (row) => row.department_name),
+      designation_headcount: groupCount(rows, (row) => row.designation_title),
+      role_access: rows.map((row) => ({
+        id: row.id,
+        employee_code: row.employee_code,
+        employee: row.full_name,
+        department: row.department_name,
+        roles: row.roles,
+        login_enabled: row.login_enabled,
+        last_login_at: row.last_login_at
+      })),
+      filters: this.appliedSummaryFilters(query)
+    });
+  }
+
+  attendanceSummary(actor: AuthUser, query: ReportSummaryQuery) {
+    const rows = this.store.attendanceDayRecords
+      .filter((record) => !record.deleted_at)
+      .filter((record) => this.canSeeUserReportRow(actor, record.employee_user_id, "attendance"))
+      .filter((record) => !query.user_id || record.employee_user_id === query.user_id)
+      .filter((record) => !query.employee_user_id || record.employee_user_id === query.employee_user_id)
+      .filter((record) => !query.status || record.status === query.status)
+      .filter((record) => !query.date_from || record.work_date >= query.date_from)
+      .filter((record) => !query.date_to || record.work_date <= query.date_to)
+      .filter((record) => {
+        const user = this.user(record.employee_user_id);
+        return !query.department_id || user?.department_id === query.department_id;
+      })
+      .map((record) => {
+        const user = this.user(record.employee_user_id);
+        return {
+          id: record.id,
+          date: record.work_date,
+          employee_user_id: record.employee_user_id,
+          employee_code: user?.employee_code ?? null,
+          employee: user?.full_name ?? record.employee_user_id,
+          department_id: user?.department_id ?? null,
+          department: user ? this.departmentName(user.department_id) : null,
+          status: record.status,
+          in_time: record.first_check_in?.slice(11, 16) ?? "",
+          out_time: record.last_check_out?.slice(11, 16) ?? "",
+          hours: Math.round((record.work_minutes / 60) * 10) / 10,
+          late_minutes: record.late_minutes,
+          early_out_minutes: record.early_out_minutes,
+          work_mode: record.work_mode,
+          exception_type: record.exception_type,
+          note: record.note
+        };
+      })
+      .sort((left, right) => right.date.localeCompare(left.date));
+    return pageWithMeta(rows, query.page, query.page_size, {
+      totals: {
+        records: rows.length,
+        present: rows.filter((row) => row.status === "present").length,
+        late: rows.filter((row) => row.status === "late").length,
+        absent: rows.filter((row) => row.status === "absent").length,
+        wfh: rows.filter((row) => row.status === "wfh").length,
+        leave: rows.filter((row) => row.status === "leave").length,
+        average_hours: average(rows.map((row) => row.hours))
+      },
+      status_breakdown: groupCount(rows, (row) => row.status),
+      department_breakdown: groupCount(rows, (row) => row.department ?? "Unknown"),
+      filters: this.appliedSummaryFilters(query)
+    });
+  }
+
+  leaveWfhSummary(actor: AuthUser, query: ReportSummaryQuery) {
+    assertReportRole(actor, [Roles.HRManager, Roles.Admin, Roles.Auditor, Roles.Reviewer, Roles.Director]);
+    const leaveRows = this.store.leaveRequests
+      .filter((request) => !request.deleted_at)
+      .filter((request) => !query.request_kind || query.request_kind === "leave")
+      .filter((request) => this.canSeeUserReportRow(actor, request.employee_user_id, "leave"))
+      .map((request) => this.presentLeaveWfhRow("leave", request));
+    const wfhRows = this.store.wfhRequests
+      .filter((request) => !request.deleted_at)
+      .filter((request) => !query.request_kind || query.request_kind === "wfh")
+      .filter((request) => this.canSeeUserReportRow(actor, request.employee_user_id, "leave"))
+      .map((request) => this.presentLeaveWfhRow("wfh", request));
+    const rows = [...leaveRows, ...wfhRows]
+      .filter((row) => !query.user_id || row.employee_user_id === query.user_id)
+      .filter((row) => !query.employee_user_id || row.employee_user_id === query.employee_user_id)
+      .filter((row) => !query.department_id || row.department_id === query.department_id)
+      .filter((row) => !query.status || row.status === query.status)
+      .filter((row) => !query.date_from || row.from_date >= query.date_from)
+      .filter((row) => !query.date_to || row.from_date <= query.date_to)
+      .sort((left, right) => right.from_date.localeCompare(left.from_date));
+    return pageWithMeta(rows, query.page, query.page_size, {
+      totals: {
+        requests: rows.length,
+        leave: rows.filter((row) => row.kind === "leave").length,
+        wfh: rows.filter((row) => row.kind === "wfh").length,
+        approved: rows.filter((row) => row.status === "approved").length,
+        pending: rows.filter((row) => row.status.includes("pending")).length,
+        rejected: rows.filter((row) => row.status === "rejected").length,
+        total_duration: rows.reduce((sum, row) => sum + row.duration, 0)
+      },
+      status_breakdown: groupCount(rows, (row) => row.status),
+      type_breakdown: groupCount(rows, (row) => row.kind === "leave" ? row.leave_type ?? "leave" : "wfh"),
+      balance_rows: leaveBalanceRows(this.store.leaveRequests.filter((request) => !request.deleted_at)),
+      holiday_rows: this.store.holidays.filter((holiday) => !holiday.deleted_at).map((holiday) => ({
+        id: holiday.id,
+        name: holiday.name,
+        date: holiday.holiday_date,
+        region: holiday.region,
+        optional: holiday.optional
+      })),
+      filters: this.appliedSummaryFilters(query)
+    });
+  }
+
+  projectsSummary(actor: AuthUser, query: ReportSummaryQuery) {
+    const visibleProjects = this.store.projects
+      .filter((project) => !project.deleted_at)
+      .filter((project) => canSeeProject(actor, project, this.store.projectMembers.filter((member) => member.project_id === project.id), this.store.users))
+      .filter((project) => !query.project_id || project.id === query.project_id)
+      .filter((project) => !query.status || project.status === query.status)
+      .filter((project) => !query.client || project.client_name.toLowerCase().includes(query.client.toLowerCase()))
+      .filter((project) => !query.department_id || project.department_id === query.department_id)
+      .filter((project) => !query.date_from || project.end_date >= query.date_from)
+      .filter((project) => !query.date_to || project.start_date <= query.date_to);
+    const rows = visibleProjects.map((project) => this.presentProjectReportRow(project));
+    const allocations = visibleProjects.flatMap((project) =>
+      this.store.projectMembers
+        .filter((member) => member.project_id === project.id && !member.deleted_at)
+        .map((member) => this.presentProjectAllocationReportRow(project, member))
+    );
+    return pageWithMeta(rows, query.page, query.page_size, {
+      totals: {
+        projects: rows.length,
+        active: rows.filter((row) => row.status === ProjectStatuses.Active).length,
+        archived: rows.filter((row) => row.status === ProjectStatuses.Archived).length,
+        allocated_percent: allocations.reduce((sum, row) => sum + row.allocation, 0),
+        billable_percent: allocations.filter((row) => row.billable).reduce((sum, row) => sum + row.allocation, 0)
+      },
+      allocation_rows: allocations,
+      utilization_rows: utilizationRows(allocations),
+      history_rows: allocations.map((row) => ({
+        id: `${row.id}-history`,
+        employee: row.employee,
+        project: row.project,
+        code: row.code,
+        role: row.role,
+        from: row.from,
+        to: row.to
+      })),
+      cost_rows: rows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        client: row.client,
+        team: row.team,
+        estimated_budget: row.estimated_budget,
+        actual_spend: row.actual_spend,
+        status: row.status
+      })),
+      filters: this.appliedSummaryFilters(query)
+    });
+  }
+
+  timesheetsSummary(actor: AuthUser, query: ReportSummaryQuery) {
+    assertReportRole(actor, [Roles.HRManager, Roles.Admin, Roles.Auditor, Roles.Reviewer, Roles.Director]);
+    const rows = this.store.timesheetSubmissions
+      .filter((submission) => !submission.deleted_at)
+      .filter((submission) => this.canSeeUserReportRow(actor, submission.employee_user_id, "timesheet"))
+      .filter((submission) => !query.user_id || submission.employee_user_id === query.user_id)
+      .filter((submission) => !query.employee_user_id || submission.employee_user_id === query.employee_user_id)
+      .filter((submission) => !query.status || submission.status === query.status)
+      .filter((submission) => !query.date_from || submission.cycle_end >= query.date_from)
+      .filter((submission) => !query.date_to || submission.cycle_start <= query.date_to)
+      .map((submission) => {
+        const user = this.user(submission.employee_user_id);
+        const segments = this.store.workSegments.filter((segment) => segment.employee_user_id === submission.employee_user_id && segment.work_date >= submission.cycle_start && segment.work_date <= submission.cycle_end && !segment.deleted_at);
+        return {
+          id: submission.id,
+          employee_user_id: submission.employee_user_id,
+          employee: user?.full_name ?? submission.employee_user_id,
+          employee_code: user?.employee_code ?? null,
+          department_id: user?.department_id ?? null,
+          department: user ? this.departmentName(user.department_id) : null,
+          cycle_start: submission.cycle_start,
+          cycle_end: submission.cycle_end,
+          status: submission.status,
+          total_hours: Number(submission.total_hours),
+          billable_hours: sumNumbers(segments.filter((segment) => segment.billable).map((segment) => Number(segment.hours))),
+          non_billable_hours: sumNumbers(segments.filter((segment) => !segment.billable).map((segment) => Number(segment.hours))),
+          project_count: new Set(segments.map((segment) => segment.project_code).filter(Boolean)).size,
+          current_approver_user_id: submission.current_approver_user_id,
+          version: submission.version
+        };
+      })
+      .filter((row) => !query.department_id || row.department_id === query.department_id);
+    return pageWithMeta(rows, query.page, query.page_size, {
+      totals: {
+        submissions: rows.length,
+        approved: rows.filter((row) => row.status === "Approved").length,
+        pending: rows.filter((row) => row.status === "Pending Approval").length,
+        returned: rows.filter((row) => row.status === "Returned").length,
+        rejected: rows.filter((row) => row.status === "Rejected").length,
+        total_hours: sumNumbers(rows.map((row) => row.total_hours)),
+        billable_hours: sumNumbers(rows.map((row) => row.billable_hours))
+      },
+      status_breakdown: groupCount(rows, (row) => row.status),
+      project_rows: groupNumber(
+        this.store.workSegments.filter((segment) => !segment.deleted_at),
+        (segment) => segment.project_code ?? "Unassigned",
+        (segment) => Number(segment.hours)
+      ),
+      productivity_rows: rows.map((row) => ({
+        id: row.id,
+        employee: row.employee,
+        cycle_start: row.cycle_start,
+        cycle_end: row.cycle_end,
+        total_hours: row.total_hours,
+        billable_mix: row.total_hours > 0 ? Math.round((row.billable_hours / row.total_hours) * 100) : 0,
+        status: row.status
+      })),
+      filters: this.appliedSummaryFilters(query)
+    });
+  }
+
+  assetsSummary(actor: AuthUser, query: ReportSummaryQuery) {
+    assertReportRole(actor, [Roles.AssetManager, Roles.Admin, Roles.Auditor]);
+    const rows = this.store.assets
+      .filter((asset) => !asset.deleted_at)
+      .filter((asset) => !query.status || asset.status === query.status)
+      .filter((asset) => !query.type || asset.asset_type === query.type)
+      .filter((asset) => !query.assigned_to_user_id || asset.current_assigned_user_id === query.assigned_to_user_id)
+      .map((asset) => {
+        const assignee = asset.current_assigned_user_id ? this.user(asset.current_assigned_user_id) : null;
+        return {
+          id: asset.id,
+          asset_code: asset.asset_code,
+          type: asset.asset_type,
+          name: asset.name,
+          serial_no: asset.serial_no,
+          status: asset.status,
+          assigned_to_user_id: asset.current_assigned_user_id,
+          assigned_to: assignee?.full_name ?? null,
+          location: typeof asset.metadata.location === "string" ? asset.metadata.location : null,
+          brand: typeof asset.metadata.brand === "string" ? asset.metadata.brand : null,
+          model: typeof asset.metadata.model === "string" ? asset.metadata.model : null,
+          warranty_expiry: typeof asset.metadata.warranty_expiry === "string" ? asset.metadata.warranty_expiry : null,
+          created_at: asset.created_at,
+          updated_at: asset.updated_at
+        };
+      });
+    return pageWithMeta(rows, query.page, query.page_size, {
+      totals: {
+        assets: rows.length,
+        assigned: rows.filter((row) => row.status === AssetStatuses.Assigned).length,
+        available: rows.filter((row) => row.status === AssetStatuses.InStock).length,
+        repair: rows.filter((row) => row.status === AssetStatuses.InMaintenance).length,
+        lost_or_damaged: rows.filter((row) => row.status === AssetStatuses.LostStolen).length
+      },
+      status_breakdown: groupCount(rows, (row) => row.status),
+      type_breakdown: groupCount(rows, (row) => row.type),
+      maintenance_rows: this.store.assetMaintenanceRecords.filter((record) => !record.deleted_at).map((record) => {
+        const asset = this.store.assets.find((candidate) => candidate.id === record.asset_id);
+        const vendor = record.vendor_id ? this.store.assetVendors.find((candidate) => candidate.id === record.vendor_id) : null;
+        return {
+          id: record.id,
+          asset_id: record.asset_id,
+          asset_code: asset?.asset_code ?? record.asset_id,
+          asset: asset?.name ?? record.asset_id,
+          type: record.maintenance_type,
+          date: record.started_on,
+          vendor: vendor?.name ?? null,
+          cost: record.cost,
+          status: record.status,
+          notes: record.notes
+        };
+      }),
+      recovery_rows: this.store.assetRecoveryTickets.map((ticket) => ({
+        id: ticket.id,
+        employee_user_id: ticket.employee_user_id,
+        employee: this.user(ticket.employee_user_id)?.full_name ?? ticket.employee_user_id,
+        asset_id: ticket.asset_id,
+        asset_code: this.store.assets.find((asset) => asset.id === ticket.asset_id)?.asset_code ?? ticket.asset_id,
+        status: ticket.status,
+        created_at: ticket.created_at
+      })),
+      filters: this.appliedSummaryFilters(query)
+    });
+  }
+
+  helpdeskSummary(actor: AuthUser, query: ReportSummaryQuery) {
+    assertReportRole(actor, [Roles.HRManager, Roles.AssetManager, Roles.FinanceManager, Roles.Admin, Roles.Auditor]);
+    const rows = this.store.helpdeskTickets
+      .filter((ticket) => !ticket.deleted_at)
+      .filter((ticket) => actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor) || ticket.assignee_user_id === actor.id || ticket.requester_user_id === actor.id || categoryAllowedForReport(actor, ticket.category_key))
+      .filter((ticket) => !query.status || ticket.status === query.status)
+      .filter((ticket) => !query.category_id || ticket.category_id === query.category_id)
+      .filter((ticket) => !query.user_id || ticket.requester_user_id === query.user_id)
+      .filter((ticket) => !query.employee_user_id || ticket.requester_user_id === query.employee_user_id)
+      .filter((ticket) => !query.date_from || ticket.created_at.slice(0, 10) >= query.date_from)
+      .filter((ticket) => !query.date_to || ticket.created_at.slice(0, 10) <= query.date_to)
+      .map((ticket) => ({
+        id: ticket.id,
+        ticket_no: ticket.ticket_no,
+        subject: ticket.subject,
+        category_id: ticket.category_id,
+        category: ticket.category_key,
+        priority: ticket.priority,
+        requester_user_id: ticket.requester_user_id,
+        requester: ticket.requester_name,
+        requester_department: ticket.requester_department,
+        assignee_user_id: ticket.assignee_user_id,
+        assignee: ticket.assignee_name,
+        status: ticket.status,
+        created_at: ticket.created_at,
+        resolved_at: ticket.resolved_at,
+        closed_at: ticket.closed_at,
+        breached: isHelpdeskBreached(ticket.created_at, ticket.resolved_at ?? ticket.closed_at, ticket.priority)
+      }));
+    return pageWithMeta(rows, query.page, query.page_size, {
+      totals: {
+        tickets: rows.length,
+        open: rows.filter((row) => !isClosedHelpdeskStatus(row.status)).length,
+        resolved: rows.filter((row) => row.status === HelpdeskTicketStatuses.Resolved).length,
+        closed: rows.filter((row) => row.status === HelpdeskTicketStatuses.Closed).length,
+        breached: rows.filter((row) => row.breached).length
+      },
+      status_breakdown: groupCount(rows, (row) => row.status),
+      category_rows: groupCount(rows, (row) => row.category),
+      employee_rows: groupCount(rows, (row) => row.requester),
+      agent_rows: helpdeskAgentRows(rows),
+      resolution_rows: rows.filter((row) => row.resolved_at).map((row) => ({
+        id: row.id,
+        ticket: row.ticket_no,
+        subject: row.subject,
+        category: row.category,
+        priority: row.priority,
+        assignee: row.assignee,
+        hours: row.resolved_at ? Math.round(((Date.parse(row.resolved_at) - Date.parse(row.created_at)) / 3_600_000) * 10) / 10 : 0
+      })),
+      filters: this.appliedSummaryFilters(query)
+    });
+  }
+
+  auditReport(actor: AuthUser, query: ReportSummaryQuery) {
+    assertReportRole(actor, [Roles.Auditor, Roles.Admin]);
+    const expenseRows = this.store.auditLogs.map((log) => ({
+      id: log.id,
+      at: log.created_at,
+      actor_user_id: log.actor_user_id,
+      actor: this.userLabel(log.actor_user_id) ?? log.actor_user_id,
+      action: log.event_type,
+      module: "Expenses",
+      target: log.ticket_id,
+      remarks: log.remarks
+    }));
+    const outboxRows = this.store.outbox.map((event) => ({
+      id: event.event_id,
+      at: event.created_at,
+      actor_user_id: typeof event.payload.actor_user_id === "string" ? event.payload.actor_user_id : null,
+      actor: typeof event.payload.actor_user_id === "string" ? this.userLabel(event.payload.actor_user_id) ?? event.payload.actor_user_id : "System",
+      action: event.event_type,
+      module: reportModuleForEvent(event),
+      target: event.aggregate_id,
+      remarks: typeof event.payload.remarks === "string" ? event.payload.remarks : null
+    }));
+    const assetRows = this.store.assetStateEvents.map((event) => ({
+      id: event.id,
+      at: event.created_at,
+      actor_user_id: event.actor_user_id,
+      actor: event.actor_user_id ? this.userLabel(event.actor_user_id) ?? event.actor_user_id : "System",
+      action: event.event_type,
+      module: "Assets",
+      target: event.asset_id,
+      remarks: typeof event.payload.remarks === "string" ? event.payload.remarks : null
+    }));
+    const helpdeskRows = this.store.helpdeskEvents.map((event) => ({
+      id: event.id,
+      at: event.created_at,
+      actor_user_id: event.actor_user_id,
+      actor: event.actor_name,
+      action: event.action,
+      module: "Helpdesk",
+      target: event.ticket_id,
+      remarks: event.detail
+    }));
+    const rows = [...expenseRows, ...outboxRows, ...assetRows, ...helpdeskRows]
+      .filter((row) => !query.actor_user_id || row.actor_user_id === query.actor_user_id)
+      .filter((row) => !query.module || row.module.toLowerCase().includes(query.module.toLowerCase()))
+      .filter((row) => !query.action || row.action.toLowerCase().includes(query.action.toLowerCase()))
+      .filter((row) => !query.date_from || row.at.slice(0, 10) >= query.date_from)
+      .filter((row) => !query.date_to || row.at.slice(0, 10) <= query.date_to)
+      .sort((left, right) => right.at.localeCompare(left.at));
+    return pageWithMeta(rows, query.page, query.page_size, {
+      module_breakdown: groupCount(rows, (row) => row.module),
+      filters: this.appliedSummaryFilters(query)
+    });
+  }
+
+  createExport(actor: AuthUser, input: { format: "csv" | "xlsx"; report_type: string; filters: Record<string, unknown> }) {
+    const aggregateId = randomUUID();
+    const event = appendOutboxEvent(this.store, {
+      aggregateType: "report_export",
+      aggregateId,
+      eventType: "reports.export.requested",
+      payload: {
+        actor_user_id: actor.id,
+        report_type: input.report_type,
+        format: input.format,
+        filters: input.filters,
+        status: "queued"
+      },
+      idempotencyKey: `report-export:${aggregateId}`
+    });
+    return this.presentExportJob(event);
+  }
+
+  listExports(actor: AuthUser, query: ReportSummaryQuery) {
+    const rows = this.reportExportEvents()
+      .filter((event) => this.canSeeExport(actor, event))
+      .filter((event) => !query.report_type || event.payload.report_type === query.report_type)
+      .filter((event) => !query.status || event.payload.status === query.status || event.status === query.status)
+      .map((event) => this.presentExportJob(event))
+      .sort((left, right) => right.created_at.localeCompare(left.created_at));
+    return page(rows, query.page, query.page_size);
+  }
+
+  getExport(actor: AuthUser, id: UUID) {
+    const event = this.reportExportEvents().find((candidate) => candidate.aggregate_id === id || candidate.event_id === id);
+    if (!event) {
+      throw notFound("Export job not found");
+    }
+    if (!this.canSeeExport(actor, event)) {
+      throw forbidden("Export job access denied");
+    }
+    return this.presentExportJob(event);
+  }
+
+  private presentEmployeeReportRow(user: CoreUser) {
+    const department = this.store.departments.find((candidate) => candidate.id === user.department_id);
+    const designation = this.store.designations.find((candidate) => candidate.id === user.designation_id);
+    const manager = user.manager_user_id ? this.user(user.manager_user_id) : null;
+    const activeCredential = this.store.userCredentials.some((credential) => credential.user_id === user.id && credential.status === "active" && !credential.deleted_at);
     return {
-      export_id: `export-${Date.now()}`,
-      format,
-      status: "queued",
-      adapter: "csv-xlsx-placeholder"
+      id: user.id,
+      employee_code: user.employee_code,
+      full_name: user.full_name,
+      email: user.email,
+      department_id: user.department_id,
+      department_code: department?.department_code ?? null,
+      department_name: department?.name ?? "Unknown department",
+      designation_id: user.designation_id,
+      designation_code: designation?.designation_code ?? null,
+      designation_title: designation?.title ?? "Unknown designation",
+      manager_user_id: user.manager_user_id,
+      manager_label: manager ? `${manager.employee_code} - ${manager.full_name}` : null,
+      status: user.employment_status,
+      joined_on: user.joined_on,
+      terminated_on: user.terminated_on,
+      location: null,
+      roles: user.roles,
+      login_enabled: activeCredential,
+      last_login_at: null,
+      notice_days: null,
+      version: user.version
+    };
+  }
+
+  private presentLeaveWfhRow(kind: "leave" | "wfh", request: { id: UUID; request_code: string; employee_user_id: UUID; date_from: string; date_to: string; duration: number; status: string; current_approver_user_id: UUID | null; decision_remarks: string | null; decided_by_user_id: UUID | null; decided_at: string | null; cancelled_at: string | null; version: number; created_at: string; updated_at: string; leave_type?: string; project_ref?: string | null }) {
+    const user = this.user(request.employee_user_id);
+    return {
+      id: request.id,
+      request_code: request.request_code,
+      kind,
+      employee_user_id: request.employee_user_id,
+      employee: user?.full_name ?? request.employee_user_id,
+      employee_code: user?.employee_code ?? null,
+      department_id: user?.department_id ?? null,
+      department: user ? this.departmentName(user.department_id) : null,
+      leave_type: kind === "leave" ? request.leave_type ?? null : null,
+      project_ref: kind === "wfh" ? request.project_ref ?? null : null,
+      from_date: request.date_from,
+      to_date: request.date_to,
+      duration: request.duration,
+      status: request.status,
+      current_approver_user_id: request.current_approver_user_id,
+      decision_remarks: request.decision_remarks,
+      decided_by_user_id: request.decided_by_user_id,
+      decided_at: request.decided_at,
+      cancelled_at: request.cancelled_at,
+      version: request.version,
+      created_at: request.created_at,
+      updated_at: request.updated_at
+    };
+  }
+
+  private presentProjectReportRow(project: ProjectRecord) {
+    const manager = this.user(project.manager_user_id);
+    const department = project.department_id ? this.store.departments.find((candidate) => candidate.id === project.department_id) : null;
+    const members = this.store.projectMembers.filter((member) => member.project_id === project.id && !member.deleted_at);
+    return {
+      id: project.id,
+      code: project.project_code,
+      name: project.name,
+      client: project.client_name,
+      project_type: project.project_type,
+      billing: project.billing_type,
+      manager_user_id: project.manager_user_id,
+      manager: manager ? `${manager.employee_code} - ${manager.full_name}` : project.manager_user_id,
+      department_id: project.department_id,
+      department: department?.name ?? null,
+      start_date: project.start_date,
+      end_date: project.end_date,
+      status: project.status,
+      health: project.health,
+      team: members.filter((member) => member.status === ProjectMemberStatuses.Active).length,
+      estimated_hours: project.estimated_hours,
+      actual_hours: project.actual_hours,
+      estimated_budget: project.estimated_budget,
+      actual_spend: project.actual_spend,
+      priority: project.priority,
+      version: project.version
+    };
+  }
+
+  private presentProjectAllocationReportRow(project: ProjectRecord, member: { id: UUID; employee_user_id: UUID; project_role: string; allocation_percent: number; billable: boolean; start_date: string; end_date: string | null; status: string }) {
+    const user = this.user(member.employee_user_id);
+    const manager = this.user(project.manager_user_id);
+    return {
+      id: member.id,
+      project_id: project.id,
+      project: project.name,
+      code: project.project_code,
+      employee_user_id: member.employee_user_id,
+      employee: user?.full_name ?? member.employee_user_id,
+      role: member.project_role,
+      allocation: member.allocation_percent,
+      billable: member.billable,
+      manager: manager?.full_name ?? project.manager_user_id,
+      from: member.start_date,
+      to: member.end_date,
+      status: member.status
+    };
+  }
+
+  private canSeeUserReportRow(actor: AuthUser, userId: UUID, module: "attendance" | "leave" | "timesheet"): boolean {
+    const user = this.user(userId);
+    if (!user) return false;
+    const privileged =
+      actor.roles.includes(Roles.Admin) ||
+      actor.roles.includes(Roles.Auditor) ||
+      actor.roles.includes(Roles.HRManager);
+    if (privileged || actor.id === user.id) return true;
+    if (module === "attendance" || module === "leave" || module === "timesheet") {
+      return user.hierarchy_path.startsWith(`${actor.hierarchy_path}.`);
+    }
+    return false;
+  }
+
+  private user(userId: UUID): CoreUser | null {
+    return this.store.users.find((candidate) => candidate.id === userId && !candidate.deleted_at) ?? null;
+  }
+
+  private departmentName(departmentId: UUID): string {
+    return this.store.departments.find((candidate) => candidate.id === departmentId && !candidate.deleted_at)?.name ?? "Unknown department";
+  }
+
+  private reportExportEvents(): OutboxEvent[] {
+    return this.store.outbox.filter((event) => event.event_type === "reports.export.requested");
+  }
+
+  private canSeeExport(actor: AuthUser, event: OutboxEvent): boolean {
+    if (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor)) return true;
+    return event.payload.actor_user_id === actor.id;
+  }
+
+  private presentExportJob(event: OutboxEvent) {
+    return {
+      id: event.aggregate_id,
+      export_id: event.aggregate_id,
+      event_id: event.event_id,
+      report_type: typeof event.payload.report_type === "string" ? event.payload.report_type : "unknown",
+      format: typeof event.payload.format === "string" ? event.payload.format : "csv",
+      status: typeof event.payload.status === "string" ? event.payload.status : event.status,
+      outbox_status: event.status,
+      created_by_user_id: typeof event.payload.actor_user_id === "string" ? event.payload.actor_user_id : null,
+      created_by: typeof event.payload.actor_user_id === "string" ? this.userLabel(event.payload.actor_user_id) : "System",
+      filters: typeof event.payload.filters === "object" && event.payload.filters !== null ? event.payload.filters : {},
+      download_document_id: null,
+      download_url: null,
+      adapter: "outbox-queued-placeholder",
+      created_at: event.created_at,
+      updated_at: event.published_at ?? event.failed_at ?? event.created_at
     };
   }
 
@@ -659,6 +1281,27 @@ export class ReportService {
       sort: query.sort ?? "-updated_at"
     };
   }
+
+  private appliedSummaryFilters(query: ReportSummaryQuery) {
+    return {
+      status: query.status ?? null,
+      type: query.type ?? null,
+      request_kind: query.request_kind ?? null,
+      department_id: query.department_id ?? null,
+      user_id: query.user_id ?? null,
+      employee_user_id: query.employee_user_id ?? null,
+      project_id: query.project_id ?? null,
+      assigned_to_user_id: query.assigned_to_user_id ?? null,
+      actor_user_id: query.actor_user_id ?? null,
+      client: query.client ?? null,
+      category_id: query.category_id ?? null,
+      module: query.module ?? null,
+      action: query.action ?? null,
+      report_type: query.report_type ?? null,
+      date_from: query.date_from ?? null,
+      date_to: query.date_to ?? null
+    };
+  }
 }
 
 function countStatus(tickets: readonly ExpenseTicket[], status: string): number {
@@ -685,6 +1328,119 @@ function groupMoney<T>(
     grouped.set(label, [...(grouped.get(label) ?? []), getAmount(item)]);
   }
   return [...grouped.entries()].map(([label, values]) => ({ label, amount: addMoney(values) }));
+}
+
+function groupNumber<T>(
+  items: readonly T[],
+  getLabel: (item: T) => string,
+  getValue: (item: T) => number
+): Array<{ id: string; label: string; value: number }> {
+  const grouped = new Map<string, number>();
+  for (const item of items) {
+    const label = getLabel(item);
+    grouped.set(label, (grouped.get(label) ?? 0) + getValue(item));
+  }
+  return [...grouped.entries()].map(([label, value]) => ({ id: label, label, value }));
+}
+
+function sumNumbers(values: readonly number[]): number {
+  return Math.round(values.reduce((sum, value) => sum + value, 0) * 100) / 100;
+}
+
+function average(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  return Math.round((sumNumbers(values) / values.length) * 10) / 10;
+}
+
+function leaveBalanceRows(requests: readonly { leave_type: string; status: string; duration: number }[]) {
+  const totals: Record<string, number> = {
+    casual: 12,
+    sick: 10,
+    earned: 18,
+    unpaid: 0
+  };
+  return Object.entries(totals).map(([leaveType, total]) => {
+    const used = sumNumbers(requests.filter((request) => request.leave_type === leaveType && request.status === "approved").map((request) => request.duration));
+    const pending = sumNumbers(requests.filter((request) => request.leave_type === leaveType && request.status.includes("pending")).map((request) => request.duration));
+    return {
+      id: leaveType,
+      leave_type: leaveType,
+      type: leaveType,
+      total,
+      used,
+      pending,
+      remaining: leaveType === "unpaid" ? null : Math.max(0, total - used - pending)
+    };
+  });
+}
+
+function utilizationRows(rows: readonly { employee: string; allocation: number; billable: boolean }[]) {
+  const grouped = new Map<string, { used: number; billable: number }>();
+  for (const row of rows) {
+    const current = grouped.get(row.employee) ?? { used: 0, billable: 0 };
+    current.used += row.allocation;
+    if (row.billable) current.billable += row.allocation;
+    grouped.set(row.employee, current);
+  }
+  return [...grouped.entries()].map(([employee, value]) => ({
+    id: employee,
+    employee,
+    used: value.used,
+    billable: value.billable,
+    mix: value.used > 0 ? Math.round((value.billable / value.used) * 100) : 0
+  }));
+}
+
+function categoryAllowedForReport(actor: AuthUser, category: string): boolean {
+  if (actor.roles.includes(Roles.AssetManager)) return ["IT", "Admin", "Assets"].includes(category);
+  if (actor.roles.includes(Roles.HRManager)) return category === "HR";
+  if (actor.roles.includes(Roles.FinanceManager)) return category === "Finance";
+  return false;
+}
+
+function helpdeskAgentRows(rows: readonly { assignee: string | null; status: string; created_at: string; resolved_at: string | null }[]) {
+  const grouped = new Map<string, { total: number; resolved: number; sumHours: number; resolvedCount: number }>();
+  for (const row of rows) {
+    if (!row.assignee) continue;
+    const current = grouped.get(row.assignee) ?? { total: 0, resolved: 0, sumHours: 0, resolvedCount: 0 };
+    current.total += 1;
+    if (row.resolved_at) {
+      current.resolved += 1;
+      current.sumHours += (Date.parse(row.resolved_at) - Date.parse(row.created_at)) / 3_600_000;
+      current.resolvedCount += 1;
+    }
+    grouped.set(row.assignee, current);
+  }
+  return [...grouped.entries()].map(([agent, value]) => ({
+    id: agent,
+    agent,
+    total: value.total,
+    resolved: value.resolved,
+    avgH: value.resolvedCount ? Math.round((value.sumHours / value.resolvedCount) * 10) / 10 : 0
+  }));
+}
+
+function isHelpdeskBreached(createdAt: string, completedAt: string | null, priority: string): boolean {
+  if (completedAt) return false;
+  const hours = ageHours(createdAt);
+  const limit = priority === "Urgent" ? 4 : priority === "High" ? 24 : priority === "Medium" ? 48 : 72;
+  return hours > limit;
+}
+
+function isClosedHelpdeskStatus(status: string): boolean {
+  return status === HelpdeskTicketStatuses.Resolved || status === HelpdeskTicketStatuses.Closed;
+}
+
+function reportModuleForEvent(event: OutboxEvent): string {
+  if (event.event_type.startsWith("admin.")) return "Admin";
+  if (event.event_type.startsWith("core.")) return "Employees";
+  if (event.event_type.startsWith("attendance.")) return "Attendance";
+  if (event.event_type.startsWith("leave.") || event.event_type.startsWith("wfh.")) return "Leave/WFH";
+  if (event.event_type.startsWith("projects.")) return "Projects";
+  if (event.event_type.startsWith("timesheets.")) return "Timesheets";
+  if (event.event_type.startsWith("assets.")) return "Assets";
+  if (event.event_type.startsWith("reports.")) return "Reports";
+  return "Platform";
 }
 
 function ageHours(iso: string): number {

@@ -18,6 +18,27 @@ const reportExpenseQuerySchema = paginationQuerySchema.extend({
   document_status: z.enum(["any", "complete", "missing", "pending", "not_required"]).default("any")
 });
 
+const reportSummaryQuerySchema = paginationQuerySchema.extend({
+  department_id: z.uuid().optional(),
+  user_id: z.uuid().optional(),
+  employee_user_id: z.uuid().optional(),
+  project_id: z.uuid().optional(),
+  assigned_to_user_id: z.uuid().optional(),
+  actor_user_id: z.uuid().optional(),
+  status: z.string().optional(),
+  type: z.string().optional(),
+  request_kind: z.enum(["leave", "wfh"]).optional(),
+  client: z.string().optional(),
+  category_id: z.uuid().optional(),
+  module: z.string().optional(),
+  action: z.string().optional(),
+  report_type: z.string().optional(),
+  date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
+  date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional()
+});
+
+const idParamSchema = z.object({ id: z.uuid() });
+
 export const reportRoutes: FastifyPluginAsync = async (fastify) => {
   const withActor = (request: { actor?: AuthUser }) => {
     if (!request.actor) {
@@ -85,9 +106,66 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
     return new ReportService(fastify.store).audit(actor, query.page, query.page_size);
   });
 
+  fastify.get("/hr/employees", async (request) => {
+    const actor = withActor(request);
+    return new ReportService(fastify.store).hrEmployees(actor, reportSummaryQuerySchema.parse(request.query));
+  });
+
+  fastify.get("/attendance/summary", async (request) => {
+    const actor = withActor(request);
+    return new ReportService(fastify.store).attendanceSummary(actor, reportSummaryQuerySchema.parse(request.query));
+  });
+
+  fastify.get("/leave-wfh/summary", async (request) => {
+    const actor = withActor(request);
+    return new ReportService(fastify.store).leaveWfhSummary(actor, reportSummaryQuerySchema.parse(request.query));
+  });
+
+  fastify.get("/projects/summary", async (request) => {
+    const actor = withActor(request);
+    return new ReportService(fastify.store).projectsSummary(actor, reportSummaryQuerySchema.parse(request.query));
+  });
+
+  fastify.get("/timesheets/summary", async (request) => {
+    const actor = withActor(request);
+    return new ReportService(fastify.store).timesheetsSummary(actor, reportSummaryQuerySchema.parse(request.query));
+  });
+
+  fastify.get("/assets/summary", async (request) => {
+    const actor = withActor(request);
+    return new ReportService(fastify.store).assetsSummary(actor, reportSummaryQuerySchema.parse(request.query));
+  });
+
+  fastify.get("/helpdesk/summary", async (request) => {
+    const actor = withActor(request);
+    return new ReportService(fastify.store).helpdeskSummary(actor, reportSummaryQuerySchema.parse(request.query));
+  });
+
+  fastify.get("/audit", async (request) => {
+    const actor = withActor(request);
+    return new ReportService(fastify.store).auditReport(actor, reportSummaryQuerySchema.parse(request.query));
+  });
+
+  fastify.get("/exports", async (request) => {
+    const actor = withActor(request);
+    return new ReportService(fastify.store).listExports(actor, reportSummaryQuerySchema.parse(request.query));
+  });
+
+  fastify.get("/exports/:id", async (request) => {
+    const actor = withActor(request);
+    const params = idParamSchema.parse(request.params);
+    return new ReportService(fastify.store).getExport(actor, params.id);
+  });
+
   fastify.post("/exports", async (request) => {
     const actor = withActor(request);
-    const body = z.object({ format: z.enum(["csv", "xlsx"]).default("csv") }).parse(request.body ?? {});
-    return new ReportService(fastify.store).createExport(actor, body.format);
+    const body = z
+      .object({
+        format: z.enum(["csv", "xlsx"]).default("csv"),
+        report_type: z.string().min(1).max(80).default("expense"),
+        filters: z.record(z.string(), z.unknown()).default({})
+      })
+      .parse(request.body ?? {});
+    return new ReportService(fastify.store).createExport(actor, body);
   });
 };
