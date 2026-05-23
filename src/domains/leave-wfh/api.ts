@@ -49,6 +49,12 @@ export interface HolidayUpsertBody extends ApiRecord {
   expected_version?: number;
 }
 
+export interface LeaveWfhExportBody extends ApiRecord {
+  filters?: ApiRecord;
+  columns?: string[];
+  format?: "csv" | "xlsx" | "json";
+}
+
 export const leaveWfhApi = {
   myBalances(query: LeaveWfhQuery = {}) {
     return apiRequest<ApiRecord>("/api/v1/leave/balances/my", { query });
@@ -109,5 +115,11 @@ export const leaveWfhApi = {
   },
   upsertHoliday(id: string, input: HolidayUpsertBody) {
     return apiRequest<ApiRecord>(`/api/v1/holidays/${id}`, { method: "PUT", body: input });
+  },
+  createExport(input: LeaveWfhExportBody) {
+    return apiRequest<ApiRecord>("/api/v1/leave-wfh/exports", {
+      method: "POST",
+      body: input,
+    });
   },
 };

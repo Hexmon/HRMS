@@ -6,6 +6,7 @@ import type {
   LeaveCreateBody,
   LeaveWfhCancelBody,
   LeaveWfhDecisionBody,
+  LeaveWfhExportBody,
   LeaveWfhQuery,
   WfhCreateBody,
 } from "./api";
@@ -128,5 +129,11 @@ export function useHolidayMutation() {
     mutationFn: ({ id, input }: { id: string; input: HolidayUpsertBody }) =>
       leaveWfhApi.upsertHoliday(id, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("leave-wfh") }),
+  });
+}
+
+export function useLeaveWfhExportMutation() {
+  return useMutation({
+    mutationFn: (input: LeaveWfhExportBody) => leaveWfhApi.createExport(input),
   });
 }

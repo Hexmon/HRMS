@@ -16,7 +16,13 @@ import { LEAVE_TYPE_LABEL, type LeaveRequest } from "@/lib/leave-store";
 import type { Role } from "@/lib/mock/roles";
 import { toast } from "sonner";
 import { Download, Eye, Filter, CalendarDays } from "lucide-react";
-import { requestsFromPage, useLeaveWfhMonitor, type LeaveWfhStatus } from "@/domains/leave-wfh";
+import {
+  requestsFromPage,
+  useLeaveWfhExportMutation,
+  useLeaveWfhMonitor,
+  type LeaveWfhStatus,
+} from "@/domains/leave-wfh";
+import { isApiEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/leave-wfh/monitor")({
   component: MonitorPage,
@@ -31,6 +37,8 @@ function MonitorPage() {
   const [status, setStatus] = useState<string>("all");
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
+  const apiMode = isApiEnabled();
+  const exportMutation = useLeaveWfhExportMutation();
   const monitorQuery = useLeaveWfhMonitor({
     page: 1,
     page_size: 100,
@@ -59,7 +67,7 @@ function MonitorPage() {
 
   if (!activeRole || !ADMIN.includes(activeRole)) return <Navigate to="/leave-wfh" />;
 
-  const exportCsv = () => {
+  const exportCsv = async () => {
     const head = [
       "ID",
       "Kind",
@@ -73,6 +81,26 @@ function MonitorPage() {
       "Status",
       "Reason",
     ];
+    if (apiMode) {
+      try {
+        const job = await exportMutation.mutateAsync({
+          filters: {
+            request_kind: "all",
+            status: status === "all" ? undefined : status,
+            department_name: dept === "all" ? undefined : dept,
+            date_from: from || undefined,
+            date_to: to || undefined,
+          },
+          columns: head.map((column) => column.toLowerCase().replaceAll(" ", "_")),
+          format: "csv",
+        });
+        const jobId = typeof job.job_id === "string" ? job.job_id.slice(0, 8) : "created";
+        toast.success(`Export queued (${jobId})`);
+      } catch (error) {
+        toast.error(errorMessage(error));
+      }
+      return;
+    }
     const rows = filtered.map((r) => [
       r.id,
       r.kind,
@@ -228,8 +256,14 @@ function MonitorPage() {
             className="w-[160px]"
           />
           <div className="ml-auto">
-            <Button size="sm" className="rounded-full" onClick={exportCsv}>
-              <Download className="mr-1.5 h-4 w-4" /> Export
+            <Button
+              size="sm"
+              className="rounded-full"
+              onClick={exportCsv}
+              disabled={exportMutation.isPending}
+            >
+              <Download className="mr-1.5 h-4 w-4" />{" "}
+              {exportMutation.isPending ? "Queueing" : "Export"}
             </Button>
           </div>
         </div>
