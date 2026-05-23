@@ -7,6 +7,38 @@ export const masterDataQuerySchema = z.object({
   search: z.string().max(160).optional()
 });
 
+export const rbacRolesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  page_size: z.coerce.number().int().min(1).max(100).default(25),
+  active_only: z.coerce.boolean().optional()
+});
+
+export const rbacPermissionsQuerySchema = z.object({
+  module: z.string().max(80).optional(),
+  search: z.string().max(160).optional()
+});
+
+export const rbacRoleCreateSchema = z.object({
+  role_key: z.string().min(2).max(80).optional(),
+  key: z.string().min(2).max(80).optional(),
+  name: z.string().min(2).max(160),
+  description: z.string().max(1000).optional(),
+  permission_ids: z.array(z.string().min(3).max(120)).default([])
+});
+
+export const rbacRoleUpdateSchema = z.object({
+  name: z.string().min(2).max(160).optional(),
+  description: z.string().max(1000).optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export const rbacRolePermissionsReplaceSchema = z.object({
+  permission_ids: z.array(z.string().min(3).max(120)),
+  expected_version: z.number().int().min(1),
+  remarks: z.string().max(1000).optional()
+});
+
 const statusSchema = z.enum(["active", "inactive"]);
 
 export const departmentCreateSchema = z.object({
@@ -63,6 +95,11 @@ export const companyProfileUpdateSchema = z.object({
 });
 
 export type MasterDataQuery = z.infer<typeof masterDataQuerySchema>;
+export type RbacRolesQuery = z.infer<typeof rbacRolesQuerySchema>;
+export type RbacPermissionsQuery = z.infer<typeof rbacPermissionsQuerySchema>;
+export type RbacRoleCreateInput = z.infer<typeof rbacRoleCreateSchema>;
+export type RbacRoleUpdateInput = z.infer<typeof rbacRoleUpdateSchema>;
+export type RbacRolePermissionsReplaceInput = z.infer<typeof rbacRolePermissionsReplaceSchema>;
 export type DepartmentCreateInput = z.infer<typeof departmentCreateSchema>;
 export type DepartmentUpdateInput = z.infer<typeof departmentUpdateSchema>;
 export type DesignationCreateInput = z.infer<typeof designationCreateSchema>;

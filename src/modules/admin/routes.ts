@@ -8,7 +8,12 @@ import {
   departmentUpdateSchema,
   designationCreateSchema,
   designationUpdateSchema,
-  masterDataQuerySchema
+  masterDataQuerySchema,
+  rbacPermissionsQuerySchema,
+  rbacRoleCreateSchema,
+  rbacRolePermissionsReplaceSchema,
+  rbacRolesQuerySchema,
+  rbacRoleUpdateSchema
 } from "./schemas.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
@@ -76,6 +81,50 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor,
       params.id,
       designationUpdateSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/rbac/roles", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).listRbacRoles(
+      request.actor,
+      rbacRolesQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.post("/rbac/roles", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).createRbacRole(
+      request.actor,
+      rbacRoleCreateSchema.parse(request.body)
+    );
+  });
+
+  fastify.patch("/rbac/roles/:id", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = idParamSchema.parse(request.params);
+    return new AdminService(fastify.store).updateRbacRole(
+      request.actor,
+      params.id,
+      rbacRoleUpdateSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/rbac/permissions", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).listRbacPermissions(
+      request.actor,
+      rbacPermissionsQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.put("/rbac/roles/:id/permissions", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = idParamSchema.parse(request.params);
+    return new AdminService(fastify.store).replaceRbacRolePermissions(
+      request.actor,
+      params.id,
+      rbacRolePermissionsReplaceSchema.parse(request.body)
     );
   });
 };

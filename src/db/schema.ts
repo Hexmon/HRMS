@@ -104,10 +104,31 @@ export const roles = core.table("roles", {
   id: uuidPk.defaultRandom(),
   roleKey: text("role_key").notNull(),
   name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  status: text("status").notNull().default("active"),
+  builtin: boolean("builtin").notNull().default(true),
   createdAt,
   updatedAt,
-  deletedAt
+  deletedAt,
+  version
 });
+
+export const rolePermissions = core.table(
+  "role_permissions",
+  {
+    id: uuidPk.defaultRandom(),
+    roleKey: text("role_key").notNull(),
+    permissionId: text("permission_id").notNull(),
+    status: text("status").notNull().default("active"),
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("core_role_permissions_role_permission_uq").on(table.roleKey, table.permissionId),
+    index("core_role_permissions_role_status_idx").on(table.roleKey, table.status)
+  ]
+);
 
 export const userRoles = core.table(
   "user_roles",
@@ -1233,6 +1254,7 @@ export const schema = {
   designations,
   users,
   roles,
+  rolePermissions,
   userRoles,
   userSessions,
   userCredentials,

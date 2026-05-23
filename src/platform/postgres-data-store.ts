@@ -131,6 +131,7 @@ const resetTables = [
   "platform.user_credentials",
   "platform.finance_governance_config",
   "core.user_roles",
+  "core.role_permissions",
   "core.roles",
   "core.users",
   "core.designations",
@@ -170,6 +171,8 @@ function json(value: unknown): Record<string, unknown> {
 function copyData(target: DataStore, source: DataStore): void {
   target.departments = source.departments;
   target.designations = source.designations;
+  target.rbacRoles = source.rbacRoles;
+  target.rbacRolePermissions = source.rbacRolePermissions;
   target.users = source.users;
   target.userCredentials = source.userCredentials;
   target.authTokens = source.authTokens;
@@ -302,6 +305,8 @@ class PostgresPersistence {
       loaded.kind = "postgres";
       loaded.departments = await this.loadDepartments(client);
       loaded.designations = await this.loadDesignations(client);
+      loaded.rbacRoles = await this.loadRbacRoles(client);
+      loaded.rbacRolePermissions = await this.loadRbacRolePermissions(client);
       loaded.users = await this.loadUsers(client);
       loaded.userCredentials = await this.loadUserCredentials(client);
       loaded.authTokens = await this.loadAuthTokens(client);
@@ -413,6 +418,35 @@ class PostgresPersistence {
   private async loadDesignations(client: PoolClient): Promise<Designation[]> {
     const { rows } = await client.query("SELECT id, designation_code, title, level, status, deleted_at, version FROM core.designations ORDER BY level NULLS LAST, designation_code");
     return rows.map((row) => ({ ...row, deleted_at: asIsoOrNull(row.deleted_at) }));
+  }
+
+  private async loadRbacRoles(client: PoolClient) {
+    const { rows } = await client.query("SELECT id, role_key, name, description, status, builtin, created_at, updated_at, deleted_at, version FROM core.roles ORDER BY role_key");
+    return rows.map((row) => ({
+      id: row.id,
+      role_key: row.role_key,
+      name: row.name,
+      description: row.description,
+      status: row.status,
+      builtin: row.builtin,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+      version: row.version
+    }));
+  }
+
+  private async loadRbacRolePermissions(client: PoolClient) {
+    const { rows } = await client.query("SELECT id, role_key, permission_id, status, created_at, updated_at, deleted_at FROM core.role_permissions ORDER BY role_key, permission_id");
+    return rows.map((row) => ({
+      id: row.id,
+      role_key: row.role_key,
+      permission_id: row.permission_id,
+      status: row.status,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
   }
 
   private async loadUsers(client: PoolClient): Promise<CoreUser[]> {
@@ -1475,6 +1509,26 @@ class PostgresPersistence {
           department.deleted_at,
           department.version
         ]
+      );
+    }
+    for (const role of this.store.rbacRoles) {
+      await client.query(
+        `INSERT INTO core.roles (id, role_key, name, description, status, builtin, deleted_at, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (role_key) DO UPDATE
+         SET name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
+             builtin = EXCLUDED.builtin, deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
+             updated_at = now()`,
+        [role.id, role.role_key, role.name, role.description, role.status, role.builtin, role.deleted_at, role.version]
+      );
+    }
+    for (const permission of this.store.rbacRolePermissions) {
+      await client.query(
+        `INSERT INTO core.role_permissions (id, role_key, permission_id, status, deleted_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (role_key, permission_id) DO UPDATE
+         SET status = EXCLUDED.status, deleted_at = EXCLUDED.deleted_at, updated_at = now()`,
+        [permission.id, permission.role_key, permission.permission_id, permission.status, permission.deleted_at]
       );
     }
     for (const user of this.store.users) {

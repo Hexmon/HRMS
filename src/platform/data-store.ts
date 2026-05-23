@@ -36,6 +36,8 @@ import type {
   ProjectMemberRecord,
   ProjectMilestoneRecord,
   ProjectRecord,
+  RbacRolePermissionRecord,
+  RbacRoleRecord,
   TimesheetSubmission,
   UUID,
   WfhRequest
@@ -63,7 +65,9 @@ import {
   ProjectMilestoneStatuses,
   ProjectPriorities,
   ProjectStatuses,
-  ProjectTypes
+  ProjectTypes,
+  RbacPermissionActions,
+  RbacPermissionGroups
 } from "#shared";
 import { MemorySessionStore, getLocalDemoPassword, hashPasswordSync, type SessionStore } from "#auth";
 
@@ -322,6 +326,8 @@ export interface DataStore {
   kind: "memory" | "postgres";
   departments: Department[];
   designations: Designation[];
+  rbacRoles: RbacRoleRecord[];
+  rbacRolePermissions: RbacRolePermissionRecord[];
   users: CoreUser[];
   userCredentials: UserCredentialRecord[];
   authTokens: AuthTokenRecord[];
@@ -495,8 +501,103 @@ function makeUser(input: {
   };
 }
 
+function rbacPermissionId(group: string, action: string): string {
+  return `${group.toLowerCase().replace(/[^a-z0-9]+/gu, "_").replace(/^_+|_+$/gu, "")}:${action}`;
+}
+
+function defaultRbacPermissionsFor(roleKey: string): string[] {
+  const all = RbacPermissionGroups.flatMap((group) => RbacPermissionActions.map((action) => rbacPermissionId(group, action)));
+  const viewExport = RbacPermissionGroups.flatMap((group) => ["view", "export"].map((action) => rbacPermissionId(group, action)));
+  const ids = new Set<string>();
+  const set = (group: string, actions: readonly string[]) => actions.forEach((action) => ids.add(rbacPermissionId(group, action)));
+
+  if (roleKey === Roles.Admin) return all;
+  if (roleKey === Roles.Auditor) return viewExport;
+
+  set("Dashboard", ["view"]);
+  set("EMS", ["view", "create", "edit"]);
+
+  switch (roleKey) {
+    case Roles.HRManager:
+      set("Employees", ["view", "create", "edit", "export"]);
+      set("Attendance", ["view", "edit", "approve", "export"]);
+      set("Leave/WFH", ["view", "approve", "export"]);
+      set("Reports", ["view", "export"]);
+      set("Admin Settings", ["view", "configure"]);
+      break;
+    case Roles.Employee:
+      set("Attendance", ["view", "create"]);
+      set("Leave/WFH", ["view", "create"]);
+      set("Timesheet", ["view", "create", "edit"]);
+      set("Expense Management", ["view", "create"]);
+      set("Assets", ["view"]);
+      set("Helpdesk", ["view", "create"]);
+      break;
+    case Roles.Reviewer:
+    case Roles.Director:
+      set("Employees", ["view"]);
+      set("Attendance", ["view", "approve", "export"]);
+      set("Leave/WFH", ["view", "approve"]);
+      set("Timesheet", ["view", "approve"]);
+      set("Expense Management", ["view", "approve"]);
+      set("Reports", ["view", "export"]);
+      break;
+    case Roles.FinanceManager:
+      set("Expense Management", ["view", "approve", "export", "configure"]);
+      set("Reports", ["view", "export"]);
+      break;
+    case Roles.AssetManager:
+      set("Assets", ["view", "create", "edit", "delete", "approve", "export"]);
+      set("Helpdesk", ["view", "edit", "approve"]);
+      break;
+  }
+
+  return [...ids];
+}
+
+function buildDefaultRbac(created: string): {
+  roles: RbacRoleRecord[];
+  permissions: RbacRolePermissionRecord[];
+} {
+  const descriptions: Record<string, string> = {
+    [Roles.Employee]: "Self-service access for personal HRMS workflows.",
+    [Roles.Reviewer]: "Manager/reviewer access for team approvals and queues.",
+    [Roles.Director]: "Department leader access for reports and escalated approvals.",
+    [Roles.FinanceManager]: "Finance workflow access for expenses, payments, and reports.",
+    [Roles.Admin]: "Full administrative access across Hawkaii HRMS.",
+    [Roles.Auditor]: "Read-only compliance and audit access.",
+    [Roles.AssetManager]: "Asset inventory, request, and recovery management.",
+    [Roles.HRManager]: "People operations access for employees, attendance, leave, and HR reports."
+  };
+  const roles = Object.values(Roles).map((role) => ({
+    id: randomUUID(),
+    role_key: role,
+    name: role,
+    description: descriptions[role] ?? role,
+    status: "active" as const,
+    builtin: true,
+    created_at: created,
+    updated_at: created,
+    deleted_at: null,
+    version: 1
+  }));
+  const permissions = roles.flatMap((role) =>
+    defaultRbacPermissionsFor(role.role_key).map((permissionId) => ({
+      id: randomUUID(),
+      role_key: role.role_key,
+      permission_id: permissionId,
+      status: "active" as const,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    }))
+  );
+  return { roles, permissions };
+}
+
 export function createMemoryDataStore(): MemoryDataStore {
   const created = nowIso();
+  const defaultRbac = buildDefaultRbac(created);
   const departments: Department[] = [
     {
       id: seedIds.departmentSales,
@@ -1252,6 +1353,8 @@ export function createMemoryDataStore(): MemoryDataStore {
     kind: "memory",
     departments,
     designations,
+    rbacRoles: defaultRbac.roles,
+    rbacRolePermissions: defaultRbac.permissions,
     users,
     userCredentials,
     authTokens: [],

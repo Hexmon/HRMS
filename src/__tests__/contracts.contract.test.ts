@@ -49,6 +49,8 @@ const expectedOperations = [
   "GET /api/v1/admin/company-profile",
   "GET /api/v1/admin/master-data/departments",
   "GET /api/v1/admin/master-data/designations",
+  "GET /api/v1/admin/rbac/permissions",
+  "GET /api/v1/admin/rbac/roles",
   "GET /api/v1/assets/",
   "GET /api/v1/assets/recovery-queue",
   "GET /api/v1/assets/requests/my",
@@ -138,6 +140,7 @@ const expectedOperations = [
   "PATCH /api/v1/auth/session/preference",
   "PATCH /api/v1/admin/master-data/departments/{id}",
   "PATCH /api/v1/admin/master-data/designations/{id}",
+  "PATCH /api/v1/admin/rbac/roles/{id}",
   "PATCH /api/v1/core/users/{id}",
   "PATCH /api/v1/expenses/{id}",
   "POST /api/v1/assets/",
@@ -166,6 +169,7 @@ const expectedOperations = [
   "POST /api/v1/auth/logout",
   "POST /api/v1/admin/master-data/departments",
   "POST /api/v1/admin/master-data/designations",
+  "POST /api/v1/admin/rbac/roles",
   "POST /api/v1/core/users",
   "POST /api/v1/core/users/{id}/activate",
   "POST /api/v1/core/users/{id}/deactivate",
@@ -224,6 +228,7 @@ const expectedOperations = [
   "POST /api/v1/wfh/requests",
   "POST /api/v1/wfh/requests/{id}/decision",
   "PUT /api/v1/admin/company-profile",
+  "PUT /api/v1/admin/rbac/roles/{id}/permissions",
   "PUT /api/v1/holidays/{id}",
   "PUT /api/v1/core/users/{id}/roles",
   "PUT /api/v1/platform/finance-governance"
@@ -243,6 +248,9 @@ const bodyRequiredOperations = [
   "PATCH /api/v1/admin/master-data/departments/{id}",
   "POST /api/v1/admin/master-data/designations",
   "PATCH /api/v1/admin/master-data/designations/{id}",
+  "POST /api/v1/admin/rbac/roles",
+  "PATCH /api/v1/admin/rbac/roles/{id}",
+  "PUT /api/v1/admin/rbac/roles/{id}/permissions",
   "POST /api/v1/auth/login",
   "POST /api/v1/core/users",
   "PATCH /api/v1/core/users/{id}",
@@ -367,13 +375,16 @@ const occOperations = [
   "POST /api/v1/notifications/{id}/read",
   "DELETE /api/v1/manager-backups/{id}",
   "PATCH /api/v1/admin/master-data/departments/{id}",
-  "PATCH /api/v1/admin/master-data/designations/{id}"
+  "PATCH /api/v1/admin/master-data/designations/{id}",
+  "PATCH /api/v1/admin/rbac/roles/{id}",
+  "PUT /api/v1/admin/rbac/roles/{id}/permissions"
 ];
 
 const listOperations = [
   "GET /api/v1/core/users",
   "GET /api/v1/admin/master-data/departments",
   "GET /api/v1/admin/master-data/designations",
+  "GET /api/v1/admin/rbac/roles",
   "GET /api/v1/expenses/my",
   "GET /api/v1/expenses/queue/manager",
   "GET /api/v1/expenses/queue/finance",
@@ -620,7 +631,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(182);
+    expect(rows.length).toBe(187);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

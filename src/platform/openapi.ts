@@ -578,6 +578,96 @@ const adminDesignationUpdateBody = {
   }
 };
 
+const adminRbacRoleSchema = {
+  type: "object",
+  required: [
+    "id",
+    "role_key",
+    "key",
+    "name",
+    "label",
+    "description",
+    "status",
+    "active",
+    "builtin",
+    "protected_system_role",
+    "assigned_users",
+    "permission_ids",
+    "permissions",
+    "updated_at",
+    "version"
+  ],
+  properties: {
+    id: uuid("RBAC role UUID"),
+    role_key: { type: "string", example: "HR Manager" },
+    key: { type: "string", example: "HR Manager" },
+    name: { type: "string", example: "HR Manager" },
+    label: { type: "string", example: "HR Manager" },
+    description: { type: "string", example: "People operations access." },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    active: { type: "boolean", example: true },
+    builtin: { type: "boolean", example: true },
+    protected_system_role: { type: "boolean", example: false },
+    assigned_users: { type: "integer", minimum: 0, example: 4 },
+    permission_ids: { type: "array", items: { type: "string", example: "employees:view" } },
+    permissions: { type: "array", items: { type: "string", example: "employees:view" } },
+    updated_at: dateTime("RBAC role update timestamp"),
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminRbacPermissionSchema = {
+  type: "object",
+  required: ["id", "permission_id", "group", "module", "action", "label", "description"],
+  properties: {
+    id: { type: "string", example: "employees:view" },
+    permission_id: { type: "string", example: "employees:view" },
+    group: { type: "string", example: "Employees" },
+    module: { type: "string", example: "Employees" },
+    action: { type: "string", enum: ["view", "create", "edit", "delete", "approve", "export", "configure"], example: "view" },
+    label: { type: "string", example: "Employees view" },
+    description: { type: "string", example: "Allows view access for Employees." }
+  },
+  additionalProperties: false
+};
+
+const adminRbacRoleCreateBody = {
+  type: "object",
+  required: ["name"],
+  properties: {
+    role_key: { type: "string", minLength: 2, maxLength: 80, example: "HR Business Partner" },
+    key: { type: "string", minLength: 2, maxLength: 80, example: "HR Business Partner" },
+    name: { type: "string", minLength: 2, maxLength: 160, example: "HR Business Partner" },
+    description: { type: "string", maxLength: 1000, example: "Custom HR role." },
+    permission_ids: { type: "array", items: { type: "string", example: "employees:view" }, default: [] }
+  },
+  additionalProperties: false
+};
+
+const adminRbacRoleUpdateBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    name: { type: "string", minLength: 2, maxLength: 160, example: "HR Operations" },
+    description: { type: "string", maxLength: 1000, example: "Updated role description." },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminRbacPermissionsReplaceBody = {
+  type: "object",
+  required: ["permission_ids", "expected_version"],
+  properties: {
+    permission_ids: { type: "array", items: { type: "string", example: "employees:view" } },
+    expected_version: { type: "integer", minimum: 1, example: 1 },
+    remarks: { type: "string", maxLength: 1000, example: "Quarterly role review." }
+  },
+  additionalProperties: false
+};
+
 const userReferenceSchema = {
   type: "object",
   required: ["id", "employee_code", "full_name"],
@@ -3232,6 +3322,76 @@ const routeDocs: Record<string, RouteSchema> = {
         type: "object",
         required: ["designation", "version"],
         properties: { designation: adminDesignationSchema, version: { type: "integer", example: 2 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "GET /api/v1/admin/rbac/roles": operation(
+    "Admin / Configuration",
+    "List RBAC roles",
+    "Lists persistent RBAC role configuration for Admin Settings. This slice records configuration without changing the existing fixed-role runtime authorization policy.",
+    { querystring: { ...paginationQuerySchema, properties: { ...paginationQuerySchema.properties, active_only: { type: "boolean", example: true } } }, response200: paginated(adminRbacRoleSchema) }
+  ),
+  "POST /api/v1/admin/rbac/roles": operation(
+    "Admin / Configuration",
+    "Create RBAC role",
+    "Creates a custom RBAC role configuration with initial permission IDs. Admin role is required.",
+    {
+      body: adminRbacRoleCreateBody,
+      response200: {
+        type: "object",
+        required: ["role", "version"],
+        properties: { role: adminRbacRoleSchema, version: { type: "integer", example: 1 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "PATCH /api/v1/admin/rbac/roles/{id}": operation(
+    "Admin / Configuration",
+    "Update RBAC role",
+    "Updates RBAC role metadata or active status with optimistic concurrency. Protected system roles cannot be deactivated.",
+    {
+      params: idParamSchema,
+      body: adminRbacRoleUpdateBody,
+      response200: {
+        type: "object",
+        required: ["role", "version"],
+        properties: { role: adminRbacRoleSchema, version: { type: "integer", example: 2 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "GET /api/v1/admin/rbac/permissions": operation(
+    "Admin / Configuration",
+    "List RBAC permissions",
+    "Lists the Admin Settings permission catalog by module/group/action for the RBAC matrix UI.",
+    {
+      querystring: {
+        type: "object",
+        properties: {
+          module: { type: "string", example: "Employees" },
+          search: { type: "string", example: "view" }
+        }
+      },
+      response200: {
+        type: "object",
+        required: ["items"],
+        properties: { items: { type: "array", items: adminRbacPermissionSchema } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "PUT /api/v1/admin/rbac/roles/{id}/permissions": operation(
+    "Admin / Configuration",
+    "Replace RBAC role permissions",
+    "Replaces a role's RBAC permission IDs with optimistic concurrency. Protected Admin role permissions cannot be replaced in this slice.",
+    {
+      params: idParamSchema,
+      body: adminRbacPermissionsReplaceBody,
+      response200: {
+        type: "object",
+        required: ["role", "version"],
+        properties: { role: adminRbacRoleSchema, version: { type: "integer", example: 2 } },
         additionalProperties: false
       }
     }

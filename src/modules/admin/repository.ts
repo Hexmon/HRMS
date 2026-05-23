@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Department, Designation } from "#shared";
+import type { Department, Designation, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
 import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
@@ -8,7 +8,10 @@ import type {
   DepartmentCreateInput,
   DepartmentUpdateInput,
   DesignationCreateInput,
-  DesignationUpdateInput
+  DesignationUpdateInput,
+  RbacRoleCreateInput,
+  RbacRolePermissionsReplaceInput,
+  RbacRoleUpdateInput
 } from "./schemas.js";
 
 export class AdminRepository {
@@ -51,6 +54,96 @@ export class AdminRepository {
     company.updated_at = nowIso();
     company.version += 1;
     return company;
+  }
+
+  listRbacRoles(): RbacRoleRecord[] {
+    return this.store.rbacRoles.filter((role) => !role.deleted_at);
+  }
+
+  rolePermissionsFor(roleKey: string): RbacRolePermissionRecord[] {
+    return this.store.rbacRolePermissions.filter((permission) => permission.role_key === roleKey && !permission.deleted_at && permission.status === "active");
+  }
+
+  createRbacRole(input: RbacRoleCreateInput): RbacRoleRecord {
+    const roleKey = normalizeRbacRoleKey(input.role_key ?? input.key ?? input.name);
+    this.assertUniqueRbacRoleKey(roleKey);
+    const now = nowIso();
+    const role: RbacRoleRecord = {
+      id: randomUUID(),
+      role_key: roleKey,
+      name: input.name.trim(),
+      description: input.description?.trim() ?? "",
+      status: "active",
+      builtin: false,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+      version: 1
+    };
+    this.store.rbacRoles.push(role);
+    for (const permissionId of input.permission_ids) {
+      this.store.rbacRolePermissions.push(newRolePermission(role.role_key, permissionId, now));
+    }
+    return role;
+  }
+
+  updateRbacRole(id: string, input: RbacRoleUpdateInput): RbacRoleRecord {
+    const role = this.store.rbacRoles.find((candidate) => candidate.id === id && !candidate.deleted_at);
+    if (!role) throw notFound("RBAC role not found", { id });
+    if (role.version !== input.expected_version) {
+      throw conflict("RBAC role was modified by another actor.", {
+        aggregate: "rbac_role",
+        id,
+        expected_version: input.expected_version,
+        current_version: role.version
+      });
+    }
+    if (input.name) role.name = input.name.trim();
+    if (input.description !== undefined) role.description = input.description.trim();
+    if (input.status) role.status = input.status;
+    role.updated_at = nowIso();
+    role.version += 1;
+    return role;
+  }
+
+  replaceRbacRolePermissions(
+    role: RbacRoleRecord,
+    input: RbacRolePermissionsReplaceInput
+  ): RbacRoleRecord {
+    if (role.version !== input.expected_version) {
+      throw conflict("RBAC role was modified by another actor.", {
+        aggregate: "rbac_role",
+        id: role.id,
+        expected_version: input.expected_version,
+        current_version: role.version
+      });
+    }
+    const now = nowIso();
+    const requested = new Set(input.permission_ids);
+    for (const permission of this.store.rbacRolePermissions.filter((candidate) => candidate.role_key === role.role_key)) {
+      if (requested.has(permission.permission_id)) {
+        permission.status = "active";
+        permission.deleted_at = null;
+        permission.updated_at = now;
+        requested.delete(permission.permission_id);
+      } else if (!permission.deleted_at && permission.status === "active") {
+        permission.status = "inactive";
+        permission.deleted_at = now;
+        permission.updated_at = now;
+      }
+    }
+    for (const permissionId of requested) {
+      this.store.rbacRolePermissions.push(newRolePermission(role.role_key, permissionId, now));
+    }
+    role.updated_at = now;
+    role.version += 1;
+    return role;
+  }
+
+  rbacRoleById(id: string): RbacRoleRecord {
+    const role = this.store.rbacRoles.find((candidate) => candidate.id === id && !candidate.deleted_at);
+    if (!role) throw notFound("RBAC role not found", { id });
+    return role;
   }
 
   listDepartments(): Department[] {
@@ -166,6 +259,13 @@ export class AdminRepository {
       throw conflict("Designation code already exists", { designation_code: code });
     }
   }
+
+  private assertUniqueRbacRoleKey(roleKey: string): void {
+    const duplicate = this.store.rbacRoles.find((candidate) => !candidate.deleted_at && candidate.role_key.toLowerCase() === roleKey.toLowerCase());
+    if (duplicate) {
+      throw conflict("RBAC role key already exists", { role_key: roleKey });
+    }
+  }
 }
 
 function defaultCompanyProfile(): CompanyProfileRecord {
@@ -204,4 +304,24 @@ function normalizeCode(value: string): string {
     throw badRequest("Master data code must include at least one letter or number", { field: "code" });
   }
   return normalized;
+}
+
+function normalizeRbacRoleKey(value: string): string {
+  const normalized = value.trim().replace(/\s+/gu, " ").slice(0, 80);
+  if (!normalized) {
+    throw badRequest("RBAC role key must include at least one visible character", { field: "role_key" });
+  }
+  return normalized;
+}
+
+function newRolePermission(roleKey: string, permissionId: string, now: string): RbacRolePermissionRecord {
+  return {
+    id: randomUUID(),
+    role_key: roleKey,
+    permission_id: permissionId,
+    status: "active",
+    created_at: now,
+    updated_at: now,
+    deleted_at: null
+  };
 }

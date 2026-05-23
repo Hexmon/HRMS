@@ -26,6 +26,8 @@ import type {
   ProjectPriority,
   ProjectStatus,
   ProjectType,
+  RbacPermissionAction,
+  RbacPermissionGroup,
   RoleKey,
   TimesheetStatus
 } from "./constants.js";
@@ -66,6 +68,39 @@ export interface Designation {
   status: "active" | "inactive";
   deleted_at: ISODateTime | null;
   version: number;
+}
+
+export interface RbacRoleRecord {
+  id: UUID;
+  role_key: string;
+  name: string;
+  description: string;
+  status: "active" | "inactive";
+  builtin: boolean;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+  version: number;
+}
+
+export interface RbacRolePermissionRecord {
+  id: UUID;
+  role_key: string;
+  permission_id: string;
+  status: "active" | "inactive";
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface RbacPermissionDefinition {
+  id: string;
+  permission_id: string;
+  group: RbacPermissionGroup;
+  module: RbacPermissionGroup;
+  action: RbacPermissionAction;
+  label: string;
+  description: string;
 }
 
 export interface CoreUser extends AuthUser {

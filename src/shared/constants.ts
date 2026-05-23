@@ -31,6 +31,36 @@ export const Permissions = {
 
 export type PermissionKey = (typeof Permissions)[keyof typeof Permissions];
 
+export const RbacPermissionGroups = [
+  "Dashboard",
+  "Employees",
+  "EMS",
+  "Attendance",
+  "Leave/WFH",
+  "Projects",
+  "Team Utilization",
+  "Timesheet",
+  "Expense Management",
+  "Assets",
+  "Helpdesk",
+  "Reports",
+  "Admin Settings"
+] as const;
+
+export type RbacPermissionGroup = (typeof RbacPermissionGroups)[number];
+
+export const RbacPermissionActions = [
+  "view",
+  "create",
+  "edit",
+  "delete",
+  "approve",
+  "export",
+  "configure"
+] as const;
+
+export type RbacPermissionAction = (typeof RbacPermissionActions)[number];
+
 export const EmploymentStatuses = {
   Active: "active",
   Inactive: "inactive",

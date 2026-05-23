@@ -1,4 +1,13 @@
-import type { AuthUser, Department, Designation } from "#shared";
+import {
+  RbacPermissionActions,
+  RbacPermissionGroups,
+  Roles,
+  type AuthUser,
+  type Department,
+  type Designation,
+  type RbacPermissionDefinition,
+  type RbacRoleRecord
+} from "#shared";
 import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { AdminRepository } from "./repository.js";
@@ -8,10 +17,15 @@ import type {
   DepartmentUpdateInput,
   DesignationCreateInput,
   DesignationUpdateInput,
-  MasterDataQuery
+  MasterDataQuery,
+  RbacPermissionsQuery,
+  RbacRoleCreateInput,
+  RbacRolePermissionsReplaceInput,
+  RbacRolesQuery,
+  RbacRoleUpdateInput
 } from "./schemas.js";
-import { assertCanManageAdminSettings, assertCanManageMasterData } from "./policy.js";
-import { conflict, notFound } from "../../platform/errors.js";
+import { assertCanManageAdminSettings, assertCanManageMasterData, assertCanManageRbac } from "./policy.js";
+import { badRequest, conflict, notFound } from "../../platform/errors.js";
 
 function page<T>(items: readonly T[], pageNumber = 1, pageSize = 25): Paginated<T> {
   const start = (pageNumber - 1) * pageSize;
@@ -45,6 +59,91 @@ export class AdminService {
       idempotencyKey: `admin.company_profile.updated:${company.id}:${company.version}`
     });
     return presentCompanyProfile(company);
+  }
+
+  listRbacRoles(actor: AuthUser, query: RbacRolesQuery): Paginated<RbacRoleResponse> {
+    assertCanManageRbac(actor);
+    const filtered = this.repository
+      .listRbacRoles()
+      .filter((role) => !query.active_only || role.status === "active")
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return page(filtered.map((role) => this.presentRbacRole(role)), query.page, query.page_size);
+  }
+
+  listRbacPermissions(actor: AuthUser, query: RbacPermissionsQuery): { items: RbacPermissionDefinition[] } {
+    assertCanManageRbac(actor);
+    const search = query.search?.trim().toLowerCase();
+    const moduleFilter = query.module?.trim().toLowerCase();
+    return {
+      items: permissionCatalog().filter((permission) => {
+        if (moduleFilter && permission.group.toLowerCase() !== moduleFilter) return false;
+        if (!search) return true;
+        return (
+          permission.id.toLowerCase().includes(search) ||
+          permission.group.toLowerCase().includes(search) ||
+          permission.action.toLowerCase().includes(search) ||
+          permission.label.toLowerCase().includes(search)
+        );
+      })
+    };
+  }
+
+  createRbacRole(actor: AuthUser, input: RbacRoleCreateInput): RbacRoleMutationResponse {
+    assertCanManageRbac(actor);
+    this.assertKnownPermissionIds(input.permission_ids);
+    const role = this.repository.createRbacRole(input);
+    appendOutboxEvent(this.store, {
+      aggregateType: "rbac_role",
+      aggregateId: role.id,
+      eventType: "admin.rbac.role.created",
+      payload: { actor_user_id: actor.id, role_key: role.role_key, permission_count: input.permission_ids.length },
+      idempotencyKey: `admin.rbac.role.created:${role.id}:${role.version}`
+    });
+    return { role: this.presentRbacRole(role), version: role.version };
+  }
+
+  updateRbacRole(actor: AuthUser, id: string, input: RbacRoleUpdateInput): RbacRoleMutationResponse {
+    assertCanManageRbac(actor);
+    const current = this.repository.rbacRoleById(id);
+    if (current.role_key === Roles.Admin && input.status === "inactive") {
+      throw conflict("Protected Admin role cannot be deactivated.", { role_key: current.role_key });
+    }
+    const role = this.repository.updateRbacRole(id, input);
+    appendOutboxEvent(this.store, {
+      aggregateType: "rbac_role",
+      aggregateId: role.id,
+      eventType: "admin.rbac.role.updated",
+      payload: {
+        actor_user_id: actor.id,
+        role_key: role.role_key,
+        changed_fields: Object.keys(input).filter((field) => field !== "expected_version")
+      },
+      idempotencyKey: `admin.rbac.role.updated:${role.id}:${role.version}`
+    });
+    return { role: this.presentRbacRole(role), version: role.version };
+  }
+
+  replaceRbacRolePermissions(actor: AuthUser, id: string, input: RbacRolePermissionsReplaceInput): RbacRoleMutationResponse {
+    assertCanManageRbac(actor);
+    this.assertKnownPermissionIds(input.permission_ids);
+    const role = this.repository.rbacRoleById(id);
+    if (role.role_key === Roles.Admin) {
+      throw conflict("Protected Admin role permissions cannot be replaced.", { role_key: role.role_key });
+    }
+    const updated = this.repository.replaceRbacRolePermissions(role, input);
+    appendOutboxEvent(this.store, {
+      aggregateType: "rbac_role",
+      aggregateId: updated.id,
+      eventType: "admin.rbac.role.permissions_replaced",
+      payload: {
+        actor_user_id: actor.id,
+        role_key: updated.role_key,
+        permission_count: input.permission_ids.length,
+        remarks: input.remarks ?? null
+      },
+      idempotencyKey: `admin.rbac.role.permissions_replaced:${updated.id}:${updated.version}`
+    });
+    return { role: this.presentRbacRole(updated), version: updated.version };
   }
 
   listDepartments(actor: AuthUser, query: MasterDataQuery): Paginated<DepartmentResponse> {
@@ -177,6 +276,35 @@ export class AdminService {
       throw conflict(`Cannot deactivate ${kind} while active employees reference it.`, { id });
     }
   }
+
+  private assertKnownPermissionIds(permissionIds: readonly string[]): void {
+    const known = new Set(permissionCatalog().map((permission) => permission.id));
+    const unknown = permissionIds.filter((permissionId) => !known.has(permissionId));
+    if (unknown.length) {
+      throw badRequest("One or more permission IDs are not supported.", { permission_ids: unknown });
+    }
+  }
+
+  private presentRbacRole(role: RbacRoleRecord): RbacRoleResponse {
+    const permissionIds = this.repository.rolePermissionsFor(role.role_key).map((permission) => permission.permission_id).sort();
+    return {
+      id: role.id,
+      role_key: role.role_key,
+      key: role.role_key,
+      name: role.name,
+      label: role.name,
+      description: role.description,
+      status: role.status,
+      active: role.status === "active",
+      builtin: role.builtin,
+      protected_system_role: role.role_key === Roles.Admin,
+      assigned_users: this.store.users.filter((user) => !user.deleted_at && user.roles.includes(role.role_key as AuthUser["roles"][number])).length,
+      permission_ids: permissionIds,
+      permissions: permissionIds,
+      updated_at: role.updated_at,
+      version: role.version
+    };
+  }
 }
 
 export interface Paginated<T> {
@@ -217,6 +345,29 @@ export interface MasterDataMutationResponse<T> {
   version: number;
   department?: T;
   designation?: T;
+}
+
+export interface RbacRoleResponse {
+  id: string;
+  role_key: string;
+  key: string;
+  name: string;
+  label: string;
+  description: string;
+  status: "active" | "inactive";
+  active: boolean;
+  builtin: boolean;
+  protected_system_role: boolean;
+  assigned_users: number;
+  permission_ids: string[];
+  permissions: string[];
+  updated_at: string;
+  version: number;
+}
+
+export interface RbacRoleMutationResponse {
+  role: RbacRoleResponse;
+  version: number;
 }
 
 export interface CompanyProfileResponse {
@@ -315,4 +466,25 @@ function monthName(month: number): string {
     "November",
     "December"
   ][Math.max(1, Math.min(12, month)) - 1] ?? "January";
+}
+
+function permissionCatalog(): RbacPermissionDefinition[] {
+  return RbacPermissionGroups.flatMap((group) =>
+    RbacPermissionActions.map((action) => {
+      const id = permissionId(group, action);
+      return {
+        id,
+        permission_id: id,
+        group,
+        module: group,
+        action,
+        label: `${group} ${action}`,
+        description: `Allows ${action} access for ${group}.`
+      };
+    })
+  );
+}
+
+function permissionId(group: string, action: string): string {
+  return `${group.toLowerCase().replace(/[^a-z0-9]+/gu, "_").replace(/^_+|_+$/gu, "")}:${action}`;
 }
