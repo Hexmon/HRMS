@@ -47,7 +47,7 @@ This versioned report captures the completed Phase 6 backup/restore scripts, obs
 | Phase 6 browser e2e baseline | Completed Playwright smoke coverage in `hrms-client` for API-mode login, notification panel, employee self-service routes, HR/admin routes, reports/settings, projects, and team utilization |
 | Phase 6 browser e2e hardening | Completed Playwright coverage for API-backed Helpdesk ticket creation, mobile authenticated shell navigation, and generated report export download handoff across all report routes |
 | Phase 6 export generation | Completed document-backed export generation for employee/core CSV, report CSV, and attendance/Leave-WFH CSV/JSON export APIs; frontend employee, Leave/WFH monitor, and route-wide ReportShell exports now open generated document downloads when returned |
-| Phase 6 Cloudinary document storage | Replaced MinIO/S3-compatible runtime wiring with Cloudinary-backed storage, removed MinIO compose services/dependency, added Cloudinary env keys, kept local/test mock uploads out of production, and added multipart file upload support for Documents/EMS wrappers |
+| Phase 6 Cloudinary document storage | Replaced MinIO/S3-compatible runtime wiring with Cloudinary-backed storage, removed MinIO compose services/dependency, added Cloudinary env keys, kept local/test mock uploads out of production, added multipart file upload support for Documents/EMS wrappers, and removed tracked legacy Supabase frontend artifacts |
 | Frontend expense create UX | Removed the visible Tax amount input from `/expenses/create`; created line items now use quantity times unit cost in the create-form total |
 | Frontend EMS document upload UX | EMS documents now send real `multipart/form-data` file payloads and compress image uploads in the browser before backend upload |
 | Phase 6 Helpdesk category configuration | Completed Admin/support-scoped Helpdesk category create/update/toggle APIs and connected the `/helpdesk/categories` UI actions to those APIs in API mode |
@@ -696,8 +696,9 @@ Frontend:
 | Phase 6 deployment/security hardening | `chore(security): harden API headers and production CORS` | Committed in `hrms_backend` as `4c7dc45` |
 | Phase 6 observability hardening | `chore(observability): configure production-safe API logging` | Committed in `hrms_backend` as `1e8b365` |
 | Phase 6 backup/restore scripts | `chore(ops): add database backup and restore scripts` | Committed in `hrms_backend` as `6a1f1c5` |
-| Cloudinary document storage backend | `feat(documents): migrate storage to Cloudinary` | Pending commit in `hrms_backend` |
-| Expense/document upload frontend | `feat(documents): compress uploads and simplify expense create` | Pending commit in `hrms-client` |
+| Cloudinary document storage backend | `feat(documents): migrate storage to Cloudinary` | Committed in `hrms_backend` as `c38ad2f` |
+| Expense/document upload frontend | `feat(documents): compress uploads and simplify expense create` | Committed in `hrms-client` as `9f1604f` |
+| Legacy Supabase cleanup frontend | `chore(frontend): remove legacy Supabase artifacts` | Committed in `hrms-client` as `d5f2c68` |
 
 ## Next Steps
 
