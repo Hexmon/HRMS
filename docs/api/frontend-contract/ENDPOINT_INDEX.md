@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 211
+Documented operations: 213
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -9983,6 +9983,115 @@ Schema: `object`.
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
 - OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/ems/employees/{user_id}/documents
+
+| Field | Contract |
+|---|---|
+| Purpose | List employee EMS documents |
+| Frontend use | List employee EMS documents |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `document_type` | query | no | string | - |
+| `user_id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `items` | array of object | required | - |
+| `page` | integer | required | minimum 1 |
+| `page_size` | integer | required | minimum 1 |
+| `total` | integer | required | minimum 0 |
+| `document_summary` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Use backend document APIs only; never expose object-storage credentials or direct bucket paths.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/ems/employees/{user_id}/documents
+
+| Field | Contract |
+|---|---|
+| Purpose | Attach employee EMS document |
+| Frontend use | Attach employee EMS document |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `user_id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+EMS employee document upload metadata. The path employee user id is used as the business object id; binary storage is handled by the backend object-storage adapter.
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `classification` | string enum("normal", "finance", "medical", "compensation", "legal", "audit") | required | - |
+| `document_type` | string | required | minLength 1 |
+| `file_name` | string | required | minLength 1 |
+| `mime_type` | string | required | minLength 1 |
+| `size_bytes` | integer | required | minimum 1 |
+| `checksum_sha256` | string | optional | - |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `document` | object | required | - |
+| `access_policy` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Use backend document APIs only; never expose object-storage credentials or direct bucket paths.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
 ## Projects / Utilization

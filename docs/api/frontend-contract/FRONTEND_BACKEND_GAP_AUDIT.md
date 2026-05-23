@@ -11,9 +11,9 @@ This audit maps the current Hawkaii HRMS frontend to the custom backend contract
 
 ## API Count Summary
 
-Current documented backend contract: **211 operations** in `openapi.json` after Phase 5 employee/core backlog completion.
+Current documented backend contract: **213 operations** in `openapi.json` after Phase 5 EMS document wrapper completion.
 
-- **209** operations are under `/api/v1/**`.
+- **211** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
 - **0** documented backend operations currently need deletion from the OpenAPI pack because Reviewer/Director APIs are not present there.
 
@@ -21,11 +21,11 @@ Disjoint implementation counts for backend planning:
 
 | Category | Count | Meaning |
 | --- | ---: | --- |
-| Existing APIs ready to integrate as-is | 211 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
+| Existing APIs ready to integrate as-is | 213 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
 | Existing APIs to update in place | 0 | Phase 1A-1C existing API expansions have landed; new gaps should be added as explicit new endpoints. |
 | Existing APIs to delete | 0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
-| New APIs remaining to add | 6 | Remaining first-pass count needed after Phase 5 employee/core backlog completion. |
-| Target contract size after additions | 217 | `211 current + 6 remaining`; employee/core history and job APIs are now implemented. |
+| New APIs remaining to add | 4 | Remaining first-pass count needed after Phase 5 EMS document wrapper completion. |
+| Target contract size after additions | 217 | `213 current + 4 remaining`; EMS document wrapper APIs are now implemented. |
 
 Existing APIs updated in place during earlier phases:
 
@@ -50,7 +50,7 @@ Minimum new API operation count by frontend area:
 | Auth, onboarding, password reset, role activation | 0 | Signup, verify email, resend verification, set password, reset request, reset confirm, company bootstrap, and active role/session preference are implemented. |
 | Dashboard | 0 | Role-scoped dashboard summary is implemented. |
 | Employees/Core | 0 | Employee CRUD/status/login, role assignment/history, profile audit, import/export job metadata, department/designation selectors, and org hierarchy are implemented. Full import parsing and document-backed export files remain production hardening. |
-| EMS | 2 | Primary profile, profile requests, letters, policies, generic requests, and HR queues are implemented; EMS-specific document wrapper endpoints remain. |
+| EMS | 0 | Primary profile, profile requests, employee document wrappers, letters, policies, generic requests, and HR queues are implemented. |
 | Attendance | 3 | Daily calendar endpoint, manager queue alias if needed by UI, reports/exports. Punches, monthly calendar, summaries, regularization submit/list/decision, and exceptions are implemented. |
 | Leave/WFH | 1 | Primary balances, leave apply/cancel/decision, WFH apply/decision, HR monitor, and holiday list/upsert are implemented; export/report job endpoint remains. |
 | Timesheets | 0 | Work segments, submissions, approver queue, decisions, workflow definitions, project aggregations, missing submissions, productivity summaries, submission detail, and selector metadata are implemented. |

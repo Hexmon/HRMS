@@ -81,6 +81,7 @@ const expectedOperations = [
   "GET /api/v1/documents",
   "GET /api/v1/documents/{id}",
   "GET /api/v1/documents/{id}/access-log",
+  "GET /api/v1/ems/employees/{user_id}/documents",
   "GET /api/v1/ems/letters",
   "GET /api/v1/ems/policies",
   "GET /api/v1/ems/profile-change-requests/my",
@@ -198,6 +199,7 @@ const expectedOperations = [
   "POST /api/v1/documents",
   "POST /api/v1/documents/{id}/download-url",
   "POST /api/v1/documents/{id}/verify",
+  "POST /api/v1/ems/employees/{user_id}/documents",
   "PATCH /api/v1/ems/profile/me",
   "POST /api/v1/ems/letters/{id}/acknowledge",
   "POST /api/v1/ems/policies/{id}/acknowledge",
@@ -306,6 +308,7 @@ const bodyRequiredOperations = [
   "POST /api/v1/expenses/{id}/documents",
   "POST /api/v1/expenses/{id}/settlement",
   "POST /api/v1/documents",
+  "POST /api/v1/ems/employees/{user_id}/documents",
   "POST /api/v1/assets/",
   "POST /api/v1/assets/{id}/assign",
   "POST /api/v1/assets/{id}/return",
@@ -477,6 +480,7 @@ const listOperations = [
   "GET /api/v1/ems/requests/queue/hr",
   "GET /api/v1/ems/letters",
   "GET /api/v1/ems/policies",
+  "GET /api/v1/ems/employees/{user_id}/documents",
   "GET /api/v1/projects",
   "GET /api/v1/projects/{id}/members",
   "GET /api/v1/projects/{id}/allocations",
@@ -677,7 +681,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(211);
+    expect(rows.length).toBe(213);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

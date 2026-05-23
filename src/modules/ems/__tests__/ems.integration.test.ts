@@ -225,4 +225,93 @@ describe("employee self-service", () => {
       version: 2
     });
   });
+
+  it("scopes EMS employee documents through the backend Documents module", async () => {
+    const employee = await loginAs(app, "E1");
+    const admin = await loginAs(app, "ADM");
+    const otherEmployee = await loginAs(app, "E2");
+
+    const employeeUpload = await app.inject({
+      method: "POST",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents`,
+      headers: authHeader(employee.token),
+      payload: {
+        classification: "normal",
+        document_type: "identity_proof",
+        file_name: "passport.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 1024
+      }
+    });
+    expect(employeeUpload.statusCode).toBe(200);
+    expect(employeeUpload.json().document).toMatchObject({
+      business_object_type: "employee",
+      business_object_id: employee.user.id,
+      owner_user_id: employee.user.id,
+      document_type: "identity_proof"
+    });
+    await expect(app.store.objectStorage?.statObject(employeeUpload.json().document.storage_key)).resolves.toMatchObject({
+      size: expect.any(Number)
+    });
+
+    const restrictedUpload = await app.inject({
+      method: "POST",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents`,
+      headers: authHeader(admin.token),
+      payload: {
+        classification: "medical",
+        document_type: "medical_record",
+        file_name: "medical.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 2048
+      }
+    });
+    expect(restrictedUpload.statusCode).toBe(200);
+    expect(restrictedUpload.json().document.owner_user_id).toBe(employee.user.id);
+
+    const ownList = await app.inject({
+      method: "GET",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents?page=1&page_size=10`,
+      headers: authHeader(employee.token)
+    });
+    expect(ownList.statusCode).toBe(200);
+    expect(ownList.json()).toMatchObject({
+      total: 1,
+      document_summary: { total: 1, pending_verification: 1, restricted: 0 }
+    });
+    expect(ownList.json().items[0]).toMatchObject({ id: employeeUpload.json().document.id });
+
+    const hrList = await app.inject({
+      method: "GET",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents?page=1&page_size=10&document_type=medical_record`,
+      headers: authHeader(admin.token)
+    });
+    expect(hrList.statusCode).toBe(200);
+    expect(hrList.json()).toMatchObject({
+      total: 1,
+      document_summary: { total: 2, restricted: 1 }
+    });
+    expect(hrList.json().items[0]).toMatchObject({ id: restrictedUpload.json().document.id });
+
+    const crossEmployeeList = await app.inject({
+      method: "GET",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents?page=1&page_size=10`,
+      headers: authHeader(otherEmployee.token)
+    });
+    expect(crossEmployeeList.statusCode).toBe(403);
+
+    const crossEmployeeUpload = await app.inject({
+      method: "POST",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents`,
+      headers: authHeader(otherEmployee.token),
+      payload: {
+        classification: "normal",
+        document_type: "identity_proof",
+        file_name: "other.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 1024
+      }
+    });
+    expect(crossEmployeeUpload.statusCode).toBe(403);
+  });
 });

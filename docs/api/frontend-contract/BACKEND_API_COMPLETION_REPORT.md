@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 211 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 213 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 6 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 217 | Regenerate frontend client only after each backend phase lands. | `211 current + 6 remaining`; employee/core history and job APIs are now available. |
+| Planned new APIs | 4 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 217 | Regenerate frontend client only after each backend phase lands. | `213 current + 4 remaining`; EMS document wrappers are now available. |
 
 ## Development Phases
 
@@ -41,7 +41,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Timesheets | 12 | Work segments, submissions, approver queue, decisions, workflow definitions, project summaries, missing submissions, productivity summary, submission detail, and selectors. |
 | Attendance | 9 | Punches, my punch list, my/team summaries, monthly calendar, regularization submit/list/decision, and exception queue. |
 | Leave / WFH / Holidays | 14 | Leave balances, leave apply/cancel/decision queues, WFH apply/decision queues, HR monitor, and holiday list/upsert. |
-| EMS | 13 | Employee profile, profile change requests and HR decisions, generic employee requests and HR queue, letters, and policy acknowledgements. |
+| EMS | 15 | Employee profile, profile change requests and HR decisions, employee document wrappers, generic employee requests and HR queue, letters, and policy acknowledgements. |
 | Projects / Utilization | 15 | Project CRUD, members, allocations, milestones/modules, project documents, project summary, and team utilization analytics. |
 | Helpdesk | 15 | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report. |
 | Notifications | 4 | Authenticated user notification feed, unread badge count, mark-read, and mark-all-read operations. |
@@ -118,7 +118,7 @@ Total remaining planned new operations: **6**.
 | POST | `/api/v1/core/users/exports` | `/employees/export` | Create employee export job. | HR/Admin/auditor by scope. | filters, columns, format | job_id, status, download_document_id optional | 403 forbidden columns, 429 export throttle. | Implemented in Phase 5 core backlog |
 | GET | `/api/v1/core/master-data/org-selectors` | `/employees filters/forms` | Return active departments, designations, roles, and manager candidates for employee forms. | Authenticated; manager candidates scoped by role. | None | departments[], designations[], roles[], managers[] | Shared errors; cacheable but must refetch after admin changes. | Implemented in Phase 3 |
 
-### EMS (13 implemented APIs, 2 planned APIs)
+### EMS (15 implemented APIs, 0 planned APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -128,8 +128,8 @@ Total remaining planned new operations: **6**.
 | GET | `/api/v1/ems/profile-change-requests/my` | `/ems/profile/change-request` | List own profile change requests. | Authenticated employee. | page, page_size, status | items[], pagination | Shared errors; frontend shows timeline and remarks. | Implemented in Phase 3 EMS |
 | GET | `/api/v1/ems/profile-change-requests/queue/hr` | `/ems/hr/profile-requests` | HR queue for profile change requests. | HR/Admin only. | page, page_size, status, department_id | items[], pagination, queue_counts | 403 non-HR; paginated. | Implemented in Phase 3 EMS |
 | POST | `/api/v1/ems/profile-change-requests/{id}/decision` | `/ems/hr/profile-requests/:id` | Approve, return, or reject profile change request. | HR/Admin only; self-processing blocked. | Path id; decision, remarks, expected_version | request, previous_status, next_status, version | remarks required for return/reject; 409 stale version. | Implemented in Phase 3 EMS |
-| GET | `/api/v1/ems/employees/{user_id}/documents` | `/ems/documents` | List employee EMS documents. | Owner, HR/Admin, or scoped manager depending classification. | Path user_id; page, page_size, document_type | items[], pagination, document_summary | 403 restricted classification; download through document API. | Planned / Not Implemented |
-| POST | `/api/v1/ems/employees/{user_id}/documents` | `/ems/documents/upload` | Attach employee EMS document metadata. | Owner for allowed types; HR/Admin for official docs. | Path user_id; document metadata and storage key from backend upload flow | document metadata, access policy | 400 invalid classification; 403 out of scope. | Planned / Not Implemented |
+| GET | `/api/v1/ems/employees/{user_id}/documents` | `/ems/documents` | List employee EMS documents. | Owner, HR/Admin, or scoped manager depending classification. | Path user_id; page, page_size, document_type | items[], pagination, document_summary | 403 restricted classification; download through document API. | Implemented in Phase 5 EMS document wrappers |
+| POST | `/api/v1/ems/employees/{user_id}/documents` | `/ems/documents/upload` | Attach employee EMS document metadata. | Owner for allowed types; HR/Admin for official docs. | Path user_id; document metadata and storage key from backend upload flow | document metadata, access policy | 400 invalid classification; 403 out of scope. | Implemented in Phase 5 EMS document wrappers |
 | GET | `/api/v1/ems/letters` | `/ems/letters` | List HR letters available to employee. | Authenticated employee; HR/Admin can filter by user. | page, page_size, user_id optional, status | items[], pagination | 403 for cross-user without HR scope. | Implemented in Phase 3 EMS |
 | POST | `/api/v1/ems/letters/{id}/acknowledge` | `/ems/letters/:id` | Acknowledge receipt of HR letter. | Assigned recipient or HR/Admin. | Path id; expected_version | letter, status, acknowledged_at, version | 409 already acknowledged or stale version. | Implemented in Phase 3 EMS |
 | GET | `/api/v1/ems/policies` | `/ems/policies` | List active company policies assigned to employee. | Authenticated employee. | page, page_size | items[], pagination, acknowledgement_summary | Shared errors; documents downloaded via backend URL. | Implemented in Phase 3 EMS |

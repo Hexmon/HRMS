@@ -2104,6 +2104,13 @@ const emsQuerySchema = {
     department_id: uuid("Department UUID filter")
   }
 };
+const emsDocumentQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    document_type: { type: "string", example: "identity_proof" }
+  }
+};
 
 const emsProfilePatchBody = {
   type: "object",
@@ -2227,6 +2234,26 @@ const emsPolicySchema = {
     version_label: { type: "string", example: "v4.0" },
     acknowledgement_status: { type: "string", enum: ["pending", "acknowledged"], example: "pending" },
     acknowledgement_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+const emsEmployeeDocumentListSchema = {
+  ...paginated(documentSchema),
+  required: ["items", "page", "page_size", "total", "document_summary"],
+  properties: {
+    ...(paginated(documentSchema).properties as RouteSchema),
+    document_summary: {
+      type: "object",
+      required: ["total", "verified", "pending_verification", "restricted", "by_type"],
+      properties: {
+        total: { type: "integer", example: 3 },
+        verified: { type: "integer", example: 1 },
+        pending_verification: { type: "integer", example: 2 },
+        restricted: { type: "integer", example: 1 },
+        by_type: { type: "object", additionalProperties: { type: "integer" } }
+      },
+      additionalProperties: true
+    }
   },
   additionalProperties: true
 };
@@ -3442,6 +3469,10 @@ const expenseDocumentUploadBody = {
   required: ["classification", "document_type", "file_name", "mime_type", "size_bytes"],
   properties: without(documentUploadBody.properties as RouteSchema, ["business_object_type", "business_object_id"])
 };
+const emsDocumentUploadBody = {
+  ...expenseDocumentUploadBody,
+  description: "EMS employee document upload metadata. The path employee user id is used as the business object id; binary storage is handled by the backend object-storage adapter."
+};
 
 const routeDocs: Record<string, RouteSchema> = {
   "GET /health/live": operation("Platform / Health", "Liveness check", "Unversioned container liveness probe.", { response200: statusResponseSchema, rateLimited: false }, false),
@@ -3785,6 +3816,30 @@ const routeDocs: Record<string, RouteSchema> = {
     "Acknowledge EMS policy",
     "Acknowledges the current active version of a policy for the authenticated employee with optimistic concurrency.",
     { params: idParamSchema, body: expectedVersionBodySchema, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/ems/employees/{user_id}/documents": operation(
+    "EMS",
+    "List employee EMS documents",
+    "Lists employee-scoped EMS documents through the existing Documents module metadata. EMS user visibility is checked first, then document classification policy controls which rows are returned.",
+    { params: userIdParamSchema, querystring: emsDocumentQuerySchema, response200: emsEmployeeDocumentListSchema }
+  ),
+  "POST /api/v1/ems/employees/{user_id}/documents": operation(
+    "EMS",
+    "Attach employee EMS document",
+    "Uploads employee-scoped EMS document metadata using the existing backend object-storage adapter. Employees can attach their own allowed documents; HR/Admin can attach official or restricted employee documents.",
+    {
+      params: userIdParamSchema,
+      body: emsDocumentUploadBody,
+      response200: {
+        type: "object",
+        required: ["document", "access_policy"],
+        properties: {
+          document: documentSchema,
+          access_policy: { type: "object", additionalProperties: true }
+        },
+        additionalProperties: true
+      }
+    }
   ),
   "GET /api/v1/admin/company-profile": operation(
     "Admin / Configuration",

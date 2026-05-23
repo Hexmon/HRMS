@@ -16,7 +16,9 @@ import {
 } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
-import { badRequest, conflict, missingRemarks, notFound } from "../../platform/errors.js";
+import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
+import { canAccessDocument } from "../documents/policy.js";
+import { DocumentService, type DocumentUploadInput } from "../documents/service.js";
 import { appendEmsOutboxEvent, emsEvents } from "./events.js";
 import { assertCanDecideProfileChange, assertCanManageEms, assertCanSeeEmsUser, canManageEms } from "./policy.js";
 import { EmsRepository } from "./repository.js";
@@ -29,6 +31,12 @@ export interface EmsQuery {
   user_id?: UUID;
   department_id?: UUID;
 }
+
+export interface EmsDocumentQuery extends Pick<EmsQuery, "page" | "page_size"> {
+  document_type?: string;
+}
+
+export type EmsDocumentUploadInput = Omit<DocumentUploadInput, "business_object_type" | "business_object_id">;
 
 const FIELD_LABELS: Record<string, string> = {
   personal_email: "Personal email",
@@ -287,6 +295,49 @@ export class EmsService {
     return { policy: this.presentPolicy(policy, actor.id), status: acknowledgement.status, version: acknowledgement.version };
   }
 
+  listEmployeeDocuments(actor: AuthUser, userId: UUID, query: EmsDocumentQuery) {
+    const user = this.requireUser(userId);
+    assertCanSeeEmsUser(actor, user);
+    const visible = this.store.documents
+      .filter((document) => document.business_object_type === "employee" && document.business_object_id === userId && !document.deleted_at)
+      .filter((document) => canAccessDocument(actor, document, "read"));
+    const filtered = query.document_type
+      ? visible.filter((document) => document.document_type === query.document_type)
+      : visible;
+    return {
+      ...page(filtered, query.page, query.page_size),
+      document_summary: this.documentSummary(visible)
+    };
+  }
+
+  async attachEmployeeDocument(actor: AuthUser, userId: UUID, input: EmsDocumentUploadInput) {
+    const user = this.requireUser(userId);
+    assertCanSeeEmsUser(actor, user);
+    if (actor.id !== userId && !canManageEms(actor)) {
+      throw forbidden("Only the employee or HR/Admin can attach EMS employee documents.");
+    }
+    const document = await new DocumentService(this.store).upload(actor, {
+      ...input,
+      business_object_type: "employee",
+      business_object_id: userId
+    });
+    document.owner_user_id = userId;
+    document.metadata = {
+      ...document.metadata,
+      ems_employee_user_id: userId,
+      ems_document_scope: "employee_self_service"
+    };
+    return {
+      document,
+      access_policy: {
+        business_object_type: "employee",
+        business_object_id: userId,
+        owner_user_id: userId,
+        classification: document.classification
+      }
+    };
+  }
+
   private profileFor(actor: AuthUser, userId: UUID) {
     const user = this.requireUser(userId);
     assertCanSeeEmsUser(actor, user);
@@ -382,6 +433,21 @@ export class EmsService {
       returned: statuses.filter((status) => status === "returned").length,
       rejected: statuses.filter((status) => status === "rejected").length,
       closed: statuses.filter((status) => status === "closed").length
+    };
+  }
+
+  private documentSummary(documents: Array<{ classification: string; document_type: string; metadata: Record<string, unknown> }>) {
+    return {
+      total: documents.length,
+      verified: documents.filter((document) => typeof document.metadata.verified_at === "string").length,
+      pending_verification: documents.filter((document) => typeof document.metadata.verified_at !== "string").length,
+      restricted: documents.filter((document) => document.classification !== "normal").length,
+      by_type: Object.fromEntries(
+        [...new Set(documents.map((document) => document.document_type))].map((type) => [
+          type,
+          documents.filter((document) => document.document_type === type).length
+        ])
+      )
     };
   }
 

@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
+  documentUploadSchema,
   emsDecisionSchema,
   emsPolicyAcknowledgeSchema,
   emsProfileChangeCreateSchema,
@@ -12,12 +13,20 @@ import { unauthorized } from "../../platform/errors.js";
 import { EmsService } from "./service.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
+const userIdParamSchema = z.object({ user_id: z.uuid() });
 
 const emsQuerySchema = paginationQuerySchema.extend({
   status: z.string().max(64).optional(),
   type: z.string().max(64).optional(),
   user_id: z.uuid().optional(),
   department_id: z.uuid().optional()
+});
+const emsDocumentQuerySchema = paginationQuerySchema.extend({
+  document_type: z.string().max(80).optional()
+});
+const emsDocumentUploadSchema = documentUploadSchema.omit({
+  business_object_type: true,
+  business_object_id: true
 });
 
 export const emsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -127,6 +136,26 @@ export const emsRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor,
       params.id,
       body.expected_version
+    );
+  });
+
+  fastify.get("/ems/employees/:user_id/documents", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = userIdParamSchema.parse(request.params);
+    return new EmsService(fastify.store).listEmployeeDocuments(
+      request.actor,
+      params.user_id,
+      emsDocumentQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.post("/ems/employees/:user_id/documents", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = userIdParamSchema.parse(request.params);
+    return new EmsService(fastify.store).attachEmployeeDocument(
+      request.actor,
+      params.user_id,
+      emsDocumentUploadSchema.parse(request.body)
     );
   });
 };
