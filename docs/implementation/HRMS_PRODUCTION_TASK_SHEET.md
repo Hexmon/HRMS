@@ -148,8 +148,8 @@ Frontend:
 
 | Feature | Message | Status |
 | --- | --- | --- |
-| Helpdesk backend | `feat(helpdesk): implement helpdesk APIs` | Pending commit |
-| Helpdesk frontend | `feat(helpdesk): connect helpdesk screens to backend APIs` | Pending commit |
+| Helpdesk backend | `feat(helpdesk): implement helpdesk APIs` | Committed in `hrms_backend` as `504da18` |
+| Helpdesk frontend | `feat(helpdesk): connect helpdesk screens to backend APIs` | Committed in `hrms-client` as `50412ce` |
 
 ## Next Steps
 
