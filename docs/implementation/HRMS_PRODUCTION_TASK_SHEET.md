@@ -42,7 +42,7 @@ This versioned report captures the completed Phase 5 Leave/WFH export slice afte
 | Non-expense Reports frontend | Integrated in `hrms-client` for HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes in API mode |
 | Employee/core backlog backend | Completed for role assignment history, profile audit trail, employee import job metadata/status, and employee export job metadata APIs |
 | Employee/core backlog frontend | Integrated in `hrms-client` for employee profile role history/audit tabs and API-backed employee export job queueing |
-| Phase 6 verification guardrails | Hardened backend implementation and scalability checks now cover the full module set, 217-operation contract floor, zero planned API backlog, synced frontend contract JSON, and critical queue/report indexes |
+| Phase 6 verification guardrails | Hardened backend implementation and scalability checks now cover the full module set, 217-operation contract floor, zero planned API backlog, synced frontend contract JSON, critical queue/report indexes, and frontend production API/mock fallback config |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Audit Log Discovery
@@ -155,6 +155,8 @@ This versioned report captures the completed Phase 5 Leave/WFH export slice afte
 | Implementation verifier | `scripts/verify-implementation.ts` now checks the full backend module manifest, app module registration, schema migrations, mutating-route auth guards, OpenAPI operation floor, zero planned API backlog, and synced frontend contract JSON | This replaces the old early-phase verifier that only covered the initial health/auth/core/expenses/documents/assets/timesheets modules |
 | Scalability verifier | `scripts/verify-scalability.ts` now checks critical indexes across Core, Auth/session/outbox, Expenses, Documents, Assets, Asset workflows, Timesheets, Attendance, Leave/WFH, EMS, Projects, Helpdesk, Notifications, and Admin settings | This keeps the first Phase 6 guardrail scoped to source-controlled checks; deeper load/performance testing remains a separate production-hardening task |
 | Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, and `pnpm verify:scalability` passed | The two verifier scripts needed escalation only because `tsx` IPC pipe creation is blocked in the sandbox |
+| Frontend production config guard | `hrms-client/scripts/production-config-guard.mjs` verifies production mode forces `mockFallback=false`, API mode defaults enabled, and env files do not set `VITE_API_MOCK_FALLBACK=true` or `VITE_API_ENABLED=false` | Added package script `pnpm api:production-config-guard` for repeatable frontend validation |
+| Frontend validation | `pnpm api:production-config-guard`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, and route coverage passed | Lint still reports the existing 39 Fast Refresh warnings |
 
 ## Admin Notification Channels Discovery
 
@@ -431,6 +433,7 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Leave/WFH export | Implement export API | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, Leave/WFH integration test, `pnpm test:contracts` | Passed. OpenAPI generated 217 operations across 192 paths and planned operations remaining dropped to 0. | `src/modules/leave-wfh/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(leave): implement leave WFH export API` |
 | 5 | Leave/WFH export | Connect monitor export | Completed in `hrms-client` | Completed for `/leave-wfh/monitor` export job queueing in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/leave-wfh/*`, `src/routes/_app/leave-wfh.monitor.tsx`, frontend API docs after sync | `feat(leave): connect Leave WFH export action` |
 | 6 | Production hardening guardrails | Harden backend verification scripts | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, `pnpm verify:scalability` | Passed. `verify:implementation` now guards the full 217-operation contract completion state and `verify:scalability` checks critical indexes across all implemented modules. | `scripts/verify-implementation.ts`, `scripts/verify-scalability.ts` | `chore(verify): harden production readiness checks` |
+| 6 | Production API config | Guard frontend production API/mock fallback config | N/A | Completed in `hrms-client` | `pnpm api:production-config-guard`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage | Passed. Lint has the existing 39 Fast Refresh warnings and no new errors. | `hrms-client/package.json`, `hrms-client/scripts/production-config-guard.mjs` | `chore(frontend): guard production API config` |
 
 ## Remaining Blockers
 
@@ -475,6 +478,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
+- `pnpm api:production-config-guard`: passed; production mock fallback is disabled and API mode is required
 - `pnpm api:implemented-route-guard`: passed, 59 files against 192 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
@@ -588,11 +592,12 @@ Frontend:
 | Leave/WFH export frontend | `feat(leave): connect Leave WFH export action` | Committed in `hrms-client` as `fd197b0` |
 | Leave/WFH export task sheet | `docs(leave): record export completion` | Committed in `hrms_backend` as `4328b28` |
 | Phase 6 verification guardrails | `chore(verify): harden production readiness checks` | Committed in `hrms_backend` as `0a7f47b` |
+| Phase 6 frontend production config guard | `chore(frontend): guard production API config` | Committed in `hrms-client` as `0e5d958` |
 
 ## Next Steps
 
 1. Phase 5 Leave/WFH export is implemented, `/leave-wfh/monitor` queues backend export jobs in API mode, and validation passed.
 2. Backend OpenAPI now has 217 operations across 192 paths; planned operations remaining are 0.
-3. Phase 6 verification guardrails are hardened for full-module implementation coverage, zero planned API backlog, frontend contract sync, and critical migration index coverage.
+3. Phase 6 verification guardrails are hardened for full-module implementation coverage, zero planned API backlog, frontend contract sync, critical migration index coverage, and frontend production API/mock fallback config.
 4. Employee import/export jobs and EMS/report/attendance/leave-WFH export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
 5. Next roadmap scope: continue Phase 6 with e2e/user-flow baseline, production API/mock fallback verification, export worker/file generation decisions, deployment checks, security headers/CORS/rate limiting, observability, backup/restore, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
