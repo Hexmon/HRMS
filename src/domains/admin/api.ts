@@ -90,6 +90,55 @@ export interface DesignationMasterInput extends ApiRecord {
   expected_version?: number;
 }
 
+export interface RbacRoleRecord extends ApiRecord {
+  id: string;
+  role_key: string;
+  key: string;
+  name: string;
+  label: string;
+  description: string;
+  status: "active" | "inactive";
+  active: boolean;
+  builtin: boolean;
+  protected_system_role: boolean;
+  assigned_users: number;
+  permission_ids: string[];
+  permissions: string[];
+  updated_at: string;
+  version: number;
+}
+
+export interface RbacPermissionRecord extends ApiRecord {
+  id: string;
+  permission_id: string;
+  group: string;
+  module: string;
+  action: string;
+  label: string;
+  description: string;
+}
+
+export interface RbacRoleInput extends ApiRecord {
+  role_key?: string;
+  key?: string;
+  name: string;
+  description?: string;
+  permission_ids: string[];
+}
+
+export interface RbacRoleUpdateInput extends ApiRecord {
+  name?: string;
+  description?: string;
+  status?: "active" | "inactive";
+  expected_version: number;
+}
+
+export interface RbacRolePermissionsInput extends ApiRecord {
+  permission_ids: string[];
+  expected_version: number;
+  remarks?: string;
+}
+
 export const adminApi = {
   getCompanyProfile() {
     return apiRequest<CompanyProfileResponse>("/api/v1/admin/company-profile");
@@ -148,6 +197,35 @@ export const adminApi = {
       `/api/v1/admin/master-data/designations/${id}`,
       {
         method: "PATCH",
+        body: input,
+      },
+    );
+  },
+  listRbacRoles(params: { page?: number; page_size?: number; active_only?: boolean } = {}) {
+    const path = "/api/v1/admin/rbac/roles";
+    return apiRequest<MasterDataListResponse<RbacRoleRecord>>(`${path}${queryString(params)}`);
+  },
+  createRbacRole(input: RbacRoleInput) {
+    return apiRequest<{ role: RbacRoleRecord; version: number }>("/api/v1/admin/rbac/roles", {
+      method: "POST",
+      body: input,
+    });
+  },
+  updateRbacRole(id: string, input: RbacRoleUpdateInput) {
+    return apiRequest<{ role: RbacRoleRecord; version: number }>(`/api/v1/admin/rbac/roles/${id}`, {
+      method: "PATCH",
+      body: input,
+    });
+  },
+  listRbacPermissions(params: { module?: string; search?: string } = {}) {
+    const path = "/api/v1/admin/rbac/permissions";
+    return apiRequest<{ items: RbacPermissionRecord[] }>(`${path}${queryString(params)}`);
+  },
+  replaceRbacRolePermissions(id: string, input: RbacRolePermissionsInput) {
+    return apiRequest<{ role: RbacRoleRecord; version: number }>(
+      `/api/v1/admin/rbac/roles/${id}/permissions`,
+      {
+        method: "PUT",
         body: input,
       },
     );

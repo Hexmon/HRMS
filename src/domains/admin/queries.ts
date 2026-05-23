@@ -5,6 +5,9 @@ import {
   type CompanyProfileUpdateInput,
   type DepartmentMasterInput,
   type DesignationMasterInput,
+  type RbacRoleInput,
+  type RbacRolePermissionsInput,
+  type RbacRoleUpdateInput,
 } from "./api";
 
 export function useCompanyProfile(enabled = true) {
@@ -85,6 +88,50 @@ export function useUpdateDesignationMasterMutation() {
       id: string;
       input: DesignationMasterInput & { expected_version: number };
     }) => adminApi.updateDesignation(id, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
+  });
+}
+
+export function useRbacRoles(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("admin", "rbac", "roles"),
+    queryFn: () => adminApi.listRbacRoles({ page: 1, page_size: 100 }),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useRbacPermissions(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("admin", "rbac", "permissions"),
+    queryFn: () => adminApi.listRbacPermissions(),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useCreateRbacRoleMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RbacRoleInput) => adminApi.createRbacRole(input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
+  });
+}
+
+export function useUpdateRbacRoleMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: RbacRoleUpdateInput }) =>
+      adminApi.updateRbacRole(id, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
+  });
+}
+
+export function useReplaceRbacRolePermissionsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: RbacRolePermissionsInput }) =>
+      adminApi.replaceRbacRolePermissions(id, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
   });
 }
