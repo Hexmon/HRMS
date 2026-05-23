@@ -36,6 +36,60 @@ export interface CompanyProfileUpdateInput extends ApiRecord {
   expected_version: number;
 }
 
+export interface MasterDataListResponse<T extends ApiRecord> extends ApiRecord {
+  items: T[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
+export interface DepartmentMasterRecord extends ApiRecord {
+  id: string;
+  department_code: string;
+  code: string;
+  name: string;
+  parent_department_id: string | null;
+  parent_id: string | null;
+  director_user_id: string | null;
+  status: "active" | "inactive";
+  active: boolean;
+  deleted_at: string | null;
+  version: number;
+}
+
+export interface DesignationMasterRecord extends ApiRecord {
+  id: string;
+  designation_code: string;
+  code: string;
+  title: string;
+  name: string;
+  level: number | null;
+  status: "active" | "inactive";
+  active: boolean;
+  deleted_at: string | null;
+  version: number;
+}
+
+export interface DepartmentMasterInput extends ApiRecord {
+  name?: string;
+  code?: string;
+  department_code?: string;
+  parent_id?: string | null;
+  parent_department_id?: string | null;
+  status?: "active" | "inactive";
+  expected_version?: number;
+}
+
+export interface DesignationMasterInput extends ApiRecord {
+  name?: string;
+  title?: string;
+  code?: string;
+  designation_code?: string;
+  level?: number | null;
+  status?: "active" | "inactive";
+  expected_version?: number;
+}
+
 export const adminApi = {
   getCompanyProfile() {
     return apiRequest<CompanyProfileResponse>("/api/v1/admin/company-profile");
@@ -45,6 +99,58 @@ export const adminApi = {
       method: "PUT",
       body: input,
     });
+  },
+  listDepartments(
+    params: { page?: number; page_size?: number; active_only?: boolean; search?: string } = {},
+  ) {
+    const path = "/api/v1/admin/master-data/departments";
+    return apiRequest<MasterDataListResponse<DepartmentMasterRecord>>(
+      `${path}${queryString(params)}`,
+    );
+  },
+  createDepartment(input: DepartmentMasterInput) {
+    return apiRequest<{ department: DepartmentMasterRecord; version: number }>(
+      "/api/v1/admin/master-data/departments",
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+  },
+  updateDepartment(id: string, input: DepartmentMasterInput & { expected_version: number }) {
+    return apiRequest<{ department: DepartmentMasterRecord; version: number }>(
+      `/api/v1/admin/master-data/departments/${id}`,
+      {
+        method: "PATCH",
+        body: input,
+      },
+    );
+  },
+  listDesignations(
+    params: { page?: number; page_size?: number; active_only?: boolean; search?: string } = {},
+  ) {
+    const path = "/api/v1/admin/master-data/designations";
+    return apiRequest<MasterDataListResponse<DesignationMasterRecord>>(
+      `${path}${queryString(params)}`,
+    );
+  },
+  createDesignation(input: DesignationMasterInput) {
+    return apiRequest<{ designation: DesignationMasterRecord; version: number }>(
+      "/api/v1/admin/master-data/designations",
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+  },
+  updateDesignation(id: string, input: DesignationMasterInput & { expected_version: number }) {
+    return apiRequest<{ designation: DesignationMasterRecord; version: number }>(
+      `/api/v1/admin/master-data/designations/${id}`,
+      {
+        method: "PATCH",
+        body: input,
+      },
+    );
   },
   getFinanceGovernance() {
     return apiRequest<ApiRecord>("/api/v1/platform/finance-governance");
@@ -74,3 +180,12 @@ export const adminApi = {
     });
   },
 };
+
+function queryString(params: Record<string, string | number | boolean | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") query.set(key, String(value));
+  }
+  const serialized = query.toString();
+  return serialized ? `?${serialized}` : "";
+}
