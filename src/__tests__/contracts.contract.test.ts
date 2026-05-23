@@ -539,11 +539,14 @@ describe("API contracts", () => {
   it("sets baseline security headers and enforces production CORS allowlist", async () => {
     const previousNodeEnv = process.env.NODE_ENV;
     const previousAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
+    const previousLogLevel = process.env.LOG_LEVEL;
     process.env.NODE_ENV = "production";
     process.env.CORS_ALLOWED_ORIGINS = "https://hrms.example.com";
-    const secureApp = await buildApp({ dataStore: createMemoryDataStore(), rateLimit: false });
+    process.env.LOG_LEVEL = "warn";
+    const secureApp = await buildApp({ dataStore: createMemoryDataStore(), logger: true, rateLimit: false });
     try {
       await secureApp.ready();
+      expect(secureApp.log.level).toBe("warn");
       const health = await secureApp.inject({ method: "GET", url: "/health/live" });
       expect(health.headers["x-content-type-options"]).toBe("nosniff");
       expect(health.headers["x-frame-options"]).toBe("DENY");
@@ -582,6 +585,11 @@ describe("API contracts", () => {
         delete process.env.CORS_ALLOWED_ORIGINS;
       } else {
         process.env.CORS_ALLOWED_ORIGINS = previousAllowedOrigins;
+      }
+      if (previousLogLevel === undefined) {
+        delete process.env.LOG_LEVEL;
+      } else {
+        process.env.LOG_LEVEL = previousLogLevel;
       }
     }
   });

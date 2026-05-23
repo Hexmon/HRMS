@@ -5,6 +5,7 @@ x-backend-build: &backend-build
 x-backend-environment: &backend-environment
   NODE_ENV: production
   PORT: "3001"
+  LOG_LEVEL: ${LOG_LEVEL:-info}
   DATABASE_URL: ${DATABASE_URL}
   VALKEY_URL: ${VALKEY_URL}
   OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT}

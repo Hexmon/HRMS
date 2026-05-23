@@ -50,7 +50,7 @@ export interface BuildAppOptions {
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: options.logger ?? false,
+    logger: loggerOptions(options.logger ?? false),
     genReqId: () => crypto.randomUUID()
   });
 
@@ -173,6 +173,34 @@ function corsOptions(config: FastifyInstance["config"]): Parameters<typeof cors>
         return;
       }
       callback(null, allowed.has(origin));
+    }
+  };
+}
+
+function loggerOptions(enabled: boolean): false | {
+  level: string;
+  redact: { paths: string[]; censor: string };
+} {
+  if (!enabled) {
+    return false;
+  }
+
+  return {
+    level: process.env.LOG_LEVEL ?? (process.env.NODE_ENV === "production" ? "info" : "debug"),
+    redact: {
+      censor: "[REDACTED]",
+      paths: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        "req.headers['x-api-key']",
+        "res.headers['set-cookie']",
+        "*.password",
+        "*.token",
+        "*.access_token",
+        "*.refresh_token",
+        "*.JWT_ACCESS_SECRET",
+        "*.JWT_REFRESH_SECRET"
+      ]
     }
   };
 }

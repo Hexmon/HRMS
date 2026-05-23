@@ -5,6 +5,7 @@ x-backend-build: &backend-build
 x-backend-environment: &backend-environment
   NODE_ENV: development
   PORT: "3001"
+  LOG_LEVEL: ${LOG_LEVEL:-debug}
   DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform
   TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform_test
   VALKEY_URL: redis://valkey:6379
