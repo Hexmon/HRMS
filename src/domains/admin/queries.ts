@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys, queryTimings } from "@/shared/query";
 import {
   adminApi,
+  type AdminPolicyUpdateInput,
   type AdminWorkflowUpdateInput,
   type CompanyProfileUpdateInput,
   type DepartmentMasterInput,
@@ -156,6 +157,24 @@ export function useUpdateAdminWorkflowMutation() {
       workflowKey: string;
       input: AdminWorkflowUpdateInput;
     }) => adminApi.updateAdminWorkflow(workflowKey, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
+  });
+}
+
+export function useAdminPolicies(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("admin", "policies"),
+    queryFn: () => adminApi.listAdminPolicies(),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useUpdateAdminPolicyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyKey, input }: { policyKey: string; input: AdminPolicyUpdateInput }) =>
+      adminApi.updateAdminPolicy(policyKey, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
   });
 }

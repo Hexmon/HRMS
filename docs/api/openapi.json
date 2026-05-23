@@ -82735,6 +82735,915 @@
         }
       }
     },
+    "/api/v1/admin/policies": {
+      "get": {
+        "summary": "List admin policy configurations",
+        "tags": ["Admin / Configuration"],
+        "description": "Lists persistent Admin Settings policy configuration. This slice records policy values without changing existing feature-specific runtime enforcement.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "attendance"
+            },
+            "in": "query",
+            "name": "module",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "in": "query",
+            "name": "active_only",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "policies", "versions"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "policy_key",
+                          "key",
+                          "module",
+                          "label",
+                          "status",
+                          "active",
+                          "config",
+                          "updated_at",
+                          "version"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Admin policy configuration UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "policy_key": {
+                            "type": "string",
+                            "enum": ["attendance", "leave", "timesheet", "expense", "asset", "sla"],
+                            "example": "attendance"
+                          },
+                          "key": {
+                            "type": "string",
+                            "enum": ["attendance", "leave", "timesheet", "expense", "asset", "sla"],
+                            "example": "attendance"
+                          },
+                          "module": {
+                            "type": "string",
+                            "example": "attendance"
+                          },
+                          "label": {
+                            "type": "string",
+                            "example": "Attendance policy"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": ["active", "inactive"],
+                            "example": "active"
+                          },
+                          "active": {
+                            "type": "boolean",
+                            "example": true
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "example": {
+                              "graceMinutes": 10,
+                              "allowRegularization": true
+                            }
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Admin policy update timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          },
+                          "version": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "policies": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "policy_key",
+                          "key",
+                          "module",
+                          "label",
+                          "status",
+                          "active",
+                          "config",
+                          "updated_at",
+                          "version"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Admin policy configuration UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "policy_key": {
+                            "type": "string",
+                            "enum": ["attendance", "leave", "timesheet", "expense", "asset", "sla"],
+                            "example": "attendance"
+                          },
+                          "key": {
+                            "type": "string",
+                            "enum": ["attendance", "leave", "timesheet", "expense", "asset", "sla"],
+                            "example": "attendance"
+                          },
+                          "module": {
+                            "type": "string",
+                            "example": "attendance"
+                          },
+                          "label": {
+                            "type": "string",
+                            "example": "Attendance policy"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": ["active", "inactive"],
+                            "example": "active"
+                          },
+                          "active": {
+                            "type": "boolean",
+                            "example": true
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "example": {
+                              "graceMinutes": 10,
+                              "allowRegularization": true
+                            }
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Admin policy update timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          },
+                          "version": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "versions": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "example": {
+                        "attendance": 1,
+                        "leave": 1
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/policies/{policy_key}": {
+      "put": {
+        "summary": "Update admin policy configuration",
+        "tags": ["Admin / Configuration"],
+        "description": "Updates one Admin Settings policy configuration with optimistic concurrency. Runtime policy enforcement remains owned by each feature module until the later policy migration.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["expected_version"],
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160,
+                    "example": "Attendance policy"
+                  },
+                  "active": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["active", "inactive"],
+                    "example": "active"
+                  },
+                  "config": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "example": {
+                      "graceMinutes": 15,
+                      "allowRegularization": true
+                    }
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["attendance", "leave", "timesheet", "expense", "asset", "sla"],
+              "example": "attendance"
+            },
+            "in": "path",
+            "name": "policy_key",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["policy", "version"],
+                  "properties": {
+                    "policy": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "policy_key",
+                        "key",
+                        "module",
+                        "label",
+                        "status",
+                        "active",
+                        "config",
+                        "updated_at",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Admin policy configuration UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "policy_key": {
+                          "type": "string",
+                          "enum": ["attendance", "leave", "timesheet", "expense", "asset", "sla"],
+                          "example": "attendance"
+                        },
+                        "key": {
+                          "type": "string",
+                          "enum": ["attendance", "leave", "timesheet", "expense", "asset", "sla"],
+                          "example": "attendance"
+                        },
+                        "module": {
+                          "type": "string",
+                          "example": "attendance"
+                        },
+                        "label": {
+                          "type": "string",
+                          "example": "Attendance policy"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": ["active", "inactive"],
+                          "example": "active"
+                        },
+                        "active": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "config": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "example": {
+                            "graceMinutes": 10,
+                            "allowRegularization": true
+                          }
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Admin policy update timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "version": {
+                      "type": "integer",
+                      "example": 2
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/openapi.json": {
       "get": {
         "summary": "OpenAPI JSON",

@@ -192,6 +192,35 @@ export interface AdminWorkflowUpdateInput extends ApiRecord {
   expected_version: number;
 }
 
+export type AdminPolicyValue = string | number | boolean | null;
+
+export interface AdminPolicyRecord extends ApiRecord {
+  id: string;
+  policy_key: string;
+  key: string;
+  module: string;
+  label: string;
+  status: "active" | "inactive";
+  active: boolean;
+  config: Record<string, AdminPolicyValue>;
+  updated_at: string;
+  version: number;
+}
+
+export interface AdminPolicyListResponse extends ApiRecord {
+  items: AdminPolicyRecord[];
+  policies: AdminPolicyRecord[];
+  versions: Record<string, number>;
+}
+
+export interface AdminPolicyUpdateInput extends ApiRecord {
+  label?: string;
+  active?: boolean;
+  status?: "active" | "inactive";
+  config?: Record<string, AdminPolicyValue>;
+  expected_version: number;
+}
+
 export const adminApi = {
   getCompanyProfile() {
     return apiRequest<CompanyProfileResponse>("/api/v1/admin/company-profile");
@@ -290,6 +319,19 @@ export const adminApi = {
   updateAdminWorkflow(workflowKey: string, input: AdminWorkflowUpdateInput) {
     return apiRequest<{ workflow: AdminWorkflowRecord; version: number }>(
       `/api/v1/admin/workflows/${workflowKey}`,
+      {
+        method: "PUT",
+        body: input,
+      },
+    );
+  },
+  listAdminPolicies(params: { module?: string; active_only?: boolean } = {}) {
+    const path = "/api/v1/admin/policies";
+    return apiRequest<AdminPolicyListResponse>(`${path}${queryString(params)}`);
+  },
+  updateAdminPolicy(policyKey: string, input: AdminPolicyUpdateInput) {
+    return apiRequest<{ policy: AdminPolicyRecord; version: number }>(
+      `/api/v1/admin/policies/${policyKey}`,
       {
         method: "PUT",
         body: input,

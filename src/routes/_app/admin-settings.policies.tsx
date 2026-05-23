@@ -1,17 +1,91 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import { useAdminSettings, type Policies } from "@/lib/admin-settings-store";
+import { useApiRouteEnabled } from "@/shared/api";
+import { useAdminPolicies, useUpdateAdminPolicyMutation } from "@/domains/admin/queries";
+import type { AdminPolicyRecord, AdminPolicyValue } from "@/domains/admin/api";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/admin-settings/policies")({
   component: PoliciesScreen,
 });
 
+type PolicyKey = keyof Policies;
+
 function PoliciesScreen() {
-  const { policies, setPolicy } = useAdminSettings();
+  const localSettings = useAdminSettings();
+  const apiEnabled = useApiRouteEnabled(["/admin-settings"]);
+  const policiesQuery = useAdminPolicies(apiEnabled);
+  const updatePolicy = useUpdateAdminPolicyMutation();
+  const [drafts, setDrafts] = useState<Policies>(localSettings.policies);
+  const [versions, setVersions] = useState<Record<string, number>>({});
+
+  const apiPolicyState = useMemo(
+    () => policiesFromApi(policiesQuery.data?.items ?? [], localSettings.policies),
+    [localSettings.policies, policiesQuery.data?.items],
+  );
+
+  useEffect(() => {
+    if (!apiEnabled) return;
+    setDrafts(apiPolicyState.policies);
+    setVersions(apiPolicyState.versions);
+  }, [apiEnabled, apiPolicyState]);
+
+  const policies = apiEnabled ? drafts : localSettings.policies;
+  const loading = apiEnabled && policiesQuery.isLoading;
+  const error = apiEnabled && policiesQuery.error instanceof Error ? policiesQuery.error : null;
+
+  function setPolicy<K extends PolicyKey>(key: K, patch: Partial<Policies[K]>) {
+    if (!apiEnabled) {
+      localSettings.setPolicy(key, patch);
+      return;
+    }
+    setDrafts((current) => ({
+      ...current,
+      [key]: { ...current[key], ...patch },
+    }));
+  }
+
+  async function savePolicy(key: PolicyKey) {
+    const version = versions[key];
+    if (!apiEnabled || !version) return;
+    try {
+      const response = await updatePolicy.mutateAsync({
+        policyKey: key,
+        input: {
+          expected_version: version,
+          config: policies[key] as unknown as Record<string, AdminPolicyValue>,
+        },
+      });
+      setVersions((current) => ({ ...current, [key]: response.version }));
+      toast.success("Policy saved");
+    } catch (saveError) {
+      toast.error(saveError instanceof Error ? saveError.message : "Policy update failed");
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card className="rounded-2xl border-border/60 p-6 text-sm text-muted-foreground">
+        Loading policy configuration...
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="rounded-2xl border-border/60 p-6 text-sm text-destructive">
+        {error.message}
+      </Card>
+    );
+  }
+
   return (
     <Tabs defaultValue="attendance">
       <TabsList className="flex-wrap">
@@ -27,6 +101,9 @@ function PoliciesScreen() {
         <PolicyCard
           title="Attendance policy"
           description="Govern grace periods and auto-absent thresholds."
+          apiEnabled={apiEnabled}
+          saving={updatePolicy.isPending}
+          onSave={() => savePolicy("attendance")}
         >
           <NumField
             label="Grace minutes (no late mark)"
@@ -52,7 +129,13 @@ function PoliciesScreen() {
       </TabsContent>
 
       <TabsContent value="leave" className="mt-4">
-        <PolicyCard title="Leave policy" description="Yearly entitlements and carry-forward rules.">
+        <PolicyCard
+          title="Leave policy"
+          description="Yearly entitlements and carry-forward rules."
+          apiEnabled={apiEnabled}
+          saving={updatePolicy.isPending}
+          onSave={() => savePolicy("leave")}
+        >
           <NumField
             label="Casual leave / year"
             value={policies.leave.casualPerYear}
@@ -85,6 +168,9 @@ function PoliciesScreen() {
         <PolicyCard
           title="Timesheet policy"
           description="Submission cadence and locking behaviour."
+          apiEnabled={apiEnabled}
+          saving={updatePolicy.isPending}
+          onSave={() => savePolicy("timesheet")}
         >
           <NumField
             label="Weekly hours target"
@@ -113,6 +199,9 @@ function PoliciesScreen() {
         <PolicyCard
           title="Expense policy"
           description="Daily limits, receipt thresholds and self-approval."
+          apiEnabled={apiEnabled}
+          saving={updatePolicy.isPending}
+          onSave={() => savePolicy("expense")}
         >
           <NumField
             label="Per-day claim limit"
@@ -141,6 +230,9 @@ function PoliciesScreen() {
         <PolicyCard
           title="Asset policy"
           description="Acknowledgement, return SLAs and warranty alerts."
+          apiEnabled={apiEnabled}
+          saving={updatePolicy.isPending}
+          onSave={() => savePolicy("asset")}
         >
           <SwitchField
             label="Charge penalty for damaged returns"
@@ -169,31 +261,34 @@ function PoliciesScreen() {
         <PolicyCard
           title="Helpdesk SLA"
           description="Response & resolution targets per priority (hours)."
+          apiEnabled={apiEnabled}
+          saving={updatePolicy.isPending}
+          onSave={() => savePolicy("sla")}
         >
-          {(["urgent", "high", "normal", "low"] as const).map((p) => (
+          {(["urgent", "high", "normal", "low"] as const).map((priority) => (
             <div
-              key={p}
+              key={priority}
               className="md:col-span-2 grid grid-cols-1 gap-3 md:grid-cols-2 rounded-xl border bg-card/50 p-3"
             >
               <p className="md:col-span-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {p} priority
+                {priority} priority
               </p>
               <NumField
                 label="Response (hrs)"
-                value={policies.sla[(p + "ResponseHrs") as keyof Policies["sla"]]}
+                value={policies.sla[`${priority}ResponseHrs` as keyof Policies["sla"]]}
                 onChange={(v) =>
-                  setPolicy("sla", { [(p + "ResponseHrs") as keyof Policies["sla"]]: v } as Partial<
-                    Policies["sla"]
-                  >)
+                  setPolicy("sla", {
+                    [`${priority}ResponseHrs`]: v,
+                  } as Partial<Policies["sla"]>)
                 }
               />
               <NumField
                 label="Resolve (hrs)"
-                value={policies.sla[(p + "ResolveHrs") as keyof Policies["sla"]]}
+                value={policies.sla[`${priority}ResolveHrs` as keyof Policies["sla"]]}
                 onChange={(v) =>
-                  setPolicy("sla", { [(p + "ResolveHrs") as keyof Policies["sla"]]: v } as Partial<
-                    Policies["sla"]
-                  >)
+                  setPolicy("sla", {
+                    [`${priority}ResolveHrs`]: v,
+                  } as Partial<Policies["sla"]>)
                 }
               />
             </div>
@@ -208,20 +303,41 @@ function PolicyCard({
   title,
   description,
   children,
+  apiEnabled,
+  saving,
+  onSave,
 }: {
   title: string;
   description: string;
   children: React.ReactNode;
+  apiEnabled: boolean;
+  saving: boolean;
+  onSave: () => void;
 }) {
   return (
     <Card className="rounded-2xl border-border/60 p-5">
-      <div className="mb-4">
-        <p className="text-sm font-semibold">{title}</p>
-        <p className="text-xs text-muted-foreground">{description}</p>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">{title}</p>
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
+        {apiEnabled && (
+          <Button
+            size="sm"
+            onClick={onSave}
+            disabled={saving}
+            style={{ background: "var(--gradient-primary)" }}
+            className="text-primary-foreground"
+          >
+            Save policy
+          </Button>
+        )}
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">{children}</div>
       <p className="mt-4 border-t pt-3 text-[11px] text-muted-foreground">
-        Changes save automatically and are reflected across the relevant module.
+        {apiEnabled
+          ? "Changes are saved when the policy is submitted."
+          : "Changes save automatically and are reflected across the relevant module."}
       </p>
     </Card>
   );
@@ -239,10 +355,15 @@ function NumField({
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">{label}</Label>
-      <Input type="number" value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <Input
+        type="number"
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
     </div>
   );
 }
+
 function TextField({
   label,
   value,
@@ -255,10 +376,11 @@ function TextField({
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   );
 }
+
 function SwitchField({
   label,
   value,
@@ -274,4 +396,155 @@ function SwitchField({
       <Switch checked={value} onCheckedChange={onChange} />
     </div>
   );
+}
+
+function policiesFromApi(items: AdminPolicyRecord[], fallback: Policies) {
+  const policies: Policies = {
+    attendance: { ...fallback.attendance },
+    leave: { ...fallback.leave },
+    timesheet: { ...fallback.timesheet },
+    expense: { ...fallback.expense },
+    asset: { ...fallback.asset },
+    sla: { ...fallback.sla },
+  };
+  const versions: Record<string, number> = {};
+  for (const item of items) {
+    const key = item.key as PolicyKey;
+    versions[key] = item.version;
+    switch (key) {
+      case "attendance":
+        policies.attendance = {
+          graceMinutes: numberValue(item.config, "graceMinutes", policies.attendance.graceMinutes),
+          halfDayAfterMinutes: numberValue(
+            item.config,
+            "halfDayAfterMinutes",
+            policies.attendance.halfDayAfterMinutes,
+          ),
+          autoMarkAbsentMinutes: numberValue(
+            item.config,
+            "autoMarkAbsentMinutes",
+            policies.attendance.autoMarkAbsentMinutes,
+          ),
+          allowRegularization: booleanValue(
+            item.config,
+            "allowRegularization",
+            policies.attendance.allowRegularization,
+          ),
+        };
+        break;
+      case "leave":
+        policies.leave = {
+          casualPerYear: numberValue(item.config, "casualPerYear", policies.leave.casualPerYear),
+          sickPerYear: numberValue(item.config, "sickPerYear", policies.leave.sickPerYear),
+          earnedPerYear: numberValue(item.config, "earnedPerYear", policies.leave.earnedPerYear),
+          carryForwardCap: numberValue(
+            item.config,
+            "carryForwardCap",
+            policies.leave.carryForwardCap,
+          ),
+          encashmentAllowed: booleanValue(
+            item.config,
+            "encashmentAllowed",
+            policies.leave.encashmentAllowed,
+          ),
+        };
+        break;
+      case "timesheet":
+        policies.timesheet = {
+          weeklyHours: numberValue(item.config, "weeklyHours", policies.timesheet.weeklyHours),
+          minDailyHours: numberValue(
+            item.config,
+            "minDailyHours",
+            policies.timesheet.minDailyHours,
+          ),
+          submitBy: stringValue(item.config, "submitBy", policies.timesheet.submitBy),
+          lockAfterApproval: booleanValue(
+            item.config,
+            "lockAfterApproval",
+            policies.timesheet.lockAfterApproval,
+          ),
+        };
+        break;
+      case "expense":
+        policies.expense = {
+          perDayLimit: numberValue(item.config, "perDayLimit", policies.expense.perDayLimit),
+          receiptMandatoryAbove: numberValue(
+            item.config,
+            "receiptMandatoryAbove",
+            policies.expense.receiptMandatoryAbove,
+          ),
+          selfApprovalAllowed: booleanValue(
+            item.config,
+            "selfApprovalAllowed",
+            policies.expense.selfApprovalAllowed,
+          ),
+          autoEscalateDays: numberValue(
+            item.config,
+            "autoEscalateDays",
+            policies.expense.autoEscalateDays,
+          ),
+        };
+        break;
+      case "asset":
+        policies.asset = {
+          damagePenalty: booleanValue(item.config, "damagePenalty", policies.asset.damagePenalty),
+          mandatoryAck: booleanValue(item.config, "mandatoryAck", policies.asset.mandatoryAck),
+          returnSlaDays: numberValue(item.config, "returnSlaDays", policies.asset.returnSlaDays),
+          warrantyAlertDays: numberValue(
+            item.config,
+            "warrantyAlertDays",
+            policies.asset.warrantyAlertDays,
+          ),
+        };
+        break;
+      case "sla":
+        policies.sla = {
+          urgentResponseHrs: numberValue(
+            item.config,
+            "urgentResponseHrs",
+            policies.sla.urgentResponseHrs,
+          ),
+          urgentResolveHrs: numberValue(
+            item.config,
+            "urgentResolveHrs",
+            policies.sla.urgentResolveHrs,
+          ),
+          highResponseHrs: numberValue(
+            item.config,
+            "highResponseHrs",
+            policies.sla.highResponseHrs,
+          ),
+          highResolveHrs: numberValue(item.config, "highResolveHrs", policies.sla.highResolveHrs),
+          normalResponseHrs: numberValue(
+            item.config,
+            "normalResponseHrs",
+            policies.sla.normalResponseHrs,
+          ),
+          normalResolveHrs: numberValue(
+            item.config,
+            "normalResolveHrs",
+            policies.sla.normalResolveHrs,
+          ),
+          lowResponseHrs: numberValue(item.config, "lowResponseHrs", policies.sla.lowResponseHrs),
+          lowResolveHrs: numberValue(item.config, "lowResolveHrs", policies.sla.lowResolveHrs),
+        };
+        break;
+    }
+  }
+  return { policies, versions };
+}
+
+function numberValue(config: Record<string, AdminPolicyValue>, key: string, fallback: number) {
+  const value = config[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function booleanValue(config: Record<string, AdminPolicyValue>, key: string, fallback: boolean) {
+  const value = config[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function stringValue(config: Record<string, AdminPolicyValue>, key: string, fallback: string) {
+  const value = config[key];
+  return typeof value === "string" && value.trim() ? value : fallback;
 }
