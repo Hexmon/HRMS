@@ -221,6 +221,37 @@ export interface AdminPolicyUpdateInput extends ApiRecord {
   expected_version: number;
 }
 
+export interface AdminEmailTemplateRecord extends ApiRecord {
+  id: string;
+  template_key: string;
+  key: string;
+  module: string;
+  name: string;
+  subject: string;
+  body: string;
+  locale: string;
+  status: "active" | "inactive";
+  active: boolean;
+  updated_at: string;
+  version: number;
+}
+
+export interface AdminEmailTemplateListResponse extends ApiRecord {
+  items: AdminEmailTemplateRecord[];
+  templates: AdminEmailTemplateRecord[];
+  versions: Record<string, number>;
+}
+
+export interface AdminEmailTemplateUpdateInput extends ApiRecord {
+  name?: string;
+  subject?: string;
+  body?: string;
+  locale?: string;
+  active?: boolean;
+  status?: "active" | "inactive";
+  expected_version: number;
+}
+
 export const adminApi = {
   getCompanyProfile() {
     return apiRequest<CompanyProfileResponse>("/api/v1/admin/company-profile");
@@ -332,6 +363,21 @@ export const adminApi = {
   updateAdminPolicy(policyKey: string, input: AdminPolicyUpdateInput) {
     return apiRequest<{ policy: AdminPolicyRecord; version: number }>(
       `/api/v1/admin/policies/${policyKey}`,
+      {
+        method: "PUT",
+        body: input,
+      },
+    );
+  },
+  listAdminEmailTemplates(
+    params: { module?: string; locale?: string; active_only?: boolean } = {},
+  ) {
+    const path = "/api/v1/admin/email-templates";
+    return apiRequest<AdminEmailTemplateListResponse>(`${path}${queryString(params)}`);
+  },
+  updateAdminEmailTemplate(templateKey: string, input: AdminEmailTemplateUpdateInput) {
+    return apiRequest<{ template: AdminEmailTemplateRecord; version: number }>(
+      `/api/v1/admin/email-templates/${templateKey}`,
       {
         method: "PUT",
         body: input,

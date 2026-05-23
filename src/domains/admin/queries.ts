@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys, queryTimings } from "@/shared/query";
 import {
   adminApi,
+  type AdminEmailTemplateUpdateInput,
   type AdminPolicyUpdateInput,
   type AdminWorkflowUpdateInput,
   type CompanyProfileUpdateInput,
@@ -175,6 +176,29 @@ export function useUpdateAdminPolicyMutation() {
   return useMutation({
     mutationFn: ({ policyKey, input }: { policyKey: string; input: AdminPolicyUpdateInput }) =>
       adminApi.updateAdminPolicy(policyKey, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
+  });
+}
+
+export function useAdminEmailTemplates(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("admin", "email-templates"),
+    queryFn: () => adminApi.listAdminEmailTemplates(),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useUpdateAdminEmailTemplateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      templateKey,
+      input,
+    }: {
+      templateKey: string;
+      input: AdminEmailTemplateUpdateInput;
+    }) => adminApi.updateAdminEmailTemplate(templateKey, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
   });
 }

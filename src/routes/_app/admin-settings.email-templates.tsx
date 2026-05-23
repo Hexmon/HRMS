@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,36 +7,126 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { useAdminSettings } from "@/lib/admin-settings-store";
+import { useAdminSettings, type EmailTemplate } from "@/lib/admin-settings-store";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Mail } from "lucide-react";
+import { useApiRouteEnabled } from "@/shared/api";
+import {
+  useAdminEmailTemplates,
+  useUpdateAdminEmailTemplateMutation,
+} from "@/domains/admin/queries";
+import type { AdminEmailTemplateRecord } from "@/domains/admin/api";
 
 export const Route = createFileRoute("/_app/admin-settings/email-templates")({
   component: EmailTemplatesScreen,
 });
 
+type ScreenTemplate = EmailTemplate & {
+  version?: number;
+  module?: string;
+  locale?: string;
+};
+
 function EmailTemplatesScreen() {
-  const { templates, updateTemplate } = useAdminSettings();
-  const [activeKey, setActiveKey] = useState(templates[0]?.key ?? "");
-  const active = templates.find((t) => t.key === activeKey) ?? templates[0];
-  const [draftSubject, setDraftSubject] = useState(active?.subject ?? "");
-  const [draftBody, setDraftBody] = useState(active?.body ?? "");
+  const localSettings = useAdminSettings();
+  const apiEnabled = useApiRouteEnabled(["/admin-settings"]);
+  const templatesQuery = useAdminEmailTemplates(apiEnabled);
+  const updateTemplateMutation = useUpdateAdminEmailTemplateMutation();
+  const [activeKey, setActiveKey] = useState(localSettings.templates[0]?.key ?? "");
+  const [draftTemplates, setDraftTemplates] = useState<ScreenTemplate[]>(localSettings.templates);
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
 
-  const onSelect = (key: string) => {
-    setActiveKey(key);
-    const t = templates.find((x) => x.key === key);
-    if (t) {
-      setDraftSubject(t.subject);
-      setDraftBody(t.body);
+  const apiTemplates = useMemo(
+    () => (templatesQuery.data?.items ?? []).map(templateFromApi),
+    [templatesQuery.data?.items],
+  );
+
+  useEffect(() => {
+    if (!apiEnabled) return;
+    setDraftTemplates(apiTemplates);
+  }, [apiEnabled, apiTemplates]);
+
+  const templates: ScreenTemplate[] = apiEnabled ? draftTemplates : localSettings.templates;
+  const active = templates.find((template) => template.key === activeKey) ?? templates[0];
+  const sourceActive = apiEnabled
+    ? apiTemplates.find((template) => template.key === active?.key)
+    : active;
+  const loading = apiEnabled && templatesQuery.isLoading;
+  const error = apiEnabled && templatesQuery.error instanceof Error ? templatesQuery.error : null;
+
+  useEffect(() => {
+    if (!templates.length) return;
+    if (!templates.some((template) => template.key === activeKey)) {
+      setActiveKey(templates[0].key);
     }
-  };
+  }, [activeKey, templates]);
 
-  const onSave = () => {
+  useEffect(() => {
     if (!active) return;
-    updateTemplate(active.key, { subject: draftSubject, body: draftBody });
-    toast.success("Template saved");
-  };
+    setDraftSubject(active.subject);
+    setDraftBody(active.body);
+  }, [active]);
+
+  function onSelect(key: string) {
+    setActiveKey(key);
+    const template = templates.find((candidate) => candidate.key === key);
+    if (template) {
+      setDraftSubject(template.subject);
+      setDraftBody(template.body);
+    }
+  }
+
+  function updateDraft(key: string, patch: Partial<ScreenTemplate>) {
+    if (!apiEnabled) {
+      localSettings.updateTemplate(key, patch);
+      return;
+    }
+    setDraftTemplates((current) =>
+      current.map((template) => (template.key === key ? { ...template, ...patch } : template)),
+    );
+  }
+
+  async function onSave() {
+    if (!active) return;
+    if (!apiEnabled) {
+      localSettings.updateTemplate(active.key, { subject: draftSubject, body: draftBody });
+      toast.success("Template saved");
+      return;
+    }
+    if (!active.version) return;
+    try {
+      await updateTemplateMutation.mutateAsync({
+        templateKey: active.key,
+        input: {
+          subject: draftSubject,
+          body: draftBody,
+          active: active.active,
+          expected_version: active.version,
+        },
+      });
+      toast.success("Template saved");
+    } catch (saveError) {
+      toast.error(saveError instanceof Error ? saveError.message : "Template update failed");
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card className="rounded-2xl border-border/60 p-6 text-sm text-muted-foreground">
+        Loading email templates...
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="rounded-2xl border-border/60 p-6 text-sm text-destructive">
+        {error.message}
+      </Card>
+    );
+  }
 
   if (!active) return null;
 
@@ -44,19 +134,19 @@ function EmailTemplatesScreen() {
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
       <Card className="rounded-2xl border-border/60 p-2">
         <ul className="space-y-1">
-          {templates.map((t) => (
-            <li key={t.key}>
+          {templates.map((template) => (
+            <li key={template.key}>
               <button
-                onClick={() => onSelect(t.key)}
+                onClick={() => onSelect(template.key)}
                 className={cn(
                   "flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition",
-                  activeKey === t.key ? "bg-primary-soft text-primary" : "hover:bg-accent",
+                  activeKey === template.key ? "bg-primary-soft text-primary" : "hover:bg-accent",
                 )}
               >
                 <Mail className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{t.name}</p>
-                  <p className="truncate text-[11px] text-muted-foreground">{t.subject}</p>
+                  <p className="truncate text-sm font-medium">{template.name}</p>
+                  <p className="truncate text-[11px] text-muted-foreground">{template.subject}</p>
                 </div>
               </button>
             </li>
@@ -79,7 +169,7 @@ function EmailTemplatesScreen() {
             </Badge>
             <Switch
               checked={active.active}
-              onCheckedChange={(v) => updateTemplate(active.key, { active: v })}
+              onCheckedChange={(value) => updateDraft(active.key, { active: value })}
             />
           </div>
         </div>
@@ -87,14 +177,14 @@ function EmailTemplatesScreen() {
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label className="text-xs">Subject</Label>
-            <Input value={draftSubject} onChange={(e) => setDraftSubject(e.target.value)} />
+            <Input value={draftSubject} onChange={(event) => setDraftSubject(event.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Body</Label>
             <Textarea
               rows={10}
               value={draftBody}
-              onChange={(e) => setDraftBody(e.target.value)}
+              onChange={(event) => setDraftBody(event.target.value)}
               className="font-mono text-xs"
             />
           </div>
@@ -104,14 +194,18 @@ function EmailTemplatesScreen() {
           <Button
             variant="ghost"
             onClick={() => {
-              setDraftSubject(active.subject);
-              setDraftBody(active.body);
+              setDraftSubject(sourceActive?.subject ?? active.subject);
+              setDraftBody(sourceActive?.body ?? active.body);
+              if (apiEnabled && sourceActive) {
+                updateDraft(active.key, { active: sourceActive.active });
+              }
             }}
           >
             Reset
           </Button>
           <Button
             onClick={onSave}
+            disabled={updateTemplateMutation.isPending}
             style={{ background: "var(--gradient-primary)" }}
             className="text-primary-foreground"
           >
@@ -121,4 +215,17 @@ function EmailTemplatesScreen() {
       </Card>
     </div>
   );
+}
+
+function templateFromApi(template: AdminEmailTemplateRecord): ScreenTemplate {
+  return {
+    key: template.key,
+    name: template.name,
+    subject: template.subject,
+    body: template.body,
+    active: template.active,
+    version: template.version,
+    module: template.module,
+    locale: template.locale,
+  };
 }
