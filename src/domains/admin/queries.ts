@@ -222,6 +222,15 @@ export function useUpdateAdminNotificationChannelsMutation() {
   });
 }
 
+export function useAdminAuditLog(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("admin", "audit-log"),
+    queryFn: () => adminApi.listAdminAuditLog({ page: 1, page_size: 100 }),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
 export function useFinanceGovernance(enabled = true) {
   return useQuery({
     queryKey: queryKeys.detail("admin", "finance-governance", "current"),

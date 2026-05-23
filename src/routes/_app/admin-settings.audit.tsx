@@ -4,11 +4,20 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui-kit";
 import { useAdminSettings } from "@/lib/admin-settings-store";
 import type { AuditLogEntry } from "@/lib/mock/audit-logs";
+import { useAdminAuditLog } from "@/domains/admin/queries";
+import type { AdminAuditLogEntry } from "@/domains/admin/api";
+import { useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/admin-settings/audit")({ component: AuditScreen });
 
 function AuditScreen() {
-  const { audit } = useAdminSettings();
+  const { audit: localAudit } = useAdminSettings();
+  const apiEnabled = useApiRouteEnabled(["/admin-settings"]);
+  const auditQuery = useAdminAuditLog(apiEnabled);
+  const apiAudit = (auditQuery.data?.items ?? []).map(auditEntryFromApi);
+  const audit = apiEnabled ? apiAudit : localAudit;
+  const loading = apiEnabled && auditQuery.isLoading;
+  const error = apiEnabled && auditQuery.error instanceof Error ? auditQuery.error : null;
 
   const cols: Column<AuditLogEntry>[] = [
     {
@@ -60,12 +69,29 @@ function AuditScreen() {
           {audit.length} entries
         </Badge>
       </div>
+      {loading ? (
+        <div className="p-6 text-sm text-muted-foreground">Loading audit entries...</div>
+      ) : error ? (
+        <div className="p-6 text-sm text-destructive">{error.message}</div>
+      ) : null}
       <DataTable
         columns={cols}
-        rows={audit}
+        rows={loading || error ? [] : audit}
         searchKeys={["actor", "action", "target", "module", "ip"]}
         emptyTitle="No audit entries yet"
       />
     </Card>
   );
+}
+
+function auditEntryFromApi(entry: AdminAuditLogEntry): AuditLogEntry {
+  return {
+    id: entry.id,
+    actor: entry.actor,
+    action: entry.action,
+    target: entry.target,
+    module: entry.module,
+    at: entry.at,
+    ip: entry.ip,
+  };
 }

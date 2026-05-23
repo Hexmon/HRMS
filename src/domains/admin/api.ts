@@ -297,6 +297,23 @@ export interface AdminNotificationChannelsUpdateInput extends ApiRecord {
   expected_version: number;
 }
 
+export interface AdminAuditLogEntry extends ApiRecord {
+  id: string;
+  event_id: string;
+  actor: string;
+  actor_user_id: string | null;
+  action: string;
+  event_type: string;
+  target: string;
+  module: string;
+  aggregate_type: string;
+  aggregate_id: string;
+  status: string;
+  at: string;
+  created_at: string;
+  ip: string;
+}
+
 export const adminApi = {
   getCompanyProfile() {
     return apiRequest<CompanyProfileResponse>("/api/v1/admin/company-profile");
@@ -438,6 +455,21 @@ export const adminApi = {
       method: "PUT",
       body: input,
     });
+  },
+  listAdminAuditLog(
+    params: {
+      page?: number;
+      page_size?: number;
+      module?: string;
+      actor_user_id?: string;
+      from?: string;
+      to?: string;
+      date_from?: string;
+      date_to?: string;
+    } = {},
+  ) {
+    const path = "/api/v1/admin/audit-log";
+    return apiRequest<MasterDataListResponse<AdminAuditLogEntry>>(`${path}${queryString(params)}`);
   },
   getFinanceGovernance() {
     return apiRequest<ApiRecord>("/api/v1/platform/finance-governance");
