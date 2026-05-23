@@ -1,9 +1,14 @@
 export interface NotificationItem {
   id: string;
+  apiId?: string;
+  version?: number;
+  type?: string;
   title: string;
   description: string;
   category: "approval" | "mention" | "system" | "alert";
   time: string;
+  createdAt?: string;
+  actionUrl?: string | null;
   read: boolean;
 }
 

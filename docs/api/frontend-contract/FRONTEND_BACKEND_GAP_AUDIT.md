@@ -7,13 +7,13 @@ This audit maps the current Hawkaii HRMS frontend to the custom backend contract
 - The app is a mock-first HRMS frontend. Most business state is in `src/lib/*-store.tsx` and `src/lib/mock/`.
 - The visible product surface includes auth/onboarding, dashboard, employees, EMS, attendance, leave/WFH, timesheets, projects, utilization, expenses, assets, helpdesk, reports, admin settings, and developer handoff.
 - Existing backend handoff coverage is strongest for auth/session, core user hierarchy, expenses, finance, documents, assets, timesheets, attendance basics, primary leave/WFH/holiday workflows, primary EMS self-service workflows, project portfolio/utilization, expense reports, health, and OpenAPI tooling.
-- Full frontend coverage requires additional API groups for EMS admin/document wrappers, attendance reports/exports, leave/WFH export/reporting, project reports/detail hardening, helpdesk, admin settings, notifications, dashboard role widgets, and non-expense reports.
+- Full frontend coverage requires additional API groups for EMS admin/document wrappers, attendance reports/exports, leave/WFH export/reporting, project reports/detail hardening, admin settings, notification channel preferences, dashboard role widgets, and non-expense reports.
 
 ## API Count Summary
 
-Current documented backend contract: **151 operations** in `openapi.json` after Phase 4 Helpdesk API completion.
+Current documented backend contract: **155 operations** in `openapi.json` after Phase 4 Notifications API completion.
 
-- **149** operations are under `/api/v1/**`.
+- **153** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
 - **0** documented backend operations currently need deletion from the OpenAPI pack because Reviewer/Director APIs are not present there.
 
@@ -21,11 +21,11 @@ Disjoint implementation counts for backend planning:
 
 | Category                               | Count | Meaning                                                                                                                                                                |
 | -------------------------------------- | ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Existing APIs ready to integrate as-is |   151 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes.                                                           |
+| Existing APIs ready to integrate as-is |   155 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes.                                                           |
 | Existing APIs to update in place       |     0 | Phase 1A-1C existing API expansions have landed; new gaps should be added as explicit new endpoints.                                                                   |
 | Existing APIs to delete                |     0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
-| New APIs remaining to add              |    64 | Remaining first-pass count needed after Phase 4 Helpdesk API completion.                                                                                               |
-| Target contract size after additions   |   215 | `151 current + 64 remaining`; Helpdesk added 15 operations after UI audit confirmed ticket, queue, lifecycle, category, and SLA needs.                                 |
+| New APIs remaining to add              |    60 | Remaining first-pass count needed after Phase 4 Notifications API completion.                                                                                          |
+| Target contract size after additions   |   215 | `155 current + 60 remaining`; Notifications added 4 operations after UI audit confirmed topbar feed, unread badge, and read-state needs.                               |
 
 Existing APIs updated in place during earlier phases:
 
@@ -60,8 +60,8 @@ Minimum new API operation count by frontend area:
 | Helpdesk                                          |               0 | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report are implemented.                                 |
 | Reports                                           |              10 | HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, export list/detail beyond existing expense exports.                                                             |
 | Admin settings                                    |              20 | Company profile, master data, RBAC, workflows, policies, email templates, notification channels, security settings, audit logs.                                                           |
-| Notifications                                     |               4 | Feed, unread count, mark read, mark all read/preferences integration.                                                                                                                     |
-| **Total remaining**                               |          **64** | Remaining operation count for full visible frontend coverage after Phase 4 Helpdesk.                                                                                                      |
+| Notifications                                     |               0 | Feed, unread count, mark read, and mark all read are implemented; notification channel preferences remain in Admin settings.                                                              |
+| **Total remaining**                               |          **60** | Remaining operation count for full visible frontend coverage after Phase 4 Notifications.                                                                                                 |
 
 ## Expense Flow Alignment
 
@@ -104,7 +104,7 @@ Remove:
 | Helpdesk                   | `/helpdesk/*`                                                                                               | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report.                                                             | Broader helpdesk summary report remains planned under non-expense reports.                                                                                                        |
 | Reports                    | `/reports/*`                                                                                                | Expense reports and export jobs.                                                                                                                                                                      | HR, attendance, leave/WFH, project, timesheet, asset, helpdesk, and audit reports with pagination/filter/export parity.                                                           |
 | Admin settings             | `/admin-settings/*`                                                                                         | Finance governance, manager backups, timesheet workflow definitions.                                                                                                                                  | Company profile, master data, RBAC roles/permissions, all workflow configs, policies, email templates, notification channels, security settings, audit logs.                      |
-| Notifications              | Topbar notification panel                                                                                   | Tag exists but no operations.                                                                                                                                                                         | Notification feed, unread count, mark read/all read, event preference integration.                                                                                                |
+| Notifications              | Topbar notification panel                                                                                   | Notification feed, unread count, mark read, and mark all read.                                                                                                                                        | Admin notification channel/event preferences remain planned under Admin settings.                                                                                                 |
 
 ## Integration Changes For Frontend
 

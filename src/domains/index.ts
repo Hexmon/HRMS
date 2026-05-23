@@ -9,6 +9,7 @@ export * from "./ems";
 export * from "./expenses";
 export * from "./helpdesk";
 export * from "./leave-wfh";
+export * from "./notifications";
 export * from "./platform";
 export * from "./projects";
 export * from "./reports";
