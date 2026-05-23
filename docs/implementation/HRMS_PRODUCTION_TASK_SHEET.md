@@ -4,7 +4,7 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 6 API e2e baseline after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, and Leave/WFH export completion. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 6 export-file generation slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, Leave/WFH export completion, verification guardrails, and API/browser e2e baselines. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
@@ -45,6 +45,7 @@ This versioned report captures the completed Phase 6 API e2e baseline after Dash
 | Phase 6 verification guardrails | Hardened backend implementation and scalability checks now cover the full module set, 217-operation contract floor, zero planned API backlog, synced frontend contract JSON, critical queue/report indexes, and frontend production API/mock fallback config |
 | Phase 6 API e2e baseline | Completed backend API-level user-flow smoke for auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata |
 | Phase 6 browser e2e baseline | Completed Playwright smoke coverage in `hrms-client` for API-mode login, notification panel, employee self-service routes, HR/admin routes, reports/settings, projects, and team utilization |
+| Phase 6 export generation | Completed document-backed export generation for employee/core CSV, report CSV, and attendance/Leave-WFH CSV/JSON export APIs; frontend employee and Leave/WFH monitor exports now open generated document downloads when returned |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Audit Log Discovery
@@ -66,13 +67,13 @@ This versioned report captures the completed Phase 6 API e2e baseline after Dash
 | Existing backend support | `src/modules/reports` already provides expense reports and `POST /api/v1/reports/exports`; source data exists in Core, Attendance, Leave/WFH, Projects, Timesheets, Assets, Helpdesk, expense audit logs, and Outbox | Extend the existing reports module with read-only non-expense summaries; use existing outbox events as durable export job records instead of introducing a separate export table |
 | Frontend report routes | `hrms-client/src/routes/_app/reports*.tsx` covers HR, attendance, leave, projects, timesheet, expenses, assets, helpdesk, and audit reports | Replace production-critical mock/local aggregation on non-expense report routes with backend report adapters in API mode |
 | Current frontend data source | HR/attendance/audit reports still derive from mock/local stores or deterministic local synthesis; projects/assets/helpdesk/timesheet reports partially derive from stores that are already API-backed in API mode | Add report domain hooks and wire visible non-expense report routes to backend summaries while keeping local behavior only when API mode is disabled |
-| Deferred scope | Real file generation/download, scheduled reports, security settings, report-builder UX, and e2e coverage are not represented in the current contract | Keep export jobs as queued metadata backed by outbox; full document-backed export generation remains production hardening |
+| Deferred scope | Scheduled reports, security settings, report-builder UX, XLSX rendering, and deeper e2e coverage are not represented in the current contract | Phase 6 now adds document-backed CSV export generation; scheduling/XLSX/retention remain production hardening |
 
 ## Non-Expense Reports Completion
 
 | Area | Completed fact | Notes |
 | --- | --- | --- |
-| Backend APIs | Added `GET /api/v1/reports/hr/employees`, `/attendance/summary`, `/leave-wfh/summary`, `/projects/summary`, `/timesheets/summary`, `/assets/summary`, `/helpdesk/summary`, `/audit`, `/exports`, and `/exports/{id}` | Export create/list/detail is queued metadata backed by existing outbox events; real document generation/download remains production hardening |
+| Backend APIs | Added `GET /api/v1/reports/hr/employees`, `/attendance/summary`, `/leave-wfh/summary`, `/projects/summary`, `/timesheets/summary`, `/assets/summary`, `/helpdesk/summary`, `/audit`, `/exports`, and `/exports/{id}` | Phase 6 now upgrades report export create/list/detail to include generated document metadata for CSV exports while keeping outbox events |
 | Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, reports integration test, and `pnpm test:contracts` passed | One first contract run failed because it was run in parallel with another DB-resetting integration test; rerun alone passed |
 | Frontend integration | Added report domain API/hooks and connected HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes to `/api/v1/reports/*` in API mode | API-disabled development keeps the existing local/mock report derivations |
 | Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
@@ -86,13 +87,13 @@ This versioned report captures the completed Phase 6 API e2e baseline after Dash
 | Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` listed role history, employee audit, import job create/status, and export job create under `/api/v1/core/users/*` | Implement those five endpoints with OpenAPI docs, contract tests, and core integration coverage |
 | Existing backend support | Core user mutations already emit durable `core.user.*` outbox events | Derive role history/audit from existing outbox events; use outbox job metadata for import/export requests until real import parsing/export file generation is implemented |
 | Frontend employee routes | `/employees` has an Export action; `/employees/$id` renders role history and audit trail from local employee arrays | Queue backend export jobs in API mode and replace detail role/audit timelines with backend reads when the actor has access |
-| Deferred scope | There is no visible employee import screen yet; document-backed export generation and actual CSV/XLSX import parsing are not implemented | Expose backend job metadata APIs now; leave real processing worker and upload/import UI for production hardening or a future visible route |
+| Deferred scope | There is no visible employee import screen yet; actual CSV/XLSX import parsing is not implemented | Phase 6 now adds document-backed CSV employee export generation; import processing and upload/import UI remain production hardening or future visible route work |
 
 ## Employee/Core Backlog Completion
 
 | Area | Completed fact | Notes |
 | --- | --- | --- |
-| Backend APIs | Added `GET /api/v1/core/users/{id}/roles/history`, `GET /api/v1/core/users/{id}/audit`, `POST /api/v1/core/users/imports`, `GET /api/v1/core/users/imports/{job_id}`, and `POST /api/v1/core/users/exports` | History/audit are backed by core outbox events; import/export jobs are queued metadata with `outbox-queued-placeholder` adapter until processors exist |
+| Backend APIs | Added `GET /api/v1/core/users/{id}/roles/history`, `GET /api/v1/core/users/{id}/audit`, `POST /api/v1/core/users/imports`, `GET /api/v1/core/users/imports/{job_id}`, and `POST /api/v1/core/users/exports` | History/audit are backed by core outbox events; Phase 6 now generates document-backed CSV employee exports, while import jobs remain queued metadata until processors exist |
 | Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, core integration test, and `pnpm test:contracts` passed | Non-escalated `tsx`/DB test runs hit sandbox IPC/network restrictions and passed when rerun with local QA infra access |
 | Frontend integration | Added Core API hooks for role history, audit, and export job creation; `/employees/$id` now reads role/audit data from backend in API mode; `/employees` queues backend export jobs when API-backed | API-disabled development keeps local role/audit arrays and local CSV export |
 | Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
@@ -128,7 +129,7 @@ This versioned report captures the completed Phase 6 API e2e baseline after Dash
 | Planned backend contract | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` lists `GET /api/v1/attendance/calendar/daily`, `GET /api/v1/attendance/regularizations/queue/manager`, and `POST /api/v1/attendance/exports` as planned | Add routes, service methods, OpenAPI docs, contract coverage, and attendance integration tests |
 | Existing backend support | Attendance already has punches, my/team summaries, monthly calendar, my regularizations, regularization decisions, exceptions, permissions, and outbox events | Reuse existing day synthesis, visible-user scoping, regularization repository, and outbox job metadata patterns |
 | Frontend routes | `/attendance/calendar` uses monthly calendar; `/attendance/exceptions` uses exceptions for HR queues; `/reports/attendance` uses the Reports summary API plus local CSV export | Add Attendance domain adapters/hooks for the new endpoints; avoid broad UI rewrites unless a visible screen directly needs the new route |
-| Export behavior | Existing report exports are queued metadata backed by outbox rather than generated files | Attendance export should follow the same queued metadata pattern and defer document-backed file generation/download to production hardening |
+| Export behavior | Existing report exports originally used queued metadata backed by outbox | Phase 6 now generates document-backed CSV/JSON attendance exports and keeps XLSX queued until a workbook renderer exists |
 
 ## Attendance Backlog Completion
 
@@ -144,7 +145,7 @@ This versioned report captures the completed Phase 6 API e2e baseline after Dash
 
 | Area | Completed fact | Notes |
 | --- | --- | --- |
-| Backend API | Added `POST /api/v1/leave-wfh/exports` | Export requests are HR/Admin/Auditor-only and persist queued metadata through the existing outbox; real file generation/download remains production hardening |
+| Backend API | Added `POST /api/v1/leave-wfh/exports` | Phase 6 now generates document-backed CSV/JSON Leave/WFH exports for HR/Admin/Auditor actors and keeps XLSX queued until a workbook renderer exists |
 | Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, Leave/WFH integration test, and `pnpm test:contracts` passed | Non-escalated DB/tsx commands are sandbox-blocked in this environment; validation passed with local QA infra access |
 | Frontend integration | Added Leave/WFH export API adapter/hook and connected `/leave-wfh/monitor` Export in API mode | API mode queues a backend export job; API-disabled development keeps the previous local CSV export |
 | Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
@@ -167,7 +168,7 @@ This versioned report captures the completed Phase 6 API e2e baseline after Dash
 | API e2e smoke | Added `src/__tests__/production-user-flows.e2e.test.ts` to exercise key employee, manager, admin, and reporting workflows through the Fastify API against QA infra | Covers login/session, employee directory/detail, timesheet segment/submission, expense creation, dashboard approvals, attendance check-in/check-out, leave approval, EMS profile-change approval, project/member/utilization, helpdesk ticket creation, notifications read state, report summaries, and report export queue metadata |
 | Seeded actors | Uses local demo credentials for employee, peer, and admin; manager uses the seeded `D1` helper session | The `reviewer@example.test` email/password path is not active in the current QA seed, so the smoke test uses the existing test helper for manager context instead of changing auth seed behavior |
 | Backend validation | `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`, and `pnpm lint` passed | First two e2e runs exposed seed/session and display-status expectations; the test was corrected to match current production API behavior before the passing run |
-| Deferred coverage | Browser-level frontend e2e and real document-backed export file generation/download remain Phase 6 hardening work | The new smoke test is API-level coverage, not a replacement for Playwright/browser coverage |
+| Deferred coverage | Browser-level frontend e2e, XLSX rendering, scheduled exports, retention policy automation, and route-wide report export UI integration remain Phase 6 hardening work | The new smoke test is API-level coverage, not a replacement for Playwright/browser coverage |
 
 ## Phase 6 Browser E2E Baseline
 
@@ -177,6 +178,16 @@ This versioned report captures the completed Phase 6 API e2e baseline after Dash
 | Browser smoke | Added `e2e/production-smoke.spec.ts` | Covers UI login, API-ready indicator, notification popover, employee self-service routes, HR/admin route rendering, Reports/Admin Settings, Projects, and Team Utilization |
 | Frontend validation | `pnpm test:e2e`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, production config guard, and `pnpm build` passed | Playwright ran against QA infra plus a live backend server. Lint keeps 39 existing Fast Refresh warnings; build keeps existing chunk-size/Wrangler log warnings |
 | Deferred coverage | Browser e2e is smoke-level only | Deeper create/approve/export mutation flows, mobile viewport coverage, upload flows, and provider-backed export/download coverage remain production hardening |
+
+## Phase 6 Export File Generation
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Backend export generation | Added `src/platform/generated-exports.ts` and wired employee/core, report, attendance, and Leave/WFH export APIs to create supported-format document records through the configured object-storage adapter | Existing outbox events are still emitted for audit/retry visibility; unsupported XLSX requests remain queued metadata with `xlsx-renderer-pending` until a workbook renderer is selected |
+| Backend download handoff | Export responses now return `status: "ready"`, `adapter: "minio-generated-csv"`, `download_document_id`, file name, row count, size bytes, and generated timestamp for supported formats | Secure download still goes through `POST /api/v1/documents/{id}/download-url`; object-storage credentials are not exposed |
+| Frontend export handoff | `/employees` and `/leave-wfh/monitor` now request a Documents API download URL when a backend export response includes `download_document_id` | Broader `/reports/*` `ReportShell` export buttons still do client-side CSV export and need a follow-up route-wide backend export integration |
+| Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, report/core/attendance/Leave-WFH integration tests, `pnpm test:contracts`, and `pnpm test:e2e` passed | The first combined integration command was stopped after stalling on shared DB resets; the same affected suites passed one at a time with verbose output |
+| Frontend validation | `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, production config guard, implemented-route guard, route coverage, and `pnpm build` passed | Lint keeps 39 existing Fast Refresh warnings; build exits 0 with the existing chunk-size and Wrangler log warnings |
 
 ## Admin Notification Channels Discovery
 
@@ -456,18 +467,19 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 6 | Production API config | Guard frontend production API/mock fallback config | N/A | Completed in `hrms-client` | `pnpm api:production-config-guard`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage | Passed. Lint has the existing 39 Fast Refresh warnings and no new errors. | `hrms-client/package.json`, `hrms-client/scripts/production-config-guard.mjs` | `chore(frontend): guard production API config` |
 | 6 | API e2e baseline | Add cross-module backend API user-flow smoke | Completed | N/A | `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`, `pnpm lint` | Passed. Covers auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata. | `src/__tests__/production-user-flows.e2e.test.ts`, task sheet | `test(e2e): add production user-flow smoke` |
 | 6 | Browser e2e baseline | Add Playwright smoke for API-mode frontend routes | N/A | Completed in `hrms-client` | `pnpm test:e2e`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, `pnpm api:implemented-route-guard`, `pnpm api:frontend-contract:route-coverage`, `pnpm api:production-config-guard`, `pnpm build` | Passed. Browser smoke uses QA backend API mode with mock fallback disabled and covers employee, HR/admin, projects/utilization, and notification surfaces. | `hrms-client/e2e/*`, `playwright.config.ts`, package/lockfile, ESLint config, `.gitignore`, task sheet | `test(e2e): add frontend browser smoke baseline` |
+| 6 | Export file generation | Generate document-backed supported-format exports | Completed for employee/core CSV, report CSV, and attendance/Leave-WFH CSV/JSON exports | Completed for employee list and Leave/WFH monitor download handoff; broader report shell backend export UI remains follow-up | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, targeted integration tests, `pnpm test:contracts`, `pnpm test:e2e`, frontend typecheck/lint/guards/build | Passed. OpenAPI remains 217 operations across 192 paths; response schemas now expose generated document metadata. | `src/platform/generated-exports.ts`, export services/tests/OpenAPI/docs, frontend employee and Leave/WFH monitor routes, frontend contract docs | `feat(exports): generate document-backed CSV exports` / `feat(exports): open generated export downloads` |
 
 ## Remaining Blockers
 
 | Priority | Blocker |
 | --- | --- |
-| P1 | Browser-level e2e coverage is smoke-level only; create/approve/export mutation flows, mobile viewport coverage, upload flows, and provider-backed export/download checks remain production hardening |
+| P1 | Browser-level e2e coverage is smoke-level only; create/approve/export mutation flows, mobile viewport coverage, upload flows, and route-wide export download checks remain production hardening |
 | P1 | EMS document Upload/Replace still needs a real file selection/form flow; API mode now blocks fake success instead of pretending to upload |
 | P1 | EMS onboarding, probation, exits, policy management, and letter generation admin actions remain static until broader HR/admin modules exist |
 | P1 | Helpdesk category create/update/toggle endpoints remain planned for admin/settings phase; API mode surfaces this as an error instead of mutating local state |
 | P1 | Full asset vendor CRUD, warranty automation, and recovery settlement workflow remain planned for admin/operational hardening |
 | P1 | Project-specific reports and project document upload/attach UX remain planned |
-| P1 | Full document-backed report export file generation/download remains production hardening; report export jobs currently persist queued metadata |
+| P1 | XLSX workbook rendering, scheduled exports, export retention cleanup, import row parsing, and `/reports/*` ReportShell backend export integration remain production hardening |
 | P1 | Admin master-data tabs beyond departments/designations remain deferred until backend APIs are defined |
 | P1 | Dynamic RBAC runtime enforcement and custom-role assignment to employees remain deferred; this slice persists Admin Settings RBAC configuration only |
 | P1 | Admin security settings remain planned and need a concrete backend contract/runtime enforcement decision |
@@ -555,13 +567,13 @@ Frontend:
 - `/admin-settings/audit` uses the backend API in API mode and keeps the local audit store only when API mode is disabled.
 - Cross-module audit reporting is now available through `/api/v1/reports/audit`; `/admin-settings/audit` remains scoped to Admin Settings audit visibility.
 - Non-expense Reports are read-only summaries derived from already implemented module stores; they do not introduce new source-of-truth workflow tables.
-- Report export create/list/detail currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
+- Report export create/list/detail now generates document-backed CSV exports for supported report types while preserving outbox events for audit visibility. XLSX rendering, scheduling, and retention automation are deferred to production hardening.
 - Frontend report routes use the backend in API mode and keep local/mock aggregation only when API mode is disabled.
 - Attendance daily calendar and manager regularization queue are added as backend completion endpoints/adapters; existing visible attendance routes already use monthly calendar, exceptions, and Reports APIs, so no route layout rewrite was required.
-- Attendance export create currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
-- Leave/WFH export create currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
+- Attendance and Leave/WFH export create now generate document-backed CSV/JSON files when object storage is configured; XLSX rendering, scheduling, retention, and broader browser download coverage remain production hardening.
 - The Phase 6 API e2e smoke uses local demo password login for employee, peer, and admin actors, and uses the existing seeded `D1` test helper session for manager context because the reviewer email/password account is not active in the current QA seed.
 - The Phase 6 browser e2e smoke waits for client hydration before UI login and uses client-side navigation after login because the current frontend stores the bearer token in memory; full-page route reload auth persistence remains a separate hardening consideration.
+- Employee/core import jobs remain queued metadata only; actual import row parsing and user-creation previews still need an import processor.
 
 ## Commit Messages
 
@@ -619,11 +631,14 @@ Frontend:
 | Phase 6 frontend production config guard | `chore(frontend): guard production API config` | Committed in `hrms-client` as `0e5d958` |
 | Phase 6 API e2e baseline | `test(e2e): add production user-flow smoke` | Committed in `hrms_backend` as `e799b34` |
 | Phase 6 browser e2e baseline | `test(e2e): add frontend browser smoke baseline` | Committed in `hrms-client` as `436df10` |
+| Phase 6 export generation backend | `feat(exports): generate document-backed CSV exports` | Committed in `hrms_backend` as `957e1f7` |
+| Phase 6 export generation frontend | `feat(exports): open generated export downloads` | Committed in `hrms-client` as `5f2ad46` |
+| Phase 6 export generation task sheet | `docs(exports): record document-backed export generation` | Pending commit |
 
 ## Next Steps
 
 1. Phase 6 API and browser e2e baselines are implemented for core backend API user flows and frontend API-mode route smoke coverage.
 2. Backend OpenAPI now has 217 operations across 192 paths; planned operations remaining are 0.
 3. Phase 6 verification guardrails are hardened for full-module implementation coverage, zero planned API backlog, frontend contract sync, critical migration index coverage, and frontend production API/mock fallback config.
-4. Employee import/export jobs and EMS/report/attendance/leave-WFH export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
-5. Next roadmap scope: continue Phase 6 with export worker/file generation decisions, deployment checks, security headers/CORS/rate limiting, observability, backup/restore, deeper browser mutation/mobile coverage, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
+4. Employee/core CSV, report CSV, and Attendance/Leave-WFH CSV/JSON exports now generate backend documents and return `download_document_id`; employee import parsing, XLSX workbook rendering, scheduled exports, retention cleanup, and broader report-shell download UX remain production hardening.
+5. Next roadmap scope: continue Phase 6 with deployment checks, security headers/CORS/rate limiting, observability, backup/restore, deeper browser mutation/mobile coverage, route-wide export download coverage, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
