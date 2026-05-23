@@ -487,6 +487,97 @@ const adminCompanyProfileUpdateBody = {
   additionalProperties: false
 };
 
+const adminMasterDataQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    active_only: { type: "boolean", description: "When true, return only active rows.", example: true },
+    search: { type: "string", maxLength: 160, description: "Search by code or display name.", example: "Sales" }
+  }
+};
+
+const adminDepartmentSchema = {
+  type: "object",
+  required: ["id", "department_code", "code", "name", "status", "active", "version"],
+  properties: {
+    id: uuid("Department UUID"),
+    department_code: { type: "string", example: "SALES" },
+    code: { type: "string", example: "SALES" },
+    name: { type: "string", example: "Sales" },
+    parent_department_id: { ...uuid("Parent department UUID"), nullable: true },
+    parent_id: { ...uuid("Parent department UUID"), nullable: true },
+    director_user_id: { ...uuid("Director user UUID"), nullable: true },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    active: { type: "boolean", example: true },
+    deleted_at: { ...dateTime("Soft-delete timestamp"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminDesignationSchema = {
+  type: "object",
+  required: ["id", "designation_code", "code", "title", "name", "status", "active", "version"],
+  properties: {
+    id: uuid("Designation UUID"),
+    designation_code: { type: "string", example: "ENGINEER" },
+    code: { type: "string", example: "ENGINEER" },
+    title: { type: "string", example: "Engineer" },
+    name: { type: "string", example: "Engineer" },
+    level: { type: "integer", nullable: true, minimum: 0, maximum: 100, example: 3 },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    active: { type: "boolean", example: true },
+    deleted_at: { ...dateTime("Soft-delete timestamp"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminDepartmentCreateBody = {
+  type: "object",
+  required: ["name"],
+  properties: {
+    name: { type: "string", minLength: 2, maxLength: 160, example: "Engineering" },
+    code: { type: "string", minLength: 2, maxLength: 40, example: "ENG" },
+    department_code: { type: "string", minLength: 2, maxLength: 40, example: "ENG" },
+    parent_id: { ...uuid("Parent department UUID"), nullable: true },
+    parent_department_id: { ...uuid("Parent department UUID"), nullable: true },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" }
+  },
+  additionalProperties: false
+};
+
+const adminDepartmentUpdateBody = {
+  ...adminDepartmentCreateBody,
+  required: ["expected_version"],
+  properties: {
+    ...adminDepartmentCreateBody.properties,
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  }
+};
+
+const adminDesignationCreateBody = {
+  type: "object",
+  properties: {
+    name: { type: "string", minLength: 2, maxLength: 160, example: "Engineer" },
+    title: { type: "string", minLength: 2, maxLength: 160, example: "Engineer" },
+    code: { type: "string", minLength: 2, maxLength: 40, example: "ENGINEER" },
+    designation_code: { type: "string", minLength: 2, maxLength: 40, example: "ENGINEER" },
+    level: { type: "integer", nullable: true, minimum: 0, maximum: 100, example: 3 },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" }
+  },
+  additionalProperties: false
+};
+
+const adminDesignationUpdateBody = {
+  ...adminDesignationCreateBody,
+  required: ["expected_version"],
+  properties: {
+    ...adminDesignationCreateBody.properties,
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  }
+};
+
 const userReferenceSchema = {
   type: "object",
   required: ["id", "employee_code", "full_name"],
@@ -3074,6 +3165,76 @@ const routeDocs: Record<string, RouteSchema> = {
     "Update company profile",
     "Updates company profile and locale/fiscal settings with optimistic concurrency. Admin role is required and the company slug remains stable.",
     { body: adminCompanyProfileUpdateBody, response200: adminCompanyProfileSchema }
+  ),
+  "GET /api/v1/admin/master-data/departments": operation(
+    "Admin / Configuration",
+    "List departments",
+    "Lists core departments for Admin Settings master-data management. Admin and HR Manager roles can read the list.",
+    { querystring: adminMasterDataQuerySchema, response200: paginated(adminDepartmentSchema) }
+  ),
+  "POST /api/v1/admin/master-data/departments": operation(
+    "Admin / Configuration",
+    "Create department",
+    "Creates a department master row with duplicate-code protection. Admin and HR Manager roles can mutate master data.",
+    {
+      body: adminDepartmentCreateBody,
+      response200: {
+        type: "object",
+        required: ["department", "version"],
+        properties: { department: adminDepartmentSchema, version: { type: "integer", example: 1 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "PATCH /api/v1/admin/master-data/departments/{id}": operation(
+    "Admin / Configuration",
+    "Update department",
+    "Updates department name, code, parent, or active status with optimistic concurrency. Deactivation is blocked while active employees reference the department.",
+    {
+      params: idParamSchema,
+      body: adminDepartmentUpdateBody,
+      response200: {
+        type: "object",
+        required: ["department", "version"],
+        properties: { department: adminDepartmentSchema, version: { type: "integer", example: 2 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "GET /api/v1/admin/master-data/designations": operation(
+    "Admin / Configuration",
+    "List designations",
+    "Lists core designations for Admin Settings master-data management. Admin and HR Manager roles can read the list.",
+    { querystring: adminMasterDataQuerySchema, response200: paginated(adminDesignationSchema) }
+  ),
+  "POST /api/v1/admin/master-data/designations": operation(
+    "Admin / Configuration",
+    "Create designation",
+    "Creates a designation master row with duplicate-code protection. Admin and HR Manager roles can mutate master data.",
+    {
+      body: adminDesignationCreateBody,
+      response200: {
+        type: "object",
+        required: ["designation", "version"],
+        properties: { designation: adminDesignationSchema, version: { type: "integer", example: 1 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "PATCH /api/v1/admin/master-data/designations/{id}": operation(
+    "Admin / Configuration",
+    "Update designation",
+    "Updates designation title, code, level, or active status with optimistic concurrency. Deactivation is blocked while active employees reference the designation.",
+    {
+      params: idParamSchema,
+      body: adminDesignationUpdateBody,
+      response200: {
+        type: "object",
+        required: ["designation", "version"],
+        properties: { designation: adminDesignationSchema, version: { type: "integer", example: 2 } },
+        additionalProperties: false
+      }
+    }
   ),
   "GET /api/v1/platform/finance-governance": operation(
     "Admin / Configuration",

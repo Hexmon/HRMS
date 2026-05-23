@@ -5,3 +5,8 @@ export function assertCanManageAdminSettings(actor: AuthUser): void {
   if (actor.roles.includes(Roles.Admin)) return;
   throw forbidden("Only Admin can manage company settings");
 }
+
+export function assertCanManageMasterData(actor: AuthUser): void {
+  if (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.HRManager)) return;
+  throw forbidden("Only Admin or HR Manager can manage master data");
+}

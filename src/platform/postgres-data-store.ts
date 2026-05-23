@@ -404,12 +404,14 @@ class PostgresPersistence {
   }
 
   private async loadDepartments(client: PoolClient): Promise<Department[]> {
-    const { rows } = await client.query("SELECT id, department_code, name, director_user_id, status, deleted_at FROM core.departments ORDER BY department_code");
+    const { rows } = await client.query(
+      "SELECT id, department_code, name, parent_department_id, director_user_id, status, deleted_at, version FROM core.departments ORDER BY department_code"
+    );
     return rows.map((row) => ({ ...row, deleted_at: asIsoOrNull(row.deleted_at) }));
   }
 
   private async loadDesignations(client: PoolClient): Promise<Designation[]> {
-    const { rows } = await client.query("SELECT id, designation_code, title, level, status, deleted_at FROM core.designations ORDER BY level NULLS LAST, designation_code");
+    const { rows } = await client.query("SELECT id, designation_code, title, level, status, deleted_at, version FROM core.designations ORDER BY level NULLS LAST, designation_code");
     return rows.map((row) => ({ ...row, deleted_at: asIsoOrNull(row.deleted_at) }));
   }
 
@@ -1444,23 +1446,35 @@ class PostgresPersistence {
   private async flushCore(client: PoolClient): Promise<void> {
     for (const designation of this.store.designations) {
       await client.query(
-        `INSERT INTO core.designations (id, designation_code, title, level, status, deleted_at)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO core.designations (id, designation_code, title, level, status, deleted_at, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (id) DO UPDATE
          SET designation_code = EXCLUDED.designation_code, title = EXCLUDED.title, level = EXCLUDED.level,
-             status = EXCLUDED.status, deleted_at = EXCLUDED.deleted_at, updated_at = now()`,
-        [designation.id, designation.designation_code, designation.title, designation.level, designation.status, designation.deleted_at]
+             status = EXCLUDED.status, deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
+             updated_at = now()`,
+        [designation.id, designation.designation_code, designation.title, designation.level, designation.status, designation.deleted_at, designation.version]
       );
     }
     for (const department of this.store.departments) {
       await client.query(
-        `INSERT INTO core.departments (id, department_code, name, director_user_id, status, deleted_at)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO core.departments (id, department_code, name, parent_department_id, director_user_id, status, deleted_at, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (id) DO UPDATE
          SET department_code = EXCLUDED.department_code, name = EXCLUDED.name,
+             parent_department_id = EXCLUDED.parent_department_id,
              director_user_id = EXCLUDED.director_user_id, status = EXCLUDED.status,
-             deleted_at = EXCLUDED.deleted_at, updated_at = now()`,
-        [department.id, department.department_code, department.name, department.director_user_id, department.status, department.deleted_at]
+             deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
+             updated_at = now()`,
+        [
+          department.id,
+          department.department_code,
+          department.name,
+          department.parent_department_id,
+          department.director_user_id,
+          department.status,
+          department.deleted_at,
+          department.version
+        ]
       );
     }
     for (const user of this.store.users) {

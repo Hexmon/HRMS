@@ -502,17 +502,21 @@ export function createMemoryDataStore(): MemoryDataStore {
       id: seedIds.departmentSales,
       department_code: "SALES",
       name: "Sales",
+      parent_department_id: null,
       director_user_id: seedIds.executive,
       status: "active",
-      deleted_at: null
+      deleted_at: null,
+      version: 1
     },
     {
       id: seedIds.departmentFinance,
       department_code: "FIN",
       name: "Finance",
+      parent_department_id: null,
       director_user_id: seedIds.financeManager,
       status: "active",
-      deleted_at: null
+      deleted_at: null,
+      version: 1
     }
   ];
 
@@ -523,7 +527,8 @@ export function createMemoryDataStore(): MemoryDataStore {
       title: "Executive",
       level: 10,
       status: "active",
-      deleted_at: null
+      deleted_at: null,
+      version: 1
     },
     {
       id: seedIds.designationManager,
@@ -531,7 +536,8 @@ export function createMemoryDataStore(): MemoryDataStore {
       title: "Manager",
       level: 6,
       status: "active",
-      deleted_at: null
+      deleted_at: null,
+      version: 1
     },
     {
       id: seedIds.designationFinance,
@@ -539,7 +545,8 @@ export function createMemoryDataStore(): MemoryDataStore {
       title: "Finance Manager",
       level: 8,
       status: "active",
-      deleted_at: null
+      deleted_at: null,
+      version: 1
     },
     {
       id: seedIds.designationEmployee,
@@ -547,7 +554,8 @@ export function createMemoryDataStore(): MemoryDataStore {
       title: "Employee",
       level: 1,
       status: "active",
-      deleted_at: null
+      deleted_at: null,
+      version: 1
     }
   ];
 

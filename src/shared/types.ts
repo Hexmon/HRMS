@@ -51,9 +51,11 @@ export interface Department {
   id: UUID;
   department_code: string;
   name: string;
+  parent_department_id: UUID | null;
   director_user_id: UUID | null;
   status: "active" | "inactive";
   deleted_at: ISODateTime | null;
+  version: number;
 }
 
 export interface Designation {
@@ -63,6 +65,7 @@ export interface Designation {
   level: number | null;
   status: "active" | "inactive";
   deleted_at: ISODateTime | null;
+  version: number;
 }
 
 export interface CoreUser extends AuthUser {

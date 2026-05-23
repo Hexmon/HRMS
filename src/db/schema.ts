@@ -42,7 +42,8 @@ export const departments = core.table(
     status: text("status").notNull().default("active"),
     createdAt,
     updatedAt,
-    deletedAt
+    deletedAt,
+    version
   },
   (table) => [
     uniqueIndex("core_departments_code_active_uq").on(table.departmentCode),
@@ -60,7 +61,8 @@ export const designations = core.table(
     status: text("status").notNull().default("active"),
     createdAt,
     updatedAt,
-    deletedAt
+    deletedAt,
+    version
   },
   (table) => [
     uniqueIndex("core_designations_code_active_uq").on(table.designationCode),

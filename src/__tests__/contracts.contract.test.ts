@@ -47,6 +47,8 @@ const localDemoPassword = getLocalDemoPassword();
 const expectedOperations = [
   "DELETE /api/v1/manager-backups/{id}",
   "GET /api/v1/admin/company-profile",
+  "GET /api/v1/admin/master-data/departments",
+  "GET /api/v1/admin/master-data/designations",
   "GET /api/v1/assets/",
   "GET /api/v1/assets/recovery-queue",
   "GET /api/v1/assets/requests/my",
@@ -134,6 +136,8 @@ const expectedOperations = [
   "GET /health/live",
   "GET /health/ready",
   "PATCH /api/v1/auth/session/preference",
+  "PATCH /api/v1/admin/master-data/departments/{id}",
+  "PATCH /api/v1/admin/master-data/designations/{id}",
   "PATCH /api/v1/core/users/{id}",
   "PATCH /api/v1/expenses/{id}",
   "POST /api/v1/assets/",
@@ -160,6 +164,8 @@ const expectedOperations = [
   "POST /api/v1/auth/verify-email",
   "POST /api/v1/auth/login",
   "POST /api/v1/auth/logout",
+  "POST /api/v1/admin/master-data/departments",
+  "POST /api/v1/admin/master-data/designations",
   "POST /api/v1/core/users",
   "POST /api/v1/core/users/{id}/activate",
   "POST /api/v1/core/users/{id}/deactivate",
@@ -233,6 +239,10 @@ const bodyRequiredOperations = [
   "POST /api/v1/auth/signup",
   "PATCH /api/v1/auth/session/preference",
   "PUT /api/v1/admin/company-profile",
+  "POST /api/v1/admin/master-data/departments",
+  "PATCH /api/v1/admin/master-data/departments/{id}",
+  "POST /api/v1/admin/master-data/designations",
+  "PATCH /api/v1/admin/master-data/designations/{id}",
   "POST /api/v1/auth/login",
   "POST /api/v1/core/users",
   "PATCH /api/v1/core/users/{id}",
@@ -355,11 +365,15 @@ const occOperations = [
   "POST /api/v1/helpdesk/tickets/{id}/close",
   "POST /api/v1/helpdesk/tickets/{id}/reopen",
   "POST /api/v1/notifications/{id}/read",
-  "DELETE /api/v1/manager-backups/{id}"
+  "DELETE /api/v1/manager-backups/{id}",
+  "PATCH /api/v1/admin/master-data/departments/{id}",
+  "PATCH /api/v1/admin/master-data/designations/{id}"
 ];
 
 const listOperations = [
   "GET /api/v1/core/users",
+  "GET /api/v1/admin/master-data/departments",
+  "GET /api/v1/admin/master-data/designations",
   "GET /api/v1/expenses/my",
   "GET /api/v1/expenses/queue/manager",
   "GET /api/v1/expenses/queue/finance",
@@ -606,7 +620,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(176);
+    expect(rows.length).toBe(182);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);
