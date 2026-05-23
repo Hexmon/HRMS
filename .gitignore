@@ -14,6 +14,8 @@ dist-ssr
 .vinxi
 .tanstack/**
 .nitro
+playwright-report/
+test-results/
 *.local
 
 # Wrangler / Cloudflare

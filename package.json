@@ -11,6 +11,9 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:install": "playwright install chromium",
     "api:frontend-contract:route-coverage": "node scripts/frontend-contract-route-coverage.mjs",
     "api:implemented-route-guard": "node scripts/api-implemented-route-guard.mjs",
     "api:production-config-guard": "node scripts/production-config-guard.mjs"
@@ -73,6 +76,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22.16.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
