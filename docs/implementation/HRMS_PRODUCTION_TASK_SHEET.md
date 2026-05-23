@@ -42,6 +42,7 @@ This versioned report captures the completed Phase 5 Leave/WFH export slice afte
 | Non-expense Reports frontend | Integrated in `hrms-client` for HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes in API mode |
 | Employee/core backlog backend | Completed for role assignment history, profile audit trail, employee import job metadata/status, and employee export job metadata APIs |
 | Employee/core backlog frontend | Integrated in `hrms-client` for employee profile role history/audit tabs and API-backed employee export job queueing |
+| Phase 6 verification guardrails | Hardened backend implementation and scalability checks now cover the full module set, 217-operation contract floor, zero planned API backlog, synced frontend contract JSON, and critical queue/report indexes |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Audit Log Discovery
@@ -146,6 +147,14 @@ This versioned report captures the completed Phase 5 Leave/WFH export slice afte
 | Frontend integration | Added Leave/WFH export API adapter/hook and connected `/leave-wfh/monitor` Export in API mode | API mode queues a backend export job; API-disabled development keeps the previous local CSV export |
 | Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
 | Contract docs | Backend generated OpenAPI/frontend contract now contains 217 operations across 192 paths | Planned operations remaining drop from 1 to 0 |
+
+## Phase 6 Verification Guardrails
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Implementation verifier | `scripts/verify-implementation.ts` now checks the full backend module manifest, app module registration, schema migrations, mutating-route auth guards, OpenAPI operation floor, zero planned API backlog, and synced frontend contract JSON | This replaces the old early-phase verifier that only covered the initial health/auth/core/expenses/documents/assets/timesheets modules |
+| Scalability verifier | `scripts/verify-scalability.ts` now checks critical indexes across Core, Auth/session/outbox, Expenses, Documents, Assets, Asset workflows, Timesheets, Attendance, Leave/WFH, EMS, Projects, Helpdesk, Notifications, and Admin settings | This keeps the first Phase 6 guardrail scoped to source-controlled checks; deeper load/performance testing remains a separate production-hardening task |
+| Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, and `pnpm verify:scalability` passed | The two verifier scripts needed escalation only because `tsx` IPC pipe creation is blocked in the sandbox |
 
 ## Admin Notification Channels Discovery
 
@@ -421,6 +430,7 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Attendance backlog | Add frontend adapters/hooks | Completed in `hrms-client` | Completed for domain-level access to daily calendar, manager regularization queue, and export job APIs | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/attendance/*`, frontend API docs after sync | `feat(attendance): add completion endpoint adapters` |
 | 5 | Leave/WFH export | Implement export API | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, Leave/WFH integration test, `pnpm test:contracts` | Passed. OpenAPI generated 217 operations across 192 paths and planned operations remaining dropped to 0. | `src/modules/leave-wfh/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(leave): implement leave WFH export API` |
 | 5 | Leave/WFH export | Connect monitor export | Completed in `hrms-client` | Completed for `/leave-wfh/monitor` export job queueing in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/leave-wfh/*`, `src/routes/_app/leave-wfh.monitor.tsx`, frontend API docs after sync | `feat(leave): connect Leave WFH export action` |
+| 6 | Production hardening guardrails | Harden backend verification scripts | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, `pnpm verify:scalability` | Passed. `verify:implementation` now guards the full 217-operation contract completion state and `verify:scalability` checks critical indexes across all implemented modules. | `scripts/verify-implementation.ts`, `scripts/verify-scalability.ts` | `chore(verify): harden production readiness checks` |
 
 ## Remaining Blockers
 
@@ -457,6 +467,8 @@ Backend:
 - `pnpm exec vitest run --project integration src/modules/ems/__tests__/ems.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 - `pnpm exec vitest run --project integration src/modules/core/__tests__/core.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 - `pnpm test:contracts`: passed, 13 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
+- `pnpm verify:implementation`: passed with escalation due `tsx` IPC sandboxing; now covers full module registration, zero planned API backlog, and contract sync guardrails
+- `pnpm verify:scalability`: passed with escalation due `tsx` IPC sandboxing; now covers critical indexes across all implemented backend modules
 
 Frontend:
 
@@ -575,10 +587,12 @@ Frontend:
 | Leave/WFH export backend | `feat(leave): implement leave WFH export API` | Committed in `hrms_backend` as `c30c814` |
 | Leave/WFH export frontend | `feat(leave): connect Leave WFH export action` | Committed in `hrms-client` as `fd197b0` |
 | Leave/WFH export task sheet | `docs(leave): record export completion` | Committed in `hrms_backend` as `4328b28` |
+| Phase 6 verification guardrails | `chore(verify): harden production readiness checks` | Pending commit |
 
 ## Next Steps
 
 1. Phase 5 Leave/WFH export is implemented, `/leave-wfh/monitor` queues backend export jobs in API mode, and validation passed.
 2. Backend OpenAPI now has 217 operations across 192 paths; planned operations remaining are 0.
-3. Employee import/export jobs and EMS/report/attendance/leave-WFH export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
-4. Next roadmap scope: Phase 6 production hardening, starting with e2e/user-flow coverage, production API/mock fallback verification, export worker/file generation decisions, deployment checks, security headers/CORS/rate limiting, observability, backup/restore, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
+3. Phase 6 verification guardrails are hardened for full-module implementation coverage, zero planned API backlog, frontend contract sync, and critical migration index coverage.
+4. Employee import/export jobs and EMS/report/attendance/leave-WFH export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
+5. Next roadmap scope: continue Phase 6 with e2e/user-flow baseline, production API/mock fallback verification, export worker/file generation decisions, deployment checks, security headers/CORS/rate limiting, observability, backup/restore, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
