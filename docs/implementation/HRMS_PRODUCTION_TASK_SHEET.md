@@ -4,13 +4,13 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 6 export-file generation and EMS document upload-picker slices after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, Leave/WFH export completion, verification guardrails, and API/browser e2e baselines. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 6 Helpdesk category configuration, export-file generation, and EMS document upload-picker slices after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, Leave/WFH export completion, verification guardrails, and API/browser e2e baselines. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 217 implemented operations across 192 paths |
+| Backend OpenAPI | 219 implemented operations across 193 paths |
 | Planned operations remaining | 0 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
@@ -20,8 +20,8 @@ This versioned report captures the completed Phase 6 export-file generation and 
 | EMS frontend | Integrated in `hrms-client` for dashboard profile signals, profile, employee document listing/downloads, requests, letters, policies, and HR admin profile/letter queues |
 | Projects/utilization backend | Implemented for project CRUD, members, allocations, milestones/modules, project documents, project summary, and team utilization |
 | Projects/utilization frontend | Integrated in `hrms-client` for `/projects`, `/projects/$id`, and `/team-utilization` in API mode |
-| Helpdesk backend | Implemented for ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report |
-| Helpdesk frontend | Integrated in `hrms-client` for Helpdesk dashboard, my tickets, agent queue, ticket detail, categories, SLA, and reports in API mode |
+| Helpdesk backend | Implemented for ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, category read/create/update/toggle configuration, and SLA report |
+| Helpdesk frontend | Integrated in `hrms-client` for Helpdesk dashboard, my tickets, agent queue, ticket detail, category read/create/update/toggle configuration, SLA, and reports in API mode |
 | Notifications backend | Implemented for authenticated feed, unread count, mark-read, and mark-all-read |
 | Notifications frontend | Integrated in `hrms-client` topbar notification panel in API mode |
 | Asset workflow backend | Implemented for asset requests, approvals, cancellations, acknowledgements, maintenance records, vendors, and recovery queue |
@@ -42,10 +42,11 @@ This versioned report captures the completed Phase 6 export-file generation and 
 | Non-expense Reports frontend | Integrated in `hrms-client` for HR, attendance, leave, projects, timesheet, assets, helpdesk, and audit report routes in API mode |
 | Employee/core backlog backend | Completed for role assignment history, profile audit trail, employee import job metadata/status, and employee export job metadata APIs |
 | Employee/core backlog frontend | Integrated in `hrms-client` for employee profile role history/audit tabs and API-backed employee export job queueing |
-| Phase 6 verification guardrails | Hardened backend implementation and scalability checks now cover the full module set, 217-operation contract floor, zero planned API backlog, synced frontend contract JSON, critical queue/report indexes, and frontend production API/mock fallback config |
+| Phase 6 verification guardrails | Hardened backend implementation and scalability checks now cover the full module set, 219-operation contract floor, zero planned API backlog, synced frontend contract JSON, critical queue/report indexes, and frontend production API/mock fallback config |
 | Phase 6 API e2e baseline | Completed backend API-level user-flow smoke for auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata |
 | Phase 6 browser e2e baseline | Completed Playwright smoke coverage in `hrms-client` for API-mode login, notification panel, employee self-service routes, HR/admin routes, reports/settings, projects, and team utilization |
 | Phase 6 export generation | Completed document-backed export generation for employee/core CSV, report CSV, and attendance/Leave-WFH CSV/JSON export APIs; frontend employee, Leave/WFH monitor, and route-wide ReportShell exports now open generated document downloads when returned |
+| Phase 6 Helpdesk category configuration | Completed Admin/support-scoped Helpdesk category create/update/toggle APIs and connected the `/helpdesk/categories` UI actions to those APIs in API mode |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Admin Audit Log Discovery
@@ -240,9 +241,21 @@ This versioned report captures the completed Phase 6 export-file generation and 
 | `POST` | `/api/v1/helpdesk/tickets/{id}/close` | Ticket detail close action | Closes resolved tickets from requester/admin scope |
 | `POST` | `/api/v1/helpdesk/tickets/{id}/reopen` | Ticket detail reopen action | Reopens closed/resolved tickets within the configured policy window |
 | `GET` | `/api/v1/helpdesk/categories` | Helpdesk category screens and ticket form | Lists active/inactive category metadata and SLA hints |
+| `POST` | `/api/v1/helpdesk/categories` | Helpdesk category configuration | Creates a supported category-key configuration when the key is not already configured |
+| `PATCH` | `/api/v1/helpdesk/categories/{id}` | Helpdesk category edit/toggle actions | Versioned update for label, assignment hints, team, active flag, and sub-category metadata |
 | `GET` | `/api/v1/helpdesk/sla-report` | Helpdesk SLA/report screens | Returns SLA rollups and per-category/assignee report rows |
 
-Deferred from this Helpdesk slice: category mutation endpoints remain planned for later admin/settings category management. Broader `/api/v1/reports/helpdesk/summary` was completed later in the non-expense Reports slice. In API mode, category edit/toggle UI reports that backend category management is not available yet instead of silently mutating local state.
+Phase 6 completed Helpdesk category create/update/toggle configuration. Broader `/api/v1/reports/helpdesk/summary` was completed later in the non-expense Reports slice.
+
+## Phase 6 Helpdesk Category Configuration Completion
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Backend APIs | Added `POST /api/v1/helpdesk/categories` and `PATCH /api/v1/helpdesk/categories/{id}` | Mutations require a Helpdesk manager/Admin-style actor and use optimistic concurrency on update |
+| Frontend integration | `/helpdesk/categories` create/edit/toggle actions now call the Helpdesk category APIs in API mode | API-disabled development keeps the local category store behavior |
+| Contract docs | Backend and frontend OpenAPI/frontend contract docs now show 219 operations across 193 paths | Planned operations remaining stays at 0 |
+| Validation | Backend typecheck/build/lint/docs/consumer checks, DB migration/FK checks, focused Helpdesk integration test, contract tests, frontend typecheck/lint/route guards/route coverage/build passed | A first parallel contract/helpdesk run deadlocked during DB reset; the focused test and contract suite passed when rerun serially |
+| Deferred scope | Arbitrary new category keys remain deferred until the Helpdesk ticket category enum and role-scope model are generalized | Current create API accepts the existing supported category-key set and returns conflict for seeded duplicate keys |
 
 ## Notifications Discovery
 
@@ -464,11 +477,12 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | Attendance backlog | Add frontend adapters/hooks | Completed in `hrms-client` | Completed for domain-level access to daily calendar, manager regularization queue, and export job APIs | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/attendance/*`, frontend API docs after sync | `feat(attendance): add completion endpoint adapters` |
 | 5 | Leave/WFH export | Implement export API | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, Leave/WFH integration test, `pnpm test:contracts` | Passed. OpenAPI generated 217 operations across 192 paths and planned operations remaining dropped to 0. | `src/modules/leave-wfh/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(leave): implement leave WFH export API` |
 | 5 | Leave/WFH export | Connect monitor export | Completed in `hrms-client` | Completed for `/leave-wfh/monitor` export job queueing in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/leave-wfh/*`, `src/routes/_app/leave-wfh.monitor.tsx`, frontend API docs after sync | `feat(leave): connect Leave WFH export action` |
-| 6 | Production hardening guardrails | Harden backend verification scripts | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, `pnpm verify:scalability` | Passed. `verify:implementation` now guards the full 217-operation contract completion state and `verify:scalability` checks critical indexes across all implemented modules. | `scripts/verify-implementation.ts`, `scripts/verify-scalability.ts` | `chore(verify): harden production readiness checks` |
+| 6 | Production hardening guardrails | Harden backend verification scripts | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, `pnpm verify:scalability` | Passed. `verify:implementation` now guards the full 219-operation contract completion state and `verify:scalability` checks critical indexes across all implemented modules. | `scripts/verify-implementation.ts`, `scripts/verify-scalability.ts` | `chore(verify): harden production readiness checks` |
 | 6 | Production API config | Guard frontend production API/mock fallback config | N/A | Completed in `hrms-client` | `pnpm api:production-config-guard`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage | Passed. Lint has the existing 39 Fast Refresh warnings and no new errors. | `hrms-client/package.json`, `hrms-client/scripts/production-config-guard.mjs` | `chore(frontend): guard production API config` |
 | 6 | API e2e baseline | Add cross-module backend API user-flow smoke | Completed | N/A | `pnpm test:e2e`, `pnpm typecheck`, `pnpm build`, `pnpm lint` | Passed. Covers auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata. | `src/__tests__/production-user-flows.e2e.test.ts`, task sheet | `test(e2e): add production user-flow smoke` |
 | 6 | Browser e2e baseline | Add Playwright smoke for API-mode frontend routes | N/A | Completed in `hrms-client` | `pnpm test:e2e`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, `pnpm api:implemented-route-guard`, `pnpm api:frontend-contract:route-coverage`, `pnpm api:production-config-guard`, `pnpm build` | Passed. Browser smoke uses QA backend API mode with mock fallback disabled and covers employee, HR/admin, projects/utilization, and notification surfaces. | `hrms-client/e2e/*`, `playwright.config.ts`, package/lockfile, ESLint config, `.gitignore`, task sheet | `test(e2e): add frontend browser smoke baseline` |
 | 6 | Export file generation | Generate document-backed supported-format exports | Completed for employee/core CSV, report CSV, and attendance/Leave-WFH CSV/JSON exports | Completed for employee list, Leave/WFH monitor, and route-wide ReportShell download handoff in API mode | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, targeted integration tests, `pnpm test:contracts`, `pnpm test:e2e`, frontend typecheck/lint/guards/build | Passed. OpenAPI remains 217 operations across 192 paths; response schemas now expose generated document metadata. | `src/platform/generated-exports.ts`, export services/tests/OpenAPI/docs, frontend employee, Leave/WFH monitor, and ReportShell routes, frontend contract docs | `feat(exports): generate document-backed CSV exports` / `feat(exports): open generated export downloads` / `feat(reports): open generated report exports` |
+| 6 | Helpdesk category configuration | Add real category create/update/toggle behavior | Completed for `POST /api/v1/helpdesk/categories` and `PATCH /api/v1/helpdesk/categories/{id}` | Completed for `/helpdesk/categories` create/edit/toggle actions in API mode | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, Helpdesk integration test, `pnpm test:contracts`, frontend typecheck/lint/route guards/build | Passed. OpenAPI now has 219 operations across 193 paths. First parallel DB-resetting validation deadlocked; serial reruns passed. | `src/modules/helpdesk/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs, `hrms-client/src/domains/helpdesk/api.ts`, `hrms-client/src/lib/helpdesk-store.tsx` | `feat(helpdesk): add category configuration APIs` / `feat(helpdesk): connect category configuration actions` |
 
 ## Remaining Blockers
 
@@ -476,7 +490,6 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | --- | --- |
 | P1 | Browser-level e2e coverage is smoke-level only; create/approve/export mutation flows, mobile viewport coverage, upload flows, and route-wide export download checks remain production hardening |
 | P1 | EMS onboarding, probation, exits, policy management, and letter generation admin actions remain static until broader HR/admin modules exist |
-| P1 | Helpdesk category create/update/toggle endpoints remain planned for admin/settings phase; API mode surfaces this as an error instead of mutating local state |
 | P1 | Full asset vendor CRUD, warranty automation, and recovery settlement workflow remain planned for admin/operational hardening |
 | P1 | Project-specific reports and project document upload/attach UX remain planned |
 | P1 | XLSX workbook rendering, scheduled exports, export retention cleanup, and import row parsing remain production hardening |
@@ -494,7 +507,7 @@ Backend:
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
 - `pnpm test:e2e`: passed, 1 API-level production user-flow smoke test covering auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata
-- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 217 operation frontend contract after Leave/WFH export completion
+- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 219 operation frontend contract after Helpdesk category configuration completion
 - `pnpm api:docs:verify`: passed
 - `pnpm api:consumer:verify`: passed with escalation due `tsx` IPC sandboxing
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
@@ -512,7 +525,7 @@ Frontend:
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
 - `pnpm api:production-config-guard`: passed; production mock fallback is disabled and API mode is required
-- `pnpm api:implemented-route-guard`: passed, 59 files against 192 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 193 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm test:e2e`: passed, 3 Playwright Chromium tests against QA backend API mode; first runs exposed login hydration and full-page reload assumptions that were fixed in the test flow
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
@@ -528,7 +541,7 @@ Frontend:
 - EMS admin onboarding, probation, exits, policy management, and letter generation tabs remain non-production placeholders until their backend modules are defined.
 - Projects list responses intentionally include members, allocations, milestones/modules, documents, and summary by default so the existing project store can hydrate visible screens without adding a generated client layer.
 - Project document APIs list documents already attached to `business_object_type = "project"`; upload/attach UX remains part of later document hardening.
-- Helpdesk category mutation is intentionally not implemented in this slice because the verified planned contract includes `GET /api/v1/helpdesk/categories` only. Category edit/toggle actions stay deferred to admin/settings category management.
+- Helpdesk category mutation is now implemented for the existing supported category-key set. Arbitrary new category keys remain deferred until the Helpdesk ticket category enum and category role-scope model are generalized.
 - Helpdesk attachment APIs accept document references only; real upload/replace remains part of the existing Documents/upload hardening work.
 - Notifications read-state is scoped to the topbar feed; Admin notification channel preferences are now persisted by the Admin Settings API, while runtime delivery-provider filtering remains deferred.
 - Asset workflow requests intentionally extend the existing asset module rather than creating a separate module so base inventory, assignment, return, and license behavior remain unchanged.
@@ -635,12 +648,16 @@ Frontend:
 | Phase 6 export generation backend | `feat(exports): generate document-backed CSV exports` | Committed in `hrms_backend` as `957e1f7` |
 | Phase 6 export generation frontend | `feat(exports): open generated export downloads` | Committed in `hrms-client` as `5f2ad46` |
 | Phase 6 report export frontend | `feat(reports): open generated report exports` | Committed in `hrms-client` as `4f33cfa` |
-| Phase 6 export generation task sheet | `docs(exports): record document-backed export generation` | Pending commit |
+| Phase 6 export generation task sheet | `docs(exports): record document-backed export generation` | Committed in `hrms_backend` as `6f011c9` |
+| Phase 6 EMS document upload picker task sheet | `docs(ems): record document upload picker` | Committed in `hrms_backend` as `b76371c` |
+| Phase 6 Helpdesk category backend | `feat(helpdesk): add category configuration APIs` | Committed in `hrms_backend` as `7fbd1a0` |
+| Phase 6 Helpdesk category frontend | `feat(helpdesk): connect category configuration actions` | Committed in `hrms-client` as `526e1c9` |
+| Phase 6 Helpdesk category task sheet | `docs(helpdesk): record category configuration completion` | Pending commit |
 
 ## Next Steps
 
 1. Phase 6 API and browser e2e baselines are implemented for core backend API user flows and frontend API-mode route smoke coverage.
-2. Backend OpenAPI now has 217 operations across 192 paths; planned operations remaining are 0.
+2. Backend OpenAPI now has 219 operations across 193 paths; planned operations remaining are 0.
 3. Phase 6 verification guardrails are hardened for full-module implementation coverage, zero planned API backlog, frontend contract sync, critical migration index coverage, and frontend production API/mock fallback config.
 4. Employee/core CSV, report CSV, and Attendance/Leave-WFH CSV/JSON exports now generate backend documents and return `download_document_id`; employee import parsing, XLSX workbook rendering, scheduled exports, retention cleanup, and broader report-shell download UX remain production hardening.
 5. Next roadmap scope: continue Phase 6 with deployment checks, security headers/CORS/rate limiting, observability, backup/restore, deeper browser mutation/mobile coverage, route-wide export download coverage, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
