@@ -25,6 +25,11 @@ const leaveWfhQuerySchema = paginationQuerySchema.extend({
   department_id: z.uuid().optional(),
   request_kind: z.enum(["leave", "wfh"]).optional()
 });
+const leaveWfhExportSchema = z.object({
+  filters: z.record(z.string(), z.unknown()).optional(),
+  columns: z.array(z.string().min(1).max(80)).max(80).optional(),
+  format: z.enum(["csv", "xlsx", "json"]).optional()
+});
 
 export const leaveWfhRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get("/leave/balances/my", async (request) => {
@@ -152,6 +157,16 @@ export const leaveWfhRoutes: FastifyPluginAsync = async (fastify) => {
     return new LeaveWfhService(fastify.store).hrMonitor(
       request.actor,
       leaveWfhQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.post("/leave-wfh/exports", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new LeaveWfhService(fastify.store).createExportJob(
+      request.actor,
+      leaveWfhExportSchema.parse(request.body ?? {})
     );
   });
 

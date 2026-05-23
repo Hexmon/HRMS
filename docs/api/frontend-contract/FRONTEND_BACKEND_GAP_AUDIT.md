@@ -7,13 +7,13 @@ This audit maps the current Hawkaii HRMS frontend to the custom backend contract
 - The app is a mock-first HRMS frontend. Most business state is in `src/lib/*-store.tsx` and `src/lib/mock/`.
 - The visible product surface includes auth/onboarding, dashboard, employees, EMS, attendance, leave/WFH, timesheets, projects, utilization, expenses, assets, helpdesk, reports, admin settings, and developer handoff.
 - Existing backend handoff coverage is strongest for auth/session, core user hierarchy, expenses, finance, documents, assets, timesheets, attendance basics, primary leave/WFH/holiday workflows, primary EMS self-service workflows, project portfolio/utilization, helpdesk, admin settings, expense and non-expense reports, health, and OpenAPI tooling.
-- Full frontend coverage requires the remaining leave/WFH export job endpoint, admin security settings, and production hardening.
+- First-pass visible frontend API coverage is complete in this contract pack. Remaining work is production hardening, explicitly scoped future contracts, and the Admin security-settings decision.
 
 ## API Count Summary
 
-Current documented backend contract: **216 operations** in `openapi.json` after Phase 5 Attendance backlog completion.
+Current documented backend contract: **217 operations** in `openapi.json` after Phase 5 Leave/WFH export completion.
 
-- **214** operations are under `/api/v1/**`.
+- **215** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
 - **0** documented backend operations currently need deletion from the OpenAPI pack because Reviewer/Director APIs are not present there.
 
@@ -21,11 +21,11 @@ Disjoint implementation counts for backend planning:
 
 | Category | Count | Meaning |
 | --- | ---: | --- |
-| Existing APIs ready to integrate as-is | 216 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
+| Existing APIs ready to integrate as-is | 217 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
 | Existing APIs to update in place | 0 | Phase 1A-1C existing API expansions have landed; new gaps should be added as explicit new endpoints. |
 | Existing APIs to delete | 0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
-| New APIs remaining to add | 1 | Remaining first-pass count needed after Phase 5 Attendance backlog completion. |
-| Target contract size after additions | 217 | `216 current + 1 remaining`; Attendance daily, manager queue, and export APIs are now implemented. |
+| New APIs remaining to add | 0 | No first-pass visible frontend API gaps remain in this contract pack. |
+| Target contract size after additions | 217 | First-pass visible frontend contract is complete at 217 operations. |
 
 Existing APIs updated in place during earlier phases:
 
@@ -52,7 +52,7 @@ Minimum new API operation count by frontend area:
 | Employees/Core | 0 | Employee CRUD/status/login, role assignment/history, profile audit, import/export job metadata, department/designation selectors, and org hierarchy are implemented. Full import parsing and document-backed export files remain production hardening. |
 | EMS | 0 | Primary profile, profile requests, employee document wrappers, letters, policies, generic requests, and HR queues are implemented. |
 | Attendance | 0 | Punches, my punch list, my/team summaries, daily/monthly calendar, regularization submit/list/manager queue/decision, exceptions, and export job metadata are implemented. |
-| Leave/WFH | 1 | Primary balances, leave apply/cancel/decision, WFH apply/decision, HR monitor, and holiday list/upsert are implemented; export/report job endpoint remains. |
+| Leave/WFH | 0 | Primary balances, leave apply/cancel/decision, WFH apply/decision, HR monitor, holiday list/upsert, and export job metadata are implemented. |
 | Timesheets | 0 | Work segments, submissions, approver queue, decisions, workflow definitions, project aggregations, missing submissions, productivity summaries, submission detail, and selector metadata are implemented. |
 | Projects/utilization | 0 | Project CRUD, members, allocations, modules/milestones, project documents, project summaries, and utilization/bench/overload analytics are implemented. |
 | Expenses/finance | 0 | Expense metadata/policy requirements, dashboard summary, withdraw, and clarification thread are implemented. |
@@ -61,7 +61,7 @@ Minimum new API operation count by frontend area:
 | Reports | 0 | HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, and export list/detail are implemented. Full document-backed export generation remains production hardening. |
 | Admin settings | 0 | Company profile, department/designation master data, RBAC role/permission configuration, workflow configuration, policy configuration, email template list/update, notification channel list/update, and audit log are implemented; security settings still need a concrete backend contract before counting/implementation. |
 | Notifications | 0 | Feed, unread count, mark read, and mark all read are implemented; Admin notification channel preferences are implemented under Admin settings. |
-| **Total remaining** | **1** | Remaining operation count for full visible frontend coverage after Phase 5 Attendance backlog completion. |
+| **Total remaining** | **0** | No first-pass visible frontend API gaps remain in this contract pack. |
 
 ## Expense Flow Alignment
 
@@ -96,7 +96,7 @@ Remove:
 | Employees/Core             | `/employees`, `/employees/:id`                                                                              | User list/detail/subtree, employee CRUD/status/login, role replacement/history, profile audit, org selectors, import job metadata, import polling, and export job metadata. | Full import row parsing/user creation and document-backed export file generation remain production hardening.                                |
 | EMS                        | `/ems/*`                                                                                                    | Profile, profile update requests, HR profile queue/decisions, employee document wrappers, generic employee requests, HR request queue, HR letters, policy acknowledgements, and Documents APIs for download/verify. | Onboarding/probation/exits/policy management/letter generation admin workflows remain broader HR/admin work.                                                 |
 | Attendance                 | `/attendance/*`                                                                                             | Punches, my punch list, my/team summaries, daily/monthly calendar, regularization submit/list/manager queue/decision, exceptions, and export job metadata. | Full document-backed export file generation/download remains production hardening.                                                                                    |
-| Leave/WFH                  | `/leave-wfh/*`                                                                                              | Balances, apply leave, apply WFH, cancel leave, manager decisions, HR monitor, holiday list, and holiday upsert. | Leave/WFH export/report job and later reporting parity.                                                                                                                          |
+| Leave/WFH                  | `/leave-wfh/*`                                                                                              | Balances, apply leave, apply WFH, cancel leave, manager decisions, HR monitor, holiday list/upsert, and export job metadata. | Full document-backed export file generation/download remains production hardening.                                                                                                                          |
 | Timesheets                 | `/timesheet/*`                                                                                              | Work segments, submissions, approver queue, workflow definitions, project summaries, missing submissions, productivity summary, submission detail, and selectors. | Timesheet report export jobs and broader report parity remain in the Reports phase.                                                                                                |
 | Projects/utilization       | `/projects`, `/projects/:id`, `/team-utilization`                                                           | Project CRUD, members, allocations, modules/milestones, project documents, project summary, and team utilization. | Project report parity, timesheet submission detail, document upload/attach UX, and e2e/user-flow coverage.                                                                        |
 | Expenses/finance           | `/expenses/*`                                                                                               | Good baseline coverage.                                                      | Keep current Manager -> Finance contract; add frontend report shapes that match current expense dashboard cards and registers.                                                    |

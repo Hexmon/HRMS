@@ -11,13 +11,14 @@ export const leaveWfhEvents = {
   WfhApproved: "wfh.approved",
   WfhReturned: "wfh.returned",
   WfhRejected: "wfh.rejected",
-  HolidayUpserted: "holiday.upserted"
+  HolidayUpserted: "holiday.upserted",
+  ExportRequested: "leave_wfh.export_requested"
 } as const;
 
 export function appendLeaveWfhOutboxEvent(
   store: MemoryDataStore,
   input: {
-    aggregateType: "leave_request" | "wfh_request" | "holiday";
+    aggregateType: "leave_request" | "wfh_request" | "holiday" | "leave_wfh_export";
     aggregateId: string;
     eventType: (typeof leaveWfhEvents)[keyof typeof leaveWfhEvents];
     payload: Record<string, unknown>;

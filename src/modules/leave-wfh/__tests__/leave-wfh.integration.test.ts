@@ -212,5 +212,35 @@ describe("leave / WFH / holidays", () => {
       }
     });
     expect(forbiddenUpdate.statusCode).toBe(403);
+
+    const exportJob = await app.inject({
+      method: "POST",
+      url: "/api/v1/leave-wfh/exports",
+      headers: authHeader(admin.token),
+      payload: {
+        filters: { request_kind: "wfh", date_from: "2026-05-01", date_to: "2026-05-31" },
+        columns: ["employee_code", "employee", "kind", "date_from", "date_to", "status"],
+        format: "csv"
+      }
+    });
+    expect(exportJob.statusCode).toBe(200);
+    expect(exportJob.json()).toMatchObject({
+      status: "queued",
+      format: "csv",
+      adapter: "outbox-queued-placeholder",
+      download_document_id: null
+    });
+    expect(app.store.outbox.some((event) => event.event_type === "leave_wfh.export_requested" && event.aggregate_id === exportJob.json().job_id)).toBe(true);
+
+    const forbiddenExport = await app.inject({
+      method: "POST",
+      url: "/api/v1/leave-wfh/exports",
+      headers: authHeader(employee.token),
+      payload: {
+        filters: { request_kind: "leave" },
+        format: "csv"
+      }
+    });
+    expect(forbiddenExport.statusCode).toBe(403);
   });
 });

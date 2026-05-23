@@ -2130,6 +2130,29 @@ const holidaysResponseSchema = {
   },
   additionalProperties: true
 };
+const leaveWfhExportBody = {
+  type: "object",
+  properties: {
+    filters: { type: "object", additionalProperties: true },
+    columns: { type: "array", maxItems: 80, items: { type: "string", maxLength: 80 }, example: ["employee_code", "employee", "kind", "date_from", "date_to", "status"] },
+    format: { type: "string", enum: ["csv", "xlsx", "json"], default: "csv", example: "csv" }
+  },
+  additionalProperties: false
+};
+const leaveWfhExportResponseSchema = {
+  type: "object",
+  required: ["job_id", "status", "format", "filters", "columns", "created_at"],
+  properties: {
+    job_id: uuid("Leave/WFH export job UUID"),
+    status: { type: "string", enum: ["queued"], example: "queued" },
+    format: { type: "string", enum: ["csv", "xlsx", "json"], example: "csv" },
+    filters: { type: "object", additionalProperties: true },
+    columns: { type: "array", items: { type: "string" } },
+    created_at: dateTime("Export job creation timestamp"),
+    download_document_id: { ...uuid("Generated document UUID"), nullable: true }
+  },
+  additionalProperties: true
+};
 
 const emsQuerySchema = {
   ...paginationQuerySchema,
@@ -3781,6 +3804,12 @@ const routeDocs: Record<string, RouteSchema> = {
     "HR Leave/WFH monitor",
     "Lists Leave and WFH requests visible to HR/Admin/Auditor with request-kind, status, employee, department, and date filters.",
     { querystring: leaveWfhQuerySchema, response200: { ...paginated({ type: "object", additionalProperties: true }), additionalProperties: true } }
+  ),
+  "POST /api/v1/leave-wfh/exports": operation(
+    "Leave / WFH / Holidays",
+    "Create Leave/WFH export job",
+    "Creates queued Leave/WFH export metadata for HR/Admin/Auditor users. Actual file rendering and download document attachment remain production hardening.",
+    { body: leaveWfhExportBody, response200: leaveWfhExportResponseSchema }
   ),
   "GET /api/v1/holidays": operation(
     "Leave / WFH / Holidays",

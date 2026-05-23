@@ -181,6 +181,7 @@ const expectedOperations = [
   "POST /api/v1/attendance/exports",
   "POST /api/v1/attendance/regularizations",
   "POST /api/v1/attendance/regularizations/{id}/decision",
+  "POST /api/v1/leave-wfh/exports",
   "POST /api/v1/auth/email-verifications/resend",
   "POST /api/v1/auth/password-reset/confirm",
   "POST /api/v1/auth/password-reset/request",
@@ -332,6 +333,7 @@ const bodyRequiredOperations = [
   "POST /api/v1/attendance/exports",
   "POST /api/v1/attendance/regularizations",
   "POST /api/v1/attendance/regularizations/{id}/decision",
+  "POST /api/v1/leave-wfh/exports",
   "POST /api/v1/leave/requests",
   "POST /api/v1/leave/requests/{id}/decision",
   "POST /api/v1/leave/requests/{id}/cancel",
@@ -687,7 +689,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(216);
+    expect(rows.length).toBe(217);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   AuthUser,
   CoreUser,
@@ -23,7 +24,7 @@ import {
 } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
-import { badRequest, conflict, missingRemarks, notFound } from "../../platform/errors.js";
+import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
 import { AttendanceRepository } from "../attendance/repository.js";
 import { CoreService } from "../core/service.js";
 import { appendLeaveWfhOutboxEvent, leaveWfhEvents } from "./events.js";
@@ -49,6 +50,12 @@ export interface LeaveWfhQuery {
   user_id?: UUID;
   department_id?: UUID;
   request_kind?: "leave" | "wfh";
+}
+
+export interface LeaveWfhExportInput {
+  filters?: Record<string, unknown>;
+  columns?: string[];
+  format?: "csv" | "xlsx" | "json";
 }
 
 const ENTITLEMENTS: Record<LeaveType, number> = {
@@ -445,6 +452,44 @@ export class LeaveWfhService {
       idempotencyKey: `holiday.upserted:${holiday.id}:${holiday.version}`
     });
     return { holiday: this.presentHoliday(holiday), version: holiday.version };
+  }
+
+  createExportJob(actor: AuthUser, input: LeaveWfhExportInput) {
+    if (!canMonitorLeaveWfh(actor)) {
+      throw forbidden("Only HR, Admin, or Auditor users can export Leave/WFH data.");
+    }
+    const jobId = randomUUID();
+    const format = input.format ?? "csv";
+    const columns = input.columns?.length
+      ? input.columns
+      : ["employee_code", "employee", "department", "kind", "type", "date_from", "date_to", "duration", "status"];
+    const filters = input.filters ?? {};
+    const createdAt = nowIso();
+    appendLeaveWfhOutboxEvent(this.store, {
+      aggregateType: "leave_wfh_export",
+      aggregateId: jobId,
+      eventType: leaveWfhEvents.ExportRequested,
+      payload: {
+        job_id: jobId,
+        requested_by_user_id: actor.id,
+        filters,
+        columns,
+        format,
+        adapter: "outbox-queued-placeholder"
+      },
+      idempotencyKey: `leave_wfh.export.requested:${jobId}`
+    });
+    return {
+      job_id: jobId,
+      status: "queued",
+      format,
+      filters,
+      columns,
+      requested_by_user_id: actor.id,
+      created_at: createdAt,
+      adapter: "outbox-queued-placeholder",
+      download_document_id: null
+    };
   }
 
   private assertNoOverlap(userId: UUID, dateFrom: string, dateTo: string): void {

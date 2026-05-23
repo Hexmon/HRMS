@@ -4,18 +4,18 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 5 Attendance backlog slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, and EMS document wrappers. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 5 Leave/WFH export slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, and Attendance backlog completion. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 216 implemented operations across 191 paths |
-| Planned operations remaining | 1 |
+| Backend OpenAPI | 217 implemented operations across 192 paths |
+| Planned operations remaining | 0 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, daily/monthly calendar, exceptions, regularization request/manager queue/decision, and export job metadata |
-| Leave/WFH/Holidays backend/frontend | Completed for balances, leave requests, WFH requests, manager decisions, HR monitor, holidays, and visible frontend routes |
+| Leave/WFH/Holidays backend/frontend | Completed for balances, leave requests, WFH requests, manager decisions, HR monitor, holidays, export job metadata, and visible frontend routes |
 | EMS backend | Implemented for profile, profile change requests, HR profile decisions, employee document wrappers, generic service requests, HR service queue, letters, and policy acknowledgements |
 | EMS frontend | Integrated in `hrms-client` for dashboard profile signals, profile, employee document listing/downloads, requests, letters, policies, and HR admin profile/letter queues |
 | Projects/utilization backend | Implemented for project CRUD, members, allocations, milestones/modules, project documents, project summary, and team utilization |
@@ -136,6 +136,16 @@ This versioned report captures the completed Phase 5 Attendance backlog slice af
 | Frontend integration | Added Attendance domain API methods/hooks for the daily calendar, manager queue, and export job endpoints | Existing visible routes already use monthly calendar, exceptions, and Reports APIs; no extra screen rewrite was required for these completion aliases |
 | Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
 | Contract docs | Backend generated OpenAPI/frontend contract now contains 216 operations across 191 paths | Planned operations remaining drop from 4 to 1; the remaining planned endpoint is `POST /api/v1/leave-wfh/exports` |
+
+## Leave/WFH Export Completion
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Backend API | Added `POST /api/v1/leave-wfh/exports` | Export requests are HR/Admin/Auditor-only and persist queued metadata through the existing outbox; real file generation/download remains production hardening |
+| Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, Leave/WFH integration test, and `pnpm test:contracts` passed | Non-escalated DB/tsx commands are sandbox-blocked in this environment; validation passed with local QA infra access |
+| Frontend integration | Added Leave/WFH export API adapter/hook and connected `/leave-wfh/monitor` Export in API mode | API mode queues a backend export job; API-disabled development keeps the previous local CSV export |
+| Frontend validation | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, and `pnpm build` passed | Lint reports 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
+| Contract docs | Backend generated OpenAPI/frontend contract now contains 217 operations across 192 paths | Planned operations remaining drop from 1 to 0 |
 
 ## Admin Notification Channels Discovery
 
@@ -409,6 +419,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 5 | EMS document wrappers | Integrate frontend EMS documents screen | Completed in `hrms-client` | Completed for `/ems/documents` list/download behavior in API mode; upload/replace stays blocked in API mode until a file picker/form flow exists | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/ems/*`, `src/routes/_app/ems.documents.tsx`, frontend API docs | `feat(ems): connect document screen to backend wrappers` |
 | 5 | Attendance backlog | Implement completion APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, attendance integration test, `pnpm test:contracts` | Passed. OpenAPI generated 216 operations across 191 paths. Non-escalated DB/tsx runs were sandbox-blocked and passed when rerun with local QA infra access. | `src/modules/attendance/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(attendance): complete daily queue and export APIs` |
 | 5 | Attendance backlog | Add frontend adapters/hooks | Completed in `hrms-client` | Completed for domain-level access to daily calendar, manager regularization queue, and export job APIs | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/attendance/*`, frontend API docs after sync | `feat(attendance): add completion endpoint adapters` |
+| 5 | Leave/WFH export | Implement export API | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, Leave/WFH integration test, `pnpm test:contracts` | Passed. OpenAPI generated 217 operations across 192 paths and planned operations remaining dropped to 0. | `src/modules/leave-wfh/*`, `src/platform/openapi.ts`, contract tests, OpenAPI/frontend contract docs | `feat(leave): implement leave WFH export API` |
+| 5 | Leave/WFH export | Connect monitor export | Completed in `hrms-client` | Completed for `/leave-wfh/monitor` export job queueing in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/leave-wfh/*`, `src/routes/_app/leave-wfh.monitor.tsx`, frontend API docs after sync | `feat(leave): connect Leave WFH export action` |
 
 ## Remaining Blockers
 
@@ -423,7 +435,6 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | P1 | Full asset vendor CRUD, warranty automation, and recovery settlement workflow remain planned for admin/operational hardening |
 | P1 | Project-specific reports and project document upload/attach UX remain planned |
 | P1 | Full document-backed report export file generation/download remains production hardening; report export jobs currently persist queued metadata |
-| P1 | Leave/WFH export endpoint remains planned |
 | P1 | Admin master-data tabs beyond departments/designations remain deferred until backend APIs are defined |
 | P1 | Dynamic RBAC runtime enforcement and custom-role assignment to employees remain deferred; this slice persists Admin Settings RBAC configuration only |
 | P1 | Admin security settings remain planned and need a concrete backend contract/runtime enforcement decision |
@@ -437,11 +448,12 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 216 operation frontend contract after Attendance backlog completion
+- `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 217 operation frontend contract after Leave/WFH export completion
 - `pnpm api:docs:verify`: passed
 - `pnpm api:consumer:verify`: passed with escalation due `tsx` IPC sandboxing
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
 - `pnpm exec vitest run --project integration src/modules/attendance/__tests__/attendance.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
+- `pnpm exec vitest run --project integration src/modules/leave-wfh/__tests__/leave-wfh.integration.test.ts`: passed, 2 tests; non-escalated DB access is sandbox-blocked and validation passed with local QA infra access
 - `pnpm exec vitest run --project integration src/modules/ems/__tests__/ems.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 - `pnpm exec vitest run --project integration src/modules/core/__tests__/core.integration.test.ts`: passed, 3 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
 - `pnpm test:contracts`: passed, 13 tests; non-escalated run failed on sandboxed DB networking and passed with local QA infra access
@@ -451,7 +463,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 191 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 192 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -509,6 +521,7 @@ Frontend:
 - Frontend report routes use the backend in API mode and keep local/mock aggregation only when API mode is disabled.
 - Attendance daily calendar and manager regularization queue are added as backend completion endpoints/adapters; existing visible attendance routes already use monthly calendar, exceptions, and Reports APIs, so no route layout rewrite was required.
 - Attendance export create currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
+- Leave/WFH export create currently persists queued metadata through the existing outbox. Actual file rendering, document attachment, download URLs, scheduling, and retention are deferred to production hardening.
 
 ## Commit Messages
 
@@ -559,10 +572,13 @@ Frontend:
 | Attendance backlog backend | `feat(attendance): complete daily queue and export APIs` | Committed in `hrms_backend` as `51a166c` |
 | Attendance backlog frontend | `feat(attendance): add completion endpoint adapters` | Committed in `hrms-client` as `36c47e6` |
 | Attendance backlog task sheet | `docs(attendance): record backlog completion` | Committed in `hrms_backend` as `e280dea` |
+| Leave/WFH export backend | `feat(leave): implement leave WFH export API` | Pending commit |
+| Leave/WFH export frontend | `feat(leave): connect Leave WFH export action` | Pending commit |
+| Leave/WFH export task sheet | `docs(leave): record export completion` | Pending commit |
 
 ## Next Steps
 
-1. Phase 5 Attendance backlog endpoints are implemented, frontend adapters/hooks are available, and validation passed.
-2. Backend OpenAPI now has 216 operations across 191 paths; planned operations remaining are 1.
-3. Employee import/export jobs and EMS/report/attendance export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
-4. Next roadmap scope: implement the remaining `POST /api/v1/leave-wfh/exports` endpoint. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.
+1. Phase 5 Leave/WFH export is implemented, `/leave-wfh/monitor` queues backend export jobs in API mode, and validation passed.
+2. Backend OpenAPI now has 217 operations across 192 paths; planned operations remaining are 0.
+3. Employee import/export jobs and EMS/report/attendance/leave-WFH export jobs remain queued metadata only; actual import parsing and document-backed file generation/download remain production hardening.
+4. Next roadmap scope: Phase 6 production hardening, starting with e2e/user-flow coverage, production API/mock fallback verification, export worker/file generation decisions, deployment checks, security headers/CORS/rate limiting, observability, backup/restore, and release-readiness reporting. Admin security settings still requires a concrete backend contract/runtime enforcement decision before implementation.

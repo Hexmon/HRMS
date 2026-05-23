@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 216 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 217 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 1 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 217 | Regenerate frontend client only after each backend phase lands. | `216 current + 1 remaining`; Attendance daily, manager queue, and export APIs are now available. |
+| Planned new APIs | 0 | No first-pass visible frontend API gaps remain in this contract pack. | Keep behavior stable and move remaining items to production hardening or explicitly scoped future contracts. |
+| Target implemented contract after completion | 217 | Regenerate frontend client after future backend phases land. | First-pass visible frontend contract is complete at 217 operations. |
 
 ## Development Phases
 
@@ -40,7 +40,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Reports & Analytics | 15 | Expense requester/manager/register reports, HR/attendance/leave/project/timesheet/asset/helpdesk/audit summaries, and export creation/list/detail. |
 | Timesheets | 12 | Work segments, submissions, approver queue, decisions, workflow definitions, project summaries, missing submissions, productivity summary, submission detail, and selectors. |
 | Attendance | 12 | Punches, my punch list, my/team summaries, daily/monthly calendar, regularization submit/list/manager queue/decision, exception queue, and export job metadata. |
-| Leave / WFH / Holidays | 14 | Leave balances, leave apply/cancel/decision queues, WFH apply/decision queues, HR monitor, and holiday list/upsert. |
+| Leave / WFH / Holidays | 15 | Leave balances, leave apply/cancel/decision queues, WFH apply/decision queues, HR monitor, holiday list/upsert, and export job metadata. |
 | EMS | 15 | Employee profile, profile change requests and HR decisions, employee document wrappers, generic employee requests and HR queue, letters, and policy acknowledgements. |
 | Projects / Utilization | 15 | Project CRUD, members, allocations, milestones/modules, project documents, project summary, and team utilization analytics. |
 | Helpdesk | 15 | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report. |
@@ -79,7 +79,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **1**.
+Total remaining planned new operations: **0**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -155,7 +155,7 @@ Total remaining planned new operations: **1**.
 | GET | `/api/v1/attendance/exceptions` | `/attendance/exceptions` | List attendance exceptions for HR follow-up. | HR/Admin/auditor; manager scoped if enabled. | page, page_size, exception_type, date_range, user_id | items[], pagination, totals | 403 out-of-scope; export through reports/exports later. | Implemented in Phase 3 attendance |
 | POST | `/api/v1/attendance/exports` | `/attendance/reports` | Create attendance export job. | HR/Admin/auditor. | filters, columns, format | job_id, status | 403 forbidden columns; 429 export throttle. | Implemented in Phase 5 Attendance backlog |
 
-### Leave / WFH (14 implemented APIs, 1 planned API)
+### Leave / WFH (15 implemented APIs, 0 planned APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -173,7 +173,7 @@ Total remaining planned new operations: **1**.
 | GET | `/api/v1/leave-wfh/hr-monitor` | `/leave-wfh/hr-monitor` | HR monitor list for leave and WFH. | HR/Admin/auditor. | page, page_size, request_kind, status, department_id, date_range | items[], totals, pagination | 403 non-HR; paginated. | Implemented in Phase 3 leave/WFH |
 | GET | `/api/v1/holidays` | `/leave-wfh/holidays` | List holiday calendar. | Authenticated user. | year, location_id optional | holidays[], calendar_metadata | Shared errors; cacheable by year/location. | Implemented in Phase 3 leave/WFH |
 | PUT | `/api/v1/holidays/{id}` | `/admin-settings/holidays` | Create or update a holiday. | HR/Admin. | Path id; name, date, location_ids, optional flag, expected_version | holiday, version | 409 stale version/date collision. | Implemented in Phase 3 leave/WFH |
-| POST | `/api/v1/leave-wfh/exports` | `/leave-wfh/reports` | Create leave/WFH export job. | HR/Admin/auditor. | filters, columns, format | job_id, status | 403 forbidden columns; 429 export throttle. | Planned / Not Implemented |
+| POST | `/api/v1/leave-wfh/exports` | `/leave-wfh/reports` | Create leave/WFH export job. | HR/Admin/auditor. | filters, columns, format | job_id, status | 403 forbidden columns; 429 export throttle. | Implemented in Phase 5 Leave/WFH backlog |
 
 ### Timesheets Enhancements (5 implemented APIs)
 
@@ -264,7 +264,7 @@ Total remaining planned new operations: **1**.
 | GET | `/api/v1/reports/exports` | `/reports/exports` | List export jobs. | Authenticated; jobs scoped by creator/role. | page, page_size, status, report_type | items[], pagination | 403 out-of-scope. | Implemented in Phase 5 Reports |
 | GET | `/api/v1/reports/exports/{id}` | `/reports/exports/:id` | Get export job detail and backend download reference when ready. | Creator, Admin, or Auditor by scope. | Path id | job, status, download_document_id or download_url token via document API | 404 unknown; do not expose storage credentials. | Implemented in Phase 5 Reports |
 
-### Admin Settings (21 planned APIs)
+### Admin Settings (21 implemented APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
