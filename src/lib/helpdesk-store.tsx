@@ -2,6 +2,7 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   helpdeskApi,
+  mapApiCategory,
   mapApiCategories,
   mapApiTicket,
   mapApiTickets,
@@ -423,7 +424,19 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
 
   const upsertCategory: Ctx["upsertCategory"] = async (c) => {
     if (apiEnabled) {
-      throw new Error("Helpdesk category editing needs a backend admin settings API.");
+      if (c.apiId) {
+        await helpdeskApi.updateCategory(c.apiId, {
+          ...categoryBody(c),
+          expected_version: c.version ?? 1,
+        });
+      } else {
+        await helpdeskApi.createCategory({
+          category_key: c.key,
+          ...categoryBody(c),
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.domain("helpdesk") });
+      return;
     }
     const idx = categories.findIndex((x) => x.key === c.key);
     if (idx === -1) persistC([...categories, c]);
@@ -432,7 +445,24 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
 
   const toggleCategory: Ctx["toggleCategory"] = async (key, active) => {
     if (apiEnabled) {
-      throw new Error("Helpdesk category toggles need a backend admin settings API.");
+      const category = visibleCategories.find((candidate) => candidate.key === key);
+      if (!category?.apiId) {
+        throw new Error("Helpdesk category metadata is not loaded.");
+      }
+      const response = await helpdeskApi.updateCategory(category.apiId, {
+        active,
+        expected_version: category.version ?? 1,
+      });
+      const nextCategory = mapApiCategory((response as ApiRecord).category, {
+        ...category,
+        active,
+      });
+      queryClient.setQueryData(
+        queryKeys.list("helpdesk", "categories", { active_only: false }),
+        visibleCategories.map((candidate) => (candidate.key === key ? nextCategory : candidate)),
+      );
+      await queryClient.invalidateQueries({ queryKey: queryKeys.domain("helpdesk") });
+      return;
     }
     persistC(categories.map((c) => (c.key === key ? { ...c, active } : c)));
   };
@@ -483,6 +513,17 @@ export const HELPDESK_AGENT_ROLES = [
   "hr_admin",
   "finance_manager",
 ] as const;
+
+function categoryBody(category: CategoryConfig) {
+  return {
+    label: category.label,
+    default_assignee_name: category.defaultAssignee || null,
+    default_assignee_role: category.defaultAssigneeRole || null,
+    team: category.team,
+    active: category.active,
+    sub_categories: category.subCategories,
+  };
+}
 
 export function categoryForRole(role: string | null): TicketCategory[] {
   switch (role) {

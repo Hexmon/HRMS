@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 217 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 219 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
 | Planned new APIs | 0 | No first-pass visible frontend API gaps remain in this contract pack. | Keep behavior stable and move remaining items to production hardening or explicitly scoped future contracts. |
-| Target implemented contract after completion | 217 | Regenerate frontend client after future backend phases land. | First-pass visible frontend contract is complete at 217 operations. |
+| Target implemented contract after completion | 219 | Regenerate frontend client after future backend phases land. | First-pass visible frontend contract is complete at 219 operations. |
 
 ## Development Phases
 

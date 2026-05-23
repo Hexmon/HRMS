@@ -1,6 +1,11 @@
 import { apiRequest } from "@/shared/api";
 import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } from "@/shared/api";
-import type { TicketCategory, TicketPriority, TicketStatus } from "@/lib/mock/helpdesk";
+import type {
+  SubCategory,
+  TicketCategory,
+  TicketPriority,
+  TicketStatus,
+} from "@/lib/mock/helpdesk";
 
 export interface HelpdeskQuery extends PageQuery {
   status?: TicketStatus;
@@ -80,6 +85,27 @@ export interface HelpdeskReopenBody extends ExpectedVersionBody {
   reason: string;
 }
 
+export interface HelpdeskCategoryCreateBody extends ApiRecord {
+  category_key: TicketCategory;
+  label: string;
+  default_assignee_user_id?: string | null;
+  default_assignee_name?: string | null;
+  default_assignee_role?: string | null;
+  team: string;
+  active?: boolean;
+  sub_categories?: SubCategory[];
+}
+
+export interface HelpdeskCategoryUpdateBody extends ExpectedVersionBody {
+  label?: string;
+  default_assignee_user_id?: string | null;
+  default_assignee_name?: string | null;
+  default_assignee_role?: string | null;
+  team?: string;
+  active?: boolean;
+  sub_categories?: SubCategory[];
+}
+
 export const helpdeskApi = {
   create(input: HelpdeskTicketCreateBody) {
     return apiRequest<ApiRecord>("/api/v1/helpdesk/tickets", { method: "POST", body: input });
@@ -155,6 +181,15 @@ export const helpdeskApi = {
   },
   categories(query: HelpdeskQuery = {}) {
     return apiRequest<ApiRecord>("/api/v1/helpdesk/categories", { query });
+  },
+  createCategory(input: HelpdeskCategoryCreateBody) {
+    return apiRequest<ApiRecord>("/api/v1/helpdesk/categories", { method: "POST", body: input });
+  },
+  updateCategory(id: string, input: HelpdeskCategoryUpdateBody) {
+    return apiRequest<ApiRecord>(`/api/v1/helpdesk/categories/${id}`, {
+      method: "PATCH",
+      body: input,
+    });
   },
   slaReport(query: HelpdeskQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord> & { totals?: ApiRecord }>(

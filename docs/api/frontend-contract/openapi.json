@@ -93029,6 +93029,110 @@
                       "type": "array",
                       "items": {
                         "type": "object",
+                        "required": [
+                          "id",
+                          "category_key",
+                          "label",
+                          "team",
+                          "active",
+                          "sub_categories",
+                          "version"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Helpdesk category UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "category_key": {
+                            "type": "string",
+                            "enum": [
+                              "IT",
+                              "HR",
+                              "Finance",
+                              "Admin",
+                              "Assets",
+                              "Project Support"
+                            ],
+                            "example": "IT"
+                          },
+                          "label": {
+                            "type": "string",
+                            "example": "IT Support"
+                          },
+                          "default_assignee_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Default assignee user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                            "nullable": true
+                          },
+                          "default_assignee_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Asset Manager"
+                          },
+                          "default_assignee_role": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "asset_manager"
+                          },
+                          "team": {
+                            "type": "string",
+                            "example": "IT Operations"
+                          },
+                          "active": {
+                            "type": "boolean",
+                            "example": true
+                          },
+                          "sub_categories": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 80,
+                                  "example": "vpn"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 120,
+                                  "example": "VPN / Network"
+                                }
+                              },
+                              "additionalProperties": false
+                            }
+                          },
+                          "version": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 2
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Category creation time",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Category update time",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          },
+                          "sla": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
                         "additionalProperties": true
                       }
                     },
@@ -93042,6 +93146,1031 @@
                     }
                   },
                   "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": [
+                      "Invalid input: expected object, received undefined"
+                    ],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": [
+                        "retry_after_seconds"
+                      ],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create helpdesk category",
+        "tags": [
+          "Helpdesk"
+        ],
+        "description": "Creates a helpdesk category configuration for scoped helpdesk managers. Category keys use the current supported category set so ticket routing remains compatible with role scopes.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "category_key",
+                  "label",
+                  "team"
+                ],
+                "properties": {
+                  "category_key": {
+                    "type": "string",
+                    "enum": [
+                      "IT",
+                      "HR",
+                      "Finance",
+                      "Admin",
+                      "Assets",
+                      "Project Support"
+                    ],
+                    "example": "IT"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "example": "IT Support"
+                  },
+                  "default_assignee_user_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Default assignee user UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                    "nullable": true
+                  },
+                  "default_assignee_name": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Asset Manager"
+                  },
+                  "default_assignee_role": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "asset_manager"
+                  },
+                  "team": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "example": "IT Operations"
+                  },
+                  "active": {
+                    "type": "boolean",
+                    "default": true,
+                    "example": true
+                  },
+                  "sub_categories": {
+                    "type": "array",
+                    "maxItems": 40,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "key",
+                        "label"
+                      ],
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80,
+                          "example": "vpn"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "example": "VPN / Network"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "category",
+                    "version"
+                  ],
+                  "properties": {
+                    "category": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "category_key",
+                        "label",
+                        "team",
+                        "active",
+                        "sub_categories",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Helpdesk category UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "category_key": {
+                          "type": "string",
+                          "enum": [
+                            "IT",
+                            "HR",
+                            "Finance",
+                            "Admin",
+                            "Assets",
+                            "Project Support"
+                          ],
+                          "example": "IT"
+                        },
+                        "label": {
+                          "type": "string",
+                          "example": "IT Support"
+                        },
+                        "default_assignee_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Default assignee user UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "default_assignee_name": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "Asset Manager"
+                        },
+                        "default_assignee_role": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "asset_manager"
+                        },
+                        "team": {
+                          "type": "string",
+                          "example": "IT Operations"
+                        },
+                        "active": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "sub_categories": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "key",
+                              "label"
+                            ],
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80,
+                                "example": "vpn"
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "example": "VPN / Network"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 2
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Category creation time",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Category update time",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "sla": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 2
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": [
+                      "Invalid input: expected object, received undefined"
+                    ],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": [
+                        "retry_after_seconds"
+                      ],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/helpdesk/categories/{id}": {
+      "patch": {
+        "summary": "Update helpdesk category",
+        "tags": [
+          "Helpdesk"
+        ],
+        "description": "Updates helpdesk category routing, active status, and sub-categories with optimistic concurrency.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expected_version"
+                ],
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "example": "IT Support"
+                  },
+                  "default_assignee_user_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Default assignee user UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                    "nullable": true
+                  },
+                  "default_assignee_name": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Asset Manager"
+                  },
+                  "default_assignee_role": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "asset_manager"
+                  },
+                  "team": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "example": "IT Operations"
+                  },
+                  "active": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "sub_categories": {
+                    "type": "array",
+                    "maxItems": 40,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "key",
+                        "label"
+                      ],
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80,
+                          "example": "vpn"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "example": "VPN / Network"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "category",
+                    "version"
+                  ],
+                  "properties": {
+                    "category": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "category_key",
+                        "label",
+                        "team",
+                        "active",
+                        "sub_categories",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Helpdesk category UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "category_key": {
+                          "type": "string",
+                          "enum": [
+                            "IT",
+                            "HR",
+                            "Finance",
+                            "Admin",
+                            "Assets",
+                            "Project Support"
+                          ],
+                          "example": "IT"
+                        },
+                        "label": {
+                          "type": "string",
+                          "example": "IT Support"
+                        },
+                        "default_assignee_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Default assignee user UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "default_assignee_name": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "Asset Manager"
+                        },
+                        "default_assignee_role": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "asset_manager"
+                        },
+                        "team": {
+                          "type": "string",
+                          "example": "IT Operations"
+                        },
+                        "active": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "sub_categories": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "key",
+                              "label"
+                            ],
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80,
+                                "example": "vpn"
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "example": "VPN / Network"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 2
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Category creation time",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Category update time",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "sla": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 2
+                    }
+                  },
+                  "additionalProperties": false
                 }
               }
             }
