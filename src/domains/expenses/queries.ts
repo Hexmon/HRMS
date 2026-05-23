@@ -13,6 +13,28 @@ export function useMyExpenses(query: PageQuery = {}, enabled = true) {
   });
 }
 
+export function useExpenseMetadata(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.detail("expenses", "metadata", "current"),
+    queryFn: () => expensesApi.metadata(),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useExpenseDashboardSummary(
+  query: Record<string, string | number | boolean | undefined> = {},
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.detail("expenses", "dashboard-summary", "current", query),
+    queryFn: () => expensesApi.dashboardSummary(query),
+    enabled,
+    staleTime: queryTimings.realtimeStaleMs,
+    placeholderData: keepPreviousData,
+  });
+}
+
 export function useExpenseDetail(id: string | undefined, enabled = true) {
   return useQuery({
     queryKey: queryKeys.detail("expenses", "ticket", id ?? "missing"),

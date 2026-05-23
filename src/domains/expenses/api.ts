@@ -2,6 +2,12 @@ import { apiRequest } from "@/shared/api";
 import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } from "@/shared/api";
 
 export const expensesApi = {
+  metadata() {
+    return apiRequest<ApiRecord>("/api/v1/expenses/metadata");
+  },
+  dashboardSummary(query: Record<string, string | number | boolean | undefined> = {}) {
+    return apiRequest<ApiRecord>("/api/v1/expenses/dashboard-summary", { query });
+  },
   create(input: ApiRecord) {
     return apiRequest<ApiRecord>("/api/v1/expenses", { method: "POST", body: input });
   },
@@ -16,6 +22,18 @@ export const expensesApi = {
   },
   submit(id: string, input: ExpectedVersionBody) {
     return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/submit`, { method: "POST", body: input });
+  },
+  withdraw(id: string, input: ExpectedVersionBody) {
+    return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/withdraw`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  addClarification(id: string, input: ApiRecord) {
+    return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/clarifications`, {
+      method: "POST",
+      body: input,
+    });
   },
   managerQueue(query: PageQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/expenses/queue/manager", { query });

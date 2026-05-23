@@ -42,7 +42,7 @@ function mapStatus(value: unknown, fallback: ExpenseStatus = "draft"): ExpenseSt
     pending_adjustment: "pending_adjustment",
     finance_routing_exception: "finance_hold",
     closed: "closed",
-    cancelled: "closed",
+    cancelled: "withdrawn",
     withdrawn: "withdrawn",
   };
   return map[status] ?? fallback;
@@ -218,7 +218,7 @@ export function mapApiExpenseTicket(
     stage: fallback?.stage ?? stageForStatus(status),
     approvals: fallback?.approvals ?? ([] as ApprovalEvent[]),
     audit: fallback?.audit ?? ([] as AuditEvent[]),
-    comments: fallback?.comments ?? [],
+    comments: mapClarifications(row.clarifications, fallback?.comments ?? []),
     payment: mapPayment(row, fallback?.payment),
     settlement: mapSettlement(row, fallback?.settlement),
     submittedAt: text(row.submitted_at, fallback?.submittedAt),
@@ -235,6 +235,22 @@ export function mapApiExpenseTickets(
     const key = text(row.id ?? row.ticket_no);
     const fallback = fallbacks.find((ticket) => ticket.id === key);
     return mapApiExpenseTicket(row as ApiRecord, fallback);
+  });
+}
+
+function mapClarifications(
+  value: unknown,
+  fallback: ExpenseTicket["comments"],
+): ExpenseTicket["comments"] {
+  const rows = asArray(value);
+  if (!rows.length) return fallback;
+  return rows.map((item) => {
+    const row = asRecord(item);
+    return {
+      by: text(row.actor_name ?? row.actor_user_id, "System"),
+      text: text(row.message ?? row.remarks, "Clarification added"),
+      at: dateText(row.created_at),
+    };
   });
 }
 

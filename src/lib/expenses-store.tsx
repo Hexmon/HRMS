@@ -942,6 +942,50 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
+  const withdrawMutation = useMutation({
+    mutationFn: ({
+      id,
+      expectedVersion,
+      remarks,
+    }: {
+      id: string;
+      expectedVersion: number;
+      remarks?: string;
+    }) =>
+      expensesApi.withdraw(id, {
+        expected_version: expectedVersion,
+        remarks,
+      }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("expenses") });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.detail("expenses", "ticket", variables.id),
+      });
+    },
+  });
+
+  const clarificationMutation = useMutation({
+    mutationFn: ({
+      id,
+      message,
+      expectedVersion,
+    }: {
+      id: string;
+      message: string;
+      expectedVersion?: number;
+    }) =>
+      expensesApi.addClarification(id, {
+        message,
+        expected_version: expectedVersion,
+      }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("expenses") });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.detail("expenses", "ticket", variables.id),
+      });
+    },
+  });
+
   const financeDecisionMutation = useMutation({
     mutationFn: ({
       id,
@@ -1084,6 +1128,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
   });
 
   const withdraw: Ctx["withdraw"] = (id, by) => {
+    const current = visibleTickets.find((ticket) => ticket.id === id);
     persist(
       tickets.map((t) => {
         if (t.id !== id) return t;
@@ -1091,6 +1136,13 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         return pushAudit({ ...t, status: "withdrawn", stage: "closed" }, by, "Withdrew ticket");
       }),
     );
+    if (apiEnabled && isUuid(id)) {
+      withdrawMutation.mutate({
+        id,
+        expectedVersion: current?.version ?? 1,
+        remarks: current?.status === "draft" ? undefined : `Withdrawn by ${by}`,
+      });
+    }
   };
 
   const managerAction: Ctx["managerAction"] = (id, action, by, remark) => {
@@ -1284,6 +1336,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addComment: Ctx["addComment"] = (id, by, text) => {
+    const current = visibleTickets.find((ticket) => ticket.id === id);
     persist(
       tickets.map((t) =>
         t.id === id
@@ -1291,6 +1344,13 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
           : t,
       ),
     );
+    if (apiEnabled && isUuid(id)) {
+      clarificationMutation.mutate({
+        id,
+        message: text,
+        expectedVersion: current?.version,
+      });
+    }
   };
 
   return (

@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useAuth } from "@/lib/auth";
+import { useExpenseDashboardSummary } from "@/domains/expenses";
+import { asArray, asRecord, numberValue, text } from "@/shared/api";
 import { MANAGER_ROLES, useExpenses, fmtCurrency, ticketTotal } from "@/lib/expenses-store";
 import { StatCard, DataCard, EmptyState, StatusBadge } from "@/components/ui-kit";
 import { Button } from "@/components/ui/button";
@@ -21,8 +23,28 @@ export const Route = createFileRoute("/_app/expenses/")({ component: ExpensesDas
 
 function ExpensesDashboard() {
   const { activeRole, user } = useAuth();
-  const { tickets } = useExpenses();
+  const { tickets, isApiBacked } = useExpenses();
+  const dashboardQuery = useExpenseDashboardSummary({}, isApiBacked);
   const me = user?.name ?? "You";
+  const summaryCards = useMemo(
+    () =>
+      asArray(asRecord(dashboardQuery.data).cards).map((item) => {
+        const row = asRecord(item);
+        return {
+          key: text(row.key),
+          value: numberValue(row.value, 0),
+          amount: text(row.amount),
+        };
+      }),
+    [dashboardQuery.data],
+  );
+  const queueCounts = asRecord(asRecord(dashboardQuery.data).queue_counts);
+  const summaryValue = (key: string, fallback: number) =>
+    summaryCards.find((card) => card.key === key)?.value ?? fallback;
+  const summaryAmount = (key: string, fallback: number) => {
+    const amount = summaryCards.find((card) => card.key === key)?.amount;
+    return amount ? Number(amount) : fallback;
+  };
 
   const mine = useMemo(
     () => tickets.filter((t) => t.employee === me || t.employeeId === "self"),
@@ -47,20 +69,25 @@ function ExpensesDashboard() {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
           <StatCard
             label="Verification pending"
-            value={verifPending.length}
+            value={summaryValue("finance_pending", verifPending.length)}
             icon={ClipboardCheck}
             tone="warning"
           />
           <StatCard
             label="Payment pending"
-            value={payPending.length}
-            hint={fmtCurrency(payPending.reduce((s, t) => s + ticketTotal(t), 0))}
+            value={summaryValue("payment_pending", payPending.length)}
+            hint={fmtCurrency(
+              summaryAmount(
+                "payment_pending",
+                payPending.reduce((s, t) => s + ticketTotal(t), 0),
+              ),
+            )}
             icon={Wallet}
             tone="info"
           />
           <StatCard
             label="Settlement pending"
-            value={settlement.length}
+            value={summaryValue("settlement_pending", settlement.length)}
             icon={Hourglass}
             tone="warning"
           />
@@ -104,7 +131,7 @@ function ExpensesDashboard() {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
           <StatCard
             label="Pending verification"
-            value={queue.length}
+            value={numberValue(queueCounts.manager_pending, queue.length)}
             icon={ClipboardCheck}
             tone="warning"
           />
@@ -153,19 +180,39 @@ function ExpensesDashboard() {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Submitted" value={submitted.length} icon={Receipt} tone="primary" />
-        <StatCard label="Pending approval" value={pending.length} icon={Hourglass} tone="warning" />
-        <StatCard label="Approved" value={approved.length} icon={BadgeCheck} tone="success" />
-        <StatCard label="Payment pending" value={paymentPending.length} icon={Wallet} tone="info" />
+        <StatCard
+          label="Submitted"
+          value={summaryValue("submitted", submitted.length)}
+          icon={Receipt}
+          tone="primary"
+        />
+        <StatCard
+          label="Pending approval"
+          value={summaryValue("pending_approval", pending.length)}
+          icon={Hourglass}
+          tone="warning"
+        />
+        <StatCard
+          label="Approved"
+          value={summaryValue("approved", approved.length)}
+          icon={BadgeCheck}
+          tone="success"
+        />
+        <StatCard
+          label="Payment pending"
+          value={summaryValue("payment_pending", paymentPending.length)}
+          icon={Wallet}
+          tone="info"
+        />
         <StatCard
           label="Settlement pending"
-          value={settlementPending.length}
+          value={summaryValue("settlement_pending", settlementPending.length)}
           icon={FileWarning}
           tone="warning"
         />
         <StatCard
           label="Returned / Rejected"
-          value={rejected.length}
+          value={summaryValue("returned_or_rejected", rejected.length)}
           icon={Ban}
           tone="destructive"
         />

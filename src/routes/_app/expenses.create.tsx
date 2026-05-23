@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { useExpenseMetadata } from "@/domains/expenses";
+import { asArray, asRecord, text } from "@/shared/api";
 import {
   useExpenses,
   fmtCurrency,
@@ -98,9 +100,37 @@ const initial: FormState = {
 function CreateExpense() {
   const { user } = useAuth();
   const { add } = useExpenses();
+  const metadataQuery = useExpenseMetadata();
   const nav = useNavigate();
   const [f, setF] = useState<FormState>(initial);
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((s) => ({ ...s, [k]: v }));
+
+  const metadataSubTypes = useMemo(
+    () =>
+      asArray(asRecord(metadataQuery.data).expense_sub_types)
+        .map((item) => asRecord(item))
+        .filter((item) =>
+          f.expenseType === "sales_presales"
+            ? text(item.expense_type) === "SalesPreSales"
+            : text(item.expense_type) === "Project",
+        )
+        .map((item) => text(item.value || item.label))
+        .filter(Boolean),
+    [f.expenseType, metadataQuery.data],
+  );
+  const projectExpenseTypeOptions = useMemo(
+    () =>
+      asArray(asRecord(metadataQuery.data).project_expense_types)
+        .map((item) => asRecord(item))
+        .map((item) => ({
+          value: text(item.value),
+          label: text(item.label || item.value),
+        }))
+        .filter((item): item is { value: FormState["projectExpenseType"]; label: string } =>
+          ["travel", "material", "lodging", "misc"].includes(item.value),
+        ),
+    [metadataQuery.data],
+  );
 
   const total = f.lineItems.reduce((s, li) => s + li.quantity * li.unitCost + li.taxAmount, 0);
 
@@ -210,10 +240,18 @@ function CreateExpense() {
                 </Field>
                 <Field label="Expense Sub-Type">
                   <Input
+                    list="expense-sub-type-options"
                     value={f.subType}
                     onChange={(e) => set("subType", e.target.value)}
                     placeholder="e.g. Travel, Software"
                   />
+                  {metadataSubTypes.length > 0 && (
+                    <datalist id="expense-sub-type-options">
+                      {metadataSubTypes.map((option) => (
+                        <option key={option} value={option} />
+                      ))}
+                    </datalist>
+                  )}
                 </Field>
                 <Field label="Task Title" className="md:col-span-2">
                   <Input
@@ -338,9 +376,15 @@ function CreateExpense() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {["travel", "material", "lodging", "misc"].map((p) => (
-                          <SelectItem key={p} value={p}>
-                            {p}
+                        {(projectExpenseTypeOptions.length
+                          ? projectExpenseTypeOptions
+                          : ["travel", "material", "lodging", "misc"].map((value) => ({
+                              value: value as FormState["projectExpenseType"],
+                              label: value,
+                            }))
+                        ).map((p) => (
+                          <SelectItem key={p.value} value={p.value}>
+                            {p.label}
                           </SelectItem>
                         ))}
                       </SelectContent>

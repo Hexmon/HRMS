@@ -72,7 +72,8 @@ type Action =
 
 function ExpenseDetail() {
   const { id } = Route.useParams();
-  const { byId, managerAction, financeAction, addComment, loading, error } = useExpenses();
+  const { byId, managerAction, financeAction, addComment, withdraw, loading, error } =
+    useExpenses();
   const { activeRole, user } = useAuth();
   const nav = useNavigate();
   const listTicket = byId(id);
@@ -295,8 +296,15 @@ function ExpenseDetail() {
             </>
           )}
           {isRequester && t.status === "pending_manager" && (
-            <Button variant="outline" onClick={() => nav({ to: "/expenses/my" })}>
-              Withdraw from list
+            <Button
+              variant="outline"
+              onClick={() => {
+                withdraw(t.id, me);
+                toast.success("Ticket withdrawn");
+                nav({ to: "/expenses/my" });
+              }}
+            >
+              Withdraw ticket
             </Button>
           )}
         </div>
