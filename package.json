@@ -56,6 +56,8 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:migrate:prod": "NODE_OPTIONS=--conditions=production node dist/scripts/db-migrate.js",
     "db:verify:no-cross-schema-fks": "tsx scripts/verify-no-cross-schema-fks.ts",
+    "backup:db": "tsx scripts/backup-db.ts",
+    "restore:db": "tsx scripts/restore-db.ts",
     "seed:dev": "tsx src/platform/seed-dev.ts",
     "release:seed": "tsx scripts/seed-release-data.ts",
     "release:verify:db": "tsx scripts/verify-release-db.ts",
