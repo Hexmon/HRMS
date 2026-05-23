@@ -51,6 +51,7 @@ const expectedOperations = [
   "GET /api/v1/admin/master-data/designations",
   "GET /api/v1/admin/rbac/permissions",
   "GET /api/v1/admin/rbac/roles",
+  "GET /api/v1/admin/workflows",
   "GET /api/v1/assets/",
   "GET /api/v1/assets/recovery-queue",
   "GET /api/v1/assets/requests/my",
@@ -229,6 +230,7 @@ const expectedOperations = [
   "POST /api/v1/wfh/requests/{id}/decision",
   "PUT /api/v1/admin/company-profile",
   "PUT /api/v1/admin/rbac/roles/{id}/permissions",
+  "PUT /api/v1/admin/workflows/{workflow_key}",
   "PUT /api/v1/holidays/{id}",
   "PUT /api/v1/core/users/{id}/roles",
   "PUT /api/v1/platform/finance-governance"
@@ -251,6 +253,7 @@ const bodyRequiredOperations = [
   "POST /api/v1/admin/rbac/roles",
   "PATCH /api/v1/admin/rbac/roles/{id}",
   "PUT /api/v1/admin/rbac/roles/{id}/permissions",
+  "PUT /api/v1/admin/workflows/{workflow_key}",
   "POST /api/v1/auth/login",
   "POST /api/v1/core/users",
   "PATCH /api/v1/core/users/{id}",
@@ -377,7 +380,8 @@ const occOperations = [
   "PATCH /api/v1/admin/master-data/departments/{id}",
   "PATCH /api/v1/admin/master-data/designations/{id}",
   "PATCH /api/v1/admin/rbac/roles/{id}",
-  "PUT /api/v1/admin/rbac/roles/{id}/permissions"
+  "PUT /api/v1/admin/rbac/roles/{id}/permissions",
+  "PUT /api/v1/admin/workflows/{workflow_key}"
 ];
 
 const listOperations = [
@@ -631,7 +635,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(187);
+    expect(rows.length).toBe(189);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

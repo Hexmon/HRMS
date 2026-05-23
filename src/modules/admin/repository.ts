@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { Department, Designation, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
+import type { Department, Designation, AdminWorkflowConfigRecord, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
 import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
-import { nowIso } from "../../platform/data-store.js";
+import { buildDefaultAdminWorkflows, nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 import type {
   CompanyProfileUpdateInput,
@@ -16,6 +16,36 @@ import type {
 
 export class AdminRepository {
   constructor(private readonly store: MemoryDataStore) {}
+
+  listAdminWorkflows(): AdminWorkflowConfigRecord[] {
+    this.ensureAdminWorkflows();
+    return this.store.adminWorkflows.filter((workflow) => !workflow.deleted_at);
+  }
+
+  adminWorkflowByKey(workflowKey: string): AdminWorkflowConfigRecord {
+    this.ensureAdminWorkflows();
+    const workflow = this.store.adminWorkflows.find((candidate) => candidate.workflow_key === workflowKey && !candidate.deleted_at);
+    if (!workflow) throw notFound("Admin workflow configuration not found", { workflow_key: workflowKey });
+    return workflow;
+  }
+
+  updateAdminWorkflow(workflowKey: string, input: AdminWorkflowUpdateData): AdminWorkflowConfigRecord {
+    const workflow = this.adminWorkflowByKey(workflowKey);
+    if (workflow.version !== input.expected_version) {
+      throw conflict("Admin workflow configuration was modified by another actor.", {
+        aggregate: "admin_workflow",
+        workflow_key: workflowKey,
+        expected_version: input.expected_version,
+        current_version: workflow.version
+      });
+    }
+    if (input.label) workflow.label = input.label.trim();
+    if (input.status) workflow.status = input.status;
+    if (input.stages) workflow.stages = input.stages;
+    workflow.updated_at = nowIso();
+    workflow.version += 1;
+    return workflow;
+  }
 
   getCurrentCompanyProfile(): CompanyProfileRecord {
     let company =
@@ -266,6 +296,19 @@ export class AdminRepository {
       throw conflict("RBAC role key already exists", { role_key: roleKey });
     }
   }
+
+  private ensureAdminWorkflows(): void {
+    const existingKeys = new Set(this.store.adminWorkflows.filter((workflow) => !workflow.deleted_at).map((workflow) => workflow.workflow_key));
+    const missingDefaults = buildDefaultAdminWorkflows(nowIso()).filter((workflow) => !existingKeys.has(workflow.workflow_key));
+    this.store.adminWorkflows.push(...missingDefaults);
+  }
+}
+
+export interface AdminWorkflowUpdateData {
+  label?: string;
+  status?: "active" | "inactive";
+  stages?: AdminWorkflowConfigRecord["stages"];
+  expected_version: number;
 }
 
 function defaultCompanyProfile(): CompanyProfileRecord {

@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 187 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 189 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 28 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `187 current + 28 remaining`; Admin RBAC added role and permission management APIs. |
+| Planned new APIs | 26 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `189 current + 26 remaining`; Admin workflow configuration APIs are now available. |
 
 ## Development Phases
 
@@ -26,7 +26,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Module tag | Operations | Ready surface |
 | --- | ---: | --- |
-| Admin / Configuration | 19 | Company profile read/update, department/designation master-data management, RBAC role/permission configuration, finance governance, manager backups, and timesheet workflow definition upsert. |
+| Admin / Configuration | 21 | Company profile read/update, department/designation master-data management, RBAC role/permission configuration, workflow configuration, finance governance, manager backups, and timesheet workflow definition upsert. |
 | Assets | 19 | Inventory, detail, assignment/return, QR scan, license lifecycle, employee termination event, requests, acknowledgements, maintenance, vendors, and recovery queue. |
 | Auth & Sessions | 11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
 | Core / Employees & Hierarchy | 11 | User list/detail/subtree, org selectors, employee create/update, lifecycle activation/deactivation, login setup/disable, and role replacement. |
@@ -79,7 +79,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **28**.
+Total remaining planned new operations: **26**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -281,8 +281,8 @@ Total remaining planned new operations: **28**.
 | PATCH | `/api/v1/admin/rbac/roles/{id}` | `/admin-settings/rbac` | Update role metadata. | Admin/RBAC manager. | fields, expected_version | role, version | 409 stale/protected system role. | Implemented in Phase 5 Admin RBAC |
 | GET | `/api/v1/admin/rbac/permissions` | `/admin-settings/rbac` | List permissions. | Admin/RBAC manager. | module optional, search optional | permissions[] | Read-only; no pagination unless large. | Implemented in Phase 5 Admin RBAC |
 | PUT | `/api/v1/admin/rbac/roles/{id}/permissions` | `/admin-settings/rbac` | Replace role permissions. | Admin/RBAC manager. | permission_ids[], expected_version, remarks | role, permissions, version | 403 protected permission; 409 stale version. | Implemented in Phase 5 Admin RBAC |
-| GET | `/api/v1/admin/workflows` | `/admin-settings/workflows` | List workflow configurations. | Admin. | module optional | workflows[], versions | Shared errors. | Planned / Not Implemented |
-| PUT | `/api/v1/admin/workflows/{workflow_key}` | `/admin-settings/workflows` | Update workflow configuration. | Admin. | workflow config, expected_version | workflow, version | 409 stale/invalid workflow graph. | Planned / Not Implemented |
+| GET | `/api/v1/admin/workflows` | `/admin-settings/workflows` | List workflow configurations. | Admin. | module optional | workflows[], versions | Shared errors. | Implemented in Phase 5 Admin workflows |
+| PUT | `/api/v1/admin/workflows/{workflow_key}` | `/admin-settings/workflows` | Update workflow configuration. | Admin. | workflow config, expected_version | workflow, version | 409 stale/invalid workflow graph. | Implemented in Phase 5 Admin workflows |
 | GET | `/api/v1/admin/policies` | `/admin-settings/policies` | List policies. | Admin/HR/Finance admin by scope. | module optional, active_only | policies[] | Shared errors. | Planned / Not Implemented |
 | PUT | `/api/v1/admin/policies/{policy_key}` | `/admin-settings/policies` | Update policy. | Admin/module owner. | policy config, expected_version | policy, version | 409 stale/invalid policy. | Planned / Not Implemented |
 | GET | `/api/v1/admin/email-templates` | `/admin-settings/templates` | List email templates. | Admin. | module optional, locale optional | templates[] | Do not return SMTP secrets. | Planned / Not Implemented |

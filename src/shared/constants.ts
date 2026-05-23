@@ -61,6 +61,25 @@ export const RbacPermissionActions = [
 
 export type RbacPermissionAction = (typeof RbacPermissionActions)[number];
 
+export const AdminWorkflowKeys = [
+  "leave",
+  "wfh",
+  "timesheet",
+  "expense",
+  "asset_request",
+  "helpdesk_escalation"
+] as const;
+
+export type AdminWorkflowKey = (typeof AdminWorkflowKeys)[number];
+
+export const AdminWorkflowApproverTypes = [
+  "Reporting Manager",
+  "Role",
+  "Specific User"
+] as const;
+
+export type AdminWorkflowApproverType = (typeof AdminWorkflowApproverTypes)[number];
+
 export const EmploymentStatuses = {
   Active: "active",
   Inactive: "inactive",

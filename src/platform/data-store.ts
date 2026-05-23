@@ -36,6 +36,7 @@ import type {
   ProjectMemberRecord,
   ProjectMilestoneRecord,
   ProjectRecord,
+  AdminWorkflowConfigRecord,
   RbacRolePermissionRecord,
   RbacRoleRecord,
   TimesheetSubmission,
@@ -66,6 +67,9 @@ import {
   ProjectPriorities,
   ProjectStatuses,
   ProjectTypes,
+  AdminWorkflowApproverTypes,
+  AdminWorkflowKeys,
+  type AdminWorkflowKey,
   RbacPermissionActions,
   RbacPermissionGroups
 } from "#shared";
@@ -328,6 +332,7 @@ export interface DataStore {
   designations: Designation[];
   rbacRoles: RbacRoleRecord[];
   rbacRolePermissions: RbacRolePermissionRecord[];
+  adminWorkflows: AdminWorkflowConfigRecord[];
   users: CoreUser[];
   userCredentials: UserCredentialRecord[];
   authTokens: AuthTokenRecord[];
@@ -595,9 +600,102 @@ function buildDefaultRbac(created: string): {
   return { roles, permissions };
 }
 
+function workflowStage(
+  workflowKey: AdminWorkflowKey,
+  order: number,
+  approverType: (typeof AdminWorkflowApproverTypes)[number],
+  approverValue: string,
+  escalateAfterDays: number
+): AdminWorkflowConfigRecord["stages"][number] {
+  return {
+    id: `${workflowKey}_stage_${order}`,
+    order,
+    approver_type: approverType,
+    approver_value: approverValue,
+    escalate_after_days: escalateAfterDays,
+    mandatory_remarks_on_reject: true
+  };
+}
+
+export function buildDefaultAdminWorkflows(created: string): AdminWorkflowConfigRecord[] {
+  const defaults: Array<{
+    key: AdminWorkflowKey;
+    module: string;
+    label: string;
+    stages: AdminWorkflowConfigRecord["stages"];
+  }> = [
+    {
+      key: "leave",
+      module: "leave_wfh",
+      label: "Leave approval",
+      stages: [
+        workflowStage("leave", 1, "Reporting Manager", "Direct manager", 2),
+        workflowStage("leave", 2, "Role", "HR Admin", 3)
+      ]
+    },
+    {
+      key: "wfh",
+      module: "leave_wfh",
+      label: "WFH approval",
+      stages: [workflowStage("wfh", 1, "Reporting Manager", "Direct manager", 1)]
+    },
+    {
+      key: "timesheet",
+      module: "timesheets",
+      label: "Timesheet approval",
+      stages: [
+        workflowStage("timesheet", 1, "Reporting Manager", "Direct manager", 2),
+        workflowStage("timesheet", 2, "Role", "Project Manager", 2)
+      ]
+    },
+    {
+      key: "expense",
+      module: "expenses",
+      label: "Expense approval",
+      stages: [
+        workflowStage("expense", 1, "Reporting Manager", "Direct manager", 2),
+        workflowStage("expense", 2, "Role", "Finance Manager", 3)
+      ]
+    },
+    {
+      key: "asset_request",
+      module: "assets",
+      label: "Asset request approval",
+      stages: [
+        workflowStage("asset_request", 1, "Reporting Manager", "Direct manager", 2),
+        workflowStage("asset_request", 2, "Role", "IT / Asset Admin", 2)
+      ]
+    },
+    {
+      key: "helpdesk_escalation",
+      module: "helpdesk",
+      label: "Helpdesk escalation",
+      stages: [
+        workflowStage("helpdesk_escalation", 1, "Role", "Helpdesk Agent", 1),
+        workflowStage("helpdesk_escalation", 2, "Role", "Module Owner", 1),
+        workflowStage("helpdesk_escalation", 3, "Specific User", "Main Admin", 1)
+      ]
+    }
+  ];
+
+  return defaults.map((workflow) => ({
+    id: uuidFromName(`admin-workflow-${workflow.key}`),
+    workflow_key: workflow.key,
+    module: workflow.module,
+    label: workflow.label,
+    status: "active",
+    stages: workflow.stages,
+    created_at: created,
+    updated_at: created,
+    deleted_at: null,
+    version: 1
+  }));
+}
+
 export function createMemoryDataStore(): MemoryDataStore {
   const created = nowIso();
   const defaultRbac = buildDefaultRbac(created);
+  const defaultAdminWorkflows = buildDefaultAdminWorkflows(created);
   const departments: Department[] = [
     {
       id: seedIds.departmentSales,
@@ -1355,6 +1453,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     designations,
     rbacRoles: defaultRbac.roles,
     rbacRolePermissions: defaultRbac.permissions,
+    adminWorkflows: defaultAdminWorkflows,
     users,
     userCredentials,
     authTokens: [],

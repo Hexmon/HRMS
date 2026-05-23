@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AdminWorkflowApproverTypes, AdminWorkflowKeys } from "#shared";
 
 export const masterDataQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -37,6 +38,35 @@ export const rbacRolePermissionsReplaceSchema = z.object({
   permission_ids: z.array(z.string().min(3).max(120)),
   expected_version: z.number().int().min(1),
   remarks: z.string().max(1000).optional()
+});
+
+export const adminWorkflowsQuerySchema = z.object({
+  module: z.string().max(80).optional()
+});
+
+const workflowStageSchema = z.object({
+  id: z.string().min(1).max(80).optional(),
+  order: z.number().int().min(1).max(20).optional(),
+  approver_type: z.enum(AdminWorkflowApproverTypes).optional(),
+  approverType: z.enum(AdminWorkflowApproverTypes).optional(),
+  approver_value: z.string().min(1).max(160).optional(),
+  approverValue: z.string().min(1).max(160).optional(),
+  escalate_after_days: z.number().int().min(0).max(30).optional(),
+  escalateAfterDays: z.number().int().min(0).max(30).optional(),
+  mandatory_remarks_on_reject: z.boolean().optional(),
+  mandatoryRemarksOnReject: z.boolean().optional()
+});
+
+export const adminWorkflowUpdateSchema = z.object({
+  label: z.string().min(2).max(160).optional(),
+  active: z.boolean().optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  stages: z.array(workflowStageSchema).min(1).max(20).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export const workflowKeyParamSchema = z.object({
+  workflow_key: z.enum(AdminWorkflowKeys)
 });
 
 const statusSchema = z.enum(["active", "inactive"]);
@@ -100,6 +130,9 @@ export type RbacPermissionsQuery = z.infer<typeof rbacPermissionsQuerySchema>;
 export type RbacRoleCreateInput = z.infer<typeof rbacRoleCreateSchema>;
 export type RbacRoleUpdateInput = z.infer<typeof rbacRoleUpdateSchema>;
 export type RbacRolePermissionsReplaceInput = z.infer<typeof rbacRolePermissionsReplaceSchema>;
+export type AdminWorkflowsQuery = z.infer<typeof adminWorkflowsQuerySchema>;
+export type AdminWorkflowUpdateInput = z.infer<typeof adminWorkflowUpdateSchema>;
+export type AdminWorkflowStageInput = z.infer<typeof workflowStageSchema>;
 export type DepartmentCreateInput = z.infer<typeof departmentCreateSchema>;
 export type DepartmentUpdateInput = z.infer<typeof departmentUpdateSchema>;
 export type DesignationCreateInput = z.infer<typeof designationCreateSchema>;

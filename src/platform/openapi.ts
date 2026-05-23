@@ -54,6 +54,18 @@ const userIdParamSchema = {
   }
 };
 
+const workflowKeyParamSchema = {
+  type: "object",
+  required: ["workflow_key"],
+  properties: {
+    workflow_key: {
+      type: "string",
+      enum: ["leave", "wfh", "timesheet", "expense", "asset_request", "helpdesk_escalation"],
+      example: "leave"
+    }
+  }
+};
+
 const expenseDocumentParamSchema = {
   type: "object",
   required: ["id", "documentId"],
@@ -664,6 +676,86 @@ const adminRbacPermissionsReplaceBody = {
     permission_ids: { type: "array", items: { type: "string", example: "employees:view" } },
     expected_version: { type: "integer", minimum: 1, example: 1 },
     remarks: { type: "string", maxLength: 1000, example: "Quarterly role review." }
+  },
+  additionalProperties: false
+};
+
+const adminWorkflowStageSchema = {
+  type: "object",
+  required: [
+    "id",
+    "order",
+    "approver_type",
+    "approverType",
+    "approver_value",
+    "approverValue",
+    "escalate_after_days",
+    "escalateAfterDays",
+    "mandatory_remarks_on_reject",
+    "mandatoryRemarksOnReject"
+  ],
+  properties: {
+    id: { type: "string", example: "leave_stage_1" },
+    order: { type: "integer", minimum: 1, example: 1 },
+    approver_type: { type: "string", enum: ["Reporting Manager", "Role", "Specific User"], example: "Reporting Manager" },
+    approverType: { type: "string", enum: ["Reporting Manager", "Role", "Specific User"], example: "Reporting Manager" },
+    approver_value: { type: "string", example: "Direct manager" },
+    approverValue: { type: "string", example: "Direct manager" },
+    escalate_after_days: { type: "integer", minimum: 0, maximum: 30, example: 2 },
+    escalateAfterDays: { type: "integer", minimum: 0, maximum: 30, example: 2 },
+    mandatory_remarks_on_reject: { type: "boolean", example: true },
+    mandatoryRemarksOnReject: { type: "boolean", example: true }
+  },
+  additionalProperties: false
+};
+
+const adminWorkflowSchema = {
+  type: "object",
+  required: ["id", "workflow_key", "key", "module", "label", "status", "active", "stages", "updated_at", "version"],
+  properties: {
+    id: uuid("Admin workflow configuration UUID"),
+    workflow_key: { type: "string", enum: ["leave", "wfh", "timesheet", "expense", "asset_request", "helpdesk_escalation"], example: "leave" },
+    key: { type: "string", enum: ["leave", "wfh", "timesheet", "expense", "asset_request", "helpdesk_escalation"], example: "leave" },
+    module: { type: "string", example: "leave_wfh" },
+    label: { type: "string", example: "Leave approval" },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    active: { type: "boolean", example: true },
+    stages: { type: "array", items: adminWorkflowStageSchema },
+    updated_at: dateTime("Admin workflow update timestamp"),
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminWorkflowUpdateBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    label: { type: "string", minLength: 2, maxLength: 160, example: "Leave approval" },
+    active: { type: "boolean", example: true },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    stages: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "object",
+        required: ["approver_type", "approver_value"],
+        properties: {
+          id: { type: "string", minLength: 1, maxLength: 80, example: "leave_stage_1" },
+          order: { type: "integer", minimum: 1, maximum: 20, example: 1 },
+          approver_type: { type: "string", enum: ["Reporting Manager", "Role", "Specific User"], example: "Reporting Manager" },
+          approverType: { type: "string", enum: ["Reporting Manager", "Role", "Specific User"], example: "Reporting Manager" },
+          approver_value: { type: "string", minLength: 1, maxLength: 160, example: "Direct manager" },
+          approverValue: { type: "string", minLength: 1, maxLength: 160, example: "Direct manager" },
+          escalate_after_days: { type: "integer", minimum: 0, maximum: 30, example: 2 },
+          escalateAfterDays: { type: "integer", minimum: 0, maximum: 30, example: 2 },
+          mandatory_remarks_on_reject: { type: "boolean", example: true },
+          mandatoryRemarksOnReject: { type: "boolean", example: true }
+        },
+        additionalProperties: false
+      }
+    },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
   },
   additionalProperties: false
 };
@@ -3392,6 +3484,48 @@ const routeDocs: Record<string, RouteSchema> = {
         type: "object",
         required: ["role", "version"],
         properties: { role: adminRbacRoleSchema, version: { type: "integer", example: 2 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "GET /api/v1/admin/workflows": operation(
+    "Admin / Configuration",
+    "List admin workflow configurations",
+    "Lists persistent Admin Settings approval workflow configuration. This slice records configuration without changing existing feature-specific approval engines.",
+    {
+      querystring: {
+        type: "object",
+        properties: {
+          module: { type: "string", example: "leave_wfh" }
+        }
+      },
+      response200: {
+        type: "object",
+        required: ["items", "workflows", "versions"],
+        properties: {
+          items: { type: "array", items: adminWorkflowSchema },
+          workflows: { type: "array", items: adminWorkflowSchema },
+          versions: {
+            type: "object",
+            additionalProperties: { type: "integer", minimum: 1 },
+            example: { leave: 1, expense: 1 }
+          }
+        },
+        additionalProperties: false
+      }
+    }
+  ),
+  "PUT /api/v1/admin/workflows/{workflow_key}": operation(
+    "Admin / Configuration",
+    "Update admin workflow configuration",
+    "Updates one Admin Settings workflow configuration with optimistic concurrency. Runtime approval routing remains owned by each feature module until the later policy migration.",
+    {
+      params: workflowKeyParamSchema,
+      body: adminWorkflowUpdateBody,
+      response200: {
+        type: "object",
+        required: ["workflow", "version"],
+        properties: { workflow: adminWorkflowSchema, version: { type: "integer", example: 2 } },
         additionalProperties: false
       }
     }

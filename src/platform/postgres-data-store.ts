@@ -36,6 +36,7 @@ import type {
   ProjectMemberRecord,
   ProjectMilestoneRecord,
   ProjectRecord,
+  AdminWorkflowConfigRecord,
   TimesheetSubmission,
   WfhRequest
 } from "#shared";
@@ -121,6 +122,7 @@ const resetTables = [
   "expenses.expense_line_items",
   "expenses.expense_tickets",
   "platform.processed_events",
+  "platform.admin_workflows",
   "platform.notifications",
   "platform.outbox_events",
   "platform.idempotency_keys",
@@ -173,6 +175,7 @@ function copyData(target: DataStore, source: DataStore): void {
   target.designations = source.designations;
   target.rbacRoles = source.rbacRoles;
   target.rbacRolePermissions = source.rbacRolePermissions;
+  target.adminWorkflows = source.adminWorkflows;
   target.users = source.users;
   target.userCredentials = source.userCredentials;
   target.authTokens = source.authTokens;
@@ -307,6 +310,7 @@ class PostgresPersistence {
       loaded.designations = await this.loadDesignations(client);
       loaded.rbacRoles = await this.loadRbacRoles(client);
       loaded.rbacRolePermissions = await this.loadRbacRolePermissions(client);
+      loaded.adminWorkflows = await this.loadAdminWorkflows(client);
       loaded.users = await this.loadUsers(client);
       loaded.userCredentials = await this.loadUserCredentials(client);
       loaded.authTokens = await this.loadAuthTokens(client);
@@ -446,6 +450,26 @@ class PostgresPersistence {
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
       deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadAdminWorkflows(client: PoolClient): Promise<AdminWorkflowConfigRecord[]> {
+    const { rows } = await client.query(`
+      SELECT id, workflow_key, module, label, status, stages, created_at, updated_at, deleted_at, version
+      FROM platform.admin_workflows
+      ORDER BY workflow_key
+    `);
+    return rows.map((row) => ({
+      id: row.id,
+      workflow_key: row.workflow_key,
+      module: row.module,
+      label: row.label,
+      status: row.status,
+      stages: Array.isArray(row.stages) ? row.stages : [],
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+      version: row.version
     }));
   }
 
@@ -1632,6 +1656,30 @@ class PostgresPersistence {
           company.created_at,
           company.updated_at,
           company.version
+        ]
+      );
+    }
+    for (const workflow of this.store.adminWorkflows) {
+      await client.query(
+        `INSERT INTO platform.admin_workflows (
+          id, workflow_key, module, label, status, stages, created_at, updated_at, deleted_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+        ON CONFLICT (workflow_key) DO UPDATE
+        SET module = EXCLUDED.module, label = EXCLUDED.label, status = EXCLUDED.status,
+            stages = EXCLUDED.stages, updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version`,
+        [
+          workflow.id,
+          workflow.workflow_key,
+          workflow.module,
+          workflow.label,
+          workflow.status,
+          JSON.stringify(workflow.stages),
+          workflow.created_at,
+          workflow.updated_at,
+          workflow.deleted_at,
+          workflow.version
         ]
       );
     }

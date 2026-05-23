@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 187
+Documented operations: 189
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -2628,6 +2628,104 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `role` | object | required | - |
+| `version` | integer | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/admin/workflows
+
+| Field | Contract |
+|---|---|
+| Purpose | List admin workflow configurations |
+| Frontend use | List admin workflow configurations |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/configuration persona only unless backend grants narrower operational permission. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `module` | query | no | string | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `items` | array of object | required | - |
+| `workflows` | array of object | required | - |
+| `versions` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PUT /api/v1/admin/workflows/{workflow_key}
+
+| Field | Contract |
+|---|---|
+| Purpose | Update admin workflow configuration |
+| Frontend use | Update admin workflow configuration |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/configuration persona only unless backend grants narrower operational permission. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `workflow_key` | path | yes | string enum("leave", "wfh", "timesheet", "expense", "asset_request", "helpdesk_escalation") | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `label` | string | optional | minLength 2 |
+| `active` | boolean | optional | - |
+| `status` | string enum("active", "inactive") | optional | - |
+| `stages` | array of object | optional | minItems 1 |
+| `expected_version` | integer | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `workflow` | object | required | - |
 | `version` | integer | required | - |
 
 **Frontend behavior notes**

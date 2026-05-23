@@ -1,7 +1,11 @@
 import {
+  AdminWorkflowApproverTypes,
   RbacPermissionActions,
   RbacPermissionGroups,
   Roles,
+  type AdminWorkflowConfigRecord,
+  type AdminWorkflowKey,
+  type AdminWorkflowStageRecord,
   type AuthUser,
   type Department,
   type Designation,
@@ -12,6 +16,9 @@ import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-
 import { appendOutboxEvent } from "../expenses/events.js";
 import { AdminRepository } from "./repository.js";
 import type {
+  AdminWorkflowStageInput,
+  AdminWorkflowUpdateInput,
+  AdminWorkflowsQuery,
   CompanyProfileUpdateInput,
   DepartmentCreateInput,
   DepartmentUpdateInput,
@@ -24,7 +31,7 @@ import type {
   RbacRolesQuery,
   RbacRoleUpdateInput
 } from "./schemas.js";
-import { assertCanManageAdminSettings, assertCanManageMasterData, assertCanManageRbac } from "./policy.js";
+import { assertCanManageAdminSettings, assertCanManageMasterData, assertCanManageRbac, assertCanManageWorkflowSettings } from "./policy.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 
 function page<T>(items: readonly T[], pageNumber = 1, pageSize = 25): Paginated<T> {
@@ -59,6 +66,44 @@ export class AdminService {
       idempotencyKey: `admin.company_profile.updated:${company.id}:${company.version}`
     });
     return presentCompanyProfile(company);
+  }
+
+  listAdminWorkflows(actor: AuthUser, query: AdminWorkflowsQuery): AdminWorkflowListResponse {
+    assertCanManageWorkflowSettings(actor);
+    const moduleFilter = query.module?.trim().toLowerCase();
+    const workflows = this.repository
+      .listAdminWorkflows()
+      .filter((workflow) => !moduleFilter || workflow.module.toLowerCase() === moduleFilter || workflow.workflow_key.toLowerCase() === moduleFilter)
+      .sort((a, b) => adminWorkflowSortOrder(a.workflow_key) - adminWorkflowSortOrder(b.workflow_key))
+      .map((workflow) => presentAdminWorkflow(workflow));
+    return {
+      items: workflows,
+      workflows,
+      versions: Object.fromEntries(workflows.map((workflow) => [workflow.workflow_key, workflow.version]))
+    };
+  }
+
+  updateAdminWorkflow(actor: AuthUser, workflowKey: AdminWorkflowKey, input: AdminWorkflowUpdateInput): AdminWorkflowMutationResponse {
+    assertCanManageWorkflowSettings(actor);
+    const stages = input.stages ? normalizeWorkflowStages(input.stages, workflowKey) : undefined;
+    const workflow = this.repository.updateAdminWorkflow(workflowKey, {
+      label: input.label,
+      status: input.status ?? (input.active === undefined ? undefined : input.active ? "active" : "inactive"),
+      stages,
+      expected_version: input.expected_version
+    });
+    appendOutboxEvent(this.store, {
+      aggregateType: "admin_workflow",
+      aggregateId: workflow.id,
+      eventType: "admin.workflow.updated",
+      payload: {
+        actor_user_id: actor.id,
+        workflow_key: workflow.workflow_key,
+        changed_fields: Object.keys(input).filter((field) => field !== "expected_version")
+      },
+      idempotencyKey: `admin.workflow.updated:${workflow.id}:${workflow.version}`
+    });
+    return { workflow: presentAdminWorkflow(workflow), version: workflow.version };
   }
 
   listRbacRoles(actor: AuthUser, query: RbacRolesQuery): Paginated<RbacRoleResponse> {
@@ -370,6 +415,43 @@ export interface RbacRoleMutationResponse {
   version: number;
 }
 
+export interface AdminWorkflowStageResponse {
+  id: string;
+  order: number;
+  approver_type: AdminWorkflowStageRecord["approver_type"];
+  approverType: AdminWorkflowStageRecord["approver_type"];
+  approver_value: string;
+  approverValue: string;
+  escalate_after_days: number;
+  escalateAfterDays: number;
+  mandatory_remarks_on_reject: boolean;
+  mandatoryRemarksOnReject: boolean;
+}
+
+export interface AdminWorkflowResponse {
+  id: string;
+  workflow_key: AdminWorkflowKey;
+  key: AdminWorkflowKey;
+  module: string;
+  label: string;
+  status: "active" | "inactive";
+  active: boolean;
+  stages: AdminWorkflowStageResponse[];
+  updated_at: string;
+  version: number;
+}
+
+export interface AdminWorkflowListResponse {
+  items: AdminWorkflowResponse[];
+  workflows: AdminWorkflowResponse[];
+  versions: Record<string, number>;
+}
+
+export interface AdminWorkflowMutationResponse {
+  workflow: AdminWorkflowResponse;
+  version: number;
+}
+
 export interface CompanyProfileResponse {
   id: string;
   company_name: string;
@@ -449,6 +531,68 @@ function presentDesignation(designation: Designation): DesignationResponse {
     deleted_at: designation.deleted_at,
     version: designation.version
   };
+}
+
+function presentAdminWorkflow(workflow: AdminWorkflowConfigRecord): AdminWorkflowResponse {
+  return {
+    id: workflow.id,
+    workflow_key: workflow.workflow_key,
+    key: workflow.workflow_key,
+    module: workflow.module,
+    label: workflow.label,
+    status: workflow.status,
+    active: workflow.status === "active",
+    stages: workflow.stages
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map((stage) => ({
+        id: stage.id,
+        order: stage.order,
+        approver_type: stage.approver_type,
+        approverType: stage.approver_type,
+        approver_value: stage.approver_value,
+        approverValue: stage.approver_value,
+        escalate_after_days: stage.escalate_after_days,
+        escalateAfterDays: stage.escalate_after_days,
+        mandatory_remarks_on_reject: stage.mandatory_remarks_on_reject,
+        mandatoryRemarksOnReject: stage.mandatory_remarks_on_reject
+      })),
+    updated_at: workflow.updated_at,
+    version: workflow.version
+  };
+}
+
+function normalizeWorkflowStages(stages: readonly AdminWorkflowStageInput[], workflowKey: AdminWorkflowKey): AdminWorkflowStageRecord[] {
+  const seen = new Set<string>();
+  return stages.map((stage, index) => {
+    const order = stage.order ?? index + 1;
+    const id = (stage.id?.trim() || `${workflowKey}_stage_${order}`).slice(0, 80);
+    if (seen.has(id)) {
+      throw badRequest("Workflow stage IDs must be unique.", { field: "stages", id });
+    }
+    seen.add(id);
+
+    const approverType = stage.approver_type ?? stage.approverType;
+    if (!approverType || !AdminWorkflowApproverTypes.includes(approverType)) {
+      throw badRequest("Workflow stage approver type is required.", { field: "approver_type" });
+    }
+    const approverValue = (stage.approver_value ?? stage.approverValue ?? "").trim();
+    if (!approverValue) {
+      throw badRequest("Workflow stage approver value is required.", { field: "approver_value" });
+    }
+    return {
+      id,
+      order,
+      approver_type: approverType,
+      approver_value: approverValue,
+      escalate_after_days: stage.escalate_after_days ?? stage.escalateAfterDays ?? 0,
+      mandatory_remarks_on_reject: stage.mandatory_remarks_on_reject ?? stage.mandatoryRemarksOnReject ?? true
+    };
+  });
+}
+
+function adminWorkflowSortOrder(workflowKey: AdminWorkflowKey): number {
+  return ["leave", "wfh", "timesheet", "expense", "asset_request", "helpdesk_escalation"].indexOf(workflowKey);
 }
 
 function monthName(month: number): string {

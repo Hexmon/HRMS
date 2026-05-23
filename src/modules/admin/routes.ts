@@ -3,6 +3,8 @@ import { z } from "zod";
 import { unauthorized } from "../../platform/errors.js";
 import { AdminService } from "./service.js";
 import {
+  adminWorkflowUpdateSchema,
+  adminWorkflowsQuerySchema,
   companyProfileUpdateSchema,
   departmentCreateSchema,
   departmentUpdateSchema,
@@ -13,7 +15,8 @@ import {
   rbacRoleCreateSchema,
   rbacRolePermissionsReplaceSchema,
   rbacRolesQuerySchema,
-  rbacRoleUpdateSchema
+  rbacRoleUpdateSchema,
+  workflowKeyParamSchema
 } from "./schemas.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
@@ -125,6 +128,24 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor,
       params.id,
       rbacRolePermissionsReplaceSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/workflows", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).listAdminWorkflows(
+      request.actor,
+      adminWorkflowsQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.put("/workflows/:workflow_key", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = workflowKeyParamSchema.parse(request.params);
+    return new AdminService(fastify.store).updateAdminWorkflow(
+      request.actor,
+      params.workflow_key,
+      adminWorkflowUpdateSchema.parse(request.body)
     );
   });
 };

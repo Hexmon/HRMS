@@ -26,6 +26,8 @@ import type {
   ProjectPriority,
   ProjectStatus,
   ProjectType,
+  AdminWorkflowApproverType,
+  AdminWorkflowKey,
   RbacPermissionAction,
   RbacPermissionGroup,
   RoleKey,
@@ -101,6 +103,28 @@ export interface RbacPermissionDefinition {
   action: RbacPermissionAction;
   label: string;
   description: string;
+}
+
+export interface AdminWorkflowStageRecord {
+  id: string;
+  order: number;
+  approver_type: AdminWorkflowApproverType;
+  approver_value: string;
+  escalate_after_days: number;
+  mandatory_remarks_on_reject: boolean;
+}
+
+export interface AdminWorkflowConfigRecord {
+  id: UUID;
+  workflow_key: AdminWorkflowKey;
+  module: string;
+  label: string;
+  status: "active" | "inactive";
+  stages: AdminWorkflowStageRecord[];
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+  version: number;
 }
 
 export interface CoreUser extends AuthUser {
