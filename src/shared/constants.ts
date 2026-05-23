@@ -295,6 +295,42 @@ export const ProjectMilestoneStatuses = {
 export type ProjectMilestoneStatus =
   (typeof ProjectMilestoneStatuses)[keyof typeof ProjectMilestoneStatuses];
 
+export const HelpdeskTicketCategories = {
+  IT: "IT",
+  HR: "HR",
+  Finance: "Finance",
+  Admin: "Admin",
+  Assets: "Assets",
+  ProjectSupport: "Project Support"
+} as const;
+
+export type HelpdeskTicketCategory =
+  (typeof HelpdeskTicketCategories)[keyof typeof HelpdeskTicketCategories];
+
+export const HelpdeskTicketPriorities = {
+  Low: "Low",
+  Medium: "Medium",
+  High: "High",
+  Urgent: "Urgent"
+} as const;
+
+export type HelpdeskTicketPriority =
+  (typeof HelpdeskTicketPriorities)[keyof typeof HelpdeskTicketPriorities];
+
+export const HelpdeskTicketStatuses = {
+  New: "new",
+  Assigned: "assigned",
+  InProgress: "in_progress",
+  OnHold: "on_hold",
+  Resolved: "resolved",
+  Closed: "closed",
+  Reopened: "reopened",
+  Escalated: "escalated"
+} as const;
+
+export type HelpdeskTicketStatus =
+  (typeof HelpdeskTicketStatuses)[keyof typeof HelpdeskTicketStatuses];
+
 export const EmsProfileChangeStatuses = {
   Pending: "pending",
   Approved: "approved",

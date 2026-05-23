@@ -29,6 +29,7 @@ import attendanceModule from "./modules/attendance/index.js";
 import leaveWfhModule from "./modules/leave-wfh/index.js";
 import emsModule from "./modules/ems/index.js";
 import projectsModule from "./modules/projects/index.js";
+import helpdeskModule from "./modules/helpdesk/index.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -110,6 +111,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(leaveWfhModule);
   await app.register(emsModule);
   await app.register(projectsModule);
+  await app.register(helpdeskModule);
 
   app.get("/api/v1/openapi.json", async () => app.swagger());
 

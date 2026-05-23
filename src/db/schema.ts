@@ -22,6 +22,7 @@ export const attendance = pgSchema("attendance");
 export const leaveWfh = pgSchema("leave_wfh");
 export const ems = pgSchema("ems");
 export const projects = pgSchema("projects");
+export const helpdesk = pgSchema("helpdesk");
 export const platform = pgSchema("platform");
 
 const uuidPk = uuid("id").primaryKey();
@@ -860,6 +861,122 @@ export const projectMilestones = projects.table(
   ]
 );
 
+export const helpdeskCategories = helpdesk.table(
+  "categories",
+  {
+    id: uuidPk.defaultRandom(),
+    categoryKey: text("category_key").notNull(),
+    label: text("label").notNull(),
+    defaultAssigneeUserId: uuid("default_assignee_user_id"),
+    defaultAssigneeName: text("default_assignee_name"),
+    defaultAssigneeRole: text("default_assignee_role"),
+    team: text("team").notNull(),
+    active: boolean("active").notNull().default(true),
+    subCategories: jsonb("sub_categories").notNull().default([]),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("helpdesk_categories_key_uq").on(table.categoryKey),
+    index("helpdesk_categories_active_idx").on(table.active)
+  ]
+);
+
+export const helpdeskTickets = helpdesk.table(
+  "tickets",
+  {
+    id: uuidPk.defaultRandom(),
+    ticketNo: text("ticket_no").notNull(),
+    subject: text("subject").notNull(),
+    description: text("description").notNull(),
+    categoryId: uuid("category_id").notNull(),
+    categoryKey: text("category_key").notNull(),
+    subCategory: text("sub_category"),
+    priority: text("priority").notNull(),
+    status: text("status").notNull(),
+    requesterUserId: uuid("requester_user_id").notNull(),
+    requesterName: text("requester_name").notNull(),
+    requesterEmail: text("requester_email"),
+    requesterDepartment: text("requester_department"),
+    assigneeUserId: uuid("assignee_user_id"),
+    assigneeName: text("assignee_name"),
+    assigneeRole: text("assignee_role"),
+    relatedAssetId: text("related_asset_id"),
+    relatedProjectId: text("related_project_id"),
+    firstResponseAt: timestamp("first_response_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    resolution: text("resolution"),
+    reopenCount: integer("reopen_count").notNull().default(0),
+    escalated: boolean("escalated").notNull().default(false),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("helpdesk_tickets_no_uq").on(table.ticketNo),
+    index("helpdesk_tickets_requester_idx").on(table.requesterUserId, table.createdAt),
+    index("helpdesk_tickets_queue_idx").on(table.status, table.categoryKey, table.assigneeUserId, table.updatedAt)
+  ]
+);
+
+export const helpdeskTicketComments = helpdesk.table(
+  "ticket_comments",
+  {
+    id: uuidPk.defaultRandom(),
+    ticketId: uuid("ticket_id").notNull(),
+    authorUserId: uuid("author_user_id"),
+    authorName: text("author_name").notNull(),
+    authorRole: text("author_role"),
+    body: text("body").notNull(),
+    internal: boolean("internal").notNull().default(false),
+    documentIds: jsonb("document_ids").notNull().default([]),
+    createdAt,
+    deletedAt
+  },
+  (table) => [
+    index("helpdesk_comments_ticket_idx").on(table.ticketId, table.createdAt)
+  ]
+);
+
+export const helpdeskTicketAttachments = helpdesk.table(
+  "ticket_attachments",
+  {
+    id: uuidPk.defaultRandom(),
+    ticketId: uuid("ticket_id").notNull(),
+    documentId: uuid("document_id"),
+    attachmentType: text("attachment_type").notNull(),
+    fileName: text("file_name").notNull(),
+    sizeText: text("size_text"),
+    uploadedByUserId: uuid("uploaded_by_user_id"),
+    uploadedByName: text("uploaded_by_name").notNull(),
+    createdAt,
+    deletedAt
+  },
+  (table) => [
+    index("helpdesk_attachments_ticket_idx").on(table.ticketId, table.createdAt)
+  ]
+);
+
+export const helpdeskTicketEvents = helpdesk.table(
+  "ticket_events",
+  {
+    id: uuidPk.defaultRandom(),
+    ticketId: uuid("ticket_id").notNull(),
+    actorUserId: uuid("actor_user_id"),
+    actorName: text("actor_name").notNull(),
+    action: text("action").notNull(),
+    detail: text("detail"),
+    createdAt
+  },
+  (table) => [
+    index("helpdesk_events_ticket_idx").on(table.ticketId, table.createdAt)
+  ]
+);
+
 export const emsEmployeeProfiles = ems.table(
   "employee_profiles",
   {
@@ -1032,6 +1149,15 @@ export const schema = {
   workflowDefinitions,
   timesheetSubmissions,
   timesheetApprovalActions,
+  projectRecords,
+  projectMembers,
+  projectAllocations,
+  projectMilestones,
+  helpdeskCategories,
+  helpdeskTickets,
+  helpdeskTicketComments,
+  helpdeskTicketAttachments,
+  helpdeskTicketEvents,
   emsEmployeeProfiles,
   emsProfileChangeRequests,
   emsServiceRequests,

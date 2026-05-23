@@ -21,6 +21,11 @@ import type {
   ExpenseLineItem,
   ExpensePayment,
   FinanceGovernanceConfig,
+  HelpdeskCategory,
+  HelpdeskTicket,
+  HelpdeskTicketAttachment,
+  HelpdeskTicketComment,
+  HelpdeskTicketEvent,
   ExpenseSubType,
   ExpenseTicket,
   Holiday,
@@ -50,6 +55,9 @@ import {
   EmsPolicyAcknowledgementStatuses,
   TimesheetStatuses,
   ProjectBillingTypes,
+  HelpdeskTicketCategories,
+  HelpdeskTicketPriorities,
+  HelpdeskTicketStatuses,
   ProjectHealthStatuses,
   ProjectMemberStatuses,
   ProjectMilestoneStatuses,
@@ -287,6 +295,11 @@ export interface DataStore {
   projectMembers: ProjectMemberRecord[];
   projectAllocations: ProjectAllocationRecord[];
   projectMilestones: ProjectMilestoneRecord[];
+  helpdeskCategories: HelpdeskCategory[];
+  helpdeskTickets: HelpdeskTicket[];
+  helpdeskComments: HelpdeskTicketComment[];
+  helpdeskAttachments: HelpdeskTicketAttachment[];
+  helpdeskEvents: HelpdeskTicketEvent[];
   attendancePunches: AttendancePunch[];
   attendanceDayRecords: AttendanceDayRecord[];
   attendanceRegularizations: AttendanceRegularizationRequest[];
@@ -871,6 +884,231 @@ export function createMemoryDataStore(): MemoryDataStore {
       deleted_at: null
     }
   ];
+  const helpdeskCategories: HelpdeskCategory[] = [
+    {
+      id: uuidFromName("helpdesk-category-it"),
+      category_key: HelpdeskTicketCategories.IT,
+      label: "IT Support",
+      default_assignee_user_id: seedIds.assetManager,
+      default_assignee_name: "Asset Manager",
+      default_assignee_role: Roles.AssetManager,
+      team: "IT Operations",
+      active: true,
+      sub_categories: [
+        { key: "vpn", label: "VPN / Network" },
+        { key: "email", label: "Email / Calendar" },
+        { key: "software", label: "Software install" },
+        { key: "hardware", label: "Hardware issue" },
+        { key: "access", label: "Access / Permissions" }
+      ],
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("helpdesk-category-hr"),
+      category_key: HelpdeskTicketCategories.HR,
+      label: "HR",
+      default_assignee_user_id: seedIds.admin,
+      default_assignee_name: "Admin User",
+      default_assignee_role: Roles.Admin,
+      team: "People Ops",
+      active: true,
+      sub_categories: [
+        { key: "leave", label: "Leave query" },
+        { key: "policy", label: "Policy clarification" },
+        { key: "letter", label: "Letter request" },
+        { key: "payroll", label: "Payroll query" }
+      ],
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("helpdesk-category-finance"),
+      category_key: HelpdeskTicketCategories.Finance,
+      label: "Finance",
+      default_assignee_user_id: seedIds.financeManager,
+      default_assignee_name: "Finance Manager N1",
+      default_assignee_role: Roles.FinanceManager,
+      team: "Finance",
+      active: true,
+      sub_categories: [
+        { key: "reimburse", label: "Reimbursement" },
+        { key: "invoice", label: "Invoice / GST" },
+        { key: "advance", label: "Advance request" }
+      ],
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("helpdesk-category-admin"),
+      category_key: HelpdeskTicketCategories.Admin,
+      label: "Admin / Facilities",
+      default_assignee_user_id: seedIds.assetManager,
+      default_assignee_name: "Asset Manager",
+      default_assignee_role: Roles.AssetManager,
+      team: "Admin",
+      active: true,
+      sub_categories: [
+        { key: "seat", label: "Seat / Workspace" },
+        { key: "travel", label: "Travel" },
+        { key: "stationery", label: "Stationery" }
+      ],
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("helpdesk-category-assets"),
+      category_key: HelpdeskTicketCategories.Assets,
+      label: "Assets",
+      default_assignee_user_id: seedIds.assetManager,
+      default_assignee_name: "Asset Manager",
+      default_assignee_role: Roles.AssetManager,
+      team: "IT Operations",
+      active: true,
+      sub_categories: [
+        { key: "request", label: "New asset" },
+        { key: "repair", label: "Repair" },
+        { key: "return", label: "Return" }
+      ],
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("helpdesk-category-project-support"),
+      category_key: HelpdeskTicketCategories.ProjectSupport,
+      label: "Project Support",
+      default_assignee_user_id: seedIds.manager,
+      default_assignee_name: "Manager D1",
+      default_assignee_role: Roles.Employee,
+      team: "Engineering",
+      active: true,
+      sub_categories: [
+        { key: "tooling", label: "Tooling / CI" },
+        { key: "infra", label: "Infrastructure" },
+        { key: "client", label: "Client coordination" }
+      ],
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    }
+  ];
+  const helpdeskTickets: HelpdeskTicket[] = [
+    {
+      id: uuidFromName("helpdesk-ticket-12001"),
+      ticket_no: "TKT-12001",
+      subject: "VPN not connecting from office",
+      description: "Corporate VPN times out from the office network and from tethering.",
+      category_id: helpdeskCategories[0]!.id,
+      category_key: HelpdeskTicketCategories.IT,
+      sub_category: "vpn",
+      priority: HelpdeskTicketPriorities.High,
+      status: HelpdeskTicketStatuses.InProgress,
+      requester_user_id: seedIds.employee1,
+      requester_name: "Employee E1",
+      requester_email: "e1@example.test",
+      requester_department: "Sales",
+      assignee_user_id: seedIds.assetManager,
+      assignee_name: "Asset Manager",
+      assignee_role: Roles.AssetManager,
+      related_asset_id: null,
+      related_project_id: projectHawkaiiId,
+      first_response_at: created,
+      resolved_at: null,
+      closed_at: null,
+      resolution: null,
+      reopen_count: 0,
+      escalated: false,
+      version: 2,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    },
+    {
+      id: uuidFromName("helpdesk-ticket-12002"),
+      ticket_no: "TKT-12002",
+      subject: "Update payroll bank account",
+      description: "Please update payroll bank details for the next cycle.",
+      category_id: helpdeskCategories[2]!.id,
+      category_key: HelpdeskTicketCategories.Finance,
+      sub_category: "payroll",
+      priority: HelpdeskTicketPriorities.Medium,
+      status: HelpdeskTicketStatuses.Assigned,
+      requester_user_id: seedIds.employee2,
+      requester_name: "Employee E2",
+      requester_email: "e2@example.test",
+      requester_department: "Sales",
+      assignee_user_id: seedIds.financeManager,
+      assignee_name: "Finance Manager N1",
+      assignee_role: Roles.FinanceManager,
+      related_asset_id: null,
+      related_project_id: null,
+      first_response_at: null,
+      resolved_at: null,
+      closed_at: null,
+      resolution: null,
+      reopen_count: 0,
+      escalated: false,
+      version: 1,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null
+    }
+  ];
+  const helpdeskComments: HelpdeskTicketComment[] = [
+    {
+      id: uuidFromName("helpdesk-comment-12001-1"),
+      ticket_id: helpdeskTickets[0]!.id,
+      author_user_id: seedIds.assetManager,
+      author_name: "Asset Manager",
+      author_role: Roles.AssetManager,
+      body: "Checking VPN gateway logs and office network routes.",
+      internal: false,
+      document_ids: [],
+      created_at: created,
+      deleted_at: null
+    }
+  ];
+  const helpdeskAttachments: HelpdeskTicketAttachment[] = [];
+  const helpdeskEvents: HelpdeskTicketEvent[] = [
+    {
+      id: uuidFromName("helpdesk-event-12001-created"),
+      ticket_id: helpdeskTickets[0]!.id,
+      actor_user_id: seedIds.employee1,
+      actor_name: "Employee E1",
+      action: "Ticket created",
+      detail: null,
+      created_at: created
+    },
+    {
+      id: uuidFromName("helpdesk-event-12001-assigned"),
+      ticket_id: helpdeskTickets[0]!.id,
+      actor_user_id: null,
+      actor_name: "System",
+      action: "Auto-assigned",
+      detail: "Assigned to Asset Manager",
+      created_at: created
+    },
+    {
+      id: uuidFromName("helpdesk-event-12002-created"),
+      ticket_id: helpdeskTickets[1]!.id,
+      actor_user_id: seedIds.employee2,
+      actor_name: "Employee E2",
+      action: "Ticket created",
+      detail: null,
+      created_at: created
+    }
+  ];
   return {
     kind: "memory",
     departments,
@@ -944,6 +1182,11 @@ export function createMemoryDataStore(): MemoryDataStore {
     projectMembers,
     projectAllocations,
     projectMilestones,
+    helpdeskCategories,
+    helpdeskTickets,
+    helpdeskComments,
+    helpdeskAttachments,
+    helpdeskEvents,
     attendancePunches: [],
     attendanceDayRecords: [],
     attendanceRegularizations: [],

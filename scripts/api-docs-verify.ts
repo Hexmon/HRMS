@@ -39,6 +39,7 @@ const allowedTags = new Set([
   "Leave / WFH / Holidays",
   "EMS",
   "Projects / Utilization",
+  "Helpdesk",
   "Reports & Analytics",
   "Notifications",
   "Outbox / Platform Events",
@@ -112,7 +113,18 @@ const bodyRequiredOperations = new Set([
   "POST /api/v1/projects/{id}/members",
   "PATCH /api/v1/projects/{id}/members/{member_id}",
   "POST /api/v1/projects/{id}/allocations",
-  "POST /api/v1/projects/{id}/milestones"
+  "POST /api/v1/projects/{id}/milestones",
+  "POST /api/v1/helpdesk/tickets",
+  "PATCH /api/v1/helpdesk/tickets/{id}",
+  "POST /api/v1/helpdesk/tickets/{id}/comments",
+  "POST /api/v1/helpdesk/tickets/{id}/internal-notes",
+  "POST /api/v1/helpdesk/tickets/{id}/attachments",
+  "POST /api/v1/helpdesk/tickets/{id}/assign",
+  "POST /api/v1/helpdesk/tickets/{id}/priority",
+  "POST /api/v1/helpdesk/tickets/{id}/status",
+  "POST /api/v1/helpdesk/tickets/{id}/resolve",
+  "POST /api/v1/helpdesk/tickets/{id}/close",
+  "POST /api/v1/helpdesk/tickets/{id}/reopen"
 ]);
 
 const occOperations = new Set([
@@ -140,7 +152,17 @@ const occOperations = new Set([
   "POST /api/v1/projects/{id}/members",
   "PATCH /api/v1/projects/{id}/members/{member_id}",
   "POST /api/v1/projects/{id}/allocations",
-  "POST /api/v1/projects/{id}/milestones"
+  "POST /api/v1/projects/{id}/milestones",
+  "PATCH /api/v1/helpdesk/tickets/{id}",
+  "POST /api/v1/helpdesk/tickets/{id}/comments",
+  "POST /api/v1/helpdesk/tickets/{id}/internal-notes",
+  "POST /api/v1/helpdesk/tickets/{id}/attachments",
+  "POST /api/v1/helpdesk/tickets/{id}/assign",
+  "POST /api/v1/helpdesk/tickets/{id}/priority",
+  "POST /api/v1/helpdesk/tickets/{id}/status",
+  "POST /api/v1/helpdesk/tickets/{id}/resolve",
+  "POST /api/v1/helpdesk/tickets/{id}/close",
+  "POST /api/v1/helpdesk/tickets/{id}/reopen"
 ]);
 
 const listOperations = new Set([
@@ -190,7 +212,10 @@ const listOperations = new Set([
   "GET /api/v1/projects/{id}/allocations",
   "GET /api/v1/projects/{id}/milestones",
   "GET /api/v1/projects/{id}/documents",
-  "GET /api/v1/team-utilization/summary"
+  "GET /api/v1/team-utilization/summary",
+  "GET /api/v1/helpdesk/tickets",
+  "GET /api/v1/helpdesk/categories",
+  "GET /api/v1/helpdesk/sla-report"
 ]);
 
 process.env.HRMS_ALLOW_MEMORY_STORE ??= "true";

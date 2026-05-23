@@ -9,6 +9,9 @@ import {
   ExpenseStatuses,
   ExpenseSubTypes,
   ExpenseTypes,
+  HelpdeskTicketCategories,
+  HelpdeskTicketPriorities,
+  HelpdeskTicketStatuses,
   LeaveRequestStatuses,
   LeaveTypes,
   PaymentTypes,
@@ -458,6 +461,133 @@ export const projectMilestoneCreateSchema = z.object({
 });
 
 export type ProjectMilestoneCreateInput = z.infer<typeof projectMilestoneCreateSchema>;
+
+const helpdeskCategoryValues = [
+  HelpdeskTicketCategories.IT,
+  HelpdeskTicketCategories.HR,
+  HelpdeskTicketCategories.Finance,
+  HelpdeskTicketCategories.Admin,
+  HelpdeskTicketCategories.Assets,
+  HelpdeskTicketCategories.ProjectSupport
+] as const;
+
+const helpdeskPriorityValues = [
+  HelpdeskTicketPriorities.Low,
+  HelpdeskTicketPriorities.Medium,
+  HelpdeskTicketPriorities.High,
+  HelpdeskTicketPriorities.Urgent
+] as const;
+
+const helpdeskStatusValues = [
+  HelpdeskTicketStatuses.New,
+  HelpdeskTicketStatuses.Assigned,
+  HelpdeskTicketStatuses.InProgress,
+  HelpdeskTicketStatuses.OnHold,
+  HelpdeskTicketStatuses.Resolved,
+  HelpdeskTicketStatuses.Closed,
+  HelpdeskTicketStatuses.Reopened,
+  HelpdeskTicketStatuses.Escalated
+] as const;
+
+export const helpdeskTicketCreateSchema = z.object({
+  category_id: uuidSchema.optional(),
+  category_key: z.enum(helpdeskCategoryValues).optional(),
+  subject: z.string().trim().min(3).max(180),
+  description: z.string().trim().min(3).max(4000),
+  sub_category: z.string().trim().max(120).optional(),
+  priority: z.enum(helpdeskPriorityValues).default(HelpdeskTicketPriorities.Medium),
+  document_ids: z.array(uuidSchema).default([]),
+  attachment_name: z.string().trim().max(240).optional(),
+  related_asset_id: z.string().trim().max(120).optional(),
+  related_project_id: z.string().trim().max(120).optional()
+}).refine((input) => Boolean(input.category_id || input.category_key), {
+  message: "category_id or category_key is required",
+  path: ["category_id"]
+});
+
+export type HelpdeskTicketCreateInput = z.infer<typeof helpdeskTicketCreateSchema>;
+
+export const helpdeskTicketUpdateSchema = z.object({
+  subject: z.string().trim().min(3).max(180).optional(),
+  description: z.string().trim().min(3).max(4000).optional(),
+  sub_category: z.string().trim().max(120).nullable().optional(),
+  category_id: uuidSchema.optional(),
+  category_key: z.enum(helpdeskCategoryValues).optional(),
+  priority: z.enum(helpdeskPriorityValues).optional(),
+  related_asset_id: z.string().trim().max(120).nullable().optional(),
+  related_project_id: z.string().trim().max(120).nullable().optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type HelpdeskTicketUpdateInput = z.infer<typeof helpdeskTicketUpdateSchema>;
+
+export const helpdeskCommentSchema = z.object({
+  message: z.string().trim().min(1).max(4000),
+  document_ids: z.array(uuidSchema).default([]),
+  expected_version: z.number().int().min(1).optional()
+});
+
+export type HelpdeskCommentInput = z.infer<typeof helpdeskCommentSchema>;
+
+export const helpdeskAttachmentSchema = z.object({
+  document_id: uuidSchema.optional(),
+  attachment_type: z.string().trim().min(1).max(120).default("supporting_document"),
+  file_name: z.string().trim().min(1).max(240).optional(),
+  size_text: z.string().trim().max(80).optional(),
+  expected_version: z.number().int().min(1).optional()
+}).refine((input) => Boolean(input.document_id || input.file_name), {
+  message: "document_id or file_name is required",
+  path: ["document_id"]
+});
+
+export type HelpdeskAttachmentInput = z.infer<typeof helpdeskAttachmentSchema>;
+
+export const helpdeskAssignSchema = z.object({
+  assignee_user_id: uuidSchema,
+  remarks: z.string().trim().max(1000).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type HelpdeskAssignInput = z.infer<typeof helpdeskAssignSchema>;
+
+export const helpdeskPrioritySchema = z.object({
+  priority: z.enum(helpdeskPriorityValues),
+  remarks: z.string().trim().max(1000).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type HelpdeskPriorityInput = z.infer<typeof helpdeskPrioritySchema>;
+
+export const helpdeskStatusSchema = z.object({
+  status: z.enum(helpdeskStatusValues),
+  remarks: z.string().trim().max(1000).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type HelpdeskStatusInput = z.infer<typeof helpdeskStatusSchema>;
+
+export const helpdeskResolveSchema = z.object({
+  resolution: z.string().trim().min(3).max(2000),
+  document_ids: z.array(uuidSchema).default([]),
+  expected_version: z.number().int().min(1)
+});
+
+export type HelpdeskResolveInput = z.infer<typeof helpdeskResolveSchema>;
+
+export const helpdeskCloseSchema = z.object({
+  satisfaction: z.number().int().min(1).max(5).optional(),
+  remarks: z.string().trim().max(1000).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type HelpdeskCloseInput = z.infer<typeof helpdeskCloseSchema>;
+
+export const helpdeskReopenSchema = z.object({
+  reason: z.string().trim().min(3).max(1000),
+  expected_version: z.number().int().min(1)
+});
+
+export type HelpdeskReopenInput = z.infer<typeof helpdeskReopenSchema>;
 
 export const workflowDefinitionSchema = z.object({
   name: z.string().min(1),

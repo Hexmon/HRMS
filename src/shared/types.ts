@@ -13,6 +13,9 @@ import type {
   ExpenseStatus,
   ExpenseSubType,
   ExpenseType,
+  HelpdeskTicketCategory,
+  HelpdeskTicketPriority,
+  HelpdeskTicketStatus,
   LeaveRequestStatus,
   LeaveType,
   PaymentType,
@@ -422,6 +425,89 @@ export interface ProjectMilestoneRecord {
   created_at: ISODateTime;
   updated_at: ISODateTime;
   deleted_at: ISODateTime | null;
+}
+
+export interface HelpdeskCategory {
+  id: UUID;
+  category_key: HelpdeskTicketCategory;
+  label: string;
+  default_assignee_user_id: UUID | null;
+  default_assignee_name: string | null;
+  default_assignee_role: string | null;
+  team: string;
+  active: boolean;
+  sub_categories: Array<{ key: string; label: string }>;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface HelpdeskTicket {
+  id: UUID;
+  ticket_no: string;
+  subject: string;
+  description: string;
+  category_id: UUID;
+  category_key: HelpdeskTicketCategory;
+  sub_category: string | null;
+  priority: HelpdeskTicketPriority;
+  status: HelpdeskTicketStatus;
+  requester_user_id: UUID;
+  requester_name: string;
+  requester_email: string | null;
+  requester_department: string | null;
+  assignee_user_id: UUID | null;
+  assignee_name: string | null;
+  assignee_role: string | null;
+  related_asset_id: string | null;
+  related_project_id: string | null;
+  first_response_at: ISODateTime | null;
+  resolved_at: ISODateTime | null;
+  closed_at: ISODateTime | null;
+  resolution: string | null;
+  reopen_count: number;
+  escalated: boolean;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface HelpdeskTicketComment {
+  id: UUID;
+  ticket_id: UUID;
+  author_user_id: UUID | null;
+  author_name: string;
+  author_role: string | null;
+  body: string;
+  internal: boolean;
+  document_ids: UUID[];
+  created_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface HelpdeskTicketAttachment {
+  id: UUID;
+  ticket_id: UUID;
+  document_id: UUID | null;
+  attachment_type: string;
+  file_name: string;
+  size_text: string | null;
+  uploaded_by_user_id: UUID | null;
+  uploaded_by_name: string;
+  created_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+export interface HelpdeskTicketEvent {
+  id: UUID;
+  ticket_id: UUID;
+  actor_user_id: UUID | null;
+  actor_name: string;
+  action: string;
+  detail: string | null;
+  created_at: ISODateTime;
 }
 
 export interface EmsEmployeeProfile {

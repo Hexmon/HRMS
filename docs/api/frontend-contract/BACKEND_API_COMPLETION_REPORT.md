@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 136 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 151 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
-| Planned new APIs | 79 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
-| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `136 current + 79 remaining`; Projects/utilization added 15 operations after UI audit confirmed project portfolio, detail, and team utilization needs. |
+| Planned new APIs | 64 | Keep related frontend features mocked or behind integration flags. | Build by phase and mark complete only after tests/OpenAPI/docs pass. |
+| Target implemented contract after completion | 215 | Regenerate frontend client only after each backend phase lands. | `151 current + 64 remaining`; Helpdesk added 15 operations after UI audit confirmed ticket, queue, lifecycle, category, and SLA needs. |
 
 ## Development Phases
 
@@ -43,6 +43,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Leave / WFH / Holidays | 14 | Leave balances, leave apply/cancel/decision queues, WFH apply/decision queues, HR monitor, and holiday list/upsert. |
 | EMS | 13 | Employee profile, profile change requests and HR decisions, generic employee requests and HR queue, letters, and policy acknowledgements. |
 | Projects / Utilization | 15 | Project CRUD, members, allocations, milestones/modules, project documents, project summary, and team utilization analytics. |
+| Helpdesk | 15 | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report. |
 
 P0 frontend integration can start with these operations only. The authoritative machine-readable list remains `docs/api/frontend-contract/openapi.json`.
 
@@ -77,7 +78,7 @@ These 11 operations already existed and were expanded in Phase 1A-1C. Their path
 
 ## Planned New API Backlog
 
-Total remaining planned new operations: **79**.
+Total remaining planned new operations: **64**.
 
 ### Auth, Onboarding, Password, Role Activation (8 implemented APIs)
 
@@ -227,25 +228,25 @@ Total remaining planned new operations: **79**.
 | GET | `/api/v1/assets/vendors` | `/assets/vendors` | List asset vendors and warranty selectors. | Asset admin/Admin. | page, page_size, active_only, search | items[], pagination | Shared errors; selector-friendly. | Planned / Not Implemented |
 | GET | `/api/v1/assets/recovery-queue` | `/assets/recovery` | List assets pending recovery from offboarding/termination. | Asset admin/HR/Admin. | page, page_size, user_id, status | items[], pagination, totals | 403 out-of-scope; integrates with employee termination events. | Planned / Not Implemented |
 
-### Helpdesk (15 planned APIs)
+### Helpdesk (15 implemented APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/api/v1/helpdesk/tickets` | `/helpdesk/new` | Create helpdesk ticket. | Authenticated employee. | category_id, subject, description, priority optional, document_ids[] | ticket, version | 400 invalid category; SLA assigned server-side. | Planned / Not Implemented |
-| GET | `/api/v1/helpdesk/tickets` | `/helpdesk` | List helpdesk tickets. | Requester own, assigned agent, manager/HR/Admin by scope. | page, page_size, status, priority, category_id, assignee_id, search | items[], pagination, queue_counts | 403 out-of-scope; paginated. | Planned / Not Implemented |
-| GET | `/api/v1/helpdesk/tickets/{id}` | `/helpdesk/:id` | Return ticket detail. | Requester, assigned agent, admin by scope. | Path id | ticket, comments[], attachments[], SLA, version | 403 not allowed; 404 unknown. | Planned / Not Implemented |
-| PATCH | `/api/v1/helpdesk/tickets/{id}` | `/helpdesk/:id` | Update allowed ticket fields. | Requester for draft/open limited fields; agent/admin broader. | field changes, expected_version | ticket, version | 409 stale version/closed ticket read-only. | Planned / Not Implemented |
-| POST | `/api/v1/helpdesk/tickets/{id}/comments` | `/helpdesk/:id` | Add public ticket comment. | Requester/agent/admin by scope. | message, document_ids[], expected_version optional | comment, ticket_version | 409 closed ticket unless reopen allowed. | Planned / Not Implemented |
-| POST | `/api/v1/helpdesk/tickets/{id}/internal-notes` | `/helpdesk/:id/internal` | Add internal support note. | Agent/Admin only. | message, document_ids[] optional | note, ticket_version | 403 requester; not visible to employee. | Planned / Not Implemented |
-| POST | `/api/v1/helpdesk/tickets/{id}/attachments` | `/helpdesk/:id` | Attach document metadata to ticket. | Requester/agent/admin by scope. | document_id, attachment_type | attachment, ticket_version | 403 restricted document; backend document access only. | Planned / Not Implemented |
-| POST | `/api/v1/helpdesk/tickets/{id}/assign` | `/helpdesk/agent` | Assign or reassign ticket. | Helpdesk lead/Admin. | assignee_user_id, remarks, expected_version | ticket, version | 409 stale version; audit required. | Planned / Not Implemented |
-| POST | `/api/v1/helpdesk/tickets/{id}/priority` | `/helpdesk/agent` | Change priority. | Agent/Admin. | priority, remarks, expected_version | ticket, SLA update, version | remarks required for escalation; 409 stale version. | Planned / Not Implemented |
-| POST | `/api/v1/helpdesk/tickets/{id}/status` | `/helpdesk/agent` | Change operational ticket status. | Agent/Admin. | status, remarks, expected_version | ticket, version | 409 invalid transition; remarks required for blocked states. | Planned / Not Implemented |
-| POST | `/api/v1/helpdesk/tickets/{id}/resolve` | `/helpdesk/agent` | Resolve ticket. | Assigned agent/Admin. | resolution, document_ids[], expected_version | ticket, resolved_at, version | 409 invalid state/stale version. | Planned / Not Implemented |
-| POST | `/api/v1/helpdesk/tickets/{id}/close` | `/helpdesk/:id` | Close resolved ticket. | Requester or Admin per policy. | satisfaction optional, remarks optional, expected_version | ticket, closed_at, version | 409 not resolved/stale version. | Planned / Not Implemented |
-| POST | `/api/v1/helpdesk/tickets/{id}/reopen` | `/helpdesk/:id` | Reopen recently closed ticket. | Requester or Agent/Admin per policy. | reason, expected_version | ticket, reopened_at, version | 409 outside reopen window/stale version. | Planned / Not Implemented |
-| GET | `/api/v1/helpdesk/categories` | `/helpdesk/new` | Return ticket categories and SLA hints. | Authenticated employee. | active_only, parent_id optional | categories[], SLA hints | Shared errors; cacheable. | Planned / Not Implemented |
-| GET | `/api/v1/helpdesk/sla-report` | `/helpdesk/reports` | Return SLA compliance report. | Helpdesk lead/Admin/auditor. | date_range, category_id, assignee_id, page, page_size | items[], totals, pagination | 403 restricted report; paginated. | Planned / Not Implemented |
+| POST | `/api/v1/helpdesk/tickets` | `/helpdesk/new` | Create helpdesk ticket. | Authenticated employee. | category_id, subject, description, priority optional, document_ids[] | ticket, version | 400 invalid category; SLA assigned server-side. | Implemented in Phase 4 Helpdesk |
+| GET | `/api/v1/helpdesk/tickets` | `/helpdesk` | List helpdesk tickets. | Requester own, assigned agent, manager/HR/Admin by scope. | page, page_size, status, priority, category_id, assignee_id, search | items[], pagination, queue_counts | 403 out-of-scope; paginated. | Implemented in Phase 4 Helpdesk |
+| GET | `/api/v1/helpdesk/tickets/{id}` | `/helpdesk/:id` | Return ticket detail. | Requester, assigned agent, admin by scope. | Path id | ticket, comments[], attachments[], SLA, version | 403 not allowed; 404 unknown. | Implemented in Phase 4 Helpdesk |
+| PATCH | `/api/v1/helpdesk/tickets/{id}` | `/helpdesk/:id` | Update allowed ticket fields. | Requester for draft/open limited fields; agent/admin broader. | field changes, expected_version | ticket, version | 409 stale version/closed ticket read-only. | Implemented in Phase 4 Helpdesk |
+| POST | `/api/v1/helpdesk/tickets/{id}/comments` | `/helpdesk/:id` | Add public ticket comment. | Requester/agent/admin by scope. | message, document_ids[], expected_version optional | comment, ticket_version | 409 closed ticket unless reopen allowed. | Implemented in Phase 4 Helpdesk |
+| POST | `/api/v1/helpdesk/tickets/{id}/internal-notes` | `/helpdesk/:id/internal` | Add internal support note. | Agent/Admin only. | message, document_ids[] optional | note, ticket_version | 403 requester; not visible to employee. | Implemented in Phase 4 Helpdesk |
+| POST | `/api/v1/helpdesk/tickets/{id}/attachments` | `/helpdesk/:id` | Attach document metadata to ticket. | Requester/agent/admin by scope. | document_id, attachment_type | attachment, ticket_version | 403 restricted document; backend document access only. | Implemented in Phase 4 Helpdesk |
+| POST | `/api/v1/helpdesk/tickets/{id}/assign` | `/helpdesk/agent` | Assign or reassign ticket. | Helpdesk lead/Admin. | assignee_user_id, remarks, expected_version | ticket, version | 409 stale version; audit required. | Implemented in Phase 4 Helpdesk |
+| POST | `/api/v1/helpdesk/tickets/{id}/priority` | `/helpdesk/agent` | Change priority. | Agent/Admin. | priority, remarks, expected_version | ticket, SLA update, version | remarks required for escalation; 409 stale version. | Implemented in Phase 4 Helpdesk |
+| POST | `/api/v1/helpdesk/tickets/{id}/status` | `/helpdesk/agent` | Change operational ticket status. | Agent/Admin. | status, remarks, expected_version | ticket, version | 409 invalid transition; remarks required for blocked states. | Implemented in Phase 4 Helpdesk |
+| POST | `/api/v1/helpdesk/tickets/{id}/resolve` | `/helpdesk/agent` | Resolve ticket. | Assigned agent/Admin. | resolution, document_ids[], expected_version | ticket, resolved_at, version | 409 invalid state/stale version. | Implemented in Phase 4 Helpdesk |
+| POST | `/api/v1/helpdesk/tickets/{id}/close` | `/helpdesk/:id` | Close resolved ticket. | Requester or Admin per policy. | satisfaction optional, remarks optional, expected_version | ticket, closed_at, version | 409 not resolved/stale version. | Implemented in Phase 4 Helpdesk |
+| POST | `/api/v1/helpdesk/tickets/{id}/reopen` | `/helpdesk/:id` | Reopen recently closed ticket. | Requester or Agent/Admin per policy. | reason, expected_version | ticket, reopened_at, version | 409 outside reopen window/stale version. | Implemented in Phase 4 Helpdesk |
+| GET | `/api/v1/helpdesk/categories` | `/helpdesk/new` | Return ticket categories and SLA hints. | Authenticated employee. | active_only, parent_id optional | categories[], SLA hints | Shared errors; cacheable. | Implemented in Phase 4 Helpdesk |
+| GET | `/api/v1/helpdesk/sla-report` | `/helpdesk/reports` | Return SLA compliance report. | Helpdesk lead/Admin/auditor. | date_range, category_id, assignee_id, page, page_size | items[], totals, pagination | 403 restricted report; paginated. | Implemented in Phase 4 Helpdesk |
 
 ### Reports Beyond Expenses (10 planned APIs)
 

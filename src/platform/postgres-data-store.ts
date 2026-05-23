@@ -23,6 +23,11 @@ import type {
   ExpensePayment,
   ExpenseTicket,
   FinanceGovernanceConfig,
+  HelpdeskCategory,
+  HelpdeskTicket,
+  HelpdeskTicketAttachment,
+  HelpdeskTicketComment,
+  HelpdeskTicketEvent,
   Holiday,
   LeaveRequest,
   ManagerBackupAssignment,
@@ -67,6 +72,11 @@ export interface PostgresDataStoreOptions {
 }
 
 const resetTables = [
+  "helpdesk.ticket_events",
+  "helpdesk.ticket_attachments",
+  "helpdesk.ticket_comments",
+  "helpdesk.tickets",
+  "helpdesk.categories",
   "projects.project_milestones",
   "projects.project_allocations",
   "projects.project_members",
@@ -188,6 +198,11 @@ function copyData(target: DataStore, source: DataStore): void {
   target.projectMembers = source.projectMembers;
   target.projectAllocations = source.projectAllocations;
   target.projectMilestones = source.projectMilestones;
+  target.helpdeskCategories = source.helpdeskCategories;
+  target.helpdeskTickets = source.helpdeskTickets;
+  target.helpdeskComments = source.helpdeskComments;
+  target.helpdeskAttachments = source.helpdeskAttachments;
+  target.helpdeskEvents = source.helpdeskEvents;
   target.attendancePunches = source.attendancePunches;
   target.attendanceDayRecords = source.attendanceDayRecords;
   target.attendanceRegularizations = source.attendanceRegularizations;
@@ -310,6 +325,11 @@ class PostgresPersistence {
       loaded.projectMembers = await this.loadProjectMembers(client);
       loaded.projectAllocations = await this.loadProjectAllocations(client);
       loaded.projectMilestones = await this.loadProjectMilestones(client);
+      loaded.helpdeskCategories = await this.loadHelpdeskCategories(client);
+      loaded.helpdeskTickets = await this.loadHelpdeskTickets(client);
+      loaded.helpdeskComments = await this.loadHelpdeskComments(client);
+      loaded.helpdeskAttachments = await this.loadHelpdeskAttachments(client);
+      loaded.helpdeskEvents = await this.loadHelpdeskEvents(client);
       loaded.attendancePunches = await this.loadAttendancePunches(client);
       loaded.attendanceDayRecords = await this.loadAttendanceDayRecords(client);
       loaded.attendanceRegularizations = await this.loadAttendanceRegularizations(client);
@@ -341,6 +361,7 @@ class PostgresPersistence {
       await this.flushAssets(client);
       await this.flushTimesheets(client);
       await this.flushProjects(client);
+      await this.flushHelpdesk(client);
       await this.flushAttendance(client);
       await this.flushLeaveWfh(client);
       await this.flushEms(client);
@@ -960,6 +981,104 @@ class PostgresPersistence {
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
       deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadHelpdeskCategories(client: PoolClient): Promise<HelpdeskCategory[]> {
+    const { rows } = await client.query("SELECT * FROM helpdesk.categories ORDER BY category_key");
+    return rows.map((row) => ({
+      id: row.id,
+      category_key: row.category_key,
+      label: row.label,
+      default_assignee_user_id: row.default_assignee_user_id,
+      default_assignee_name: row.default_assignee_name,
+      default_assignee_role: row.default_assignee_role,
+      team: row.team,
+      active: Boolean(row.active),
+      sub_categories: Array.isArray(row.sub_categories) ? row.sub_categories : [],
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadHelpdeskTickets(client: PoolClient): Promise<HelpdeskTicket[]> {
+    const { rows } = await client.query("SELECT * FROM helpdesk.tickets ORDER BY created_at DESC, ticket_no DESC");
+    return rows.map((row) => ({
+      id: row.id,
+      ticket_no: row.ticket_no,
+      subject: row.subject,
+      description: row.description,
+      category_id: row.category_id,
+      category_key: row.category_key,
+      sub_category: row.sub_category,
+      priority: row.priority,
+      status: row.status,
+      requester_user_id: row.requester_user_id,
+      requester_name: row.requester_name,
+      requester_email: row.requester_email,
+      requester_department: row.requester_department,
+      assignee_user_id: row.assignee_user_id,
+      assignee_name: row.assignee_name,
+      assignee_role: row.assignee_role,
+      related_asset_id: row.related_asset_id,
+      related_project_id: row.related_project_id,
+      first_response_at: asIsoOrNull(row.first_response_at),
+      resolved_at: asIsoOrNull(row.resolved_at),
+      closed_at: asIsoOrNull(row.closed_at),
+      resolution: row.resolution,
+      reopen_count: row.reopen_count,
+      escalated: Boolean(row.escalated),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadHelpdeskComments(client: PoolClient): Promise<HelpdeskTicketComment[]> {
+    const { rows } = await client.query("SELECT * FROM helpdesk.ticket_comments ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      ticket_id: row.ticket_id,
+      author_user_id: row.author_user_id,
+      author_name: row.author_name,
+      author_role: row.author_role,
+      body: row.body,
+      internal: Boolean(row.internal),
+      document_ids: Array.isArray(row.document_ids) ? row.document_ids : [],
+      created_at: asIso(row.created_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadHelpdeskAttachments(client: PoolClient): Promise<HelpdeskTicketAttachment[]> {
+    const { rows } = await client.query("SELECT * FROM helpdesk.ticket_attachments ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      ticket_id: row.ticket_id,
+      document_id: row.document_id,
+      attachment_type: row.attachment_type,
+      file_name: row.file_name,
+      size_text: row.size_text,
+      uploaded_by_user_id: row.uploaded_by_user_id,
+      uploaded_by_name: row.uploaded_by_name,
+      created_at: asIso(row.created_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadHelpdeskEvents(client: PoolClient): Promise<HelpdeskTicketEvent[]> {
+    const { rows } = await client.query("SELECT * FROM helpdesk.ticket_events ORDER BY created_at, id");
+    return rows.map((row) => ({
+      id: row.id,
+      ticket_id: row.ticket_id,
+      actor_user_id: row.actor_user_id,
+      actor_name: row.actor_name,
+      action: row.action,
+      detail: row.detail,
+      created_at: asIso(row.created_at)
     }));
   }
 
@@ -2101,6 +2220,195 @@ class PostgresPersistence {
           milestone.created_at,
           milestone.updated_at,
           milestone.deleted_at
+        ]
+      );
+    }
+  }
+
+  private async flushHelpdesk(client: PoolClient): Promise<void> {
+    for (const category of this.store.helpdeskCategories) {
+      await client.query(
+        `INSERT INTO helpdesk.categories (
+          id, category_key, label, default_assignee_user_id, default_assignee_name,
+          default_assignee_role, team, active, sub_categories, version,
+          created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
+        ON CONFLICT (id) DO UPDATE
+        SET category_key = EXCLUDED.category_key,
+            label = EXCLUDED.label,
+            default_assignee_user_id = EXCLUDED.default_assignee_user_id,
+            default_assignee_name = EXCLUDED.default_assignee_name,
+            default_assignee_role = EXCLUDED.default_assignee_role,
+            team = EXCLUDED.team,
+            active = EXCLUDED.active,
+            sub_categories = EXCLUDED.sub_categories,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          category.id,
+          category.category_key,
+          category.label,
+          category.default_assignee_user_id,
+          category.default_assignee_name,
+          category.default_assignee_role,
+          category.team,
+          category.active,
+          JSON.stringify(category.sub_categories),
+          category.version,
+          category.created_at,
+          category.updated_at,
+          category.deleted_at
+        ]
+      );
+    }
+    for (const ticket of this.store.helpdeskTickets) {
+      await client.query(
+        `INSERT INTO helpdesk.tickets (
+          id, ticket_no, subject, description, category_id, category_key, sub_category,
+          priority, status, requester_user_id, requester_name, requester_email,
+          requester_department, assignee_user_id, assignee_name, assignee_role,
+          related_asset_id, related_project_id, first_response_at, resolved_at, closed_at,
+          resolution, reopen_count, escalated, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+        ON CONFLICT (id) DO UPDATE
+        SET ticket_no = EXCLUDED.ticket_no,
+            subject = EXCLUDED.subject,
+            description = EXCLUDED.description,
+            category_id = EXCLUDED.category_id,
+            category_key = EXCLUDED.category_key,
+            sub_category = EXCLUDED.sub_category,
+            priority = EXCLUDED.priority,
+            status = EXCLUDED.status,
+            requester_user_id = EXCLUDED.requester_user_id,
+            requester_name = EXCLUDED.requester_name,
+            requester_email = EXCLUDED.requester_email,
+            requester_department = EXCLUDED.requester_department,
+            assignee_user_id = EXCLUDED.assignee_user_id,
+            assignee_name = EXCLUDED.assignee_name,
+            assignee_role = EXCLUDED.assignee_role,
+            related_asset_id = EXCLUDED.related_asset_id,
+            related_project_id = EXCLUDED.related_project_id,
+            first_response_at = EXCLUDED.first_response_at,
+            resolved_at = EXCLUDED.resolved_at,
+            closed_at = EXCLUDED.closed_at,
+            resolution = EXCLUDED.resolution,
+            reopen_count = EXCLUDED.reopen_count,
+            escalated = EXCLUDED.escalated,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          ticket.id,
+          ticket.ticket_no,
+          ticket.subject,
+          ticket.description,
+          ticket.category_id,
+          ticket.category_key,
+          ticket.sub_category,
+          ticket.priority,
+          ticket.status,
+          ticket.requester_user_id,
+          ticket.requester_name,
+          ticket.requester_email,
+          ticket.requester_department,
+          ticket.assignee_user_id,
+          ticket.assignee_name,
+          ticket.assignee_role,
+          ticket.related_asset_id,
+          ticket.related_project_id,
+          ticket.first_response_at,
+          ticket.resolved_at,
+          ticket.closed_at,
+          ticket.resolution,
+          ticket.reopen_count,
+          ticket.escalated,
+          ticket.version,
+          ticket.created_at,
+          ticket.updated_at,
+          ticket.deleted_at
+        ]
+      );
+    }
+    for (const comment of this.store.helpdeskComments) {
+      await client.query(
+        `INSERT INTO helpdesk.ticket_comments (
+          id, ticket_id, author_user_id, author_name, author_role, body,
+          internal, document_ids, created_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+        ON CONFLICT (id) DO UPDATE
+        SET author_user_id = EXCLUDED.author_user_id,
+            author_name = EXCLUDED.author_name,
+            author_role = EXCLUDED.author_role,
+            body = EXCLUDED.body,
+            internal = EXCLUDED.internal,
+            document_ids = EXCLUDED.document_ids,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          comment.id,
+          comment.ticket_id,
+          comment.author_user_id,
+          comment.author_name,
+          comment.author_role,
+          comment.body,
+          comment.internal,
+          JSON.stringify(comment.document_ids),
+          comment.created_at,
+          comment.deleted_at
+        ]
+      );
+    }
+    for (const attachment of this.store.helpdeskAttachments) {
+      await client.query(
+        `INSERT INTO helpdesk.ticket_attachments (
+          id, ticket_id, document_id, attachment_type, file_name, size_text,
+          uploaded_by_user_id, uploaded_by_name, created_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ON CONFLICT (id) DO UPDATE
+        SET document_id = EXCLUDED.document_id,
+            attachment_type = EXCLUDED.attachment_type,
+            file_name = EXCLUDED.file_name,
+            size_text = EXCLUDED.size_text,
+            uploaded_by_user_id = EXCLUDED.uploaded_by_user_id,
+            uploaded_by_name = EXCLUDED.uploaded_by_name,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          attachment.id,
+          attachment.ticket_id,
+          attachment.document_id,
+          attachment.attachment_type,
+          attachment.file_name,
+          attachment.size_text,
+          attachment.uploaded_by_user_id,
+          attachment.uploaded_by_name,
+          attachment.created_at,
+          attachment.deleted_at
+        ]
+      );
+    }
+    for (const event of this.store.helpdeskEvents) {
+      await client.query(
+        `INSERT INTO helpdesk.ticket_events (
+          id, ticket_id, actor_user_id, actor_name, action, detail, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (id) DO UPDATE
+        SET actor_user_id = EXCLUDED.actor_user_id,
+            actor_name = EXCLUDED.actor_name,
+            action = EXCLUDED.action,
+            detail = EXCLUDED.detail`,
+        [
+          event.id,
+          event.ticket_id,
+          event.actor_user_id,
+          event.actor_name,
+          event.action,
+          event.detail,
+          event.created_at
         ]
       );
     }

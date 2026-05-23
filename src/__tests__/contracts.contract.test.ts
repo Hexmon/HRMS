@@ -79,6 +79,10 @@ const expectedOperations = [
   "GET /api/v1/expenses/{id}/timeline",
   "GET /api/v1/health/live",
   "GET /api/v1/health/ready",
+  "GET /api/v1/helpdesk/categories",
+  "GET /api/v1/helpdesk/sla-report",
+  "GET /api/v1/helpdesk/tickets",
+  "GET /api/v1/helpdesk/tickets/{id}",
   "GET /api/v1/holidays",
   "GET /api/v1/leave-wfh/hr-monitor",
   "GET /api/v1/leave/balances/my",
@@ -159,6 +163,17 @@ const expectedOperations = [
   "POST /api/v1/expenses/{id}/manager/verify",
   "POST /api/v1/expenses/{id}/settlement",
   "POST /api/v1/expenses/{id}/submit",
+  "PATCH /api/v1/helpdesk/tickets/{id}",
+  "POST /api/v1/helpdesk/tickets",
+  "POST /api/v1/helpdesk/tickets/{id}/assign",
+  "POST /api/v1/helpdesk/tickets/{id}/attachments",
+  "POST /api/v1/helpdesk/tickets/{id}/close",
+  "POST /api/v1/helpdesk/tickets/{id}/comments",
+  "POST /api/v1/helpdesk/tickets/{id}/internal-notes",
+  "POST /api/v1/helpdesk/tickets/{id}/priority",
+  "POST /api/v1/helpdesk/tickets/{id}/reopen",
+  "POST /api/v1/helpdesk/tickets/{id}/resolve",
+  "POST /api/v1/helpdesk/tickets/{id}/status",
   "POST /api/v1/leave/requests",
   "POST /api/v1/leave/requests/{id}/cancel",
   "POST /api/v1/leave/requests/{id}/decision",
@@ -248,6 +263,17 @@ const bodyRequiredOperations = [
   "PATCH /api/v1/projects/{id}/members/{member_id}",
   "POST /api/v1/projects/{id}/allocations",
   "POST /api/v1/projects/{id}/milestones",
+  "POST /api/v1/helpdesk/tickets",
+  "PATCH /api/v1/helpdesk/tickets/{id}",
+  "POST /api/v1/helpdesk/tickets/{id}/comments",
+  "POST /api/v1/helpdesk/tickets/{id}/internal-notes",
+  "POST /api/v1/helpdesk/tickets/{id}/attachments",
+  "POST /api/v1/helpdesk/tickets/{id}/assign",
+  "POST /api/v1/helpdesk/tickets/{id}/priority",
+  "POST /api/v1/helpdesk/tickets/{id}/status",
+  "POST /api/v1/helpdesk/tickets/{id}/resolve",
+  "POST /api/v1/helpdesk/tickets/{id}/close",
+  "POST /api/v1/helpdesk/tickets/{id}/reopen",
   "POST /api/v1/manager-backups",
   "POST /api/v1/reports/exports",
   "PUT /api/v1/platform/finance-governance"
@@ -277,6 +303,16 @@ const occOperations = [
   "PATCH /api/v1/projects/{id}/members/{member_id}",
   "POST /api/v1/projects/{id}/allocations",
   "POST /api/v1/projects/{id}/milestones",
+  "PATCH /api/v1/helpdesk/tickets/{id}",
+  "POST /api/v1/helpdesk/tickets/{id}/comments",
+  "POST /api/v1/helpdesk/tickets/{id}/internal-notes",
+  "POST /api/v1/helpdesk/tickets/{id}/attachments",
+  "POST /api/v1/helpdesk/tickets/{id}/assign",
+  "POST /api/v1/helpdesk/tickets/{id}/priority",
+  "POST /api/v1/helpdesk/tickets/{id}/status",
+  "POST /api/v1/helpdesk/tickets/{id}/resolve",
+  "POST /api/v1/helpdesk/tickets/{id}/close",
+  "POST /api/v1/helpdesk/tickets/{id}/reopen",
   "DELETE /api/v1/manager-backups/{id}"
 ];
 
@@ -326,7 +362,10 @@ const listOperations = [
   "GET /api/v1/projects/{id}/allocations",
   "GET /api/v1/projects/{id}/milestones",
   "GET /api/v1/projects/{id}/documents",
-  "GET /api/v1/team-utilization/summary"
+  "GET /api/v1/team-utilization/summary",
+  "GET /api/v1/helpdesk/tickets",
+  "GET /api/v1/helpdesk/categories",
+  "GET /api/v1/helpdesk/sla-report"
 ];
 
 describe("API contracts", () => {
@@ -517,7 +556,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(136);
+    expect(rows.length).toBe(151);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

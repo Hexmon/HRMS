@@ -2125,6 +2125,196 @@ const projectSchema = {
   additionalProperties: true
 };
 
+const helpdeskQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    status: { type: "string", enum: ["new", "assigned", "in_progress", "on_hold", "resolved", "closed", "reopened", "escalated"], example: "in_progress" },
+    priority: { type: "string", enum: ["Low", "Medium", "High", "Urgent"], example: "High" },
+    category_id: uuid("Helpdesk category UUID"),
+    category_key: { type: "string", enum: ["IT", "HR", "Finance", "Admin", "Assets", "Project Support"], example: "IT" },
+    assignee_id: uuid("Assigned agent user UUID"),
+    requester_id: uuid("Requester user UUID"),
+    active_only: { type: "boolean", example: true },
+    search: { type: "string", example: "vpn" },
+    date_from: date("Created-at lower date filter", "2026-05-01"),
+    date_to: date("Created-at upper date filter", "2026-05-31")
+  }
+};
+
+const helpdeskTicketBody = {
+  type: "object",
+  required: ["subject", "description"],
+  properties: {
+    category_id: uuid("Helpdesk category UUID"),
+    category_key: { type: "string", enum: ["IT", "HR", "Finance", "Admin", "Assets", "Project Support"], example: "IT" },
+    subject: { type: "string", minLength: 3, maxLength: 180, example: "VPN not connecting" },
+    description: { type: "string", minLength: 3, maxLength: 4000, example: "The VPN client times out after 30 seconds." },
+    sub_category: { type: "string", maxLength: 120, example: "vpn" },
+    priority: { type: "string", enum: ["Low", "Medium", "High", "Urgent"], default: "Medium", example: "High" },
+    document_ids: { type: "array", items: uuid("Document UUID") },
+    attachment_name: { type: "string", maxLength: 240, example: "vpn-error.png" },
+    related_asset_id: { type: "string", example: "AST-7710" },
+    related_project_id: { type: "string", example: "HAW-HRMS" }
+  },
+  additionalProperties: false
+};
+
+const helpdeskTicketUpdateBody = {
+  ...helpdeskTicketBody,
+  required: ["expected_version"],
+  properties: {
+    ...helpdeskTicketBody.properties,
+    expected_version: { type: "integer", minimum: 1, example: 2 }
+  }
+};
+
+const helpdeskCommentBody = {
+  type: "object",
+  required: ["message"],
+  properties: {
+    message: { type: "string", minLength: 1, maxLength: 4000, example: "Looking into this now." },
+    document_ids: { type: "array", items: uuid("Document UUID") },
+    expected_version: { type: "integer", minimum: 1, example: 2 }
+  },
+  additionalProperties: false
+};
+
+const helpdeskAttachmentBody = {
+  type: "object",
+  properties: {
+    document_id: uuid("Document UUID"),
+    attachment_type: { type: "string", default: "supporting_document", example: "supporting_document" },
+    file_name: { type: "string", example: "vpn-error.png" },
+    size_text: { type: "string", example: "240 KB" },
+    expected_version: { type: "integer", minimum: 1, example: 2 }
+  },
+  additionalProperties: false
+};
+
+const helpdeskAssignBody = {
+  type: "object",
+  required: ["assignee_user_id", "expected_version"],
+  properties: {
+    assignee_user_id: uuid("Assignee user UUID"),
+    remarks: { type: "string", example: "Routing to IT operations." },
+    expected_version: { type: "integer", minimum: 1, example: 2 }
+  },
+  additionalProperties: false
+};
+
+const helpdeskPriorityBody = {
+  type: "object",
+  required: ["priority", "expected_version"],
+  properties: {
+    priority: { type: "string", enum: ["Low", "Medium", "High", "Urgent"], example: "Urgent" },
+    remarks: { type: "string", example: "Customer impact is blocking work." },
+    expected_version: { type: "integer", minimum: 1, example: 2 }
+  },
+  additionalProperties: false
+};
+
+const helpdeskStatusBody = {
+  type: "object",
+  required: ["status", "expected_version"],
+  properties: {
+    status: { type: "string", enum: ["new", "assigned", "in_progress", "on_hold", "reopened", "escalated"], example: "in_progress" },
+    remarks: { type: "string", example: "Waiting for vendor confirmation." },
+    expected_version: { type: "integer", minimum: 1, example: 2 }
+  },
+  additionalProperties: false
+};
+
+const helpdeskResolveBody = {
+  type: "object",
+  required: ["resolution", "expected_version"],
+  properties: {
+    resolution: { type: "string", minLength: 3, maxLength: 2000, example: "Reset VPN profile and confirmed connection." },
+    document_ids: { type: "array", items: uuid("Document UUID") },
+    expected_version: { type: "integer", minimum: 1, example: 2 }
+  },
+  additionalProperties: false
+};
+
+const helpdeskCloseBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    satisfaction: { type: "integer", minimum: 1, maximum: 5, example: 5 },
+    remarks: { type: "string", example: "Confirmed fixed." },
+    expected_version: { type: "integer", minimum: 1, example: 3 }
+  },
+  additionalProperties: false
+};
+
+const helpdeskReopenBody = {
+  type: "object",
+  required: ["reason", "expected_version"],
+  properties: {
+    reason: { type: "string", minLength: 3, maxLength: 1000, example: "The same VPN error returned." },
+    expected_version: { type: "integer", minimum: 1, example: 4 }
+  },
+  additionalProperties: false
+};
+
+const helpdeskTicketSchema = {
+  type: "object",
+  required: ["id", "ticket_no", "subject", "category_key", "priority", "status", "requester_user_id", "version"],
+  properties: {
+    id: uuid("Helpdesk ticket UUID"),
+    ticket_no: { type: "string", example: "TKT-12001" },
+    display_id: { type: "string", example: "TKT-12001" },
+    subject: { type: "string", example: "VPN not connecting" },
+    description: { type: "string", example: "VPN client times out." },
+    category_id: uuid("Helpdesk category UUID"),
+    category_key: { type: "string", example: "IT" },
+    category: { type: "object", additionalProperties: true },
+    sub_category: { type: "string", nullable: true, example: "vpn" },
+    priority: { type: "string", example: "High" },
+    status: { type: "string", example: "in_progress" },
+    requester_user_id: uuid("Requester user UUID"),
+    requester_name: { type: "string", example: "Employee E1" },
+    requester_email: { type: "string", nullable: true, example: "e1@example.test" },
+    requester_department: { type: "string", nullable: true, example: "Sales" },
+    assignee_user_id: uuid("Assigned agent user UUID"),
+    assignee_name: { type: "string", nullable: true, example: "Asset Manager" },
+    assignee_role: { type: "string", nullable: true, example: "Asset Manager" },
+    first_response_at: dateTime("First public agent response time"),
+    resolved_at: dateTime("Resolution time"),
+    closed_at: dateTime("Closure time"),
+    resolution: { type: "string", nullable: true },
+    reopen_count: { type: "integer", minimum: 0, example: 0 },
+    escalated: { type: "boolean", example: false },
+    sla: { type: "object", additionalProperties: true },
+    counts: { type: "object", additionalProperties: true },
+    comments: { type: "array", items: { type: "object", additionalProperties: true } },
+    attachments: { type: "array", items: { type: "object", additionalProperties: true } },
+    events: { type: "array", items: { type: "object", additionalProperties: true } },
+    version: { type: "integer", minimum: 1, example: 2 },
+    created_at: dateTime("Created timestamp"),
+    updated_at: dateTime("Updated timestamp")
+  },
+  additionalProperties: true
+};
+
+const helpdeskMutationResponse = {
+  type: "object",
+  required: ["ticket", "version"],
+  properties: {
+    ticket: helpdeskTicketSchema,
+    version: { type: "integer", minimum: 1, example: 2 },
+    ticket_version: { type: "integer", minimum: 1, example: 2 },
+    comment: { type: "object", additionalProperties: true },
+    note: { type: "object", additionalProperties: true },
+    attachment: { type: "object", additionalProperties: true },
+    sla: { type: "object", additionalProperties: true },
+    resolved_at: dateTime("Resolution time"),
+    closed_at: dateTime("Closure time"),
+    reopened_at: dateTime("Reopen time")
+  },
+  additionalProperties: true
+};
+
 const documentUploadBody = {
   type: "object",
   required: ["business_object_type", "business_object_id", "classification", "document_type", "file_name", "mime_type", "size_bytes"],
@@ -2250,6 +2440,21 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/projects/{id}/documents": operation("Projects / Utilization", "List project documents", "Lists project-scoped documents from the existing Documents module metadata. Downloads and verification continue through Documents APIs.", { params: idParamSchema, querystring: projectQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
   "GET /api/v1/projects/{id}/summary": operation("Projects / Utilization", "Project summary", "Returns project cards, timesheet rollups, expense rollups, and allocation summary derived from implemented backend modules.", { params: idParamSchema, querystring: projectQuerySchema, response200: { type: "object", additionalProperties: true } }),
   "GET /api/v1/team-utilization/summary": operation("Projects / Utilization", "Team utilization summary", "Returns bench, overload, capacity, billable/non-billable, and utilization analytics without client-side all-user aggregation.", { querystring: projectQuerySchema, response200: { type: "object", additionalProperties: true } }),
+  "POST /api/v1/helpdesk/tickets": operation("Helpdesk", "Create helpdesk ticket", "Creates a helpdesk ticket for the authenticated employee, snapshots requester context, assigns the category default agent when configured, and starts SLA tracking server-side.", { body: helpdeskTicketBody, response200: helpdeskMutationResponse }),
+  "GET /api/v1/helpdesk/tickets": operation("Helpdesk", "List helpdesk tickets", "Lists requester-owned, assigned, or category-scoped helpdesk tickets with pagination, filters, and queue counts.", { querystring: helpdeskQuerySchema, response200: { ...paginated(helpdeskTicketSchema), additionalProperties: true } }),
+  "GET /api/v1/helpdesk/tickets/{id}": operation("Helpdesk", "Helpdesk ticket detail", "Returns ticket detail, comments, attachments, events, SLA state, and optimistic concurrency version for authorized requesters and agents.", { params: idParamSchema, response200: helpdeskTicketSchema }),
+  "PATCH /api/v1/helpdesk/tickets/{id}": operation("Helpdesk", "Update helpdesk ticket", "Updates allowed ticket fields with optimistic concurrency protection. Closed tickets must be reopened before mutation.", { params: idParamSchema, body: helpdeskTicketUpdateBody, response200: helpdeskMutationResponse }),
+  "POST /api/v1/helpdesk/tickets/{id}/comments": operation("Helpdesk", "Add public ticket comment", "Adds a requester-visible ticket comment and records first-response time when the first public agent response is added.", { params: idParamSchema, body: helpdeskCommentBody, response200: helpdeskMutationResponse }),
+  "POST /api/v1/helpdesk/tickets/{id}/internal-notes": operation("Helpdesk", "Add internal ticket note", "Adds an internal support note visible only to helpdesk agents and scoped managers.", { params: idParamSchema, body: helpdeskCommentBody, response200: helpdeskMutationResponse }),
+  "POST /api/v1/helpdesk/tickets/{id}/attachments": operation("Helpdesk", "Attach helpdesk document", "Attaches backend document metadata or a local file reference to a ticket. Binary upload and secure download stay owned by the Documents module.", { params: idParamSchema, body: helpdeskAttachmentBody, response200: helpdeskMutationResponse }),
+  "POST /api/v1/helpdesk/tickets/{id}/assign": operation("Helpdesk", "Assign helpdesk ticket", "Assigns or reassigns a ticket to an active employee using optimistic concurrency and activity timeline events.", { params: idParamSchema, body: helpdeskAssignBody, response200: helpdeskMutationResponse }),
+  "POST /api/v1/helpdesk/tickets/{id}/priority": operation("Helpdesk", "Change helpdesk priority", "Changes priority, recalculates SLA, and requires remarks when escalating to urgent priority.", { params: idParamSchema, body: helpdeskPriorityBody, response200: helpdeskMutationResponse }),
+  "POST /api/v1/helpdesk/tickets/{id}/status": operation("Helpdesk", "Change helpdesk status", "Changes operational ticket status for assigned/category-scoped agents. Resolve and close use dedicated endpoints.", { params: idParamSchema, body: helpdeskStatusBody, response200: helpdeskMutationResponse }),
+  "POST /api/v1/helpdesk/tickets/{id}/resolve": operation("Helpdesk", "Resolve helpdesk ticket", "Resolves an open ticket with resolution notes, sets resolved timestamp, and preserves SLA metadata.", { params: idParamSchema, body: helpdeskResolveBody, response200: helpdeskMutationResponse }),
+  "POST /api/v1/helpdesk/tickets/{id}/close": operation("Helpdesk", "Close helpdesk ticket", "Closes a resolved ticket by requester or agent with optimistic concurrency protection.", { params: idParamSchema, body: helpdeskCloseBody, response200: helpdeskMutationResponse }),
+  "POST /api/v1/helpdesk/tickets/{id}/reopen": operation("Helpdesk", "Reopen helpdesk ticket", "Reopens a resolved or closed ticket with a requester/agent reason and increments reopen count.", { params: idParamSchema, body: helpdeskReopenBody, response200: helpdeskMutationResponse }),
+  "GET /api/v1/helpdesk/categories": operation("Helpdesk", "List helpdesk categories", "Returns active ticket categories, default routing metadata, sub-categories, and SLA hints used by the raise-ticket flow.", { querystring: helpdeskQuerySchema, response200: { type: "object", required: ["categories", "sla"], properties: { categories: { type: "array", items: { type: "object", additionalProperties: true } }, sla: { type: "object", additionalProperties: true }, actor_scope: { type: "string", example: "requester" } }, additionalProperties: true } }),
+  "GET /api/v1/helpdesk/sla-report": operation("Helpdesk", "Helpdesk SLA report", "Returns SLA compliance rows and totals for helpdesk managers, admins, and auditors.", { querystring: helpdeskQuerySchema, response200: { ...paginated({ type: "object", additionalProperties: true }), additionalProperties: true } }),
   "POST /api/v1/attendance/punches": operation(
     "Attendance",
     "Record punch",
@@ -2605,6 +2810,7 @@ export const openApiTags = [
   { name: "Leave / WFH / Holidays", description: "Leave balances, leave/WFH request workflows, HR monitor, and holiday calendar contracts." },
   { name: "EMS", description: "Employee self-service profile, requests, HR letters, and policy acknowledgement workflows." },
   { name: "Projects / Utilization", description: "Project CRUD, delivery team allocation, milestones, project summaries, and utilization analytics." },
+  { name: "Helpdesk", description: "Ticket creation, support queue, comments, attachments, assignment, SLA tracking, and ticket lifecycle workflow." },
   { name: "Reports & Analytics", description: "Role-scoped expense registers and export readiness." },
   { name: "Notifications", description: "Notification contracts are emitted by backend workflows; no public endpoint is exposed in this delivery." },
   { name: "Outbox / Platform Events", description: "Transactional outbox and protected local event consumer contracts." },
@@ -2635,7 +2841,8 @@ export const openApiComponents = {
     EmsServiceRequest: emsServiceRequestSchema,
     EmsLetter: emsLetterSchema,
     EmsPolicy: emsPolicySchema,
-    Project: projectSchema
+    Project: projectSchema,
+    HelpdeskTicket: helpdeskTicketSchema
   }
 };
 
