@@ -403,6 +403,7 @@ export type RequestStatus = "pending" | "approved" | "rejected" | "fulfilled";
 
 export interface AssetRequest {
   id: string;
+  version?: number;
   raisedBy: string;
   employeeId?: string;
   raisedAt: string;

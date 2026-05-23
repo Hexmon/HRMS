@@ -44,4 +44,54 @@ export const assetsApi = {
       body: input,
     });
   },
+  createRequest(input: ApiRecord) {
+    return apiRequest<ApiRecord>("/api/v1/assets/requests", { method: "POST", body: input });
+  },
+  myRequests(query: PageQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/assets/requests/my", { query });
+  },
+  requestQueue(query: PageQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord> & { queue_counts?: ApiRecord }>(
+      "/api/v1/assets/requests/queue",
+      { query },
+    );
+  },
+  decideRequest(id: string, input: ApiRecord) {
+    return apiRequest<ApiRecord>(`/api/v1/assets/requests/${id}/decision`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  cancelRequest(id: string, input: ExpectedVersionBody) {
+    return apiRequest<ApiRecord>(`/api/v1/assets/requests/${id}/cancel`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  acknowledge(id: string, input: ExpectedVersionBody & { acknowledgement_type: string }) {
+    return apiRequest<ApiRecord>(`/api/v1/assets/${id}/acknowledgements`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  listMaintenance(id: string, query: PageQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord>>(`/api/v1/assets/${id}/maintenance`, {
+      query,
+    });
+  },
+  createMaintenance(id: string, input: ApiRecord) {
+    return apiRequest<ApiRecord>(`/api/v1/assets/${id}/maintenance`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  vendors(query: PageQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/assets/vendors", { query });
+  },
+  recoveryQueue(query: PageQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord> & { totals?: ApiRecord }>(
+      "/api/v1/assets/recovery-queue",
+      { query },
+    );
+  },
 };

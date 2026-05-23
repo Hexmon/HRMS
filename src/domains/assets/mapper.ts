@@ -1,5 +1,5 @@
 import { asRecord, dateText, numberValue, text, type ApiRecord } from "@/shared/api";
-import type { Asset } from "@/lib/mock/assets";
+import type { Asset, AssetRequest, MaintenanceEntry } from "@/lib/mock/assets";
 
 function mapAssetStatus(value: unknown, fallback: Asset["status"] = "available"): Asset["status"] {
   const normalized = text(value).toLowerCase().replace(/\s+/g, "_");
@@ -18,6 +18,9 @@ export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
   const row = asRecord(value);
   const assetType = text(row.asset_type ?? row.type, fallback?.type ?? "Asset");
   const name = text(row.name, fallback?.model ?? assetType);
+  const maintenance = Array.isArray(row.maintenance)
+    ? row.maintenance.map(mapApiMaintenance)
+    : (fallback?.maintenance ?? []);
 
   return {
     id: text(row.id ?? row.asset_code, fallback?.id ?? "AST-API"),
@@ -46,7 +49,7 @@ export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
     assignedOn: text(row.assigned_on, fallback?.assignedOn),
     expectedReturn: text(row.expected_return, fallback?.expectedReturn),
     history: fallback?.history ?? [],
-    maintenance: fallback?.maintenance ?? [],
+    maintenance,
     documents: fallback?.documents ?? [],
     audit: fallback?.audit ?? [],
   };
@@ -59,4 +62,71 @@ export function mapApiAssets(values: unknown[], fallbacks: Asset[]): Asset[] {
     const fallback = fallbacks.find((asset) => asset.id === key || asset.serial === row.serial_no);
     return mapApiAsset(row as ApiRecord, fallback);
   });
+}
+
+function mapPriority(value: unknown): AssetRequest["priority"] {
+  const priority = text(value, "normal");
+  if (priority === "medium") return "normal";
+  if (priority === "low" || priority === "high" || priority === "urgent" || priority === "normal") {
+    return priority;
+  }
+  return "normal";
+}
+
+function mapRequestStatus(value: unknown): AssetRequest["status"] {
+  const status = text(value, "pending");
+  if (
+    status === "approved" ||
+    status === "rejected" ||
+    status === "fulfilled" ||
+    status === "pending"
+  ) {
+    return status;
+  }
+  if (status === "returned" || status === "cancelled") return "rejected";
+  return "pending";
+}
+
+function mapApiMaintenance(input: unknown): MaintenanceEntry {
+  const row = asRecord(input);
+  const type = text(row.maintenance_type, "repair");
+  return {
+    id: text(row.id, "maintenance"),
+    date: dateText(row.started_on, new Date().toISOString()).slice(0, 10),
+    type:
+      type === "preventive"
+        ? "service"
+        : type === "warranty"
+          ? "repair"
+          : type === "other"
+            ? "service"
+            : (type as MaintenanceEntry["type"]),
+    vendor: text(row.vendor_name),
+    cost: numberValue(row.cost, 0),
+    notes: text(row.notes),
+  };
+}
+
+export function mapApiAssetRequest(value: unknown): AssetRequest {
+  const row = asRecord(value);
+  return {
+    id: text(row.id ?? row.request_code, "REQ-API"),
+    version: numberValue(row.version, 1),
+    raisedBy: text(row.requester_name, "You"),
+    employeeId: text(row.requester_user_id),
+    raisedAt: text(row.created_at, new Date().toISOString()),
+    type: (text(row.request_type, "new") as AssetRequest["type"]) || "new",
+    assetType: text(row.asset_type, "Asset"),
+    assetId: text(row.asset_id),
+    reason: text(row.reason, "Asset request"),
+    priority: mapPriority(row.priority),
+    status: mapRequestStatus(row.status),
+    decisionBy: text(row.decision_by_name),
+    decisionAt: text(row.decision_at),
+    decisionRemarks: text(row.decision_remarks),
+  };
+}
+
+export function mapApiAssetRequests(values: unknown[]): AssetRequest[] {
+  return values.map(mapApiAssetRequest);
 }

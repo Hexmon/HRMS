@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { assetsApi, mapApiAssets } from "@/domains/assets";
+import { assetsApi, mapApiAssetRequests, mapApiAssets } from "@/domains/assets";
+import { useAuth } from "@/lib/auth";
 import { isUuid, pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import {
@@ -92,7 +93,9 @@ function assetCreateBody(asset: Asset) {
 
 export function AssetsProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
+  const { activeRole, user } = useAuth();
   const apiEnabled = useApiRouteEnabled(["/dashboard", "/assets", "/reports"]);
+  const isAssetAdmin = activeRole === "asset_admin" || activeRole === "main_admin";
   const [assets, setAssets] = React.useState<Asset[]>(SEED_ASSETS);
   const [requests, setRequests] = React.useState<AssetRequest[]>(SEED_REQS);
 
@@ -121,6 +124,34 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         () => assets,
       ),
     enabled: apiEnabled,
+    staleTime: queryTimings.listStaleMs,
+  });
+
+  const apiMyRequestsQuery = useQuery({
+    queryKey: queryKeys.list("assets", "requests-my", { page_size: 100 }),
+    queryFn: () =>
+      withApiFallback(
+        async () => {
+          const response = await assetsApi.myRequests({ page_size: 100 });
+          return mapApiAssetRequests(pageItems(response));
+        },
+        () => requests.filter((request) => request.raisedBy === user?.name),
+      ),
+    enabled: apiEnabled,
+    staleTime: queryTimings.listStaleMs,
+  });
+
+  const apiQueueRequestsQuery = useQuery({
+    queryKey: queryKeys.list("assets", "requests-queue", { page_size: 100 }),
+    queryFn: () =>
+      withApiFallback(
+        async () => {
+          const response = await assetsApi.requestQueue({ page_size: 100 });
+          return mapApiAssetRequests(pageItems(response));
+        },
+        () => requests,
+      ),
+    enabled: apiEnabled && isAssetAdmin,
     staleTime: queryTimings.listStaleMs,
   });
 
@@ -159,17 +190,111 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
+  const createRequestMutation = useMutation({
+    mutationFn: (request: AssetRequest) =>
+      assetsApi.createRequest({
+        request_type: request.type,
+        asset_type: request.assetType,
+        asset_id: isUuid(request.assetId) ? request.assetId : undefined,
+        reason: request.reason,
+        priority: request.priority === "normal" ? "medium" : request.priority,
+        preferred_specs: request.attachment ? { attachment: request.attachment } : {},
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") }),
+  });
+
+  const decideRequestMutation = useMutation({
+    mutationFn: ({
+      id,
+      status,
+      remarks,
+      expectedVersion,
+    }: {
+      id: string;
+      status: RequestStatus;
+      remarks?: string;
+      expectedVersion: number;
+    }) =>
+      assetsApi.decideRequest(id, {
+        decision: status,
+        remarks,
+        expected_version: expectedVersion,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") }),
+  });
+
+  const cancelRequestMutation = useMutation({
+    mutationFn: ({ id, expectedVersion }: { id: string; expectedVersion: number }) =>
+      assetsApi.cancelRequest(id, { expected_version: expectedVersion }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") }),
+  });
+
+  const acknowledgeMutation = useMutation({
+    mutationFn: ({ id, expectedVersion }: { id: string; expectedVersion: number }) =>
+      assetsApi.acknowledge(id, {
+        acknowledgement_type: "received",
+        expected_version: expectedVersion,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") }),
+  });
+
+  const maintenanceMutation = useMutation({
+    mutationFn: ({
+      id,
+      entry,
+      expectedVersion,
+    }: {
+      id: string;
+      entry: MaintenanceEntry;
+      expectedVersion: number;
+    }) =>
+      assetsApi.createMaintenance(id, {
+        maintenance_type: entry.type === "service" ? "preventive" : entry.type,
+        cost: entry.cost ? String(entry.cost) : undefined,
+        started_on: entry.date,
+        status: "completed",
+        notes: entry.notes,
+        expected_version: expectedVersion,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") }),
+  });
+
   const hasApiResult = apiAssetsQuery.data !== undefined;
   const visibleAssets = React.useMemo(() => {
     if (!apiEnabled) return assets;
     if (!hasApiResult) return [];
     return apiAssetsQuery.data ?? [];
   }, [apiAssetsQuery.data, apiEnabled, assets, hasApiResult]);
+  const hasRequestApiResult =
+    apiMyRequestsQuery.data !== undefined ||
+    (isAssetAdmin && apiQueueRequestsQuery.data !== undefined);
+  const visibleRequests = React.useMemo(() => {
+    if (!apiEnabled) return requests;
+    if (!hasRequestApiResult) return [];
+    const source = isAssetAdmin
+      ? [...(apiQueueRequestsQuery.data ?? []), ...(apiMyRequestsQuery.data ?? [])]
+      : (apiMyRequestsQuery.data ?? []);
+    return Array.from(new Map(source.map((request) => [request.id, request])).values());
+  }, [
+    apiEnabled,
+    apiMyRequestsQuery.data,
+    apiQueueRequestsQuery.data,
+    hasRequestApiResult,
+    isAssetAdmin,
+    requests,
+  ]);
   const apiError =
     apiEnabled && !hasApiResult && apiAssetsQuery.error instanceof Error
       ? apiAssetsQuery.error
       : null;
-  const loading = apiEnabled && !hasApiResult && apiAssetsQuery.isLoading;
+  const requestError =
+    apiEnabled && !hasRequestApiResult && apiMyRequestsQuery.error instanceof Error
+      ? apiMyRequestsQuery.error
+      : null;
+  const loading =
+    apiEnabled &&
+    ((!hasApiResult && apiAssetsQuery.isLoading) ||
+      (!hasRequestApiResult && (apiMyRequestsQuery.isLoading || apiQueueRequestsQuery.isLoading)));
 
   const addAsset: Ctx["addAsset"] = (a, actor = "Marco Rossi") => {
     const next = { ...a, audit: [audit(actor, "Asset registered"), ...(a.audit ?? [])] };
@@ -245,6 +370,10 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         };
       }),
     );
+    if (apiEnabled && isUuid(assetId)) {
+      const current = visibleAssets.find((asset) => asset.id === assetId);
+      acknowledgeMutation.mutate({ id: assetId, expectedVersion: current?.version ?? 1 });
+    }
   };
 
   const returnAsset: Ctx["returnAsset"] = (
@@ -306,9 +435,16 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
           : x,
       ),
     );
+    if (apiEnabled && isUuid(id)) {
+      const current = visibleAssets.find((asset) => asset.id === id);
+      maintenanceMutation.mutate({ id, entry, expectedVersion: current?.version ?? 1 });
+    }
   };
 
-  const addRequest: Ctx["addRequest"] = (req) => persistR([req, ...requests]);
+  const addRequest: Ctx["addRequest"] = (req) => {
+    persistR([req, ...requests]);
+    if (apiEnabled) createRequestMutation.mutate(req);
+  };
 
   const decideRequest: Ctx["decideRequest"] = (id, status, by, remarks) => {
     persistR(
@@ -324,9 +460,24 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
           : r,
       ),
     );
+    if (apiEnabled && isUuid(id)) {
+      const current = visibleRequests.find((request) => request.id === id);
+      decideRequestMutation.mutate({
+        id,
+        status,
+        remarks,
+        expectedVersion: current?.version ?? 1,
+      });
+    }
   };
 
-  const cancelRequest: Ctx["cancelRequest"] = (id) => persistR(requests.filter((r) => r.id !== id));
+  const cancelRequest: Ctx["cancelRequest"] = (id) => {
+    persistR(requests.filter((r) => r.id !== id));
+    if (apiEnabled && isUuid(id)) {
+      const current = visibleRequests.find((request) => request.id === id);
+      cancelRequestMutation.mutate({ id, expectedVersion: current?.version ?? 1 });
+    }
+  };
 
   const reset = () => {
     persistA(SEED_ASSETS);
@@ -337,9 +488,9 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     <Ctx_.Provider
       value={{
         assets: visibleAssets,
-        requests,
+        requests: visibleRequests,
         loading,
-        error: apiError,
+        error: apiError ?? requestError,
         isApiBacked: apiEnabled && hasApiResult,
         addAsset,
         updateAsset,
