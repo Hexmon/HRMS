@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 170
+Documented operations: 174
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -2111,6 +2111,110 @@ Success body highlights:
 - Closed expense tickets are read-only unless a future correction API explicitly allows edits.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
+### GET /api/v1/expenses/metadata
+
+| Field | Contract |
+|---|---|
+| Purpose | Expense metadata |
+| Frontend use | Employee expense self-service: create, drafts, my expenses, detail, returned/held work, and timeline. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Requester-owned records plus backend-approved manager/finance/admin/auditor read scope. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `generated_at` | string<date-time> | required | Metadata generation timestamp |
+| `actor_scope` | object | optional | - |
+| `expense_types` | array of object | required | - |
+| `expense_sub_types` | array of object | required | - |
+| `project_expense_types` | array of object | optional | - |
+| `payment_types` | array of object | required | - |
+| `currencies` | array of object | required | - |
+| `document_types` | array of object | required | - |
+| `policy_hints` | object | required | - |
+| `selectors` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Expense money values are decimal strings; do not use floating-point math for persisted amounts.
+- Closed expense tickets are read-only unless a future correction API explicitly allows edits.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/expenses/dashboard-summary
+
+| Field | Contract |
+|---|---|
+| Purpose | Expense dashboard summary |
+| Frontend use | Employee expense self-service: create, drafts, my expenses, detail, returned/held work, and timeline. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Requester-owned records plus backend-approved manager/finance/admin/auditor read scope. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `date_from` | query | no | string<date> | - |
+| `date_to` | query | no | string<date> | - |
+| `status` | query | no | string | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `generated_at` | string<date-time> | required | Summary generation timestamp |
+| `scope` | object | required | - |
+| `cards` | array of object | required | - |
+| `queue_counts` | object | required | - |
+| `aging` | array of object | required | - |
+| `totals` | object | required | - |
+| `rows` | array of object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Expense money values are decimal strings; do not use floating-point math for persisted amounts.
+- Closed expense tickets are read-only unless a future correction API explicitly allows edits.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
 ### GET /api/v1/expenses/{id}
 
 | Field | Contract |
@@ -2306,6 +2410,115 @@ Success body highlights:
 | `created_at` | string<date-time> | optional | Creation timestamp |
 
 Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Expense money values are decimal strings; do not use floating-point math for persisted amounts.
+- Closed expense tickets are read-only unless a future correction API explicitly allows edits.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/expenses/{id}/withdraw
+
+| Field | Contract |
+|---|---|
+| Purpose | Withdraw expense |
+| Frontend use | Employee expense self-service: create, drafts, my expenses, detail, returned/held work, and timeline. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Requester-owned records plus backend-approved manager/finance/admin/auditor read scope. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `expected_version` | integer | required | minimum 1 |
+| `remarks` | string | optional | Required once the ticket has been submitted. |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `expense` | object | required | - |
+| `version` | integer | required | minimum 1 |
+| `timeline_event` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Expense money values are decimal strings; do not use floating-point math for persisted amounts.
+- Closed expense tickets are read-only unless a future correction API explicitly allows edits.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/expenses/{id}/clarifications
+
+| Field | Contract |
+|---|---|
+| Purpose | Add expense clarification |
+| Frontend use | Employee expense self-service: create, drafts, my expenses, detail, returned/held work, and timeline. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Requester-owned records plus backend-approved manager/finance/admin/auditor read scope. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `message` | string | required | minLength 1 |
+| `document_ids` | array of string<uuid> | optional | default [] |
+| `expected_version` | integer | optional | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `clarification` | object | required | - |
+| `thread` | array of object | required | - |
+| `expense_version` | integer | required | minimum 1 |
 
 **Frontend behavior notes**
 

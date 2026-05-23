@@ -2128,6 +2128,92 @@ const settlementBody = {
   }
 };
 
+const expenseDashboardQuery = {
+  type: "object",
+  properties: {
+    date_from: date("Created date from", "2026-05-01"),
+    date_to: date("Created date to", "2026-05-31"),
+    status: { type: "string", example: "Pending Manager Verification" }
+  },
+  additionalProperties: false
+};
+
+const expenseMetadataSchema = {
+  type: "object",
+  required: ["generated_at", "expense_types", "expense_sub_types", "payment_types", "currencies", "document_types", "policy_hints", "selectors"],
+  properties: {
+    generated_at: dateTime("Metadata generation timestamp"),
+    actor_scope: { type: "object", additionalProperties: true },
+    expense_types: { type: "array", items: { type: "object", additionalProperties: true } },
+    expense_sub_types: { type: "array", items: { type: "object", additionalProperties: true } },
+    project_expense_types: { type: "array", items: { type: "object", additionalProperties: true } },
+    payment_types: { type: "array", items: { type: "object", additionalProperties: true } },
+    currencies: { type: "array", items: { type: "object", additionalProperties: true } },
+    document_types: { type: "array", items: { type: "object", additionalProperties: true } },
+    policy_hints: { type: "object", additionalProperties: true },
+    selectors: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: true
+};
+
+const expenseDashboardSummarySchema = {
+  type: "object",
+  required: ["generated_at", "scope", "cards", "queue_counts", "aging", "totals", "rows"],
+  properties: {
+    generated_at: dateTime("Summary generation timestamp"),
+    scope: { type: "object", additionalProperties: true },
+    cards: { type: "array", items: { type: "object", additionalProperties: true } },
+    queue_counts: { type: "object", additionalProperties: true },
+    aging: { type: "array", items: { type: "object", additionalProperties: true } },
+    totals: { type: "object", additionalProperties: true },
+    rows: { type: "array", items: ticketSchema }
+  },
+  additionalProperties: true
+};
+
+const expenseWithdrawBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    expected_version: { type: "integer", minimum: 1, example: 1 },
+    remarks: { type: "string", description: "Required once the ticket has been submitted.", example: "Trip cancelled before manager approval." }
+  },
+  additionalProperties: false
+};
+
+const expenseWithdrawResponseSchema = {
+  type: "object",
+  required: ["expense", "version", "timeline_event"],
+  properties: {
+    expense: ticketSchema,
+    version: { type: "integer", minimum: 1, example: 2 },
+    timeline_event: expenseTimelineEventSchema
+  },
+  additionalProperties: true
+};
+
+const expenseClarificationBody = {
+  type: "object",
+  required: ["message"],
+  properties: {
+    message: { type: "string", minLength: 1, maxLength: 4000, example: "Please attach the GST invoice for this claim." },
+    document_ids: { type: "array", items: uuid("Document metadata UUID"), default: [] },
+    expected_version: { type: "integer", minimum: 1, example: 2 }
+  },
+  additionalProperties: false
+};
+
+const expenseClarificationResponseSchema = {
+  type: "object",
+  required: ["clarification", "thread", "expense_version"],
+  properties: {
+    clarification: { type: "object", additionalProperties: true },
+    thread: { type: "array", items: { type: "object", additionalProperties: true } },
+    expense_version: { type: "integer", minimum: 1, example: 3 }
+  },
+  additionalProperties: true
+};
+
 const projectQuerySchema = {
   ...paginationQuerySchema,
   properties: {
@@ -2953,9 +3039,13 @@ const routeDocs: Record<string, RouteSchema> = {
 
   "POST /api/v1/expenses": operation("Expenses / Requester", "Create expense", "Creates an expense draft or submitted ticket. Business routing and self-approval prevention remain backend-owned.", { body: expenseCreateBody, response200: ticketSchema }),
   "GET /api/v1/expenses/my": operation("Expenses / Requester", "My expenses", "Lists the authenticated requester's expense tickets.", { querystring: paginationQuerySchema, response200: paginated(ticketSchema) }),
+  "GET /api/v1/expenses/metadata": operation("Expenses / Requester", "Expense metadata", "Returns expense form metadata, policy hints, required document selectors, currencies, payment types, and project/client selectors for API-backed expense forms.", { response200: expenseMetadataSchema }),
+  "GET /api/v1/expenses/dashboard-summary": operation("Expenses / Requester", "Expense dashboard summary", "Returns role-aware dashboard cards, queue counts, aging buckets, totals, and compact visible rows for the expense dashboard.", { querystring: expenseDashboardQuery, response200: expenseDashboardSummarySchema }),
   "GET /api/v1/expenses/{id}": operation("Expenses / Requester", "Expense detail", "Reads an expense ticket if the actor has object-level access.", { params: idParamSchema, response200: ticketSchema }),
   "PATCH /api/v1/expenses/{id}": operation("Expenses / Requester", "Edit expense placeholder", "Currently restricted by backend policy and returns a documented business validation error.", { params: idParamSchema, body: { type: "object", additionalProperties: true }, response: { 400: { description: "Edit endpoint is intentionally restricted in this delivery.", content: { "application/json": { schema: errorResponseSchema } } } } }),
   "POST /api/v1/expenses/{id}/submit": operation("Expenses / Requester", "Submit expense", "Submits a draft or returned expense using OCC expected_version.", { params: idParamSchema, body: expectedVersionBodySchema, response200: ticketSchema }),
+  "POST /api/v1/expenses/{id}/withdraw": operation("Expenses / Requester", "Withdraw expense", "Withdraws a requester-owned draft, submitted, pending-manager, or manager-returned expense with OCC expected_version. Remarks are required after submission.", { params: idParamSchema, body: expenseWithdrawBody, response200: expenseWithdrawResponseSchema }),
+  "POST /api/v1/expenses/{id}/clarifications": operation("Expenses / Requester", "Add expense clarification", "Appends a durable object-scoped clarification message and returns the current thread. Requester, assigned manager, assigned finance actor, Admin, and Auditor can read according to expense object policy.", { params: idParamSchema, body: expenseClarificationBody, response200: expenseClarificationResponseSchema }),
   "GET /api/v1/expenses/queue/manager": operation("Expenses / Manager", "Manager queue", "Lists expense tickets assigned to the authenticated manager or configured manager backup.", { querystring: paginationQuerySchema, response200: paginated(ticketSchema) }),
   "POST /api/v1/expenses/{id}/manager/verify": operation("Expenses / Manager", "Manager verification decision", "Manager approve/reject/return decision. Reject/return require remarks; self-processing and OCC conflicts are enforced.", { params: idParamSchema, body: expenseDecisionBody, response200: ticketSchema }),
 

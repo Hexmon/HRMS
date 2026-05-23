@@ -3,12 +3,13 @@ import { ExpenseDecisions, ExpenseStatuses } from "#shared";
 import { badRequest } from "../../platform/errors.js";
 
 const transitions: Record<string, readonly ExpenseStatus[]> = {
-  [ExpenseStatuses.Draft]: [ExpenseStatuses.Submitted],
-  [ExpenseStatuses.Submitted]: [ExpenseStatuses.PendingManagerVerification],
+  [ExpenseStatuses.Draft]: [ExpenseStatuses.Submitted, ExpenseStatuses.Cancelled],
+  [ExpenseStatuses.Submitted]: [ExpenseStatuses.PendingManagerVerification, ExpenseStatuses.Cancelled],
   [ExpenseStatuses.PendingManagerVerification]: [
     ExpenseStatuses.ManagerVerified,
     ExpenseStatuses.ManagerRejected,
-    ExpenseStatuses.ManagerReturned
+    ExpenseStatuses.ManagerReturned,
+    ExpenseStatuses.Cancelled
   ],
   [ExpenseStatuses.ManagerReturned]: [ExpenseStatuses.Submitted, ExpenseStatuses.Cancelled],
   [ExpenseStatuses.ManagerRejected]: [],

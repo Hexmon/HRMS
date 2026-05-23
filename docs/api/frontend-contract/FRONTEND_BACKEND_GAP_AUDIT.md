@@ -11,9 +11,9 @@ This audit maps the current Hawkaii HRMS frontend to the custom backend contract
 
 ## API Count Summary
 
-Current documented backend contract: **170 operations** in `openapi.json` after Phase 4 Timesheet enhancements API completion.
+Current documented backend contract: **174 operations** in `openapi.json` after Phase 4 Expense enhancements API completion.
 
-- **168** operations are under `/api/v1/**`.
+- **172** operations are under `/api/v1/**`.
 - **2** operations are unversioned platform health checks: `/health/live` and `/health/ready`.
 - **0** documented backend operations currently need deletion from the OpenAPI pack because Reviewer/Director APIs are not present there.
 
@@ -21,11 +21,11 @@ Disjoint implementation counts for backend planning:
 
 | Category | Count | Meaning |
 | --- | ---: | --- |
-| Existing APIs ready to integrate as-is | 170 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
+| Existing APIs ready to integrate as-is | 174 | Present in `openapi.json` and usable through the generated frontend client without path or workflow changes. |
 | Existing APIs to update in place | 0 | Phase 1A-1C existing API expansions have landed; new gaps should be added as explicit new endpoints. |
 | Existing APIs to delete | 0 | No active OpenAPI endpoint should be removed. If another legacy backend still exposes Reviewer/Director endpoints, deprecate them outside this frontend contract pack. |
-| New APIs remaining to add | 45 | Remaining first-pass count needed after Phase 4 Timesheet enhancements API completion. |
-| Target contract size after additions | 215 | `170 current + 45 remaining`; Timesheet enhancements added 5 operations after UI audit confirmed project summary, missing submission, productivity, detail, and selector needs. |
+| New APIs remaining to add | 41 | Remaining first-pass count needed after Phase 4 Expense enhancements API completion. |
+| Target contract size after additions | 215 | `174 current + 41 remaining`; Expense enhancements added metadata, dashboard summary, withdraw, and clarification thread APIs. |
 
 Existing APIs updated in place during earlier phases:
 
@@ -55,13 +55,13 @@ Minimum new API operation count by frontend area:
 | Leave/WFH | 1 | Primary balances, leave apply/cancel/decision, WFH apply/decision, HR monitor, and holiday list/upsert are implemented; export/report job endpoint remains. |
 | Timesheets | 0 | Work segments, submissions, approver queue, decisions, workflow definitions, project aggregations, missing submissions, productivity summaries, submission detail, and selector metadata are implemented. |
 | Projects/utilization | 0 | Project CRUD, members, allocations, modules/milestones, project documents, project summaries, and utilization/bench/overload analytics are implemented. |
-| Expenses/finance | 4 | Expense metadata/policy requirements, dashboard summary, withdraw, clarification thread. |
+| Expenses/finance | 0 | Expense metadata/policy requirements, dashboard summary, withdraw, and clarification thread are implemented. |
 | Assets | 0 | Requests, decisions, cancellation, acknowledgements, maintenance, vendor views, and recovery queues are implemented; asset reports remain in Reports. |
 | Helpdesk | 0 | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report are implemented. |
 | Reports | 10 | HR, attendance, leave/WFH, projects, timesheets, assets, helpdesk, audit, export list/detail beyond existing expense exports. |
 | Admin settings | 20 | Company profile, master data, RBAC, workflows, policies, email templates, notification channels, security settings, audit logs. |
 | Notifications | 0 | Feed, unread count, mark read, and mark all read are implemented; notification channel preferences remain in Admin settings. |
-| **Total remaining** | **45** | Remaining operation count for full visible frontend coverage after Phase 4 Timesheet enhancements. |
+| **Total remaining** | **41** | Remaining operation count for full visible frontend coverage after Phase 4 Expense enhancements. |
 
 ## Expense Flow Alignment
 

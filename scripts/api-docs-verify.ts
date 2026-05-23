@@ -66,6 +66,8 @@ const bodyRequiredOperations = new Set([
   "POST /api/v1/expenses",
   "PATCH /api/v1/expenses/{id}",
   "POST /api/v1/expenses/{id}/submit",
+  "POST /api/v1/expenses/{id}/withdraw",
+  "POST /api/v1/expenses/{id}/clarifications",
   "PATCH /api/v1/core/users/{id}",
   "POST /api/v1/core/users/{id}/activate",
   "POST /api/v1/core/users/{id}/deactivate",
@@ -135,6 +137,7 @@ const bodyRequiredOperations = new Set([
 
 const occOperations = new Set([
   "POST /api/v1/expenses/{id}/submit",
+  "POST /api/v1/expenses/{id}/withdraw",
   "POST /api/v1/expenses/{id}/manager/verify",
   "POST /api/v1/expenses/{id}/finance/approve",
   "POST /api/v1/expenses/{id}/finance/payment",

@@ -75,6 +75,8 @@ const expectedOperations = [
   "GET /api/v1/ems/profile/me",
   "GET /api/v1/ems/requests/my",
   "GET /api/v1/ems/requests/queue/hr",
+  "GET /api/v1/expenses/dashboard-summary",
+  "GET /api/v1/expenses/metadata",
   "GET /api/v1/expenses/my",
   "GET /api/v1/expenses/queue/finance",
   "GET /api/v1/expenses/queue/manager",
@@ -173,6 +175,7 @@ const expectedOperations = [
   "POST /api/v1/ems/requests",
   "POST /api/v1/expenses",
   "POST /api/v1/expenses/{id}/bills",
+  "POST /api/v1/expenses/{id}/clarifications",
   "POST /api/v1/expenses/{id}/documents",
   "POST /api/v1/expenses/{id}/documents/{documentId}/verify",
   "POST /api/v1/expenses/{id}/finance/approve",
@@ -180,6 +183,7 @@ const expectedOperations = [
   "POST /api/v1/expenses/{id}/manager/verify",
   "POST /api/v1/expenses/{id}/settlement",
   "POST /api/v1/expenses/{id}/submit",
+  "POST /api/v1/expenses/{id}/withdraw",
   "PATCH /api/v1/helpdesk/tickets/{id}",
   "POST /api/v1/helpdesk/tickets",
   "POST /api/v1/helpdesk/tickets/{id}/assign",
@@ -236,6 +240,8 @@ const bodyRequiredOperations = [
   "PUT /api/v1/core/users/{id}/roles",
   "POST /api/v1/expenses",
   "POST /api/v1/expenses/{id}/submit",
+  "POST /api/v1/expenses/{id}/withdraw",
+  "POST /api/v1/expenses/{id}/clarifications",
   "PATCH /api/v1/core/users/{id}",
   "POST /api/v1/core/users/{id}/activate",
   "POST /api/v1/core/users/{id}/deactivate",
@@ -307,6 +313,7 @@ const bodyRequiredOperations = [
 
 const occOperations = [
   "POST /api/v1/expenses/{id}/submit",
+  "POST /api/v1/expenses/{id}/withdraw",
   "POST /api/v1/expenses/{id}/manager/verify",
   "POST /api/v1/expenses/{id}/finance/approve",
   "POST /api/v1/expenses/{id}/finance/payment",
@@ -595,7 +602,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(170);
+    expect(rows.length).toBe(174);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

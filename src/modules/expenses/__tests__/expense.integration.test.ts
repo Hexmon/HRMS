@@ -326,6 +326,100 @@ describe("expense manager-finance workflow integration", () => {
     expect(oldApproveAction.statusCode).toBe(404);
   });
 
+  it("returns metadata and dashboard summary, supports requester withdrawal, and records clarifications", async () => {
+    const employee = await loginAs(app, "E1");
+    const manager = await loginAs(app, "D1");
+    const finance = await loginAs(app, "N1");
+
+    const metadata = await app.inject({
+      method: "GET",
+      url: "/api/v1/expenses/metadata",
+      headers: authHeader(employee.token)
+    });
+    expect(metadata.statusCode).toBe(200);
+    expect(metadata.json().expense_types.some((row: { value: string }) => row.value === "Project")).toBe(true);
+    expect(metadata.json().document_types.length).toBeGreaterThan(0);
+
+    const withdrawCreate = await app.inject({
+      method: "POST",
+      url: "/api/v1/expenses",
+      headers: authHeader(employee.token),
+      payload: { ...projectTravelPayload, project_code: "WITHDRAW-1" }
+    });
+    expect(withdrawCreate.statusCode).toBe(200);
+    const withdrawTicket = withdrawCreate.json();
+
+    const dashboardBeforeWithdraw = await app.inject({
+      method: "GET",
+      url: "/api/v1/expenses/dashboard-summary",
+      headers: authHeader(employee.token)
+    });
+    expect(dashboardBeforeWithdraw.statusCode).toBe(200);
+    expect(dashboardBeforeWithdraw.json().rows.some((row: { id: string }) => row.id === withdrawTicket.id)).toBe(true);
+
+    const withdrawWithoutRemarks = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${withdrawTicket.id}/withdraw`,
+      headers: authHeader(employee.token),
+      payload: { expected_version: 1 }
+    });
+    expect(withdrawWithoutRemarks.statusCode).toBe(400);
+
+    const withdraw = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${withdrawTicket.id}/withdraw`,
+      headers: authHeader(employee.token),
+      payload: { expected_version: 1, remarks: "Travel cancelled before approval" }
+    });
+    expect(withdraw.statusCode).toBe(200);
+    expect(withdraw.json().expense.status).toBe("Cancelled");
+    expect(withdraw.json().timeline_event.event_type).toBe("expense.withdrawn");
+
+    const clarifyCreate = await app.inject({
+      method: "POST",
+      url: "/api/v1/expenses",
+      headers: authHeader(employee.token),
+      payload: { ...projectTravelPayload, project_code: "CLARIFY-1" }
+    });
+    expect(clarifyCreate.statusCode).toBe(200);
+    const clarifyTicket = clarifyCreate.json();
+
+    const managerVerify = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${clarifyTicket.id}/manager/verify`,
+      headers: authHeader(manager.token),
+      payload: { decision: "approve", expected_version: 1 }
+    });
+    expect(managerVerify.statusCode).toBe(200);
+
+    const financeClarification = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${clarifyTicket.id}/finance/approve`,
+      headers: authHeader(finance.token),
+      payload: { decision: "clarification", remarks: "Attach original GST invoice", expected_version: 2 }
+    });
+    expect(financeClarification.statusCode).toBe(200);
+    expect(financeClarification.json().status).toBe("Clarification Required");
+
+    const reply = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${clarifyTicket.id}/clarifications`,
+      headers: authHeader(employee.token),
+      payload: { message: "Uploaded the GST invoice copy.", expected_version: 3 }
+    });
+    expect(reply.statusCode).toBe(200);
+    expect(reply.json().thread.length).toBeGreaterThanOrEqual(2);
+    expect(reply.json().expense_version).toBe(4);
+
+    const withdrawnClarification = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${withdrawTicket.id}/clarifications`,
+      headers: authHeader(employee.token),
+      payload: { message: "Adding a late note is blocked." }
+    });
+    expect(withdrawnClarification.statusCode).toBe(400);
+  });
+
   it("uses configured finance governance for finance-manager self-request backup", async () => {
     const admin = await loginAs(app, "ADM");
     const executive = await loginAs(app, "S1");

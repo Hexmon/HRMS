@@ -18,6 +18,7 @@ import {
   EmploymentStatuses,
   ExpenseDecisions,
   ExpenseStatuses,
+  ExpenseSubTypes,
   ExpenseTypes,
   PaymentTypes,
   ProjectExpenseSubTypes,
@@ -30,12 +31,12 @@ import {
 } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { getRequiredDocuments, nowIso } from "../../platform/data-store.js";
-import { badRequest, forbidden, missingRemarks } from "../../platform/errors.js";
+import { badRequest, conflict, forbidden, missingRemarks } from "../../platform/errors.js";
 import { CoreService } from "../core/service.js";
 import { appendOutboxEvent } from "./events.js";
 import { assertFinanceActor, assertManagerActor, canReadTicket } from "./policy.js";
 import { ExpenseRepository } from "./repository.js";
-import { assertTransition, financeDecisionToStatus, managerDecisionToStatus } from "./state-machine.js";
+import { assertTransition, financeDecisionToStatus, isTerminalExpenseStatus, managerDecisionToStatus } from "./state-machine.js";
 
 function paginate<T>(items: readonly T[], page: number, pageSize: number): PaginatedResult<T> {
   const start = (page - 1) * pageSize;
@@ -98,6 +99,18 @@ export interface ExpenseTimelineEvent {
   remarks: string | null;
   status_from: string | null;
   status_to: string | null;
+}
+
+export interface ExpenseDashboardQuery {
+  date_from?: string;
+  date_to?: string;
+  status?: ExpenseStatus;
+}
+
+export interface ExpenseClarificationInput {
+  message: string;
+  document_ids?: UUID[];
+  expected_version?: number;
 }
 
 export class ExpenseService {
@@ -424,12 +437,220 @@ export class ExpenseService {
     return this.presentPaginatedTickets(this.repository.listByRequester(actor.id), page, pageSize);
   }
 
+  metadata(actor: AuthUser): Record<string, unknown> {
+    const activeProjects = this.store.projects
+      .filter((project) => !project.deleted_at && project.status !== "archived" && project.status !== "cancelled")
+      .map((project) => ({
+        id: project.id,
+        code: project.project_code,
+        name: project.name,
+        client: project.client_name,
+        status: project.status,
+        manager_user_id: project.manager_user_id,
+        manager_name: this.store.users.find((user) => user.id === project.manager_user_id)?.full_name ?? null
+      }));
+    const activeClients = Array.from(new Set(activeProjects.map((project) => project.client).filter(Boolean))).sort();
+    return {
+      generated_at: nowIso(),
+      actor_scope: {
+        user_id: actor.id,
+        roles: actor.roles
+      },
+      expense_types: [
+        { value: ExpenseTypes.Project, label: "Project" },
+        { value: ExpenseTypes.SalesPreSales, label: "Sales / Pre-Sales" }
+      ],
+      expense_sub_types: [
+        ...ProjectExpenseSubTypes.map((value) => ({ value, label: value, expense_type: ExpenseTypes.Project })),
+        ...SalesExpenseSubTypes.map((value) => ({ value, label: value, expense_type: ExpenseTypes.SalesPreSales }))
+      ],
+      project_expense_types: [
+        { value: "travel", label: "Travel", expense_sub_type: ExpenseSubTypes.ProjectTravel },
+        { value: "material", label: "Material", expense_sub_type: ExpenseSubTypes.MaterialConsumables },
+        { value: "lodging", label: "Lodging & Boarding", expense_sub_type: ExpenseSubTypes.LodgingBoarding },
+        { value: "misc", label: "Miscellaneous", expense_sub_type: ExpenseSubTypes.ProjectTravel }
+      ],
+      payment_types: [
+        { value: PaymentTypes.ReimbursementAccrued, label: "Reimbursement" },
+        { value: PaymentTypes.Advance, label: "Advance" }
+      ],
+      currencies: [{ code: "INR", symbol: "₹", default: true }],
+      document_types: Object.entries(RequiredDocumentsByExpenseSubType).map(([expense_sub_type, required_documents]) => ({
+        expense_sub_type,
+        required_documents
+      })),
+      policy_hints: {
+        default_currency: "INR",
+        high_value_threshold: "100000.00",
+        advance_requires_justification_when_over_estimate: true,
+        remarks_required_for_withdraw_after_submission: true,
+        self_approval_blocked: true
+      },
+      selectors: {
+        projects: activeProjects,
+        clients: activeClients
+      }
+    };
+  }
+
+  dashboardSummary(actor: AuthUser, query: ExpenseDashboardQuery): Record<string, unknown> {
+    const visible = this.visibleTickets(actor)
+      .filter((ticket) => !query.status || ticket.status === query.status)
+      .filter((ticket) => !query.date_from || ticket.created_at.slice(0, 10) >= query.date_from)
+      .filter((ticket) => !query.date_to || ticket.created_at.slice(0, 10) <= query.date_to)
+      .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
+    const mine = visible.filter((ticket) => ticket.requester_user_id === actor.id);
+    const managerQueue = visible.filter((ticket) => ticket.manager_verifier_id === actor.id && ticket.status === ExpenseStatuses.PendingManagerVerification);
+    const financeStatuses: readonly ExpenseStatus[] = [
+      ExpenseStatuses.ManagerVerified,
+      ExpenseStatuses.FinanceHold,
+      ExpenseStatuses.ClarificationRequired,
+      ExpenseStatuses.FinanceApproved,
+      ExpenseStatuses.PaymentReleased,
+      ExpenseStatuses.BillsSubmitted,
+      ExpenseStatuses.PendingAdjustment
+    ];
+    const pendingApprovalStatuses: readonly ExpenseStatus[] = [ExpenseStatuses.PendingManagerVerification, ExpenseStatuses.ManagerVerified];
+    const approvedStatuses: readonly ExpenseStatus[] = [
+      ExpenseStatuses.FinanceApproved,
+      ExpenseStatuses.PaymentReleased,
+      ExpenseStatuses.BillsSubmitted,
+      ExpenseStatuses.PendingAdjustment,
+      ExpenseStatuses.Closed
+    ];
+    const returnedOrRejectedStatuses: readonly ExpenseStatus[] = [ExpenseStatuses.ManagerReturned, ExpenseStatuses.ManagerRejected];
+    const settlementStatuses: readonly ExpenseStatus[] = [
+      ExpenseStatuses.PaymentReleased,
+      ExpenseStatuses.BillsSubmitted,
+      ExpenseStatuses.PendingAdjustment
+    ];
+    const financeQueue = visible.filter((ticket) => ticket.finance_approver_id === actor.id && financeStatuses.includes(ticket.status));
+    const totals = {
+      submitted: mine.filter((ticket) => ticket.status !== ExpenseStatuses.Draft).length,
+      pending_approval: mine.filter((ticket) => pendingApprovalStatuses.includes(ticket.status)).length,
+      approved: mine.filter((ticket) => approvedStatuses.includes(ticket.status)).length,
+      returned_or_rejected: mine.filter((ticket) => returnedOrRejectedStatuses.includes(ticket.status)).length,
+      finance_pending: financeQueue.filter((ticket) => ticket.status === ExpenseStatuses.ManagerVerified).length,
+      payment_pending: financeQueue.filter((ticket) => ticket.status === ExpenseStatuses.FinanceApproved).length,
+      settlement_pending: visible.filter((ticket) => settlementStatuses.includes(ticket.status)).length
+    };
+    return {
+      generated_at: nowIso(),
+      scope: {
+        actor_user_id: actor.id,
+        roles: actor.roles
+      },
+      cards: [
+        { key: "submitted", label: "Submitted", value: totals.submitted, tone: "primary" },
+        { key: "pending_approval", label: "Pending approval", value: totals.pending_approval, tone: "warning" },
+        { key: "finance_pending", label: "Finance pending", value: totals.finance_pending, tone: "info" },
+        { key: "payment_pending", label: "Payment pending", value: totals.payment_pending, amount: this.sumTickets(financeQueue.filter((ticket) => ticket.status === ExpenseStatuses.FinanceApproved)), tone: "success" },
+        { key: "settlement_pending", label: "Settlement pending", value: totals.settlement_pending, tone: "warning" },
+        { key: "returned_or_rejected", label: "Returned / Rejected", value: totals.returned_or_rejected, tone: "destructive" }
+      ],
+      queue_counts: {
+        my_tickets: mine.length,
+        manager_pending: managerQueue.length,
+        finance_pending: financeQueue.length,
+        total_visible: visible.length
+      },
+      aging: this.agingBuckets(visible),
+      totals: {
+        ...totals,
+        visible_amount: this.sumTickets(visible),
+        mine_amount: this.sumTickets(mine),
+        finance_queue_amount: this.sumTickets(financeQueue)
+      },
+      rows: visible.slice(0, 10).map((ticket) => this.presentTicket(ticket))
+    };
+  }
+
   getTicket(actor: AuthUser, ticketId: UUID): Record<string, unknown> {
     const ticket = this.repository.findTicket(ticketId);
     if (!canReadTicket(actor, ticket)) {
       throw forbidden("You do not have access to this ticket");
     }
     return this.presentTicket(ticket);
+  }
+
+  withdrawTicket(actor: AuthUser, ticketId: UUID, expectedVersion: number, remarks?: string): Record<string, unknown> {
+    const current = this.repository.findTicket(ticketId);
+    if (current.requester_user_id !== actor.id) {
+      throw forbidden("Only the requester can withdraw this ticket");
+    }
+    const allowedStatuses: readonly ExpenseStatus[] = [
+      ExpenseStatuses.Draft,
+      ExpenseStatuses.Submitted,
+      ExpenseStatuses.PendingManagerVerification,
+      ExpenseStatuses.ManagerReturned
+    ];
+    if (!allowedStatuses.includes(current.status)) {
+      throw badRequest("Only draft, submitted, pending-manager, or manager-returned tickets can be withdrawn", {
+        current_status: current.status
+      });
+    }
+    if (current.status !== ExpenseStatuses.Draft && !remarks?.trim()) {
+      throw badRequest("Remarks are required to withdraw a submitted expense ticket");
+    }
+    assertTransition(current.status, ExpenseStatuses.Cancelled);
+    const ticket = this.repository.updateTicketVersioned(ticketId, expectedVersion, (candidate) => {
+      candidate.status = ExpenseStatuses.Cancelled;
+      candidate.closed_at = nowIso();
+      candidate.closure_remarks = remarks?.trim() ?? null;
+    });
+    const timelineEvent = this.writeMutation(actor, ticket, "expense.withdrawn", current.status, ticket.status, remarks?.trim() ?? null);
+    this.addNotification(actor.id, ticket.manager_verifier_id ?? ticket.finance_approver_id, "expense.withdrawn", { ticket_id: ticket.id });
+    return {
+      expense: this.presentTicket(ticket),
+      version: ticket.version,
+      timeline_event: this.toTimelineEvent(timelineEvent)
+    };
+  }
+
+  addClarification(actor: AuthUser, ticketId: UUID, input: ExpenseClarificationInput): Record<string, unknown> {
+    const ticket = this.repository.findTicket(ticketId);
+    if (!canReadTicket(actor, ticket)) {
+      throw forbidden("You do not have access to this ticket clarification thread");
+    }
+    if (isTerminalExpenseStatus(ticket.status)) {
+      throw badRequest("Closed, cancelled, or rejected tickets are read-only", { current_status: ticket.status });
+    }
+    if (input.expected_version !== undefined && ticket.version !== input.expected_version) {
+      throw conflict("The ticket was modified by another actor. Refresh and retry.", {
+        expected_version: input.expected_version,
+        current_version: ticket.version
+      });
+    }
+    ticket.version += 1;
+    ticket.updated_at = nowIso();
+    const clarification = this.repository.addAudit({
+      ticket_id: ticket.id,
+      actor_user_id: actor.id,
+      event_type: "expense.clarification.added",
+      old_value: { status: ticket.status },
+      new_value: {
+        status: ticket.status,
+        version: ticket.version,
+        message: input.message.trim(),
+        document_ids: input.document_ids ?? []
+      },
+      remarks: input.message.trim(),
+      payload_hash: null
+    });
+    appendOutboxEvent(this.store, {
+      aggregateType: "expense_ticket",
+      aggregateId: ticket.id,
+      eventType: "expense.clarification.added",
+      payload: { ticket_id: ticket.id, actor_user_id: actor.id, document_ids: input.document_ids ?? [] },
+      idempotencyKey: `expense.clarification:${ticket.id}:${ticket.version}:${clarification.id}`
+    });
+    const target = actor.id === ticket.requester_user_id ? ticket.manager_verifier_id ?? ticket.finance_approver_id : ticket.requester_user_id;
+    this.addNotification(actor.id, target, "expense.clarification_added", { ticket_id: ticket.id });
+    return {
+      clarification: this.toClarificationThreadItem(clarification),
+      thread: this.clarificationThread(ticket.id),
+      expense_version: ticket.version
+    };
   }
 
   managerQueue(actor: AuthUser, page: number, pageSize: number): PaginatedResult<Record<string, unknown>> {
@@ -878,6 +1099,7 @@ export class ExpenseService {
       finance_backup_applied: ticket.route_snapshot.finance_backup_applied === true,
       governance_warning_codes: governanceNotes.filter((note) => note.startsWith("finance_") || note.startsWith("primary_") || note.startsWith("manager_")),
       missing_documents: this.missingRequiredDocuments(ticket),
+      clarifications: this.clarificationThread(ticket.id),
       documents: expenseDocuments.map((document) => ({
         id: document.id,
         document_id: document.document_id,
@@ -886,6 +1108,58 @@ export class ExpenseService {
         owner: document.uploaded_by,
         uploaded_at: document.uploaded_at
       }))
+    };
+  }
+
+  private visibleTickets(actor: AuthUser): ExpenseTicket[] {
+    return this.store.tickets.filter((ticket) => !ticket.deleted_at && canReadTicket(actor, ticket));
+  }
+
+  private sumTickets(tickets: readonly ExpenseTicket[]): string {
+    return addMoney(tickets.map((ticket) => ticket.estimated_amount));
+  }
+
+  private agingBuckets(tickets: readonly ExpenseTicket[]): Array<{ bucket: string; count: number; total_amount: string }> {
+    const buckets = [
+      { bucket: "0-24h", min: 0, max: 24 },
+      { bucket: "24-72h", min: 25, max: 72 },
+      { bucket: "72h-plus", min: 73, max: Number.POSITIVE_INFINITY }
+    ];
+    return buckets.map((bucket) => {
+      const rows = tickets.filter((ticket) => {
+        const age = this.ageHours(ticket);
+        return age >= bucket.min && age <= bucket.max;
+      });
+      return {
+        bucket: bucket.bucket,
+        count: rows.length,
+        total_amount: this.sumTickets(rows)
+      };
+    });
+  }
+
+  private clarificationThread(ticketId: UUID): Array<Record<string, unknown>> {
+    return this.store.auditLogs
+      .filter((log) => log.ticket_id === ticketId && log.event_type.includes("clarification"))
+      .sort((left, right) => left.created_at.localeCompare(right.created_at))
+      .map((log) => this.toClarificationThreadItem(log));
+  }
+
+  private toClarificationThreadItem(log: ExpenseAuditLog): Record<string, unknown> {
+    const actor = this.store.users.find((user) => user.id === log.actor_user_id);
+    const newValue = log.new_value ?? {};
+    const documentIds = Array.isArray(newValue.document_ids)
+      ? newValue.document_ids.filter((value): value is string => typeof value === "string")
+      : [];
+    return {
+      id: log.id,
+      ticket_id: log.ticket_id,
+      actor_user_id: log.actor_user_id,
+      actor_name: actor ? `${actor.employee_code} - ${actor.full_name}` : "Unknown actor",
+      message: typeof newValue.message === "string" ? newValue.message : log.remarks ?? "",
+      document_ids: documentIds,
+      created_at: log.created_at,
+      event_type: log.event_type
     };
   }
 
@@ -914,7 +1188,7 @@ export class ExpenseService {
     oldStatus: string,
     newStatus: string,
     remarks: string | null
-  ): void {
+  ): ExpenseAuditLog {
     const audit = this.repository.addAudit({
       ticket_id: ticket.id,
       actor_user_id: actor.id,
@@ -931,6 +1205,7 @@ export class ExpenseService {
       payload: { ticket_id: ticket.id, actor_user_id: actor.id, status: newStatus },
       idempotencyKey: `${eventType}:${ticket.id}:${ticket.version}:${audit.id}`
     });
+    return audit;
   }
 
   private toTimelineEvent(log: ExpenseAuditLog): ExpenseTimelineEvent {

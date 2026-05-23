@@ -22,6 +22,36 @@ const idParamSchema = z.object({ id: z.uuid() });
 const documentParamSchema = z.object({ id: z.uuid(), documentId: z.uuid() });
 const mappingIdParamSchema = z.object({ id: z.uuid() });
 const versionQuerySchema = z.object({ expected_version: z.coerce.number().int().min(1).optional() });
+const expenseDashboardQuerySchema = z.object({
+  date_from: isoDateSchema.optional(),
+  date_to: isoDateSchema.optional(),
+  status: z.enum([
+    ExpenseStatuses.Draft,
+    ExpenseStatuses.Submitted,
+    ExpenseStatuses.PendingManagerVerification,
+    ExpenseStatuses.ManagerReturned,
+    ExpenseStatuses.ManagerRejected,
+    ExpenseStatuses.ManagerVerified,
+    ExpenseStatuses.FinanceHold,
+    ExpenseStatuses.ClarificationRequired,
+    ExpenseStatuses.FinanceApproved,
+    ExpenseStatuses.PaymentReleased,
+    ExpenseStatuses.BillsSubmitted,
+    ExpenseStatuses.PendingAdjustment,
+    ExpenseStatuses.Closed,
+    ExpenseStatuses.FinanceRoutingException,
+    ExpenseStatuses.Cancelled
+  ]).optional()
+});
+const expenseWithdrawSchema = z.object({
+  expected_version: z.number().int().min(1),
+  remarks: z.string().trim().min(1).max(2000).optional()
+});
+const expenseClarificationSchema = z.object({
+  message: z.string().trim().min(1).max(4000),
+  document_ids: z.array(z.uuid()).default([]),
+  expected_version: z.number().int().min(1).optional()
+});
 const financeQueueQuerySchema = paginationQuerySchema.extend({
   status: z.enum([
     ExpenseStatuses.ManagerVerified,
@@ -74,6 +104,21 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     return new ExpenseService(fastify.store).listMyTickets(request.actor, query.page, query.page_size);
   });
 
+  fastify.get("/expenses/metadata", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new ExpenseService(fastify.store).metadata(request.actor);
+  });
+
+  fastify.get("/expenses/dashboard-summary", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const query = expenseDashboardQuerySchema.parse(request.query);
+    return new ExpenseService(fastify.store).dashboardSummary(request.actor, query);
+  });
+
   fastify.get("/expenses/:id", async (request) => {
     if (!request.actor) {
       throw unauthorized();
@@ -89,6 +134,24 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     const params = idParamSchema.parse(request.params);
     const body = z.object({ expected_version: z.number().int().min(1) }).parse(request.body);
     return new ExpenseService(fastify.store).submitTicket(request.actor, params.id, body.expected_version);
+  });
+
+  fastify.post("/expenses/:id/withdraw", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = idParamSchema.parse(request.params);
+    const body = expenseWithdrawSchema.parse(request.body);
+    return new ExpenseService(fastify.store).withdrawTicket(request.actor, params.id, body.expected_version, body.remarks);
+  });
+
+  fastify.post("/expenses/:id/clarifications", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = idParamSchema.parse(request.params);
+    const body = expenseClarificationSchema.parse(request.body);
+    return new ExpenseService(fastify.store).addClarification(request.actor, params.id, body);
   });
 
   fastify.get("/expenses/queue/manager", async (request) => {
