@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys, queryTimings } from "@/shared/query";
 import {
   adminApi,
+  type AdminWorkflowUpdateInput,
   type CompanyProfileUpdateInput,
   type DepartmentMasterInput,
   type DesignationMasterInput,
@@ -132,6 +133,29 @@ export function useReplaceRbacRolePermissionsMutation() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: RbacRolePermissionsInput }) =>
       adminApi.replaceRbacRolePermissions(id, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
+  });
+}
+
+export function useAdminWorkflows(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("admin", "workflows"),
+    queryFn: () => adminApi.listAdminWorkflows(),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useUpdateAdminWorkflowMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      workflowKey,
+      input,
+    }: {
+      workflowKey: string;
+      input: AdminWorkflowUpdateInput;
+    }) => adminApi.updateAdminWorkflow(workflowKey, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
   });
 }

@@ -139,6 +139,59 @@ export interface RbacRolePermissionsInput extends ApiRecord {
   remarks?: string;
 }
 
+export interface AdminWorkflowStageRecord extends ApiRecord {
+  id: string;
+  order: number;
+  approver_type: "Reporting Manager" | "Role" | "Specific User";
+  approverType: "Reporting Manager" | "Role" | "Specific User";
+  approver_value: string;
+  approverValue: string;
+  escalate_after_days: number;
+  escalateAfterDays: number;
+  mandatory_remarks_on_reject: boolean;
+  mandatoryRemarksOnReject: boolean;
+}
+
+export interface AdminWorkflowRecord extends ApiRecord {
+  id: string;
+  workflow_key: string;
+  key: string;
+  module: string;
+  label: string;
+  status: "active" | "inactive";
+  active: boolean;
+  stages: AdminWorkflowStageRecord[];
+  updated_at: string;
+  version: number;
+}
+
+export interface AdminWorkflowListResponse extends ApiRecord {
+  items: AdminWorkflowRecord[];
+  workflows: AdminWorkflowRecord[];
+  versions: Record<string, number>;
+}
+
+export interface AdminWorkflowStageInput extends ApiRecord {
+  id?: string;
+  order?: number;
+  approver_type?: "Reporting Manager" | "Role" | "Specific User";
+  approverType?: "Reporting Manager" | "Role" | "Specific User";
+  approver_value?: string;
+  approverValue?: string;
+  escalate_after_days?: number;
+  escalateAfterDays?: number;
+  mandatory_remarks_on_reject?: boolean;
+  mandatoryRemarksOnReject?: boolean;
+}
+
+export interface AdminWorkflowUpdateInput extends ApiRecord {
+  label?: string;
+  active?: boolean;
+  status?: "active" | "inactive";
+  stages?: AdminWorkflowStageInput[];
+  expected_version: number;
+}
+
 export const adminApi = {
   getCompanyProfile() {
     return apiRequest<CompanyProfileResponse>("/api/v1/admin/company-profile");
@@ -224,6 +277,19 @@ export const adminApi = {
   replaceRbacRolePermissions(id: string, input: RbacRolePermissionsInput) {
     return apiRequest<{ role: RbacRoleRecord; version: number }>(
       `/api/v1/admin/rbac/roles/${id}/permissions`,
+      {
+        method: "PUT",
+        body: input,
+      },
+    );
+  },
+  listAdminWorkflows(params: { module?: string } = {}) {
+    const path = "/api/v1/admin/workflows";
+    return apiRequest<AdminWorkflowListResponse>(`${path}${queryString(params)}`);
+  },
+  updateAdminWorkflow(workflowKey: string, input: AdminWorkflowUpdateInput) {
+    return apiRequest<{ workflow: AdminWorkflowRecord; version: number }>(
+      `/api/v1/admin/workflows/${workflowKey}`,
       {
         method: "PUT",
         body: input,
