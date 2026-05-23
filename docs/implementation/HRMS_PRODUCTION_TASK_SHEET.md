@@ -4,14 +4,14 @@ Last updated: 2026-05-23
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 4 Asset workflow additions after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, and Notifications. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 4 Timesheet enhancement slice after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, and Asset workflow additions. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
 | Area | Status |
 | --- | --- |
-| Backend OpenAPI | 165 implemented operations across 147 paths |
-| Planned operations remaining | 50 |
+| Backend OpenAPI | 170 implemented operations across 152 paths |
+| Planned operations remaining | 45 |
 | Dashboard backend/frontend | Completed for backend summary API and frontend summary integration |
 | Employee admin backend/frontend | Completed for employee create/update, lifecycle, login, roles, and org selectors |
 | Attendance backend/frontend | Completed for punches, my/team summary, monthly calendar, exceptions, and regularization request/decision |
@@ -26,6 +26,8 @@ This versioned report captures the completed Phase 4 Asset workflow additions af
 | Notifications frontend | Integrated in `hrms-client` topbar notification panel in API mode |
 | Asset workflow backend | Implemented for asset requests, approvals, cancellations, acknowledgements, maintenance records, vendors, and recovery queue |
 | Asset workflow frontend | Integrated in `hrms-client` asset store/API mode for visible asset request, acknowledgement, maintenance, vendor, and recovery queue flows |
+| Timesheet enhancements backend | Implemented for project summaries, missing submissions, productivity summary, submission detail, and selectors |
+| Timesheet enhancements frontend | Integrated in `hrms-client` for project timesheet view, missing submission queue/report inputs, productivity/project report rollups, and form selectors in API mode |
 | Root task sheet | Updated but uncommitted by design because root has no `.git` |
 
 ## Helpdesk Discovery
@@ -107,6 +109,27 @@ Deferred from this Helpdesk slice: category mutation endpoints and broader `/api
 | `GET` | `/api/v1/assets/vendors` | `/assets/warranty` vendor selector/cards | Lists software/hardware vendor metadata |
 | `GET` | `/api/v1/assets/recovery-queue` | `/assets/returns` recovery queue | Lists assets assigned to inactive or terminated users |
 
+## Timesheet Enhancements Discovery
+
+| Area | Verified fact | Required work |
+| --- | --- | --- |
+| Existing backend | `src/modules/timesheets` already implements work segments, my submissions, approver queue, approve/return/reject decisions, and workflow definitions | Extend the module with the 5 planned read endpoints instead of replacing existing workflow behavior |
+| Planned contract gap | `docs/api/frontend-contract/BACKEND_API_COMPLETION_REPORT.md` lists project summaries, missing submissions, productivity summary, submission detail, and selectors as planned Timesheet APIs | Implement those endpoints under `/api/v1/timesheets/*` with OpenAPI/docs/tests |
+| Frontend routes | `hrms-client/src/routes/_app/timesheet.index.tsx`, `timesheet.approvals.tsx`, `timesheet.projects.tsx`, and `reports.timesheet.tsx` use `src/lib/timesheets-store.tsx` plus client aggregation | Add API adapter/store support so project view, missing submissions, productivity, and selectors use backend data in API mode |
+| Current frontend data source | Segments, my submissions, and approval queue are API-backed in API mode; project summaries, missing submissions, productivity, and selectors are still derived from local store/project data | Keep explicit local fallback only through existing non-production config |
+| Visible actions | My timesheet save/submit and manager approve/return/reject are already wired to backend APIs; project view and reports need backend rollups | Implement read-oriented APIs first; no new mutation surface is needed for this slice |
+| Deferred scope | Export jobs and full timesheet report endpoints remain part of Phase 5 reports | Keep CSV/export behavior client-side for now unless report APIs are implemented later |
+
+## Timesheet Enhancements API Inventory
+
+| Method | Path | Frontend usage | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/timesheets/projects/summary` | `/timesheet/projects`, `/reports/timesheet` project-wise rollup | Returns project/member submitted hours, billable split, missing submissions, and totals |
+| `GET` | `/api/v1/timesheets/missing-submissions` | `/timesheet/approvals` missing tab | Returns visible missing or under-submitted cycles with manager/reminder context |
+| `GET` | `/api/v1/timesheets/productivity-summary` | `/reports/timesheet` productivity tab | Returns backend-derived cards, series, and grouped breakdown rows |
+| `GET` | `/api/v1/timesheets/submissions/{id}` | Domain adapter/detail-ready workflow | Returns visible submission detail, segments, workflow history, and latest decision |
+| `GET` | `/api/v1/timesheets/selectors` | `/timesheet` forms | Returns visible projects, task selectors, cycles, approvers, workflow definitions, and rules |
+
 ## Projects / Utilization API Inventory
 
 | Method | Path | Frontend usage | Notes |
@@ -147,6 +170,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 4 | Notifications | Integrate topbar panel | Completed in `hrms-client` | Completed for the topbar notification panel in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/notifications/*`, `src/components/ui-kit/notification-panel.tsx`, `src/lib/mock/notifications.ts`, frontend API docs | `feat(notifications): connect topbar notifications to backend APIs` |
 | 4 | Asset workflows | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, assets integration test, `pnpm test:contracts` | Passed. OpenAPI generated 165 operations across 147 paths. | `src/db/migrations/0009_asset_workflows.sql`, `src/modules/assets/*`, `src/db/schema.ts`, store persistence, OpenAPI/docs/contracts | `feat(assets): implement asset workflow APIs` |
 | 4 | Asset workflows | Integrate frontend asset screens | Completed in `hrms-client` | Completed for requests, acknowledgements, maintenance, vendors, and recovery queue in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/assets/*`, `src/lib/assets-store.tsx`, `src/lib/mock/assets.ts`, frontend API docs | `feat(assets): connect asset workflow screens to backend APIs` |
+| 4 | Timesheet enhancements | Implement backend APIs | Completed | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm db:verify:no-cross-schema-fks`, timesheets integration test, `pnpm test:contracts` | Passed. OpenAPI generated 170 operations across 152 paths. Non-escalated DB/tsx runs were sandbox-blocked; reruns with local QA infra access passed. | `src/modules/timesheets/*`, OpenAPI/docs/contracts | `feat(timesheets): implement timesheet analytics APIs` |
+| 4 | Timesheet enhancements | Integrate frontend timesheet screens | Completed in `hrms-client` | Completed for project view, missing submission queue, productivity/project report rollups, and form selectors in API mode | `pnpm format`, `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, route guard, route coverage, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/domains/timesheets/*`, `src/routes/_app/timesheet*.tsx`, `src/routes/_app/reports.timesheet.tsx`, frontend API docs | `feat(timesheets): connect timesheet analytics screens to backend APIs` |
 
 ## Remaining Blockers
 
@@ -160,7 +185,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | P1 | Helpdesk category create/update/toggle endpoints remain planned for admin/settings phase; API mode surfaces this as an error instead of mutating local state |
 | P1 | Admin notification channel/event preferences remain planned for Admin settings |
 | P1 | Full asset vendor CRUD, warranty automation, recovery settlement workflow, and asset reports remain planned for admin/report hardening |
-| P1 | Project-specific reports, timesheet submission detail, and project document upload/attach UX remain planned |
+| P1 | Project-specific reports and project document upload/attach UX remain planned |
+| P1 | Timesheet export jobs and full report parity remain planned for the Reports phase |
 | P1 | Attendance daily detail, manager queue alias, export/report endpoints, and richer attendance reports remain planned |
 | P1 | Leave/WFH export/report endpoint remains planned for reports/admin phase |
 | P2 | Frontend lint keeps 39 existing Fast Refresh warnings |
@@ -173,10 +199,10 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
-- `pnpm api:docs:generate`: passed; generated 165 operation frontend contract
+- `pnpm api:docs:generate`: passed; generated 170 operation frontend contract
 - `pnpm api:docs:verify`: passed
 - `pnpm db:verify:no-cross-schema-fks`: passed after verifier fix; no cross-schema SQL foreign keys found in migrations or PostgreSQL metadata
-- `pnpm exec vitest run --project integration src/modules/assets/__tests__/assets.integration.test.ts`: passed, 3 tests
+- `pnpm exec vitest run --project integration src/modules/timesheets/__tests__/timesheets.integration.test.ts`: passed, 3 tests
 - `pnpm test:contracts`: passed, 13 tests
 
 Frontend:
@@ -184,7 +210,7 @@ Frontend:
 - `pnpm format`: passed
 - `pnpm exec tsc -p tsconfig.json --noEmit`: passed
 - `pnpm lint`: passed with 39 existing warnings
-- `pnpm api:implemented-route-guard`: passed, 59 files against 147 paths
+- `pnpm api:implemented-route-guard`: passed, 59 files against 152 paths
 - `pnpm api:frontend-contract:route-coverage`: passed, 85 routes across 15 groups
 - `pnpm build`: passed with existing chunk-size/Wrangler log warnings
 
@@ -203,6 +229,8 @@ Frontend:
 - Asset workflow requests intentionally extend the existing asset module rather than creating a separate module so base inventory, assignment, return, and license behavior remain unchanged.
 - Asset vendor support is read-only in this slice because the current visible frontend needs vendor cards/selectors; vendor CRUD remains in admin hardening.
 - Asset recovery queue is read-only in this slice and derives from assigned assets owned by inactive/terminated users; settlement workflows remain deferred.
+- Timesheet enhancements intentionally add read-oriented analytics/selector endpoints only; existing segment, submission, and approval mutation behavior remains unchanged.
+- Timesheet report exports remain client-side until the broader Reports phase adds export job/list/detail APIs.
 
 ## Commit Messages
 
@@ -214,10 +242,13 @@ Frontend:
 | Notifications frontend | `feat(notifications): connect topbar notifications to backend APIs` | Committed in `hrms-client` as `4ae6531` |
 | Asset workflows backend | `feat(assets): implement asset workflow APIs` | Committed in `hrms_backend` as `bfc719f` |
 | Asset workflows frontend | `feat(assets): connect asset workflow screens to backend APIs` | Committed in `hrms-client` as `6989a2f` |
+| Timesheet enhancements backend | `feat(timesheets): implement timesheet analytics APIs` | Committed in `hrms_backend` as `b67fa38` |
+| Timesheet enhancements frontend | `feat(timesheets): connect timesheet analytics screens to backend APIs` | Committed in `hrms-client` as `c256ff0` |
+| DB verifier fix | `fix(db): make cross-schema verifier use test env` | Committed in `hrms_backend` as `0bfa017` |
 
 ## Next Steps
 
-1. Phase 4 Asset workflow additions are implemented, frontend-integrated, and validated for the visible asset request, acknowledgement, maintenance, vendor, and recovery queue vertical slice.
-2. Backend OpenAPI now has 165 operations across 147 paths; planned operations remaining are 50.
-3. Asset workflow behavior uses backend APIs in API mode; explicit non-production fallback remains available only through the existing config path.
-4. Next Phase 4 scope: Timesheet project summaries, submission detail, productivity, missing submission, and selector additions.
+1. Phase 4 Timesheet enhancements are implemented, frontend-integrated, and validated for project summaries, missing submissions, productivity summary, submission detail, and selectors.
+2. Backend OpenAPI now has 170 operations across 152 paths; planned operations remaining are 45.
+3. Timesheet analytics and selector behavior uses backend APIs in API mode; explicit non-production fallback remains available only through the existing config path.
+4. Next Phase 4 scope: Expense metadata, dashboard summary, withdraw, and clarification thread additions.
