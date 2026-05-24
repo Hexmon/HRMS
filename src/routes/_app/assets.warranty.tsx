@@ -23,7 +23,13 @@ import {
 import { ShieldAlert, ShieldCheck, Wrench, Building2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { useApiRouteEnabled } from "@/shared/api";
-import { useAssetVendorMutation, useAssetVendors, type AssetVendorView } from "@/domains/assets";
+import {
+  useAssetVendorMutation,
+  useAssetVendors,
+  useAssetWarrantyAlerts,
+  type AssetVendorView,
+  type AssetWarrantyAlertView,
+} from "@/domains/assets";
 
 export const Route = createFileRoute("/_app/assets/warranty")({ component: WarrantyScreen });
 
@@ -31,19 +37,42 @@ function WarrantyScreen() {
   const { assets } = useAssets();
   const apiEnabled = useApiRouteEnabled(["/assets"]);
   const vendorQuery = useAssetVendors({ page_size: 100 }, apiEnabled);
+  const warrantyAlertQuery = useAssetWarrantyAlerts({ page_size: 100 }, apiEnabled);
   const vendorMutation = useAssetVendorMutation();
   const [vendorEditor, setVendorEditor] = useState<AssetVendorView | "new" | null>(null);
 
-  const expiring = useMemo(
+  const derivedWarrantyAlerts = useMemo<AssetWarrantyAlertView[]>(
     () =>
       assets
-        .map((a) => ({ a, d: warrantyDaysLeft(a.warrantyExpiry) }))
-        .filter((x) => x.d <= 60)
-        .sort((x, y) => x.d - y.d),
+        .map((asset) => ({
+          assetId: asset.id,
+          assetCode: asset.id,
+          assetType: asset.type,
+          name: `${asset.brand} ${asset.model}`.trim(),
+          brand: asset.brand,
+          model: asset.model,
+          vendor: asset.vendor,
+          warrantyExpiry: asset.warrantyExpiry,
+          daysLeft: warrantyDaysLeft(asset.warrantyExpiry),
+          severity: (warrantyDaysLeft(asset.warrantyExpiry) < 0
+            ? "expired"
+            : warrantyDaysLeft(asset.warrantyExpiry) <= 14
+              ? "critical"
+              : "warning") as AssetWarrantyAlertView["severity"],
+          assignedTo: asset.assignedTo ?? "",
+        }))
+        .filter((alert) => alert.daysLeft <= 60)
+        .sort((a, b) => a.daysLeft - b.daysLeft),
     [assets],
   );
-  const expired = expiring.filter((x) => x.d < 0);
-  const soon = expiring.filter((x) => x.d >= 0);
+  const warrantyAlerts =
+    apiEnabled && warrantyAlertQuery.data ? warrantyAlertQuery.data.items : derivedWarrantyAlerts;
+  const alertWindowDays = apiEnabled ? (warrantyAlertQuery.data?.alert_window_days ?? 60) : 60;
+  const alertsLoading = apiEnabled && warrantyAlertQuery.isLoading && !warrantyAlertQuery.data;
+  const alertsError =
+    apiEnabled && warrantyAlertQuery.error instanceof Error ? warrantyAlertQuery.error : null;
+  const expired = warrantyAlerts.filter((x) => x.daysLeft < 0);
+  const soon = warrantyAlerts.filter((x) => x.daysLeft >= 0);
 
   const maintenance = useMemo(
     () =>
@@ -108,7 +137,12 @@ function WarrantyScreen() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard label="Expiring (60d)" value={soon.length} icon={ShieldAlert} tone="warning" />
+        <StatCard
+          label={`Expiring (${alertWindowDays}d)`}
+          value={soon.length}
+          icon={ShieldAlert}
+          tone="warning"
+        />
         <StatCard label="Expired" value={expired.length} icon={AlertTriangle} tone="destructive" />
         <StatCard
           label="Active warranties"
@@ -127,24 +161,35 @@ function WarrantyScreen() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <DataCard title="Warranty expiring" description="Action recommended" padded={false}>
-          {expiring.length === 0 ? (
+          {alertsLoading ? (
+            <div className="px-5 py-8 text-sm text-muted-foreground">
+              Loading warranty alerts...
+            </div>
+          ) : alertsError ? (
+            <div className="px-5 py-8 text-sm text-destructive">{alertsError.message}</div>
+          ) : warrantyAlerts.length === 0 ? (
             <EmptyState icon={ShieldCheck} title="All warranties healthy" />
           ) : (
             <ul className="divide-y">
-              {expiring.map(({ a, d }) => (
-                <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
-                  <Link to="/assets/$id" params={{ id: a.id }} className="min-w-0 flex-1">
+              {warrantyAlerts.map((alert) => (
+                <li
+                  key={alert.assetId}
+                  className="flex items-center justify-between gap-3 px-5 py-3.5"
+                >
+                  <Link to="/assets/$id" params={{ id: alert.assetId }} className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
-                      {a.brand} {a.model}
+                      {alert.brand || alert.assetType} {alert.model || alert.name}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {a.id} · {a.vendor} · {a.warrantyExpiry}
+                      {alert.assetCode} · {alert.vendor} · {alert.warrantyExpiry}
                     </p>
                   </Link>
                   <span
-                    className={`text-xs font-medium ${d < 0 ? "text-destructive" : d <= 14 ? "text-warning-foreground" : "text-muted-foreground"}`}
+                    className={`text-xs font-medium ${alert.daysLeft < 0 ? "text-destructive" : alert.daysLeft <= 14 ? "text-warning-foreground" : "text-muted-foreground"}`}
                   >
-                    {d < 0 ? `${Math.abs(d)}d expired` : `${d}d left`}
+                    {alert.daysLeft < 0
+                      ? `${Math.abs(alert.daysLeft)}d expired`
+                      : `${alert.daysLeft}d left`}
                   </span>
                 </li>
               ))}

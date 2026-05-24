@@ -161,6 +161,45 @@ export function mapApiAssetVendors(values: unknown[]): AssetVendorView[] {
   return values.map(mapApiAssetVendor);
 }
 
+export type AssetWarrantyAlertView = {
+  assetId: string;
+  assetCode: string;
+  assetType: string;
+  name: string;
+  brand: string;
+  model: string;
+  vendor: string;
+  warrantyExpiry: string;
+  daysLeft: number;
+  severity: "expired" | "critical" | "warning";
+  assignedTo: string;
+};
+
+export function mapApiWarrantyAlert(value: unknown): AssetWarrantyAlertView {
+  const row = asRecord(value);
+  const severity = text(row.severity, "warning");
+  return {
+    assetId: text(row.asset_id, text(row.id, "asset")),
+    assetCode: text(row.asset_code, "Asset"),
+    assetType: text(row.asset_type, "Asset"),
+    name: text(row.name, "Asset"),
+    brand: text(row.brand),
+    model: text(row.model ?? row.name, "Asset"),
+    vendor: text(row.vendor, "—"),
+    warrantyExpiry: dateText(row.warranty_expiry, new Date().toISOString()).slice(0, 10),
+    daysLeft: numberValue(row.days_left, 0),
+    severity:
+      severity === "expired" || severity === "critical" || severity === "warning"
+        ? severity
+        : "warning",
+    assignedTo: text(row.assigned_to_name),
+  };
+}
+
+export function mapApiWarrantyAlerts(values: unknown[]): AssetWarrantyAlertView[] {
+  return values.map(mapApiWarrantyAlert);
+}
+
 export type AssetRecoveryTicketView = {
   id: string;
   employeeName: string;

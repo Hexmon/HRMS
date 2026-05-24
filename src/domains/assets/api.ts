@@ -88,6 +88,15 @@ export const assetsApi = {
   vendors(query: PageQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/assets/vendors", { query });
   },
+  warrantyAlerts(query: PageQuery = {}) {
+    return apiRequest<
+      PaginatedResponse<ApiRecord> & {
+        alert_window_days?: number;
+        counts?: ApiRecord;
+        generated_at?: string;
+      }
+    >("/api/v1/assets/warranty-alerts", { query });
+  },
   createVendor(input: ApiRecord) {
     return apiRequest<ApiRecord>("/api/v1/assets/vendors", {
       method: "POST",

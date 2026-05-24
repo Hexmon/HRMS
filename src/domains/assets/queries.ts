@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { queryKeys, queryTimings } from "@/shared/query";
 import type { ExpectedVersionBody, PageQuery } from "@/shared/api";
 import { assetsApi } from "./api";
-import { mapApiAssetVendors, mapApiRecoveryTickets } from "./mapper";
+import { mapApiAssetVendors, mapApiRecoveryTickets, mapApiWarrantyAlerts } from "./mapper";
 
 export function useAssetsList(query: PageQuery = {}, enabled = true) {
   return useQuery({
@@ -53,6 +53,19 @@ export function useAssetVendors(query: PageQuery = {}, enabled = true) {
     },
     enabled,
     staleTime: queryTimings.referenceStaleMs,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useAssetWarrantyAlerts(query: PageQuery = {}, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("assets", "warranty-alerts", query),
+    queryFn: async () => {
+      const response = await assetsApi.warrantyAlerts(query);
+      return { ...response, items: mapApiWarrantyAlerts(response.items) };
+    },
+    enabled,
+    staleTime: queryTimings.listStaleMs,
     placeholderData: keepPreviousData,
   });
 }
