@@ -5,6 +5,7 @@ import {
   type AdminEmailTemplateUpdateInput,
   type AdminNotificationChannelsUpdateInput,
   type AdminPolicyUpdateInput,
+  type AdminSecuritySettingsUpdateInput,
   type AdminWorkflowUpdateInput,
   type CompanyProfileUpdateInput,
   type DepartmentMasterInput,
@@ -228,6 +229,30 @@ export function useAdminAuditLog(enabled = true) {
     queryFn: () => adminApi.listAdminAuditLog({ page: 1, page_size: 100 }),
     enabled,
     staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useAdminSecuritySettings(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.detail("admin", "security-settings", "current"),
+    queryFn: () => adminApi.getAdminSecuritySettings(),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useUpdateAdminSecuritySettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AdminSecuritySettingsUpdateInput) =>
+      adminApi.updateAdminSecuritySettings(input),
+    onSuccess: (response) => {
+      queryClient.setQueryData(
+        queryKeys.detail("admin", "security-settings", "current"),
+        response.settings,
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") });
+    },
   });
 }
 

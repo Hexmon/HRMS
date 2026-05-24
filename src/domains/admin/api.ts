@@ -314,6 +314,53 @@ export interface AdminAuditLogEntry extends ApiRecord {
   ip: string;
 }
 
+export interface AdminSecuritySettingsRecord extends ApiRecord {
+  id: string;
+  settings_key: "default";
+  password_min_length: number;
+  passwordMinLength: number;
+  password_require_special: boolean;
+  passwordRequireSpecial: boolean;
+  password_require_number: boolean;
+  passwordRequireNumber: boolean;
+  password_expiry_days: number;
+  passwordExpiryDays: number;
+  session_timeout_minutes: number;
+  sessionTimeoutMinutes: number;
+  login_attempt_limit: number;
+  loginAttemptLimit: number;
+  mfa_enabled: false;
+  mfaEnabled: false;
+  audit_role_changes: boolean;
+  auditRoleChanges: boolean;
+  ip_device_audit_enabled: boolean;
+  ipDeviceAuditEnabled: boolean;
+  updated_at: string;
+  version: number;
+}
+
+export interface AdminSecuritySettingsUpdateInput extends ApiRecord {
+  password_min_length?: number;
+  passwordMinLength?: number;
+  password_require_special?: boolean;
+  passwordRequireSpecial?: boolean;
+  password_require_number?: boolean;
+  passwordRequireNumber?: boolean;
+  password_expiry_days?: number;
+  passwordExpiryDays?: number;
+  session_timeout_minutes?: number;
+  sessionTimeoutMinutes?: number;
+  login_attempt_limit?: number;
+  loginAttemptLimit?: number;
+  mfa_enabled?: false;
+  mfaEnabled?: false;
+  audit_role_changes?: boolean;
+  auditRoleChanges?: boolean;
+  ip_device_audit_enabled?: boolean;
+  ipDeviceAuditEnabled?: boolean;
+  expected_version: number;
+}
+
 export const adminApi = {
   getCompanyProfile() {
     return apiRequest<CompanyProfileResponse>("/api/v1/admin/company-profile");
@@ -470,6 +517,18 @@ export const adminApi = {
   ) {
     const path = "/api/v1/admin/audit-log";
     return apiRequest<MasterDataListResponse<AdminAuditLogEntry>>(`${path}${queryString(params)}`);
+  },
+  getAdminSecuritySettings() {
+    return apiRequest<AdminSecuritySettingsRecord>("/api/v1/admin/security-settings");
+  },
+  updateAdminSecuritySettings(input: AdminSecuritySettingsUpdateInput) {
+    return apiRequest<{ settings: AdminSecuritySettingsRecord; version: number }>(
+      "/api/v1/admin/security-settings",
+      {
+        method: "PUT",
+        body: input,
+      },
+    );
   },
   getFinanceGovernance() {
     return apiRequest<ApiRecord>("/api/v1/platform/finance-governance");
