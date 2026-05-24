@@ -1,10 +1,10 @@
 # Hawkaii HRMS Production Task Sheet
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
 ## Executive Summary
 
-This versioned report captures the completed Phase 6 backup/restore scripts, observability, deployment/security hardening, Cloudinary document storage migration, Helpdesk category configuration, export-file generation, EMS document upload-picker, and browser e2e hardening slices after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, Leave/WFH export completion, verification guardrails, and API/browser e2e baselines. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
+This versioned report captures the completed Phase 6 backup/restore scripts, observability, deployment/security hardening, Cloudinary document storage migration, document upload compression hardening, Helpdesk category configuration, export-file generation, EMS document upload-picker, and browser e2e hardening slices after Dashboard, Employee CRUD/Admin, Attendance, Leave/WFH/Holidays, EMS, Projects/utilization, Helpdesk, Notifications, Asset workflow, Timesheet enhancement, Expense enhancement, Admin company profile, Admin master data, Admin RBAC, Admin workflow, Admin policy, Admin email template, Admin notification channel, Admin audit-log, non-expense Reports, employee/core backlog additions, EMS document wrappers, Attendance backlog completion, Leave/WFH export completion, verification guardrails, and API/browser e2e baselines. The root task sheet remains at `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`, but the repository root is not a Git repo, so this backend copy records implementation state inside a versioned repo.
 
 ## Current Verified Status
 
@@ -50,6 +50,7 @@ This versioned report captures the completed Phase 6 backup/restore scripts, obs
 | Phase 6 Cloudinary document storage | Replaced MinIO/S3-compatible runtime wiring with Cloudinary-backed storage, removed MinIO compose services/dependency, added Cloudinary env keys, kept local/test mock uploads out of production, added multipart file upload support for Documents/EMS wrappers, and removed tracked legacy Supabase frontend artifacts |
 | Frontend expense create UX | Removed the visible Tax amount input from `/expenses/create`; created line items now use quantity times unit cost in the create-form total |
 | Frontend EMS document upload UX | EMS documents now send real `multipart/form-data` file payloads and compress image uploads in the browser before backend upload |
+| Phase 6 document upload compression | Added shared frontend upload preparation for image compression/size validation and backend server-side PDF compression before Cloudinary storage with Ghostscript-backed, env-controlled fail-open behavior |
 | Phase 6 Helpdesk category configuration | Completed Admin/support-scoped Helpdesk category create/update/toggle APIs and connected the `/helpdesk/categories` UI actions to those APIs in API mode |
 | Phase 6 deployment/security hardening | Completed baseline backend security headers, production CORS allowlisting, compose CORS env wiring, deployment verifier service-name alignment, and production-safe logger configuration |
 | Phase 6 backup/restore scripts | Added PostgreSQL custom-format backup and guarded restore scripts plus package commands; live backup execution still requires PostgreSQL client tools on the operator host |
@@ -197,6 +198,17 @@ This versioned report captures the completed Phase 6 backup/restore scripts, obs
 | Frontend export handoff | `/employees`, `/leave-wfh/monitor`, and route-wide `/reports/*` `ReportShell` export buttons now request a Documents API download URL when a backend export response includes `download_document_id` | Local CSV generation remains only for API-disabled development mode; browser e2e should still add explicit download assertions |
 | Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm api:docs:generate`, `pnpm api:docs:verify`, `pnpm api:consumer:verify`, `pnpm db:verify:no-cross-schema-fks`, report/core/attendance/Leave-WFH integration tests, `pnpm test:contracts`, and `pnpm test:e2e` passed | The first combined integration command was stopped after stalling on shared DB resets; the same affected suites passed one at a time with verbose output |
 | Frontend validation | `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, production config guard, implemented-route guard, route coverage, and `pnpm build` passed | Lint keeps 39 existing Fast Refresh warnings; build exits 0 with the existing chunk-size and Wrangler log warnings |
+
+## Phase 6 Document Upload Compression Hardening
+
+| Area | Completed fact | Notes |
+| --- | --- | --- |
+| Frontend upload preparation | Added `src/shared/uploads/documents.ts` and reused it from EMS documents and expense create attachments | Browser image uploads are compressed to JPEG when smaller and all selected files are checked against the backend 10 MB multipart limit before submission/attachment |
+| Backend PDF compression | Added `src/platform/pdf-compression.ts` and wired `DocumentService.upload` to compress detected PDFs before Cloudinary storage | Uses Ghostscript through `PDF_COMPRESSION_*` env keys. `PDF_COMPRESSION_FAIL_OPEN=true` keeps uploads available if Ghostscript is missing or compression fails, while metadata records attempted/compressed/reason/size fields |
+| Runtime/deployment wiring | Added PDF compression env keys to tracked examples and Docker compose runtime anchors, and installed `ghostscript` in the backend Docker image | Local/test/QA mock uploads do not require Cloudinary credentials; production examples enable PDF compression and require real Cloudinary credentials with `CLOUDINARY_MOCK_UPLOADS=false` |
+| Documentation | Updated README and Documents API guide | Documented that frontend image compression reduces browser-to-backend upload size, while server PDF compression reduces backend-to-Cloudinary stored/download size after the original upload reaches the backend |
+| Backend validation | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm test:unit -- --runInBand`, `pnpm api:docs:verify`, and `pnpm docker:prod:config` passed | `pnpm lint` and `pnpm api:docs:verify` needed escalation because `tsx` IPC sockets are blocked in the sandbox; no OpenAPI operation count changed |
+| Frontend validation | `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, and `pnpm build` passed | Lint keeps 39 existing Fast Refresh warnings; build exits 0 with existing chunk-size/Wrangler log warnings |
 
 ## Admin Notification Channels Discovery
 
@@ -515,6 +527,8 @@ Deferred from the original Projects/utilization plan: richer project reports, pr
 | 6 | Deployment/security hardening | Add backend security headers, production CORS allowlist, compose env wiring, and verifier service-name sync | Completed for backend API runtime and Docker compose verification scripts | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm verify:implementation`, QA `pnpm db:migrate`, `pnpm test:contracts`, `pnpm docker:prod:config`, tracked `.env.prod.example` compose config parse | Passed. `pnpm docker:prod:config` also exposed a local untracked `.env.prod` drift warning; `.env.prod.example` validates cleanly. | `src/plugins/security-headers.ts`, `src/app.ts`, config/decorator types, env examples, compose files, `scripts/verify-dev-deployment.ts`, contract test | `chore(security): harden API headers and production CORS` |
 | 6 | Observability | Add production-safe logger level and redaction defaults | Completed with `LOG_LEVEL` env examples/compose wiring and Fastify logger redaction when `logger: true` is used | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, QA `pnpm db:migrate`, `pnpm test:contracts` | Passed. Contract coverage confirms `LOG_LEVEL` is honored alongside the security-header/CORS test. | `src/app.ts`, env examples, compose files, contract test | `chore(observability): configure production-safe API logging` |
 | 6 | Backup/restore | Add guarded database backup and restore scripts | Completed for source-controlled PostgreSQL custom-format backup/restore commands | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint` | Passed. Live backup/restore execution not run because PostgreSQL client tools are not installed on this host PATH. | `scripts/backup-db.ts`, `scripts/restore-db.ts`, `package.json`, `.gitignore` | `chore(ops): add database backup and restore scripts` |
+| 6 | Document upload compression | Add server-side PDF compression before Cloudinary storage | Completed for detected PDF uploads through Documents/EMS wrapper paths | N/A | `pnpm typecheck`, `pnpm build`, `pnpm lint`, `pnpm test:unit -- --runInBand`, `pnpm api:docs:verify`, `pnpm docker:prod:config` | Passed. `tsx`-based lint/docs verify needed escalation due sandbox IPC restrictions. OpenAPI remains 219 operations across 193 paths. | `src/platform/pdf-compression.ts`, `src/modules/documents/service.ts`, config/decorator/store wiring, env examples, Docker compose files, Dockerfile, README, Documents API guide | `feat(documents): add PDF compression before Cloudinary upload` |
+| 6 | Document upload preparation | Share browser image compression and upload-size validation | N/A | Completed for `/ems/documents` uploads and `/expenses/create` attachment selection | `pnpm exec tsc -p tsconfig.json --noEmit`, `pnpm lint`, `pnpm build` | Passed. Frontend lint has 39 existing Fast Refresh warnings; build keeps chunk-size/Wrangler log warnings but exits 0. | `hrms-client/src/shared/uploads/documents.ts`, `hrms-client/src/routes/_app/ems.documents.tsx`, `hrms-client/src/routes/_app/expenses.create.tsx` | `feat(documents): share upload preparation across document forms` |
 
 ## Remaining Blockers
 
@@ -538,6 +552,7 @@ Backend:
 - `pnpm typecheck`: passed
 - `pnpm build`: passed
 - `pnpm lint`: passed with escalation due `tsx` IPC sandboxing
+- `pnpm test:unit -- --runInBand`: passed, including PDF compression disabled/fail-open/fail-closed coverage
 - `pnpm test:e2e`: passed, 1 API-level production user-flow smoke test covering auth/session, core users, dashboard, timesheets, expenses, attendance, leave/WFH, EMS, projects/utilization, helpdesk, notifications, reports, and export metadata
 - `pnpm api:docs:generate`: passed with escalation due `tsx` IPC sandboxing; generated 219 operation frontend contract after Helpdesk category configuration completion
 - `pnpm api:docs:verify`: passed
@@ -550,7 +565,7 @@ Backend:
 - `pnpm test:contracts`: passed, 14 tests after adding security-header and production CORS allowlist coverage; non-escalated DB access is sandbox-blocked and validation passed with local QA infra access
 - `pnpm verify:implementation`: passed with escalation due `tsx` IPC sandboxing; now covers full module registration, zero planned API backlog, and contract sync guardrails
 - `pnpm verify:scalability`: passed with escalation due `tsx` IPC sandboxing; now covers critical indexes across all implemented backend modules
-- `pnpm docker:prod:config`: passed compose parsing; local untracked `.env.prod` still warns that `CORS_ALLOWED_ORIGINS` is unset
+- `pnpm docker:prod:config`: passed compose parsing and shows PDF compression env pass-through; local untracked `.env.prod` still warns that `CORS_ALLOWED_ORIGINS` is unset
 - `docker compose --env-file .env.prod.example -f infra/docker/docker-compose.prod.yml -p hawkaii_hrms_backend_prod config`: passed with tracked production example values and no CORS/API service-name drift
 - `pnpm backup:db` / `pnpm restore:db`: not run because `pg_dump`/`pg_restore` are not installed on this host PATH; scripts compile through typecheck/build
 
@@ -572,7 +587,8 @@ Frontend:
 - EMS generic service requests support create/list/HR queue only in this slice; assignment and closure workflows stay planned for later HR operations.
 - EMS employee document wrappers reuse the existing Documents module and `business_object_type = "employee"` instead of adding a parallel EMS document table.
 - EMS document downloads, verification, access logs, and object-storage behavior remain owned by the existing Documents APIs.
-- EMS document Upload/Replace now uses a real file picker in API mode and sends selected-file metadata to the EMS document wrapper. Backend storage still records the current metadata placeholder body; richer binary streaming/version replacement remains document hardening if required.
+- EMS document Upload/Replace now uses a real file picker in API mode and sends `multipart/form-data` file bytes to the EMS document wrapper. Download URLs, verification, access logs, and object-storage behavior remain owned by the Documents APIs.
+- Browser image compression reduces client-to-backend upload size for image documents. Server-side PDF compression runs after the backend receives the PDF, so it reduces backend-to-Cloudinary storage/download size but does not reduce the initial browser-to-backend PDF upload bandwidth.
 - EMS admin onboarding, probation, exits, policy management, and letter generation tabs remain non-production placeholders until their backend modules are defined.
 - Projects list responses intentionally include members, allocations, milestones/modules, documents, and summary by default so the existing project store can hydrate visible screens without adding a generated client layer.
 - Project document APIs list documents already attached to `business_object_type = "project"`; upload/attach UX remains part of later document hardening.
@@ -699,6 +715,8 @@ Frontend:
 | Cloudinary document storage backend | `feat(documents): migrate storage to Cloudinary` | Committed in `hrms_backend` as `c38ad2f` |
 | Expense/document upload frontend | `feat(documents): compress uploads and simplify expense create` | Committed in `hrms-client` as `9f1604f` |
 | Legacy Supabase cleanup frontend | `chore(frontend): remove legacy Supabase artifacts` | Committed in `hrms-client` as `d5f2c68` |
+| Document PDF compression backend | `feat(documents): add PDF compression before Cloudinary upload` | Committed in `hrms_backend` as `fc86ab8` |
+| Shared document upload preparation frontend | `feat(documents): share upload preparation across document forms` | Committed in `hrms-client` as `b4cd326` |
 
 ## Next Steps
 
