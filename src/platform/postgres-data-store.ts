@@ -49,6 +49,7 @@ import {
   type AuthTokenRecord,
   type CompanyProfileRecord,
   type DataStore,
+  type DocumentProcessingConfig,
   type DocumentAccessLogRecord,
   type DocumentVersionRecord,
   type ExpenseApprovalRecord,
@@ -74,6 +75,7 @@ export interface PostgresDataStoreOptions {
     uploadTransformation?: string;
     mockUploads: boolean;
   };
+  documentProcessing?: DocumentProcessingConfig;
   seedIfEmpty?: boolean;
 }
 
@@ -282,12 +284,16 @@ export async function createPostgresDataStore(options: PostgresDataStoreOptions)
   const pool = new Pool({ connectionString: options.databaseUrl });
   const objectStorage = new CloudinaryObjectStorage(options.objectStorage);
   await objectStorage.ensureReady();
+  const documentProcessing = options.documentProcessing;
 
   const store = createMemoryDataStore();
   store.kind = "postgres";
   store.pgPool = pool;
   store.sessionStore = new ValkeySessionStore(options.valkeyUrl);
   store.objectStorage = objectStorage;
+  if (documentProcessing) {
+    store.documentProcessing = documentProcessing;
+  }
   store.persistence = new PostgresPersistence(pool, store);
   await store.persistence.reload();
 
@@ -298,6 +304,9 @@ export async function createPostgresDataStore(options: PostgresDataStoreOptions)
     store.pgPool = pool;
     store.sessionStore = new ValkeySessionStore(options.valkeyUrl);
     store.objectStorage = objectStorage;
+    if (documentProcessing) {
+      store.documentProcessing = documentProcessing;
+    }
     store.persistence = new PostgresPersistence(pool, store);
     await store.persistence.flush();
     await store.persistence.reload();

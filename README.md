@@ -31,6 +31,10 @@ CLOUDINARY_FOLDER=hawkaii-hrms-dev
 CLOUDINARY_RESOURCE_TYPE=auto
 CLOUDINARY_UPLOAD_TRANSFORMATION=q_auto:eco,f_auto
 CLOUDINARY_MOCK_UPLOADS=true
+PDF_COMPRESSION_ENABLED=true
+PDF_COMPRESSION_BINARY=gs
+PDF_COMPRESSION_QUALITY=ebook
+PDF_COMPRESSION_FAIL_OPEN=true
 ```
 
 For real local or production uploads, set real Cloudinary dashboard values and disable mock uploads:
@@ -43,6 +47,8 @@ CLOUDINARY_MOCK_UPLOADS=false
 ```
 
 Do not expose `CLOUDINARY_API_SECRET` to the frontend. Files are uploaded to the backend first; the backend signs and stores them in Cloudinary. MinIO is no longer part of the runtime.
+
+Image uploads are compressed in the frontend before they reach the backend. PDF uploads are compressed server-side before Cloudinary storage when `PDF_COMPRESSION_ENABLED=true`; this uses Ghostscript (`PDF_COMPRESSION_BINARY`, default `gs`) and defaults to fail-open behavior so uploads continue if local Ghostscript is not installed. The production Docker image installs Ghostscript for this path.
 
 API endpoints:
 

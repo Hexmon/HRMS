@@ -84,6 +84,7 @@ import {
 } from "#shared";
 import { MemorySessionStore, getLocalDemoPassword, hashPasswordSync, type SessionStore } from "#auth";
 import { getReleaseSeedEmails } from "./seed-personas.js";
+import { defaultPdfCompressionOptions, type PdfCompressionOptions } from "./pdf-compression.js";
 
 export interface NotificationRecord {
   id: UUID;
@@ -344,6 +345,10 @@ export interface DataStorePersistence {
   close(): Promise<void>;
 }
 
+export interface DocumentProcessingConfig {
+  pdfCompression: PdfCompressionOptions;
+}
+
 export interface DataStore {
   kind: "memory" | "postgres";
   departments: Department[];
@@ -425,6 +430,7 @@ export interface DataStore {
   processedEvents: Set<string>;
   sessionStore: SessionStore;
   objectStorage: ObjectStoragePort | null;
+  documentProcessing: DocumentProcessingConfig;
   persistence: DataStorePersistence | null;
   pgPool: Pool | null;
   nextOutboxId: number;
@@ -1846,6 +1852,9 @@ export function createMemoryDataStore(): MemoryDataStore {
     processedEvents: new Set<string>(),
     sessionStore: new MemorySessionStore(),
     objectStorage: null,
+    documentProcessing: {
+      pdfCompression: defaultPdfCompressionOptions()
+    },
     persistence: null,
     pgPool: null,
     nextOutboxId: 1,

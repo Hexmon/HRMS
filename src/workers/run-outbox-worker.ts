@@ -27,6 +27,16 @@ const store = await createPostgresDataStore({
     uploadTransformation: process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
     mockUploads: process.env.CLOUDINARY_MOCK_UPLOADS === "true"
   },
+  documentProcessing: {
+    pdfCompression: {
+      enabled: process.env.PDF_COMPRESSION_ENABLED === "true",
+      binary: process.env.PDF_COMPRESSION_BINARY ?? "gs",
+      quality: (process.env.PDF_COMPRESSION_QUALITY as "screen" | "ebook" | "printer" | "prepress" | "default" | undefined) ?? "ebook",
+      minBytes: Number(process.env.PDF_COMPRESSION_MIN_BYTES ?? "131072"),
+      timeoutMs: Number(process.env.PDF_COMPRESSION_TIMEOUT_MS ?? "30000"),
+      failOpen: process.env.PDF_COMPRESSION_FAIL_OPEN !== "false"
+    }
+  },
   seedIfEmpty: false
 });
 

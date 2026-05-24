@@ -20,7 +20,7 @@ Optional filters:
 
 `POST /api/v1/documents`
 
-The endpoint accepts JSON metadata for generated/backend documents and `multipart/form-data` with a `file` field for browser uploads. Image files should be compressed by the frontend before upload; the backend also requests Cloudinary upload-time quality optimization.
+The endpoint accepts JSON metadata for generated/backend documents and `multipart/form-data` with a `file` field for browser uploads. Image files should be compressed by the frontend before upload; the backend also requests Cloudinary upload-time quality optimization. PDF files can be compressed server-side before Cloudinary storage with `PDF_COMPRESSION_ENABLED=true` and Ghostscript available at `PDF_COMPRESSION_BINARY` (default `gs`).
 
 ```json
 {
@@ -49,6 +49,12 @@ The path ticket id becomes the business object id.
 - `GET /api/v1/documents/{id}/access-log?page=1&page_size=25`
 
 `download-url` returns a backend-generated short-lived URL. It must not expose object-storage access keys.
+
+## Upload Compression
+
+- Browser image uploads are prepared before the request to reduce client-to-server upload size on slower networks.
+- Server-side PDF compression runs after the backend receives the file and before it stores the object in Cloudinary. This reduces stored/downloaded PDF size but does not reduce the original browser-to-backend upload bandwidth.
+- `PDF_COMPRESSION_FAIL_OPEN=true` keeps uploads available if Ghostscript is missing or cannot compress a file; the document metadata records whether compression was attempted, compressed, skipped, or failed.
 
 ## Classification
 

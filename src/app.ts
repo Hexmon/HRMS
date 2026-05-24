@@ -130,7 +130,18 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
     if (process.env.HRMS_ALLOW_MEMORY_STORE !== "true") {
       throw new Error("MemoryDataStore is allowed only when HRMS_ALLOW_MEMORY_STORE=true is set explicitly.");
     }
-    return createMemoryDataStore();
+    const store = createMemoryDataStore();
+    store.documentProcessing = {
+      pdfCompression: {
+        enabled: config.PDF_COMPRESSION_ENABLED,
+        binary: config.PDF_COMPRESSION_BINARY,
+        quality: config.PDF_COMPRESSION_QUALITY,
+        minBytes: config.PDF_COMPRESSION_MIN_BYTES,
+        timeoutMs: config.PDF_COMPRESSION_TIMEOUT_MS,
+        failOpen: config.PDF_COMPRESSION_FAIL_OPEN
+      }
+    };
+    return store;
   }
 
   if (!config.DATABASE_URL) {
@@ -151,6 +162,16 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
       resourceType: config.CLOUDINARY_RESOURCE_TYPE,
       uploadTransformation: config.CLOUDINARY_UPLOAD_TRANSFORMATION,
       mockUploads: config.CLOUDINARY_MOCK_UPLOADS
+    },
+    documentProcessing: {
+      pdfCompression: {
+        enabled: config.PDF_COMPRESSION_ENABLED,
+        binary: config.PDF_COMPRESSION_BINARY,
+        quality: config.PDF_COMPRESSION_QUALITY,
+        minBytes: config.PDF_COMPRESSION_MIN_BYTES,
+        timeoutMs: config.PDF_COMPRESSION_TIMEOUT_MS,
+        failOpen: config.PDF_COMPRESSION_FAIL_OPEN
+      }
     },
     seedIfEmpty: options.seedIfEmpty ?? true
   });

@@ -23,6 +23,12 @@ declare module "fastify" {
       CLOUDINARY_RESOURCE_TYPE: "auto" | "image" | "raw" | "video";
       CLOUDINARY_UPLOAD_TRANSFORMATION: string;
       CLOUDINARY_MOCK_UPLOADS: boolean;
+      PDF_COMPRESSION_ENABLED: boolean;
+      PDF_COMPRESSION_BINARY: string;
+      PDF_COMPRESSION_QUALITY: "screen" | "ebook" | "printer" | "prepress" | "default";
+      PDF_COMPRESSION_MIN_BYTES: number;
+      PDF_COMPRESSION_TIMEOUT_MS: number;
+      PDF_COMPRESSION_FAIL_OPEN: boolean;
       API_BASE_URL: string;
       CORS_ALLOWED_ORIGINS: string;
       RATE_LIMIT_ENABLED: boolean;

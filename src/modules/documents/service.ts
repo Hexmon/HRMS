@@ -5,6 +5,7 @@ import type { z } from "zod";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { makeStorageKey, nowIso } from "../../platform/data-store.js";
 import { forbidden } from "../../platform/errors.js";
+import { compressPdfBuffer, isPdfUpload, type PdfCompressionResult } from "../../platform/pdf-compression.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { ExpenseService } from "../expenses/service.js";
 import { canAccessDocument } from "./policy.js";
@@ -64,7 +65,7 @@ export class DocumentService {
     if (!this.store.objectStorage || this.store.objectStorage.kind !== "cloudinary") {
       throw forbidden("Document object storage adapter is not configured for release acceptance");
     }
-    const body = input.file_buffer ?? Buffer.from(
+    const rawBody = input.file_buffer ?? Buffer.from(
       JSON.stringify({
         document_id: document.id,
         file_name: document.file_name,
@@ -73,7 +74,11 @@ export class DocumentService {
         checksum_sha256: document.checksum_sha256
       })
     );
-    const stored = await this.store.objectStorage.putObject(document.storage_key, body, {
+    const pdfCompression = input.file_buffer
+      ? await this.preparePdfUploadBody(rawBody, document)
+      : null;
+    const uploadBody = pdfCompression?.buffer ?? rawBody;
+    const stored = await this.store.objectStorage.putObject(document.storage_key, uploadBody, {
       "content-type": document.mime_type,
       "x-hrms-document-id": document.id
     });
@@ -83,6 +88,11 @@ export class DocumentService {
       cloudinary_resource_type: stored.resourceType ?? null,
       cloudinary_url: stored.url ?? null,
       cloudinary_upload_compressed: stored.compressed ?? false,
+      pdf_compression_attempted: pdfCompression?.attempted ?? false,
+      pdf_compressed: pdfCompression?.compressed ?? false,
+      pdf_compression_reason: pdfCompression?.reason ?? null,
+      pdf_original_size_bytes: pdfCompression?.originalSize ?? null,
+      pdf_output_size_bytes: pdfCompression?.outputSize ?? null,
       original_size_bytes: input.file_buffer ? input.size_bytes : null,
       stored_size_bytes: stored.size
     };
@@ -119,6 +129,16 @@ export class DocumentService {
       );
     }
     return document;
+  }
+
+  private async preparePdfUploadBody(
+    body: Buffer,
+    document: Pick<DocumentMetadata, "mime_type" | "file_name">
+  ): Promise<PdfCompressionResult | null> {
+    if (!isPdfUpload(document.mime_type, document.file_name, body)) {
+      return null;
+    }
+    return compressPdfBuffer(body, this.store.documentProcessing.pdfCompression);
   }
 
   metadata(actor: AuthUser, id: UUID): DocumentMetadata {
