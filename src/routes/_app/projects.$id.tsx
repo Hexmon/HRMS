@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
@@ -18,6 +19,9 @@ import {
 import { useProjects } from "@/lib/projects-store";
 import { useAuth } from "@/lib/auth";
 import { ProjectFormDrawer } from "@/components/projects/project-form-drawer";
+import { documentsApi } from "@/domains/documents";
+import { queryKeys } from "@/shared/query";
+import { prepareDocumentUploadFile } from "@/shared/uploads/documents";
 import {
   type ProjectMember,
   type ProjectModule,
@@ -46,6 +50,8 @@ import {
   History,
   CheckCircle2,
   Trash2,
+  Upload,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -58,8 +64,10 @@ export const Route = createFileRoute("/_app/projects/$id")({
 function ProjectDetailPage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const { projects, removeMember, setStatus, loading, error } = useProjects();
+  const { projects, removeMember, setStatus, loading, error, isApiBacked } = useProjects();
   const { activeRole, user } = useAuth();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const project = projects.find((p) => p.id === id);
 
   const [editOpen, setEditOpen] = useState(false);
@@ -68,6 +76,56 @@ function ProjectDetailPage() {
   const isPM = activeRole === "project_manager" && project?.manager === user?.name;
   const isFinance = activeRole === "finance_manager";
   const canEdit = project?.permissions?.can_edit ?? (isMain || isPM);
+  const canManageDocuments = canEdit && isApiBacked;
+
+  const uploadDocument = useMutation({
+    mutationFn: async (file: File) => {
+      if (!project) throw new Error("Project is not loaded.");
+      const prepared = await prepareDocumentUploadFile(file);
+      const formData = new FormData();
+      formData.set("business_object_type", "project");
+      formData.set("business_object_id", project.id);
+      formData.set("classification", "normal");
+      formData.set("document_type", "other");
+      formData.set("file_name", prepared.file.name);
+      formData.set("mime_type", prepared.file.type || "application/octet-stream");
+      formData.set("size_bytes", String(prepared.file.size));
+      formData.set("file", prepared.file);
+      return documentsApi.create(formData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("documents") });
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("projects") });
+    },
+  });
+
+  const handleDocumentUpload = (file: File | undefined) => {
+    if (!file) return;
+    uploadDocument
+      .mutateAsync(file)
+      .then(() => toast.success("Project document uploaded"))
+      .catch((err) =>
+        toast.error("Document upload failed", {
+          description: err instanceof Error ? err.message : "The backend did not accept the file.",
+        }),
+      );
+  };
+
+  const downloadDocument = (document: ProjectDocument) => {
+    documentsApi
+      .createDownloadUrl(document.id)
+      .then((response) => {
+        const url = typeof response.url === "string" ? response.url : "";
+        if (!url) throw new Error("Download URL was not returned.");
+        window.open(url, "_blank", "noopener,noreferrer");
+      })
+      .catch((err) =>
+        toast.error("Download failed", {
+          description:
+            err instanceof Error ? err.message : "The backend did not return a file URL.",
+        }),
+      );
+  };
 
   if (!project) {
     return (
@@ -269,6 +327,21 @@ function ProjectDetailPage() {
             year: "numeric",
           })}
         </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      render: (d) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!isApiBacked}
+          onClick={() => downloadDocument(d)}
+        >
+          <Download className="mr-1.5 h-4 w-4" />
+          Download
+        </Button>
       ),
     },
   ];
@@ -674,12 +747,37 @@ function ProjectDetailPage() {
 
         {/* Documents */}
         <TabsContent value="documents" className="space-y-3">
+          <div className="flex items-center justify-end">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(event) => {
+                handleDocumentUpload(event.target.files?.[0]);
+                event.currentTarget.value = "";
+              }}
+            />
+            {canManageDocuments && (
+              <Button
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadDocument.isPending}
+              >
+                <Upload className="mr-1.5 h-4 w-4" />
+                {uploadDocument.isPending ? "Uploading..." : "Upload document"}
+              </Button>
+            )}
+          </div>
           {project.documents.length === 0 ? (
             <Card className="rounded-2xl border-border/60 p-10">
               <EmptyState
                 icon={FileText}
                 title="No documents yet"
-                description="Project documents will appear here once they are attached."
+                description={
+                  canManageDocuments
+                    ? "Upload project documents to keep scope, contracts, and working files attached."
+                    : "Project documents will appear here once they are attached."
+                }
               />
             </Card>
           ) : (
