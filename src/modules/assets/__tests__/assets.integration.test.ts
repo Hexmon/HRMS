@@ -96,6 +96,61 @@ describe("assets and licenses", () => {
     expect(compromised.statusCode).toBe(400);
   });
 
+  it("returns warranty alerts from the asset policy window", async () => {
+    const assetManager = await loginAs(app, "AST");
+    const employee = await loginAs(app, "E1");
+    const asset = app.store.assets[0];
+    const assetPolicy = app.store.adminPolicies.find((policy) => policy.policy_key === "asset");
+    if (!asset || !assetPolicy) {
+      throw new Error("Expected seeded asset and asset policy");
+    }
+    asset.metadata = {
+      ...asset.metadata,
+      brand: "Lenovo",
+      model: "T14",
+      vendor: "Lenovo India",
+      warranty_expiry: dateAfterDays(30)
+    };
+    assetPolicy.config = {
+      ...assetPolicy.config,
+      warrantyAlertDays: 45
+    };
+
+    const denied = await app.inject({
+      method: "GET",
+      url: "/api/v1/assets/warranty-alerts?page=1&page_size=10",
+      headers: authHeader(employee.token)
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const alerts = await app.inject({
+      method: "GET",
+      url: "/api/v1/assets/warranty-alerts?page=1&page_size=10",
+      headers: authHeader(assetManager.token)
+    });
+    expect(alerts.statusCode).toBe(200);
+    expect(alerts.json()).toMatchObject({
+      alert_window_days: 45,
+      total: 1,
+      counts: { expired: 0, critical: 0, warning: 1 }
+    });
+    expect(alerts.json().items[0]).toMatchObject({
+      asset_id: asset.id,
+      asset_code: "LAP-001",
+      warranty_expiry: asset.metadata.warranty_expiry,
+      days_left: 30,
+      severity: "warning"
+    });
+
+    const narrowWindow = await app.inject({
+      method: "GET",
+      url: "/api/v1/assets/warranty-alerts?page=1&page_size=10&window_days=14&include_expired=false",
+      headers: authHeader(assetManager.token)
+    });
+    expect(narrowWindow.statusCode).toBe(200);
+    expect(narrowWindow.json()).toMatchObject({ alert_window_days: 14, total: 0 });
+  });
+
   it("supports asset requests, acknowledgement, maintenance, vendors, and recovery queue", async () => {
     const employee = await loginAs(app, "E1");
     const assetManager = await loginAs(app, "AST");
@@ -297,3 +352,9 @@ describe("assets and licenses", () => {
     expect(maintenanceList.json().total).toBe(1);
   });
 });
+
+function dateAfterDays(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}

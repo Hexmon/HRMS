@@ -29,6 +29,53 @@ export class AssetService {
     return { items: items.slice(start, start + pageSize), page, page_size: pageSize, total: items.length };
   }
 
+  warrantyAlerts(
+    actor: AuthUser,
+    query: { page: number; page_size: number; window_days?: number; include_expired?: boolean }
+  ) {
+    assertAssetManager(actor);
+    const windowDays = Math.max(0, Math.min(365, query.window_days ?? this.getWarrantyAlertWindowDays()));
+    const includeExpired = query.include_expired ?? true;
+    const items = this.repository
+      .list()
+      .map((asset) => {
+        const expiry = typeof asset.metadata?.warranty_expiry === "string" ? asset.metadata.warranty_expiry : null;
+        if (!expiry) return null;
+        const daysLeft = daysUntil(expiry);
+        if (daysLeft === null) return null;
+        if (daysLeft < 0 && !includeExpired) return null;
+        if (daysLeft > windowDays) return null;
+        const presented = this.presentAsset(asset);
+        return {
+          asset_id: asset.id,
+          asset_code: asset.asset_code,
+          asset_type: asset.asset_type,
+          name: asset.name,
+          brand: presented.brand ?? null,
+          model: presented.model ?? null,
+          vendor: presented.vendor ?? null,
+          warranty_expiry: expiry,
+          days_left: daysLeft,
+          severity: daysLeft < 0 ? "expired" : daysLeft <= 14 ? "critical" : "warning",
+          assigned_to_user_id: asset.current_assigned_user_id,
+          assigned_to_name: presented.assigned_to_name ?? null
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .sort((a, b) => a.days_left - b.days_left || a.asset_code.localeCompare(b.asset_code));
+    const result = page(items, query.page, query.page_size);
+    return {
+      ...result,
+      alert_window_days: windowDays,
+      generated_at: nowIso(),
+      counts: {
+        expired: items.filter((item) => item.days_left < 0).length,
+        critical: items.filter((item) => item.days_left >= 0 && item.days_left <= 14).length,
+        warning: items.filter((item) => item.days_left > 14 && item.days_left <= windowDays).length
+      }
+    };
+  }
+
   detail(actor: AuthUser, id: UUID) {
     assertAssetManager(actor);
     return this.presentAsset(this.repository.find(id));
@@ -589,9 +636,22 @@ export class AssetService {
       maintenance: this.repository.listMaintenance(asset.id).map((record) => this.presentMaintenance(record))
     };
   }
+
+  private getWarrantyAlertWindowDays(): number {
+    const raw = this.store.adminPolicies.find((policy) => policy.policy_key === "asset" && !policy.deleted_at)?.config?.warrantyAlertDays;
+    return typeof raw === "number" && Number.isFinite(raw) ? raw : 60;
+  }
 }
 
 function page<T>(items: T[], pageNumber: number, pageSize: number) {
   const start = (pageNumber - 1) * pageSize;
   return { items: items.slice(start, start + pageSize), page: pageNumber, page_size: pageSize, total: items.length };
+}
+
+function daysUntil(dateText: string): number | null {
+  const target = new Date(`${dateText.slice(0, 10)}T00:00:00.000Z`);
+  if (Number.isNaN(target.getTime())) return null;
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return Math.ceil((target.getTime() - today.getTime()) / 86_400_000);
 }

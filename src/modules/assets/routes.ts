@@ -71,6 +71,10 @@ const recoverySettlementSchema = z.object({
   remarks: z.string().trim().max(2000).nullable().optional(),
   expected_version: z.number().int().positive()
 });
+const warrantyAlertsQuerySchema = paginationQuerySchema.extend({
+  window_days: z.coerce.number().int().min(0).max(365).optional(),
+  include_expired: z.coerce.boolean().optional()
+});
 
 export const assetRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/", async (request) => {
@@ -86,6 +90,16 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const query = paginationQuerySchema.parse(request.query);
     return new AssetService(fastify.store).list(request.actor, query.page, query.page_size);
+  });
+
+  fastify.get("/warranty-alerts", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new AssetService(fastify.store).warrantyAlerts(
+      request.actor,
+      warrantyAlertsQuerySchema.parse(request.query)
+    );
   });
 
   fastify.get("/:id", async (request) => {

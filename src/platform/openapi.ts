@@ -1740,6 +1740,36 @@ const assetVendorUpdateBodySchema = {
   additionalProperties: false
 };
 
+const assetWarrantyAlertSchema = {
+  type: "object",
+  required: ["asset_id", "asset_code", "asset_type", "name", "warranty_expiry", "days_left", "severity"],
+  properties: {
+    asset_id: uuid("Asset UUID"),
+    asset_code: { type: "string", example: "LAP-001" },
+    asset_type: { type: "string", example: "Laptop" },
+    name: { type: "string", example: "ThinkPad T-Series" },
+    brand: { type: "string", nullable: true, example: "Lenovo" },
+    model: { type: "string", nullable: true, example: "T14" },
+    vendor: { type: "string", nullable: true, example: "Lenovo India" },
+    warranty_expiry: { type: "string", format: "date", example: "2026-06-30" },
+    days_left: { type: "integer", example: 14 },
+    severity: { type: "string", enum: ["expired", "critical", "warning"], example: "critical" },
+    assigned_to_user_id: { ...uuid("Assigned user UUID"), nullable: true },
+    assigned_to_name: { type: "string", nullable: true, example: "Ananya Rao" }
+  },
+  additionalProperties: true
+};
+
+const assetWarrantyAlertsQuerySchema = {
+  type: "object",
+  properties: {
+    ...paginationQuerySchema.properties,
+    window_days: { type: "integer", minimum: 0, maximum: 365, example: 60 },
+    include_expired: { type: "boolean", example: true }
+  },
+  additionalProperties: false
+};
+
 const assetRecoveryTicketSchema = {
   type: "object",
   required: ["id", "employee_user_id", "asset_id", "status", "version", "created_at"],
@@ -4762,6 +4792,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/assets/licenses/validate": operation("Assets", "Validate license", "Validates software license binding for a hardware fingerprint.", { body: { type: "object", required: ["product_id", "hardware_fingerprint"], properties: { product_id: uuid("Software product UUID"), hardware_fingerprint: { type: "string", minLength: 8, example: "HW-FINGERPRINT-001" } } }, response200: { type: "object", additionalProperties: true } }),
   "POST /api/v1/assets/licenses/revoke": operation("Assets", "Revoke license/device", "Revokes a hardware fingerprint or compromised key/device binding.", { body: { type: "object", required: ["hardware_fingerprint"], properties: { hardware_fingerprint: { type: "string", minLength: 8, example: "HW-FINGERPRINT-001" } } }, response200: { type: "object", additionalProperties: true } }),
   "POST /api/v1/assets/events/employee-terminated": operation("Outbox / Platform Events", "Consume employee terminated event", "Protected local event consumer that moves assigned assets into recovery workflow when an employee is terminated.", { body: { type: "object", required: ["employee_user_id"], properties: { employee_user_id: uuid("Terminated employee UUID") } }, response200: { type: "object", additionalProperties: true } }),
+  "GET /api/v1/assets/warranty-alerts": operation("Assets", "Asset warranty alerts", "Lists expired and soon-expiring asset warranties using the Admin asset policy warranty alert window unless a narrower window is requested.", { querystring: assetWarrantyAlertsQuerySchema, response200: { ...paginated(assetWarrantyAlertSchema), required: ["items", "page", "page_size", "total", "alert_window_days", "generated_at", "counts"], properties: { ...paginated(assetWarrantyAlertSchema).properties, alert_window_days: { type: "integer", example: 60 }, generated_at: dateTime("Generation timestamp"), counts: { type: "object", required: ["expired", "critical", "warning"], properties: { expired: { type: "integer", example: 1 }, critical: { type: "integer", example: 2 }, warning: { type: "integer", example: 3 } }, additionalProperties: false } }, additionalProperties: true } }),
   "POST /api/v1/assets/requests": operation("Assets", "Create asset request", "Creates an authenticated employee asset request for new, replacement, repair, or return needs.", { body: assetRequestBodySchema, response200: { type: "object", required: ["request", "version"], properties: { request: assetRequestSchema, version: { type: "integer", minimum: 1, example: 1 } }, additionalProperties: false } }),
   "GET /api/v1/assets/requests/my": operation("Assets", "List my asset requests", "Lists asset requests raised by the authenticated employee.", { querystring: paginationQuerySchema, response200: paginated(assetRequestSchema) }),
   "GET /api/v1/assets/requests/queue": operation("Assets", "Asset request queue", "Lists asset requests for Asset/Admin actors with queue counts.", { querystring: paginationQuerySchema, response200: { ...paginated(assetRequestSchema), additionalProperties: true } }),
