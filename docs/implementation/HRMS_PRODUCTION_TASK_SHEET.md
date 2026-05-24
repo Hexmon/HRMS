@@ -785,8 +785,8 @@ Frontend:
 | Admin security settings frontend | `feat(admin): connect security settings to backend API` | Committed in `hrms-client` as `f41e798` |
 | EMS admin workflow backend | `feat(ems): implement admin workflow APIs` | Committed in `hrms_backend` as `ee76dec` |
 | EMS admin workflow frontend | `feat(ems): connect admin workflow screens to backend APIs` | Committed in `hrms-client` as `6ee3829` |
-| Asset vendor/recovery backend | `feat(assets): implement vendor and recovery settlement APIs` | Pending commit in `hrms_backend` |
-| Asset vendor/recovery frontend | `feat(assets): connect vendor and recovery workflows` | Pending commit in `hrms-client` |
+| Asset vendor/recovery backend | `feat(assets): implement vendor and recovery settlement APIs` | Committed in `hrms_backend` as `66a592b` |
+| Asset vendor/recovery frontend | `feat(assets): connect vendor and recovery workflows` | Committed in `hrms-client` as `e7fe602` |
 
 ## Next Steps
 
