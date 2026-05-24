@@ -38,7 +38,13 @@ export const rateLimitPlugin = fp(async (fastify) => {
       return;
     }
 
-    const policy = policyFor(path, request.method, fastify.config);
+    const policy = policyFor(path, request.method, {
+      ...fastify.config,
+      RATE_LIMIT_AUTH_MAX: Math.min(
+        fastify.config.RATE_LIMIT_AUTH_MAX,
+        fastify.store.adminSecuritySettings.login_attempt_limit
+      )
+    });
     if (!policy) {
       return;
     }

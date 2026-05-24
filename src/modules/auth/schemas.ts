@@ -30,11 +30,8 @@ export type LoginInput = z.infer<typeof loginSchema>;
 
 const strongPasswordSchema = z
   .string()
-  .min(10)
-  .max(128)
-  .regex(/[A-Z]/u, "Password must include an uppercase letter.")
-  .regex(/[a-z]/u, "Password must include a lowercase letter.")
-  .regex(/[0-9]/u, "Password must include a number.");
+  .min(1)
+  .max(128);
 
 export const signupSchema = z
   .object({

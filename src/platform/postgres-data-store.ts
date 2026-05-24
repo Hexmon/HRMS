@@ -39,6 +39,7 @@ import type {
   AdminEmailTemplateRecord,
   AdminNotificationChannelRecord,
   AdminPolicyConfigRecord,
+  AdminSecuritySettingsRecord,
   AdminWorkflowConfigRecord,
   TimesheetSubmission,
   WfhRequest
@@ -59,6 +60,7 @@ import {
   type UserSessionPreferenceRecord,
   type WorkSegment,
   type WorkflowDefinitionRecord,
+  buildDefaultAdminSecuritySettings,
   createMemoryDataStore
 } from "./data-store.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
@@ -189,6 +191,7 @@ function copyData(target: DataStore, source: DataStore): void {
   target.adminPolicies = source.adminPolicies;
   target.adminEmailTemplates = source.adminEmailTemplates;
   target.adminNotificationChannels = source.adminNotificationChannels;
+  target.adminSecuritySettings = source.adminSecuritySettings;
   target.users = source.users;
   target.userCredentials = source.userCredentials;
   target.authTokens = source.authTokens;
@@ -334,6 +337,7 @@ class PostgresPersistence {
       loaded.adminPolicies = await this.loadAdminPolicies(client);
       loaded.adminEmailTemplates = await this.loadAdminEmailTemplates(client);
       loaded.adminNotificationChannels = await this.loadAdminNotificationChannels(client);
+      loaded.adminSecuritySettings = await this.loadAdminSecuritySettings(client);
       loaded.users = await this.loadUsers(client);
       loaded.userCredentials = await this.loadUserCredentials(client);
       loaded.authTokens = await this.loadAuthTokens(client);
@@ -558,6 +562,39 @@ class PostgresPersistence {
       deleted_at: asIsoOrNull(row.deleted_at),
       version: row.version
     }));
+  }
+
+  private async loadAdminSecuritySettings(client: PoolClient): Promise<AdminSecuritySettingsRecord> {
+    const { rows } = await client.query(`
+      SELECT
+        id, settings_key, password_min_length, password_require_special, password_require_number,
+        password_expiry_days, session_timeout_minutes, login_attempt_limit, mfa_enabled,
+        audit_role_changes, ip_device_audit_enabled, created_at, updated_at, deleted_at, version
+      FROM platform.admin_security_settings
+      WHERE settings_key = 'default'
+      LIMIT 1
+    `);
+    const row = rows[0];
+    if (!row) {
+      return buildDefaultAdminSecuritySettings(new Date().toISOString());
+    }
+    return {
+      id: row.id,
+      settings_key: "default",
+      password_min_length: row.password_min_length,
+      password_require_special: row.password_require_special,
+      password_require_number: row.password_require_number,
+      password_expiry_days: row.password_expiry_days,
+      session_timeout_minutes: row.session_timeout_minutes,
+      login_attempt_limit: row.login_attempt_limit,
+      mfa_enabled: false,
+      audit_role_changes: row.audit_role_changes,
+      ip_device_audit_enabled: row.ip_device_audit_enabled,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+      version: row.version
+    };
   }
 
   private async loadUsers(client: PoolClient): Promise<CoreUser[]> {
@@ -1849,6 +1886,43 @@ class PostgresPersistence {
         ]
       );
     }
+    const security = this.store.adminSecuritySettings;
+    await client.query(
+      `INSERT INTO platform.admin_security_settings (
+        id, settings_key, password_min_length, password_require_special, password_require_number,
+        password_expiry_days, session_timeout_minutes, login_attempt_limit, mfa_enabled,
+        audit_role_changes, ip_device_audit_enabled, created_at, updated_at, deleted_at, version
+      )
+      VALUES ($1, 'default', $2, $3, $4, $5, $6, $7, false, $8, $9, $10, $11, $12, $13)
+      ON CONFLICT (settings_key) DO UPDATE
+      SET password_min_length = EXCLUDED.password_min_length,
+          password_require_special = EXCLUDED.password_require_special,
+          password_require_number = EXCLUDED.password_require_number,
+          password_expiry_days = EXCLUDED.password_expiry_days,
+          session_timeout_minutes = EXCLUDED.session_timeout_minutes,
+          login_attempt_limit = EXCLUDED.login_attempt_limit,
+          mfa_enabled = false,
+          audit_role_changes = EXCLUDED.audit_role_changes,
+          ip_device_audit_enabled = EXCLUDED.ip_device_audit_enabled,
+          updated_at = EXCLUDED.updated_at,
+          deleted_at = EXCLUDED.deleted_at,
+          version = EXCLUDED.version`,
+      [
+        security.id,
+        security.password_min_length,
+        security.password_require_special,
+        security.password_require_number,
+        security.password_expiry_days,
+        security.session_timeout_minutes,
+        security.login_attempt_limit,
+        security.audit_role_changes,
+        security.ip_device_audit_enabled,
+        security.created_at,
+        security.updated_at,
+        security.deleted_at,
+        security.version
+      ]
+    );
     for (const preference of this.store.userSessionPreferences) {
       await client.query(
         `INSERT INTO platform.user_session_preferences (

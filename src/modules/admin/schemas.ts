@@ -71,6 +71,28 @@ export const adminAuditLogQuerySchema = z.object({
   date_to: z.string().max(40).optional()
 });
 
+export const adminSecuritySettingsUpdateSchema = z.object({
+  password_min_length: z.number().int().min(8).max(128).optional(),
+  passwordMinLength: z.number().int().min(8).max(128).optional(),
+  password_require_special: z.boolean().optional(),
+  passwordRequireSpecial: z.boolean().optional(),
+  password_require_number: z.boolean().optional(),
+  passwordRequireNumber: z.boolean().optional(),
+  password_expiry_days: z.number().int().min(0).max(730).optional(),
+  passwordExpiryDays: z.number().int().min(0).max(730).optional(),
+  session_timeout_minutes: z.number().int().min(5).max(1440).optional(),
+  sessionTimeoutMinutes: z.number().int().min(5).max(1440).optional(),
+  login_attempt_limit: z.number().int().min(1).max(100).optional(),
+  loginAttemptLimit: z.number().int().min(1).max(100).optional(),
+  mfa_enabled: z.literal(false).optional(),
+  mfaEnabled: z.literal(false).optional(),
+  audit_role_changes: z.boolean().optional(),
+  auditRoleChanges: z.boolean().optional(),
+  ip_device_audit_enabled: z.boolean().optional(),
+  ipDeviceAuditEnabled: z.boolean().optional(),
+  expected_version: z.number().int().min(1)
+});
+
 const workflowStageSchema = z.object({
   id: z.string().min(1).max(80).optional(),
   order: z.number().int().min(1).max(20).optional(),
@@ -215,6 +237,7 @@ export type AdminNotificationChannelsQuery = z.infer<typeof adminNotificationCha
 export type AdminNotificationChannelsUpdateInput = z.infer<typeof adminNotificationChannelsUpdateSchema>;
 export type AdminNotificationChannelInput = z.infer<typeof adminNotificationChannelInputSchema>;
 export type AdminAuditLogQuery = z.infer<typeof adminAuditLogQuerySchema>;
+export type AdminSecuritySettingsUpdateInput = z.infer<typeof adminSecuritySettingsUpdateSchema>;
 export type DepartmentCreateInput = z.infer<typeof departmentCreateSchema>;
 export type DepartmentUpdateInput = z.infer<typeof departmentUpdateSchema>;
 export type DesignationCreateInput = z.infer<typeof designationCreateSchema>;

@@ -107740,6 +107740,1027 @@
         }
       }
     },
+    "/api/v1/admin/security-settings": {
+      "get": {
+        "summary": "Read admin security settings",
+        "tags": [
+          "Admin / Configuration"
+        ],
+        "description": "Returns the enforced Admin Settings security policy for password setup/reset, session TTL, auth rate limits, and audit toggles. MFA is intentionally not enabled in this release.",
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "settings_key",
+                    "password_min_length",
+                    "passwordMinLength",
+                    "password_require_special",
+                    "passwordRequireSpecial",
+                    "password_require_number",
+                    "passwordRequireNumber",
+                    "password_expiry_days",
+                    "passwordExpiryDays",
+                    "session_timeout_minutes",
+                    "sessionTimeoutMinutes",
+                    "login_attempt_limit",
+                    "loginAttemptLimit",
+                    "mfa_enabled",
+                    "mfaEnabled",
+                    "audit_role_changes",
+                    "auditRoleChanges",
+                    "ip_device_audit_enabled",
+                    "ipDeviceAuditEnabled",
+                    "updated_at",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Admin security settings UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "settings_key": {
+                      "type": "string",
+                      "enum": [
+                        "default"
+                      ],
+                      "example": "default"
+                    },
+                    "password_min_length": {
+                      "type": "integer",
+                      "minimum": 8,
+                      "maximum": 128,
+                      "example": 10
+                    },
+                    "passwordMinLength": {
+                      "type": "integer",
+                      "minimum": 8,
+                      "maximum": 128,
+                      "example": 10
+                    },
+                    "password_require_special": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "passwordRequireSpecial": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "password_require_number": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "passwordRequireNumber": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "password_expiry_days": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 730,
+                      "example": 90
+                    },
+                    "passwordExpiryDays": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 730,
+                      "example": 90
+                    },
+                    "session_timeout_minutes": {
+                      "type": "integer",
+                      "minimum": 5,
+                      "maximum": 1440,
+                      "example": 60
+                    },
+                    "sessionTimeoutMinutes": {
+                      "type": "integer",
+                      "minimum": 5,
+                      "maximum": 1440,
+                      "example": 60
+                    },
+                    "login_attempt_limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100,
+                      "example": 10
+                    },
+                    "loginAttemptLimit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100,
+                      "example": 10
+                    },
+                    "mfa_enabled": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ],
+                      "example": false
+                    },
+                    "mfaEnabled": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ],
+                      "example": false
+                    },
+                    "audit_role_changes": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "auditRoleChanges": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "ip_device_audit_enabled": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "ipDeviceAuditEnabled": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Admin security settings update timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": [
+                      "Invalid input: expected object, received undefined"
+                    ],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": [
+                        "retry_after_seconds"
+                      ],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update admin security settings",
+        "tags": [
+          "Admin / Configuration"
+        ],
+        "description": "Persists basic security settings with optimistic concurrency. Password policy, session TTL, and auth rate-limit changes are enforced by backend runtime paths; MFA must remain false until a provider flow is specified.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expected_version"
+                ],
+                "properties": {
+                  "password_min_length": {
+                    "type": "integer",
+                    "minimum": 8,
+                    "maximum": 128,
+                    "example": 12
+                  },
+                  "passwordMinLength": {
+                    "type": "integer",
+                    "minimum": 8,
+                    "maximum": 128,
+                    "example": 12
+                  },
+                  "password_require_special": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "passwordRequireSpecial": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "password_require_number": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "passwordRequireNumber": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "password_expiry_days": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 730,
+                    "example": 90
+                  },
+                  "passwordExpiryDays": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 730,
+                    "example": 90
+                  },
+                  "session_timeout_minutes": {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 1440,
+                    "example": 45
+                  },
+                  "sessionTimeoutMinutes": {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 1440,
+                    "example": 45
+                  },
+                  "login_attempt_limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "example": 5
+                  },
+                  "loginAttemptLimit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "example": 5
+                  },
+                  "mfa_enabled": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ],
+                    "example": false
+                  },
+                  "mfaEnabled": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ],
+                    "example": false
+                  },
+                  "audit_role_changes": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "auditRoleChanges": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "ip_device_audit_enabled": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "ipDeviceAuditEnabled": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "settings",
+                    "version"
+                  ],
+                  "properties": {
+                    "settings": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "settings_key",
+                        "password_min_length",
+                        "passwordMinLength",
+                        "password_require_special",
+                        "passwordRequireSpecial",
+                        "password_require_number",
+                        "passwordRequireNumber",
+                        "password_expiry_days",
+                        "passwordExpiryDays",
+                        "session_timeout_minutes",
+                        "sessionTimeoutMinutes",
+                        "login_attempt_limit",
+                        "loginAttemptLimit",
+                        "mfa_enabled",
+                        "mfaEnabled",
+                        "audit_role_changes",
+                        "auditRoleChanges",
+                        "ip_device_audit_enabled",
+                        "ipDeviceAuditEnabled",
+                        "updated_at",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Admin security settings UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "settings_key": {
+                          "type": "string",
+                          "enum": [
+                            "default"
+                          ],
+                          "example": "default"
+                        },
+                        "password_min_length": {
+                          "type": "integer",
+                          "minimum": 8,
+                          "maximum": 128,
+                          "example": 10
+                        },
+                        "passwordMinLength": {
+                          "type": "integer",
+                          "minimum": 8,
+                          "maximum": 128,
+                          "example": 10
+                        },
+                        "password_require_special": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "passwordRequireSpecial": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "password_require_number": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "passwordRequireNumber": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "password_expiry_days": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 730,
+                          "example": 90
+                        },
+                        "passwordExpiryDays": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 730,
+                          "example": 90
+                        },
+                        "session_timeout_minutes": {
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 1440,
+                          "example": 60
+                        },
+                        "sessionTimeoutMinutes": {
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 1440,
+                          "example": 60
+                        },
+                        "login_attempt_limit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100,
+                          "example": 10
+                        },
+                        "loginAttemptLimit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100,
+                          "example": 10
+                        },
+                        "mfa_enabled": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ],
+                          "example": false
+                        },
+                        "mfaEnabled": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ],
+                          "example": false
+                        },
+                        "audit_role_changes": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "auditRoleChanges": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "ip_device_audit_enabled": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "ipDeviceAuditEnabled": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Admin security settings update timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "version": {
+                      "type": "integer",
+                      "example": 2
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": [
+                      "Invalid input: expected object, received undefined"
+                    ],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": [
+                        "retry_after_seconds"
+                      ],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/openapi.json": {
       "get": {
         "summary": "OpenAPI JSON",

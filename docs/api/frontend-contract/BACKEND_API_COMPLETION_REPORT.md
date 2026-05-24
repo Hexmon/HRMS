@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 219 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 221 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
 | Planned new APIs | 0 | No first-pass visible frontend API gaps remain in this contract pack. | Keep behavior stable and move remaining items to production hardening or explicitly scoped future contracts. |
-| Target implemented contract after completion | 219 | Regenerate frontend client after future backend phases land. | First-pass visible frontend contract is complete at 219 operations. |
+| Target implemented contract after completion | 221 | Regenerate frontend client after future backend phases land. | First-pass visible frontend contract plus Admin Security Settings is complete at 221 operations. |
 
 ## Development Phases
 
@@ -26,7 +26,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Module tag | Operations | Ready surface |
 | --- | ---: | --- |
-| Admin / Configuration | 28 | Company profile read/update, department/designation master-data management, RBAC role/permission configuration, workflow configuration, policy configuration, email template configuration, notification channel configuration, audit log, finance governance, manager backups, and timesheet workflow definition upsert. |
+| Admin / Configuration | 30 | Company profile read/update, department/designation master-data management, RBAC role/permission configuration, workflow configuration, policy configuration, email template configuration, notification channel configuration, audit log, security settings, finance governance, manager backups, and timesheet workflow definition upsert. |
 | Assets | 19 | Inventory, detail, assignment/return, QR scan, license lifecycle, employee termination event, requests, acknowledgements, maintenance, vendors, and recovery queue. |
 | Auth & Sessions | 11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
 | Core / Employees & Hierarchy | 16 | User list/detail/subtree, org selectors, employee create/update, lifecycle activation/deactivation, login setup/disable, role replacement, role history, audit trail, import job metadata, import polling, and export job metadata. |

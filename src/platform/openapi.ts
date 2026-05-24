@@ -953,6 +953,86 @@ const adminNotificationChannelsUpdateBody = {
   additionalProperties: false
 };
 
+const adminSecuritySettingsSchema = {
+  type: "object",
+  required: [
+    "id",
+    "settings_key",
+    "password_min_length",
+    "passwordMinLength",
+    "password_require_special",
+    "passwordRequireSpecial",
+    "password_require_number",
+    "passwordRequireNumber",
+    "password_expiry_days",
+    "passwordExpiryDays",
+    "session_timeout_minutes",
+    "sessionTimeoutMinutes",
+    "login_attempt_limit",
+    "loginAttemptLimit",
+    "mfa_enabled",
+    "mfaEnabled",
+    "audit_role_changes",
+    "auditRoleChanges",
+    "ip_device_audit_enabled",
+    "ipDeviceAuditEnabled",
+    "updated_at",
+    "version"
+  ],
+  properties: {
+    id: uuid("Admin security settings UUID"),
+    settings_key: { type: "string", enum: ["default"], example: "default" },
+    password_min_length: { type: "integer", minimum: 8, maximum: 128, example: 10 },
+    passwordMinLength: { type: "integer", minimum: 8, maximum: 128, example: 10 },
+    password_require_special: { type: "boolean", example: false },
+    passwordRequireSpecial: { type: "boolean", example: false },
+    password_require_number: { type: "boolean", example: true },
+    passwordRequireNumber: { type: "boolean", example: true },
+    password_expiry_days: { type: "integer", minimum: 0, maximum: 730, example: 90 },
+    passwordExpiryDays: { type: "integer", minimum: 0, maximum: 730, example: 90 },
+    session_timeout_minutes: { type: "integer", minimum: 5, maximum: 1440, example: 60 },
+    sessionTimeoutMinutes: { type: "integer", minimum: 5, maximum: 1440, example: 60 },
+    login_attempt_limit: { type: "integer", minimum: 1, maximum: 100, example: 10 },
+    loginAttemptLimit: { type: "integer", minimum: 1, maximum: 100, example: 10 },
+    mfa_enabled: { type: "boolean", enum: [false], example: false },
+    mfaEnabled: { type: "boolean", enum: [false], example: false },
+    audit_role_changes: { type: "boolean", example: true },
+    auditRoleChanges: { type: "boolean", example: true },
+    ip_device_audit_enabled: { type: "boolean", example: true },
+    ipDeviceAuditEnabled: { type: "boolean", example: true },
+    updated_at: dateTime("Admin security settings update timestamp"),
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminSecuritySettingsUpdateBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    password_min_length: { type: "integer", minimum: 8, maximum: 128, example: 12 },
+    passwordMinLength: { type: "integer", minimum: 8, maximum: 128, example: 12 },
+    password_require_special: { type: "boolean", example: true },
+    passwordRequireSpecial: { type: "boolean", example: true },
+    password_require_number: { type: "boolean", example: true },
+    passwordRequireNumber: { type: "boolean", example: true },
+    password_expiry_days: { type: "integer", minimum: 0, maximum: 730, example: 90 },
+    passwordExpiryDays: { type: "integer", minimum: 0, maximum: 730, example: 90 },
+    session_timeout_minutes: { type: "integer", minimum: 5, maximum: 1440, example: 45 },
+    sessionTimeoutMinutes: { type: "integer", minimum: 5, maximum: 1440, example: 45 },
+    login_attempt_limit: { type: "integer", minimum: 1, maximum: 100, example: 5 },
+    loginAttemptLimit: { type: "integer", minimum: 1, maximum: 100, example: 5 },
+    mfa_enabled: { type: "boolean", enum: [false], example: false },
+    mfaEnabled: { type: "boolean", enum: [false], example: false },
+    audit_role_changes: { type: "boolean", example: true },
+    auditRoleChanges: { type: "boolean", example: true },
+    ip_device_audit_enabled: { type: "boolean", example: true },
+    ipDeviceAuditEnabled: { type: "boolean", example: true },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
 const adminAuditLogQuerySchema = {
   ...paginationQuerySchema,
   properties: {
@@ -4332,6 +4412,26 @@ const routeDocs: Record<string, RouteSchema> = {
     {
       querystring: adminAuditLogQuerySchema,
       response200: paginated(adminAuditLogEntrySchema)
+    }
+  ),
+  "GET /api/v1/admin/security-settings": operation(
+    "Admin / Configuration",
+    "Read admin security settings",
+    "Returns the enforced Admin Settings security policy for password setup/reset, session TTL, auth rate limits, and audit toggles. MFA is intentionally not enabled in this release.",
+    { response200: adminSecuritySettingsSchema }
+  ),
+  "PUT /api/v1/admin/security-settings": operation(
+    "Admin / Configuration",
+    "Update admin security settings",
+    "Persists basic security settings with optimistic concurrency. Password policy, session TTL, and auth rate-limit changes are enforced by backend runtime paths; MFA must remain false until a provider flow is specified.",
+    {
+      body: adminSecuritySettingsUpdateBody,
+      response200: {
+        type: "object",
+        required: ["settings", "version"],
+        properties: { settings: adminSecuritySettingsSchema, version: { type: "integer", example: 2 } },
+        additionalProperties: false
+      }
     }
   ),
   "GET /api/v1/platform/finance-governance": operation(

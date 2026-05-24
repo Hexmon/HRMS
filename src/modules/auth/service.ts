@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createJwt, hashPasswordSync, verifyPasswordSync } from "#auth";
-import { EmploymentStatuses, Permissions, Roles, type AuthUser, type CoreUser, type RoleKey, type UUID } from "#shared";
+import { EmploymentStatuses, Permissions, Roles, type AdminSecuritySettingsRecord, type AuthUser, type CoreUser, type RoleKey, type UUID } from "#shared";
 import { badRequest, conflict, forbidden, notFound, unauthorized } from "../../platform/errors.js";
 import type { AuthTokenRecord, CompanyProfileRecord, MemoryDataStore, UserCredentialRecord, UserSessionPreferenceRecord } from "../../platform/data-store.js";
 import { nowIso, seedIds } from "../../platform/data-store.js";
@@ -77,7 +77,7 @@ export class AuthService {
     const user = input.email && input.password
       ? this.authenticatePassword(input.email, input.password)
       : this.authenticateEmployeeCode(input.employee_code ?? "");
-    const jwt = createJwt(user, this.jwtSecret, 3600);
+    const jwt = createJwt(user, this.jwtSecret, this.sessionTtlSeconds());
     await this.store.sessionStore.create({
       jti: jwt.jti,
       user_id: user.id,
@@ -114,6 +114,9 @@ export class AuthService {
     }
 
     this.revokeActiveTokensForUser(user.id, "email_verification");
+    if (input.password) {
+      assertPasswordMatchesSecurityPolicy(input.password, this.store.adminSecuritySettings);
+    }
     const verification = this.createToken({
       type: "email_verification",
       userId: user.id,
@@ -218,6 +221,7 @@ export class AuthService {
     const token = this.requireActiveToken(input.token, "password_setup");
     const user = this.requireTokenUser(token);
     const now = nowIso();
+    assertPasswordMatchesSecurityPolicy(input.password, this.store.adminSecuritySettings);
     this.setCredential(user.id, hashPasswordSync(input.password), now);
     user.employment_status = EmploymentStatuses.Active;
     user.version += 1;
@@ -261,6 +265,7 @@ export class AuthService {
       throw forbidden("User account is inactive or blocked");
     }
     const now = nowIso();
+    assertPasswordMatchesSecurityPolicy(input.password, this.store.adminSecuritySettings);
     this.setCredential(user.id, hashPasswordSync(input.password), now);
     token.status = "used";
     token.used_at = now;
@@ -402,6 +407,10 @@ export class AuthService {
       throw unauthorized("Invalid email or password");
     }
     return user;
+  }
+
+  private sessionTtlSeconds(): number {
+    return Math.max(60, this.store.adminSecuritySettings.session_timeout_minutes * 60);
   }
 
   async logout(jti: string): Promise<void> {
@@ -608,6 +617,28 @@ function unique(values: readonly string[]): string[] {
 
 function uniqueRoles(values: readonly RoleKey[]): RoleKey[] {
   return [...new Set(values)];
+}
+
+function assertPasswordMatchesSecurityPolicy(password: string, policy: AdminSecuritySettingsRecord): void {
+  const errors: string[] = [];
+  if (password.length < policy.password_min_length) {
+    errors.push(`Password must be at least ${policy.password_min_length} characters.`);
+  }
+  if (!/[A-Z]/u.test(password)) {
+    errors.push("Password must include an uppercase letter.");
+  }
+  if (!/[a-z]/u.test(password)) {
+    errors.push("Password must include a lowercase letter.");
+  }
+  if (policy.password_require_number && !/[0-9]/u.test(password)) {
+    errors.push("Password must include a number.");
+  }
+  if (policy.password_require_special && !/[^A-Za-z0-9]/u.test(password)) {
+    errors.push("Password must include a special character.");
+  }
+  if (errors.length > 0) {
+    throw badRequest("Password does not meet the current security policy.", { errors });
+  }
 }
 
 function readTimezone(user: AuthUser): string | null {

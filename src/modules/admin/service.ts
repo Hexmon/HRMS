@@ -11,6 +11,7 @@ import {
   type AdminNotificationEventKey,
   type AdminPolicyConfigRecord,
   type AdminPolicyKey,
+  type AdminSecuritySettingsRecord,
   type AdminWorkflowConfigRecord,
   type AdminWorkflowKey,
   type AdminWorkflowStageRecord,
@@ -33,6 +34,7 @@ import type {
   AdminAuditLogQuery,
   AdminPoliciesQuery,
   AdminPolicyUpdateInput,
+  AdminSecuritySettingsUpdateInput,
   AdminWorkflowStageInput,
   AdminWorkflowUpdateInput,
   AdminWorkflowsQuery,
@@ -68,6 +70,11 @@ export class AdminService {
     return presentCompanyProfile(this.repository.getCurrentCompanyProfile());
   }
 
+  getAdminSecuritySettings(actor: AuthUser): AdminSecuritySettingsResponse {
+    assertCanManageAdminSettings(actor);
+    return presentAdminSecuritySettings(this.repository.getAdminSecuritySettings());
+  }
+
   updateCompanyProfile(actor: AuthUser, input: CompanyProfileUpdateInput): CompanyProfileResponse {
     assertCanManageAdminSettings(actor);
     const company = this.repository.updateCurrentCompanyProfile(input);
@@ -83,6 +90,22 @@ export class AdminService {
       idempotencyKey: `admin.company_profile.updated:${company.id}:${company.version}`
     });
     return presentCompanyProfile(company);
+  }
+
+  updateAdminSecuritySettings(actor: AuthUser, input: AdminSecuritySettingsUpdateInput): AdminSecuritySettingsMutationResponse {
+    assertCanManageAdminSettings(actor);
+    const settings = this.repository.updateAdminSecuritySettings(input);
+    appendOutboxEvent(this.store, {
+      aggregateType: "admin_security_settings",
+      aggregateId: settings.id,
+      eventType: "admin.security_settings.updated",
+      payload: {
+        actor_user_id: actor.id,
+        changed_fields: Object.keys(input).filter((field) => field !== "expected_version")
+      },
+      idempotencyKey: `admin.security_settings.updated:${settings.id}:${settings.version}`
+    });
+    return { settings: presentAdminSecuritySettings(settings), version: settings.version };
   }
 
   listAdminWorkflows(actor: AuthUser, query: AdminWorkflowsQuery): AdminWorkflowListResponse {
@@ -737,6 +760,36 @@ export interface CompanyProfileResponse {
   version: number;
 }
 
+export interface AdminSecuritySettingsResponse {
+  id: string;
+  settings_key: "default";
+  password_min_length: number;
+  passwordMinLength: number;
+  password_require_special: boolean;
+  passwordRequireSpecial: boolean;
+  password_require_number: boolean;
+  passwordRequireNumber: boolean;
+  password_expiry_days: number;
+  passwordExpiryDays: number;
+  session_timeout_minutes: number;
+  sessionTimeoutMinutes: number;
+  login_attempt_limit: number;
+  loginAttemptLimit: number;
+  mfa_enabled: false;
+  mfaEnabled: false;
+  audit_role_changes: boolean;
+  auditRoleChanges: boolean;
+  ip_device_audit_enabled: boolean;
+  ipDeviceAuditEnabled: boolean;
+  updated_at: string;
+  version: number;
+}
+
+export interface AdminSecuritySettingsMutationResponse {
+  settings: AdminSecuritySettingsResponse;
+  version: number;
+}
+
 function presentCompanyProfile(company: CompanyProfileRecord): CompanyProfileResponse {
   return {
     id: company.id,
@@ -760,6 +813,33 @@ function presentCompanyProfile(company: CompanyProfileRecord): CompanyProfileRes
     bootstrap_completed_at: company.bootstrap_completed_at,
     updated_at: company.updated_at,
     version: company.version
+  };
+}
+
+function presentAdminSecuritySettings(settings: AdminSecuritySettingsRecord): AdminSecuritySettingsResponse {
+  return {
+    id: settings.id,
+    settings_key: settings.settings_key,
+    password_min_length: settings.password_min_length,
+    passwordMinLength: settings.password_min_length,
+    password_require_special: settings.password_require_special,
+    passwordRequireSpecial: settings.password_require_special,
+    password_require_number: settings.password_require_number,
+    passwordRequireNumber: settings.password_require_number,
+    password_expiry_days: settings.password_expiry_days,
+    passwordExpiryDays: settings.password_expiry_days,
+    session_timeout_minutes: settings.session_timeout_minutes,
+    sessionTimeoutMinutes: settings.session_timeout_minutes,
+    login_attempt_limit: settings.login_attempt_limit,
+    loginAttemptLimit: settings.login_attempt_limit,
+    mfa_enabled: false,
+    mfaEnabled: false,
+    audit_role_changes: settings.audit_role_changes,
+    auditRoleChanges: settings.audit_role_changes,
+    ip_device_audit_enabled: settings.ip_device_audit_enabled,
+    ipDeviceAuditEnabled: settings.ip_device_audit_enabled,
+    updated_at: settings.updated_at,
+    version: settings.version
   };
 }
 

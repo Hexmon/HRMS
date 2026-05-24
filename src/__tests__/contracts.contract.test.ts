@@ -55,6 +55,7 @@ const expectedOperations = [
   "GET /api/v1/admin/policies",
   "GET /api/v1/admin/rbac/permissions",
   "GET /api/v1/admin/rbac/roles",
+  "GET /api/v1/admin/security-settings",
   "GET /api/v1/admin/workflows",
   "GET /api/v1/assets/",
   "GET /api/v1/assets/recovery-queue",
@@ -260,6 +261,7 @@ const expectedOperations = [
   "PUT /api/v1/admin/notification-channels",
   "PUT /api/v1/admin/policies/{policy_key}",
   "PUT /api/v1/admin/rbac/roles/{id}/permissions",
+  "PUT /api/v1/admin/security-settings",
   "PUT /api/v1/admin/workflows/{workflow_key}",
   "PUT /api/v1/holidays/{id}",
   "PUT /api/v1/core/users/{id}/roles",
@@ -279,6 +281,7 @@ const bodyRequiredOperations = [
   "PUT /api/v1/admin/email-templates/{template_key}",
   "PUT /api/v1/admin/notification-channels",
   "PUT /api/v1/admin/policies/{policy_key}",
+  "PUT /api/v1/admin/security-settings",
   "POST /api/v1/admin/master-data/departments",
   "PATCH /api/v1/admin/master-data/departments/{id}",
   "POST /api/v1/admin/master-data/designations",
@@ -360,6 +363,7 @@ const bodyRequiredOperations = [
   "POST /api/v1/helpdesk/tickets",
   "PATCH /api/v1/helpdesk/tickets/{id}",
   "PUT /api/v1/admin/company-profile",
+  "PUT /api/v1/admin/security-settings",
   "POST /api/v1/helpdesk/tickets/{id}/comments",
   "POST /api/v1/helpdesk/tickets/{id}/internal-notes",
   "POST /api/v1/helpdesk/tickets/{id}/attachments",
@@ -425,6 +429,7 @@ const occOperations = [
   "PUT /api/v1/admin/notification-channels",
   "PUT /api/v1/admin/policies/{policy_key}",
   "PUT /api/v1/admin/rbac/roles/{id}/permissions",
+  "PUT /api/v1/admin/security-settings",
   "PUT /api/v1/admin/workflows/{workflow_key}"
 ];
 
@@ -752,7 +757,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(219);
+    expect(rows.length).toBe(221);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

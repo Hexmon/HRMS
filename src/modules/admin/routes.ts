@@ -10,6 +10,7 @@ import {
   adminNotificationChannelsUpdateSchema,
   adminPoliciesQuerySchema,
   adminPolicyUpdateSchema,
+  adminSecuritySettingsUpdateSchema,
   adminWorkflowUpdateSchema,
   adminWorkflowsQuerySchema,
   companyProfileUpdateSchema,
@@ -215,6 +216,19 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
     return new AdminService(fastify.store).listAdminAuditLog(
       request.actor,
       adminAuditLogQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.get("/security-settings", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).getAdminSecuritySettings(request.actor);
+  });
+
+  fastify.put("/security-settings", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new AdminService(fastify.store).updateAdminSecuritySettings(
+      request.actor,
+      adminSecuritySettingsUpdateSchema.parse(request.body)
     );
   });
 };

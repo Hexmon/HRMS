@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 219
+Documented operations: 221
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -3378,6 +3378,135 @@ Success body highlights:
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
 - Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/admin/security-settings
+
+| Field | Contract |
+|---|---|
+| Purpose | Read admin security settings |
+| Frontend use | Read admin security settings |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/configuration persona only unless backend grants narrower operational permission. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Admin security settings UUID |
+| `settings_key` | string enum("default") | required | - |
+| `password_min_length` | integer | required | minimum 8 |
+| `passwordMinLength` | integer | required | minimum 8 |
+| `password_require_special` | boolean | required | - |
+| `passwordRequireSpecial` | boolean | required | - |
+| `password_require_number` | boolean | required | - |
+| `passwordRequireNumber` | boolean | required | - |
+| `password_expiry_days` | integer | required | minimum 0 |
+| `passwordExpiryDays` | integer | required | minimum 0 |
+| `session_timeout_minutes` | integer | required | minimum 5 |
+| `sessionTimeoutMinutes` | integer | required | minimum 5 |
+| `login_attempt_limit` | integer | required | minimum 1 |
+| `loginAttemptLimit` | integer | required | minimum 1 |
+| `mfa_enabled` | boolean enum(false) | required | - |
+| `mfaEnabled` | boolean enum(false) | required | - |
+| `audit_role_changes` | boolean | required | - |
+| `auditRoleChanges` | boolean | required | - |
+| `ip_device_audit_enabled` | boolean | required | - |
+| `ipDeviceAuditEnabled` | boolean | required | - |
+| `updated_at` | string<date-time> | required | Admin security settings update timestamp |
+| `version` | integer | required | minimum 1 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PUT /api/v1/admin/security-settings
+
+| Field | Contract |
+|---|---|
+| Purpose | Update admin security settings |
+| Frontend use | Update admin security settings |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/configuration persona only unless backend grants narrower operational permission. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `password_min_length` | integer | optional | minimum 8 |
+| `passwordMinLength` | integer | optional | minimum 8 |
+| `password_require_special` | boolean | optional | - |
+| `passwordRequireSpecial` | boolean | optional | - |
+| `password_require_number` | boolean | optional | - |
+| `passwordRequireNumber` | boolean | optional | - |
+| `password_expiry_days` | integer | optional | minimum 0 |
+| `passwordExpiryDays` | integer | optional | minimum 0 |
+| `session_timeout_minutes` | integer | optional | minimum 5 |
+| `sessionTimeoutMinutes` | integer | optional | minimum 5 |
+| `login_attempt_limit` | integer | optional | minimum 1 |
+| `loginAttemptLimit` | integer | optional | minimum 1 |
+| `mfa_enabled` | boolean enum(false) | optional | - |
+| `mfaEnabled` | boolean enum(false) | optional | - |
+| `audit_role_changes` | boolean | optional | - |
+| `auditRoleChanges` | boolean | optional | - |
+| `ip_device_audit_enabled` | boolean | optional | - |
+| `ipDeviceAuditEnabled` | boolean | optional | - |
+| `expected_version` | integer | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `settings` | object | required | - |
+| `version` | integer | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
 ## Expenses / Requester

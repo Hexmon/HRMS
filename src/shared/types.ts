@@ -173,6 +173,24 @@ export interface AdminNotificationChannelRecord {
   version: number;
 }
 
+export interface AdminSecuritySettingsRecord {
+  id: UUID;
+  settings_key: "default";
+  password_min_length: number;
+  password_require_special: boolean;
+  password_require_number: boolean;
+  password_expiry_days: number;
+  session_timeout_minutes: number;
+  login_attempt_limit: number;
+  mfa_enabled: false;
+  audit_role_changes: boolean;
+  ip_device_audit_enabled: boolean;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+  version: number;
+}
+
 export interface CoreUser extends AuthUser {
   manager_user_id: UUID | null;
   timezone: string | null;

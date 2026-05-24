@@ -39,6 +39,7 @@ import type {
   AdminEmailTemplateRecord,
   AdminNotificationChannelRecord,
   AdminPolicyConfigRecord,
+  AdminSecuritySettingsRecord,
   AdminWorkflowConfigRecord,
   RbacRolePermissionRecord,
   RbacRoleRecord,
@@ -359,6 +360,7 @@ export interface DataStore {
   adminPolicies: AdminPolicyConfigRecord[];
   adminEmailTemplates: AdminEmailTemplateRecord[];
   adminNotificationChannels: AdminNotificationChannelRecord[];
+  adminSecuritySettings: AdminSecuritySettingsRecord;
   users: CoreUser[];
   userCredentials: UserCredentialRecord[];
   authTokens: AuthTokenRecord[];
@@ -461,6 +463,7 @@ export interface SeedIds {
   auditor: UUID;
   assetManager: UUID;
   financeGovernanceConfig: UUID;
+  adminSecuritySettings: UUID;
   workflowDefinition: UUID;
   licenseProduct: UUID;
   entitlement: UUID;
@@ -498,6 +501,7 @@ export const seedIds: SeedIds = {
   auditor: uuidFromName("user-auditor"),
   assetManager: uuidFromName("user-asset-manager"),
   financeGovernanceConfig: uuidFromName("finance-governance-global"),
+  adminSecuritySettings: uuidFromName("admin-security-settings-default"),
   workflowDefinition: uuidFromName("workflow-timesheet-default"),
   licenseProduct: uuidFromName("license-product-office"),
   entitlement: uuidFromName("license-entitlement-office")
@@ -932,6 +936,26 @@ export function buildDefaultAdminNotificationChannels(created: string): AdminNot
     }));
 }
 
+export function buildDefaultAdminSecuritySettings(created: string): AdminSecuritySettingsRecord {
+  return {
+    id: seedIds.adminSecuritySettings,
+    settings_key: "default",
+    password_min_length: 10,
+    password_require_special: false,
+    password_require_number: true,
+    password_expiry_days: 90,
+    session_timeout_minutes: 60,
+    login_attempt_limit: 10,
+    mfa_enabled: false,
+    audit_role_changes: true,
+    ip_device_audit_enabled: true,
+    created_at: created,
+    updated_at: created,
+    deleted_at: null,
+    version: 1
+  };
+}
+
 export function createMemoryDataStore(): MemoryDataStore {
   const created = nowIso();
   const releaseSeedEmails = getReleaseSeedEmails();
@@ -940,6 +964,7 @@ export function createMemoryDataStore(): MemoryDataStore {
   const defaultAdminPolicies = buildDefaultAdminPolicies(created);
   const defaultAdminEmailTemplates = buildDefaultAdminEmailTemplates(created);
   const defaultAdminNotificationChannels = buildDefaultAdminNotificationChannels(created);
+  const defaultAdminSecuritySettings = buildDefaultAdminSecuritySettings(created);
   const departments: Department[] = [
     {
       id: seedIds.departmentSales,
@@ -1701,6 +1726,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     adminPolicies: defaultAdminPolicies,
     adminEmailTemplates: defaultAdminEmailTemplates,
     adminNotificationChannels: defaultAdminNotificationChannels,
+    adminSecuritySettings: defaultAdminSecuritySettings,
     users,
     userCredentials,
     authTokens: [],

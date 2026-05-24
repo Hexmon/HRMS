@@ -331,6 +331,28 @@ export const adminNotificationChannels = platform.table(
   ]
 );
 
+export const adminSecuritySettings = platform.table(
+  "admin_security_settings",
+  {
+    id: uuidPk.defaultRandom(),
+    settingsKey: text("settings_key").notNull().default("default"),
+    passwordMinLength: integer("password_min_length").notNull().default(10),
+    passwordRequireSpecial: boolean("password_require_special").notNull().default(false),
+    passwordRequireNumber: boolean("password_require_number").notNull().default(true),
+    passwordExpiryDays: integer("password_expiry_days").notNull().default(90),
+    sessionTimeoutMinutes: integer("session_timeout_minutes").notNull().default(60),
+    loginAttemptLimit: integer("login_attempt_limit").notNull().default(10),
+    mfaEnabled: boolean("mfa_enabled").notNull().default(false),
+    auditRoleChanges: boolean("audit_role_changes").notNull().default(true),
+    ipDeviceAuditEnabled: boolean("ip_device_audit_enabled").notNull().default(true),
+    createdAt,
+    updatedAt,
+    deletedAt,
+    version
+  },
+  (table) => [uniqueIndex("platform_admin_security_settings_key_uq").on(table.settingsKey)]
+);
+
 export const processedEvents = platform.table("processed_events", {
   consumerName: text("consumer_name").notNull(),
   eventId: uuid("event_id").notNull(),
@@ -1349,6 +1371,7 @@ export const schema = {
   adminPolicies,
   adminEmailTemplates,
   adminNotificationChannels,
+  adminSecuritySettings,
   processedEvents,
   expenseTickets,
   expenseLineItems,

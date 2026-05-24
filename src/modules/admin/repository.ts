@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Department, Designation, AdminEmailTemplateRecord, AdminNotificationChannelRecord, AdminPolicyConfigRecord, AdminWorkflowConfigRecord, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
+import type { Department, Designation, AdminEmailTemplateRecord, AdminNotificationChannelRecord, AdminPolicyConfigRecord, AdminSecuritySettingsRecord, AdminWorkflowConfigRecord, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
 import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { buildDefaultAdminEmailTemplates, buildDefaultAdminNotificationChannels, buildDefaultAdminPolicies, buildDefaultAdminWorkflows, nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
@@ -9,6 +9,7 @@ import type {
   DepartmentUpdateInput,
   DesignationCreateInput,
   DesignationUpdateInput,
+  AdminSecuritySettingsUpdateInput,
   RbacRoleCreateInput,
   RbacRolePermissionsReplaceInput,
   RbacRoleUpdateInput
@@ -35,6 +36,10 @@ export class AdminRepository {
   listAdminNotificationChannels(): AdminNotificationChannelRecord[] {
     this.ensureAdminNotificationChannels();
     return this.store.adminNotificationChannels.filter((channel) => !channel.deleted_at);
+  }
+
+  getAdminSecuritySettings(): AdminSecuritySettingsRecord {
+    return this.store.adminSecuritySettings;
   }
 
   adminWorkflowByKey(workflowKey: string): AdminWorkflowConfigRecord {
@@ -143,6 +148,29 @@ export class AdminRepository {
       channel.version += 1;
     }
     return this.listAdminNotificationChannels();
+  }
+
+  updateAdminSecuritySettings(input: AdminSecuritySettingsUpdateInput): AdminSecuritySettingsRecord {
+    const settings = this.getAdminSecuritySettings();
+    if (settings.version !== input.expected_version) {
+      throw conflict("Admin security settings were modified by another actor.", {
+        aggregate: "admin_security_settings",
+        expected_version: input.expected_version,
+        current_version: settings.version
+      });
+    }
+    settings.password_min_length = input.password_min_length ?? input.passwordMinLength ?? settings.password_min_length;
+    settings.password_require_special = input.password_require_special ?? input.passwordRequireSpecial ?? settings.password_require_special;
+    settings.password_require_number = input.password_require_number ?? input.passwordRequireNumber ?? settings.password_require_number;
+    settings.password_expiry_days = input.password_expiry_days ?? input.passwordExpiryDays ?? settings.password_expiry_days;
+    settings.session_timeout_minutes = input.session_timeout_minutes ?? input.sessionTimeoutMinutes ?? settings.session_timeout_minutes;
+    settings.login_attempt_limit = input.login_attempt_limit ?? input.loginAttemptLimit ?? settings.login_attempt_limit;
+    settings.mfa_enabled = false;
+    settings.audit_role_changes = input.audit_role_changes ?? input.auditRoleChanges ?? settings.audit_role_changes;
+    settings.ip_device_audit_enabled = input.ip_device_audit_enabled ?? input.ipDeviceAuditEnabled ?? settings.ip_device_audit_enabled;
+    settings.updated_at = nowIso();
+    settings.version += 1;
+    return settings;
   }
 
   getCurrentCompanyProfile(): CompanyProfileRecord {
