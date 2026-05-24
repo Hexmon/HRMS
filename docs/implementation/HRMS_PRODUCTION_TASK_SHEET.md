@@ -799,8 +799,8 @@ Frontend:
 | Project document upload frontend | `feat(projects): add project document upload flow` | Committed in `hrms-client` as `24bf569` |
 | Asset warranty alerts backend | `feat(assets): add policy driven warranty alerts` | Committed in `hrms_backend` as `954e883` |
 | Asset warranty alerts frontend | `feat(assets): use warranty alert API` | Committed in `hrms-client` as `edc9391` |
-| XLSX export rendering backend | `feat(exports): render XLSX export documents` | Pending commit in `hrms_backend` |
-| XLSX export docs frontend | `docs(exports): sync XLSX export contract docs` | Pending commit in `hrms-client` |
+| XLSX export rendering backend | `feat(exports): render XLSX export documents` | Committed in `hrms_backend` as `a36bd2f` |
+| XLSX export docs frontend | `docs(exports): sync XLSX export contract docs` | Committed in `hrms-client` as `48d0735` |
 
 ## Next Steps
 
