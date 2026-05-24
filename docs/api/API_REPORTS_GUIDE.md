@@ -37,4 +37,4 @@ Finance analytics powers the enterprise cockpit and includes summary counts, cha
 }
 ```
 
-CSV report exports now generate a document-backed export in object storage and return `download_document_id` for secure download through the Documents API. XLSX workbook rendering, scheduled reports, retention policy automation, and external accounting-provider export targets remain production hardening/HIR scope.
+CSV and XLSX report exports now generate document-backed files in object storage and return `download_document_id` for secure download through the Documents API. Scheduled reports, retention policy automation, and external accounting-provider export targets remain production hardening/HIR scope.

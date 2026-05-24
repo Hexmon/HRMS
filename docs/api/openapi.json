@@ -14735,7 +14735,7 @@
         "tags": [
           "Core / Employees & Hierarchy"
         ],
-        "description": "Creates a CSV employee export document for HR/Admin/Auditor users when object storage is configured. XLSX remains queued metadata until the workbook renderer is implemented.",
+        "description": "Creates CSV or XLSX employee export documents for HR/Admin/Auditor users when object storage is configured.",
         "requestBody": {
           "required": true,
           "content": {
@@ -42559,7 +42559,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Creates a CSV report export document backed by object storage and durable outbox metadata. XLSX remains queued metadata until the workbook renderer is implemented.",
+        "description": "Creates a CSV or XLSX report export document backed by object storage and durable outbox metadata.",
         "requestBody": {
           "required": true,
           "content": {
@@ -66506,7 +66506,7 @@
         "tags": [
           "Attendance"
         ],
-        "description": "Creates CSV/JSON attendance export documents for HR/Admin/Auditor users when object storage is configured. XLSX remains queued metadata until the workbook renderer is implemented.",
+        "description": "Creates CSV, JSON, or XLSX attendance export documents for HR/Admin/Auditor users when object storage is configured.",
         "requestBody": {
           "required": true,
           "content": {
@@ -72392,7 +72392,7 @@
         "tags": [
           "Leave / WFH / Holidays"
         ],
-        "description": "Creates CSV/JSON Leave/WFH export documents for HR/Admin/Auditor users when object storage is configured. XLSX remains queued metadata until the workbook renderer is implemented.",
+        "description": "Creates CSV, JSON, or XLSX Leave/WFH export documents for HR/Admin/Auditor users when object storage is configured.",
         "requestBody": {
           "required": true,
           "content": {
