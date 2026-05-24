@@ -11,10 +11,12 @@ import type {
   Department,
   Designation,
   DocumentMetadata,
+  EmsAdminChecklist,
   EmsEmployeeProfile,
   EmsLetter,
   EmsPolicy,
   EmsPolicyAcknowledgement,
+  EmsProbationReview,
   EmsProfileChangeRequest,
   EmsServiceRequest,
   ExpenseAuditLog,
@@ -91,6 +93,8 @@ const resetTables = [
   "projects.project_allocations",
   "projects.project_members",
   "projects.projects",
+  "ems.probation_reviews",
+  "ems.admin_checklists",
   "ems.policy_acknowledgements",
   "ems.policies",
   "ems.letters",
@@ -182,6 +186,12 @@ function json(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
+function booleanRecord(value: unknown): Record<string, boolean> {
+  return Object.fromEntries(
+    Object.entries(json(value)).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean")
+  );
+}
+
 function copyData(target: DataStore, source: DataStore): void {
   target.departments = source.departments;
   target.designations = source.designations;
@@ -246,6 +256,8 @@ function copyData(target: DataStore, source: DataStore): void {
   target.emsLetters = source.emsLetters;
   target.emsPolicies = source.emsPolicies;
   target.emsPolicyAcknowledgements = source.emsPolicyAcknowledgements;
+  target.emsAdminChecklists = source.emsAdminChecklists;
+  target.emsProbationReviews = source.emsProbationReviews;
   target.nextTicketNo = source.nextTicketNo;
   target.nextOutboxId = source.nextOutboxId;
 }
@@ -392,6 +404,8 @@ class PostgresPersistence {
       loaded.emsLetters = await this.loadEmsLetters(client);
       loaded.emsPolicies = await this.loadEmsPolicies(client);
       loaded.emsPolicyAcknowledgements = await this.loadEmsPolicyAcknowledgements(client);
+      loaded.emsAdminChecklists = await this.loadEmsAdminChecklists(client);
+      loaded.emsProbationReviews = await this.loadEmsProbationReviews(client);
       loaded.nextOutboxId = Math.max(1, ...loaded.outbox.map((event) => event.id + 1));
       loaded.nextTicketNo = this.nextTicketNumber(loaded.tickets);
       copyData(this.store, loaded);
@@ -1622,6 +1636,43 @@ class PostgresPersistence {
       version: row.version,
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at)
+    }));
+  }
+
+  private async loadEmsAdminChecklists(client: PoolClient): Promise<EmsAdminChecklist[]> {
+    const { rows } = await client.query("SELECT * FROM ems.admin_checklists ORDER BY updated_at DESC, id");
+    return rows.map((row) => ({
+      id: row.id,
+      checklist_type: row.checklist_type,
+      employee_user_id: row.employee_user_id,
+      status: row.status,
+      due_date: asDateOrNull(row.due_date),
+      checklist: booleanRecord(row.checklist),
+      remarks: row.remarks,
+      completed_at: asIsoOrNull(row.completed_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
+    }));
+  }
+
+  private async loadEmsProbationReviews(client: PoolClient): Promise<EmsProbationReview[]> {
+    const { rows } = await client.query("SELECT * FROM ems.probation_reviews ORDER BY due_on, id");
+    return rows.map((row) => ({
+      id: row.id,
+      employee_user_id: row.employee_user_id,
+      joining_on: asDate(row.joining_on),
+      due_on: asDate(row.due_on),
+      status: row.status,
+      extended_until: asDateOrNull(row.extended_until),
+      remarks: row.remarks,
+      decided_by_user_id: row.decided_by_user_id,
+      decided_at: asIsoOrNull(row.decided_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at)
     }));
   }
 
@@ -3493,6 +3544,72 @@ class PostgresPersistence {
           acknowledgement.version,
           acknowledgement.created_at,
           acknowledgement.updated_at
+        ]
+      );
+    }
+    for (const checklist of this.store.emsAdminChecklists) {
+      await client.query(
+        `INSERT INTO ems.admin_checklists (
+          id, checklist_type, employee_user_id, status, due_date, checklist, remarks,
+          completed_at, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (id) DO UPDATE
+        SET status = EXCLUDED.status,
+            due_date = EXCLUDED.due_date,
+            checklist = EXCLUDED.checklist,
+            remarks = EXCLUDED.remarks,
+            completed_at = EXCLUDED.completed_at,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          checklist.id,
+          checklist.checklist_type,
+          checklist.employee_user_id,
+          checklist.status,
+          checklist.due_date,
+          JSON.stringify(checklist.checklist),
+          checklist.remarks,
+          checklist.completed_at,
+          checklist.version,
+          checklist.created_at,
+          checklist.updated_at,
+          checklist.deleted_at
+        ]
+      );
+    }
+    for (const review of this.store.emsProbationReviews) {
+      await client.query(
+        `INSERT INTO ems.probation_reviews (
+          id, employee_user_id, joining_on, due_on, status, extended_until, remarks,
+          decided_by_user_id, decided_at, version, created_at, updated_at, deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (id) DO UPDATE
+        SET due_on = EXCLUDED.due_on,
+            status = EXCLUDED.status,
+            extended_until = EXCLUDED.extended_until,
+            remarks = EXCLUDED.remarks,
+            decided_by_user_id = EXCLUDED.decided_by_user_id,
+            decided_at = EXCLUDED.decided_at,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at`,
+        [
+          review.id,
+          review.employee_user_id,
+          review.joining_on,
+          review.due_on,
+          review.status,
+          review.extended_until,
+          review.remarks,
+          review.decided_by_user_id,
+          review.decided_at,
+          review.version,
+          review.created_at,
+          review.updated_at,
+          review.deleted_at
         ]
       );
     }

@@ -2320,6 +2320,61 @@ const emsRequestCreateBody = {
   additionalProperties: false
 };
 
+const emsServiceRequestDecisionBody = {
+  type: "object",
+  required: ["decision", "expected_version"],
+  properties: {
+    decision: { type: "string", enum: ["approved", "returned", "rejected", "closed"], example: "approved" },
+    remarks: { type: "string", example: "Generated and sent to employee." },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const emsAdminChecklistUpdateBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    checklist: {
+      type: "object",
+      additionalProperties: { type: "boolean" },
+      example: { offer: true, docs: true, assets: false }
+    },
+    status: { type: "string", enum: ["pending", "in_progress", "completed"], example: "in_progress" },
+    due_date: { type: "string", format: "date", nullable: true, example: "2026-06-10" },
+    remarks: { type: "string", nullable: true, example: "Documents are pending." },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const emsProbationDecisionBody = {
+  type: "object",
+  required: ["decision", "expected_version"],
+  properties: {
+    decision: { type: "string", enum: ["confirmed", "extended"], example: "confirmed" },
+    extended_until: { type: "string", format: "date", example: "2026-08-01" },
+    remarks: { type: "string", example: "Performance goals met." },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const emsPolicyUpdateBody = {
+  type: "object",
+  required: ["expected_version"],
+  properties: {
+    title: { type: "string", example: "Leave policy" },
+    category: { type: "string", example: "Leave" },
+    version_label: { type: "string", example: "v4.1" },
+    effective_from: { type: "string", format: "date", example: "2026-06-01" },
+    document_id: { ...uuid("Policy document UUID"), nullable: true },
+    status: { type: "string", enum: ["active", "inactive", "superseded"], example: "active" },
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
 const emsProfileResponseSchema = {
   type: "object",
   required: ["profile", "reporting_line", "emergency_contacts", "summaries"],
@@ -2390,6 +2445,43 @@ const emsPolicySchema = {
     version_label: { type: "string", example: "v4.0" },
     acknowledgement_status: { type: "string", enum: ["pending", "acknowledged"], example: "pending" },
     acknowledgement_version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const emsAdminChecklistSchema = {
+  type: "object",
+  required: ["id", "checklist_type", "employee_user_id", "status", "checklist", "version"],
+  properties: {
+    id: uuid("EMS admin checklist UUID"),
+    checklist_type: { type: "string", enum: ["onboarding", "exit"], example: "onboarding" },
+    employee_user_id: uuid("Employee user UUID"),
+    employee: { type: "object", additionalProperties: true },
+    status: { type: "string", enum: ["pending", "in_progress", "completed"], example: "in_progress" },
+    due_date: { type: "string", format: "date", nullable: true, example: "2026-06-10" },
+    checklist: { type: "object", additionalProperties: { type: "boolean" } },
+    remarks: { type: "string", nullable: true },
+    completed_at: { ...dateTime("Checklist completion timestamp"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: true
+};
+
+const emsProbationReviewSchema = {
+  type: "object",
+  required: ["id", "employee_user_id", "joining_on", "due_on", "status", "version"],
+  properties: {
+    id: uuid("EMS probation review UUID"),
+    employee_user_id: uuid("Employee user UUID"),
+    employee: { type: "object", additionalProperties: true },
+    joining_on: { type: "string", format: "date", example: "2026-01-01" },
+    due_on: { type: "string", format: "date", example: "2026-07-01" },
+    status: { type: "string", enum: ["pending", "confirmed", "extended"], example: "pending" },
+    extended_until: { type: "string", format: "date", nullable: true, example: "2026-08-01" },
+    remarks: { type: "string", nullable: true },
+    decided_by_user_id: uuid("Decision actor UUID"),
+    decided_at: { ...dateTime("Decision timestamp"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 }
   },
   additionalProperties: true
 };
@@ -4052,6 +4144,48 @@ const routeDocs: Record<string, RouteSchema> = {
     "Lists HR/Admin-scoped EMS service requests for operational follow-up.",
     { querystring: emsQuerySchema, response200: { ...paginated(emsServiceRequestSchema), additionalProperties: true } }
   ),
+  "POST /api/v1/ems/requests/{id}/decision": operation(
+    "EMS",
+    "Decide EMS service request",
+    "Approves, returns, rejects, or closes an EMS service request with optimistic concurrency. Approving a letter request creates an available EMS letter for the requester.",
+    { params: idParamSchema, body: emsServiceRequestDecisionBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/ems/admin/onboarding": operation(
+    "EMS",
+    "EMS admin onboarding queue",
+    "Lists HR/Admin onboarding checklists for the visible EMS admin onboarding tab.",
+    { querystring: emsQuerySchema, response200: paginated(emsAdminChecklistSchema) }
+  ),
+  "PATCH /api/v1/ems/admin/onboarding/{id}": operation(
+    "EMS",
+    "Update EMS onboarding checklist",
+    "Updates onboarding checklist steps and status with optimistic concurrency.",
+    { params: idParamSchema, body: emsAdminChecklistUpdateBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/ems/admin/probation": operation(
+    "EMS",
+    "EMS admin probation queue",
+    "Lists HR/Admin probation reviews with due dates and employee context.",
+    { querystring: emsQuerySchema, response200: paginated(emsProbationReviewSchema) }
+  ),
+  "POST /api/v1/ems/admin/probation/{id}/decision": operation(
+    "EMS",
+    "Decide EMS probation review",
+    "Confirms or extends an employee probation review with optimistic concurrency.",
+    { params: idParamSchema, body: emsProbationDecisionBody, response200: { type: "object", additionalProperties: true } }
+  ),
+  "GET /api/v1/ems/admin/exits": operation(
+    "EMS",
+    "EMS admin exit checklist queue",
+    "Lists HR/Admin exit checklists for visible manager, asset, finance, and relieving-letter clearance steps.",
+    { querystring: emsQuerySchema, response200: paginated(emsAdminChecklistSchema) }
+  ),
+  "PATCH /api/v1/ems/admin/exits/{id}": operation(
+    "EMS",
+    "Update EMS exit checklist",
+    "Updates exit clearance checklist steps and status with optimistic concurrency.",
+    { params: idParamSchema, body: emsAdminChecklistUpdateBody, response200: { type: "object", additionalProperties: true } }
+  ),
   "GET /api/v1/ems/letters": operation(
     "EMS",
     "My EMS letters",
@@ -4075,6 +4209,12 @@ const routeDocs: Record<string, RouteSchema> = {
     "Acknowledge EMS policy",
     "Acknowledges the current active version of a policy for the authenticated employee with optimistic concurrency.",
     { params: idParamSchema, body: expectedVersionBodySchema, response200: { type: "object", additionalProperties: true } }
+  ),
+  "PUT /api/v1/ems/policies/{id}": operation(
+    "EMS",
+    "Update EMS policy",
+    "Updates or publishes a visible EMS policy entry for HR/Admin policy management with optimistic concurrency.",
+    { params: idParamSchema, body: emsPolicyUpdateBody, response200: { type: "object", additionalProperties: true } }
   ),
   "GET /api/v1/ems/employees/{user_id}/documents": operation(
     "EMS",

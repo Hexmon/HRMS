@@ -4,6 +4,7 @@ import {
   AssetStatuses,
   DocumentClassifications,
   EmsProfileChangeStatuses,
+  EmsServiceRequestStatuses,
   EmsServiceRequestTypes,
   ExpenseDecisions,
   ExpenseStatuses,
@@ -106,6 +107,55 @@ export const emsRequestCreateSchema = z.object({
 });
 
 export type EmsRequestCreateInput = z.infer<typeof emsRequestCreateSchema>;
+
+export const emsAdminChecklistUpdateSchema = z.object({
+  checklist: z.record(z.string().min(1).max(80), z.boolean()).optional(),
+  status: z.enum(["pending", "in_progress", "completed"]).optional(),
+  due_date: isoDateSchema.nullable().optional(),
+  remarks: z.string().max(1000).nullable().optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type EmsAdminChecklistUpdateInput = z.infer<typeof emsAdminChecklistUpdateSchema>;
+
+export const emsProbationDecisionSchema = z
+  .object({
+    decision: z.enum(["confirmed", "extended"]),
+    extended_until: isoDateSchema.optional(),
+    remarks: z.string().max(1000).optional(),
+    expected_version: z.number().int().min(1)
+  })
+  .refine((input) => input.decision !== "extended" || Boolean(input.extended_until), {
+    path: ["extended_until"],
+    message: "extended_until is required when probation is extended."
+  });
+
+export type EmsProbationDecisionInput = z.infer<typeof emsProbationDecisionSchema>;
+
+export const emsPolicyUpdateSchema = z.object({
+  title: z.string().min(1).max(180).optional(),
+  category: z.string().min(1).max(80).optional(),
+  version_label: z.string().min(1).max(40).optional(),
+  effective_from: isoDateSchema.optional(),
+  document_id: uuidSchema.nullable().optional(),
+  status: z.enum(["active", "inactive", "superseded"]).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type EmsPolicyUpdateInput = z.infer<typeof emsPolicyUpdateSchema>;
+
+export const emsServiceRequestDecisionSchema = z.object({
+  decision: z.enum([
+    EmsServiceRequestStatuses.Approved,
+    EmsServiceRequestStatuses.Returned,
+    EmsServiceRequestStatuses.Rejected,
+    EmsServiceRequestStatuses.Closed
+  ]),
+  remarks: z.string().max(1000).optional(),
+  expected_version: z.number().int().min(1)
+});
+
+export type EmsServiceRequestDecisionInput = z.infer<typeof emsServiceRequestDecisionSchema>;
 
 export const emsPolicyAcknowledgeSchema = z.object({
   expected_version: z.number().int().min(1)

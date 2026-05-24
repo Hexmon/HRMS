@@ -174,13 +174,28 @@ describe("employee self-service", () => {
     expect(queue.statusCode).toBe(200);
     expect(queue.json().items[0]).toMatchObject({ id: request.json().request_id, requester_user_id: employee.user.id });
 
+    const decidedRequest = await app.inject({
+      method: "POST",
+      url: `/api/v1/ems/requests/${request.json().request_id}/decision`,
+      headers: authHeader(admin.token),
+      payload: { decision: "approved", expected_version: 1 }
+    });
+    expect(decidedRequest.statusCode).toBe(200);
+    expect(decidedRequest.json()).toMatchObject({
+      status: "approved",
+      generated_letter: {
+        title: "Experience letter request",
+        status: "available"
+      }
+    });
+
     const letters = await app.inject({
       method: "GET",
       url: "/api/v1/ems/letters?page=1&page_size=10",
       headers: authHeader(employee.token)
     });
     expect(letters.statusCode).toBe(200);
-    const letter = letters.json().items.find((item: { status: string }) => item.status === "available");
+    const letter = letters.json().items.find((item: { title: string }) => item.title === "Offer Letter");
     expect(letter).toMatchObject({ title: "Offer Letter", version: 1 });
 
     const acknowledgeLetter = await app.inject({
@@ -224,6 +239,109 @@ describe("employee self-service", () => {
       status: "acknowledged",
       version: 2
     });
+  });
+
+  it("persists EMS admin onboarding, probation, exit, and policy actions", async () => {
+    const admin = await loginAs(app, "ADM");
+    const employee = await loginAs(app, "E1");
+
+    const forbidden = await app.inject({
+      method: "GET",
+      url: "/api/v1/ems/admin/onboarding?page=1&page_size=10",
+      headers: authHeader(employee.token)
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    const onboarding = await app.inject({
+      method: "GET",
+      url: "/api/v1/ems/admin/onboarding?page=1&page_size=10",
+      headers: authHeader(admin.token)
+    });
+    expect(onboarding.statusCode).toBe(200);
+    expect(onboarding.json().items[0]).toMatchObject({
+      checklist_type: "onboarding",
+      status: "in_progress",
+      version: 1
+    });
+    const onboardingRow = onboarding.json().items[0];
+
+    const updatedOnboarding = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/ems/admin/onboarding/${onboardingRow.id}`,
+      headers: authHeader(admin.token),
+      payload: {
+        checklist: { docs: true, assets: true, access: true, orientation: true },
+        expected_version: onboardingRow.version
+      }
+    });
+    expect(updatedOnboarding.statusCode).toBe(200);
+    expect(updatedOnboarding.json()).toMatchObject({
+      status: "completed",
+      checklist: {
+        status: "completed"
+      }
+    });
+
+    const probation = await app.inject({
+      method: "GET",
+      url: "/api/v1/ems/admin/probation?page=1&page_size=10",
+      headers: authHeader(admin.token)
+    });
+    expect(probation.statusCode).toBe(200);
+    const probationRow = probation.json().items[0];
+    expect(probationRow).toMatchObject({ status: "pending", version: 1 });
+
+    const confirmed = await app.inject({
+      method: "POST",
+      url: `/api/v1/ems/admin/probation/${probationRow.id}/decision`,
+      headers: authHeader(admin.token),
+      payload: { decision: "confirmed", remarks: "Probation goals met.", expected_version: probationRow.version }
+    });
+    expect(confirmed.statusCode).toBe(200);
+    expect(confirmed.json()).toMatchObject({ status: "confirmed", version: 2 });
+
+    const exits = await app.inject({
+      method: "GET",
+      url: "/api/v1/ems/admin/exits?page=1&page_size=10",
+      headers: authHeader(admin.token)
+    });
+    expect(exits.statusCode).toBe(200);
+    const exitRow = exits.json().items[0];
+    expect(exitRow).toMatchObject({ checklist_type: "exit", status: "in_progress" });
+
+    const updatedExit = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/ems/admin/exits/${exitRow.id}`,
+      headers: authHeader(admin.token),
+      payload: {
+        checklist: { assets: true, finance: true, letter: true },
+        expected_version: exitRow.version
+      }
+    });
+    expect(updatedExit.statusCode).toBe(200);
+    expect(updatedExit.json()).toMatchObject({ status: "completed" });
+
+    const policies = await app.inject({
+      method: "GET",
+      url: "/api/v1/ems/policies?page=1&page_size=10",
+      headers: authHeader(admin.token)
+    });
+    expect(policies.statusCode).toBe(200);
+    const policy = policies.json().items.find((item: { policy_code: string }) => item.policy_code === "LEAVE");
+    expect(policy).toMatchObject({ version_label: "v4.0" });
+
+    const publish = await app.inject({
+      method: "PUT",
+      url: `/api/v1/ems/policies/${policy.id}`,
+      headers: authHeader(admin.token),
+      payload: {
+        version_label: "v4.1",
+        effective_from: "2026-06-15",
+        expected_version: policy.version
+      }
+    });
+    expect(publish.statusCode).toBe(200);
+    expect(publish.json().policy).toMatchObject({ version_label: "v4.1", version: 2 });
   });
 
   it("scopes EMS employee documents through the backend Documents module", async () => {

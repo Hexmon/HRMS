@@ -737,6 +737,37 @@ export interface EmsPolicyAcknowledgement {
   updated_at: ISODateTime;
 }
 
+export interface EmsAdminChecklist {
+  id: UUID;
+  checklist_type: "onboarding" | "exit";
+  employee_user_id: UUID;
+  status: "pending" | "in_progress" | "completed";
+  due_date: ISODate | null;
+  checklist: Record<string, boolean>;
+  remarks: string | null;
+  completed_at: ISODateTime | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+  version: number;
+}
+
+export interface EmsProbationReview {
+  id: UUID;
+  employee_user_id: UUID;
+  joining_on: ISODate;
+  due_on: ISODate;
+  status: "pending" | "confirmed" | "extended";
+  extended_until: ISODate | null;
+  remarks: string | null;
+  decided_by_user_id: UUID | null;
+  decided_at: ISODateTime | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+  version: number;
+}
+
 export interface OutboxEvent {
   id: number;
   event_id: UUID;

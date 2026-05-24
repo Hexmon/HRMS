@@ -2,11 +2,15 @@ import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   documentUploadSchema,
+  emsAdminChecklistUpdateSchema,
   emsDecisionSchema,
+  emsPolicyUpdateSchema,
   emsPolicyAcknowledgeSchema,
+  emsProbationDecisionSchema,
   emsProfileChangeCreateSchema,
   emsProfilePatchSchema,
   emsRequestCreateSchema,
+  emsServiceRequestDecisionSchema,
   paginationQuerySchema
 } from "#shared";
 import { unauthorized } from "../../platform/errors.js";
@@ -101,6 +105,74 @@ export const emsRoutes: FastifyPluginAsync = async (fastify) => {
     );
   });
 
+  fastify.post("/ems/requests/:id/decision", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = idParamSchema.parse(request.params);
+    return new EmsService(fastify.store).decideServiceRequest(
+      request.actor,
+      params.id,
+      emsServiceRequestDecisionSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/ems/admin/onboarding", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new EmsService(fastify.store).listAdminChecklists(
+      request.actor,
+      "onboarding",
+      emsQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.patch("/ems/admin/onboarding/:id", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = idParamSchema.parse(request.params);
+    return new EmsService(fastify.store).updateAdminChecklist(
+      request.actor,
+      "onboarding",
+      params.id,
+      emsAdminChecklistUpdateSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/ems/admin/probation", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new EmsService(fastify.store).listProbationReviews(
+      request.actor,
+      emsQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.post("/ems/admin/probation/:id/decision", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = idParamSchema.parse(request.params);
+    return new EmsService(fastify.store).decideProbation(
+      request.actor,
+      params.id,
+      emsProbationDecisionSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/ems/admin/exits", async (request) => {
+    if (!request.actor) throw unauthorized();
+    return new EmsService(fastify.store).listAdminChecklists(
+      request.actor,
+      "exit",
+      emsQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.patch("/ems/admin/exits/:id", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = idParamSchema.parse(request.params);
+    return new EmsService(fastify.store).updateAdminChecklist(
+      request.actor,
+      "exit",
+      params.id,
+      emsAdminChecklistUpdateSchema.parse(request.body)
+    );
+  });
+
   fastify.get("/ems/letters", async (request) => {
     if (!request.actor) throw unauthorized();
     return new EmsService(fastify.store).listLetters(
@@ -136,6 +208,16 @@ export const emsRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor,
       params.id,
       body.expected_version
+    );
+  });
+
+  fastify.put("/ems/policies/:id", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = idParamSchema.parse(request.params);
+    return new EmsService(fastify.store).updatePolicy(
+      request.actor,
+      params.id,
+      emsPolicyUpdateSchema.parse(request.body)
     );
   });
 

@@ -1,10 +1,14 @@
 import type {
   AuthUser,
   CoreUser,
+  EmsAdminChecklistUpdateInput,
   EmsDecisionInput,
+  EmsPolicyUpdateInput,
+  EmsProbationDecisionInput,
   EmsProfileChangeCreateInput,
   EmsProfilePatchInput,
   EmsRequestCreateInput,
+  EmsServiceRequestDecisionInput,
   UUID
 } from "#shared";
 import {
@@ -225,6 +229,152 @@ export class EmsService {
     };
   }
 
+  decideServiceRequest(actor: AuthUser, id: UUID, input: EmsServiceRequestDecisionInput) {
+    assertCanManageEms(actor);
+    const current = this.repository
+      .listServiceRequests()
+      .find((request) => request.id === id && !request.deleted_at);
+    if (!current) {
+      throw notFound("EMS service request not found", { id });
+    }
+    if (current.requester_user_id === actor.id) {
+      throw forbidden("EMS service requests cannot be decided by their requester.");
+    }
+    if (
+      current.status !== EmsServiceRequestStatuses.Pending &&
+      current.status !== EmsServiceRequestStatuses.InProgress
+    ) {
+      throw conflict("Only pending or in-progress EMS service requests can be decided.", { id, status: current.status });
+    }
+    if ((input.decision === EmsServiceRequestStatuses.Returned || input.decision === EmsServiceRequestStatuses.Rejected) && !input.remarks?.trim()) {
+      throw missingRemarks("EMS_SERVICE_REQUEST_DECISION");
+    }
+    const previousStatus = current.status;
+    const request = this.repository.updateServiceRequestVersioned(id, input.expected_version, (target) => {
+      target.status = input.decision;
+      target.decision_remarks = input.remarks?.trim() || null;
+      target.decided_by_user_id = actor.id;
+      target.decided_at = nowIso();
+      target.assignee_user_id = null;
+    });
+    const generatedLetter =
+      request.request_type === "letter" && request.status === EmsServiceRequestStatuses.Approved
+        ? this.repository.addLetter({
+            employee_user_id: request.requester_user_id,
+            letter_type: slugifyLetterType(request.subject),
+            title: request.subject,
+            description: request.description,
+            status: EmsLetterStatuses.Available,
+            document_id: null,
+            issued_on: todayIsoDate()
+          })
+        : null;
+    appendEmsOutboxEvent(this.store, {
+      aggregateType: "ems_service_request",
+      aggregateId: request.id,
+      eventType: emsEvents.ServiceRequestDecided,
+      payload: {
+        request_id: request.id,
+        previous_status: previousStatus,
+        next_status: request.status,
+        actor_user_id: actor.id,
+        generated_letter_id: generatedLetter?.id ?? null
+      },
+      idempotencyKey: `ems.service_request.decided:${request.id}:${request.version}`
+    });
+    return {
+      request: this.presentServiceRequest(request),
+      generated_letter: generatedLetter ? this.presentLetter(generatedLetter) : null,
+      previous_status: previousStatus,
+      next_status: request.status,
+      status: request.status,
+      version: request.version
+    };
+  }
+
+  listAdminChecklists(actor: AuthUser, type: "onboarding" | "exit", query: EmsQuery) {
+    assertCanManageEms(actor);
+    return page(
+      this.repository
+        .listAdminChecklists(type, query.status)
+        .filter((checklist) => this.matchesUserFilters(checklist.employee_user_id, query))
+        .map((checklist) => this.presentAdminChecklist(checklist)),
+      query.page,
+      query.page_size
+    );
+  }
+
+  updateAdminChecklist(actor: AuthUser, type: "onboarding" | "exit", id: UUID, input: EmsAdminChecklistUpdateInput) {
+    assertCanManageEms(actor);
+    const current = this.repository.findAdminChecklist(id);
+    if (current.checklist_type !== type) {
+      throw notFound("EMS admin checklist not found", { id });
+    }
+    const checklist = this.repository.updateAdminChecklistVersioned(id, input.expected_version, (target) => {
+      if (input.checklist) {
+        target.checklist = { ...target.checklist, ...input.checklist };
+      }
+      if (input.status) {
+        target.status = input.status;
+      } else if (Object.values(target.checklist).every(Boolean)) {
+        target.status = "completed";
+      }
+      if ("due_date" in input) {
+        target.due_date = input.due_date ?? null;
+      }
+      if ("remarks" in input) {
+        target.remarks = input.remarks ?? null;
+      }
+      target.completed_at = target.status === "completed" ? target.completed_at ?? nowIso() : null;
+    });
+    appendEmsOutboxEvent(this.store, {
+      aggregateType: `ems_${type}_checklist`,
+      aggregateId: checklist.id,
+      eventType: type === "onboarding" ? emsEvents.OnboardingChecklistUpdated : emsEvents.ExitChecklistUpdated,
+      payload: { checklist_id: checklist.id, actor_user_id: actor.id, status: checklist.status },
+      idempotencyKey: `ems.${type}.checklist.updated:${checklist.id}:${checklist.version}`
+    });
+    return { checklist: this.presentAdminChecklist(checklist), status: checklist.status, version: checklist.version };
+  }
+
+  listProbationReviews(actor: AuthUser, query: EmsQuery) {
+    assertCanManageEms(actor);
+    return page(
+      this.repository
+        .listProbationReviews(query.status)
+        .filter((review) => this.matchesUserFilters(review.employee_user_id, query))
+        .map((review) => this.presentProbationReview(review)),
+      query.page,
+      query.page_size
+    );
+  }
+
+  decideProbation(actor: AuthUser, id: UUID, input: EmsProbationDecisionInput) {
+    assertCanManageEms(actor);
+    const current = this.repository.findProbationReview(id);
+    if (current.employee_user_id === actor.id) {
+      throw forbidden("Probation review cannot be decided by the employee under review.");
+    }
+    if (current.status !== "pending" && current.status !== "extended") {
+      throw conflict("Only pending or extended probation reviews can be decided.", { id, status: current.status });
+    }
+    const review = this.repository.updateProbationReviewVersioned(id, input.expected_version, (target) => {
+      target.status = input.decision;
+      target.extended_until = input.decision === "extended" ? input.extended_until ?? null : null;
+      target.remarks = input.remarks?.trim() || null;
+      target.decided_by_user_id = actor.id;
+      target.decided_at = nowIso();
+    });
+    appendEmsOutboxEvent(this.store, {
+      aggregateType: "ems_probation_review",
+      aggregateId: review.id,
+      eventType: emsEvents.ProbationDecided,
+      payload: { review_id: review.id, employee_user_id: review.employee_user_id, status: review.status },
+      idempotencyKey: `ems.probation.decided:${review.id}:${review.version}`
+    });
+    return { review: this.presentProbationReview(review), status: review.status, version: review.version };
+  }
+
   listLetters(actor: AuthUser, query: EmsQuery) {
     const userId = canManageEms(actor) && query.user_id ? query.user_id : actor.id;
     const user = this.requireUser(userId);
@@ -293,6 +443,28 @@ export class EmsService {
       idempotencyKey: `ems.policy.acknowledged:${policy.id}:${actor.id}:${acknowledgement.version}`
     });
     return { policy: this.presentPolicy(policy, actor.id), status: acknowledgement.status, version: acknowledgement.version };
+  }
+
+  updatePolicy(actor: AuthUser, id: UUID, input: EmsPolicyUpdateInput) {
+    assertCanManageEms(actor);
+    const policy = this.repository.updatePolicyVersioned(id, input.expected_version, (target) => {
+      target.title = input.title?.trim() || target.title;
+      target.category = input.category?.trim() || target.category;
+      target.version_label = input.version_label?.trim() || target.version_label;
+      target.effective_from = input.effective_from ?? target.effective_from;
+      if ("document_id" in input) {
+        target.document_id = input.document_id ?? null;
+      }
+      target.status = input.status ?? target.status;
+    });
+    appendEmsOutboxEvent(this.store, {
+      aggregateType: "ems_policy",
+      aggregateId: policy.id,
+      eventType: emsEvents.PolicyUpdated,
+      payload: { policy_id: policy.id, actor_user_id: actor.id, version_label: policy.version_label },
+      idempotencyKey: `ems.policy.updated:${policy.id}:${policy.version}`
+    });
+    return { policy: this.presentPolicy(policy, actor.id), status: policy.status, version: policy.version };
   }
 
   listEmployeeDocuments(actor: AuthUser, userId: UUID, query: EmsDocumentQuery) {
@@ -396,6 +568,22 @@ export class EmsService {
     };
   }
 
+  private presentAdminChecklist(checklist: ReturnType<EmsRepository["findAdminChecklist"]>) {
+    const user = this.store.users.find((candidate) => candidate.id === checklist.employee_user_id);
+    return {
+      ...checklist,
+      employee: userLabel(user)
+    };
+  }
+
+  private presentProbationReview(review: ReturnType<EmsRepository["findProbationReview"]>) {
+    const user = this.store.users.find((candidate) => candidate.id === review.employee_user_id);
+    return {
+      ...review,
+      employee: userLabel(user)
+    };
+  }
+
   private presentLetter(letter: ReturnType<EmsRepository["findLetter"]>) {
     return {
       ...letter,
@@ -462,4 +650,16 @@ export class EmsService {
   private hrFallback(): CoreUser | null {
     return this.store.users.find((user) => user.roles.includes(Roles.HRManager) || user.roles.includes(Roles.Admin)) ?? null;
   }
+}
+
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function slugifyLetterType(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "_")
+    .replace(/^_+|_+$/gu, "");
+  return slug || "letter";
 }

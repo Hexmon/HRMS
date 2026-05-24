@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 221 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 229 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
 | Planned new APIs | 0 | No first-pass visible frontend API gaps remain in this contract pack. | Keep behavior stable and move remaining items to production hardening or explicitly scoped future contracts. |
-| Target implemented contract after completion | 221 | Regenerate frontend client after future backend phases land. | First-pass visible frontend contract plus Admin Security Settings is complete at 221 operations. |
+| Target implemented contract after completion | 229 | Regenerate frontend client after future backend phases land. | First-pass visible frontend contract plus EMS admin workflow hardening is complete at 229 operations. |
 
 ## Development Phases
 
@@ -41,7 +41,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Timesheets | 12 | Work segments, submissions, approver queue, decisions, workflow definitions, project summaries, missing submissions, productivity summary, submission detail, and selectors. |
 | Attendance | 12 | Punches, my punch list, my/team summaries, daily/monthly calendar, regularization submit/list/manager queue/decision, exception queue, and export job metadata. |
 | Leave / WFH / Holidays | 15 | Leave balances, leave apply/cancel/decision queues, WFH apply/decision queues, HR monitor, holiday list/upsert, and export job metadata. |
-| EMS | 15 | Employee profile, profile change requests and HR decisions, employee document wrappers, generic employee requests and HR queue, letters, and policy acknowledgements. |
+| EMS | 23 | Employee profile, profile change requests and HR decisions, employee document wrappers, generic employee requests and HR queue/decisions, letters, policy acknowledgements, onboarding/exit checklists, probation decisions, and policy update/publish workflow. |
 | Projects / Utilization | 15 | Project CRUD, members, allocations, milestones/modules, project documents, project summary, and team utilization analytics. |
 | Helpdesk | 15 | Ticket CRUD, comments/internal notes, attachments, assignment, priority/status changes, resolve/close/reopen, categories, and SLA report. |
 | Notifications | 4 | Authenticated user notification feed, unread badge count, mark-read, and mark-all-read operations. |

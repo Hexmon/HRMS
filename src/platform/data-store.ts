@@ -10,10 +10,12 @@ import type {
   Department,
   Designation,
   DocumentMetadata,
+  EmsAdminChecklist,
   EmsEmployeeProfile,
   EmsLetter,
   EmsPolicy,
   EmsPolicyAcknowledgement,
+  EmsProbationReview,
   EmsProfileChangeRequest,
   EmsServiceRequest,
   ExpenseAuditLog,
@@ -429,6 +431,8 @@ export interface DataStore {
   emsLetters: EmsLetter[];
   emsPolicies: EmsPolicy[];
   emsPolicyAcknowledgements: EmsPolicyAcknowledgement[];
+  emsAdminChecklists: EmsAdminChecklist[];
+  emsProbationReviews: EmsProbationReview[];
   processedEvents: Set<string>;
   sessionStore: SessionStore;
   objectStorage: ObjectStoragePort | null;
@@ -1288,6 +1292,64 @@ export function createMemoryDataStore(): MemoryDataStore {
     created_at: created,
     updated_at: created
   }));
+  const emsAdminChecklists: EmsAdminChecklist[] = [
+    {
+      id: uuidFromName("ems-onboarding-e2"),
+      checklist_type: "onboarding",
+      employee_user_id: seedIds.employee2,
+      status: "in_progress",
+      due_date: "2026-06-10",
+      checklist: {
+        offer: true,
+        docs: false,
+        assets: false,
+        access: false,
+        orientation: false
+      },
+      remarks: null,
+      completed_at: null,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null,
+      version: 1
+    },
+    {
+      id: uuidFromName("ems-exit-e3"),
+      checklist_type: "exit",
+      employee_user_id: seedIds.employee3,
+      status: "in_progress",
+      due_date: "2026-05-31",
+      checklist: {
+        clearance: true,
+        assets: false,
+        finance: false,
+        letter: false
+      },
+      remarks: null,
+      completed_at: null,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null,
+      version: 1
+    }
+  ];
+  const emsProbationReviews: EmsProbationReview[] = [
+    {
+      id: uuidFromName("ems-probation-e1"),
+      employee_user_id: seedIds.employee1,
+      joining_on: "2026-01-01",
+      due_on: "2026-07-01",
+      status: "pending",
+      extended_until: null,
+      remarks: null,
+      decided_by_user_id: null,
+      decided_at: null,
+      created_at: created,
+      updated_at: created,
+      deleted_at: null,
+      version: 1
+    }
+  ];
   const projectHawkaiiId = uuidFromName("project-hawkaii-hrms");
   const projectFinanceId = uuidFromName("project-finance-automation");
   const projectMembers: ProjectMemberRecord[] = [
@@ -1875,6 +1937,8 @@ export function createMemoryDataStore(): MemoryDataStore {
     emsLetters,
     emsPolicies,
     emsPolicyAcknowledgements,
+    emsAdminChecklists,
+    emsProbationReviews,
     processedEvents: new Set<string>(),
     sessionStore: new MemorySessionStore(),
     objectStorage: null,

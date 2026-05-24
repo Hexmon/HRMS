@@ -84,6 +84,9 @@ const expectedOperations = [
   "GET /api/v1/documents",
   "GET /api/v1/documents/{id}",
   "GET /api/v1/documents/{id}/access-log",
+  "GET /api/v1/ems/admin/exits",
+  "GET /api/v1/ems/admin/onboarding",
+  "GET /api/v1/ems/admin/probation",
   "GET /api/v1/ems/employees/{user_id}/documents",
   "GET /api/v1/ems/letters",
   "GET /api/v1/ems/policies",
@@ -164,6 +167,8 @@ const expectedOperations = [
   "PATCH /api/v1/admin/master-data/designations/{id}",
   "PATCH /api/v1/admin/rbac/roles/{id}",
   "PATCH /api/v1/core/users/{id}",
+  "PATCH /api/v1/ems/admin/exits/{id}",
+  "PATCH /api/v1/ems/admin/onboarding/{id}",
   "PATCH /api/v1/expenses/{id}",
   "POST /api/v1/assets/",
   "POST /api/v1/assets/events/employee-terminated",
@@ -208,9 +213,11 @@ const expectedOperations = [
   "PATCH /api/v1/ems/profile/me",
   "POST /api/v1/ems/letters/{id}/acknowledge",
   "POST /api/v1/ems/policies/{id}/acknowledge",
+  "POST /api/v1/ems/admin/probation/{id}/decision",
   "POST /api/v1/ems/profile-change-requests",
   "POST /api/v1/ems/profile-change-requests/{id}/decision",
   "POST /api/v1/ems/requests",
+  "POST /api/v1/ems/requests/{id}/decision",
   "POST /api/v1/expenses",
   "POST /api/v1/expenses/{id}/bills",
   "POST /api/v1/expenses/{id}/clarifications",
@@ -263,6 +270,7 @@ const expectedOperations = [
   "PUT /api/v1/admin/rbac/roles/{id}/permissions",
   "PUT /api/v1/admin/security-settings",
   "PUT /api/v1/admin/workflows/{workflow_key}",
+  "PUT /api/v1/ems/policies/{id}",
   "PUT /api/v1/holidays/{id}",
   "PUT /api/v1/core/users/{id}/roles",
   "PUT /api/v1/platform/finance-governance"
@@ -346,11 +354,16 @@ const bodyRequiredOperations = [
   "POST /api/v1/wfh/requests/{id}/decision",
   "PUT /api/v1/holidays/{id}",
   "PATCH /api/v1/ems/profile/me",
+  "PATCH /api/v1/ems/admin/exits/{id}",
+  "PATCH /api/v1/ems/admin/onboarding/{id}",
+  "POST /api/v1/ems/admin/probation/{id}/decision",
   "POST /api/v1/ems/profile-change-requests",
   "POST /api/v1/ems/profile-change-requests/{id}/decision",
   "POST /api/v1/ems/requests",
+  "POST /api/v1/ems/requests/{id}/decision",
   "POST /api/v1/ems/letters/{id}/acknowledge",
   "POST /api/v1/ems/policies/{id}/acknowledge",
+  "PUT /api/v1/ems/policies/{id}",
   "POST /api/v1/projects",
   "PATCH /api/v1/projects/{id}",
   "POST /api/v1/projects/{id}/archive",
@@ -430,7 +443,12 @@ const occOperations = [
   "PUT /api/v1/admin/policies/{policy_key}",
   "PUT /api/v1/admin/rbac/roles/{id}/permissions",
   "PUT /api/v1/admin/security-settings",
-  "PUT /api/v1/admin/workflows/{workflow_key}"
+  "PUT /api/v1/admin/workflows/{workflow_key}",
+  "PATCH /api/v1/ems/admin/exits/{id}",
+  "PATCH /api/v1/ems/admin/onboarding/{id}",
+  "POST /api/v1/ems/admin/probation/{id}/decision",
+  "POST /api/v1/ems/requests/{id}/decision",
+  "PUT /api/v1/ems/policies/{id}"
 ];
 
 const listOperations = [
@@ -499,6 +517,9 @@ const listOperations = [
   "GET /api/v1/ems/letters",
   "GET /api/v1/ems/policies",
   "GET /api/v1/ems/employees/{user_id}/documents",
+  "GET /api/v1/ems/admin/onboarding",
+  "GET /api/v1/ems/admin/probation",
+  "GET /api/v1/ems/admin/exits",
   "GET /api/v1/projects",
   "GET /api/v1/projects/{id}/members",
   "GET /api/v1/projects/{id}/allocations",
@@ -757,7 +778,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(221);
+    expect(rows.length).toBe(229);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

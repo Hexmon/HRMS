@@ -1355,6 +1355,51 @@ export const emsPolicyAcknowledgements = ems.table(
   (table) => [uniqueIndex("ems_policy_ack_user_uq").on(table.policyId, table.employeeUserId)]
 );
 
+export const emsAdminChecklists = ems.table(
+  "admin_checklists",
+  {
+    id: uuidPk.defaultRandom(),
+    checklistType: text("checklist_type").notNull(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    status: text("status").notNull(),
+    dueDate: date("due_date"),
+    checklist: jsonb("checklist").notNull().default({}),
+    remarks: text("remarks"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("ems_admin_checklists_type_employee_uq").on(table.checklistType, table.employeeUserId),
+    index("ems_admin_checklists_queue_idx").on(table.checklistType, table.status, table.dueDate, table.updatedAt)
+  ]
+);
+
+export const emsProbationReviews = ems.table(
+  "probation_reviews",
+  {
+    id: uuidPk.defaultRandom(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    joiningOn: date("joining_on").notNull(),
+    dueOn: date("due_on").notNull(),
+    status: text("status").notNull(),
+    extendedUntil: date("extended_until"),
+    remarks: text("remarks"),
+    decidedByUserId: uuid("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    version,
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    uniqueIndex("ems_probation_reviews_employee_uq").on(table.employeeUserId),
+    index("ems_probation_reviews_queue_idx").on(table.status, table.dueOn, table.updatedAt)
+  ]
+);
+
 export const schema = {
   departments,
   designations,
@@ -1413,5 +1458,7 @@ export const schema = {
   emsServiceRequests,
   emsLetters,
   emsPolicies,
-  emsPolicyAcknowledgements
+  emsPolicyAcknowledgements,
+  emsAdminChecklists,
+  emsProbationReviews
 };
