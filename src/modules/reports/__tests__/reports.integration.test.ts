@@ -197,6 +197,31 @@ describe("non-expense reports", () => {
       size: expect.any(Number)
     });
 
+    const xlsxExport = await app.inject({
+      method: "POST",
+      url: "/api/v1/reports/exports",
+      headers: authHeader(admin.token),
+      payload: {
+        report_type: "hr/employees",
+        format: "xlsx",
+        filters: { status: "active" }
+      }
+    });
+    expect(xlsxExport.statusCode).toBe(200);
+    expect(xlsxExport.json()).toMatchObject({
+      report_type: "hr/employees",
+      format: "xlsx",
+      status: "ready",
+      adapter: "cloudinary-generated-xlsx",
+      file_name: expect.stringMatching(/\.xlsx$/u),
+      download_document_id: expect.any(String)
+    });
+    const xlsxDocument = app.store.documents.find((document) => document.id === xlsxExport.json().download_document_id);
+    expect(xlsxDocument?.mime_type).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    await expect(app.store.objectStorage?.statObject(xlsxDocument?.storage_key ?? "")).resolves.toMatchObject({
+      size: expect.any(Number)
+    });
+
     const listExports = await app.inject({
       method: "GET",
       url: "/api/v1/reports/exports?page=1&page_size=10&report_type=hr/employees",

@@ -158,7 +158,7 @@ Settlement:
 - `GET /api/v1/reports/expenses/audit`
 - `POST /api/v1/reports/exports`
 
-CSV report exports generate backend document records through object storage and return a `download_document_id`. External accounting-provider exports and XLSX workbook rendering remain HIR-004.
+CSV and XLSX report exports generate backend document records through object storage and return a `download_document_id`. External accounting-provider exports remain HIR-004.
 
 ## Error Handling
 

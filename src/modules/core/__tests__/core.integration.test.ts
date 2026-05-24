@@ -296,6 +296,33 @@ describe("core hierarchy API", () => {
       size: expect.any(Number)
     });
 
+    const xlsxExport = await app.inject({
+      method: "POST",
+      url: "/api/v1/core/users/exports",
+      headers: authHeader(admin.token),
+      payload: {
+        format: "xlsx",
+        filters: { department_id: manager.user.department_id },
+        columns: ["employee_code", "full_name", "roles"]
+      }
+    });
+    expect(xlsxExport.statusCode).toBe(200);
+    expect(xlsxExport.json()).toMatchObject({
+      status: "ready",
+      format: "xlsx",
+      adapter: "cloudinary-generated-xlsx",
+      file_name: expect.stringMatching(/\.xlsx$/u),
+      download_document_id: expect.any(String)
+    });
+    const xlsxDocument = app.store.documents.find((document) => document.id === xlsxExport.json().download_document_id);
+    expect(xlsxDocument).toMatchObject({
+      mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      document_type: "core_user_export_export"
+    });
+    await expect(app.store.objectStorage?.statObject(xlsxDocument?.storage_key ?? "")).resolves.toMatchObject({
+      size: expect.any(Number)
+    });
+
     const forbiddenExport = await app.inject({
       method: "POST",
       url: "/api/v1/core/users/exports",
