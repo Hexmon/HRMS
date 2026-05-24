@@ -794,8 +794,8 @@ Frontend:
 | Asset vendor/recovery backend | `feat(assets): implement vendor and recovery settlement APIs` | Committed in `hrms_backend` as `66a592b` |
 | Asset vendor/recovery frontend | `feat(assets): connect vendor and recovery workflows` | Committed in `hrms-client` as `e7fe602` |
 | Project document upload frontend | `feat(projects): add project document upload flow` | Committed in `hrms-client` as `24bf569` |
-| Asset warranty alerts backend | `feat(assets): add policy driven warranty alerts` | Pending commit in `hrms_backend` |
-| Asset warranty alerts frontend | `feat(assets): use warranty alert API` | Pending commit in `hrms-client` |
+| Asset warranty alerts backend | `feat(assets): add policy driven warranty alerts` | Committed in `hrms_backend` as `954e883` |
+| Asset warranty alerts frontend | `feat(assets): use warranty alert API` | Committed in `hrms-client` as `edc9391` |
 
 ## Next Steps
 
