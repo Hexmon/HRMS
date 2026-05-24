@@ -1109,6 +1109,12 @@ class PostgresPersistence {
       employee_user_id: row.employee_user_id,
       asset_id: row.asset_id,
       status: row.status,
+      settlement_status: row.settlement_status,
+      settlement_amount: asMoney(row.settlement_amount),
+      settlement_remarks: row.settlement_remarks,
+      settled_by_user_id: row.settled_by_user_id,
+      settled_at: asIsoOrNull(row.settled_at),
+      version: row.version ?? 1,
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at)
     }));
@@ -2584,11 +2590,34 @@ class PostgresPersistence {
     }
     for (const ticket of this.store.assetRecoveryTickets) {
       await client.query(
-        `INSERT INTO assets.asset_recovery_tickets (id, employee_user_id, asset_id, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO assets.asset_recovery_tickets (
+          id, employee_user_id, asset_id, status, settlement_status, settlement_amount,
+          settlement_remarks, settled_by_user_id, settled_at, version, created_at, updated_at
+        )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          ON CONFLICT (id) DO UPDATE
-         SET status = EXCLUDED.status, updated_at = EXCLUDED.updated_at`,
-        [ticket.id, ticket.employee_user_id, ticket.asset_id, ticket.status, ticket.created_at, ticket.updated_at]
+         SET status = EXCLUDED.status,
+             settlement_status = EXCLUDED.settlement_status,
+             settlement_amount = EXCLUDED.settlement_amount,
+             settlement_remarks = EXCLUDED.settlement_remarks,
+             settled_by_user_id = EXCLUDED.settled_by_user_id,
+             settled_at = EXCLUDED.settled_at,
+             version = EXCLUDED.version,
+             updated_at = EXCLUDED.updated_at`,
+        [
+          ticket.id,
+          ticket.employee_user_id,
+          ticket.asset_id,
+          ticket.status,
+          ticket.settlement_status,
+          ticket.settlement_amount,
+          ticket.settlement_remarks,
+          ticket.settled_by_user_id,
+          ticket.settled_at,
+          ticket.version,
+          ticket.created_at,
+          ticket.updated_at
+        ]
       );
     }
     for (const entitlement of this.store.licenseEntitlements) {

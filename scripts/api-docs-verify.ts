@@ -112,6 +112,9 @@ const bodyRequiredOperations = new Set([
   "POST /api/v1/assets/requests",
   "POST /api/v1/assets/requests/{id}/cancel",
   "POST /api/v1/assets/requests/{id}/decision",
+  "POST /api/v1/assets/vendors",
+  "PATCH /api/v1/assets/vendors/{id}",
+  "POST /api/v1/assets/recovery-queue/{id}/settlement",
   "POST /api/v1/assets/{id}/acknowledgements",
   "POST /api/v1/assets/{id}/maintenance",
   "POST /api/v1/projects",
@@ -148,6 +151,8 @@ const occOperations = new Set([
   "POST /api/v1/assets/{id}/return",
   "POST /api/v1/assets/requests/{id}/cancel",
   "POST /api/v1/assets/requests/{id}/decision",
+  "PATCH /api/v1/assets/vendors/{id}",
+  "POST /api/v1/assets/recovery-queue/{id}/settlement",
   "POST /api/v1/assets/{id}/acknowledgements",
   "POST /api/v1/assets/{id}/maintenance",
   "POST /api/v1/timesheets/submissions/{id}/approve",
@@ -354,7 +359,7 @@ function verifyFinanceGrouping(spec: OpenApiDocument): void {
       path.includes("/queue/finance") ||
       path.includes("/finance-detail") ||
       path.includes("/finance/") ||
-      path.includes("/settlement") ||
+      (path.includes("/expenses/") && path.includes("/settlement")) ||
       path.includes("/bills") ||
       path.includes("/finance-analytics") ||
       path.includes("/finance-dashboard") ||

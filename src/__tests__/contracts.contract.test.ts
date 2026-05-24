@@ -64,6 +64,9 @@ const expectedOperations = [
   "GET /api/v1/assets/vendors",
   "GET /api/v1/assets/{id}",
   "GET /api/v1/assets/{id}/maintenance",
+  "PATCH /api/v1/assets/vendors/{id}",
+  "POST /api/v1/assets/recovery-queue/{id}/settlement",
+  "POST /api/v1/assets/vendors",
   "GET /api/v1/attendance/calendar/daily",
   "GET /api/v1/attendance/calendar/monthly",
   "GET /api/v1/attendance/exceptions",
@@ -336,6 +339,9 @@ const bodyRequiredOperations = [
   "POST /api/v1/assets/requests",
   "POST /api/v1/assets/requests/{id}/cancel",
   "POST /api/v1/assets/requests/{id}/decision",
+  "POST /api/v1/assets/recovery-queue/{id}/settlement",
+  "POST /api/v1/assets/vendors",
+  "PATCH /api/v1/assets/vendors/{id}",
   "POST /api/v1/assets/{id}/acknowledgements",
   "POST /api/v1/assets/{id}/maintenance",
   "POST /api/v1/timesheets/work-segments",
@@ -404,6 +410,8 @@ const occOperations = [
   "POST /api/v1/assets/{id}/acknowledgements",
   "POST /api/v1/assets/{id}/maintenance",
   "POST /api/v1/assets/{id}/return",
+  "POST /api/v1/assets/recovery-queue/{id}/settlement",
+  "PATCH /api/v1/assets/vendors/{id}",
   "POST /api/v1/assets/requests/{id}/cancel",
   "POST /api/v1/assets/requests/{id}/decision",
   "POST /api/v1/timesheets/submissions/{id}/approve",
@@ -778,7 +786,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(229);
+    expect(rows.length).toBe(232);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);
@@ -832,7 +840,7 @@ describe("API contracts", () => {
         path.includes("/queue/finance") ||
         path.includes("/finance-detail") ||
         path.includes("/finance/") ||
-        path.includes("/settlement") ||
+        (path.includes("/expenses/") && path.includes("/settlement")) ||
         path.includes("/finance-analytics") ||
         path.includes("/finance-dashboard") ||
         path.includes("/advance-aging") ||

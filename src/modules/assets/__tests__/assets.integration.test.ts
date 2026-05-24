@@ -184,6 +184,40 @@ describe("assets and licenses", () => {
     });
     expect(vendors.statusCode).toBe(200);
     expect(vendors.json().items[0]).toMatchObject({ name: "Lenovo India", status: "active" });
+    const createdVendor = await app.inject({
+      method: "POST",
+      url: "/api/v1/assets/vendors",
+      headers: authHeader(assetManager.token),
+      payload: {
+        name: "Apple Enterprise",
+        contact_email: "apple-assets@example.test",
+        phone: "+91-11111-22222",
+        status: "active"
+      }
+    });
+    expect(createdVendor.statusCode).toBe(200);
+    expect(createdVendor.json().vendor).toMatchObject({
+      name: "Apple Enterprise",
+      contact_email: "apple-assets@example.test",
+      version: 1
+    });
+
+    const updatedVendor = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/assets/vendors/${createdVendor.json().vendor.id}`,
+      headers: authHeader(assetManager.token),
+      payload: {
+        phone: "+91-33333-44444",
+        status: "inactive",
+        expected_version: createdVendor.json().version
+      }
+    });
+    expect(updatedVendor.statusCode).toBe(200);
+    expect(updatedVendor.json().vendor).toMatchObject({
+      phone: "+91-33333-44444",
+      status: "inactive",
+      version: 2
+    });
 
     await app.inject({
       method: "POST",
@@ -198,6 +232,35 @@ describe("assets and licenses", () => {
     });
     expect(recoveryQueue.statusCode).toBe(200);
     expect(recoveryQueue.json().totals.open).toBeGreaterThanOrEqual(1);
+    const recoveryTicket = recoveryQueue
+      .json()
+      .items.find((ticket: { asset_id: string }) => ticket.asset_id === asset.id);
+    if (!recoveryTicket) {
+      throw new Error("Expected recovery ticket for assigned asset");
+    }
+
+    const settlement = await app.inject({
+      method: "POST",
+      url: `/api/v1/assets/recovery-queue/${recoveryTicket.id}/settlement`,
+      headers: authHeader(assetManager.token),
+      payload: {
+        settlement_status: "recovered",
+        remarks: "Recovered during exit clearance.",
+        expected_version: recoveryTicket.version
+      }
+    });
+    expect(settlement.statusCode).toBe(200);
+    expect(settlement.json().ticket).toMatchObject({
+      id: recoveryTicket.id,
+      status: "closed",
+      settlement_status: "recovered",
+      version: recoveryTicket.version + 1
+    });
+    expect(settlement.json().asset).toMatchObject({
+      id: asset.id,
+      status: "Returned",
+      assigned_to_user_id: null
+    });
 
     const detail = await app.inject({
       method: "GET",

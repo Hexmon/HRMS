@@ -15,6 +15,12 @@ export function createRecoveryTicketsForTerminatedEmployee(store: MemoryDataStor
       employee_user_id: employeeUserId,
       asset_id: asset.id,
       status: "open",
+      settlement_status: null,
+      settlement_amount: null,
+      settlement_remarks: null,
+      settled_by_user_id: null,
+      settled_at: null,
+      version: 1,
       created_at: now,
       updated_at: now
     });

@@ -263,6 +263,58 @@ export class AssetService {
     return page(this.repository.listVendors({ activeOnly: query.active_only, search: query.search }), query.page, query.page_size);
   }
 
+  createVendor(
+    actor: AuthUser,
+    input: {
+      name: string;
+      contact_email?: string | null;
+      phone?: string | null;
+      status?: "active" | "inactive";
+      metadata?: Record<string, unknown>;
+    }
+  ) {
+    assertAssetManager(actor);
+    const vendor = this.repository.createVendor(input);
+    appendOutboxEvent(this.store, {
+      aggregateType: "asset_vendor",
+      aggregateId: vendor.id,
+      eventType: "asset.vendor_created",
+      payload: { name: vendor.name, actor_user_id: actor.id },
+      idempotencyKey: `asset.vendor_created:${vendor.id}`
+    });
+    return { vendor, version: vendor.version };
+  }
+
+  updateVendor(
+    actor: AuthUser,
+    id: UUID,
+    input: {
+      name?: string;
+      contact_email?: string | null;
+      phone?: string | null;
+      status?: "active" | "inactive";
+      metadata?: Record<string, unknown>;
+      expected_version: number;
+    }
+  ) {
+    assertAssetManager(actor);
+    const vendor = this.repository.updateVendorVersioned(id, input.expected_version, (candidate) => {
+      candidate.name = input.name?.trim() || candidate.name;
+      if ("contact_email" in input) candidate.contact_email = input.contact_email ?? null;
+      if ("phone" in input) candidate.phone = input.phone ?? null;
+      if (input.status) candidate.status = input.status;
+      if (input.metadata) candidate.metadata = { ...candidate.metadata, ...input.metadata };
+    });
+    appendOutboxEvent(this.store, {
+      aggregateType: "asset_vendor",
+      aggregateId: vendor.id,
+      eventType: "asset.vendor_updated",
+      payload: { name: vendor.name, status: vendor.status, actor_user_id: actor.id },
+      idempotencyKey: `asset.vendor_updated:${vendor.id}:${vendor.version}`
+    });
+    return { vendor, version: vendor.version };
+  }
+
   recoveryQueue(actor: AuthUser, query: { page: number; page_size: number; user_id?: UUID; status?: string }) {
     if (!actor.roles.includes(Roles.AssetManager) && !actor.roles.includes(Roles.Admin) && !actor.roles.includes(Roles.HRManager)) {
       throw forbidden("Asset, HR, or Admin role required");
@@ -283,6 +335,66 @@ export class AssetService {
         in_progress: tickets.filter((ticket) => ticket.status === "in_progress").length,
         closed: tickets.filter((ticket) => ticket.status === "closed").length
       }
+    };
+  }
+
+  settleRecovery(
+    actor: AuthUser,
+    id: UUID,
+    input: {
+      settlement_status: "recovered" | "deduction" | "waived" | "lost_damaged";
+      settlement_amount?: string | null;
+      remarks?: string | null;
+      expected_version: number;
+    }
+  ) {
+    assertAssetManager(actor);
+    const ticket = this.repository.findRecoveryTicket(id);
+    if (ticket.version !== input.expected_version) {
+      throw conflict("Asset recovery ticket was modified by another actor.", { aggregate: "asset_recovery_ticket", id });
+    }
+    if (ticket.status === "closed") {
+      throw conflict("Asset recovery ticket is already closed.", { id });
+    }
+    const asset = this.repository.find(ticket.asset_id);
+    const now = nowIso();
+    if (input.settlement_status === "lost_damaged") {
+      asset.status = AssetStatuses.LostStolen;
+    } else {
+      asset.status = AssetStatuses.Returned;
+    }
+    if (asset.current_assigned_user_id === ticket.employee_user_id) {
+      asset.current_assigned_user_id = null;
+    }
+    asset.version += 1;
+    asset.updated_at = now;
+    const assignment = this.store.assetAssignments.find(
+      (candidate) => candidate.asset_id === asset.id && candidate.status === "active"
+    );
+    if (assignment) {
+      assignment.status = "returned";
+      assignment.returned_at = now;
+      assignment.updated_at = now;
+    }
+    ticket.status = "closed";
+    ticket.settlement_status = input.settlement_status;
+    ticket.settlement_amount = input.settlement_amount ?? null;
+    ticket.settlement_remarks = input.remarks ?? null;
+    ticket.settled_by_user_id = actor.id;
+    ticket.settled_at = now;
+    ticket.version += 1;
+    ticket.updated_at = now;
+    this.appendAssetEvent(asset.id, actor.id, "asset.recovery_settled", {
+      recovery_ticket_id: ticket.id,
+      employee_user_id: ticket.employee_user_id,
+      settlement_status: ticket.settlement_status,
+      settlement_amount: ticket.settlement_amount,
+      remarks: ticket.settlement_remarks
+    });
+    return {
+      ticket: this.presentRecoveryTicket(ticket),
+      asset: this.presentAsset(asset),
+      version: ticket.version
     };
   }
 
@@ -438,6 +550,14 @@ export class AssetService {
     return {
       ...record,
       vendor_name: vendor?.name ?? null
+    };
+  }
+
+  private presentRecoveryTicket(ticket: MemoryDataStore["assetRecoveryTickets"][number]) {
+    return {
+      ...ticket,
+      employee: this.store.users.find((user) => user.id === ticket.employee_user_id) ?? null,
+      asset: this.store.assets.find((asset) => asset.id === ticket.asset_id) ?? null
     };
   }
 

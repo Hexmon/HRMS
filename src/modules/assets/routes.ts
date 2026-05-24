@@ -51,9 +51,25 @@ const vendorQuerySchema = paginationQuerySchema.extend({
   active_only: z.coerce.boolean().optional(),
   search: z.string().min(1).max(120).optional()
 });
+const assetVendorCreateSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  contact_email: z.email().nullable().optional(),
+  phone: z.string().trim().min(3).max(40).nullable().optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional()
+});
+const assetVendorUpdateSchema = assetVendorCreateSchema.partial().extend({
+  expected_version: z.number().int().positive()
+});
 const recoveryQuerySchema = paginationQuerySchema.extend({
   user_id: z.uuid().optional(),
   status: z.string().min(1).max(40).optional()
+});
+const recoverySettlementSchema = z.object({
+  settlement_status: z.enum(["recovered", "deduction", "waived", "lost_damaged"]),
+  settlement_amount: z.string().regex(/^\d+(\.\d{1,2})?$/).nullable().optional(),
+  remarks: z.string().trim().max(2000).nullable().optional(),
+  expected_version: z.number().int().positive()
 });
 
 export const assetRoutes: FastifyPluginAsync = async (fastify) => {
@@ -225,6 +241,25 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     return new AssetService(fastify.store).vendors(request.actor, vendorQuerySchema.parse(request.query));
   });
 
+  fastify.post("/vendors", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new AssetService(fastify.store).createVendor(request.actor, assetVendorCreateSchema.parse(request.body));
+  });
+
+  fastify.patch("/vendors/:id", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = idParamSchema.parse(request.params);
+    return new AssetService(fastify.store).updateVendor(
+      request.actor,
+      params.id,
+      assetVendorUpdateSchema.parse(request.body)
+    );
+  });
+
   fastify.get("/recovery-queue", async (request) => {
     if (!request.actor) {
       throw unauthorized();
@@ -232,6 +267,18 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     return new AssetService(fastify.store).recoveryQueue(
       request.actor,
       recoveryQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.post("/recovery-queue/:id/settlement", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = idParamSchema.parse(request.params);
+    return new AssetService(fastify.store).settleRecovery(
+      request.actor,
+      params.id,
+      recoverySettlementSchema.parse(request.body)
     );
   });
 };

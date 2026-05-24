@@ -159,6 +159,69 @@ export class AssetRepository {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  findVendor(id: UUID): AssetVendorRecord {
+    const vendor = this.store.assetVendors.find((candidate) => candidate.id === id && !candidate.deleted_at);
+    if (!vendor) {
+      throw notFound("Asset vendor not found", { id });
+    }
+    return vendor;
+  }
+
+  createVendor(input: {
+    name: string;
+    contact_email?: string | null;
+    phone?: string | null;
+    metadata?: Record<string, unknown>;
+    status?: "active" | "inactive";
+  }): AssetVendorRecord {
+    const normalized = input.name.trim().toLowerCase();
+    const duplicate = this.store.assetVendors.find((vendor) => !vendor.deleted_at && vendor.name.trim().toLowerCase() === normalized);
+    if (duplicate) {
+      throw conflict("Asset vendor already exists.", { id: duplicate.id, name: duplicate.name });
+    }
+    const now = nowIso();
+    const vendor: AssetVendorRecord = {
+      id: randomUUID(),
+      name: input.name.trim(),
+      status: input.status ?? "active",
+      contact_email: input.contact_email ?? null,
+      phone: input.phone ?? null,
+      metadata: input.metadata ?? {},
+      version: 1,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null
+    };
+    this.store.assetVendors.push(vendor);
+    return vendor;
+  }
+
+  updateVendorVersioned(id: UUID, expectedVersion: number, mutator: (vendor: AssetVendorRecord) => void): AssetVendorRecord {
+    const vendor = this.findVendor(id);
+    if (vendor.version !== expectedVersion) {
+      throw conflict("Asset vendor was modified by another actor.", { aggregate: "asset_vendor", id });
+    }
+    mutator(vendor);
+    const normalized = vendor.name.trim().toLowerCase();
+    const duplicate = this.store.assetVendors.find(
+      (candidate) => candidate.id !== id && !candidate.deleted_at && candidate.name.trim().toLowerCase() === normalized
+    );
+    if (duplicate) {
+      throw conflict("Asset vendor already exists.", { id: duplicate.id, name: duplicate.name });
+    }
+    vendor.version += 1;
+    vendor.updated_at = nowIso();
+    return vendor;
+  }
+
+  findRecoveryTicket(id: UUID) {
+    const ticket = this.store.assetRecoveryTickets.find((candidate) => candidate.id === id);
+    if (!ticket) {
+      throw notFound("Asset recovery ticket not found", { id });
+    }
+    return ticket;
+  }
+
   hashFingerprint(value: string): string {
     return createHash("sha256").update(value).digest("hex");
   }

@@ -281,6 +281,23 @@ export interface AssetVendorRecord {
   deleted_at: string | null;
 }
 
+export type AssetRecoverySettlementStatus = "recovered" | "deduction" | "waived" | "lost_damaged";
+
+export interface AssetRecoveryTicketRecord {
+  id: UUID;
+  employee_user_id: UUID;
+  asset_id: UUID;
+  status: string;
+  settlement_status: AssetRecoverySettlementStatus | null;
+  settlement_amount: string | null;
+  settlement_remarks: string | null;
+  settled_by_user_id: UUID | null;
+  settled_at: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WorkSegment {
   id: UUID;
   employee_user_id: UUID;
@@ -388,14 +405,7 @@ export interface DataStore {
   assetAcknowledgements: AssetAcknowledgementRecord[];
   assetMaintenanceRecords: AssetMaintenanceRecord[];
   assetVendors: AssetVendorRecord[];
-  assetRecoveryTickets: Array<{
-    id: UUID;
-    employee_user_id: UUID;
-    asset_id: UUID;
-    status: string;
-    created_at: string;
-    updated_at: string;
-  }>;
+  assetRecoveryTickets: AssetRecoveryTicketRecord[];
   licenseEntitlements: LicenseEntitlement[];
   licenseActivations: LicenseActivation[];
   compromisedKeys: Array<{ id: UUID; key_hash: string; status: string; created_at: string }>;

@@ -812,6 +812,12 @@ export const assetRecoveryTickets = assets.table("asset_recovery_tickets", {
   employeeUserId: uuid("employee_user_id").notNull(),
   assetId: uuid("asset_id").notNull(),
   status: text("status").notNull(),
+  settlementStatus: text("settlement_status"),
+  settlementAmount: numeric("settlement_amount", { precision: 12, scale: 2 }),
+  settlementRemarks: text("settlement_remarks"),
+  settledByUserId: uuid("settled_by_user_id"),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  version: integer("version").notNull().default(1),
   createdAt,
   updatedAt
 });

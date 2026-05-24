@@ -6,11 +6,11 @@ This report is a planning handoff for backend completion after the frontend gap 
 
 | Category | Count | Frontend action | Backend action |
 | --- | ---: | --- | --- |
-| Implemented APIs ready to integrate | 229 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
+| Implemented APIs ready to integrate | 232 | Use generated client from `openapi.json`. | Keep behavior stable and fix bugs only. |
 | Implemented APIs needing expansion | 0 | Use the expanded OpenAPI shapes. | Phase 1A-1C completed the 11 existing API expansions. |
 | Implemented APIs to delete | 0 | Do not remove current generated client operations. | No deletion from current OpenAPI. |
 | Planned new APIs | 0 | No first-pass visible frontend API gaps remain in this contract pack. | Keep behavior stable and move remaining items to production hardening or explicitly scoped future contracts. |
-| Target implemented contract after completion | 229 | Regenerate frontend client after future backend phases land. | First-pass visible frontend contract plus EMS admin workflow hardening is complete at 229 operations. |
+| Target implemented contract after completion | 232 | Regenerate frontend client after future backend phases land. | First-pass visible frontend contract plus asset vendor/recovery hardening is complete at 232 operations. |
 
 ## Development Phases
 
@@ -27,7 +27,7 @@ This report is a planning handoff for backend completion after the frontend gap 
 | Module tag | Operations | Ready surface |
 | --- | ---: | --- |
 | Admin / Configuration | 30 | Company profile read/update, department/designation master-data management, RBAC role/permission configuration, workflow configuration, policy configuration, email template configuration, notification channel configuration, audit log, security settings, finance governance, manager backups, and timesheet workflow definition upsert. |
-| Assets | 19 | Inventory, detail, assignment/return, QR scan, license lifecycle, employee termination event, requests, acknowledgements, maintenance, vendors, and recovery queue. |
+| Assets | 22 | Inventory, detail, assignment/return, QR scan, license lifecycle, employee termination event, requests, acknowledgements, maintenance, vendor list/create/update, recovery queue, and recovery settlement. |
 | Auth & Sessions | 11 | Login, logout, current session bootstrap, signup, email verification, password setup/reset, company bootstrap, and session preference. |
 | Core / Employees & Hierarchy | 16 | User list/detail/subtree, org selectors, employee create/update, lifecycle activation/deactivation, login setup/disable, role replacement, role history, audit trail, import job metadata, import polling, and export job metadata. |
 | Dashboard | 1 | Role-scoped summary derived from implemented Core, Expenses, Documents, Assets, Timesheets, Attendance, Notifications, and Outbox data. |
@@ -214,7 +214,7 @@ Total remaining planned new operations: **0**.
 | POST | `/api/v1/expenses/{id}/withdraw` | `/expenses/:id` | Withdraw requester-owned draft/submitted/returned expense when policy allows. | Requester only; self-processing rule still applies to approvals. | Path id; remarks, expected_version | expense, version, timeline_event | 409 invalid status/stale version; remarks may be required after submission. | Implemented in Phase 4 Expenses |
 | POST | `/api/v1/expenses/{id}/clarifications` | `/expenses/:id/clarifications` | Append clarification message and return current thread. | Requester, assigned manager, finance/admin by scope. | Path id; message, document_ids[], expected_version optional | clarification, thread[], expense_version | 403 out-of-scope; 409 if expense closed/read-only. | Implemented in Phase 4 Expenses |
 
-### Assets Additions (10 implemented APIs)
+### Assets Additions (13 implemented APIs)
 
 | Method | Planned path | Frontend route/screen | Purpose and business behavior | Auth/persona | Inputs | Success response | Errors/OCC/rate notes | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -227,7 +227,10 @@ Total remaining planned new operations: **0**.
 | GET | `/api/v1/assets/{id}/maintenance` | `/assets/:id/maintenance` | List asset maintenance records. | Asset admin/Admin; assigned user limited view. | page, page_size, status | items[], pagination | 403 restricted asset. | Implemented in Phase 4 Assets |
 | POST | `/api/v1/assets/{id}/maintenance` | `/assets/:id/maintenance` | Create maintenance record. | Asset admin/Admin. | maintenance_type, vendor_id, cost, dates, notes, expected_version | maintenance, asset_version | 409 stale asset version; money as string. | Implemented in Phase 4 Assets |
 | GET | `/api/v1/assets/vendors` | `/assets/vendors` | List asset vendors and warranty selectors. | Asset admin/Admin. | page, page_size, active_only, search | items[], pagination | Shared errors; selector-friendly. | Implemented in Phase 4 Assets |
+| POST | `/api/v1/assets/vendors` | `/assets/warranty` | Create asset vendor or warranty partner. | Asset admin/Admin. | name, contact_email, phone, status, metadata | vendor, version | 409 duplicate vendor name. | Implemented in Phase 6 Asset hardening |
+| PATCH | `/api/v1/assets/vendors/{id}` | `/assets/warranty` | Update vendor contact/status details. | Asset admin/Admin. | name, contact_email, phone, status, expected_version | vendor, version | 409 stale version or duplicate vendor name. | Implemented in Phase 6 Asset hardening |
 | GET | `/api/v1/assets/recovery-queue` | `/assets/recovery` | List assets pending recovery from offboarding/termination. | Asset admin/HR/Admin. | page, page_size, user_id, status | items[], pagination, totals | 403 out-of-scope; integrates with employee termination events. | Implemented in Phase 4 Assets |
+| POST | `/api/v1/assets/recovery-queue/{id}/settlement` | `/assets/returns` | Close an offboarding recovery ticket and update the linked asset/assignment state. | Asset admin/Admin. | settlement_status, settlement_amount, remarks, expected_version | ticket, asset, version | 409 stale version or already closed. | Implemented in Phase 6 Asset hardening |
 
 ### Helpdesk (15 implemented APIs)
 
