@@ -1,14 +1,38 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAssets, warrantyDaysLeft, fmtMoney } from "@/lib/assets-store";
 import { DataCard, EmptyState, StatCard } from "@/components/ui-kit";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ShieldAlert, ShieldCheck, Wrench, Building2, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
+import { useApiRouteEnabled } from "@/shared/api";
+import { useAssetVendorMutation, useAssetVendors, type AssetVendorView } from "@/domains/assets";
 
 export const Route = createFileRoute("/_app/assets/warranty")({ component: WarrantyScreen });
 
 function WarrantyScreen() {
   const { assets } = useAssets();
+  const apiEnabled = useApiRouteEnabled(["/assets"]);
+  const vendorQuery = useAssetVendors({ page_size: 100 }, apiEnabled);
+  const vendorMutation = useAssetVendorMutation();
+  const [vendorEditor, setVendorEditor] = useState<AssetVendorView | "new" | null>(null);
 
   const expiring = useMemo(
     () =>
@@ -29,7 +53,7 @@ function WarrantyScreen() {
     [assets],
   );
 
-  const vendors = useMemo(() => {
+  const derivedVendors = useMemo<AssetVendorView[]>(() => {
     const map = new Map<string, { name: string; assets: number; warranties: number }>();
     assets.forEach((a) => {
       const cur = map.get(a.vendor) ?? { name: a.vendor, assets: 0, warranties: 0 };
@@ -37,8 +61,49 @@ function WarrantyScreen() {
       if (warrantyDaysLeft(a.warrantyExpiry) >= 0) cur.warranties += 1;
       map.set(a.vendor, cur);
     });
-    return Array.from(map.values()).sort((a, b) => b.assets - a.assets);
+    return Array.from(map.values())
+      .sort((a, b) => b.assets - a.assets)
+      .map((vendor) => ({
+        id: vendor.name,
+        name: vendor.name,
+        status: "active",
+        contactEmail: "",
+        phone: "",
+        assets: vendor.assets,
+        warranties: vendor.warranties,
+        version: 1,
+      }));
   }, [assets]);
+  const vendors = apiEnabled && vendorQuery.data ? vendorQuery.data.items : derivedVendors;
+  const vendorLoading = apiEnabled && vendorQuery.isLoading && !vendorQuery.data;
+  const vendorError = apiEnabled && vendorQuery.error instanceof Error ? vendorQuery.error : null;
+
+  const saveVendor = async (input: {
+    id?: string;
+    name: string;
+    contact_email?: string | null;
+    phone?: string | null;
+    status: "active" | "inactive";
+    expected_version?: number;
+  }) => {
+    if (!apiEnabled) {
+      toast.success("Vendor saved locally for this demo session");
+      setVendorEditor(null);
+      return;
+    }
+    await vendorMutation.mutateAsync({
+      id: input.id,
+      input: {
+        name: input.name,
+        contact_email: input.contact_email || null,
+        phone: input.phone || null,
+        status: input.status,
+        expected_version: input.expected_version,
+      },
+    });
+    toast.success(input.id ? "Vendor updated" : "Vendor created");
+    setVendorEditor(null);
+  };
 
   return (
     <div className="space-y-4">
@@ -121,8 +186,21 @@ function WarrantyScreen() {
         </DataCard>
       </div>
 
-      <DataCard title="Vendors" description="Suppliers and AMC partners" padded={false}>
-        {vendors.length === 0 ? (
+      <DataCard
+        title="Vendors"
+        description="Suppliers and AMC partners"
+        padded={false}
+        actions={
+          <Button size="sm" onClick={() => setVendorEditor("new")}>
+            Add vendor
+          </Button>
+        }
+      >
+        {vendorLoading ? (
+          <div className="px-5 py-8 text-sm text-muted-foreground">Loading vendors...</div>
+        ) : vendorError ? (
+          <div className="px-5 py-8 text-sm text-destructive">{vendorError.message}</div>
+        ) : vendors.length === 0 ? (
           <EmptyState icon={Building2} title="No vendors" />
         ) : (
           <ul className="divide-y">
@@ -131,10 +209,17 @@ function WarrantyScreen() {
                 <div>
                   <p className="text-sm font-medium">{v.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {v.assets} assets · {v.warranties} active warranties
+                    {apiEnabled
+                      ? `${v.status} · ${v.contactEmail || v.phone || "No contact saved"}`
+                      : `${v.assets} assets · ${v.warranties} active warranties`}
                   </p>
                 </div>
-                <Button size="sm" variant="ghost" className="text-primary">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-primary"
+                  onClick={() => setVendorEditor(v)}
+                >
                   Open
                 </Button>
               </li>
@@ -142,6 +227,109 @@ function WarrantyScreen() {
           </ul>
         )}
       </DataCard>
+      <VendorDialog
+        open={Boolean(vendorEditor)}
+        vendor={vendorEditor === "new" ? null : vendorEditor}
+        saving={vendorMutation.isPending}
+        onOpenChange={(open) => {
+          if (!open) setVendorEditor(null);
+        }}
+        onSave={saveVendor}
+      />
     </div>
+  );
+}
+
+function VendorDialog({
+  open,
+  vendor,
+  saving,
+  onOpenChange,
+  onSave,
+}: {
+  open: boolean;
+  vendor: AssetVendorView | null;
+  saving: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (input: {
+    id?: string;
+    name: string;
+    contact_email?: string | null;
+    phone?: string | null;
+    status: "active" | "inactive";
+    expected_version?: number;
+  }) => Promise<void>;
+}) {
+  const [name, setName] = useState(vendor?.name ?? "");
+  const [email, setEmail] = useState(vendor?.contactEmail ?? "");
+  const [phone, setPhone] = useState(vendor?.phone ?? "");
+  const [status, setStatus] = useState<"active" | "inactive">(vendor?.status ?? "active");
+
+  useEffect(() => {
+    setName(vendor?.name ?? "");
+    setEmail(vendor?.contactEmail ?? "");
+    setPhone(vendor?.phone ?? "");
+    setStatus(vendor?.status ?? "active");
+  }, [vendor]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{vendor ? "Vendor details" : "Add vendor"}</DialogTitle>
+          <DialogDescription>
+            Vendor records support warranty and maintenance workflows.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="space-y-1">
+            <Label>Vendor name</Label>
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label>Contact email</Label>
+              <Input value={email} onChange={(event) => setEmail(event.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>Phone</Label>
+              <Input value={phone} onChange={(event) => setPhone(event.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label>Status</Label>
+            <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={saving || !name.trim()}
+            onClick={() => {
+              void onSave({
+                id: vendor?.id,
+                name: name.trim(),
+                contact_email: email.trim() || null,
+                phone: phone.trim() || null,
+                status,
+                expected_version: vendor?.version,
+              }).catch((error: Error) => toast.error(error.message));
+            }}
+          >
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

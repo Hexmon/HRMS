@@ -88,10 +88,28 @@ export const assetsApi = {
   vendors(query: PageQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/assets/vendors", { query });
   },
+  createVendor(input: ApiRecord) {
+    return apiRequest<ApiRecord>("/api/v1/assets/vendors", {
+      method: "POST",
+      body: input,
+    });
+  },
+  updateVendor(id: string, input: ApiRecord) {
+    return apiRequest<ApiRecord>(`/api/v1/assets/vendors/${id}`, {
+      method: "PATCH",
+      body: input,
+    });
+  },
   recoveryQueue(query: PageQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord> & { totals?: ApiRecord }>(
       "/api/v1/assets/recovery-queue",
       { query },
     );
+  },
+  settleRecovery(id: string, input: ApiRecord) {
+    return apiRequest<ApiRecord>(`/api/v1/assets/recovery-queue/${id}/settlement`, {
+      method: "POST",
+      body: input,
+    });
   },
 };

@@ -26,12 +26,21 @@ import {
 import { Undo2, Laptop } from "lucide-react";
 import type { AssetCondition } from "@/lib/mock/assets";
 import { toast } from "sonner";
+import { useApiRouteEnabled } from "@/shared/api";
+import {
+  useAssetRecoveryQueue,
+  useAssetRecoverySettlementMutation,
+  type AssetRecoveryTicketView,
+} from "@/domains/assets";
 
 export const Route = createFileRoute("/_app/assets/returns")({ component: ReturnsScreen });
 
 function ReturnsScreen() {
   const { assets, returnAsset } = useAssets();
   const { employees } = useEmployees();
+  const apiEnabled = useApiRouteEnabled(["/assets"]);
+  const recoveryQueue = useAssetRecoveryQueue({ page_size: 100, status: "open" }, apiEnabled);
+  const settleRecovery = useAssetRecoverySettlementMutation();
 
   // Group assigned assets by employee, surfacing those tied to exit / notice
   const grouped = useMemo(() => {
@@ -53,6 +62,31 @@ function ReturnsScreen() {
   }, [assets, employees]);
 
   const exitOrNotice = grouped.filter((g) => g.status === "exited" || g.status === "notice_period");
+  const recoveryTickets = recoveryQueue.data?.items ?? [];
+  const recoveryLoading = apiEnabled && recoveryQueue.isLoading && !recoveryQueue.data;
+  const recoveryError =
+    apiEnabled && recoveryQueue.error instanceof Error ? recoveryQueue.error : null;
+
+  const settleTicket = (
+    ticket: AssetRecoveryTicketView,
+    date: string,
+    condition: AssetCondition,
+    remarks: string,
+  ) => {
+    void settleRecovery
+      .mutateAsync({
+        id: ticket.id,
+        input: {
+          settlement_status: "recovered",
+          remarks: [remarks, `Return date: ${date}`, `Condition: ${condition}`]
+            .filter(Boolean)
+            .join(" · "),
+          expected_version: ticket.version,
+        },
+      })
+      .then(() => toast.success(`${ticket.assetCode} recovered`))
+      .catch((error: Error) => toast.error(error.message));
+  };
 
   return (
     <div className="space-y-4">
@@ -61,7 +95,41 @@ function ReturnsScreen() {
         description="Employees on notice or exited — reclaim assets before clearance."
         padded={false}
       >
-        {exitOrNotice.length === 0 ? (
+        {apiEnabled ? (
+          recoveryLoading ? (
+            <div className="px-5 py-8 text-sm text-muted-foreground">Loading recovery queue...</div>
+          ) : recoveryError ? (
+            <div className="px-5 py-8 text-sm text-destructive">{recoveryError.message}</div>
+          ) : recoveryTickets.length === 0 ? (
+            <EmptyState
+              icon={Undo2}
+              title="No active recovery cases"
+              description="When someone enters notice period, their assets will be listed here."
+            />
+          ) : (
+            <ul className="divide-y">
+              {recoveryTickets.map((ticket) => (
+                <li key={ticket.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                  <Link to="/assets/$id" params={{ id: ticket.assetId }} className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{ticket.assetName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {ticket.assetCode} · {ticket.employeeName} · since{" "}
+                      {ticket.assignedOn.slice(0, 10)}
+                    </p>
+                  </Link>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={ticket.status} label={ticket.status} />
+                    <ReturnInline
+                      onConfirm={(date, condition, remarks) =>
+                        settleTicket(ticket, date, condition, remarks)
+                      }
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : exitOrNotice.length === 0 ? (
           <EmptyState
             icon={Undo2}
             title="No active recovery cases"

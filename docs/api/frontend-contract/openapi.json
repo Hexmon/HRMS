@@ -46403,6 +46403,738 @@
             }
           }
         }
+      },
+      "post": {
+        "summary": "Create asset vendor",
+        "tags": ["Assets"],
+        "description": "Creates a vendor or warranty partner used by maintenance and warranty workflows. Asset/Admin role required.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160,
+                    "example": "Apple Enterprise"
+                  },
+                  "contact_email": {
+                    "type": "string",
+                    "format": "email",
+                    "nullable": true,
+                    "example": "support@apple.example.test"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "+91-00000-00000"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["active", "inactive"],
+                    "example": "active"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["vendor", "version"],
+                  "properties": {
+                    "vendor": {
+                      "type": "object",
+                      "required": ["id", "name", "status", "version"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Vendor UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Lenovo India"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": ["active", "inactive"],
+                          "example": "active"
+                        },
+                        "contact_email": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "support@lenovo.example.test"
+                        },
+                        "phone": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "+91-00000-00000"
+                        },
+                        "metadata": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/vendors/{id}": {
+      "patch": {
+        "summary": "Update asset vendor",
+        "tags": ["Assets"],
+        "description": "Updates vendor contact/status details with OCC expected_version. Asset/Admin role required.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["expected_version"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160,
+                    "example": "Apple Enterprise"
+                  },
+                  "contact_email": {
+                    "type": "string",
+                    "format": "email",
+                    "nullable": true,
+                    "example": "support@apple.example.test"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "+91-00000-00000"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["active", "inactive"],
+                    "example": "active"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["vendor", "version"],
+                  "properties": {
+                    "vendor": {
+                      "type": "object",
+                      "required": ["id", "name", "status", "version"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Vendor UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Lenovo India"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": ["active", "inactive"],
+                          "example": "active"
+                        },
+                        "contact_email": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "support@lenovo.example.test"
+                        },
+                        "phone": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "+91-00000-00000"
+                        },
+                        "metadata": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 2
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/assets/recovery-queue": {
@@ -46466,6 +47198,149 @@
                       "type": "array",
                       "items": {
                         "type": "object",
+                        "required": [
+                          "id",
+                          "employee_user_id",
+                          "asset_id",
+                          "status",
+                          "version",
+                          "created_at"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Recovery ticket UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Employee user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "asset_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Asset UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": ["open", "in_progress", "closed"],
+                            "example": "open"
+                          },
+                          "settlement_status": {
+                            "type": "string",
+                            "enum": ["recovered", "deduction", "waived", "lost_damaged"],
+                            "nullable": true,
+                            "example": "recovered"
+                          },
+                          "settlement_amount": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "2500.00"
+                          },
+                          "settlement_remarks": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Recovered during exit clearance."
+                          },
+                          "settled_by_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Settlement actor UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                            "nullable": true
+                          },
+                          "settled_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Settlement timestamp",
+                            "example": "2026-05-04T10:00:00.000Z",
+                            "nullable": true
+                          },
+                          "version": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                          },
+                          "employee": {
+                            "type": "object",
+                            "nullable": true,
+                            "additionalProperties": true
+                          },
+                          "asset": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "asset_code",
+                              "asset_type",
+                              "name",
+                              "status",
+                              "version"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Asset UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "asset_code": {
+                                "type": "string",
+                                "example": "LAP-001"
+                              },
+                              "asset_type": {
+                                "type": "string",
+                                "example": "Laptop"
+                              },
+                              "name": {
+                                "type": "string",
+                                "example": "ThinkPad T-Series"
+                              },
+                              "serial_no": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "SN-001"
+                              },
+                              "qr_hash": {
+                                "type": "string",
+                                "example": "release-qr-hash-lap-available"
+                              },
+                              "status": {
+                                "type": "string",
+                                "example": "In Stock"
+                              },
+                              "assigned_to_user_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Assigned employee UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                                "nullable": true
+                              },
+                              "version": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "example": 1
+                              }
+                            },
+                            "additionalProperties": true,
+                            "nullable": true
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Created timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Updated timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          }
+                        },
                         "additionalProperties": true
                       }
                     },
@@ -46486,6 +47361,527 @@
                     }
                   },
                   "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": ["Invalid input: expected object, received undefined"],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Retry after the documented delay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "TOO_MANY_REQUESTS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many requests. Please wait and try again."
+                    },
+                    "details": {
+                      "type": "object",
+                      "required": ["retry_after_seconds"],
+                      "properties": {
+                        "retry_after_seconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 60
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "TOO_MANY_REQUESTS",
+                  "message": "Too many requests. Please wait and try again.",
+                  "details": {
+                    "retry_after_seconds": 60
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "message", "request_id"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/recovery-queue/{id}/settlement": {
+      "post": {
+        "summary": "Settle asset recovery ticket",
+        "tags": ["Assets"],
+        "description": "Closes an offboarding asset recovery ticket, updates the linked asset status, and records recovery settlement details with OCC expected_version.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["settlement_status", "expected_version"],
+                "properties": {
+                  "settlement_status": {
+                    "type": "string",
+                    "enum": ["recovered", "deduction", "waived", "lost_damaged"],
+                    "example": "recovered"
+                  },
+                  "settlement_amount": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "2500.00"
+                  },
+                  "remarks": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Recovered during exit clearance."
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Resource UUID path parameter"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["ticket", "asset", "version"],
+                  "properties": {
+                    "ticket": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "employee_user_id",
+                        "asset_id",
+                        "status",
+                        "version",
+                        "created_at"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Recovery ticket UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "employee_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Employee user UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "asset_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Asset UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": ["open", "in_progress", "closed"],
+                          "example": "open"
+                        },
+                        "settlement_status": {
+                          "type": "string",
+                          "enum": ["recovered", "deduction", "waived", "lost_damaged"],
+                          "nullable": true,
+                          "example": "recovered"
+                        },
+                        "settlement_amount": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "2500.00"
+                        },
+                        "settlement_remarks": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "Recovered during exit clearance."
+                        },
+                        "settled_by_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Settlement actor UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "settled_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Settlement timestamp",
+                          "example": "2026-05-04T10:00:00.000Z",
+                          "nullable": true
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        },
+                        "employee": {
+                          "type": "object",
+                          "nullable": true,
+                          "additionalProperties": true
+                        },
+                        "asset": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "asset_code",
+                            "asset_type",
+                            "name",
+                            "status",
+                            "version"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Asset UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                            },
+                            "asset_code": {
+                              "type": "string",
+                              "example": "LAP-001"
+                            },
+                            "asset_type": {
+                              "type": "string",
+                              "example": "Laptop"
+                            },
+                            "name": {
+                              "type": "string",
+                              "example": "ThinkPad T-Series"
+                            },
+                            "serial_no": {
+                              "type": "string",
+                              "nullable": true,
+                              "example": "SN-001"
+                            },
+                            "qr_hash": {
+                              "type": "string",
+                              "example": "release-qr-hash-lap-available"
+                            },
+                            "status": {
+                              "type": "string",
+                              "example": "In Stock"
+                            },
+                            "assigned_to_user_id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Assigned employee UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                              "nullable": true
+                            },
+                            "version": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "example": 1
+                            }
+                          },
+                          "additionalProperties": true,
+                          "nullable": true
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Created timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Updated timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "asset": {
+                      "type": "object",
+                      "required": ["id", "asset_code", "asset_type", "name", "status", "version"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Asset UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "asset_code": {
+                          "type": "string",
+                          "example": "LAP-001"
+                        },
+                        "asset_type": {
+                          "type": "string",
+                          "example": "Laptop"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "ThinkPad T-Series"
+                        },
+                        "serial_no": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "SN-001"
+                        },
+                        "qr_hash": {
+                          "type": "string",
+                          "example": "release-qr-hash-lap-available"
+                        },
+                        "status": {
+                          "type": "string",
+                          "example": "In Stock"
+                        },
+                        "assigned_to_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Assigned employee UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 2
+                    }
+                  },
+                  "additionalProperties": false
                 }
               }
             }

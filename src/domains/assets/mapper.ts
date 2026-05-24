@@ -7,7 +7,7 @@ function mapAssetStatus(value: unknown, fallback: Asset["status"] = "available")
   if (["assigned", "allocated"].includes(normalized)) return "assigned";
   if (["repair", "under_repair", "maintenance", "in_maintenance"].includes(normalized))
     return "repair";
-  if (["lost", "lost_stolen"].includes(normalized)) return "lost";
+  if (["lost", "lost_stolen", "lost/stolen"].includes(normalized)) return "lost";
   if (["return_pending"].includes(normalized)) return "assigned";
   if (["damaged"].includes(normalized)) return "damaged";
   if (["retired"].includes(normalized)) return "retired";
@@ -129,4 +129,71 @@ export function mapApiAssetRequest(value: unknown): AssetRequest {
 
 export function mapApiAssetRequests(values: unknown[]): AssetRequest[] {
   return values.map(mapApiAssetRequest);
+}
+
+export type AssetVendorView = {
+  id: string;
+  name: string;
+  status: "active" | "inactive";
+  contactEmail: string;
+  phone: string;
+  assets: number;
+  warranties: number;
+  version: number;
+};
+
+export function mapApiAssetVendor(value: unknown): AssetVendorView {
+  const row = asRecord(value);
+  const metadata = asRecord(row.metadata);
+  return {
+    id: text(row.id, text(row.name, "vendor")),
+    name: text(row.name, "Vendor"),
+    status: text(row.status, "active") === "inactive" ? "inactive" : "active",
+    contactEmail: text(row.contact_email),
+    phone: text(row.phone),
+    assets: numberValue(metadata.assets_count, 0),
+    warranties: numberValue(metadata.active_warranties, 0),
+    version: numberValue(row.version, 1),
+  };
+}
+
+export function mapApiAssetVendors(values: unknown[]): AssetVendorView[] {
+  return values.map(mapApiAssetVendor);
+}
+
+export type AssetRecoveryTicketView = {
+  id: string;
+  employeeName: string;
+  employeeStatus: string;
+  assetId: string;
+  assetName: string;
+  assetCode: string;
+  assignedOn: string;
+  status: string;
+  settlementStatus: string;
+  settlementAmount: string;
+  version: number;
+};
+
+export function mapApiRecoveryTicket(value: unknown): AssetRecoveryTicketView {
+  const row = asRecord(value);
+  const employee = asRecord(row.employee);
+  const asset = asRecord(row.asset);
+  return {
+    id: text(row.id, "recovery-ticket"),
+    employeeName: text(employee.full_name ?? employee.name ?? employee.email, "Employee"),
+    employeeStatus: text(employee.employment_status ?? employee.status, "offboarding"),
+    assetId: text(row.asset_id ?? asset.id),
+    assetName: text(asset.name ?? asset.model ?? asset.asset_type, "Asset"),
+    assetCode: text(asset.asset_code ?? asset.id, "Asset"),
+    assignedOn: dateText(asset.assigned_on ?? row.created_at, new Date().toISOString()),
+    status: text(row.status, "open"),
+    settlementStatus: text(row.settlement_status),
+    settlementAmount: text(row.settlement_amount),
+    version: numberValue(row.version, 1),
+  };
+}
+
+export function mapApiRecoveryTickets(values: unknown[]): AssetRecoveryTicketView[] {
+  return values.map(mapApiRecoveryTicket);
 }
