@@ -3,11 +3,15 @@ import { queryKeys, queryTimings } from "@/shared/query";
 import { emsApi } from "./api";
 import type {
   EmsDecisionBody,
+  EmsAdminChecklistUpdateBody,
   EmsDocumentUploadBody,
+  EmsPolicyUpdateBody,
+  EmsProbationDecisionBody,
   EmsProfileChangeBody,
   EmsProfilePatchBody,
   EmsQuery,
   EmsRequestCreateBody,
+  EmsServiceRequestDecisionBody,
 } from "./api";
 
 export function useEmsProfile(enabled = true) {
@@ -53,6 +57,36 @@ export function useHrEmsRequestQueue(query: EmsQuery = {}, enabled = true) {
   return useQuery({
     queryKey: queryKeys.list("ems", "request-queue", query),
     queryFn: () => emsApi.hrRequestQueue(query),
+    enabled,
+    staleTime: queryTimings.realtimeStaleMs,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useEmsAdminOnboarding(query: EmsQuery = {}, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("ems", "admin-onboarding", query),
+    queryFn: () => emsApi.adminOnboarding(query),
+    enabled,
+    staleTime: queryTimings.realtimeStaleMs,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useEmsAdminProbation(query: EmsQuery = {}, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("ems", "admin-probation", query),
+    queryFn: () => emsApi.adminProbation(query),
+    enabled,
+    staleTime: queryTimings.realtimeStaleMs,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useEmsAdminExits(query: EmsQuery = {}, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("ems", "admin-exits", query),
+    queryFn: () => emsApi.adminExits(query),
     enabled,
     staleTime: queryTimings.realtimeStaleMs,
     placeholderData: keepPreviousData,
@@ -126,6 +160,35 @@ export function useEmsRequestMutation() {
   });
 }
 
+export function useEmsRequestDecisionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: EmsServiceRequestDecisionBody }) =>
+      emsApi.decideRequest(id, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
+  });
+}
+
+export function useEmsAdminChecklistMutation(type: "onboarding" | "exit") {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: EmsAdminChecklistUpdateBody }) =>
+      type === "onboarding"
+        ? emsApi.updateAdminOnboarding(id, input)
+        : emsApi.updateAdminExit(id, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
+  });
+}
+
+export function useEmsProbationDecisionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: EmsProbationDecisionBody }) =>
+      emsApi.decideProbation(id, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
+  });
+}
+
 export function useEmsDocumentMutation(userId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -152,6 +215,15 @@ export function useEmsPolicyAcknowledgeMutation() {
   return useMutation({
     mutationFn: ({ id, expectedVersion }: { id: string; expectedVersion: number }) =>
       emsApi.acknowledgePolicy(id, { expected_version: expectedVersion }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
+  });
+}
+
+export function useEmsPolicyUpdateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: EmsPolicyUpdateBody }) =>
+      emsApi.updatePolicy(id, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
   });
 }

@@ -9,9 +9,20 @@ import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
 import { documentsApi, mapApiDocuments } from "@/domains/documents";
 import {
+  mapAdminChecklist,
+  mapPolicy,
   mapProfileChange,
+  mapProbationReview,
   mapRequest,
+  useEmsAdminChecklistMutation,
+  useEmsAdminExits,
+  useEmsAdminOnboarding,
+  useEmsAdminProbation,
+  useEmsPolicyUpdateMutation,
+  useEmsPolicies,
+  useEmsProbationDecisionMutation,
   useEmsProfileDecisionMutation,
+  useEmsRequestDecisionMutation,
   useHrEmsRequestQueue,
   useHrProfileChangeQueue,
 } from "@/domains/ems";
@@ -98,7 +109,11 @@ const PROFILE_QUEUE: ProfRow[] = [
 ];
 
 interface Onboard {
+  id: string;
   name: string;
+  status?: string;
+  dueDate?: string;
+  expectedVersion?: number;
   offer: boolean;
   docs: boolean;
   assets: boolean;
@@ -106,8 +121,28 @@ interface Onboard {
   orientation: boolean;
 }
 const ONBOARDING: Onboard[] = [
-  { name: "Sneha Roy", offer: true, docs: true, assets: false, access: false, orientation: false },
-  { name: "Imran Ali", offer: true, docs: false, assets: false, access: false, orientation: false },
+  {
+    id: "local-onboarding-1",
+    name: "Sneha Roy",
+    status: "in_progress",
+    dueDate: "—",
+    offer: true,
+    docs: true,
+    assets: false,
+    access: false,
+    orientation: false,
+  },
+  {
+    id: "local-onboarding-2",
+    name: "Imran Ali",
+    status: "pending",
+    dueDate: "—",
+    offer: true,
+    docs: false,
+    assets: false,
+    access: false,
+    orientation: false,
+  },
 ];
 
 interface Probation {
@@ -116,6 +151,8 @@ interface Probation {
   joining: string;
   due: string;
   status: string;
+  extendedUntil?: string;
+  expectedVersion?: number;
 }
 const PROBATION: Probation[] = [
   {
@@ -135,7 +172,10 @@ const PROBATION: Probation[] = [
 ];
 
 interface ExitRow {
+  id: string;
   name: string;
+  status?: string;
+  expectedVersion?: number;
   clearance: boolean;
   assets: boolean;
   finance: boolean;
@@ -144,7 +184,9 @@ interface ExitRow {
 }
 const EXITS: ExitRow[] = [
   {
+    id: "local-exit-1",
     name: "Vikram Reddy",
+    status: "notice_period",
     clearance: true,
     assets: false,
     finance: false,
@@ -179,11 +221,70 @@ const LETTERS: LetterRow[] = [
   },
 ];
 
-const POLICIES = [
-  { name: "Attendance policy", version: "v3.1", updated: "12 Jan 2026", ack: "94%" },
-  { name: "Leave policy", version: "v4.0", updated: "01 Jun 2026", ack: "61%" },
-  { name: "WFH policy", version: "v2.0", updated: "15 Mar 2026", ack: "88%" },
+interface PolicyRow {
+  id: string;
+  name: string;
+  category?: string;
+  version: string;
+  updated: string;
+  ack: string;
+  status?: string;
+  documentId?: string;
+  expectedVersion?: number;
+}
+
+const POLICIES: PolicyRow[] = [
+  {
+    id: "local-policy-1",
+    name: "Attendance policy",
+    version: "v3.1",
+    updated: "12 Jan 2026",
+    ack: "94%",
+  },
+  {
+    id: "local-policy-2",
+    name: "Leave policy",
+    version: "v4.0",
+    updated: "01 Jun 2026",
+    ack: "61%",
+  },
+  { id: "local-policy-3", name: "WFH policy", version: "v2.0", updated: "15 Mar 2026", ack: "88%" },
 ];
+
+const ONBOARDING_STEPS: Array<
+  [keyof Pick<Onboard, "offer" | "docs" | "assets" | "access" | "orientation">, string]
+> = [
+  ["offer", "Offer accepted"],
+  ["docs", "Docs verified"],
+  ["assets", "Assets allocated"],
+  ["access", "Access provisioned"],
+  ["orientation", "Orientation"],
+];
+
+const EXIT_STEPS: Array<
+  [keyof Pick<ExitRow, "clearance" | "assets" | "finance" | "letter">, string]
+> = [
+  ["clearance", "Manager clearance"],
+  ["assets", "Assets returned"],
+  ["finance", "Finance settled"],
+  ["letter", "Relieving letter"],
+];
+
+function isoDateAfterDays(days: number) {
+  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function bumpPolicyVersion(version: string) {
+  const match = version.match(/^v?(\d+)(?:\.(\d+))?$/i);
+  if (!match) return `${version} updated`;
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? "0") + 1;
+  return `v${major}.${minor}`;
+}
 
 function DocQueue() {
   const queryClient = useQueryClient();
@@ -383,31 +484,91 @@ function ProfileQueue() {
 }
 
 function OnboardingChecklist() {
+  const apiEnabled = useApiRouteEnabled(["/ems"]);
+  const onboardingQuery = useEmsAdminOnboarding({ page: 1, page_size: 50 }, apiEnabled);
+  const updateMutation = useEmsAdminChecklistMutation("onboarding");
+  const rows: Onboard[] = apiEnabled
+    ? pageItems(onboardingQuery.data).map((item) => {
+        const row = mapAdminChecklist(item);
+        return {
+          id: row.id,
+          name: row.employee,
+          status: row.status,
+          dueDate: row.dueDate,
+          expectedVersion: row.expectedVersion,
+          offer: row.checklist.offer ?? false,
+          docs: row.checklist.docs ?? false,
+          assets: row.checklist.assets ?? false,
+          access: row.checklist.access ?? false,
+          orientation: row.checklist.orientation ?? false,
+        };
+      })
+    : ONBOARDING;
+  const update = (
+    row: Onboard,
+    key: keyof Pick<Onboard, "offer" | "docs" | "assets" | "access" | "orientation">,
+    checked: boolean,
+    label: string,
+  ) => {
+    if (!apiEnabled || !isUuid(row.id) || !row.expectedVersion) {
+      toast.success(`${label} updated`);
+      return;
+    }
+    updateMutation.mutate(
+      {
+        id: row.id,
+        input: { expected_version: row.expectedVersion, checklist: { [key]: checked } },
+      },
+      {
+        onSuccess: () => toast.success(`${label} updated`),
+        onError: () => toast.error("Onboarding checklist could not be updated."),
+      },
+    );
+  };
+
+  if (apiEnabled && onboardingQuery.isLoading) {
+    return (
+      <EmptyState title="Loading onboarding checklist" description="Fetching onboarding tasks." />
+    );
+  }
+  if (apiEnabled && onboardingQuery.error) {
+    return (
+      <EmptyState
+        title="Onboarding checklist unavailable"
+        description="The onboarding queue could not be loaded from the backend."
+      />
+    );
+  }
+  if (!rows.length) {
+    return (
+      <EmptyState
+        title="No onboarding tasks"
+        description="New hire onboarding checklists will appear here."
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
-      {ONBOARDING.map((o) => (
+      {rows.map((o) => (
         <Card key={o.name} className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold">{o.name}</p>
-            <span className="text-xs text-muted-foreground">Onboarding in progress</span>
+            <div>
+              <p className="text-sm font-semibold">{o.name}</p>
+              <p className="text-xs text-muted-foreground">Due: {o.dueDate ?? "—"}</p>
+            </div>
+            <StatusBadge status={o.status ?? "in_progress"} />
           </div>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            {(
-              [
-                ["offer", "Offer accepted"],
-                ["docs", "Docs verified"],
-                ["assets", "Assets allocated"],
-                ["access", "Access provisioned"],
-                ["orientation", "Orientation"],
-              ] as const
-            ).map(([k, label]) => (
+            {ONBOARDING_STEPS.map(([k, label]) => (
               <label
                 key={k}
                 className="flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm"
               >
                 <Checkbox
                   checked={o[k]}
-                  onCheckedChange={() => toast.success(`${label} updated`)}
+                  disabled={updateMutation.isPending}
+                  onCheckedChange={(checked) => update(o, k, checked === true, label)}
                 />
                 <span className={o[k] ? "" : "text-muted-foreground"}>{label}</span>
               </label>
@@ -420,6 +581,48 @@ function OnboardingChecklist() {
 }
 
 function ProbationQueue() {
+  const apiEnabled = useApiRouteEnabled(["/ems"]);
+  const probationQuery = useEmsAdminProbation({ page: 1, page_size: 50 }, apiEnabled);
+  const decisionMutation = useEmsProbationDecisionMutation();
+  const rows: Probation[] = apiEnabled
+    ? pageItems(probationQuery.data).map((item) => {
+        const row = mapProbationReview(item);
+        return {
+          id: row.id,
+          employee: row.employee,
+          joining: row.joining,
+          due: row.due,
+          status: row.status,
+          extendedUntil: row.extendedUntil,
+          expectedVersion: row.expectedVersion,
+        };
+      })
+    : PROBATION;
+  const decide = (row: Probation, decision: "confirmed" | "extended") => {
+    if (!apiEnabled || !isUuid(row.id) || !row.expectedVersion) {
+      toast.success(decision === "confirmed" ? "Confirmation issued" : "Probation extended");
+      return;
+    }
+    decisionMutation.mutate(
+      {
+        id: row.id,
+        input: {
+          decision,
+          expected_version: row.expectedVersion,
+          extended_until: decision === "extended" ? isoDateAfterDays(30) : undefined,
+          remarks:
+            decision === "extended"
+              ? "Probation extended from EMS admin queue."
+              : "Probation confirmed from EMS admin queue.",
+        },
+      },
+      {
+        onSuccess: () =>
+          toast.success(decision === "confirmed" ? "Confirmation issued" : "Probation extended"),
+        onError: () => toast.error("Probation decision could not be saved."),
+      },
+    );
+  };
   const cols: Column<Probation>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "employee", header: "Employee", render: (r) => <>{r.employee}</> },
@@ -429,12 +632,16 @@ function ProbationQueue() {
     {
       key: "a",
       header: "Actions",
-      render: () => (
+      render: (row) => (
         <div className="flex gap-2">
           <Button
             size="sm"
             className="h-7 rounded-full"
-            onClick={() => toast.success("Confirmation issued")}
+            disabled={
+              decisionMutation.isPending ||
+              (apiEnabled && !["pending", "extended"].includes(row.status))
+            }
+            onClick={() => decide(row, "confirmed")}
           >
             Confirm
           </Button>
@@ -442,7 +649,8 @@ function ProbationQueue() {
             size="sm"
             variant="outline"
             className="h-7 rounded-full"
-            onClick={() => toast("Probation extended")}
+            disabled={decisionMutation.isPending || (apiEnabled && row.status !== "pending")}
+            onClick={() => decide(row, "extended")}
           >
             Extend
           </Button>
@@ -450,37 +658,101 @@ function ProbationQueue() {
       ),
     },
   ];
-  return <DataTable rows={PROBATION} columns={cols} />;
+  return (
+    <DataTable
+      rows={rows}
+      columns={cols}
+      loading={apiEnabled && probationQuery.isLoading}
+      emptyTitle="No probation reviews"
+      emptyDescription={
+        probationQuery.error
+          ? "Probation queue could not be loaded from the backend."
+          : "Upcoming probation reviews will appear here."
+      }
+    />
+  );
 }
 
 function ExitChecklist() {
+  const apiEnabled = useApiRouteEnabled(["/ems"]);
+  const exitsQuery = useEmsAdminExits({ page: 1, page_size: 50 }, apiEnabled);
+  const updateMutation = useEmsAdminChecklistMutation("exit");
+  const rows: ExitRow[] = apiEnabled
+    ? pageItems(exitsQuery.data).map((item) => {
+        const row = mapAdminChecklist(item);
+        return {
+          id: row.id,
+          name: row.employee,
+          status: row.status,
+          expectedVersion: row.expectedVersion,
+          clearance: row.checklist.clearance ?? false,
+          assets: row.checklist.assets ?? false,
+          finance: row.checklist.finance ?? false,
+          letter: row.checklist.letter ?? false,
+          lwd: row.dueDate,
+        };
+      })
+    : EXITS;
+  const update = (
+    row: ExitRow,
+    key: keyof Pick<ExitRow, "clearance" | "assets" | "finance" | "letter">,
+    checked: boolean,
+    label: string,
+  ) => {
+    if (!apiEnabled || !isUuid(row.id) || !row.expectedVersion) {
+      toast.success(`${label} updated`);
+      return;
+    }
+    updateMutation.mutate(
+      {
+        id: row.id,
+        input: { expected_version: row.expectedVersion, checklist: { [key]: checked } },
+      },
+      {
+        onSuccess: () => toast.success(`${label} updated`),
+        onError: () => toast.error("Exit checklist could not be updated."),
+      },
+    );
+  };
+
+  if (apiEnabled && exitsQuery.isLoading) {
+    return <EmptyState title="Loading exit checklist" description="Fetching exit tasks." />;
+  }
+  if (apiEnabled && exitsQuery.error) {
+    return (
+      <EmptyState
+        title="Exit checklist unavailable"
+        description="The exit queue could not be loaded from the backend."
+      />
+    );
+  }
+  if (!rows.length) {
+    return (
+      <EmptyState title="No exit tasks" description="Employee exit checklists will appear here." />
+    );
+  }
+
   return (
     <div className="space-y-3">
-      {EXITS.map((e) => (
+      {rows.map((e) => (
         <Card key={e.name} className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold">{e.name}</p>
               <p className="text-xs text-muted-foreground">Last working day: {e.lwd}</p>
             </div>
-            <StatusBadge status="notice_period" />
+            <StatusBadge status={e.status ?? "notice_period"} />
           </div>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {(
-              [
-                ["clearance", "Manager clearance"],
-                ["assets", "Assets returned"],
-                ["finance", "Finance settled"],
-                ["letter", "Relieving letter"],
-              ] as const
-            ).map(([k, label]) => (
+            {EXIT_STEPS.map(([k, label]) => (
               <label
                 key={k}
                 className="flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm"
               >
                 <Checkbox
                   checked={e[k]}
-                  onCheckedChange={() => toast.success(`${label} updated`)}
+                  disabled={updateMutation.isPending}
+                  onCheckedChange={(checked) => update(e, k, checked === true, label)}
                 />
                 <span className={e[k] ? "" : "text-muted-foreground"}>{label}</span>
               </label>
@@ -493,9 +765,68 @@ function ExitChecklist() {
 }
 
 function PolicyMgmt() {
+  const apiEnabled = useApiRouteEnabled(["/ems"]);
+  const policiesQuery = useEmsPolicies({ page: 1, page_size: 50 }, apiEnabled);
+  const policyMutation = useEmsPolicyUpdateMutation();
+  const rows: PolicyRow[] = apiEnabled
+    ? pageItems(policiesQuery.data).map((item) => {
+        const policy = mapPolicy(item);
+        return {
+          id: policy.id,
+          name: policy.title,
+          category: policy.category,
+          version: policy.versionLabel,
+          updated: policy.effectiveFrom,
+          ack: policy.acknowledgementStatus,
+          status: policy.status,
+          documentId: policy.documentId,
+          expectedVersion: policy.expectedVersion,
+        };
+      })
+    : POLICIES;
+  const publish = (policy: PolicyRow) => {
+    if (!apiEnabled || !isUuid(policy.id) || !policy.expectedVersion) {
+      toast.success("New version published");
+      return;
+    }
+    policyMutation.mutate(
+      {
+        id: policy.id,
+        input: {
+          expected_version: policy.expectedVersion,
+          title: policy.name,
+          category: policy.category,
+          version_label: bumpPolicyVersion(policy.version),
+          effective_from: todayIsoDate(),
+          document_id: policy.documentId || null,
+          status: "active",
+        },
+      },
+      {
+        onSuccess: () => toast.success("New version published"),
+        onError: () => toast.error("Policy version could not be published."),
+      },
+    );
+  };
+
+  if (apiEnabled && policiesQuery.isLoading) {
+    return <EmptyState title="Loading policies" description="Fetching policy records." />;
+  }
+  if (apiEnabled && policiesQuery.error) {
+    return (
+      <EmptyState
+        title="Policies unavailable"
+        description="EMS policy records could not be loaded from the backend."
+      />
+    );
+  }
+  if (!rows.length) {
+    return <EmptyState title="No policies" description="Published policies will appear here." />;
+  }
+
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-      {POLICIES.map((p) => (
+      {rows.map((p) => (
         <Card key={p.name} className="rounded-2xl p-5">
           <div className="flex items-start justify-between">
             <div>
@@ -509,13 +840,14 @@ function PolicyMgmt() {
             </span>
           </div>
           <div className="mt-4 flex gap-2">
-            <Button size="sm" variant="outline" className="rounded-full">
+            <Button size="sm" variant="outline" className="rounded-full" disabled>
               Edit
             </Button>
             <Button
               size="sm"
               className="rounded-full"
-              onClick={() => toast.success("New version published")}
+              disabled={policyMutation.isPending}
+              onClick={() => publish(p)}
             >
               Publish version
             </Button>
@@ -529,6 +861,7 @@ function PolicyMgmt() {
 function LetterQueue() {
   const apiEnabled = useApiRouteEnabled(["/ems"]);
   const queueQuery = useHrEmsRequestQueue({ page: 1, page_size: 50, type: "letter" }, apiEnabled);
+  const decisionMutation = useEmsRequestDecisionMutation();
   const rows: LetterRow[] = apiEnabled
     ? pageItems(queueQuery.data).map((item) => {
         const request = mapRequest(item);
@@ -543,6 +876,26 @@ function LetterQueue() {
         };
       })
     : LETTERS;
+  const generate = (row: LetterRow) => {
+    if (!apiEnabled || !row.requestId || !row.expectedVersion) {
+      toast.success("Letter generated");
+      return;
+    }
+    decisionMutation.mutate(
+      {
+        id: row.requestId,
+        input: {
+          decision: "approved",
+          expected_version: row.expectedVersion,
+          remarks: "Generated from EMS admin letter queue.",
+        },
+      },
+      {
+        onSuccess: () => toast.success("Letter generated"),
+        onError: () => toast.error("Letter could not be generated."),
+      },
+    );
+  };
   const cols: Column<LetterRow>[] = [
     { key: "id", header: "ID", render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: "employee", header: "Employee", render: (r) => <>{r.employee}</> },
@@ -556,21 +909,20 @@ function LetterQueue() {
     {
       key: "a",
       header: "Actions",
-      render: () => (
+      render: (row) => (
         <div className="flex gap-2">
           <Button
             size="sm"
             className="h-7 rounded-full"
-            onClick={() => toast.success("Letter generated")}
+            disabled={
+              decisionMutation.isPending ||
+              (apiEnabled && !["pending", "in_progress"].includes(row.status))
+            }
+            onClick={() => generate(row)}
           >
             Generate
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 rounded-full"
-            onClick={() => toast("Sent to employee")}
-          >
+          <Button size="sm" variant="outline" className="h-7 rounded-full" disabled>
             Send
           </Button>
         </div>
@@ -594,24 +946,47 @@ function LetterQueue() {
 
 function EmsAdmin() {
   const { activeRole } = useAuth();
+  const apiEnabled = useApiRouteEnabled(["/ems", "/documents"]);
+  const canAccess = Boolean(activeRole && ADMIN_ROLES.includes(activeRole));
+  const documentsCountQuery = useQuery({
+    queryKey: queryKeys.list("documents", "verification-count", { page_size: 100 }),
+    queryFn: () => documentsApi.list({ page: 1, page_size: 100 }),
+    enabled: apiEnabled && canAccess,
+    staleTime: queryTimings.realtimeStaleMs,
+  });
+  const profileCountQuery = useHrProfileChangeQueue(
+    { page: 1, page_size: 1 },
+    apiEnabled && canAccess,
+  );
+  const probationCountQuery = useEmsAdminProbation(
+    { page: 1, page_size: 1 },
+    apiEnabled && canAccess,
+  );
+  const letterCountQuery = useHrEmsRequestQueue(
+    { page: 1, page_size: 1, type: "letter" },
+    apiEnabled && canAccess,
+  );
   if (!activeRole || !ADMIN_ROLES.includes(activeRole)) return <Navigate to="/ems" />;
+  const docsToVerify = apiEnabled
+    ? mapApiDocuments(pageItems(documentsCountQuery.data)).filter(
+        (document) => document.status !== "verified",
+      ).length
+    : DOC_QUEUE.length;
+  const profileUpdates = apiEnabled ? (profileCountQuery.data?.total ?? 0) : PROFILE_QUEUE.length;
+  const probationDue = apiEnabled ? (probationCountQuery.data?.total ?? 0) : PROBATION.length;
+  const lettersInQueue = apiEnabled ? (letterCountQuery.data?.total ?? 0) : LETTERS.length;
 
   return (
     <div className="space-y-4 pt-4">
       <p className="text-sm text-muted-foreground">Operational queues for the people-ops team.</p>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard
-          label="Docs to verify"
-          value={DOC_QUEUE.length}
-          icon={FileCheck2}
-          tone="warning"
-        />
-        <StatCard label="Profile updates" value={PROFILE_QUEUE.length} icon={UserCog} tone="info" />
-        <StatCard label="Probation due" value={PROBATION.length} icon={BadgeCheck} tone="primary" />
+        <StatCard label="Docs to verify" value={docsToVerify} icon={FileCheck2} tone="warning" />
+        <StatCard label="Profile updates" value={profileUpdates} icon={UserCog} tone="info" />
+        <StatCard label="Probation due" value={probationDue} icon={BadgeCheck} tone="primary" />
         <StatCard
           label="Letters in queue"
-          value={LETTERS.length}
+          value={lettersInQueue}
           icon={FileSignature}
           tone="success"
         />

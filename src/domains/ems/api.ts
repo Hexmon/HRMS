@@ -2,6 +2,7 @@ import { apiRequest } from "@/shared/api";
 import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } from "@/shared/api";
 
 export type EmsProfileChangeDecision = "approved" | "returned" | "rejected";
+export type EmsServiceRequestDecision = "approved" | "returned" | "rejected" | "closed";
 export type EmsRequestType =
   | "profile_update"
   | "document_verification"
@@ -44,6 +45,33 @@ export interface EmsRequestCreateBody extends ApiRecord {
   subject: string;
   description: string;
   document_ids?: string[];
+}
+
+export interface EmsServiceRequestDecisionBody extends ExpectedVersionBody {
+  decision: EmsServiceRequestDecision;
+  remarks?: string;
+}
+
+export interface EmsAdminChecklistUpdateBody extends ExpectedVersionBody {
+  checklist?: Record<string, boolean>;
+  status?: "pending" | "in_progress" | "completed";
+  due_date?: string | null;
+  remarks?: string | null;
+}
+
+export interface EmsProbationDecisionBody extends ExpectedVersionBody {
+  decision: "confirmed" | "extended";
+  extended_until?: string;
+  remarks?: string;
+}
+
+export interface EmsPolicyUpdateBody extends ExpectedVersionBody {
+  title?: string;
+  category?: string;
+  version_label?: string;
+  effective_from?: string;
+  document_id?: string | null;
+  status?: "active" | "inactive" | "superseded";
 }
 
 export interface EmsDocumentUploadBody extends ApiRecord {
@@ -97,6 +125,39 @@ export const emsApi = {
       { query },
     );
   },
+  decideRequest(id: string, input: EmsServiceRequestDecisionBody) {
+    return apiRequest<ApiRecord>(`/api/v1/ems/requests/${id}/decision`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  adminOnboarding(query: EmsQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/ems/admin/onboarding", { query });
+  },
+  updateAdminOnboarding(id: string, input: EmsAdminChecklistUpdateBody) {
+    return apiRequest<ApiRecord>(`/api/v1/ems/admin/onboarding/${id}`, {
+      method: "PATCH",
+      body: input,
+    });
+  },
+  adminProbation(query: EmsQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/ems/admin/probation", { query });
+  },
+  decideProbation(id: string, input: EmsProbationDecisionBody) {
+    return apiRequest<ApiRecord>(`/api/v1/ems/admin/probation/${id}/decision`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  adminExits(query: EmsQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/ems/admin/exits", { query });
+  },
+  updateAdminExit(id: string, input: EmsAdminChecklistUpdateBody) {
+    return apiRequest<ApiRecord>(`/api/v1/ems/admin/exits/${id}`, {
+      method: "PATCH",
+      body: input,
+    });
+  },
   letters(query: EmsQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/ems/letters", { query });
   },
@@ -115,6 +176,12 @@ export const emsApi = {
   acknowledgePolicy(id: string, input: ExpectedVersionBody) {
     return apiRequest<ApiRecord>(`/api/v1/ems/policies/${id}/acknowledge`, {
       method: "POST",
+      body: input,
+    });
+  },
+  updatePolicy(id: string, input: EmsPolicyUpdateBody) {
+    return apiRequest<ApiRecord>(`/api/v1/ems/policies/${id}`, {
+      method: "PUT",
       body: input,
     });
   },

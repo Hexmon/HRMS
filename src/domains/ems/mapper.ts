@@ -78,6 +78,28 @@ export interface EmsPolicyView {
   acknowledgedAt: string;
   documentId: string;
   acknowledgementVersion: number;
+  expectedVersion: number;
+}
+
+export interface EmsAdminChecklistView {
+  id: string;
+  employee: string;
+  employeeCode: string;
+  status: string;
+  dueDate: string;
+  checklist: Record<string, boolean>;
+  expectedVersion: number;
+}
+
+export interface EmsProbationReviewView {
+  id: string;
+  employee: string;
+  employeeCode: string;
+  joining: string;
+  due: string;
+  status: string;
+  extendedUntil: string;
+  expectedVersion: number;
 }
 
 export function formatDate(value: unknown, fallback = "—"): string {
@@ -187,5 +209,44 @@ export function mapPolicy(value: unknown): EmsPolicyView {
     acknowledgedAt: formatDate(record.acknowledged_at, ""),
     documentId: text(record.document_download_id, text(record.document_id)),
     acknowledgementVersion: numberValue(record.acknowledgement_version, 1),
+    expectedVersion: numberValue(record.version, 1),
   };
+}
+
+export function mapAdminChecklist(value: unknown): EmsAdminChecklistView {
+  const record = asRecord(value);
+  const employee = mapUserLabel(record.employee);
+  return {
+    id: text(record.id),
+    employee: employee.fullName,
+    employeeCode: employee.employeeCode,
+    status: text(record.status, "pending"),
+    dueDate: formatDate(record.due_date, "—"),
+    checklist: booleanRecord(record.checklist),
+    expectedVersion: numberValue(record.version, 1),
+  };
+}
+
+export function mapProbationReview(value: unknown): EmsProbationReviewView {
+  const record = asRecord(value);
+  const employee = mapUserLabel(record.employee);
+  return {
+    id: text(record.id),
+    employee: employee.fullName,
+    employeeCode: employee.employeeCode,
+    joining: formatDate(record.joining_on),
+    due: formatDate(record.due_on),
+    status: text(record.status, "pending"),
+    extendedUntil: formatDate(record.extended_until, ""),
+    expectedVersion: numberValue(record.version, 1),
+  };
+}
+
+function booleanRecord(value: unknown): Record<string, boolean> {
+  const record = asRecord(value);
+  return Object.fromEntries(
+    Object.entries(record).filter(
+      (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+    ),
+  );
 }
