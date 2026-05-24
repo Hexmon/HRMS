@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus, Trash2, Upload, FileText } from "lucide-react";
 import { toast } from "sonner";
+import { prepareDocumentUploadFile } from "@/shared/uploads/documents";
 
 export const Route = createFileRoute("/_app/expenses/create")({ component: CreateExpense });
 
@@ -219,21 +220,28 @@ function CreateExpense() {
     }
   };
 
-  const attachSelectedDocument = (event: ChangeEvent<HTMLInputElement>) => {
+  const attachSelectedDocument = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (file.size <= 0) {
-      toast.error("Selected file is empty.");
-      return;
+
+    try {
+      const prepared = await prepareDocumentUploadFile(file);
+      set("documents", [
+        ...f.documents,
+        {
+          id: `d${Date.now()}`,
+          name: prepared.file.name,
+          kind: pendingDocumentKind,
+        },
+      ]);
+      if (prepared.compressed) {
+        toast.success("Image compressed", {
+          description: `${file.name} was prepared for upload.`,
+        });
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Selected file could not be prepared.");
     }
-    set("documents", [
-      ...f.documents,
-      {
-        id: `d${Date.now()}`,
-        name: file.name,
-        kind: pendingDocumentKind,
-      },
-    ]);
   };
 
   return (
@@ -567,7 +575,7 @@ function CreateExpense() {
                   type="file"
                   accept="image/*,application/pdf"
                   className="sr-only"
-                  onChange={attachSelectedDocument}
+                  onChange={(event) => void attachSelectedDocument(event)}
                 />
                 {[
                   { kind: "bill" as const, label: "Bills" },

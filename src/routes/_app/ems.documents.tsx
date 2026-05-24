@@ -13,6 +13,7 @@ import {
 } from "@/domains/ems";
 import { useAuth } from "@/lib/auth";
 import { isUuid, pageItems, useApiRouteEnabled } from "@/shared/api";
+import { prepareDocumentUploadFile } from "@/shared/uploads/documents";
 
 export const Route = createFileRoute("/_app/ems/documents")({
   component: MyDocuments,
@@ -134,14 +135,10 @@ function MyDocuments() {
   async function uploadSelectedFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (file.size <= 0) {
-      toast.error("Selected file is empty.");
-      return;
-    }
 
     const target = uploadTarget;
     try {
-      const prepared = await prepareDocumentFile(file);
+      const prepared = await prepareDocumentUploadFile(file);
       const formData = new FormData();
       formData.set("file", prepared.file);
       formData.set("classification", classificationFor(target));
@@ -279,59 +276,6 @@ function classificationFor(document: Doc | null): EmsDocumentUploadBody["classif
   if (value.includes("legal")) return "legal";
   if (value.includes("finance") || value.includes("tax")) return "finance";
   return "normal";
-}
-
-async function prepareDocumentFile(file: File): Promise<{ file: File; compressed: boolean }> {
-  if (!file.type.startsWith("image/")) {
-    return { file, compressed: false };
-  }
-  const compressed = await compressImageFile(file);
-  if (!compressed || compressed.size >= file.size) {
-    return { file, compressed: false };
-  }
-  return { file: compressed, compressed: true };
-}
-
-async function compressImageFile(file: File): Promise<File | null> {
-  const imageUrl = URL.createObjectURL(file);
-  try {
-    const image = await loadImage(imageUrl);
-    const maxSide = 1600;
-    const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
-    const width = Math.max(1, Math.round(image.width * scale));
-    const height = Math.max(1, Math.round(image.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, width, height);
-    context.drawImage(image, 0, 0, width, height);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", 0.82),
-    );
-    if (!blob) return null;
-    return new File([blob], renameAsJpeg(file.name), {
-      type: "image/jpeg",
-      lastModified: Date.now(),
-    });
-  } finally {
-    URL.revokeObjectURL(imageUrl);
-  }
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Selected image could not be read."));
-    image.src = src;
-  });
-}
-
-function renameAsJpeg(name: string): string {
-  return /\.[^.]+$/u.test(name) ? name.replace(/\.[^.]+$/u, ".jpg") : `${name}.jpg`;
 }
 
 function slug(value: string): string {
