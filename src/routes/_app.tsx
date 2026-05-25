@@ -10,20 +10,21 @@ export const Route = createFileRoute("/_app")({
 });
 
 function AppLayout() {
-  const { user } = useAuth();
+  const { user, isInitializing } = useAuth();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
+    if (isInitializing) return;
     if (user === null) {
       const t = setTimeout(() => {
         if (!user) navigate({ to: "/login" });
       }, 0);
       return () => clearTimeout(t);
     }
-  }, [user, navigate]);
+  }, [user, navigate, isInitializing]);
 
-  if (!user) {
+  if (!user || isInitializing) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div

@@ -422,7 +422,7 @@ function EmployeesPage() {
                 });
               },
             });
-            if (e.status !== "notice_period" && e.status !== "exited") {
+            if (!isApiBacked && e.status !== "notice_period" && e.status !== "exited") {
               actions.push({
                 label: "Mark notice period",
                 onClick: () => {

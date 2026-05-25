@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useExpenses, fmtCurrency, ticketTotal } from "@/lib/expenses-store";
+import { mapApiExpenseTickets } from "@/domains/expenses";
+import { useExpenseFinanceAnalyticsReport, useExpenseRegisterReport } from "@/domains/reports";
 import { DataCard, StatCard, EmptyState } from "@/components/ui-kit";
+import { asRecord, numberValue, pageItems, useApiRouteEnabled } from "@/shared/api";
 import {
   Banknote,
   Receipt,
@@ -22,6 +25,14 @@ function ageDays(iso?: string) {
 
 function ExpenseReports() {
   const { tickets } = useExpenses();
+  const apiMode = useApiRouteEnabled(["/expenses", "/reports"]);
+  const registerQuery = useExpenseRegisterReport(apiMode, { page: 1, page_size: 500 });
+  const analyticsQuery = useExpenseFinanceAnalyticsReport(apiMode);
+  const sourceTickets = useMemo(
+    () => (apiMode ? mapApiExpenseTickets(pageItems(registerQuery.data), tickets) : tickets),
+    [apiMode, registerQuery.data, tickets],
+  );
+  const analyticsSummary = asRecord(analyticsQuery.data?.summary);
 
   const advanceAging = useMemo(() => {
     const buckets = [
@@ -31,7 +42,7 @@ function ExpenseReports() {
       { b: "30+ d", min: 31, max: 9999 },
     ];
     return buckets.map((bk) => {
-      const set = tickets.filter(
+      const set = sourceTickets.filter(
         (t) =>
           t.paymentType === "advance" &&
           ["payment_released", "bills_submitted", "settlement_review"].includes(t.status) &&
@@ -44,20 +55,20 @@ function ExpenseReports() {
         total: set.reduce((s, t) => s + ticketTotal(t), 0),
       };
     });
-  }, [tickets]);
+  }, [sourceTickets]);
 
   const reimbursable = useMemo(
     () =>
-      tickets.filter(
+      sourceTickets.filter(
         (t) =>
           t.paymentType === "reimbursement" &&
           ["finance_verified", "payment_released"].includes(t.status),
       ),
-    [tickets],
+    [sourceTickets],
   );
   const projectAgg = useMemo(() => {
     const m = new Map<string, number>();
-    tickets
+    sourceTickets
       .filter((t) => t.expenseType === "project")
       .forEach((t) =>
         m.set(
@@ -68,10 +79,10 @@ function ExpenseReports() {
     return Array.from(m.entries())
       .map(([k, v]) => ({ name: k, total: v }))
       .sort((a, b) => b.total - a.total);
-  }, [tickets]);
+  }, [sourceTickets]);
   const salesAgg = useMemo(() => {
     const m = new Map<string, number>();
-    tickets
+    sourceTickets
       .filter((t) => t.expenseType === "sales_presales")
       .forEach((t) =>
         m.set(t.sales?.client ?? "—", (m.get(t.sales?.client ?? "—") ?? 0) + ticketTotal(t)),
@@ -79,33 +90,49 @@ function ExpenseReports() {
     return Array.from(m.entries())
       .map(([k, v]) => ({ name: k, total: v }))
       .sort((a, b) => b.total - a.total);
-  }, [tickets]);
+  }, [sourceTickets]);
   const deptAgg = useMemo(() => {
     const m = new Map<string, number>();
-    tickets.forEach((t) => m.set(t.department, (m.get(t.department) ?? 0) + ticketTotal(t)));
+    sourceTickets.forEach((t) => m.set(t.department, (m.get(t.department) ?? 0) + ticketTotal(t)));
     return Array.from(m.entries())
       .map(([k, v]) => ({ name: k, total: v }))
       .sort((a, b) => b.total - a.total);
-  }, [tickets]);
+  }, [sourceTickets]);
   const pendingApproval = useMemo(
-    () => tickets.filter((t) => ["pending_manager", "finance_verification"].includes(t.status)),
-    [tickets],
+    () =>
+      sourceTickets.filter((t) => ["pending_manager", "finance_verification"].includes(t.status)),
+    [sourceTickets],
   );
-  const paymentRegister = useMemo(() => tickets.filter((t) => t.payment), [tickets]);
+  const paymentRegister = useMemo(() => sourceTickets.filter((t) => t.payment), [sourceTickets]);
   const settlementPending = useMemo(
     () =>
-      tickets.filter((t) =>
+      sourceTickets.filter((t) =>
         ["bills_submitted", "settlement_review", "pending_adjustment"].includes(t.status),
       ),
-    [tickets],
+    [sourceTickets],
   );
+
+  const apiError = registerQuery.error ?? analyticsQuery.error;
+
+  if (apiMode && (registerQuery.isLoading || analyticsQuery.isLoading)) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading expense reports...</div>;
+  }
+
+  if (apiMode && apiError instanceof Error) {
+    return <div className="p-6 text-sm text-destructive">{apiError.message}</div>;
+  }
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
           label="Advance outstanding"
-          value={fmtCurrency(advanceAging.reduce((s, b) => s + b.total, 0))}
+          value={fmtCurrency(
+            numberValue(
+              analyticsSummary.advance_outstanding_amount,
+              advanceAging.reduce((s, b) => s + b.total, 0),
+            ),
+          )}
           icon={Banknote}
           tone="primary"
         />

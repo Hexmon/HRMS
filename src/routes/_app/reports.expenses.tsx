@@ -5,6 +5,14 @@ import { ReportShell } from "@/components/reports/report-shell";
 import { StatusBadge, type Column } from "@/components/ui-kit";
 import { useExpenses } from "@/lib/expenses-store";
 import { STATUS_LABEL, type ExpenseTicket, type ExpenseStatus } from "@/lib/expenses-store";
+import { mapApiExpenseTickets } from "@/domains/expenses";
+import {
+  useExpenseFinanceAnalyticsReport,
+  useExpenseFinanceDashboardReport,
+  useExpenseManagerQueueReport,
+  useExpenseRegisterReport,
+} from "@/domains/reports";
+import { asRecord, numberValue, pageItems, useApiRouteEnabled } from "@/shared/api";
 import { inDateRange } from "@/lib/reports/utils";
 
 export const Route = createFileRoute("/_app/reports/expenses")({ component: ExpenseReports });
@@ -18,6 +26,34 @@ function totalOf(t: ExpenseTicket) {
 
 function ExpenseReports() {
   const { tickets } = useExpenses();
+  const apiMode = useApiRouteEnabled(["/reports"]);
+  const registerQuery = useExpenseRegisterReport(apiMode, { page: 1, page_size: 500 });
+  const managerQueueQuery = useExpenseManagerQueueReport(apiMode, { page: 1, page_size: 500 });
+  const financeDashboardQuery = useExpenseFinanceDashboardReport(apiMode, {
+    page: 1,
+    page_size: 500,
+  });
+  const analyticsQuery = useExpenseFinanceAnalyticsReport(apiMode);
+
+  const registerTickets = useMemo(
+    () => (apiMode ? mapApiExpenseTickets(pageItems(registerQuery.data), tickets) : tickets),
+    [apiMode, registerQuery.data, tickets],
+  );
+  const managerQueueTickets = useMemo(
+    () =>
+      apiMode
+        ? mapApiExpenseTickets(pageItems(managerQueueQuery.data), tickets)
+        : tickets.filter((t) => t.status === "pending_manager"),
+    [apiMode, managerQueueQuery.data, tickets],
+  );
+  const financeDashboardTickets = useMemo(
+    () =>
+      apiMode
+        ? mapApiExpenseTickets(pageItems(financeDashboardQuery.data), tickets)
+        : tickets.filter((t) => t.stage === "finance" || t.status === "finance_hold"),
+    [apiMode, financeDashboardQuery.data, tickets],
+  );
+  const analyticsSummary = asRecord(analyticsQuery.data?.summary);
 
   const filter = (
     rows: ExpenseTicket[],
@@ -74,11 +110,11 @@ function ExpenseReports() {
     value: s,
     label: STATUS_LABEL[s],
   }));
-  const employeePool = Array.from(new Set(tickets.map((t) => t.employee)));
+  const employeePool = Array.from(new Set(registerTickets.map((t) => t.employee)));
 
   const aging = useMemo(
     () =>
-      tickets
+      registerTickets
         .filter((t) => t.paymentType === "advance" && t.status !== "closed")
         .map((t) => ({
           id: t.id,
@@ -87,12 +123,12 @@ function ExpenseReports() {
           age: Math.floor((Date.now() - new Date(t.createdAt).getTime()) / 86400000),
           status: t.status,
         })),
-    [tickets],
+    [registerTickets],
   );
 
   const payments = useMemo(
     () =>
-      tickets
+      registerTickets
         .filter((t) => t.payment)
         .map((t) => ({
           id: t.id,
@@ -103,8 +139,28 @@ function ExpenseReports() {
           ref: t.payment!.reference,
           status: t.status,
         })),
-    [tickets],
+    [registerTickets],
   );
+
+  const apiError =
+    registerQuery.error ??
+    managerQueueQuery.error ??
+    financeDashboardQuery.error ??
+    analyticsQuery.error;
+
+  if (
+    apiMode &&
+    (registerQuery.isLoading ||
+      managerQueueQuery.isLoading ||
+      financeDashboardQuery.isLoading ||
+      analyticsQuery.isLoading)
+  ) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading expense reports...</div>;
+  }
+
+  if (apiMode && apiError instanceof Error) {
+    return <div className="p-6 text-sm text-destructive">{apiError.message}</div>;
+  }
 
   return (
     <Tabs defaultValue="register">
@@ -132,20 +188,28 @@ function ExpenseReports() {
             employeePool,
           }}
           summary={[
-            { label: "Tickets", value: tickets.length, tone: "info" },
+            {
+              label: "Tickets",
+              value: numberValue(analyticsSummary.total_tickets, registerTickets.length),
+              tone: "info",
+            },
             {
               label: "Closed",
-              value: tickets.filter((t) => t.status === "closed").length,
+              value: numberValue(
+                analyticsSummary.closed,
+                registerTickets.filter((t) => t.status === "closed").length,
+              ),
               tone: "success",
             },
             {
               label: "In progress",
-              value: tickets.filter((t) => t.status !== "closed" && t.status !== "withdrawn")
-                .length,
+              value: registerTickets.filter(
+                (t) => t.status !== "closed" && t.status !== "withdrawn",
+              ).length,
               tone: "warning",
             },
           ]}
-          build={(f) => filter(tickets, f)}
+          build={(f) => filter(registerTickets, f)}
           columns={cols}
           searchKeys={["id", "employee", "department"]}
           exportName="expense-register"
@@ -157,12 +221,7 @@ function ExpenseReports() {
           title="Pending Approval"
           description="Tickets waiting on manager verification."
           facets={{ showDepartment: true, showEmployee: true, employeePool }}
-          build={(f) =>
-            filter(
-              tickets.filter((t) => t.status === "pending_manager"),
-              f,
-            )
-          }
+          build={(f) => filter(managerQueueTickets, f)}
           columns={cols}
           searchKeys={["id", "employee"]}
           exportName="pending-approval"
@@ -174,12 +233,7 @@ function ExpenseReports() {
           title="Finance Pending"
           description="Tickets sitting in finance verification or hold."
           facets={{ showDepartment: true }}
-          build={(f) =>
-            filter(
-              tickets.filter((t) => t.stage === "finance" || t.status === "finance_hold"),
-              f,
-            )
-          }
+          build={(f) => filter(financeDashboardTickets, f)}
           columns={cols}
           searchKeys={["id", "employee"]}
           exportName="finance-pending"
@@ -231,7 +285,7 @@ function ExpenseReports() {
           description="Approved reimbursements awaiting payout."
           build={(f) =>
             filter(
-              tickets.filter(
+              registerTickets.filter(
                 (t) => t.paymentType === "reimbursement" && t.status === "finance_verified",
               ),
               f,
@@ -250,7 +304,7 @@ function ExpenseReports() {
           facets={{ showDepartment: true }}
           build={(f) =>
             filter(
-              tickets.filter((t) => t.expenseType === "project"),
+              registerTickets.filter((t) => t.expenseType === "project"),
               f,
             )
           }
@@ -267,7 +321,7 @@ function ExpenseReports() {
           facets={{ showDepartment: true }}
           build={(f) =>
             filter(
-              tickets.filter((t) => t.expenseType === "sales_presales"),
+              registerTickets.filter((t) => t.expenseType === "sales_presales"),
               f,
             )
           }
@@ -283,7 +337,9 @@ function ExpenseReports() {
           description="Advances awaiting settlement after payment."
           build={(f) =>
             filter(
-              tickets.filter((t) => t.stage === "settlement" || t.status === "pending_adjustment"),
+              registerTickets.filter(
+                (t) => t.stage === "settlement" || t.status === "pending_adjustment",
+              ),
               f,
             )
           }

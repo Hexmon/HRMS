@@ -83,8 +83,15 @@ const STEPS = [
 ];
 
 export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
-  const { employees, departments, designations, addDepartment, addDesignation, upsert } =
-    useEmployees();
+  const {
+    employees,
+    departments,
+    designations,
+    addDepartment,
+    addDesignation,
+    upsert,
+    isApiBacked,
+  } = useEmployees();
   const [active, setActive] = useState(0);
   const [error, setError] = useState("");
   const [deptOpen, setDeptOpen] = useState(false);
@@ -311,6 +318,7 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
                 designations={Array.from(new Set(designations.map((d) => d.title)))}
                 onAddDept={() => setDeptOpen(true)}
                 onAddDesig={() => setDesigOpen(true)}
+                apiBacked={isApiBacked}
               />
             )}
             {active === 2 && <Step3 form={form} set={set} />}
@@ -492,6 +500,7 @@ function Step2({
   designations,
   onAddDept,
   onAddDesig,
+  apiBacked,
 }: {
   form: FormState;
   set: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
@@ -499,7 +508,15 @@ function Step2({
   designations: string[];
   onAddDept: () => void;
   onAddDesig: () => void;
+  apiBacked: boolean;
 }) {
+  const statusOptions = Object.entries(EMPLOYEE_STATUS_LABEL)
+    .filter(([value]) => !apiBacked || ["active", "inactive", "exited"].includes(value))
+    .map(([value, label]) => ({
+      value,
+      label,
+    }));
+
   return (
     <div className="space-y-5">
       <Section title="Employment">
@@ -529,6 +546,7 @@ function Step2({
             onChange={(v) => set("department", v)}
             options={departments}
             onAdd={onAddDept}
+            allowAdd={!apiBacked}
           />
           <SelectFieldWithAdd
             label="Designation"
@@ -536,6 +554,7 @@ function Step2({
             onChange={(v) => set("designation", v)}
             options={designations}
             onAdd={onAddDesig}
+            allowAdd={!apiBacked}
           />
         </Grid>
         <Grid>
@@ -549,10 +568,7 @@ function Step2({
             label="Lifecycle status"
             value={form.status}
             onChange={(v) => set("status", v as EmployeeStatus)}
-            options={Object.entries(EMPLOYEE_STATUS_LABEL).map(([value, label]) => ({
-              value,
-              label,
-            }))}
+            options={statusOptions}
           />
         </Grid>
       </Section>
@@ -813,24 +829,28 @@ function SelectFieldWithAdd({
   onChange,
   options,
   onAdd,
+  allowAdd = true,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: string[];
   onAdd: () => void;
+  allowAdd?: boolean;
 }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <Label>{label}</Label>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
-        >
-          <Plus className="h-3 w-3" /> Add new
-        </button>
+        {allowAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
+          >
+            <Plus className="h-3 w-3" /> Add new
+          </button>
+        )}
       </div>
       <Select value={value} onValueChange={onChange}>
         <SelectTrigger>

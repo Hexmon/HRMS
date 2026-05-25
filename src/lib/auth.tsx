@@ -57,6 +57,7 @@ interface CompanySetupResult {
 interface AuthState {
   user: User | null;
   activeRole: Role | null;
+  isInitializing: boolean;
   // session
   login: (email: string, password?: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
@@ -331,6 +332,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       persistSession(null, null);
     }
   }, [apiSessionQuery.error, persistSession]);
+
+  const isInitializing =
+    isApiEnabled() && user === null && !sessionBlocked && apiSessionQuery.isPending;
 
   const persistUsers = (next: User[]) => {
     setUsers(next);
@@ -746,6 +750,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         activeRole,
+        isInitializing,
         login,
         logout,
         setActiveRole,

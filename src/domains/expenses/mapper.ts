@@ -110,15 +110,35 @@ function mapDocuments(value: unknown, fallback: ExpenseDoc[]): ExpenseDoc[] {
 }
 
 function mapPayment(row: ApiRecord, fallback?: Payment): Payment | undefined {
-  if (!row.payment && !row.payment_reference && !fallback) return undefined;
-  const payment = asRecord(row.payment);
+  if (
+    !row.payment &&
+    !row.payment_summary &&
+    !row.payment_reference &&
+    !row.payment_reference_no &&
+    !fallback
+  ) {
+    return undefined;
+  }
+  const payment = asRecord(row.payment ?? row.payment_summary);
   return {
-    paidAmount: numberValue(payment.paid_amount ?? row.paid_amount, fallback?.paidAmount ?? 0),
-    mode: (normalized(payment.mode ?? row.payment_mode) ||
+    paidAmount: numberValue(
+      payment.paid_amount ?? payment.approved_amount ?? row.paid_amount,
+      fallback?.paidAmount ?? 0,
+    ),
+    mode: (normalized(payment.mode ?? payment.payment_mode ?? row.payment_mode) ||
       fallback?.mode ||
       "bank_transfer") as Payment["mode"],
-    paidOn: dateText(payment.paid_on ?? row.paid_on, fallback?.paidOn).slice(0, 10),
-    reference: text(payment.reference ?? row.payment_reference, fallback?.reference ?? "—"),
+    paidOn: dateText(
+      payment.paid_on ?? payment.payment_date ?? row.paid_on ?? row.payment_date,
+      fallback?.paidOn,
+    ).slice(0, 10),
+    reference: text(
+      payment.reference ??
+        payment.reference_no ??
+        row.payment_reference ??
+        row.payment_reference_no,
+      fallback?.reference ?? "—",
+    ),
     remarks: text(payment.remarks ?? row.payment_remarks, fallback?.remarks),
   };
 }

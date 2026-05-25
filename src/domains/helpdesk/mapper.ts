@@ -45,6 +45,7 @@ function mapAttachment(value: unknown): TicketAttachment {
   const row = asRecord(value);
   return {
     id: text(row.id, "attachment-api"),
+    documentId: text(row.document_id ?? row.documentId) || undefined,
     name: text(row.name ?? row.file_name, "attachment"),
     size: text(row.size ?? row.size_text, "—"),
     by: text(row.by ?? row.uploaded_by_name, "Backend API"),

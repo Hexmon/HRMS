@@ -1,6 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useExpenses, fmtCurrency, ticketTotal, type ExpenseTicket } from "@/lib/expenses-store";
+import { mapApiExpenseTickets } from "@/domains/expenses";
+import { documentsApi } from "@/domains/documents";
+import { useCreateReportExportMutation, useExpenseRegisterReport } from "@/domains/reports";
 import { DataTable, StatusBadge, type Column } from "@/components/ui-kit";
 import {
   Select,
@@ -12,29 +15,46 @@ import {
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
+import { pageItems, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/expenses/register")({ component: ExpenseRegister });
 
 function ExpenseRegister() {
-  const { tickets, loading, error } = useExpenses();
+  const { tickets, loading, error, isApiBacked } = useExpenses();
+  const apiMode = useApiRouteEnabled(["/expenses", "/reports"]);
+  const registerQuery = useExpenseRegisterReport(apiMode, { page: 1, page_size: 500 });
+  const exportMutation = useCreateReportExportMutation();
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [pay, setPay] = useState("all");
 
+  const sourceTickets = useMemo(() => {
+    if (!apiMode) return tickets;
+    if (!registerQuery.data) return [];
+    return mapApiExpenseTickets(pageItems(registerQuery.data), tickets);
+  }, [apiMode, registerQuery.data, tickets]);
+
+  const tableLoading = apiMode ? registerQuery.isLoading : loading;
+  const tableError = apiMode
+    ? registerQuery.error instanceof Error
+      ? registerQuery.error
+      : null
+    : error;
+
   const departments = useMemo(
-    () => Array.from(new Set(tickets.map((t) => t.department))),
-    [tickets],
+    () => Array.from(new Set(sourceTickets.map((t) => t.department))),
+    [sourceTickets],
   );
 
   const rows = useMemo(
     () =>
-      tickets.filter(
+      sourceTickets.filter(
         (t) =>
           (dept === "all" || t.department === dept) &&
           (status === "all" || t.status === status) &&
           (pay === "all" || t.paymentType === pay),
       ),
-    [tickets, dept, status, pay],
+    [sourceTickets, dept, status, pay],
   );
 
   const cols: Column<ExpenseTicket>[] = [
@@ -91,7 +111,32 @@ function ExpenseRegister() {
     },
   ];
 
-  const exportCsv = () => {
+  const exportCsv = async () => {
+    if (apiMode || isApiBacked) {
+      try {
+        const job = await exportMutation.mutateAsync({
+          format: "csv",
+          report_type: "expenses/register",
+          filters: {
+            status: status === "all" ? undefined : status,
+            payment_type:
+              pay === "all" ? undefined : pay === "advance" ? "Advance" : "ReimbursementAccrued",
+            department: dept === "all" ? undefined : dept,
+          },
+        });
+        if (typeof job.download_document_id === "string" && job.download_document_id) {
+          const download = await documentsApi.createDownloadUrl(job.download_document_id);
+          if (typeof download.url === "string" && download.url) {
+            window.open(download.url, "_blank", "noopener,noreferrer");
+          }
+        }
+        toast.success(job.download_document_id ? "Register exported" : "Register export queued");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Expense register export failed.");
+      }
+      return;
+    }
+
     const head = [
       "Ticket",
       "Employee",
@@ -136,11 +181,11 @@ function ExpenseRegister() {
       searchKeys={["id", "employee", "taskTitle"]}
       emptyTitle="No expense records"
       emptyDescription={
-        error
+        tableError
           ? "Expense register data could not be loaded from the backend."
           : "No expenses match the current filters."
       }
-      loading={loading}
+      loading={tableLoading}
       toolbarRight={
         <div className="flex flex-wrap items-center gap-2">
           <Select value={dept} onValueChange={setDept}>
@@ -187,7 +232,13 @@ function ExpenseRegister() {
               <SelectItem value="reimbursement">Reimbursement</SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={exportCsv} variant="outline" size="sm" className="rounded-full">
+          <Button
+            onClick={exportCsv}
+            variant="outline"
+            size="sm"
+            className="rounded-full"
+            disabled={(apiMode || isApiBacked) && exportMutation.isPending}
+          >
             <Download className="mr-1 h-4 w-4" /> Export
           </Button>
         </div>

@@ -23,6 +23,7 @@ export interface TicketComment {
 
 export interface TicketAttachment {
   id: string;
+  documentId?: string;
   name: string;
   size: string;
   by: string;

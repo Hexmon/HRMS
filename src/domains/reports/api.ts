@@ -58,6 +58,10 @@ const reportPaths = {
   assetsSummary: "/api/v1/reports/assets/summary",
   helpdeskSummary: "/api/v1/reports/helpdesk/summary",
   audit: "/api/v1/reports/audit",
+  expenseRegister: "/api/v1/reports/expenses/register",
+  expenseManagerQueue: "/api/v1/reports/expenses/manager-queue",
+  expenseFinanceDashboard: "/api/v1/reports/expenses/finance-dashboard",
+  expenseFinanceAnalytics: "/api/v1/reports/expenses/finance-analytics",
   exports: "/api/v1/reports/exports",
 } as const;
 
@@ -85,6 +89,20 @@ export const reportsApi = {
   },
   audit(params: ReportParams = {}) {
     return apiRequest<ReportSummaryResponse>(withQuery(reportPaths.audit, params));
+  },
+  expenseRegister(params: ReportParams = {}) {
+    return apiRequest<ReportSummaryResponse>(withQuery(reportPaths.expenseRegister, params));
+  },
+  expenseManagerQueue(params: ReportParams = {}) {
+    return apiRequest<ReportSummaryResponse>(withQuery(reportPaths.expenseManagerQueue, params));
+  },
+  expenseFinanceDashboard(params: ReportParams = {}) {
+    return apiRequest<ReportSummaryResponse>(
+      withQuery(reportPaths.expenseFinanceDashboard, params),
+    );
+  },
+  expenseFinanceAnalytics(params: ReportParams = {}) {
+    return apiRequest<ApiRecord>(withQuery(reportPaths.expenseFinanceAnalytics, params));
   },
   listExports(params: ReportParams = {}) {
     return apiRequest<ReportSummaryResponse<ReportExportJob>>(

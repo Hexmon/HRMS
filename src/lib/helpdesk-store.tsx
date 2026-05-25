@@ -81,7 +81,13 @@ interface Ctx {
     authorRole?: string,
     internal?: boolean,
   ) => void | Promise<void>;
-  addAttachment: (id: string, name: string, by: string) => void | Promise<void>;
+  addAttachment: (
+    id: string,
+    name: string,
+    by: string,
+    documentId?: string,
+    sizeText?: string,
+  ) => void | Promise<void>;
   changePriority: (id: string, priority: TicketPriority, actor: string) => void | Promise<void>;
   assign: (
     id: string,
@@ -279,10 +285,12 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const addAttachment: Ctx["addAttachment"] = async (id, name, by) => {
+  const addAttachment: Ctx["addAttachment"] = async (id, name, by, documentId, sizeText) => {
     if (apiEnabled) {
       await helpdeskApi.addAttachment(apiTicketId(id), {
+        document_id: documentId,
         file_name: name,
+        size_text: sizeText,
         attachment_type: "supporting_document",
         expected_version: expectedVersion(id),
       });
@@ -291,7 +299,17 @@ export function HelpdeskProvider({ children }: { children: React.ReactNode }) {
     }
     update(id, (t) => ({
       ...t,
-      attachments: [...t.attachments, { id: "f_" + uid(), name, size: "—", by, at: now() }],
+      attachments: [
+        ...t.attachments,
+        {
+          id: "f_" + uid(),
+          documentId,
+          name,
+          size: sizeText ?? "—",
+          by,
+          at: now(),
+        },
+      ],
       events: [...t.events, evt(by, "Attachment uploaded", name)],
     }));
   };

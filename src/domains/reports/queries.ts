@@ -76,6 +76,45 @@ export function useAuditReport(enabled = true, params: ReportParams = defaultPar
   });
 }
 
+export function useExpenseRegisterReport(enabled = true, params: ReportParams = defaultParams) {
+  return useQuery({
+    queryKey: queryKeys.list("reports", "expenses-register", params),
+    queryFn: () => reportsApi.expenseRegister(params),
+    enabled,
+    staleTime: queryTimings.realtimeStaleMs,
+  });
+}
+
+export function useExpenseManagerQueueReport(enabled = true, params: ReportParams = defaultParams) {
+  return useQuery({
+    queryKey: queryKeys.list("reports", "expenses-manager-queue", params),
+    queryFn: () => reportsApi.expenseManagerQueue(params),
+    enabled,
+    staleTime: queryTimings.realtimeStaleMs,
+  });
+}
+
+export function useExpenseFinanceDashboardReport(
+  enabled = true,
+  params: ReportParams = defaultParams,
+) {
+  return useQuery({
+    queryKey: queryKeys.list("reports", "expenses-finance-dashboard", params),
+    queryFn: () => reportsApi.expenseFinanceDashboard(params),
+    enabled,
+    staleTime: queryTimings.realtimeStaleMs,
+  });
+}
+
+export function useExpenseFinanceAnalyticsReport(enabled = true, params: ReportParams = {}) {
+  return useQuery({
+    queryKey: queryKeys.list("reports", "expenses-finance-analytics", params),
+    queryFn: () => reportsApi.expenseFinanceAnalytics(params),
+    enabled,
+    staleTime: queryTimings.realtimeStaleMs,
+  });
+}
+
 export function useCreateReportExportMutation() {
   return useMutation({
     mutationFn: reportsApi.createExport,

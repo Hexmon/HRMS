@@ -801,17 +801,17 @@ function ProjectDetailPage() {
             />
             <StatCard
               label="Billable hours"
-              value={Math.round(project.actualHours * 0.85).toLocaleString()}
+              value={isApiBacked ? "—" : Math.round(project.actualHours * 0.85).toLocaleString()}
               icon={DollarSign}
               tone="success"
-              hint="~85% billable mix"
+              hint={isApiBacked ? "Use project reports" : "~85% billable mix"}
             />
             <StatCard
               label="Non-billable"
-              value={Math.round(project.actualHours * 0.15).toLocaleString()}
+              value={isApiBacked ? "—" : Math.round(project.actualHours * 0.15).toLocaleString()}
               icon={Activity}
               tone="warning"
-              hint="Internal time"
+              hint={isApiBacked ? "Use project reports" : "Internal time"}
             />
             <StatCard
               label="Team utilization"

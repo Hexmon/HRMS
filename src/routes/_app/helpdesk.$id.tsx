@@ -1,8 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useHelpdesk, HELPDESK_AGENT_ROLES } from "@/lib/helpdesk-store";
 import { useEmployees } from "@/lib/employees-store";
+import { documentsApi } from "@/domains/documents";
+import { queryKeys } from "@/shared/query";
+import { formatBytes, prepareDocumentUploadFile } from "@/shared/uploads/documents";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,10 +72,13 @@ function TicketDetailScreen() {
     close,
     reopen,
     escalate,
+    isApiBacked,
   } = useHelpdesk();
   const { employees } = useEmployees();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const t = tickets.find((x) => x.id === id);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAgent = !!activeRole && (HELPDESK_AGENT_ROLES as readonly string[]).includes(activeRole);
   const actor = user?.name ?? "Anonymous";
@@ -81,6 +88,50 @@ function TicketDetailScreen() {
   const [attachName, setAttachName] = useState("");
 
   const sla = useMemo(() => (t ? computeSla(t) : null), [t]);
+
+  const uploadAttachment = useMutation({
+    mutationFn: async (file: File) => {
+      if (!t) throw new Error("Ticket is not loaded.");
+      const prepared = await prepareDocumentUploadFile(file);
+      const formData = new FormData();
+      formData.set("business_object_type", "helpdesk_ticket");
+      formData.set("business_object_id", t.id);
+      formData.set("classification", "normal");
+      formData.set("document_type", "supporting_document");
+      formData.set("file_name", prepared.file.name);
+      formData.set("mime_type", prepared.file.type || "application/octet-stream");
+      formData.set("size_bytes", String(prepared.file.size));
+      formData.set("file", prepared.file);
+      const document = await documentsApi.create(formData);
+      const documentId =
+        typeof document.id === "string"
+          ? document.id
+          : typeof document.document_id === "string"
+            ? document.document_id
+            : "";
+      if (!documentId) throw new Error("The backend did not return a document id.");
+      await addAttachment(
+        t.id,
+        prepared.file.name,
+        actor,
+        documentId,
+        formatBytes(prepared.file.size),
+      );
+      return prepared;
+    },
+    onSuccess: (prepared) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.domain("helpdesk") });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.domain("documents") });
+      toast.success("Attachment uploaded", {
+        description: prepared.compressed
+          ? `${prepared.file.name} was compressed and attached.`
+          : `${prepared.file.name} is attached to this ticket.`,
+      });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Attachment upload failed.");
+    },
+  });
 
   if (!t) {
     return (
@@ -127,6 +178,26 @@ function TicketDetailScreen() {
     if (!attachName.trim()) return;
     runAction(() => addAttachment(t.id, attachName.trim(), actor), "Attachment added");
     setAttachName("");
+  };
+
+  const uploadSelectedAttachment = (file: File | undefined) => {
+    if (!file) return;
+    uploadAttachment.mutate(file);
+  };
+
+  const downloadAttachment = (documentId?: string) => {
+    if (!documentId) {
+      toast.error("Download unavailable", {
+        description: "This attachment only has filename metadata in the backend.",
+      });
+      return;
+    }
+    runAction(async () => {
+      const response = await documentsApi.createDownloadUrl(documentId);
+      const url = typeof response.url === "string" ? response.url : "";
+      if (!url) throw new Error("The backend did not return a download URL.");
+      window.open(url, "_blank", "noopener,noreferrer");
+    }, "Download URL opened");
   };
 
   return (
@@ -285,7 +356,12 @@ function TicketDetailScreen() {
                       </p>
                     </div>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => toast.info("Download started")}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isApiBacked && !f.documentId}
+                    onClick={() => downloadAttachment(f.documentId)}
+                  >
                     <Download className="mr-1 h-3.5 w-3.5" /> Download
                   </Button>
                 </li>
@@ -293,15 +369,40 @@ function TicketDetailScreen() {
             </ul>
             {!isClosed && (
               <div className="flex items-center gap-2 border-t bg-muted/30 px-5 py-3">
-                <Input
-                  value={attachName}
-                  onChange={(e) => setAttachName(e.target.value)}
-                  placeholder="filename.pdf"
-                  className="h-9"
-                />
-                <Button size="sm" variant="outline" onClick={submitAttachment}>
-                  <Upload className="mr-1 h-3.5 w-3.5" /> Add
-                </Button>
+                {isApiBacked ? (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(event) => {
+                        uploadSelectedAttachment(event.target.files?.[0]);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadAttachment.isPending}
+                    >
+                      <Upload className="mr-1 h-3.5 w-3.5" />
+                      {uploadAttachment.isPending ? "Uploading" : "Upload file"}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Input
+                      value={attachName}
+                      onChange={(e) => setAttachName(e.target.value)}
+                      placeholder="filename.pdf"
+                      className="h-9"
+                    />
+                    <Button size="sm" variant="outline" onClick={submitAttachment}>
+                      <Upload className="mr-1 h-3.5 w-3.5" /> Add
+                    </Button>
+                  </>
+                )}
               </div>
             )}
           </Card>
