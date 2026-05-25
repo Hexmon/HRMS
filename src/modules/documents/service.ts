@@ -4,7 +4,7 @@ import { documentUploadSchema, paginationQuerySchema, RetryableMutationScopes } 
 import type { z } from "zod";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { makeStorageKey, nowIso } from "../../platform/data-store.js";
-import { forbidden } from "../../platform/errors.js";
+import { forbidden, notFound } from "../../platform/errors.js";
 import { compressPdfBuffer, isPdfUpload, type PdfCompressionResult } from "../../platform/pdf-compression.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { ExpenseService } from "../expenses/service.js";
@@ -19,6 +19,18 @@ export type DocumentListQuery = z.infer<typeof paginationQuerySchema> & {
   business_object_type?: string;
   business_object_id?: UUID;
 };
+
+export interface DocumentContentResult {
+  body: Buffer;
+  contentType: string;
+  fileName: string;
+  size: number;
+}
+
+export interface DocumentDeleteResult {
+  document_id: UUID;
+  status: "deleted";
+}
 
 export class DocumentService {
   private readonly repository: DocumentRepository;
@@ -155,7 +167,11 @@ export class DocumentService {
     return document;
   }
 
-  async downloadUrl(actor: AuthUser, id: UUID): Promise<{ document_id: UUID; url: string; expires_in_seconds: number }> {
+  async downloadUrl(
+    actor: AuthUser,
+    id: UUID,
+    apiBaseUrl = ""
+  ): Promise<{ document_id: UUID; url: string; expires_in_seconds: number }> {
     const document = this.repository.find(id);
     if (!canAccessDocument(actor, document, "read")) {
       this.log(actor, id, "download-url", "denied", "classification_policy");
@@ -167,11 +183,69 @@ export class DocumentService {
     }
     const objectUrl = typeof document.metadata.object_url === "string" ? document.metadata.object_url : "";
     const cloudinaryUrl = typeof document.metadata.cloudinary_url === "string" ? document.metadata.cloudinary_url : "";
+    const candidateUrl = objectUrl || cloudinaryUrl || await this.store.objectStorage.presignedGetUrl(document.storage_key, 900);
     return {
       document_id: id,
-      url: objectUrl || cloudinaryUrl || await this.store.objectStorage.presignedGetUrl(document.storage_key, 900),
+      url: isBrowserOpenableUrl(candidateUrl) ? candidateUrl : documentContentUrl(apiBaseUrl, id),
       expires_in_seconds: 900
     };
+  }
+
+  async downloadContent(actor: AuthUser, id: UUID): Promise<DocumentContentResult> {
+    const document = this.repository.find(id);
+    if (!canAccessDocument(actor, document, "read")) {
+      this.log(actor, id, "download-content", "denied", "classification_policy");
+      throw forbidden("Document access denied");
+    }
+    if (!this.store.objectStorage) {
+      throw forbidden("Document object storage adapter is not configured for release acceptance");
+    }
+    const object = await this.store.objectStorage.getObject(document.storage_key);
+    if (!object) {
+      this.log(actor, id, "download-content", "denied", "object_not_available");
+      throw notFound("Document bytes are not available in the local object-storage adapter. Re-upload the file or disable mock uploads to use real Cloudinary storage.");
+    }
+    this.log(actor, id, "download-content", "allowed", null);
+    return {
+      body: object.body,
+      contentType: object.contentType || document.mime_type || "application/octet-stream",
+      fileName: document.file_name,
+      size: object.size
+    };
+  }
+
+  async delete(actor: AuthUser, id: UUID): Promise<DocumentDeleteResult> {
+    const document = this.repository.find(id);
+    if (!canAccessDocument(actor, document, "write")) {
+      this.log(actor, id, "delete", "denied", "classification_policy");
+      throw forbidden("Document delete denied");
+    }
+    if (!this.store.objectStorage) {
+      throw forbidden("Document object storage adapter is not configured for release acceptance");
+    }
+    await this.store.objectStorage.removeObject(document.storage_key);
+    const deletedAt = nowIso();
+    document.deleted_at = deletedAt;
+    document.updated_at = deletedAt;
+    document.metadata = {
+      ...document.metadata,
+      deleted_by_user_id: actor.id,
+      deleted_at: deletedAt,
+      storage_object_removed: true
+    };
+    this.log(actor, id, "delete", "allowed", null);
+    appendOutboxEvent(this.store, {
+      aggregateType: "document",
+      aggregateId: document.id,
+      eventType: "document.deleted",
+      payload: {
+        document_id: document.id,
+        business_object_type: document.business_object_type,
+        business_object_id: document.business_object_id
+      },
+      idempotencyKey: `${RetryableMutationScopes.DocumentUpload}:delete:${document.id}:${deletedAt}`
+    });
+    return { document_id: id, status: "deleted" };
   }
 
   verify(actor: AuthUser, id: UUID): DocumentMetadata {
@@ -232,4 +306,14 @@ export class DocumentService {
       created_at: nowIso()
     });
   }
+}
+
+function isBrowserOpenableUrl(url: string): boolean {
+  return /^https?:\/\//iu.test(url);
+}
+
+function documentContentUrl(apiBaseUrl: string, id: UUID): string {
+  const path = `/api/v1/documents/${id}/content`;
+  const normalizedBaseUrl = apiBaseUrl.replace(/\/+$/u, "");
+  return normalizedBaseUrl ? `${normalizedBaseUrl}${path}` : path;
 }

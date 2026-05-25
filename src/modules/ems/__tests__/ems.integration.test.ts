@@ -399,6 +399,44 @@ describe("employee self-service", () => {
     });
     expect(ownList.json().items[0]).toMatchObject({ id: employeeUpload.json().document.id });
 
+    const replacementUpload = await app.inject({
+      method: "POST",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents`,
+      headers: authHeader(employee.token),
+      payload: {
+        classification: "normal",
+        document_type: "identity_proof",
+        file_name: "passport-replacement.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 1536,
+        replace_document_id: employeeUpload.json().document.id
+      }
+    });
+    expect(replacementUpload.statusCode).toBe(200);
+    expect(replacementUpload.json().document).toMatchObject({
+      business_object_type: "employee",
+      business_object_id: employee.user.id,
+      owner_user_id: employee.user.id,
+      document_type: "identity_proof",
+      file_name: "passport-replacement.pdf"
+    });
+    expect(replacementUpload.json().document.metadata).toMatchObject({
+      replaces_document_id: employeeUpload.json().document.id
+    });
+    expect(app.store.documents.find((document) => document.id === employeeUpload.json().document.id)?.deleted_at).toEqual(expect.any(String));
+
+    const replacedList = await app.inject({
+      method: "GET",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents?page=1&page_size=10`,
+      headers: authHeader(employee.token)
+    });
+    expect(replacedList.statusCode).toBe(200);
+    expect(replacedList.json()).toMatchObject({
+      total: 1,
+      document_summary: { total: 1, pending_verification: 1, restricted: 0 }
+    });
+    expect(replacedList.json().items[0]).toMatchObject({ id: replacementUpload.json().document.id });
+
     const hrList = await app.inject({
       method: "GET",
       url: `/api/v1/ems/employees/${employee.user.id}/documents?page=1&page_size=10&document_type=medical_record`,

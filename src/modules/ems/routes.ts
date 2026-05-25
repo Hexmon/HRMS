@@ -31,6 +31,8 @@ const emsDocumentQuerySchema = paginationQuerySchema.extend({
 const emsDocumentUploadSchema = documentUploadSchema.omit({
   business_object_type: true,
   business_object_id: true
+}).extend({
+  replace_document_id: z.uuid().optional()
 });
 
 export const emsRoutes: FastifyPluginAsync = async (fastify) => {

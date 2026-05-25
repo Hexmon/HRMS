@@ -170,6 +170,16 @@ describe("document management integration", () => {
     });
     expect(download.statusCode).toBe(200);
     expect(download.json().url).toEqual(expect.any(String));
+    expect(download.json().url).toContain(`/api/v1/documents/${pdfUpload.json().id}/content`);
+
+    const content = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${pdfUpload.json().id}/content`,
+      headers: authHeader(admin.token)
+    });
+    expect(content.statusCode).toBe(200);
+    expect(content.headers["content-type"]).toContain("application/pdf");
+    expect(content.body).toContain("%PDF");
   });
 
   it("stores multipart uploads through expense and EMS document wrapper paths", async () => {
@@ -255,6 +265,37 @@ describe("document management integration", () => {
     });
     expect(emsDownload.statusCode).toBe(200);
     expect(emsDownload.json().url).toEqual(expect.any(String));
+
+    const emsContent = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${emsUpload.json().document.id}/content`,
+      headers: authHeader(employee.token)
+    });
+    expect(emsContent.statusCode).toBe(200);
+    expect(emsContent.headers["content-type"]).toContain("image/jpeg");
+    expect(Buffer.from(emsContent.rawPayload).subarray(0, imageBody.length)).toEqual(imageBody);
+
+    const deleteDocument = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/documents/${emsUpload.json().document.id}`,
+      headers: authHeader(employee.token)
+    });
+    expect(deleteDocument.statusCode).toBe(200);
+    expect(deleteDocument.json()).toMatchObject({
+      document_id: emsUpload.json().document.id,
+      status: "deleted"
+    });
+    await expect(app.store.objectStorage?.statObject(emsUpload.json().document.storage_key)).resolves.toBeNull();
+
+    const listAfterDelete = await app.inject({
+      method: "GET",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents?page=1&page_size=10`,
+      headers: authHeader(employee.token)
+    });
+    expect(listAfterDelete.statusCode).toBe(200);
+    expect(
+      listAfterDelete.json().items.some((document: { id: string }) => document.id === emsUpload.json().document.id)
+    ).toBe(false);
   });
 });
 

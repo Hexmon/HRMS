@@ -61,7 +61,28 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
-    return new DocumentService(fastify.store).downloadUrl(request.actor, params.id);
+    return new DocumentService(fastify.store).downloadUrl(request.actor, params.id, fastify.config.API_BASE_URL);
+  });
+
+  fastify.get("/documents/:id/content", async (request, reply) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = idParamSchema.parse(request.params);
+    const content = await new DocumentService(fastify.store).downloadContent(request.actor, params.id);
+    reply
+      .header("content-type", content.contentType)
+      .header("content-length", String(content.size))
+      .header("content-disposition", `inline; filename="${safeDispositionFileName(content.fileName)}"`);
+    return reply.send(content.body);
+  });
+
+  fastify.delete("/documents/:id", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = idParamSchema.parse(request.params);
+    return new DocumentService(fastify.store).delete(request.actor, params.id);
   });
 
   fastify.post("/documents/:id/verify", async (request) => {
@@ -106,4 +127,8 @@ async function parseDocumentUpload(request: FastifyRequest): Promise<{
     fields.size_bytes = Number(fields.size_bytes);
   }
   return { fields, fileBuffer };
+}
+
+function safeDispositionFileName(fileName: string): string {
+  return fileName.replace(/["\\\r\n]/gu, "_").slice(0, 160) || "document";
 }

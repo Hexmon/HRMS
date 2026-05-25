@@ -40,7 +40,9 @@ export interface EmsDocumentQuery extends Pick<EmsQuery, "page" | "page_size"> {
   document_type?: string;
 }
 
-export type EmsDocumentUploadInput = Omit<DocumentUploadBody, "business_object_type" | "business_object_id">;
+export type EmsDocumentUploadInput = Omit<DocumentUploadBody, "business_object_type" | "business_object_id"> & {
+  replace_document_id?: UUID;
+};
 
 const FIELD_LABELS: Record<string, string> = {
   personal_email: "Personal email",
@@ -488,6 +490,9 @@ export class EmsService {
     if (actor.id !== userId && !canManageEms(actor)) {
       throw forbidden("Only the employee or HR/Admin can attach EMS employee documents.");
     }
+    const replaceTarget = input.replace_document_id
+      ? this.requireReplaceTarget(actor, userId, input.replace_document_id)
+      : null;
     const document = await new DocumentService(this.store).upload(actor, {
       ...input,
       business_object_type: "employee",
@@ -497,8 +502,20 @@ export class EmsService {
     document.metadata = {
       ...document.metadata,
       ems_employee_user_id: userId,
-      ems_document_scope: "employee_self_service"
+      ems_document_scope: "employee_self_service",
+      replaces_document_id: replaceTarget?.id ?? null
     };
+    if (replaceTarget) {
+      const now = nowIso();
+      replaceTarget.deleted_at = now;
+      replaceTarget.updated_at = now;
+      replaceTarget.metadata = {
+        ...replaceTarget.metadata,
+        replaced_by_document_id: document.id,
+        replaced_by_user_id: actor.id,
+        replaced_at: now
+      };
+    }
     return {
       document,
       access_policy: {
@@ -508,6 +525,20 @@ export class EmsService {
         classification: document.classification
       }
     };
+  }
+
+  private requireReplaceTarget(actor: AuthUser, userId: UUID, documentId: UUID) {
+    const document = this.store.documents.find((candidate) => candidate.id === documentId && !candidate.deleted_at);
+    if (!document) {
+      throw notFound("Document to replace was not found", { document_id: documentId });
+    }
+    if (document.business_object_type !== "employee" || document.business_object_id !== userId) {
+      throw forbidden("Document replacement is only allowed within the same employee document scope.");
+    }
+    if (!canAccessDocument(actor, document, "write")) {
+      throw forbidden("Document replacement denied");
+    }
+    return document;
   }
 
   private profileFor(actor: AuthUser, userId: UUID) {

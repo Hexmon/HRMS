@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ObjectStoragePort, ObjectStoragePutResult } from "./data-store.js";
+import type { ObjectStorageGetResult, ObjectStoragePort, ObjectStoragePutResult } from "./data-store.js";
 
 export interface CloudinaryObjectStorageOptions {
   cloudName: string;
@@ -20,6 +20,7 @@ interface CloudinaryUploadResponse {
 
 interface StoredObject {
   body: Buffer;
+  contentType: string;
   url: string;
   publicId: string;
   resourceType: "image" | "raw" | "video";
@@ -40,6 +41,11 @@ export class MemoryObjectStorage implements ObjectStoragePort {
       throw new Error(`Object not found: ${key}`);
     }
     return `memory://documents/${encodeURIComponent(key)}`;
+  }
+
+  async getObject(key: string): Promise<ObjectStorageGetResult | null> {
+    const object = this.objects.get(key);
+    return object ? { body: Buffer.from(object), size: object.length } : null;
   }
 
   async statObject(key: string): Promise<{ size: number } | null> {
@@ -91,7 +97,7 @@ export class CloudinaryObjectStorage implements ObjectStoragePort {
     if (this.options.mockUploads) {
       const resourceType = this.resourceTypeFromMime(contentType);
       const url = `cloudinary-mock://${encodeURIComponent(publicId)}`;
-      this.objects.set(key, { body: Buffer.from(body), url, publicId, resourceType });
+      this.objects.set(key, { body: Buffer.from(body), contentType, url, publicId, resourceType });
       return {
         size: body.length,
         url,
@@ -144,6 +150,13 @@ export class CloudinaryObjectStorage implements ObjectStoragePort {
     const object = this.objects.get(key);
     if (object) return object.url;
     return `https://res.cloudinary.com/${encodeURIComponent(this.options.cloudName)}/raw/upload/fl_attachment/${encodePublicId(this.publicIdForKey(key))}`;
+  }
+
+  async getObject(key: string): Promise<ObjectStorageGetResult | null> {
+    const object = this.objects.get(key);
+    return object
+      ? { body: Buffer.from(object.body), contentType: object.contentType, size: object.body.length }
+      : null;
   }
 
   async statObject(key: string): Promise<{ size: number } | null> {

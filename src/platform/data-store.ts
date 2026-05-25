@@ -356,11 +356,18 @@ export interface ObjectStoragePutResult {
   compressed?: boolean;
 }
 
+export interface ObjectStorageGetResult {
+  body: Buffer;
+  contentType?: string;
+  size: number;
+}
+
 export interface ObjectStoragePort {
   readonly kind: "memory" | "cloudinary";
   readonly bucket: string;
   putObject(key: string, body: Buffer, metadata?: Record<string, string>): Promise<ObjectStoragePutResult>;
   presignedGetUrl(key: string, expiresInSeconds: number): Promise<string>;
+  getObject(key: string): Promise<ObjectStorageGetResult | null>;
   statObject(key: string): Promise<{ size: number } | null>;
   removeObject(key: string): Promise<void>;
 }

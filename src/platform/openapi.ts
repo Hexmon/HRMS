@@ -3888,6 +3888,10 @@ const expenseDocumentUploadBody = {
 };
 const emsDocumentUploadBody = {
   ...expenseDocumentUploadBody,
+  properties: {
+    ...(expenseDocumentUploadBody.properties as RouteSchema),
+    replace_document_id: uuid("Existing EMS document UUID to replace")
+  },
   description: "EMS employee document upload metadata. The path employee user id is used as the business object id; binary storage is handled by the backend object-storage adapter."
 };
 
@@ -4771,7 +4775,9 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/expenses/{id}/documents": operation("Documents", "Upload expense document", "Uploads metadata for an expense ticket document using the path ticket id as business object id.", { params: idParamSchema, body: expenseDocumentUploadBody, response200: documentSchema }),
   "GET /api/v1/documents": operation("Documents", "List documents", "Lists documents visible to the actor with optional business object filters.", { querystring: { ...paginationQuerySchema, properties: { ...paginationQuerySchema.properties, business_object_type: { type: "string", example: "expense_ticket" }, business_object_id: uuid("Business object UUID") } }, response200: paginated(documentSchema) }),
   "GET /api/v1/documents/{id}": operation("Documents", "Document metadata", "Returns document metadata if classification and object-level access policies allow.", { params: idParamSchema, response200: documentSchema }),
+  "DELETE /api/v1/documents/{id}": operation("Documents", "Delete document", "Removes the stored document object and marks the document metadata as deleted after the same write-access policy check. Deleted documents no longer appear in document lists.", { params: idParamSchema, response200: { type: "object", required: ["document_id", "status"], properties: { document_id: { type: "string", format: "uuid" }, status: { type: "string", enum: ["deleted"] } } } }),
   "POST /api/v1/documents/{id}/download-url": operation("Documents", "Create download URL", "Returns a short-lived backend-generated download URL for allowed actors. Does not expose storage credentials.", { params: idParamSchema, response200: { type: "object", required: ["url", "expires_at"], properties: { url: { type: "string", format: "uri", example: "http://localhost:3001/api/v1/documents/downloads/local-token" }, expires_at: dateTime("Download URL expiration") } } }),
+  "GET /api/v1/documents/{id}/content": operation("Documents", "Download local document content", "Streams document bytes through the backend for local/mock object storage after the same document access policy check. Real Cloudinary deployments continue to use provider HTTPS URLs from the download-url endpoint.", { params: idParamSchema, response200: { type: "string", format: "binary" } }),
   "POST /api/v1/documents/{id}/verify": operation("Documents", "Verify document", "Marks a document as verified when actor has Finance/HR/Admin classification authority.", { params: idParamSchema, response200: documentSchema }),
   "GET /api/v1/documents/{id}/access-log": operation("Documents", "Document access log", "Paginated immutable document access log for auditors/admins.", { params: idParamSchema, querystring: paginationQuerySchema, response200: paginated({ type: "object", additionalProperties: true }) }),
 

@@ -87,9 +87,11 @@ const expectedOperations = [
   "GET /api/v1/core/users/{id}/roles/history",
   "GET /api/v1/core/users/{id}/subtree",
   "GET /api/v1/dashboard/summary",
+  "DELETE /api/v1/documents/{id}",
   "GET /api/v1/documents",
   "GET /api/v1/documents/{id}",
   "GET /api/v1/documents/{id}/access-log",
+  "GET /api/v1/documents/{id}/content",
   "GET /api/v1/ems/admin/exits",
   "GET /api/v1/ems/admin/onboarding",
   "GET /api/v1/ems/admin/probation",
@@ -960,7 +962,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(234);
+    expect(rows.length).toBe(236);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);
