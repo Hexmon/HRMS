@@ -6,6 +6,7 @@ import {
   clearApiAccessToken,
   isApiEnabled,
   isMockFallbackEnabled,
+  onApiUnauthorized,
   setApiAccessToken,
   shouldUseMockFallback,
   userFacingErrorMessage,
@@ -294,6 +295,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [applyApiUser],
   );
 
+  const clearAuthenticatedSession = React.useCallback(() => {
+    setSessionBlocked(true);
+    queryClient.clear();
+    clearApiAccessToken();
+    setUser(null);
+    setActiveRoleState(null);
+    persistSession(null, null);
+  }, [persistSession, queryClient]);
+
   const apiSessionQuery = useQuery({
     queryKey: queryKeys.detail("auth", "session", "me"),
     queryFn: () => authApi.getSession(),
@@ -331,10 +341,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (apiSessionQuery.error instanceof ApiError && apiSessionQuery.error.status === 401) {
-      clearApiAccessToken();
-      persistSession(null, null);
+      clearAuthenticatedSession();
     }
-  }, [apiSessionQuery.error, persistSession]);
+  }, [apiSessionQuery.error, clearAuthenticatedSession]);
+
+  React.useEffect(() => {
+    if (!isApiEnabled()) return undefined;
+    return onApiUnauthorized(clearAuthenticatedSession);
+  }, [clearAuthenticatedSession]);
 
   const isInitializing =
     isApiEnabled() && user === null && !sessionBlocked && apiSessionQuery.isPending;
@@ -392,13 +406,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
-    setSessionBlocked(true);
-    queryClient.clear();
     if (isApiEnabled()) void authApi.logout().catch(() => undefined);
-    clearApiAccessToken();
-    setUser(null);
-    setActiveRoleState(null);
-    persistSession(null, null);
+    clearAuthenticatedSession();
   };
 
   const setActiveRole = (role: Role) => {

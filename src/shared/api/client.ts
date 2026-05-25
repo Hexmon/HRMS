@@ -1,6 +1,6 @@
 import { apiConfig, isApiEnabled, isMockFallbackEnabled } from "./config";
 import { apiErrorFromResponse, ApiUnavailableError, shouldUseMockFallback } from "./errors";
-import { getApiAccessToken } from "./session";
+import { getApiAccessToken, notifyApiUnauthorized } from "./session";
 import {
   registerDefaultCooldown,
   registerRetryAfter,
@@ -75,6 +75,9 @@ export async function apiRequest<T = ApiRecord>(
     if (response.status === 429) {
       if (apiError.retryAfterSeconds != null) registerRetryAfter(apiError.retryAfterSeconds);
       else registerDefaultCooldown();
+    }
+    if (response.status === 401 && options.auth !== false) {
+      notifyApiUnauthorized();
     }
     throw apiError;
   }
