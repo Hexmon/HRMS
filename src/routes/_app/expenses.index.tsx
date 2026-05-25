@@ -123,7 +123,12 @@ function ExpensesDashboard() {
     );
   }
 
-  if (activeRole && MANAGER_ROLES.includes(activeRole)) {
+  const canReviewExpenses = Boolean(
+    (activeRole && MANAGER_ROLES.includes(activeRole)) ||
+    user?.roles.some((role) => MANAGER_ROLES.includes(role)),
+  );
+
+  if (canReviewExpenses) {
     const queue = tickets.filter((t) => t.status === "pending_manager");
     const returned = tickets.filter((t) => t.status === "manager_returned");
     return (

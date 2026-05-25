@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useAuth } from "@/lib/auth";
 import { useExpenseMetadata } from "@/domains/expenses";
 import { asArray, asRecord, text } from "@/shared/api";
@@ -28,7 +28,28 @@ import { Plus, Trash2, Upload, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { prepareDocumentUploadFile } from "@/shared/uploads/documents";
 
-export const Route = createFileRoute("/_app/expenses/create")({ component: CreateExpense });
+interface SearchParams {
+  step?: number;
+}
+
+const EXPENSE_CREATE_STEP_COUNT = 5;
+const EXPENSE_CREATE_DRAFT_KEY = "hawkaii_expense_create_draft_v1";
+
+const toSearchStep = (value: unknown): number | undefined => {
+  const parsed =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  if (!Number.isFinite(parsed)) return undefined;
+  const step = Math.trunc(parsed);
+  if (step < 1 || step > EXPENSE_CREATE_STEP_COUNT) return undefined;
+  return step;
+};
+
+export const Route = createFileRoute("/_app/expenses/create")({
+  validateSearch: (s: Record<string, unknown>): SearchParams => ({
+    step: toSearchStep(s.step),
+  }),
+  component: CreateExpense,
+});
 
 interface FormState {
   expenseType: ExpenseType;
@@ -98,16 +119,198 @@ const initial: FormState = {
   documents: [],
 };
 
+interface StoredExpenseDraft {
+  form: FormState;
+  step: number;
+  savedAt: string;
+}
+
+const createInitialForm = (): FormState => ({
+  ...initial,
+  lineItems: initial.lineItems.map((item) => ({ ...item })),
+  documents: [],
+});
+
+const clampStepIndex = (step: unknown): number => {
+  const parsed =
+    typeof step === "number" ? step : typeof step === "string" ? Number(step) : Number.NaN;
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(EXPENSE_CREATE_STEP_COUNT - 1, Math.max(0, Math.trunc(parsed)));
+};
+
+const draftStorageKey = (userId?: string) => `${EXPENSE_CREATE_DRAFT_KEY}:${userId ?? "guest"}`;
+
+const toNumber = (value: unknown, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeLineItems = (value: unknown): LineItem[] => {
+  const items = asArray(value)
+    .map((item, index) => {
+      const record = asRecord(item);
+      return {
+        id: text(record.id) || `li${index + 1}`,
+        category: text(record.category),
+        description: text(record.description),
+        quantity: Math.max(0, toNumber(record.quantity, 1)),
+        unitCost: Math.max(0, toNumber(record.unitCost, 0)),
+        taxAmount: Math.max(0, toNumber(record.taxAmount, 0)),
+        vendor: text(record.vendor),
+      };
+    })
+    .filter((item) => item.id);
+
+  return items.length ? items : createInitialForm().lineItems;
+};
+
+const normalizeDocuments = (value: unknown): FormState["documents"] =>
+  asArray(value)
+    .map((item, index) => {
+      const record = asRecord(item);
+      const kind = text(record.kind);
+      return {
+        id: text(record.id) || `d${index + 1}`,
+        name: text(record.name),
+        kind: ["bill", "receipt", "ticket", "hotel", "vendor", "other"].includes(kind)
+          ? (kind as FormState["documents"][number]["kind"])
+          : "other",
+      };
+    })
+    .filter((item) => item.name);
+
+const normalizeDraftForm = (value: unknown): FormState => {
+  const record = asRecord(value);
+  const expenseType = text(record.expenseType);
+  const paymentType = text(record.paymentType);
+  const priority = text(record.priority);
+  const projectExpenseType = text(record.projectExpenseType);
+
+  return {
+    ...createInitialForm(),
+    expenseType:
+      expenseType === "sales_presales" || expenseType === "project"
+        ? (expenseType as ExpenseType)
+        : initial.expenseType,
+    subType: text(record.subType),
+    taskTitle: text(record.taskTitle),
+    taskDescription: text(record.taskDescription),
+    startDate: text(record.startDate) || initial.startDate,
+    endDate: text(record.endDate) || initial.endDate,
+    location: text(record.location),
+    estimatedAmount: Math.max(0, toNumber(record.estimatedAmount, 0)),
+    paymentType:
+      paymentType === "advance" || paymentType === "reimbursement"
+        ? (paymentType as PaymentType)
+        : initial.paymentType,
+    priority: ["low", "normal", "high", "urgent"].includes(priority)
+      ? (priority as Priority)
+      : initial.priority,
+    remarks: text(record.remarks),
+    projectCode: text(record.projectCode),
+    projectName: text(record.projectName),
+    projectManager: text(record.projectManager),
+    costCenter: text(record.costCenter),
+    projectExpenseType: ["travel", "material", "lodging", "misc"].includes(projectExpenseType)
+      ? (projectExpenseType as FormState["projectExpenseType"])
+      : initial.projectExpenseType,
+    client: text(record.client),
+    opportunity: text(record.opportunity),
+    meetingType: text(record.meetingType) || initial.meetingType,
+    salesOwner: text(record.salesOwner),
+    expectedOutcome: text(record.expectedOutcome),
+    lineItems: normalizeLineItems(record.lineItems),
+    documents: normalizeDocuments(record.documents),
+  };
+};
+
+const readStoredDraft = (userId?: string): StoredExpenseDraft | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(draftStorageKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    const record = asRecord(parsed);
+    return {
+      form: normalizeDraftForm(record.form),
+      step: clampStepIndex(record.step),
+      savedAt: text(record.savedAt) || new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredDraft = (userId: string | undefined, form: FormState, step: number) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    draftStorageKey(userId),
+    JSON.stringify({
+      form,
+      step: clampStepIndex(step),
+      savedAt: new Date().toISOString(),
+    }),
+  );
+};
+
+const clearStoredDraft = (userId?: string) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(draftStorageKey(userId));
+};
+
 function CreateExpense() {
   const { user } = useAuth();
   const { add } = useExpenses();
   const metadataQuery = useExpenseMetadata();
   const nav = useNavigate();
-  const [f, setF] = useState<FormState>(initial);
+  const search = Route.useSearch();
+  const [f, setF] = useState<FormState>(
+    () => readStoredDraft(user?.id)?.form ?? createInitialForm(),
+  );
+  const [activeStep, setActiveStepState] = useState(() =>
+    clampStepIndex(search.step ? search.step - 1 : readStoredDraft(user?.id)?.step),
+  );
   const documentInputRef = useRef<HTMLInputElement>(null);
   const [pendingDocumentKind, setPendingDocumentKind] =
     useState<FormState["documents"][number]["kind"]>("other");
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((s) => ({ ...s, [k]: v }));
+
+  useEffect(() => {
+    const draft = readStoredDraft(user?.id);
+    if (!draft) return;
+    setF(draft.form);
+    setActiveStepState(draft.step);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (search.step) {
+      setActiveStepState(clampStepIndex(search.step - 1));
+    }
+  }, [search.step]);
+
+  useEffect(() => {
+    writeStoredDraft(user?.id, f, activeStep);
+  }, [activeStep, f, user?.id]);
+
+  useEffect(() => {
+    if (!search.step) {
+      void nav({
+        to: "/expenses/create",
+        search: { step: activeStep + 1 },
+        replace: true,
+      });
+    }
+  }, [activeStep, nav, search.step]);
+
+  const setActiveStep = (step: number) => {
+    const nextStep = clampStepIndex(step);
+    setActiveStepState(nextStep);
+    void nav({
+      to: "/expenses/create",
+      search: { step: nextStep + 1 },
+      replace: true,
+    });
+  };
 
   const metadataSubTypes = useMemo(
     () =>
@@ -208,6 +411,7 @@ function CreateExpense() {
       status: asDraft ? "draft" : "pending_manager",
       submittedAt: asDraft ? undefined : new Date().toISOString(),
     });
+    clearStoredDraft(user?.id);
     toast.success(asDraft ? "Saved as draft" : "Ticket submitted for manager verification");
     nav({ to: "/expenses/my" });
   };
@@ -252,6 +456,8 @@ function CreateExpense() {
         pay.
       </div>
       <StepperForm
+        activeStep={activeStep}
+        onStepChange={setActiveStep}
         completeLabel="Submit ticket"
         onComplete={() => submit(false)}
         steps={[

@@ -9,6 +9,7 @@ import {
   Timer,
   Users,
 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DataCard, EmptyState, SkeletonStats, StatCard, StatusBadge } from "@/components/ui-kit";
 import type { DashboardMetric, DashboardSummary } from "@/domains/dashboard";
@@ -97,21 +98,25 @@ export function BackendDashboardSummary({ summary, loading, error }: Props) {
               label="Manager expenses"
               value={summary.approvals.expense_manager_pending}
               status="pending"
+              to="/expenses/review"
             />
             <QueueRow
               label="Finance expenses"
               value={summary.approvals.expense_finance_pending}
               status="pending"
+              to="/expenses/finance"
             />
             <QueueRow
               label="Timesheets"
               value={summary.approvals.timesheet_pending}
               status="pending"
+              to="/timesheet/approvals"
             />
             <QueueRow
               label="Documents"
               value={summary.approvals.document_verification_pending}
               status="pending"
+              to="/documents"
             />
           </ul>
         </DataCard>
@@ -142,18 +147,30 @@ function QueueRow({
   value,
   status,
   icon: Icon,
+  to,
 }: {
   label: string;
   value: number;
   status?: string;
   icon?: typeof Boxes;
+  to?: string;
 }) {
+  const content = (
+    <>
+      {Icon && <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
+      <span className="truncate text-sm font-medium">{label}</span>
+    </>
+  );
+
   return (
     <li className="flex items-center justify-between gap-3 px-5 py-3.5">
-      <div className="flex min-w-0 items-center gap-2">
-        {Icon && <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
-        <span className="truncate text-sm font-medium">{label}</span>
-      </div>
+      {to ? (
+        <Link to={to} className="flex min-w-0 items-center gap-2 hover:text-primary">
+          {content}
+        </Link>
+      ) : (
+        <div className="flex min-w-0 items-center gap-2">{content}</div>
+      )}
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold">{value}</span>
         {status && value > 0 && <StatusBadge status={status} />}

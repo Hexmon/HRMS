@@ -212,7 +212,9 @@ function apiUserToLocalUser(apiUser: ApiRecord, roleValues?: unknown[]): User {
     : Array.isArray(apiUser.roles)
       ? apiUser.roles
       : [];
-  const roles = roleCandidates.map(mapApiRole).filter((role): role is Role => Boolean(role));
+  const roles = Array.from(
+    new Set(roleCandidates.map(mapApiRole).filter((role): role is Role => Boolean(role))),
+  );
   const fallbackRole: Role = roles[0] ?? "employee";
 
   return {

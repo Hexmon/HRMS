@@ -299,11 +299,53 @@ function approvalStatus(eventType: string): ApprovalEvent["status"] {
   return "approved";
 }
 
+function eventTypeOf(row: ApiRecord): string {
+  return text(row.event_type).trim().toLowerCase();
+}
+
+function approvalMirrorKey(row: ApiRecord): string | null {
+  const eventType = eventTypeOf(row);
+  const match = /^(approval|expense)\.(manager|finance)\.([a-z_]+)/u.exec(eventType);
+  if (!match) return null;
+  const actor = text(row.actor_user_id ?? row.actor_name ?? row.actor, "system").toLowerCase();
+  const occurredAt = dateText(row.timestamp ?? row.created_at).slice(0, 16);
+  return `${match[2]}:${match[3]}:${actor}:${occurredAt}`;
+}
+
+function dedupeMirroredApprovalEvents(values: unknown[]): ApiRecord[] {
+  const rows = asArray(values).map(asRecord);
+  const workflowKeys = new Set(
+    rows
+      .filter((row) => eventTypeOf(row).startsWith("expense."))
+      .map(approvalMirrorKey)
+      .filter((key): key is string => Boolean(key)),
+  );
+  const seen = new Set<string>();
+
+  return rows.filter((row) => {
+    const eventType = eventTypeOf(row);
+    const mirrorKey = approvalMirrorKey(row);
+    if (eventType.startsWith("approval.") && mirrorKey && workflowKeys.has(mirrorKey)) {
+      return false;
+    }
+
+    const uniqueKey = [
+      eventType,
+      text(row.actor_user_id ?? row.actor_name ?? row.actor, "system").toLowerCase(),
+      dateText(row.timestamp ?? row.created_at),
+      text(row.remarks),
+    ].join("|");
+    if (seen.has(uniqueKey)) return false;
+    seen.add(uniqueKey);
+    return true;
+  });
+}
+
 export function mapApiExpenseApprovals(
   values: unknown[],
   fallback: ApprovalEvent[],
 ): ApprovalEvent[] {
-  const rows = asArray(values);
+  const rows = dedupeMirroredApprovalEvents(values);
   if (!rows.length) return fallback;
   return rows.map((item) => {
     const row = asRecord(item);
@@ -320,7 +362,7 @@ export function mapApiExpenseApprovals(
 }
 
 export function mapApiExpenseAudit(values: unknown[], fallback: AuditEvent[]): AuditEvent[] {
-  const rows = asArray(values);
+  const rows = dedupeMirroredApprovalEvents(values);
   if (!rows.length) return fallback;
   return rows.map((item) => {
     const row = asRecord(item);

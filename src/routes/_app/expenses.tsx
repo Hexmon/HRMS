@@ -2,6 +2,7 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { PageHeader, ModuleTabs, type ModuleTab } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import { MANAGER_ROLES, FINANCE_ROLES, ADMIN_ROLES } from "@/lib/expenses-store";
+import type { Role } from "@/lib/mock/roles";
 import {
   LayoutDashboard,
   Receipt,
@@ -20,7 +21,7 @@ const TABS = [
   { to: "/expenses/create", label: "Create Ticket", icon: Plus },
   {
     to: "/expenses/review",
-    label: "Manager Verification",
+    label: "Expense Approvals",
     icon: ClipboardCheck,
     gate: "manager" as const,
   },
@@ -29,14 +30,24 @@ const TABS = [
   { to: "/expenses/reports", label: "Reports", icon: BarChart3, gate: "admin" as const },
 ];
 
+function hasExpenseTabAccess(
+  roles: readonly Role[] | null | undefined,
+  activeRole: Role | null,
+  allowedRoles: readonly Role[],
+) {
+  return Boolean(
+    (activeRole && allowedRoles.includes(activeRole)) ||
+    roles?.some((role) => allowedRoles.includes(role)),
+  );
+}
+
 function ExpensesLayout() {
-  const { activeRole } = useAuth();
+  const { activeRole, user } = useAuth();
   const visible: ModuleTab[] = TABS.filter((t) => {
     if (!t.gate) return true;
-    if (!activeRole) return false;
-    if (t.gate === "manager") return MANAGER_ROLES.includes(activeRole);
-    if (t.gate === "finance") return FINANCE_ROLES.includes(activeRole);
-    if (t.gate === "admin") return ADMIN_ROLES.includes(activeRole);
+    if (t.gate === "manager") return hasExpenseTabAccess(user?.roles, activeRole, MANAGER_ROLES);
+    if (t.gate === "finance") return hasExpenseTabAccess(user?.roles, activeRole, FINANCE_ROLES);
+    if (t.gate === "admin") return hasExpenseTabAccess(user?.roles, activeRole, ADMIN_ROLES);
     return false;
   });
 

@@ -2,7 +2,7 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { expensesApi, mapApiExpenseTickets } from "@/domains/expenses";
 import { useAuth } from "@/lib/auth";
-import { isUuid, pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
+import { isUuid, pageItems, useApiRouteEnabled } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import type { Role } from "./mock/roles";
 
@@ -857,12 +857,23 @@ const ls = {
   },
 };
 
+function hasExpenseRoleAccess(
+  roles: readonly Role[] | null | undefined,
+  activeRole: Role | null,
+  allowedRoles: readonly Role[],
+) {
+  return Boolean(
+    (activeRole && allowedRoles.includes(activeRole)) ||
+    roles?.some((role) => allowedRoles.includes(role)),
+  );
+}
+
 export function ExpensesProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
-  const { activeRole } = useAuth();
+  const { activeRole, user } = useAuth();
   const apiEnabled = useApiRouteEnabled(["/dashboard", "/expenses", "/reports"]);
-  const canUseManagerQueue = !!activeRole && MANAGER_ROLES.includes(activeRole);
-  const canUseFinanceQueue = !!activeRole && FINANCE_ROLES.includes(activeRole);
+  const canUseManagerQueue = hasExpenseRoleAccess(user?.roles, activeRole, MANAGER_ROLES);
+  const canUseFinanceQueue = hasExpenseRoleAccess(user?.roles, activeRole, FINANCE_ROLES);
   const [tickets, setTickets] = React.useState<ExpenseTicket[]>(SEED);
 
   React.useEffect(() => {
@@ -877,42 +888,30 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
 
   const myExpensesQuery = useQuery({
     queryKey: queryKeys.list("expenses", "mine", { page_size: 100 }),
-    queryFn: () =>
-      withApiFallback(
-        async () => {
-          const response = await expensesApi.listMine({ page_size: 100 });
-          return mapApiExpenseTickets(pageItems(response), tickets);
-        },
-        () => tickets,
-      ),
+    queryFn: async () => {
+      const response = await expensesApi.listMine({ page_size: 100 });
+      return mapApiExpenseTickets(pageItems(response), tickets);
+    },
     enabled: apiEnabled,
     staleTime: queryTimings.listStaleMs,
   });
 
   const managerQueueQuery = useQuery({
     queryKey: queryKeys.list("expenses", "manager-queue", { page_size: 100 }),
-    queryFn: () =>
-      withApiFallback(
-        async () => {
-          const response = await expensesApi.managerQueue({ page_size: 100 });
-          return mapApiExpenseTickets(pageItems(response), tickets);
-        },
-        () => tickets,
-      ),
+    queryFn: async () => {
+      const response = await expensesApi.managerQueue({ page_size: 100 });
+      return mapApiExpenseTickets(pageItems(response), tickets);
+    },
     enabled: apiEnabled && canUseManagerQueue,
     staleTime: queryTimings.realtimeStaleMs,
   });
 
   const financeQueueQuery = useQuery({
     queryKey: queryKeys.list("expenses", "finance-queue", { page_size: 100 }),
-    queryFn: () =>
-      withApiFallback(
-        async () => {
-          const response = await expensesApi.financeQueue({ page_size: 100 });
-          return mapApiExpenseTickets(pageItems(response), tickets);
-        },
-        () => tickets,
-      ),
+    queryFn: async () => {
+      const response = await expensesApi.financeQueue({ page_size: 100 });
+      return mapApiExpenseTickets(pageItems(response), tickets);
+    },
     enabled: apiEnabled && canUseFinanceQueue,
     staleTime: queryTimings.realtimeStaleMs,
   });

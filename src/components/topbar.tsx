@@ -2,6 +2,7 @@ import { useRouterState, useNavigate, Link } from "@tanstack/react-router";
 import {
   LogOut,
   ChevronDown,
+  Check,
   Plus,
   User as UserIcon,
   Settings as SettingsIcon,
@@ -63,7 +64,7 @@ const QUICK_ACTIONS: QuickAction[] = [
 ];
 
 export function Topbar() {
-  const { user, activeRole, logout } = useAuth();
+  const { user, activeRole, setActiveRole, logout } = useAuth();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const apiEnabled = isApiEnabled();
@@ -89,6 +90,7 @@ export function Topbar() {
           : "Platform API unavailable";
 
   if (!user || !activeRole) return null;
+  const switchableRoles = Array.from(new Set(user.roles));
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/65 sm:px-6">
@@ -190,6 +192,26 @@ export function Topbar() {
                   <SettingsIcon className="mr-2 h-4 w-4" /> Settings
                 </Link>
               </DropdownMenuItem>
+            )}
+            {switchableRoles.length > 1 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Active role
+                </DropdownMenuLabel>
+                {switchableRoles.map((role) => (
+                  <DropdownMenuItem
+                    key={role}
+                    onClick={() => setActiveRole(role)}
+                    className={role === activeRole ? "font-medium text-primary" : undefined}
+                  >
+                    <Check
+                      className={`mr-2 h-4 w-4 ${role === activeRole ? "opacity-100" : "opacity-0"}`}
+                    />
+                    {ROLE_MAP[role].label}
+                  </DropdownMenuItem>
+                ))}
+              </>
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem

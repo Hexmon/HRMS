@@ -142,8 +142,16 @@ function ExpenseDetail() {
   const total = ticketTotal(t);
   const me = user?.name ?? "You";
   const isRequester = me === t.employee;
-  const isManager = activeRole && MANAGER_ROLES.includes(activeRole) && me !== t.employee;
-  const isFinance = activeRole && FINANCE_ROLES.includes(activeRole) && me !== t.employee;
+  const canReviewExpenses = Boolean(
+    (activeRole && MANAGER_ROLES.includes(activeRole)) ||
+    user?.roles.some((role) => MANAGER_ROLES.includes(role)),
+  );
+  const canFinanceExpenses = Boolean(
+    (activeRole && FINANCE_ROLES.includes(activeRole)) ||
+    user?.roles.some((role) => FINANCE_ROLES.includes(role)),
+  );
+  const isManager = canReviewExpenses && me !== t.employee;
+  const isFinance = canFinanceExpenses && me !== t.employee;
   const isClosed = ["closed", "withdrawn", "manager_rejected"].includes(t.status);
   const highValue = total >= HIGH_VALUE_THRESHOLD;
 

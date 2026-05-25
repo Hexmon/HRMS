@@ -49,7 +49,8 @@ const HERO_ACTIONS: Record<Role, { label: string; to: string; variant?: "primary
     ],
     manager: [
       { label: "Team utilisation", to: "/team-utilization", variant: "outline" },
-      { label: "Review approvals", to: "/leave-wfh" },
+      { label: "Expense reviews", to: "/expenses/review" },
+      { label: "Leave / WFH", to: "/leave-wfh", variant: "outline" },
     ],
     project_manager: [
       { label: "View projects", to: "/projects", variant: "outline" },

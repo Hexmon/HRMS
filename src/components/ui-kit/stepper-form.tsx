@@ -13,10 +13,25 @@ interface Props {
   steps: Step[];
   onComplete?: () => void;
   completeLabel?: string;
+  activeStep?: number;
+  onStepChange?: (step: number) => void;
 }
 
-export function StepperForm({ steps, onComplete, completeLabel = "Submit" }: Props) {
-  const [active, setActive] = useState(0);
+export function StepperForm({
+  steps,
+  onComplete,
+  completeLabel = "Submit",
+  activeStep,
+  onStepChange,
+}: Props) {
+  const [internalActive, setInternalActive] = useState(0);
+  const active = Math.min(steps.length - 1, Math.max(0, activeStep ?? internalActive));
+  const setActive = (next: number | ((current: number) => number)) => {
+    const resolved = typeof next === "function" ? next(active) : next;
+    const clamped = Math.min(steps.length - 1, Math.max(0, resolved));
+    if (onStepChange) onStepChange(clamped);
+    else setInternalActive(clamped);
+  };
   const isLast = active === steps.length - 1;
 
   return (
