@@ -3328,8 +3328,10 @@ class PostgresPersistence {
           note, exception_type, regularization_status, version, created_at, updated_at, deleted_at
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-        ON CONFLICT (employee_user_id, work_date) DO UPDATE
-        SET status = EXCLUDED.status,
+        ON CONFLICT (id) DO UPDATE
+        SET employee_user_id = EXCLUDED.employee_user_id,
+            work_date = EXCLUDED.work_date,
+            status = EXCLUDED.status,
             first_check_in = EXCLUDED.first_check_in,
             last_check_out = EXCLUDED.last_check_out,
             work_minutes = EXCLUDED.work_minutes,

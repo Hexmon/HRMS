@@ -543,6 +543,114 @@ const listOperations = [
   "GET /api/v1/notifications"
 ];
 
+describe("CORS configuration", () => {
+  it("allows configured local frontend origins for credentialed write preflights", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
+    process.env.NODE_ENV = "development";
+    process.env.CORS_ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:3000,http://localhost:8080";
+    const localApp = await buildApp({ dataStore: createMemoryDataStore(), rateLimit: false });
+    try {
+      await localApp.ready();
+      const preflight = await localApp.inject({
+        method: "OPTIONS",
+        url: "/api/v1/core/users/3bbda5f8-e717-4598-bc73-11cac0bee411",
+        headers: {
+          origin: "http://localhost:8080",
+          "access-control-request-method": "PATCH",
+          "access-control-request-headers": "content-type,authorization"
+        }
+      });
+      expect(preflight.headers["access-control-allow-origin"]).toBe("http://localhost:8080");
+      expect(preflight.headers["access-control-allow-credentials"]).toBe("true");
+      expect(String(preflight.headers["access-control-allow-methods"])).toContain("PATCH");
+
+      const deniedPreflight = await localApp.inject({
+        method: "OPTIONS",
+        url: "/api/v1/core/users/3bbda5f8-e717-4598-bc73-11cac0bee411",
+        headers: {
+          origin: "http://localhost:9090",
+          "access-control-request-method": "PATCH",
+          "access-control-request-headers": "content-type,authorization"
+        }
+      });
+      expect(deniedPreflight.headers["access-control-allow-origin"]).toBeUndefined();
+    } finally {
+      await localApp.close();
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+      if (previousAllowedOrigins === undefined) {
+        delete process.env.CORS_ALLOWED_ORIGINS;
+      } else {
+        process.env.CORS_ALLOWED_ORIGINS = previousAllowedOrigins;
+      }
+    }
+  });
+});
+
+describe("Auth guard", () => {
+  it("does not flush persistence for invalid login attempts", async () => {
+    const store = createMemoryDataStore();
+    let flushCalls = 0;
+    store.persistence = {
+      async flush() {
+        flushCalls += 1;
+        throw new Error("flush should not run for failed login");
+      },
+      async reload() {
+        // no-op test persistence
+      },
+      async close() {
+        // no-op test persistence
+      }
+    };
+    const localApp = await buildApp({ dataStore: store, rateLimit: false });
+    try {
+      await localApp.ready();
+      const response = await localApp.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: {
+          email: "missing-user@example.test",
+          password: "WrongPassword123"
+        }
+      });
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toMatchObject({
+        code: "UNAUTHORIZED",
+        message: "Invalid email or password"
+      });
+      expect(flushCalls).toBe(0);
+    } finally {
+      await localApp.close();
+    }
+  });
+
+  it("returns 401 for stale or malformed bearer tokens instead of leaking a 500", async () => {
+    const localApp = await buildApp({ dataStore: createMemoryDataStore(), rateLimit: false });
+    try {
+      await localApp.ready();
+      const response = await localApp.inject({
+        method: "GET",
+        url: "/api/v1/core/users",
+        headers: {
+          authorization: "Bearer stale-token"
+        }
+      });
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toMatchObject({
+        code: "UNAUTHORIZED",
+        message: "Invalid or expired session"
+      });
+    } finally {
+      await localApp.close();
+    }
+  });
+});
+
 describe("API contracts", () => {
   let app: FastifyInstance;
 
