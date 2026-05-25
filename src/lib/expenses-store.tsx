@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { expensesApi, mapApiExpenseTickets } from "@/domains/expenses";
+import { useAuth } from "@/lib/auth";
 import { isUuid, pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import type { Role } from "./mock/roles";
@@ -858,7 +859,10 @@ const ls = {
 
 export function ExpensesProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
+  const { activeRole } = useAuth();
   const apiEnabled = useApiRouteEnabled(["/dashboard", "/expenses", "/reports"]);
+  const canUseManagerQueue = !!activeRole && MANAGER_ROLES.includes(activeRole);
+  const canUseFinanceQueue = !!activeRole && FINANCE_ROLES.includes(activeRole);
   const [tickets, setTickets] = React.useState<ExpenseTicket[]>(SEED);
 
   React.useEffect(() => {
@@ -895,7 +899,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         },
         () => tickets,
       ),
-    enabled: apiEnabled,
+    enabled: apiEnabled && canUseManagerQueue,
     staleTime: queryTimings.realtimeStaleMs,
   });
 
@@ -909,7 +913,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         },
         () => tickets,
       ),
-    enabled: apiEnabled,
+    enabled: apiEnabled && canUseFinanceQueue,
     staleTime: queryTimings.realtimeStaleMs,
   });
 
@@ -1056,16 +1060,16 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
 
   const hasAnyApiResult =
     myExpensesQuery.data !== undefined ||
-    managerQueueQuery.data !== undefined ||
-    financeQueueQuery.data !== undefined;
+    (canUseManagerQueue && managerQueueQuery.data !== undefined) ||
+    (canUseFinanceQueue && financeQueueQuery.data !== undefined);
 
   const visibleTickets = React.useMemo(() => {
     if (!apiEnabled) return tickets;
     if (!hasAnyApiResult) return [];
     const combined = [
       ...(myExpensesQuery.data ?? []),
-      ...(managerQueueQuery.data ?? []),
-      ...(financeQueueQuery.data ?? []),
+      ...(canUseManagerQueue ? (managerQueueQuery.data ?? []) : []),
+      ...(canUseFinanceQueue ? (financeQueueQuery.data ?? []) : []),
     ];
     if (!combined.length) return [];
     const byId = new Map<string, ExpenseTicket>();
@@ -1073,6 +1077,8 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     return Array.from(byId.values());
   }, [
     apiEnabled,
+    canUseFinanceQueue,
+    canUseManagerQueue,
     financeQueueQuery.data,
     hasAnyApiResult,
     managerQueueQuery.data,
@@ -1080,14 +1086,18 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     tickets,
   ]);
 
-  const queryError = [myExpensesQuery.error, managerQueueQuery.error, financeQueueQuery.error].find(
-    (error): error is Error => error instanceof Error,
-  );
+  const queryError = [
+    myExpensesQuery.error,
+    canUseManagerQueue ? managerQueueQuery.error : null,
+    canUseFinanceQueue ? financeQueueQuery.error : null,
+  ].find((error): error is Error => error instanceof Error);
   const apiError = apiEnabled && !hasAnyApiResult ? (queryError ?? null) : null;
   const loading =
     apiEnabled &&
     !hasAnyApiResult &&
-    (myExpensesQuery.isLoading || managerQueueQuery.isLoading || financeQueueQuery.isLoading);
+    (myExpensesQuery.isLoading ||
+      (canUseManagerQueue && managerQueueQuery.isLoading) ||
+      (canUseFinanceQueue && financeQueueQuery.isLoading));
 
   const byId: Ctx["byId"] = (id) => visibleTickets.find((t) => t.id === id);
 

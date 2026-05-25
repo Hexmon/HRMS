@@ -96,6 +96,7 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
   const { activeRole, user } = useAuth();
   const apiEnabled = useApiRouteEnabled(["/dashboard", "/assets", "/reports"]);
   const isAssetAdmin = activeRole === "asset_admin" || activeRole === "main_admin";
+  const canUseAssetInventory = isAssetAdmin;
   const [assets, setAssets] = React.useState<Asset[]>(SEED_ASSETS);
   const [requests, setRequests] = React.useState<AssetRequest[]>(SEED_REQS);
 
@@ -123,7 +124,7 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         },
         () => assets,
       ),
-    enabled: apiEnabled,
+    enabled: apiEnabled && canUseAssetInventory,
     staleTime: queryTimings.listStaleMs,
   });
 
@@ -259,12 +260,13 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") }),
   });
 
-  const hasApiResult = apiAssetsQuery.data !== undefined;
+  const hasApiResult = canUseAssetInventory ? apiAssetsQuery.data !== undefined : true;
   const visibleAssets = React.useMemo(() => {
     if (!apiEnabled) return assets;
+    if (!canUseAssetInventory) return [];
     if (!hasApiResult) return [];
     return apiAssetsQuery.data ?? [];
-  }, [apiAssetsQuery.data, apiEnabled, assets, hasApiResult]);
+  }, [apiAssetsQuery.data, apiEnabled, assets, canUseAssetInventory, hasApiResult]);
   const hasRequestApiResult =
     apiMyRequestsQuery.data !== undefined ||
     (isAssetAdmin && apiQueueRequestsQuery.data !== undefined);
@@ -284,7 +286,7 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     requests,
   ]);
   const apiError =
-    apiEnabled && !hasApiResult && apiAssetsQuery.error instanceof Error
+    apiEnabled && canUseAssetInventory && !hasApiResult && apiAssetsQuery.error instanceof Error
       ? apiAssetsQuery.error
       : null;
   const requestError =
@@ -293,7 +295,7 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
       : null;
   const loading =
     apiEnabled &&
-    ((!hasApiResult && apiAssetsQuery.isLoading) ||
+    ((canUseAssetInventory && !hasApiResult && apiAssetsQuery.isLoading) ||
       (!hasRequestApiResult && (apiMyRequestsQuery.isLoading || apiQueueRequestsQuery.isLoading)));
 
   const addAsset: Ctx["addAsset"] = (a, actor = "Marco Rossi") => {
