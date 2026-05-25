@@ -1,18 +1,39 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState, type ChangeEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { StatusBadge } from "@/components/ui-kit";
 import { toast } from "sonner";
-import { FileText, Upload, Download, Eye, RefreshCw, AlertCircle } from "lucide-react";
-import { documentsApi, mapApiDocuments } from "@/domains/documents";
+import {
+  FileText,
+  Upload,
+  Download,
+  Eye,
+  RefreshCw,
+  AlertCircle,
+  Trash2,
+  AlertTriangle,
+} from "lucide-react";
+import { documentsApi, mapApiDocuments, useDocumentDeleteMutation } from "@/domains/documents";
 import {
   type EmsDocumentUploadBody,
   useEmsDocumentMutation,
   useEmsEmployeeDocuments,
 } from "@/domains/ems";
 import { useAuth } from "@/lib/auth";
-import { isUuid, pageItems, useApiRouteEnabled } from "@/shared/api";
+import { isUuid, pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
+import { queryKeys } from "@/shared/query";
 import { prepareDocumentUploadFile } from "@/shared/uploads/documents";
 
 export const Route = createFileRoute("/_app/ems/documents")({
@@ -92,11 +113,14 @@ function statusToBadge(s: DocStatus) {
 
 function MyDocuments() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const apiEnabled = useApiRouteEnabled(["/ems", "/documents"]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTarget, setUploadTarget] = useState<Doc | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Doc | null>(null);
   const documentsQuery = useEmsEmployeeDocuments(user?.id, { page: 1, page_size: 100 }, apiEnabled);
   const uploadMutation = useEmsDocumentMutation(user?.id);
+  const deleteMutation = useDocumentDeleteMutation();
   const docs = apiEnabled ? mapApiDocuments(pageItems(documentsQuery.data)) : DOCS;
   const loading = apiEnabled && documentsQuery.isLoading;
   const error = documentsQuery.error instanceof Error ? documentsQuery.error : null;
@@ -113,6 +137,26 @@ function MyDocuments() {
       else toast.error("Download URL was not returned.");
     } catch {
       toast.error("Document download could not be started.");
+    }
+  }
+
+  function requestDeleteDocument(document: Doc) {
+    if (!apiEnabled || !isUuid(document.id)) {
+      toast.message("Delete is available when documents are loaded from the backend.");
+      return;
+    }
+    setDeleteTarget(document);
+  }
+
+  async function confirmDeleteDocument() {
+    if (!deleteTarget) return;
+    try {
+      await deleteMutation.mutateAsync(deleteTarget.id);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") });
+      toast.success("Document deleted", { description: deleteTarget.name });
+      setDeleteTarget(null);
+    } catch (deleteError) {
+      toastApiError(deleteError, "Document could not be deleted.");
     }
   }
 
@@ -146,6 +190,9 @@ function MyDocuments() {
       formData.set("file_name", prepared.file.name);
       formData.set("mime_type", prepared.file.type || "application/octet-stream");
       formData.set("size_bytes", String(prepared.file.size));
+      if (target && isUuid(target.id)) {
+        formData.set("replace_document_id", target.id);
+      }
       await uploadMutation.mutateAsync(formData);
       toast.success(target ? "Replacement uploaded" : "Document uploaded", {
         description: `${prepared.file.name} is pending verification.`,
@@ -255,11 +302,106 @@ function MyDocuments() {
                       </Button>
                     </>
                   )}
+                  {apiEnabled && d.status !== "missing" && isUuid(d.id) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="rounded-full text-destructive hover:text-destructive"
+                      onClick={() => requestDeleteDocument(d)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                      {deleteMutation.isPending && deleteMutation.variables === d.id
+                        ? "Deleting"
+                        : "Delete"}
+                    </Button>
+                  )}
                 </div>
               </Card>
             ))}
       </div>
+
+      <DeleteDocumentDialog
+        document={deleteTarget}
+        busy={deleteMutation.isPending}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) setDeleteTarget(null);
+        }}
+        onConfirm={() => void confirmDeleteDocument()}
+      />
     </div>
+  );
+}
+
+function DeleteDocumentDialog({
+  document,
+  busy,
+  onOpenChange,
+  onConfirm,
+}: {
+  document: Doc | null;
+  busy: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog open={Boolean(document)} onOpenChange={onOpenChange}>
+      <AlertDialogContent className="overflow-hidden rounded-2xl border-destructive/20 p-0 shadow-2xl data-[state=open]:duration-300">
+        <div className="relative border-b border-destructive/10 bg-gradient-to-br from-destructive/12 via-background to-primary-soft/50 p-6">
+          <div className="absolute right-5 top-5 h-16 w-16 rounded-full bg-destructive/10 blur-2xl" />
+          <AlertDialogHeader className="relative space-y-3 text-left">
+            <div className="flex items-center gap-3">
+              <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-destructive/15 text-destructive shadow-sm ring-1 ring-destructive/20">
+                <span className="absolute inset-0 rounded-2xl animate-ping bg-destructive/10" />
+                <Trash2 className="relative h-5 w-5" />
+              </span>
+              <div>
+                <AlertDialogTitle className="text-xl">Delete document?</AlertDialogTitle>
+                <AlertDialogDescription className="mt-1">
+                  This removes the uploaded file from storage and hides it from your document list.
+                </AlertDialogDescription>
+              </div>
+            </div>
+          </AlertDialogHeader>
+        </div>
+
+        <div className="space-y-4 p-6">
+          <div className="rounded-xl border border-border/70 bg-muted/40 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Selected document
+            </p>
+            <p className="mt-2 break-words text-sm font-semibold">{document?.name ?? "Document"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {document?.category ?? "Employee document"}
+            </p>
+          </div>
+
+          <div className="flex gap-2 rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>
+              This action cannot be undone from the app. Upload the document again if it is needed
+              later.
+            </p>
+          </div>
+        </div>
+
+        <AlertDialogFooter className="border-t border-border/70 bg-muted/20 px-6 py-4">
+          <AlertDialogCancel disabled={busy} className="rounded-full">
+            Keep document
+          </AlertDialogCancel>
+          <AlertDialogAction
+            disabled={busy}
+            className="rounded-full bg-destructive text-destructive-foreground shadow-lg shadow-destructive/20 transition hover:bg-destructive/90"
+            onClick={(event) => {
+              event.preventDefault();
+              onConfirm();
+            }}
+          >
+            {busy ? "Deleting..." : "Delete permanently"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

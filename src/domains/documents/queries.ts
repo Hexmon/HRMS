@@ -29,3 +29,11 @@ export function useDocumentMutation() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("documents") }),
   });
 }
+
+export function useDocumentDeleteMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: documentsApi.deleteDocument,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("documents") }),
+  });
+}

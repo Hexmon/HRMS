@@ -17,6 +17,9 @@ export const documentsApi = {
   get(id: string) {
     return apiRequest<ApiRecord>(`/api/v1/documents/${id}`);
   },
+  deleteDocument(id: string) {
+    return apiRequest<ApiRecord>(`/api/v1/documents/${id}`, { method: "DELETE" });
+  },
   createDownloadUrl(id: string) {
     return apiRequest<ApiRecord>(`/api/v1/documents/${id}/download-url`, { method: "POST" });
   },

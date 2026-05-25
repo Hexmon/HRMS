@@ -81,6 +81,7 @@ export interface EmsDocumentUploadBody extends ApiRecord {
   mime_type: string;
   size_bytes: number;
   checksum_sha256?: string;
+  replace_document_id?: string;
 }
 
 export const emsApi = {
