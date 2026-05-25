@@ -15347,7 +15347,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "minio-generated-csv"
+                      "example": "cloudinary-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -42705,7 +42705,7 @@
                           },
                           "adapter": {
                             "type": "string",
-                            "example": "minio-generated-csv"
+                            "example": "cloudinary-generated-csv"
                           },
                           "file_name": {
                             "type": "string",
@@ -43171,7 +43171,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "minio-generated-csv"
+                      "example": "cloudinary-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -43603,7 +43603,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "minio-generated-csv"
+                      "example": "cloudinary-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -67112,7 +67112,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "minio-generated-csv"
+                      "example": "cloudinary-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -73000,7 +73000,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "minio-generated-csv"
+                      "example": "cloudinary-generated-csv"
                     },
                     "file_name": {
                       "type": "string",

@@ -191,20 +191,7 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
 }
 
 function objectStorageOptions(config: FastifyInstance["config"]): PostgresObjectStorageOptions {
-  if (config.OBJECT_STORAGE_PROVIDER === "minio") {
-    return {
-      provider: "minio",
-      endpoint: config.MINIO_ENDPOINT,
-      publicEndpoint: config.MINIO_PUBLIC_ENDPOINT,
-      accessKey: config.MINIO_ACCESS_KEY,
-      secretKey: config.MINIO_SECRET_KEY,
-      bucket: config.MINIO_BUCKET,
-      region: config.MINIO_REGION
-    };
-  }
-
   return {
-    provider: "cloudinary",
     cloudName: config.CLOUDINARY_CLOUD_NAME,
     apiKey: config.CLOUDINARY_API_KEY,
     apiSecret: config.CLOUDINARY_API_SECRET,

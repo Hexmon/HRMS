@@ -20,27 +20,9 @@ pnpm release:seed
 pnpm dev
 ```
 
-Local and demo document uploads are MinIO-backed by default so uploads work without external credentials. The backend storage layer is provider-based, so Cloudinary can still be enabled later by changing env only.
+Local, QA, and production document/media uploads use the Cloudinary storage adapter. Local and QA examples default to `CLOUDINARY_MOCK_UPLOADS=true`, which keeps upload flows working without external credentials but stores file bytes only in the running backend process. For real persistence, provide real Cloudinary credentials and set `CLOUDINARY_MOCK_UPLOADS=false`.
 
 ```env
-OBJECT_STORAGE_PROVIDER=minio
-MINIO_ENDPOINT=http://localhost:19000
-MINIO_PUBLIC_ENDPOINT=http://localhost:19000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET=hawkaii-hrms-dev
-MINIO_REGION=us-east-1
-```
-
-The local Docker stack starts MinIO with these endpoints:
-
-- S3 API: `http://localhost:19000`
-- Console: `http://localhost:19001`
-
-To switch the same upload code to Cloudinary, set the provider and real Cloudinary dashboard values:
-
-```env
-OBJECT_STORAGE_PROVIDER=cloudinary
 CLOUDINARY_CLOUD_NAME=local-cloudinary-mock
 CLOUDINARY_API_KEY=local-cloudinary-key
 CLOUDINARY_API_SECRET=local-cloudinary-secret
@@ -50,7 +32,7 @@ CLOUDINARY_UPLOAD_TRANSFORMATION=q_auto:eco,f_auto
 CLOUDINARY_MOCK_UPLOADS=true
 ```
 
-For real Cloudinary uploads, disable mock mode:
+For real Cloudinary uploads, replace the dashboard values and disable mock mode:
 
 ```env
 CLOUDINARY_CLOUD_NAME=your_cloud_name
@@ -59,7 +41,7 @@ CLOUDINARY_API_SECRET=your_api_secret
 CLOUDINARY_MOCK_UPLOADS=false
 ```
 
-Do not expose `CLOUDINARY_API_SECRET`, `MINIO_SECRET_KEY`, or any object-storage credential to the frontend. Files are uploaded to the backend first; the backend stores them through the configured provider and returns a backend-issued download URL.
+Do not expose `CLOUDINARY_API_SECRET` or any object-storage credential to the frontend. Files are uploaded to the backend first; the backend stores them through Cloudinary and returns a backend-issued download URL.
 
 Image uploads are compressed in the frontend before they reach the backend. PDF uploads are compressed server-side before object storage when `PDF_COMPRESSION_ENABLED=true`; this uses Ghostscript (`PDF_COMPRESSION_BINARY`, default `gs`) and defaults to fail-open behavior so uploads continue if local Ghostscript is not installed. The production Docker image installs Ghostscript for this path.
 
@@ -141,4 +123,4 @@ pnpm verify:scalability
 pnpm verify:regression
 ```
 
-Integration tests require PostgreSQL, Valkey, and object storage. Use `pnpm test:infra:up` before `pnpm test:integration` or point `.env.test` to your own services. Document storage tests use MinIO by default; set `OBJECT_STORAGE_PROVIDER=cloudinary` plus real Cloudinary credentials or `CLOUDINARY_MOCK_UPLOADS=true` only when intentionally testing the Cloudinary adapter.
+Integration tests require PostgreSQL, Valkey, and object storage. Use `pnpm test:infra:up` before `pnpm test:integration` or point `.env.test` to your own services. Document storage tests use the Cloudinary adapter; `.env.test.example` keeps `CLOUDINARY_MOCK_UPLOADS=true` so tests do not require external Cloudinary credentials.

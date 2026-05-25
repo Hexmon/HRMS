@@ -66,28 +66,17 @@ import {
   createMemoryDataStore
 } from "./data-store.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
-import { CloudinaryObjectStorage, MinioObjectStorage } from "./object-storage.js";
+import { CloudinaryObjectStorage } from "./object-storage.js";
 
-export type PostgresObjectStorageOptions =
-  | {
-      provider: "cloudinary";
-      cloudName: string;
-      apiKey: string;
-      apiSecret: string;
-      folder: string;
-      resourceType: "auto" | "image" | "raw" | "video";
-      uploadTransformation?: string;
-      mockUploads: boolean;
-    }
-  | {
-      provider: "minio";
-      endpoint: string;
-      publicEndpoint?: string;
-      accessKey: string;
-      secretKey: string;
-      bucket: string;
-      region: string;
-    };
+export interface PostgresObjectStorageOptions {
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
+  folder: string;
+  resourceType: "auto" | "image" | "raw" | "video";
+  uploadTransformation?: string;
+  mockUploads: boolean;
+}
 
 export interface PostgresDataStoreOptions {
   databaseUrl: string;
@@ -315,9 +304,7 @@ export async function resetPostgresDatabase(databaseUrl: string): Promise<void> 
 
 export async function createPostgresDataStore(options: PostgresDataStoreOptions): Promise<DataStore> {
   const pool = new Pool({ connectionString: options.databaseUrl });
-  const objectStorage = options.objectStorage.provider === "minio"
-    ? new MinioObjectStorage(options.objectStorage)
-    : new CloudinaryObjectStorage(options.objectStorage);
+  const objectStorage = new CloudinaryObjectStorage(options.objectStorage);
   await objectStorage.ensureReady();
   const documentProcessing = options.documentProcessing;
 

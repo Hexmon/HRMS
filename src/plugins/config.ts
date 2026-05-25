@@ -2,6 +2,13 @@ import fp from "fastify-plugin";
 import { z } from "zod";
 
 const optionalUrl = z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional());
+const booleanEnv = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off", ""].includes(normalized)) return false;
+  return value;
+}, z.boolean());
 
 const configSchema = z.object({
   NODE_ENV: z.string().default("development"),
@@ -10,30 +17,23 @@ const configSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(16).default("local-dev-refresh-secret-change-me"),
   SESSION_COOKIE_NAME: z.string().default("hrms_session"),
   JWT_SECRET: z.string().min(16).optional(),
-  COOKIE_SECURE: z.coerce.boolean().default(false),
+  COOKIE_SECURE: booleanEnv.default(false),
   DATABASE_URL: z.string().optional(),
   TEST_DATABASE_URL: z.string().optional(),
   VALKEY_URL: z.string().optional(),
-  OBJECT_STORAGE_PROVIDER: z.enum(["cloudinary", "minio"]).default("minio"),
   CLOUDINARY_CLOUD_NAME: z.string().default("local-cloudinary-mock"),
   CLOUDINARY_API_KEY: z.string().default("local-cloudinary-key"),
   CLOUDINARY_API_SECRET: z.string().default("local-cloudinary-secret"),
   CLOUDINARY_FOLDER: z.string().default("hawkaii-hrms"),
   CLOUDINARY_RESOURCE_TYPE: z.enum(["auto", "image", "raw", "video"]).default("auto"),
   CLOUDINARY_UPLOAD_TRANSFORMATION: z.string().default("q_auto:eco,f_auto"),
-  CLOUDINARY_MOCK_UPLOADS: z.coerce.boolean().default(false),
-  MINIO_ENDPOINT: z.string().url().default("http://localhost:19000"),
-  MINIO_PUBLIC_ENDPOINT: optionalUrl,
-  MINIO_ACCESS_KEY: z.string().default("minioadmin"),
-  MINIO_SECRET_KEY: z.string().default("minioadmin"),
-  MINIO_BUCKET: z.string().default("hawkaii-hrms-dev"),
-  MINIO_REGION: z.string().default("us-east-1"),
-  PDF_COMPRESSION_ENABLED: z.coerce.boolean().default(false),
+  CLOUDINARY_MOCK_UPLOADS: booleanEnv.default(true),
+  PDF_COMPRESSION_ENABLED: booleanEnv.default(false),
   PDF_COMPRESSION_BINARY: z.string().default("gs"),
   PDF_COMPRESSION_QUALITY: z.enum(["screen", "ebook", "printer", "prepress", "default"]).default("ebook"),
   PDF_COMPRESSION_MIN_BYTES: z.coerce.number().int().min(0).default(128 * 1024),
   PDF_COMPRESSION_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30_000),
-  PDF_COMPRESSION_FAIL_OPEN: z.coerce.boolean().default(true),
+  PDF_COMPRESSION_FAIL_OPEN: booleanEnv.default(true),
   API_BASE_URL: z.string().default("http://localhost:3001"),
   APP_URL: optionalUrl,
   FRONTEND_URL: z.string().url().default("http://localhost:5173"),
@@ -50,7 +50,7 @@ const configSchema = z.object({
   EMAIL_VERIFICATION_RESEND_HOURLY_LIMIT: z.coerce.number().int().min(1).default(5),
   EMAIL_VERIFICATION_RESEND_DAILY_LIMIT: z.coerce.number().int().min(1).default(10),
   CORS_ALLOWED_ORIGINS: z.string().default(""),
-  RATE_LIMIT_ENABLED: z.coerce.boolean().default(true),
+  RATE_LIMIT_ENABLED: booleanEnv.default(true),
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(60),
   RATE_LIMIT_READ_MAX: z.coerce.number().int().min(1).default(120),
   RATE_LIMIT_WRITE_MAX: z.coerce.number().int().min(1).default(60),
@@ -81,33 +81,20 @@ const configSchema = z.object({
   }
   if (config.NODE_ENV === "production") {
     requireField("RESEND_WEBHOOK_SECRET");
-    if (config.OBJECT_STORAGE_PROVIDER === "cloudinary") {
-      if (config.CLOUDINARY_MOCK_UPLOADS) {
+    if (config.CLOUDINARY_MOCK_UPLOADS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CLOUDINARY_MOCK_UPLOADS"],
+        message: "CLOUDINARY_MOCK_UPLOADS cannot be true in production."
+      });
+    }
+    for (const field of ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const) {
+      if (!config[field] || /^replace-|^local-|mock/iu.test(config[field])) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["CLOUDINARY_MOCK_UPLOADS"],
-          message: "CLOUDINARY_MOCK_UPLOADS cannot be true in production."
+          path: [field],
+          message: `${field} must be a real Cloudinary value in production.`
         });
-      }
-      for (const field of ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const) {
-        if (!config[field] || /^replace-|^local-|mock/iu.test(config[field])) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [field],
-            message: `${field} must be a real Cloudinary value when OBJECT_STORAGE_PROVIDER=cloudinary in production.`
-          });
-        }
-      }
-    }
-    if (config.OBJECT_STORAGE_PROVIDER === "minio") {
-      for (const field of ["MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET"] as const) {
-        if (!config[field] || config[field] === "minioadmin") {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [field],
-            message: `${field} must be set to a non-default value when OBJECT_STORAGE_PROVIDER=minio in production.`
-          });
-        }
       }
     }
   }

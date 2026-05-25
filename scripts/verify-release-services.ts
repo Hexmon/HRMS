@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Redis as Valkey } from "iovalkey";
-import { CloudinaryObjectStorage, MinioObjectStorage } from "../src/platform/object-storage.js";
+import { CloudinaryObjectStorage } from "../src/platform/object-storage.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 import { fail } from "./lib.js";
 
@@ -68,18 +68,7 @@ if (failures.length > 0) {
 
 console.log("Valkey and object-storage release verification passed.");
 
-function objectStorage(): CloudinaryObjectStorage | MinioObjectStorage {
-  if ((process.env.OBJECT_STORAGE_PROVIDER ?? "minio") === "minio") {
-    return new MinioObjectStorage({
-      endpoint: process.env.MINIO_ENDPOINT ?? "http://localhost:19000",
-      publicEndpoint: process.env.MINIO_PUBLIC_ENDPOINT,
-      accessKey: process.env.MINIO_ACCESS_KEY ?? "minioadmin",
-      secretKey: process.env.MINIO_SECRET_KEY ?? "minioadmin",
-      bucket: process.env.MINIO_BUCKET ?? "hawkaii-hrms-dev",
-      region: process.env.MINIO_REGION ?? "us-east-1"
-    });
-  }
-
+function objectStorage(): CloudinaryObjectStorage {
   return new CloudinaryObjectStorage({
     cloudName: requireEnv("CLOUDINARY_CLOUD_NAME"),
     apiKey: requireEnv("CLOUDINARY_API_KEY"),

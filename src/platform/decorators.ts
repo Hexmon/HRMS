@@ -17,7 +17,6 @@ declare module "fastify" {
       DATABASE_URL?: string;
       TEST_DATABASE_URL?: string;
       VALKEY_URL?: string;
-      OBJECT_STORAGE_PROVIDER: "cloudinary" | "minio";
       CLOUDINARY_CLOUD_NAME: string;
       CLOUDINARY_API_KEY: string;
       CLOUDINARY_API_SECRET: string;
@@ -25,12 +24,6 @@ declare module "fastify" {
       CLOUDINARY_RESOURCE_TYPE: "auto" | "image" | "raw" | "video";
       CLOUDINARY_UPLOAD_TRANSFORMATION: string;
       CLOUDINARY_MOCK_UPLOADS: boolean;
-      MINIO_ENDPOINT: string;
-      MINIO_PUBLIC_ENDPOINT?: string;
-      MINIO_ACCESS_KEY: string;
-      MINIO_SECRET_KEY: string;
-      MINIO_BUCKET: string;
-      MINIO_REGION: string;
       PDF_COMPRESSION_ENABLED: boolean;
       PDF_COMPRESSION_BINARY: string;
       PDF_COMPRESSION_QUALITY: "screen" | "ebook" | "printer" | "prepress" | "default";

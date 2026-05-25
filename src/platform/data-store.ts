@@ -357,7 +357,7 @@ export interface ObjectStoragePutResult {
 }
 
 export interface ObjectStoragePort {
-  readonly kind: "memory" | "cloudinary" | "minio";
+  readonly kind: "memory" | "cloudinary";
   readonly bucket: string;
   putObject(key: string, body: Buffer, metadata?: Record<string, string>): Promise<ObjectStoragePutResult>;
   presignedGetUrl(key: string, expiresInSeconds: number): Promise<string>;

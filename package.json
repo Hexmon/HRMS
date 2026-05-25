@@ -72,7 +72,7 @@
     "verify:implementation": "tsx scripts/verify-implementation.ts",
     "verify:scalability": "tsx scripts/verify-scalability.ts",
     "verify:regression": "tsx scripts/verify-regression.ts",
-    "dev:infra:up": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev up -d --wait postgres valkey minio",
+    "dev:infra:up": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev up -d --wait postgres valkey",
     "dev:infra:down": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev down",
     "docker:dev:build": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev build",
     "docker:dev:up": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev up -d --build",
@@ -90,7 +90,7 @@
     "docker:prod:up": "docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml -p hawkaii_hrms_backend_prod up -d --build",
     "docker:prod:down": "docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml -p hawkaii_hrms_backend_prod down",
     "docker:prod:config": "docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml -p hawkaii_hrms_backend_prod config",
-    "test:infra:up": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_test up -d --wait postgres valkey minio",
+    "test:infra:up": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_test up -d --wait postgres valkey",
     "test:infra:down": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_test down",
     "qa:human": "HRMS_REPORT_DIR=docs/qa/runs/standalone-full-human-qa tsx scripts/run-standalone-full-human-qa.ts",
     "api:frontend-contract:generate": "tsx scripts/api-frontend-contract-generate.ts"

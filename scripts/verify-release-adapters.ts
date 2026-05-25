@@ -27,7 +27,7 @@ const notes: string[] = [];
 try {
   if (store.kind !== "postgres") failures.push("runtime store is not PostgreSQL-backed");
   if (!store.pgPool) failures.push("PostgreSQL pool is not attached to runtime store");
-  const expectedStorageProvider = process.env.OBJECT_STORAGE_PROVIDER ?? "minio";
+  const expectedStorageProvider = "cloudinary";
   if (store.objectStorage?.kind !== expectedStorageProvider) {
     failures.push(`document object storage is not ${expectedStorageProvider}-backed`);
   }
@@ -111,20 +111,7 @@ if (failures.length > 0) {
 console.log("Real adapter verification passed.");
 
 function objectStorageOptions() {
-  if ((process.env.OBJECT_STORAGE_PROVIDER ?? "minio") === "minio") {
-    return {
-      provider: "minio" as const,
-      endpoint: process.env.MINIO_ENDPOINT ?? "http://localhost:19000",
-      publicEndpoint: process.env.MINIO_PUBLIC_ENDPOINT,
-      accessKey: process.env.MINIO_ACCESS_KEY ?? "minioadmin",
-      secretKey: process.env.MINIO_SECRET_KEY ?? "minioadmin",
-      bucket: process.env.MINIO_BUCKET ?? "hawkaii-hrms-dev",
-      region: process.env.MINIO_REGION ?? "us-east-1"
-    };
-  }
-
   return {
-    provider: "cloudinary" as const,
     cloudName: requireEnv("CLOUDINARY_CLOUD_NAME"),
     apiKey: requireEnv("CLOUDINARY_API_KEY"),
     apiSecret: requireEnv("CLOUDINARY_API_SECRET"),

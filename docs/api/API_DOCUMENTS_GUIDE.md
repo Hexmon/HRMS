@@ -2,7 +2,7 @@
 
 Date: 2026-05-01
 
-Documents are stored through the backend object-storage adapter. Local/demo defaults use MinIO, and production can use Cloudinary by setting `OBJECT_STORAGE_PROVIDER=cloudinary`. API consumers never receive storage credentials.
+Documents are stored through the backend Cloudinary object-storage adapter. Local/demo and test environments can use `CLOUDINARY_MOCK_UPLOADS=true` for credential-free flows; production must use real Cloudinary credentials with `CLOUDINARY_MOCK_UPLOADS=false`. API consumers never receive storage credentials.
 
 ## List Documents
 
@@ -20,7 +20,7 @@ Optional filters:
 
 `POST /api/v1/documents`
 
-The endpoint accepts JSON metadata for generated/backend documents and `multipart/form-data` with a `file` field for browser uploads. Image files should be compressed by the frontend before upload; Cloudinary mode also requests upload-time quality optimization. PDF files can be compressed server-side before object storage with `PDF_COMPRESSION_ENABLED=true` and Ghostscript available at `PDF_COMPRESSION_BINARY` (default `gs`).
+The endpoint accepts JSON metadata for generated/backend documents and `multipart/form-data` with a `file` field for browser uploads. Image files should be compressed by the frontend before upload; Cloudinary uploads also request upload-time quality optimization. PDF files can be compressed server-side before object storage with `PDF_COMPRESSION_ENABLED=true` and Ghostscript available at `PDF_COMPRESSION_BINARY` (default `gs`).
 
 ```json
 {

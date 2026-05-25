@@ -33,20 +33,7 @@ const store = await createPostgresDataStore({
 });
 
 function objectStorageOptions() {
-  if ((process.env.OBJECT_STORAGE_PROVIDER ?? "minio") === "minio") {
-    return {
-      provider: "minio" as const,
-      endpoint: process.env.MINIO_ENDPOINT ?? "http://localhost:19000",
-      publicEndpoint: process.env.MINIO_PUBLIC_ENDPOINT,
-      accessKey: process.env.MINIO_ACCESS_KEY ?? "minioadmin",
-      secretKey: process.env.MINIO_SECRET_KEY ?? "minioadmin",
-      bucket: process.env.MINIO_BUCKET ?? "hawkaii-hrms-dev",
-      region: process.env.MINIO_REGION ?? "us-east-1"
-    };
-  }
-
   return {
-    provider: "cloudinary" as const,
     cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? "local-cloudinary-mock",
     apiKey: process.env.CLOUDINARY_API_KEY ?? "local-cloudinary-key",
     apiSecret: process.env.CLOUDINARY_API_SECRET ?? "local-cloudinary-secret",

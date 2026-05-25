@@ -686,10 +686,10 @@ describe("API contracts", () => {
     const previousAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
     const previousLogLevel = process.env.LOG_LEVEL;
     const previousEmailMode = process.env.EMAIL_DELIVERY_MODE;
-    const previousObjectStorageProvider = process.env.OBJECT_STORAGE_PROVIDER;
-    const previousMinioAccessKey = process.env.MINIO_ACCESS_KEY;
-    const previousMinioSecretKey = process.env.MINIO_SECRET_KEY;
-    const previousMinioBucket = process.env.MINIO_BUCKET;
+    const previousCloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const previousCloudinaryApiKey = process.env.CLOUDINARY_API_KEY;
+    const previousCloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET;
+    const previousCloudinaryMockUploads = process.env.CLOUDINARY_MOCK_UPLOADS;
     const previousResendApiKey = process.env.RESEND_API_KEY;
     const previousResendFromEmail = process.env.RESEND_FROM_EMAIL;
     const previousResendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
@@ -698,10 +698,10 @@ describe("API contracts", () => {
     process.env.CORS_ALLOWED_ORIGINS = "https://hrms.example.com";
     process.env.LOG_LEVEL = "warn";
     process.env.EMAIL_DELIVERY_MODE = "send";
-    process.env.OBJECT_STORAGE_PROVIDER = "minio";
-    process.env.MINIO_ACCESS_KEY = "prod-contract-minio-access";
-    process.env.MINIO_SECRET_KEY = "prod-contract-minio-secret";
-    process.env.MINIO_BUCKET = "prod-contract-bucket";
+    process.env.CLOUDINARY_CLOUD_NAME = "prod-contract-cloud";
+    process.env.CLOUDINARY_API_KEY = "prod-contract-cloudinary-key";
+    process.env.CLOUDINARY_API_SECRET = "prod-contract-cloudinary-secret";
+    process.env.CLOUDINARY_MOCK_UPLOADS = "false";
     process.env.RESEND_API_KEY = "test-resend-api-key";
     process.env.RESEND_FROM_EMAIL = "verify@example.test";
     process.env.RESEND_WEBHOOK_SECRET = "test-resend-webhook-secret";
@@ -759,25 +759,25 @@ describe("API contracts", () => {
       } else {
         process.env.EMAIL_DELIVERY_MODE = previousEmailMode;
       }
-      if (previousObjectStorageProvider === undefined) {
-        delete process.env.OBJECT_STORAGE_PROVIDER;
+      if (previousCloudinaryCloudName === undefined) {
+        delete process.env.CLOUDINARY_CLOUD_NAME;
       } else {
-        process.env.OBJECT_STORAGE_PROVIDER = previousObjectStorageProvider;
+        process.env.CLOUDINARY_CLOUD_NAME = previousCloudinaryCloudName;
       }
-      if (previousMinioAccessKey === undefined) {
-        delete process.env.MINIO_ACCESS_KEY;
+      if (previousCloudinaryApiKey === undefined) {
+        delete process.env.CLOUDINARY_API_KEY;
       } else {
-        process.env.MINIO_ACCESS_KEY = previousMinioAccessKey;
+        process.env.CLOUDINARY_API_KEY = previousCloudinaryApiKey;
       }
-      if (previousMinioSecretKey === undefined) {
-        delete process.env.MINIO_SECRET_KEY;
+      if (previousCloudinaryApiSecret === undefined) {
+        delete process.env.CLOUDINARY_API_SECRET;
       } else {
-        process.env.MINIO_SECRET_KEY = previousMinioSecretKey;
+        process.env.CLOUDINARY_API_SECRET = previousCloudinaryApiSecret;
       }
-      if (previousMinioBucket === undefined) {
-        delete process.env.MINIO_BUCKET;
+      if (previousCloudinaryMockUploads === undefined) {
+        delete process.env.CLOUDINARY_MOCK_UPLOADS;
       } else {
-        process.env.MINIO_BUCKET = previousMinioBucket;
+        process.env.CLOUDINARY_MOCK_UPLOADS = previousCloudinaryMockUploads;
       }
       if (previousResendApiKey === undefined) {
         delete process.env.RESEND_API_KEY;
