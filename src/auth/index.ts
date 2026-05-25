@@ -226,9 +226,15 @@ export function verifyJwt(token: string, secret: string): JwtClaims {
 
 const rolePermissions: Record<RoleKey, readonly PermissionKey[]> = {
   [Roles.Employee]: [Permissions.ExpenseCreate, Permissions.DocumentRead],
-  [Roles.Reviewer]: [Permissions.ExpenseCreate, Permissions.DocumentRead],
+  [Roles.Reviewer]: [
+    Permissions.ExpenseCreate,
+    Permissions.ExpenseManagerVerify,
+    Permissions.ReportRead,
+    Permissions.DocumentRead
+  ],
   [Roles.Director]: [
     Permissions.ExpenseCreate,
+    Permissions.ExpenseManagerVerify,
     Permissions.ReportRead,
     Permissions.DocumentRead
   ],

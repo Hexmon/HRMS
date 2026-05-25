@@ -726,6 +726,9 @@ function permissionsForRole(role: string): string[] {
       return Object.values(Permissions);
     case Roles.FinanceManager:
       return [Permissions.ExpenseFinanceApprove, Permissions.ExpenseFinance, Permissions.ReportRead, Permissions.DocumentRead];
+    case Roles.Reviewer:
+    case Roles.Director:
+      return [Permissions.ExpenseCreate, Permissions.ExpenseManagerVerify, Permissions.ReportRead, Permissions.DocumentRead];
     case Roles.Auditor:
       return [Permissions.ExpenseAudit, Permissions.ReportRead, Permissions.DocumentRead];
     case Roles.AssetManager:
@@ -746,7 +749,7 @@ function navigationFor(permissions: readonly string[], roles: readonly string[])
     { key: "documents", label: "Documents", path: "/documents", permission: Permissions.DocumentRead }
   ];
   if (permissionSet.has(Permissions.ExpenseManagerVerify)) {
-    items.push({ key: "manager-expenses", label: "Manager Verification", path: "/expenses/review", permission: Permissions.ExpenseManagerVerify });
+    items.push({ key: "manager-expenses", label: "Expense Approvals", path: "/expenses/review", permission: Permissions.ExpenseManagerVerify });
   }
   if (permissionSet.has(Permissions.ExpenseFinance)) {
     items.push({ key: "finance", label: "Finance", path: "/expenses/finance", permission: Permissions.ExpenseFinance });
