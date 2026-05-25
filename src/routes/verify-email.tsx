@@ -1,9 +1,21 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import {
+  forgetDemoEmailVerificationToken,
+  readDemoEmailVerificationToken,
+  rememberDemoEmailVerificationToken,
+} from "@/lib/demo-email-verification";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, MailCheck, MailWarning, RefreshCcw, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  MailCheck,
+  MailWarning,
+  RefreshCcw,
+  ShieldCheck,
+  XCircle,
+} from "lucide-react";
 
 interface SearchParams {
   email?: string;
@@ -32,6 +44,10 @@ function VerifyEmailPage() {
     null,
   );
   const [verifying, setVerifying] = useState(false);
+  const [demoToken, setDemoToken] = useState<string | null>(() =>
+    readDemoEmailVerificationToken(email),
+  );
+  const [demoError, setDemoError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -53,39 +69,69 @@ function VerifyEmailPage() {
   }, [token, verifyToken]);
 
   useEffect(() => {
+    setDemoToken(readDemoEmailVerificationToken(email));
+  }, [email]);
+
+  const continueAfterVerification = useCallback(
+    (result: Awaited<ReturnType<typeof verifyToken>>) => {
+      if (result.status !== "ok" || !result.pending) return false;
+      if (result.nextStep === "set_password") {
+        if (!result.pending.token) return false;
+        navigate({ to: "/set-password", search: { token: result.pending.token } });
+        return true;
+      }
+      navigate({ to: "/login" });
+      return true;
+    },
+    [navigate],
+  );
+
+  useEffect(() => {
     if (verification?.status === "ok" && verification.pending) {
       const t = setTimeout(() => {
-        if (verification.nextStep === "set_password" && verification.pending?.token) {
-          navigate({ to: "/set-password", search: { token: verification.pending.token } });
-        } else if (verification.nextStep === "set_password") {
-          return;
-        } else {
-          navigate({ to: "/login" });
-        }
+        continueAfterVerification(verification);
       }, 1400);
       return () => clearTimeout(t);
     }
-  }, [verification, navigate]);
+  }, [verification, continueAfterVerification]);
 
-  const state: NonNullable<SearchParams["state"]> =
-    stateParam ??
-    (verifying
-      ? "sent"
-      : verification
-        ? verification.status === "ok"
-          ? "verified"
-          : verification.status === "expired"
-            ? "expired"
-            : "invalid"
-        : "sent");
+  const state: NonNullable<SearchParams["state"]> = (() => {
+    if (verifying) return "sent";
+    if (!verification) return stateParam ?? "sent";
+    if (verification.status === "ok") return "verified";
+    if (verification.status === "expired") return "expired";
+    return "invalid";
+  })();
 
   const handleResend = async () => {
     if (!email) return;
     const rec = await resendVerification(email);
     if (rec) {
+      rememberDemoEmailVerificationToken(rec.email, rec.token);
+      setDemoToken(readDemoEmailVerificationToken(rec.email));
       setResentAt(Date.now());
       navigate({ to: "/verify-email", search: { email, state: "sent" } });
     }
+  };
+
+  const handleDemoVerify = async () => {
+    if (!demoToken) return;
+    setDemoError("");
+    setVerifying(true);
+    const result = await verifyToken(demoToken);
+    setVerification(result);
+    if (result.status === "ok") {
+      forgetDemoEmailVerificationToken(email);
+      setDemoToken(null);
+      if (!continueAfterVerification(result)) {
+        setDemoError(
+          "Email was verified, but this demo cannot continue because the backend did not return a local setup token. Run the backend outside production mode and sign up again.",
+        );
+      }
+    } else {
+      setDemoError("The demo verification token is invalid or expired. Start signup again.");
+    }
+    setVerifying(false);
   };
 
   return (
@@ -140,15 +186,34 @@ function VerifyEmailPage() {
         )}
 
         {(state === "sent" || state === "expired") && (
-          <Button
-            onClick={handleResend}
-            variant="outline"
-            className="h-11 w-full rounded-xl"
-            disabled={!email}
-          >
-            <RefreshCcw className="mr-1.5 h-4 w-4" />
-            Resend verification email
-          </Button>
+          <div className="space-y-3">
+            {demoToken && (
+              <Button
+                onClick={handleDemoVerify}
+                className="h-11 w-full rounded-xl text-primary-foreground"
+                style={{ background: "var(--gradient-primary)" }}
+                disabled={verifying}
+              >
+                <ShieldCheck className="mr-1.5 h-4 w-4" />
+                {verifying ? "Verifying..." : "Demo verify and continue"}
+              </Button>
+            )}
+            <Button
+              onClick={handleResend}
+              variant="outline"
+              className="h-11 w-full rounded-xl"
+              disabled={!email}
+            >
+              <RefreshCcw className="mr-1.5 h-4 w-4" />
+              Resend verification email
+            </Button>
+          </div>
+        )}
+
+        {demoError && (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {demoError}
+          </p>
         )}
 
         {resentAt && (

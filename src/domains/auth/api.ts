@@ -94,7 +94,6 @@ export interface ResendEmailVerificationRequest {
 
 export interface ResendEmailVerificationResponse extends DevOnlyResponse {
   accepted: boolean;
-  sent: boolean;
   masked_email: string;
   retry_after_seconds: number;
 }

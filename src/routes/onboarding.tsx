@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth, dashboardPathForRole } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,7 +64,39 @@ type CompanyProfile = {
   address: string;
   timezone: string;
   currency: string;
+  logoName: string;
+  logoDataUrl: string;
+  logoMimeType: string;
+  logoSizeBytes: number | null;
 };
+
+type OnboardingDraft = {
+  step: number;
+  profile: CompanyProfile;
+  departments: string[];
+  designations: string[];
+  enabledRoles: string[];
+  savedAt: string;
+};
+
+const DEFAULT_PROFILE: CompanyProfile = {
+  companyName: "",
+  website: "",
+  industry: "Software",
+  size: "11–50",
+  address: "",
+  timezone: "Asia/Kolkata",
+  currency: "USD",
+  logoName: "",
+  logoDataUrl: "",
+  logoMimeType: "",
+  logoSizeBytes: null,
+};
+
+const ONBOARDING_DRAFT_KEY_PREFIX = "hawkaii_onboarding_draft_v1";
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+const ACCEPTED_LOGO_TYPES = new Set(["image/png", "image/svg+xml"]);
+const ACCEPTED_LOGO_EXTENSIONS = [".png", ".svg"];
 
 const POLICIES = [
   {
@@ -113,26 +145,145 @@ const STEPS = [
   { id: 5, title: "Policies", icon: ShieldCheck },
 ];
 
+function onboardingDraftKey(identity: string) {
+  return `${ONBOARDING_DRAFT_KEY_PREFIX}:${identity}`;
+}
+
+function clampStep(value: unknown) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return 1;
+  return Math.min(STEPS.length, Math.max(1, Math.round(numeric)));
+}
+
+function normalizeStringList(value: unknown, fallback: string[]) {
+  if (!Array.isArray(value)) return fallback;
+  const cleaned = value.filter(
+    (item): item is string => typeof item === "string" && item.trim().length > 0,
+  );
+  return cleaned.length ? cleaned : fallback;
+}
+
+function mergeProfileDraft(value: unknown): CompanyProfile {
+  if (!value || typeof value !== "object") return DEFAULT_PROFILE;
+  return { ...DEFAULT_PROFILE, ...(value as Partial<CompanyProfile>) };
+}
+
+function readOnboardingDraft(key: string): OnboardingDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<OnboardingDraft>;
+    return {
+      step: clampStep(parsed.step),
+      profile: mergeProfileDraft(parsed.profile),
+      departments: normalizeStringList(parsed.departments, DEFAULT_DEPARTMENTS),
+      designations: normalizeStringList(parsed.designations, DEFAULT_DESIGNATIONS),
+      enabledRoles: normalizeStringList(
+        parsed.enabledRoles,
+        ROLES.map((role) => role.key),
+      ),
+      savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeOnboardingDraft(key: string, draft: OnboardingDraft) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    // A large uploaded logo can exceed localStorage quota. Keep the wizard usable even then.
+  }
+}
+
+function clearOnboardingDraft(key: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(key);
+}
+
+function isAcceptedLogo(file: File) {
+  const lowerName = file.name.toLowerCase();
+  return (
+    ACCEPTED_LOGO_TYPES.has(file.type) ||
+    ACCEPTED_LOGO_EXTENSIONS.some((extension) => lowerName.endsWith(extension))
+  );
+}
+
+function readLogoFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("Could not read logo file."));
+    };
+    reader.onerror = () => reject(new Error("Could not read logo file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatBytes(bytes: number | null) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`;
+  return `${Math.round(bytes / (1024 * 102.4)) / 10} MB`;
+}
+
 function OnboardingPage() {
   const { user, activeRole, isCompanySetupComplete, completeCompanySetup } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
+  const [draftLoaded, setDraftLoaded] = useState(false);
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const [profile, setProfile] = useState<CompanyProfile>({
-    companyName: "",
-    website: "",
-    industry: "Software",
-    size: "11–50",
-    address: "",
-    timezone: "Asia/Kolkata",
-    currency: "USD",
-  });
+  const [profile, setProfile] = useState<CompanyProfile>(DEFAULT_PROFILE);
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
   const [designations, setDesignations] = useState<string[]>(DEFAULT_DESIGNATIONS);
   const [enabledRoles, setEnabledRoles] = useState<string[]>(ROLES.map((r) => r.key));
+  const draftKey = user ? onboardingDraftKey(user.id || user.email) : null;
+
+  useEffect(() => {
+    if (!draftKey) {
+      setDraftLoaded(false);
+      return;
+    }
+
+    const draft = readOnboardingDraft(draftKey);
+    if (draft) {
+      setStep(draft.step);
+      setProfile(draft.profile);
+      setDepartments(draft.departments);
+      setDesignations(draft.designations);
+      setEnabledRoles(draft.enabledRoles);
+    }
+    setDraftLoaded(true);
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!draftKey || !draftLoaded || done || isCompanySetupComplete) return;
+    writeOnboardingDraft(draftKey, {
+      step,
+      profile,
+      departments,
+      designations,
+      enabledRoles,
+      savedAt: new Date().toISOString(),
+    });
+  }, [
+    departments,
+    designations,
+    done,
+    draftKey,
+    draftLoaded,
+    enabledRoles,
+    isCompanySetupComplete,
+    profile,
+    step,
+  ]);
 
   useEffect(() => {
     if (!user) {
@@ -140,9 +291,10 @@ function OnboardingPage() {
       return;
     }
     if (isCompanySetupComplete) {
+      if (draftKey) clearOnboardingDraft(draftKey);
       navigate({ to: dashboardPathForRole(activeRole) });
     }
-  }, [user, activeRole, isCompanySetupComplete, navigate]);
+  }, [user, activeRole, draftKey, isCompanySetupComplete, navigate]);
 
   if (!user) return null;
 
@@ -167,6 +319,7 @@ function OnboardingPage() {
         setError(result.error ?? "Could not finish setup.");
         return;
       }
+      if (draftKey) clearOnboardingDraft(draftKey);
       setDone(true);
     } finally {
       setSubmitting(false);
@@ -329,9 +482,46 @@ function StepProfile({
   profile: CompanyProfile;
   setProfile: React.Dispatch<React.SetStateAction<CompanyProfile>>;
 }) {
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [logoError, setLogoError] = useState("");
+  const [dragging, setDragging] = useState(false);
   const set =
     (k: keyof CompanyProfile) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setProfile((p) => ({ ...p, [k]: e.target.value }));
+  const applyLogo = async (file: File | null | undefined) => {
+    setLogoError("");
+    if (!file) return;
+    if (!isAcceptedLogo(file)) {
+      setLogoError("Use a PNG or SVG logo.");
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setLogoError("Logo must be 2 MB or smaller.");
+      return;
+    }
+    try {
+      const logoDataUrl = await readLogoFile(file);
+      setProfile((p) => ({
+        ...p,
+        logoName: file.name,
+        logoDataUrl,
+        logoMimeType: file.type,
+        logoSizeBytes: file.size,
+      }));
+    } catch {
+      setLogoError("Could not read this logo file. Try another PNG or SVG.");
+    }
+  };
+  const clearLogo = () => {
+    setLogoError("");
+    setProfile((p) => ({
+      ...p,
+      logoName: "",
+      logoDataUrl: "",
+      logoMimeType: "",
+      logoSizeBytes: null,
+    }));
+  };
   return (
     <div className="space-y-5">
       <Header
@@ -392,20 +582,74 @@ function StepProfile({
           options={["USD", "EUR", "GBP", "INR", "SGD", "AUD"]}
         />
       </div>
-      <div className="rounded-2xl border border-dashed bg-secondary/40 p-6">
-        <div className="flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-xl bg-card text-muted-foreground">
-            <ImageUp className="h-5 w-5" />
+      <div
+        className={`rounded-2xl border border-dashed bg-secondary/40 p-6 transition ${
+          dragging ? "border-primary bg-primary/5" : "border-border"
+        }`}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(event) => {
+          event.preventDefault();
+          setDragging(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          void applyLogo(event.dataTransfer.files.item(0));
+        }}
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl bg-card text-muted-foreground">
+            {profile.logoDataUrl ? (
+              <img
+                src={profile.logoDataUrl}
+                alt={`${profile.companyName || "Company"} logo preview`}
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <ImageUp className="h-5 w-5" />
+            )}
           </div>
           <div className="flex-1">
             <p className="text-sm font-medium">Company logo</p>
             <p className="text-xs text-muted-foreground">
               PNG or SVG, up to 2 MB. Drop here or click to upload.
             </p>
+            {profile.logoName && (
+              <p className="mt-1 text-xs text-foreground">
+                {profile.logoName}
+                {profile.logoSizeBytes ? ` (${formatBytes(profile.logoSizeBytes)})` : ""}
+              </p>
+            )}
+            {logoError && <p className="mt-1 text-xs text-destructive">{logoError}</p>}
           </div>
-          <Button variant="outline" type="button" className="rounded-xl">
-            Upload
-          </Button>
+          <div className="flex shrink-0 gap-2 self-start sm:self-auto">
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/png,image/svg+xml"
+              className="hidden"
+              onChange={(event) => {
+                void applyLogo(event.currentTarget.files?.item(0));
+                event.currentTarget.value = "";
+              }}
+            />
+            <Button
+              variant="outline"
+              type="button"
+              className="rounded-xl"
+              onClick={() => logoInputRef.current?.click()}
+            >
+              Upload
+            </Button>
+            {profile.logoDataUrl && (
+              <Button variant="ghost" type="button" className="rounded-xl" onClick={clearLogo}>
+                Remove
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

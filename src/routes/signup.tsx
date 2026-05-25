@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowRight, Building2 } from "lucide-react";
+import { rememberDemoEmailVerificationToken } from "@/lib/demo-email-verification";
 
 export const Route = createFileRoute("/signup")({
   head: () => ({
@@ -54,6 +55,7 @@ function SignupPage() {
     setSubmitting(true);
     try {
       const rec = await signup(form);
+      rememberDemoEmailVerificationToken(rec.email, rec.token);
       navigate({ to: "/verify-email", search: { email: rec.email, state: "sent" } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create workspace.");
