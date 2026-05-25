@@ -5,7 +5,7 @@ Use this file as prompt context when asking Codex to build HRMS frontend screens
 ## Hard Rules
 
 - Do not invent routes. Use only `docs/api/frontend-contract/openapi.json` and `ENDPOINT_INDEX.md`.
-- Do not query PostgreSQL, Drizzle, Valkey, Cloudinary, migrations, or backend repositories from frontend code.
+- Do not query PostgreSQL, Drizzle, Valkey, object storage, migrations, or backend repositories from frontend code.
 - Do not put production secrets, bearer tokens, cookies, signed download URLs, or database URLs into prompts, logs, fixtures, screenshots, or committed files.
 - Preserve Manager -> Finance vocabulary. Do not recreate legacy reviewer/director queues, labels, or approval pages.
 - Keep frontend role checks as UX hints only; backend RBAC/ABAC is authoritative.

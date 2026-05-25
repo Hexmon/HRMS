@@ -963,6 +963,11 @@ export class CoreService {
       status: "active",
       expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       used_at: null,
+      revoked_at: null,
+      created_ip_hash: null,
+      user_agent_hash: null,
+      last_sent_at: null,
+      send_count: 0,
       created_at: now,
       metadata: { reason }
     };
@@ -978,6 +983,7 @@ export class CoreService {
   private revokeActivePasswordSetupTokens(userId: UUID): void {
     for (const token of this.store.authTokens.filter((candidate) => candidate.user_id === userId && candidate.token_type === "password_setup" && candidate.status === "active")) {
       token.status = "revoked";
+      token.revoked_at = nowIso();
     }
   }
 

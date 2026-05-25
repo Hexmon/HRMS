@@ -38,6 +38,7 @@ const protectedExceptions = new Set([
   "POST /api/v1/auth/password-reset/request",
   "POST /api/v1/auth/password-reset/confirm",
   "POST /api/v1/onboarding/company-bootstrap",
+  "POST /api/v1/webhooks/resend",
   "POST /api/v1/auth/login",
   "POST /api/v1/auth/logout",
   "POST /api/v1/assets/scan/{qr_hash}"
@@ -77,6 +78,7 @@ const expectedOperations = [
   "GET /api/v1/attendance/summary/my",
   "GET /api/v1/attendance/summary/team",
   "GET /api/v1/auth/me",
+  "POST /api/v1/webhooks/resend",
   "GET /api/v1/core/master-data/org-selectors",
   "GET /api/v1/core/users",
   "GET /api/v1/core/users/imports/{job_id}",
@@ -575,9 +577,27 @@ describe("API contracts", () => {
     const previousNodeEnv = process.env.NODE_ENV;
     const previousAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
     const previousLogLevel = process.env.LOG_LEVEL;
+    const previousEmailMode = process.env.EMAIL_DELIVERY_MODE;
+    const previousObjectStorageProvider = process.env.OBJECT_STORAGE_PROVIDER;
+    const previousMinioAccessKey = process.env.MINIO_ACCESS_KEY;
+    const previousMinioSecretKey = process.env.MINIO_SECRET_KEY;
+    const previousMinioBucket = process.env.MINIO_BUCKET;
+    const previousResendApiKey = process.env.RESEND_API_KEY;
+    const previousResendFromEmail = process.env.RESEND_FROM_EMAIL;
+    const previousResendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+    const previousFrontendUrl = process.env.FRONTEND_URL;
     process.env.NODE_ENV = "production";
     process.env.CORS_ALLOWED_ORIGINS = "https://hrms.example.com";
     process.env.LOG_LEVEL = "warn";
+    process.env.EMAIL_DELIVERY_MODE = "send";
+    process.env.OBJECT_STORAGE_PROVIDER = "minio";
+    process.env.MINIO_ACCESS_KEY = "prod-contract-minio-access";
+    process.env.MINIO_SECRET_KEY = "prod-contract-minio-secret";
+    process.env.MINIO_BUCKET = "prod-contract-bucket";
+    process.env.RESEND_API_KEY = "test-resend-api-key";
+    process.env.RESEND_FROM_EMAIL = "verify@example.test";
+    process.env.RESEND_WEBHOOK_SECRET = "test-resend-webhook-secret";
+    process.env.FRONTEND_URL = "https://hrms.example.com";
     const secureApp = await buildApp({ dataStore: createMemoryDataStore(), logger: true, rateLimit: false });
     try {
       await secureApp.ready();
@@ -625,6 +645,51 @@ describe("API contracts", () => {
         delete process.env.LOG_LEVEL;
       } else {
         process.env.LOG_LEVEL = previousLogLevel;
+      }
+      if (previousEmailMode === undefined) {
+        delete process.env.EMAIL_DELIVERY_MODE;
+      } else {
+        process.env.EMAIL_DELIVERY_MODE = previousEmailMode;
+      }
+      if (previousObjectStorageProvider === undefined) {
+        delete process.env.OBJECT_STORAGE_PROVIDER;
+      } else {
+        process.env.OBJECT_STORAGE_PROVIDER = previousObjectStorageProvider;
+      }
+      if (previousMinioAccessKey === undefined) {
+        delete process.env.MINIO_ACCESS_KEY;
+      } else {
+        process.env.MINIO_ACCESS_KEY = previousMinioAccessKey;
+      }
+      if (previousMinioSecretKey === undefined) {
+        delete process.env.MINIO_SECRET_KEY;
+      } else {
+        process.env.MINIO_SECRET_KEY = previousMinioSecretKey;
+      }
+      if (previousMinioBucket === undefined) {
+        delete process.env.MINIO_BUCKET;
+      } else {
+        process.env.MINIO_BUCKET = previousMinioBucket;
+      }
+      if (previousResendApiKey === undefined) {
+        delete process.env.RESEND_API_KEY;
+      } else {
+        process.env.RESEND_API_KEY = previousResendApiKey;
+      }
+      if (previousResendFromEmail === undefined) {
+        delete process.env.RESEND_FROM_EMAIL;
+      } else {
+        process.env.RESEND_FROM_EMAIL = previousResendFromEmail;
+      }
+      if (previousResendWebhookSecret === undefined) {
+        delete process.env.RESEND_WEBHOOK_SECRET;
+      } else {
+        process.env.RESEND_WEBHOOK_SECRET = previousResendWebhookSecret;
+      }
+      if (previousFrontendUrl === undefined) {
+        delete process.env.FRONTEND_URL;
+      } else {
+        process.env.FRONTEND_URL = previousFrontendUrl;
       }
     }
   });
@@ -787,7 +852,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(233);
+    expect(rows.length).toBe(234);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

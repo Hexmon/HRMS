@@ -88,6 +88,7 @@ import {
 import { MemorySessionStore, getLocalDemoPassword, hashPasswordSync, type SessionStore } from "#auth";
 import { getReleaseSeedEmails } from "./seed-personas.js";
 import { defaultPdfCompressionOptions, type PdfCompressionOptions } from "./pdf-compression.js";
+import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 
 export interface NotificationRecord {
   id: UUID;
@@ -170,6 +171,11 @@ export interface AuthTokenRecord {
   status: "active" | "used" | "revoked" | "expired";
   expires_at: string;
   used_at: string | null;
+  revoked_at: string | null;
+  created_ip_hash: string | null;
+  user_agent_hash: string | null;
+  last_sent_at: string | null;
+  send_count: number;
   created_at: string;
   metadata: Record<string, unknown>;
 }
@@ -351,7 +357,7 @@ export interface ObjectStoragePutResult {
 }
 
 export interface ObjectStoragePort {
-  readonly kind: "memory" | "cloudinary";
+  readonly kind: "memory" | "cloudinary" | "minio";
   readonly bucket: string;
   putObject(key: string, body: Buffer, metadata?: Record<string, string>): Promise<ObjectStoragePutResult>;
   presignedGetUrl(key: string, expiresInSeconds: number): Promise<string>;
@@ -397,6 +403,8 @@ export interface DataStore {
   documentVersions: DocumentVersionRecord[];
   documentAccessLogs: DocumentAccessLogRecord[];
   notifications: NotificationRecord[];
+  emailDeliveries: EmailDeliveryRecord[];
+  emailEvents: EmailEventRecord[];
   outbox: OutboxEvent[];
   assets: AssetRecord[];
   assetAssignments: AssetAssignmentRecord[];
@@ -541,6 +549,8 @@ function makeUser(input: {
     designation_id: input.designationId,
     roles: input.roles,
     employment_status: EmploymentStatuses.Active,
+    email_verified_at: "2026-01-01T00:00:00.000Z",
+    email_verification_status: "verified",
     hierarchy_path: input.path,
     manager_user_id: input.managerId,
     timezone: "Asia/Kolkata",
@@ -1816,6 +1826,8 @@ export function createMemoryDataStore(): MemoryDataStore {
     documentVersions: [],
     documentAccessLogs: [],
     notifications,
+    emailDeliveries: [],
+    emailEvents: [],
     outbox: [],
     assets: [
       {

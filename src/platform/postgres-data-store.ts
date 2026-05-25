@@ -65,20 +65,34 @@ import {
   buildDefaultAdminSecuritySettings,
   createMemoryDataStore
 } from "./data-store.js";
-import { CloudinaryObjectStorage } from "./object-storage.js";
+import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
+import { CloudinaryObjectStorage, MinioObjectStorage } from "./object-storage.js";
+
+export type PostgresObjectStorageOptions =
+  | {
+      provider: "cloudinary";
+      cloudName: string;
+      apiKey: string;
+      apiSecret: string;
+      folder: string;
+      resourceType: "auto" | "image" | "raw" | "video";
+      uploadTransformation?: string;
+      mockUploads: boolean;
+    }
+  | {
+      provider: "minio";
+      endpoint: string;
+      publicEndpoint?: string;
+      accessKey: string;
+      secretKey: string;
+      bucket: string;
+      region: string;
+    };
 
 export interface PostgresDataStoreOptions {
   databaseUrl: string;
   valkeyUrl: string;
-  objectStorage: {
-    cloudName: string;
-    apiKey: string;
-    apiSecret: string;
-    folder: string;
-    resourceType: "auto" | "image" | "raw" | "video";
-    uploadTransformation?: string;
-    mockUploads: boolean;
-  };
+  objectStorage: PostgresObjectStorageOptions;
   documentProcessing?: DocumentProcessingConfig;
   seedIfEmpty?: boolean;
 }
@@ -135,6 +149,8 @@ const resetTables = [
   "expenses.expense_line_items",
   "expenses.expense_tickets",
   "platform.processed_events",
+  "platform.email_events",
+  "platform.email_deliveries",
   "platform.admin_notification_channels",
   "platform.admin_email_templates",
   "platform.admin_policies",
@@ -219,6 +235,8 @@ function copyData(target: DataStore, source: DataStore): void {
   target.documentVersions = source.documentVersions;
   target.documentAccessLogs = source.documentAccessLogs;
   target.notifications = source.notifications;
+  target.emailDeliveries = source.emailDeliveries;
+  target.emailEvents = source.emailEvents;
   target.outbox = source.outbox;
   target.assets = source.assets;
   target.assetAssignments = source.assetAssignments;
@@ -297,7 +315,9 @@ export async function resetPostgresDatabase(databaseUrl: string): Promise<void> 
 
 export async function createPostgresDataStore(options: PostgresDataStoreOptions): Promise<DataStore> {
   const pool = new Pool({ connectionString: options.databaseUrl });
-  const objectStorage = new CloudinaryObjectStorage(options.objectStorage);
+  const objectStorage = options.objectStorage.provider === "minio"
+    ? new MinioObjectStorage(options.objectStorage)
+    : new CloudinaryObjectStorage(options.objectStorage);
   await objectStorage.ensureReady();
   const documentProcessing = options.documentProcessing;
 
@@ -367,6 +387,8 @@ class PostgresPersistence {
       loaded.documentVersions = await this.loadDocumentVersions(client);
       loaded.documentAccessLogs = await this.loadDocumentAccessLogs(client);
       loaded.notifications = await this.loadNotifications(client);
+      loaded.emailDeliveries = await this.loadEmailDeliveries(client);
+      loaded.emailEvents = await this.loadEmailEvents(client);
       loaded.outbox = await this.loadOutbox(client);
       loaded.assets = await this.loadAssets(client);
       loaded.assetAssignments = await this.loadAssetAssignments(client);
@@ -616,6 +638,7 @@ class PostgresPersistence {
       SELECT
         u.id, u.employee_code, u.email, u.full_name, u.department_id, u.designation_id,
         u.manager_user_id, u.hierarchy_path::text AS hierarchy_path, u.employment_status,
+        u.email_verified_at, u.email_verification_status,
         u.timezone, u.joined_on, u.terminated_on, u.deleted_at, u.version,
         COALESCE(array_agg(DISTINCT ur.role_key) FILTER (WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL), '{}') AS roles
       FROM core.users u
@@ -626,6 +649,8 @@ class PostgresPersistence {
     return rows.map((row) => ({
       ...row,
       roles: row.roles as RoleKey[],
+      email_verified_at: asIsoOrNull(row.email_verified_at),
+      email_verification_status: row.email_verification_status ?? "unverified",
       joined_on: asDateOrNull(row.joined_on),
       terminated_on: asDateOrNull(row.terminated_on),
       deleted_at: asIsoOrNull(row.deleted_at)
@@ -653,7 +678,8 @@ class PostgresPersistence {
 
   private async loadAuthTokens(client: PoolClient): Promise<AuthTokenRecord[]> {
     const { rows } = await client.query(`
-      SELECT id, token_hash, token_type, user_id, email, company_id, status, expires_at, used_at, created_at, metadata
+      SELECT id, token_hash, token_type, user_id, email, company_id, status, expires_at, used_at,
+        revoked_at, created_ip_hash, user_agent_hash, last_sent_at, send_count, created_at, metadata
       FROM platform.auth_tokens
       ORDER BY created_at, id
     `);
@@ -667,6 +693,11 @@ class PostgresPersistence {
       status: row.status,
       expires_at: asIso(row.expires_at),
       used_at: asIsoOrNull(row.used_at),
+      revoked_at: asIsoOrNull(row.revoked_at),
+      created_ip_hash: row.created_ip_hash,
+      user_agent_hash: row.user_agent_hash,
+      last_sent_at: asIsoOrNull(row.last_sent_at),
+      send_count: row.send_count ?? 0,
       created_at: asIso(row.created_at),
       metadata: json(row.metadata)
     }));
@@ -957,6 +988,60 @@ class PostgresPersistence {
       version: row.version,
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at)
+    }));
+  }
+
+  private async loadEmailDeliveries(client: PoolClient): Promise<EmailDeliveryRecord[]> {
+    const { rows } = await client.query(`
+      SELECT id, provider, template_key, purpose, user_id, email, subject, status, provider_email_id,
+        idempotency_key, error_code, error_message, queued_at, sent_at, delivered_at, failed_at,
+        bounced_at, complained_at, metadata, created_at, updated_at, version
+      FROM platform.email_deliveries
+      ORDER BY created_at, id
+    `);
+    return rows.map((row) => ({
+      id: row.id,
+      provider: row.provider,
+      template_key: row.template_key,
+      purpose: row.purpose,
+      user_id: row.user_id,
+      email: row.email,
+      subject: row.subject,
+      status: row.status,
+      provider_email_id: row.provider_email_id,
+      idempotency_key: row.idempotency_key,
+      error_code: row.error_code,
+      error_message: row.error_message,
+      queued_at: asIso(row.queued_at),
+      sent_at: asIsoOrNull(row.sent_at),
+      delivered_at: asIsoOrNull(row.delivered_at),
+      failed_at: asIsoOrNull(row.failed_at),
+      bounced_at: asIsoOrNull(row.bounced_at),
+      complained_at: asIsoOrNull(row.complained_at),
+      metadata: json(row.metadata),
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      version: row.version
+    }));
+  }
+
+  private async loadEmailEvents(client: PoolClient): Promise<EmailEventRecord[]> {
+    const { rows } = await client.query(`
+      SELECT id, provider, provider_event_id, provider_email_id, event_type, email, delivery_id, payload, received_at, processed_at
+      FROM platform.email_events
+      ORDER BY received_at, id
+    `);
+    return rows.map((row) => ({
+      id: row.id,
+      provider: row.provider,
+      provider_event_id: row.provider_event_id,
+      provider_email_id: row.provider_email_id,
+      event_type: row.event_type,
+      email: row.email,
+      delivery_id: row.delivery_id,
+      payload: json(row.payload),
+      received_at: asIso(row.received_at),
+      processed_at: asIsoOrNull(row.processed_at)
     }));
   }
 
@@ -1740,14 +1825,18 @@ class PostgresPersistence {
       await client.query(
         `INSERT INTO core.users (
           id, employee_code, email, full_name, department_id, designation_id, manager_user_id,
-          hierarchy_path, employment_status, timezone, joined_on, terminated_on, deleted_at, version
+          hierarchy_path, employment_status, email_verified_at, email_verification_status,
+          timezone, joined_on, terminated_on, deleted_at, version
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::ltree, $9, $10, $11, $12, $13, $14)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::ltree, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT (id) DO UPDATE
         SET employee_code = EXCLUDED.employee_code, email = EXCLUDED.email, full_name = EXCLUDED.full_name,
             department_id = EXCLUDED.department_id, designation_id = EXCLUDED.designation_id,
             manager_user_id = EXCLUDED.manager_user_id, hierarchy_path = EXCLUDED.hierarchy_path,
-            employment_status = EXCLUDED.employment_status, timezone = EXCLUDED.timezone,
+            employment_status = EXCLUDED.employment_status,
+            email_verified_at = EXCLUDED.email_verified_at,
+            email_verification_status = EXCLUDED.email_verification_status,
+            timezone = EXCLUDED.timezone,
             joined_on = EXCLUDED.joined_on, terminated_on = EXCLUDED.terminated_on,
             deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version, updated_at = now()`,
         [
@@ -1760,6 +1849,8 @@ class PostgresPersistence {
           user.manager_user_id,
           user.hierarchy_path,
           user.employment_status,
+          user.email_verified_at,
+          user.email_verification_status ?? "unverified",
           user.timezone,
           user.joined_on,
           user.terminated_on,
@@ -2007,11 +2098,17 @@ class PostgresPersistence {
     for (const token of this.store.authTokens) {
       await client.query(
         `INSERT INTO platform.auth_tokens (
-          id, token_hash, token_type, user_id, email, company_id, status, expires_at, used_at, created_at, metadata
+          id, token_hash, token_type, user_id, email, company_id, status, expires_at, used_at,
+          revoked_at, created_ip_hash, user_agent_hash, last_sent_at, send_count, created_at, metadata
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb)
         ON CONFLICT (id) DO UPDATE
-        SET status = EXCLUDED.status, used_at = EXCLUDED.used_at, metadata = EXCLUDED.metadata`,
+        SET status = EXCLUDED.status,
+            used_at = EXCLUDED.used_at,
+            revoked_at = EXCLUDED.revoked_at,
+            last_sent_at = EXCLUDED.last_sent_at,
+            send_count = EXCLUDED.send_count,
+            metadata = EXCLUDED.metadata`,
         [
           token.id,
           token.token_hash,
@@ -2022,6 +2119,11 @@ class PostgresPersistence {
           token.status,
           token.expires_at,
           token.used_at,
+          token.revoked_at,
+          token.created_ip_hash,
+          token.user_agent_hash,
+          token.last_sent_at,
+          token.send_count,
           token.created_at,
           JSON.stringify(token.metadata)
         ]
@@ -2103,6 +2205,79 @@ class PostgresPersistence {
           notification.version,
           notification.created_at,
           notification.updated_at
+        ]
+      );
+    }
+    for (const delivery of this.store.emailDeliveries) {
+      await client.query(
+        `INSERT INTO platform.email_deliveries (
+          id, provider, template_key, purpose, user_id, email, subject, status, provider_email_id,
+          idempotency_key, error_code, error_message, queued_at, sent_at, delivered_at, failed_at,
+          bounced_at, complained_at, metadata, created_at, updated_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22)
+        ON CONFLICT (id) DO UPDATE
+        SET status = EXCLUDED.status,
+            provider_email_id = EXCLUDED.provider_email_id,
+            error_code = EXCLUDED.error_code,
+            error_message = EXCLUDED.error_message,
+            sent_at = EXCLUDED.sent_at,
+            delivered_at = EXCLUDED.delivered_at,
+            failed_at = EXCLUDED.failed_at,
+            bounced_at = EXCLUDED.bounced_at,
+            complained_at = EXCLUDED.complained_at,
+            metadata = EXCLUDED.metadata,
+            updated_at = EXCLUDED.updated_at,
+            version = EXCLUDED.version`,
+        [
+          delivery.id,
+          delivery.provider,
+          delivery.template_key,
+          delivery.purpose,
+          delivery.user_id,
+          delivery.email,
+          delivery.subject,
+          delivery.status,
+          delivery.provider_email_id,
+          delivery.idempotency_key,
+          delivery.error_code,
+          delivery.error_message,
+          delivery.queued_at,
+          delivery.sent_at,
+          delivery.delivered_at,
+          delivery.failed_at,
+          delivery.bounced_at,
+          delivery.complained_at,
+          JSON.stringify(delivery.metadata),
+          delivery.created_at,
+          delivery.updated_at,
+          delivery.version
+        ]
+      );
+    }
+    for (const event of this.store.emailEvents) {
+      await client.query(
+        `INSERT INTO platform.email_events (
+          id, provider, provider_event_id, provider_email_id, event_type, email, delivery_id, payload, received_at, processed_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+        ON CONFLICT (provider, provider_event_id) DO UPDATE
+        SET provider_email_id = EXCLUDED.provider_email_id,
+            email = EXCLUDED.email,
+            delivery_id = EXCLUDED.delivery_id,
+            payload = EXCLUDED.payload,
+            processed_at = EXCLUDED.processed_at`,
+        [
+          event.id,
+          event.provider,
+          event.provider_event_id,
+          event.provider_email_id,
+          event.event_type,
+          event.email,
+          event.delivery_id,
+          JSON.stringify(event.payload),
+          event.received_at,
+          event.processed_at
         ]
       );
     }

@@ -1,6 +1,8 @@
 import fp from "fastify-plugin";
 import { z } from "zod";
 
+const optionalUrl = z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional());
+
 const configSchema = z.object({
   NODE_ENV: z.string().default("development"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
@@ -12,7 +14,7 @@ const configSchema = z.object({
   DATABASE_URL: z.string().optional(),
   TEST_DATABASE_URL: z.string().optional(),
   VALKEY_URL: z.string().optional(),
-  OBJECT_STORAGE_PROVIDER: z.literal("cloudinary").default("cloudinary"),
+  OBJECT_STORAGE_PROVIDER: z.enum(["cloudinary", "minio"]).default("minio"),
   CLOUDINARY_CLOUD_NAME: z.string().default("local-cloudinary-mock"),
   CLOUDINARY_API_KEY: z.string().default("local-cloudinary-key"),
   CLOUDINARY_API_SECRET: z.string().default("local-cloudinary-secret"),
@@ -20,6 +22,12 @@ const configSchema = z.object({
   CLOUDINARY_RESOURCE_TYPE: z.enum(["auto", "image", "raw", "video"]).default("auto"),
   CLOUDINARY_UPLOAD_TRANSFORMATION: z.string().default("q_auto:eco,f_auto"),
   CLOUDINARY_MOCK_UPLOADS: z.coerce.boolean().default(false),
+  MINIO_ENDPOINT: z.string().url().default("http://localhost:19000"),
+  MINIO_PUBLIC_ENDPOINT: optionalUrl,
+  MINIO_ACCESS_KEY: z.string().default("minioadmin"),
+  MINIO_SECRET_KEY: z.string().default("minioadmin"),
+  MINIO_BUCKET: z.string().default("hawkaii-hrms-dev"),
+  MINIO_REGION: z.string().default("us-east-1"),
   PDF_COMPRESSION_ENABLED: z.coerce.boolean().default(false),
   PDF_COMPRESSION_BINARY: z.string().default("gs"),
   PDF_COMPRESSION_QUALITY: z.enum(["screen", "ebook", "printer", "prepress", "default"]).default("ebook"),
@@ -27,6 +35,20 @@ const configSchema = z.object({
   PDF_COMPRESSION_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30_000),
   PDF_COMPRESSION_FAIL_OPEN: z.coerce.boolean().default(true),
   API_BASE_URL: z.string().default("http://localhost:3001"),
+  APP_URL: optionalUrl,
+  FRONTEND_URL: z.string().url().default("http://localhost:5173"),
+  EMAIL_DELIVERY_PROVIDER: z.literal("resend").default("resend"),
+  EMAIL_DELIVERY_MODE: z.enum(["send", "log", "disabled"]).default("log"),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().default("Hawkaii HRMS <verify@example.test>"),
+  RESEND_FROM_NAME: z.string().optional(),
+  RESEND_REPLY_TO_EMAIL: z.string().optional(),
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
+  RESEND_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS: z.coerce.number().int().positive().default(300),
+  EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: z.coerce.number().int().min(300).default(24 * 60 * 60),
+  EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(1).default(60),
+  EMAIL_VERIFICATION_RESEND_HOURLY_LIMIT: z.coerce.number().int().min(1).default(5),
+  EMAIL_VERIFICATION_RESEND_DAILY_LIMIT: z.coerce.number().int().min(1).default(10),
   CORS_ALLOWED_ORIGINS: z.string().default(""),
   RATE_LIMIT_ENABLED: z.coerce.boolean().default(true),
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(60),
@@ -34,9 +56,65 @@ const configSchema = z.object({
   RATE_LIMIT_WRITE_MAX: z.coerce.number().int().min(1).default(60),
   RATE_LIMIT_AUTH_MAX: z.coerce.number().int().min(1).default(10),
   RATE_LIMIT_PUBLIC_MAX: z.coerce.number().int().min(1).default(60)
+}).superRefine((config, context) => {
+  const requireField = (field: "RESEND_API_KEY" | "RESEND_FROM_EMAIL" | "RESEND_WEBHOOK_SECRET" | "FRONTEND_URL") => {
+    if (!config[field]) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `${field} is required when transactional email delivery is enabled.`
+      });
+    }
+  };
+
+  if (config.NODE_ENV === "production" && config.EMAIL_DELIVERY_MODE !== "send") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["EMAIL_DELIVERY_MODE"],
+      message: "EMAIL_DELIVERY_MODE must be 'send' in production."
+    });
+  }
+  if (config.EMAIL_DELIVERY_MODE === "send") {
+    requireField("RESEND_API_KEY");
+    requireField("RESEND_FROM_EMAIL");
+    requireField("FRONTEND_URL");
+  }
+  if (config.NODE_ENV === "production") {
+    requireField("RESEND_WEBHOOK_SECRET");
+    if (config.OBJECT_STORAGE_PROVIDER === "cloudinary") {
+      if (config.CLOUDINARY_MOCK_UPLOADS) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CLOUDINARY_MOCK_UPLOADS"],
+          message: "CLOUDINARY_MOCK_UPLOADS cannot be true in production."
+        });
+      }
+      for (const field of ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const) {
+        if (!config[field] || /^replace-|^local-|mock/iu.test(config[field])) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [field],
+            message: `${field} must be a real Cloudinary value when OBJECT_STORAGE_PROVIDER=cloudinary in production.`
+          });
+        }
+      }
+    }
+    if (config.OBJECT_STORAGE_PROVIDER === "minio") {
+      for (const field of ["MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET"] as const) {
+        if (!config[field] || config[field] === "minioadmin") {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [field],
+            message: `${field} must be set to a non-default value when OBJECT_STORAGE_PROVIDER=minio in production.`
+          });
+        }
+      }
+    }
+  }
 }).transform((config) => ({
   ...config,
-  JWT_SECRET: config.JWT_SECRET ?? config.JWT_ACCESS_SECRET
+  JWT_SECRET: config.JWT_SECRET ?? config.JWT_ACCESS_SECRET,
+  APP_URL: config.APP_URL ?? config.API_BASE_URL
 }));
 
 export const configPlugin = fp(async (fastify) => {

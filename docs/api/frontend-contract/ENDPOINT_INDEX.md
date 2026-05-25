@@ -6,13 +6,59 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 233
+Documented operations: 234
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
 ## Platform / Health
 
 Health and OpenAPI routes support runtime readiness checks and API tooling.
+
+### POST /api/v1/webhooks/resend
+
+| Field | Contract |
+|---|---|
+| Purpose | Resend webhook |
+| Frontend use | Resend webhook |
+| Auth | Public. No bearer token or session cookie required. |
+| Roles/scope | Public health/OpenAPI surface only; no sensitive config values. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+Schema: `object`.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `received` | boolean | required | - |
+| `duplicate` | boolean | required | - |
+| `event_type` | string | optional | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
 
 ### GET /health/live
 
@@ -369,7 +415,6 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `accepted` | boolean | required | - |
-| `sent` | boolean | required | False can be returned for already verified/unknown emails without exposing sensitive account state. |
 | `masked_email` | string | required | - |
 | `retry_after_seconds` | integer | required | minimum 1 |
 | `dev_only` | object | optional, nullable | Local/QA only token echo for automated testing. Production responses omit this object. |
@@ -959,6 +1004,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -978,8 +1025,8 @@ Success body highlights:
 | `timesheet_summary` | object | required | - |
 | `expense_summary` | object | required | - |
 | `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1030,6 +1077,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1114,6 +1163,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1133,8 +1184,8 @@ Success body highlights:
 | `timesheet_summary` | object | required | - |
 | `expense_summary` | object | required | - |
 | `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1196,6 +1247,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1215,8 +1268,8 @@ Success body highlights:
 | `timesheet_summary` | object | required | - |
 | `expense_summary` | object | required | - |
 | `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1278,6 +1331,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1297,8 +1352,8 @@ Success body highlights:
 | `timesheet_summary` | object | required | - |
 | `expense_summary` | object | required | - |
 | `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1358,6 +1413,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1377,8 +1434,8 @@ Success body highlights:
 | `timesheet_summary` | object | required | - |
 | `expense_summary` | object | required | - |
 | `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1438,6 +1495,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1457,8 +1516,8 @@ Success body highlights:
 | `timesheet_summary` | object | required | - |
 | `expense_summary` | object | required | - |
 | `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1518,6 +1577,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1537,8 +1598,8 @@ Success body highlights:
 | `timesheet_summary` | object | required | - |
 | `expense_summary` | object | required | - |
 | `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 

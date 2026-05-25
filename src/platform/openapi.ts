@@ -256,10 +256,9 @@ const resendEmailVerificationBodySchema = {
 
 const resendEmailVerificationResponseSchema = {
   type: "object",
-  required: ["accepted", "sent", "masked_email", "retry_after_seconds"],
+  required: ["accepted", "masked_email", "retry_after_seconds"],
   properties: {
     accepted: { type: "boolean", example: true },
-    sent: { type: "boolean", description: "False can be returned for already verified/unknown emails without exposing sensitive account state.", example: true },
     masked_email: { type: "string", example: "as**********@example.test" },
     retry_after_seconds: { type: "integer", minimum: 1, example: 60 },
     dev_only: authDevOnlySchema
@@ -379,6 +378,8 @@ const authUserSchema = {
     manager_user_id: { ...uuid("Manager user UUID"), nullable: true },
     hierarchy_path: { type: "string", example: "CEO.FIN.N1" },
     employment_status: { type: "string", example: "active" },
+    email_verified_at: { type: "string", format: "date-time", nullable: true, example: "2026-01-01T00:00:00.000Z" },
+    email_verification_status: { type: "string", enum: ["unverified", "pending", "verified", "bounced", "blocked"], example: "verified" },
     timezone: { type: "string", example: "Asia/Kolkata" },
     roles: { type: "array", items: { type: "string" }, example: ["Finance Manager"] }
   },
@@ -1392,7 +1393,7 @@ const coreUserExportJobSchema = {
     download_url: { type: "string", nullable: true },
     created_by_user_id: { ...uuid("Actor user UUID"), nullable: true },
     created_by: { type: "string", example: "ADM - Priya Menon" },
-    adapter: { type: "string", example: "cloudinary-generated-csv" },
+    adapter: { type: "string", example: "minio-generated-csv" },
     file_name: { type: "string", nullable: true, example: "employee-export-2026-05-23.csv" },
     row_count: { type: "integer", minimum: 0, example: 25 },
     size_bytes: { type: "integer", nullable: true, minimum: 0, example: 2048 },
@@ -2152,7 +2153,7 @@ const attendanceExportResponseSchema = {
     created_at: dateTime("Export job creation timestamp"),
     download_document_id: { ...uuid("Generated document UUID"), nullable: true },
     download_url: { type: "string", nullable: true },
-    adapter: { type: "string", example: "cloudinary-generated-csv" },
+    adapter: { type: "string", example: "minio-generated-csv" },
     file_name: { type: "string", nullable: true, example: "attendance-export-2026-05-23.csv" },
     row_count: { type: "integer", minimum: 0, example: 25 },
     size_bytes: { type: "integer", nullable: true, minimum: 0, example: 2048 },
@@ -2332,7 +2333,7 @@ const leaveWfhExportResponseSchema = {
     created_at: dateTime("Export job creation timestamp"),
     download_document_id: { ...uuid("Generated document UUID"), nullable: true },
     download_url: { type: "string", nullable: true },
-    adapter: { type: "string", example: "cloudinary-generated-csv" },
+    adapter: { type: "string", example: "minio-generated-csv" },
     file_name: { type: "string", nullable: true, example: "leave-wfh-export-2026-05-23.csv" },
     row_count: { type: "integer", minimum: 0, example: 25 },
     size_bytes: { type: "integer", nullable: true, minimum: 0, example: 2048 },
@@ -2902,7 +2903,7 @@ const reportExportJobSchema = {
     filters: { type: "object", additionalProperties: true },
     download_document_id: { ...uuid("Generated document UUID"), nullable: true },
     download_url: { type: "string", nullable: true },
-    adapter: { type: "string", example: "cloudinary-generated-csv" },
+    adapter: { type: "string", example: "minio-generated-csv" },
     file_name: { type: "string", nullable: true, example: "report-hr-employees-2026-05-23.csv" },
     row_count: { type: "integer", minimum: 0, example: 25 },
     size_bytes: { type: "integer", nullable: true, minimum: 0, example: 2048 },
@@ -3896,10 +3897,24 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/health/live": operation("Platform / Health", "Versioned liveness check", "Versioned liveness probe for API clients.", { response200: statusResponseSchema, rateLimited: false }, false),
   "GET /api/v1/health/ready": operation("Platform / Health", "Versioned readiness check", "Versioned readiness probe for API clients.", { response200: statusResponseSchema, rateLimited: false }, false),
   "GET /api/v1/openapi.json": operation("Platform / Health", "OpenAPI JSON", "Returns the generated OpenAPI 3.0 contract used by Swagger UI.", { response200: { type: "object", additionalProperties: true }, rateLimited: false }, false),
+  "POST /api/v1/webhooks/resend": operation("Platform / Health", "Resend webhook", "Accepts Resend transactional email webhooks after raw-body Svix signature verification, stores deduplicated provider events, and updates email delivery status. Webhook events never mark a user email as verified.", {
+    body: { type: "object", additionalProperties: true },
+    response200: {
+      type: "object",
+      required: ["received", "duplicate"],
+      properties: {
+        received: { type: "boolean", example: true },
+        duplicate: { type: "boolean", example: false },
+        event_type: { type: "string", example: "email.delivered" }
+      },
+      additionalProperties: false
+    },
+    rateLimited: false
+  }, false),
 
-  "POST /api/v1/auth/signup": operation("Auth & Sessions", "Signup", "Creates a pending workspace signup identity with hashed token-based email verification. Duplicate verified emails and bootstrapped company slugs return 409. Password is optional; if omitted, verify-email leads to set-password. Local/QA responses include dev_only tokens for automation; production omits them.", { body: signupBodySchema, response200: signupResponseSchema }, false),
-  "POST /api/v1/auth/verify-email": operation("Auth & Sessions", "Verify email", "Consumes a one-time email verification token, activates the pending identity when a password exists, or issues a password setup action when no password was supplied. Reused tokens return 409 and expired/invalid tokens return 400.", { body: verifyEmailBodySchema, response200: verifyEmailResponseSchema }, false),
-  "POST /api/v1/auth/email-verifications/resend": operation("Auth & Sessions", "Resend email verification", "Enumeration-safe resend endpoint for pending signups. The response is accepted for unknown or already-verified emails and includes retry guidance; Local/QA may include a dev_only token when a pending identity exists.", { body: resendEmailVerificationBodySchema, response200: resendEmailVerificationResponseSchema }, false),
+  "POST /api/v1/auth/signup": operation("Auth & Sessions", "Signup", "Creates a pending workspace signup identity with hashed token-based email verification and queues a transactional verification email. Duplicate verified emails and bootstrapped company slugs return 409. Password is optional; if omitted, verify-email leads to set-password. Local/QA responses include dev_only tokens for automation; production omits them.", { body: signupBodySchema, response200: signupResponseSchema }, false),
+  "POST /api/v1/auth/verify-email": operation("Auth & Sessions", "Verify email", "Consumes a one-time app-owned email verification token, marks the user email as verified, activates the pending identity when a password exists, or issues a password setup action when no password was supplied. Resend webhook events are not trusted for verification. Reused tokens return 409 and expired/invalid tokens return 400.", { body: verifyEmailBodySchema, response200: verifyEmailResponseSchema }, false),
+  "POST /api/v1/auth/email-verifications/resend": operation("Auth & Sessions", "Resend email verification", "Enumeration-safe resend endpoint for pending signups. The response is accepted for unknown or already-verified emails and does not reveal whether an email was sent; pending users are protected by cooldown/hourly/daily resend limits. Local/QA may include a dev_only token when a pending identity exists.", { body: resendEmailVerificationBodySchema, response200: resendEmailVerificationResponseSchema }, false),
   "POST /api/v1/auth/set-password": operation("Auth & Sessions", "Set password", "Sets the initial password for an invited or verified account using a one-time password_setup token. Password confirmation is required, reused tokens return 409, and successful setup enables login.", { body: passwordSetBodySchema, response200: setPasswordResponseSchema }, false),
   "POST /api/v1/auth/password-reset/request": operation("Auth & Sessions", "Request password reset", "Enumeration-safe password reset request. The response shape is the same for existing and unknown emails; Local/QA may include a dev_only token only for automation.", { body: resendEmailVerificationBodySchema, response200: passwordResetRequestResponseSchema }, false),
   "POST /api/v1/auth/password-reset/confirm": operation("Auth & Sessions", "Confirm password reset", "Consumes a one-time password_reset token, replaces the active password hash, and revokes active sessions for the user. Reused tokens return 409 and invalid/expired tokens return 400.", { body: passwordSetBodySchema, response200: passwordResetConfirmResponseSchema }, false),
@@ -4752,7 +4767,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/manager-backups": operation("Admin / Configuration", "Create manager backup", "Creates an effective-dated manager backup assignment. Self mappings and inactive users are blocked.", { body: { type: "object", required: ["employee_user_id", "backup_manager_user_id", "effective_from"], properties: { employee_user_id: uuid("Employee user UUID"), backup_manager_user_id: uuid("Backup manager user UUID"), effective_from: date("Effective from"), effective_to: date("Effective to") } }, response200: { type: "object", additionalProperties: true } }),
   "DELETE /api/v1/manager-backups/{id}": operation("Admin / Configuration", "Revoke manager backup", "Soft-revokes a manager backup assignment. Optional expected_version query supports OCC where available.", { params: idParamSchema, querystring: { type: "object", properties: { expected_version: { type: "integer", minimum: 1, example: 1 } } }, response200: { type: "object", additionalProperties: true } }),
 
-  "POST /api/v1/documents": operation("Documents", "Upload document metadata", "Creates secure document metadata and stores the file through the backend Cloudinary object storage adapter. Object-storage credentials are never exposed.", { body: documentUploadBody, response200: documentSchema }),
+  "POST /api/v1/documents": operation("Documents", "Upload document metadata", "Creates secure document metadata and stores the file through the backend object storage adapter. Object-storage credentials are never exposed.", { body: documentUploadBody, response200: documentSchema }),
   "POST /api/v1/expenses/{id}/documents": operation("Documents", "Upload expense document", "Uploads metadata for an expense ticket document using the path ticket id as business object id.", { params: idParamSchema, body: expenseDocumentUploadBody, response200: documentSchema }),
   "GET /api/v1/documents": operation("Documents", "List documents", "Lists documents visible to the actor with optional business object filters.", { querystring: { ...paginationQuerySchema, properties: { ...paginationQuerySchema.properties, business_object_type: { type: "string", example: "expense_ticket" }, business_object_id: uuid("Business object UUID") } }, response200: paginated(documentSchema) }),
   "GET /api/v1/documents/{id}": operation("Documents", "Document metadata", "Returns document metadata if classification and object-level access policies allow.", { params: idParamSchema, response200: documentSchema }),

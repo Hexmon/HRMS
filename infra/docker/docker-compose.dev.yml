@@ -9,7 +9,7 @@ x-backend-environment: &backend-environment
   DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform
   TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform_test
   VALKEY_URL: redis://valkey:6379
-  OBJECT_STORAGE_PROVIDER: cloudinary
+  OBJECT_STORAGE_PROVIDER: ${OBJECT_STORAGE_PROVIDER:-minio}
   CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-local-cloudinary-mock}
   CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-local-cloudinary-key}
   CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-local-cloudinary-secret}
@@ -17,6 +17,12 @@ x-backend-environment: &backend-environment
   CLOUDINARY_RESOURCE_TYPE: ${CLOUDINARY_RESOURCE_TYPE:-auto}
   CLOUDINARY_UPLOAD_TRANSFORMATION: ${CLOUDINARY_UPLOAD_TRANSFORMATION:-q_auto:eco,f_auto}
   CLOUDINARY_MOCK_UPLOADS: ${CLOUDINARY_MOCK_UPLOADS:-true}
+  MINIO_ENDPOINT: ${MINIO_DOCKER_ENDPOINT:-http://minio:9000}
+  MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://localhost:19000}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+  MINIO_BUCKET: ${MINIO_BUCKET:-hawkaii-hrms-dev}
+  MINIO_REGION: ${MINIO_REGION:-us-east-1}
   PDF_COMPRESSION_ENABLED: ${PDF_COMPRESSION_ENABLED:-true}
   PDF_COMPRESSION_BINARY: ${PDF_COMPRESSION_BINARY:-gs}
   PDF_COMPRESSION_QUALITY: ${PDF_COMPRESSION_QUALITY:-ebook}
@@ -64,6 +70,23 @@ services:
     volumes:
       - valkey-data:/data
 
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "${MINIO_HOST_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-19001}:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - minio-data:/data
+
   hawkaii-hrms-migrate:
     build: *backend-build
     environment: *backend-environment
@@ -71,6 +94,8 @@ services:
       postgres:
         condition: service_healthy
       valkey:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     command: ["sh", "-lc", "pnpm db:migrate && pnpm release:seed"]
     restart: "no"
@@ -82,6 +107,8 @@ services:
       hawkaii-hrms-migrate:
         condition: service_completed_successfully
       valkey:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     ports:
       - "${API_HOST_PORT:-3001}:3001"
@@ -106,3 +133,4 @@ services:
 volumes:
   postgres-data:
   valkey-data:
+  minio-data:

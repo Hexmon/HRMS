@@ -4,6 +4,7 @@ import { EmploymentStatuses, Permissions, Roles, type AdminSecuritySettingsRecor
 import { badRequest, conflict, forbidden, notFound, unauthorized } from "../../platform/errors.js";
 import type { AuthTokenRecord, CompanyProfileRecord, MemoryDataStore, UserCredentialRecord, UserSessionPreferenceRecord } from "../../platform/data-store.js";
 import { nowIso, seedIds } from "../../platform/data-store.js";
+import type { EmailDeliveryService } from "../../platform/email/email-delivery-service.js";
 import { AuthRepository } from "./repository.js";
 import type {
   CompanyBootstrapInput,
@@ -63,12 +64,32 @@ interface GeneratedToken {
   record: AuthTokenRecord;
 }
 
+interface AuthRequestContext {
+  ip?: string;
+  userAgent?: string;
+}
+
+interface VerificationEmailSendInput {
+  user: CoreUser;
+  email: string;
+  company: CompanyProfileRecord | null;
+  metadata: () => Record<string, unknown>;
+  context?: AuthRequestContext;
+  enforceResendLimits: boolean;
+}
+
+interface VerificationEmailSendResult {
+  generated: GeneratedToken | null;
+  retryAfterSeconds: number;
+}
+
 export class AuthService {
   private readonly repository: AuthRepository;
 
   constructor(
     private readonly store: MemoryDataStore,
-    private readonly jwtSecret: string
+    private readonly jwtSecret: string,
+    private readonly emailDelivery?: EmailDeliveryService
   ) {
     this.repository = new AuthRepository(store);
   }
@@ -87,7 +108,7 @@ export class AuthService {
     return { user, token: jwt.token, expires_at: jwt.expiresAt, jti: jwt.jti };
   }
 
-  signup(input: SignupInput) {
+  async signup(input: SignupInput, context: AuthRequestContext = {}) {
     const email = normalizeEmail(input.email);
     const companySlug = slugify(input.company_slug ?? input.company_name);
     const existingCompany = this.repository.findCompanyBySlug(companySlug);
@@ -99,46 +120,68 @@ export class AuthService {
       throw conflict("Signup email is already verified.", { email: maskEmail(email) });
     }
 
+    if (existingUser) {
+      if (isPendingEmailVerification(existingUser)) {
+        existingUser.full_name = input.full_name;
+        existingUser.timezone = input.timezone;
+        existingUser.email_verification_status = "pending";
+        existingUser.version += 1;
+        const company = this.companyForVerification(existingUser, email, companySlug) ?? existingCompany ?? null;
+        const verification = await this.sendVerificationEmail({
+          user: existingUser,
+          email,
+          company,
+          metadata: () => {
+            if (input.password) {
+              assertPasswordMatchesSecurityPolicy(input.password, this.store.adminSecuritySettings);
+            }
+            return {
+              password_hash: input.password ? hashPasswordSync(input.password) : null,
+              company_slug: company?.company_slug ?? companySlug,
+              timezone: input.timezone,
+              locale: input.locale,
+              signup_retry: true
+            };
+          },
+          context,
+          enforceResendLimits: true
+        });
+        return this.signupVerificationResponse(existingUser, email, verification);
+      }
+      return this.signupVerificationResponse(existingUser, email, {
+        generated: null,
+        retryAfterSeconds: this.resendCooldownSeconds()
+      });
+    }
+
     const now = nowIso();
     const company = existingCompany ?? this.createCompanyProfile(input.company_name, companySlug, input.timezone, input.locale, now);
-    const user = existingUser ?? this.createPendingUser({
+    const user = this.createPendingUser({
       email,
       fullName: input.full_name,
       timezone: input.timezone,
       now
     });
-    if (existingUser) {
-      existingUser.full_name = input.full_name;
-      existingUser.timezone = input.timezone;
-      existingUser.version += 1;
-    }
-
-    this.revokeActiveTokensForUser(user.id, "email_verification");
-    if (input.password) {
-      assertPasswordMatchesSecurityPolicy(input.password, this.store.adminSecuritySettings);
-    }
-    const verification = this.createToken({
-      type: "email_verification",
-      userId: user.id,
+    const verification = await this.sendVerificationEmail({
+      user,
       email,
-      companyId: company.id,
-      ttlSeconds: 24 * 60 * 60,
-      metadata: {
-        password_hash: input.password ? hashPasswordSync(input.password) : null,
-        company_slug: company.company_slug,
-        timezone: input.timezone,
-        locale: input.locale
-      }
+      company,
+      metadata: () => {
+        if (input.password) {
+          assertPasswordMatchesSecurityPolicy(input.password, this.store.adminSecuritySettings);
+        }
+        return {
+          password_hash: input.password ? hashPasswordSync(input.password) : null,
+          company_slug: company.company_slug,
+          timezone: input.timezone,
+          locale: input.locale
+        };
+      },
+      context,
+      enforceResendLimits: false
     });
 
-    return {
-      signup_id: user.id,
-      verification_required: true,
-      masked_email: maskEmail(email),
-      next_step: "verify_email",
-      retry_after_seconds: 60,
-      ...devOnly({ email_verification_token: verification.raw })
-    };
+    return this.signupVerificationResponse(user, email, verification);
   }
 
   verifyEmail(input: VerifyEmailInput) {
@@ -150,6 +193,8 @@ export class AuthService {
     const now = nowIso();
     token.status = "used";
     token.used_at = now;
+    user.email_verified_at = user.email_verified_at ?? now;
+    user.email_verification_status = "verified";
     const passwordHash = typeof token.metadata.password_hash === "string" ? token.metadata.password_hash : null;
     let passwordSetupToken: GeneratedToken | null = null;
     if (passwordHash) {
@@ -192,27 +237,28 @@ export class AuthService {
     };
   }
 
-  resendEmailVerification(input: ResendEmailVerificationInput) {
+  async resendEmailVerification(input: ResendEmailVerificationInput, context: AuthRequestContext = {}) {
     const email = normalizeEmail(input.email);
     const user = this.repository.findUserByEmail(email);
     let generated: GeneratedToken | null = null;
-    if (user && user.employment_status !== EmploymentStatuses.Active) {
-      const company = input.company_slug ? this.repository.findCompanyBySlug(input.company_slug) : this.store.companyProfiles.at(-1) ?? null;
-      this.revokeActiveTokensForUser(user.id, "email_verification");
-      generated = this.createToken({
-        type: "email_verification",
-        userId: user.id,
+    let retryAfterSeconds = this.resendCooldownSeconds();
+    if (user && isPendingEmailVerification(user)) {
+      const company = input.company_slug ? this.repository.findCompanyBySlug(input.company_slug) ?? null : this.companyForVerification(user, email);
+      const result = await this.sendVerificationEmail({
+        user,
         email,
-        companyId: company?.id ?? null,
-        ttlSeconds: 24 * 60 * 60,
-        metadata: { resend: true }
+        company,
+        metadata: () => ({ resend: true }),
+        context,
+        enforceResendLimits: true
       });
+      generated = result.generated;
+      retryAfterSeconds = result.retryAfterSeconds;
     }
     return {
       accepted: true,
-      sent: Boolean(generated),
       masked_email: maskEmail(email),
-      retry_after_seconds: 60,
+      retry_after_seconds: retryAfterSeconds,
       ...devOnly({ email_verification_token: generated?.raw ?? null })
     };
   }
@@ -224,6 +270,8 @@ export class AuthService {
     assertPasswordMatchesSecurityPolicy(input.password, this.store.adminSecuritySettings);
     this.setCredential(user.id, hashPasswordSync(input.password), now);
     user.employment_status = EmploymentStatuses.Active;
+    user.email_verified_at = user.email_verified_at ?? now;
+    user.email_verification_status = "verified";
     user.version += 1;
     token.status = "used";
     token.used_at = now;
@@ -235,25 +283,34 @@ export class AuthService {
     };
   }
 
-  requestPasswordReset(input: PasswordResetRequestInput) {
+  async requestPasswordReset(input: PasswordResetRequestInput, context: AuthRequestContext = {}) {
     const email = normalizeEmail(input.email);
     const user = this.repository.findUserByEmail(email);
     let generated: GeneratedToken | null = null;
+    let company: CompanyProfileRecord | null = null;
     if (user && user.employment_status === EmploymentStatuses.Active && this.repository.findActiveCredential(user.id)) {
+      company = input.company_slug ? this.repository.findCompanyBySlug(input.company_slug) : this.store.companyProfiles.at(-1) ?? null;
       this.revokeActiveTokensForUser(user.id, "password_reset");
       generated = this.createToken({
         type: "password_reset",
         userId: user.id,
         email,
-        companyId: input.company_slug ? this.repository.findCompanyBySlug(input.company_slug)?.id ?? null : this.store.companyProfiles.at(-1)?.id ?? null,
+        companyId: company?.id ?? null,
         ttlSeconds: 60 * 60,
-        metadata: { requested: true }
+        metadata: { requested: true },
+        context
+      });
+      await this.emailDelivery?.queuePasswordResetEmail({
+        user,
+        token: generated.record,
+        rawToken: generated.raw,
+        companyName: company?.company_name ?? defaultCompany(user).company_name
       });
     }
     return {
       accepted: true,
       masked_email: maskEmail(email),
-      retry_after_seconds: 60,
+      retry_after_seconds: this.resendCooldownSeconds(),
       ...devOnly({ password_reset_token: generated?.raw ?? null })
     };
   }
@@ -428,6 +485,8 @@ export class AuthService {
       designation_id: seedIds.designationEmployee,
       roles: [Roles.Employee],
       employment_status: EmploymentStatuses.Inactive,
+      email_verified_at: null,
+      email_verification_status: "pending",
       hierarchy_path: `ONBOARDING.${employeeCode}`,
       manager_user_id: null,
       timezone: input.timezone,
@@ -472,6 +531,7 @@ export class AuthService {
     companyId: UUID | null;
     ttlSeconds: number;
     metadata: Record<string, unknown>;
+    context?: AuthRequestContext;
   }): GeneratedToken {
     const raw = randomBytes(32).toString("base64url");
     const now = nowIso();
@@ -485,6 +545,11 @@ export class AuthService {
       status: "active",
       expires_at: new Date(Date.now() + input.ttlSeconds * 1000).toISOString(),
       used_at: null,
+      revoked_at: null,
+      created_ip_hash: hashContextValue(input.context?.ip),
+      user_agent_hash: hashContextValue(input.context?.userAgent),
+      last_sent_at: null,
+      send_count: 0,
       created_at: now,
       metadata: input.metadata
     };
@@ -516,9 +581,96 @@ export class AuthService {
   }
 
   private revokeActiveTokensForUser(userId: UUID, tokenType: AuthTokenRecord["token_type"]): void {
+    const now = nowIso();
     for (const token of this.repository.activeTokensForUser(userId, tokenType)) {
       token.status = "revoked";
+      token.revoked_at = now;
     }
+  }
+
+  private verificationTokenTtlSeconds(): number {
+    return this.emailDelivery?.verificationTokenTtlSeconds() ?? 24 * 60 * 60;
+  }
+
+  private resendCooldownSeconds(): number {
+    return this.emailDelivery?.resendCooldownSeconds() ?? 60;
+  }
+
+  private checkVerificationResendLimit(email: string): { allowed: true; retryAfterSeconds: number } | { allowed: false; retryAfterSeconds: number } {
+    const now = Date.now();
+    const cooldownMs = this.resendCooldownSeconds() * 1000;
+    const hourlyLimit = this.emailDelivery?.resendHourlyLimit() ?? 5;
+    const dailyLimit = this.emailDelivery?.resendDailyLimit() ?? 10;
+    const sends = this.store.authTokens
+      .filter((token) => token.token_type === "email_verification" && token.email?.toLowerCase() === email.toLowerCase())
+      .map((token) => Date.parse(token.last_sent_at ?? token.created_at))
+      .filter((sentAt) => Number.isFinite(sentAt))
+      .sort((a, b) => b - a);
+    const latest = sends[0] ?? 0;
+    if (latest && now - latest < cooldownMs) {
+      return { allowed: false, retryAfterSeconds: Math.ceil((cooldownMs - (now - latest)) / 1000) };
+    }
+    const hourlyCount = sends.filter((sentAt) => now - sentAt < 60 * 60 * 1000).length;
+    if (hourlyCount >= hourlyLimit) {
+      return { allowed: false, retryAfterSeconds: this.resendCooldownSeconds() };
+    }
+    const dailyCount = sends.filter((sentAt) => now - sentAt < 24 * 60 * 60 * 1000).length;
+    if (dailyCount >= dailyLimit) {
+      return { allowed: false, retryAfterSeconds: this.resendCooldownSeconds() };
+    }
+    return { allowed: true, retryAfterSeconds: this.resendCooldownSeconds() };
+  }
+
+  private async sendVerificationEmail(input: VerificationEmailSendInput): Promise<VerificationEmailSendResult> {
+    if (input.enforceResendLimits) {
+      const rateLimit = this.checkVerificationResendLimit(input.email);
+      if (!rateLimit.allowed) {
+        return { generated: null, retryAfterSeconds: rateLimit.retryAfterSeconds };
+      }
+    }
+    const metadata = input.metadata();
+    this.revokeActiveTokensForUser(input.user.id, "email_verification");
+    const generated = this.createToken({
+      type: "email_verification",
+      userId: input.user.id,
+      email: input.email,
+      companyId: input.company?.id ?? null,
+      ttlSeconds: this.verificationTokenTtlSeconds(),
+      metadata,
+      context: input.context
+    });
+    await this.emailDelivery?.queueVerificationEmail({
+      user: input.user,
+      token: generated.record,
+      rawToken: generated.raw,
+      companyName: input.company?.company_name ?? defaultCompany(input.user).company_name
+    });
+    return { generated, retryAfterSeconds: this.resendCooldownSeconds() };
+  }
+
+  private signupVerificationResponse(user: CoreUser, email: string, verification: VerificationEmailSendResult) {
+    return {
+      signup_id: user.id,
+      verification_required: true,
+      masked_email: maskEmail(email),
+      next_step: "verify_email",
+      retry_after_seconds: verification.retryAfterSeconds,
+      ...devOnly({ email_verification_token: verification.generated?.raw ?? null })
+    };
+  }
+
+  private companyForVerification(user: CoreUser, email: string, companySlug?: string): CompanyProfileRecord | null {
+    if (companySlug) {
+      const company = this.repository.findCompanyBySlug(companySlug);
+      if (company) {
+        return company;
+      }
+    }
+    const tokenCompanyId = [...this.store.authTokens]
+      .reverse()
+      .find((token) => token.token_type === "email_verification" && token.user_id === user.id && token.email?.toLowerCase() === email.toLowerCase() && token.company_id)
+      ?.company_id;
+    return tokenCompanyId ? this.repository.findCompanyById(tokenCompanyId) : null;
   }
 
   private setCredential(userId: UUID, passwordHash: string, now: string): UserCredentialRecord {
@@ -664,6 +816,10 @@ function tokenHash(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function hashContextValue(value: string | undefined): string | null {
+  return value ? createHash("sha256").update(value).digest("hex") : null;
+}
+
 function nextSignupEmployeeCode(store: MemoryDataStore): string {
   let index = store.users.length + 1;
   let code = `ONB${String(index).padStart(4, "0")}`;
@@ -707,8 +863,15 @@ function presentUser(user: CoreUser) {
     full_name: user.full_name,
     roles: user.roles,
     employment_status: user.employment_status,
+    email_verified_at: user.email_verified_at ?? null,
+    email_verification_status: user.email_verification_status ?? "unverified",
     version: user.version
   };
+}
+
+function isPendingEmailVerification(user: CoreUser): boolean {
+  const status = user.email_verification_status ?? "unverified";
+  return user.employment_status === EmploymentStatuses.Inactive && (status === "pending" || status === "unverified");
 }
 
 function defaultCompany(user: AuthUser): CompanyProfileRecord {

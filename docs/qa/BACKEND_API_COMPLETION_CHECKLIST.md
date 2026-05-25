@@ -18,7 +18,7 @@ Use this checklist for every remaining HRMS backend API phase. A phase is not co
 - Use compact paginated list responses. Default `page_size` is `25`; maximum normal list `page_size` is `100`.
 - Use `include=` for optional nested data instead of returning large objects by default.
 - Use async export jobs for large report/download workloads.
-- Do not add infrastructure beyond PostgreSQL, Valkey, Cloudinary-backed storage, Fastify, and the existing worker unless explicitly approved.
+- Do not add infrastructure beyond PostgreSQL, Valkey, backend-owned object storage, Fastify, and the existing worker unless explicitly approved.
 
 ## Required Tests
 

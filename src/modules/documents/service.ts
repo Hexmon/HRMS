@@ -49,7 +49,7 @@ export class DocumentService {
       size_bytes: input.size_bytes,
       checksum_sha256: input.checksum_sha256 ?? null,
       metadata: {
-        storage: "cloudinary",
+        storage: this.store.objectStorage?.kind ?? "unconfigured",
         storage_adapter: this.store.objectStorage?.kind ?? "unconfigured",
         folder: this.store.objectStorage?.bucket ?? null
       },
@@ -62,7 +62,7 @@ export class DocumentService {
       this.log(actor, document.id, "upload", "denied", "classification_policy");
       throw forbidden("You cannot upload this document classification");
     }
-    if (!this.store.objectStorage || this.store.objectStorage.kind !== "cloudinary") {
+    if (!this.store.objectStorage) {
       throw forbidden("Document object storage adapter is not configured for release acceptance");
     }
     const rawBody = input.file_buffer ?? Buffer.from(
@@ -84,10 +84,14 @@ export class DocumentService {
     });
     document.metadata = {
       ...document.metadata,
-      cloudinary_public_id: stored.publicId ?? null,
-      cloudinary_resource_type: stored.resourceType ?? null,
-      cloudinary_url: stored.url ?? null,
-      cloudinary_upload_compressed: stored.compressed ?? false,
+      object_public_id: stored.publicId ?? null,
+      object_resource_type: stored.resourceType ?? null,
+      object_url: stored.url ?? null,
+      object_upload_compressed: stored.compressed ?? false,
+      cloudinary_public_id: this.store.objectStorage.kind === "cloudinary" ? stored.publicId ?? null : null,
+      cloudinary_resource_type: this.store.objectStorage.kind === "cloudinary" ? stored.resourceType ?? null : null,
+      cloudinary_url: this.store.objectStorage.kind === "cloudinary" ? stored.url ?? null : null,
+      cloudinary_upload_compressed: this.store.objectStorage.kind === "cloudinary" ? stored.compressed ?? false : false,
       pdf_compression_attempted: pdfCompression?.attempted ?? false,
       pdf_compressed: pdfCompression?.compressed ?? false,
       pdf_compression_reason: pdfCompression?.reason ?? null,
@@ -158,13 +162,14 @@ export class DocumentService {
       throw forbidden("Document access denied");
     }
     this.log(actor, id, "download-url", "allowed", null);
-    if (!this.store.objectStorage || this.store.objectStorage.kind !== "cloudinary") {
+    if (!this.store.objectStorage) {
       throw forbidden("Document object storage adapter is not configured for release acceptance");
     }
+    const objectUrl = typeof document.metadata.object_url === "string" ? document.metadata.object_url : "";
     const cloudinaryUrl = typeof document.metadata.cloudinary_url === "string" ? document.metadata.cloudinary_url : "";
     return {
       document_id: id,
-      url: cloudinaryUrl || await this.store.objectStorage.presignedGetUrl(document.storage_key, 900),
+      url: objectUrl || cloudinaryUrl || await this.store.objectStorage.presignedGetUrl(document.storage_key, 900),
       expires_in_seconds: 900
     };
   }

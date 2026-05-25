@@ -289,7 +289,7 @@ describe("core hierarchy API", () => {
     expect(exportJob.json()).toMatchObject({
       status: "ready",
       format: "csv",
-      adapter: "cloudinary-generated-csv",
+      adapter: `${app.store.objectStorage?.kind}-generated-csv`,
       download_document_id: expect.any(String)
     });
     await expect(app.store.objectStorage?.statObject(app.store.documents.find((document) => document.id === exportJob.json().download_document_id)?.storage_key ?? "")).resolves.toMatchObject({
@@ -310,7 +310,7 @@ describe("core hierarchy API", () => {
     expect(xlsxExport.json()).toMatchObject({
       status: "ready",
       format: "xlsx",
-      adapter: "cloudinary-generated-xlsx",
+      adapter: `${app.store.objectStorage?.kind}-generated-xlsx`,
       file_name: expect.stringMatching(/\.xlsx$/u),
       download_document_id: expect.any(String)
     });

@@ -741,6 +741,279 @@
     }
   },
   "paths": {
+    "/api/v1/webhooks/resend": {
+      "post": {
+        "summary": "Resend webhook",
+        "tags": [
+          "Platform / Health"
+        ],
+        "description": "Accepts Resend transactional email webhooks after raw-body Svix signature verification, stores deduplicated provider events, and updates email delivery status. Webhook events never mark a user email as verified.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "received",
+                    "duplicate"
+                  ],
+                  "properties": {
+                    "received": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "duplicate": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "event_type": {
+                      "type": "string",
+                      "example": "email.delivered"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or invalid business request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "message": "Request validation failed",
+                  "details": {
+                    "formErrors": [
+                      "Invalid input: expected object, received undefined"
+                    ],
+                    "fieldErrors": {}
+                  },
+                  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated actor is not allowed to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic concurrency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "WORKFLOW_CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "The ticket was modified by another actor. Refresh and retry."
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_FAILED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Request validation failed"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Optional structured error details, including Zod formErrors/fieldErrors for validation failures."
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "example": "601fe7b7-6361-463e-ae66-5d972673dd27"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "summary": "Liveness check",
@@ -1759,7 +2032,7 @@
         "tags": [
           "Auth & Sessions"
         ],
-        "description": "Creates a pending workspace signup identity with hashed token-based email verification. Duplicate verified emails and bootstrapped company slugs return 409. Password is optional; if omitted, verify-email leads to set-password. Local/QA responses include dev_only tokens for automation; production omits them.",
+        "description": "Creates a pending workspace signup identity with hashed token-based email verification and queues a transactional verification email. Duplicate verified emails and bootstrapped company slugs return 409. Password is optional; if omitted, verify-email leads to set-password. Local/QA responses include dev_only tokens for automation; production omits them.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2159,7 +2432,7 @@
         "tags": [
           "Auth & Sessions"
         ],
-        "description": "Consumes a one-time email verification token, activates the pending identity when a password exists, or issues a password setup action when no password was supplied. Reused tokens return 409 and expired/invalid tokens return 400.",
+        "description": "Consumes a one-time app-owned email verification token, marks the user email as verified, activates the pending identity when a password exists, or issues a password setup action when no password was supplied. Resend webhook events are not trusted for verification. Reused tokens return 409 and expired/invalid tokens return 400.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2527,7 +2800,7 @@
         "tags": [
           "Auth & Sessions"
         ],
-        "description": "Enumeration-safe resend endpoint for pending signups. The response is accepted for unknown or already-verified emails and includes retry guidance; Local/QA may include a dev_only token when a pending identity exists.",
+        "description": "Enumeration-safe resend endpoint for pending signups. The response is accepted for unknown or already-verified emails and does not reveal whether an email was sent; pending users are protected by cooldown/hourly/daily resend limits. Local/QA may include a dev_only token when a pending identity exists.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2563,18 +2836,12 @@
                   "type": "object",
                   "required": [
                     "accepted",
-                    "sent",
                     "masked_email",
                     "retry_after_seconds"
                   ],
                   "properties": {
                     "accepted": {
                       "type": "boolean",
-                      "example": true
-                    },
-                    "sent": {
-                      "type": "boolean",
-                      "description": "False can be returned for already verified/unknown emails without exposing sensitive account state.",
                       "example": true
                     },
                     "masked_email": {
@@ -4052,6 +4319,23 @@
                           "type": "string",
                           "example": "active"
                         },
+                        "email_verified_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true,
+                          "example": "2026-01-01T00:00:00.000Z"
+                        },
+                        "email_verification_status": {
+                          "type": "string",
+                          "enum": [
+                            "unverified",
+                            "pending",
+                            "verified",
+                            "bounced",
+                            "blocked"
+                          ],
+                          "example": "verified"
+                        },
                         "timezone": {
                           "type": "string",
                           "example": "Asia/Kolkata"
@@ -4754,6 +5038,23 @@
                           "type": "string",
                           "example": "active"
                         },
+                        "email_verified_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true,
+                          "example": "2026-01-01T00:00:00.000Z"
+                        },
+                        "email_verification_status": {
+                          "type": "string",
+                          "enum": [
+                            "unverified",
+                            "pending",
+                            "verified",
+                            "bounced",
+                            "blocked"
+                          ],
+                          "example": "verified"
+                        },
                         "timezone": {
                           "type": "string",
                           "example": "Asia/Kolkata"
@@ -5381,6 +5682,23 @@
                         "employment_status": {
                           "type": "string",
                           "example": "active"
+                        },
+                        "email_verified_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true,
+                          "example": "2026-01-01T00:00:00.000Z"
+                        },
+                        "email_verification_status": {
+                          "type": "string",
+                          "enum": [
+                            "unverified",
+                            "pending",
+                            "verified",
+                            "bounced",
+                            "blocked"
+                          ],
+                          "example": "verified"
                         },
                         "timezone": {
                           "type": "string",
@@ -6923,6 +7241,23 @@
                             "type": "string",
                             "example": "active"
                           },
+                          "email_verified_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true,
+                            "example": "2026-01-01T00:00:00.000Z"
+                          },
+                          "email_verification_status": {
+                            "type": "string",
+                            "enum": [
+                              "unverified",
+                              "pending",
+                              "verified",
+                              "bounced",
+                              "blocked"
+                            ],
+                            "example": "verified"
+                          },
                           "timezone": {
                             "type": "string",
                             "example": "Asia/Kolkata"
@@ -7596,6 +7931,23 @@
                       "type": "string",
                       "example": "active"
                     },
+                    "email_verified_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "example": "2026-01-01T00:00:00.000Z"
+                    },
+                    "email_verification_status": {
+                      "type": "string",
+                      "enum": [
+                        "unverified",
+                        "pending",
+                        "verified",
+                        "bounced",
+                        "blocked"
+                      ],
+                      "example": "verified"
+                    },
                     "timezone": {
                       "type": "string",
                       "example": "Asia/Kolkata"
@@ -8238,6 +8590,23 @@
                     "employment_status": {
                       "type": "string",
                       "example": "active"
+                    },
+                    "email_verified_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "example": "2026-01-01T00:00:00.000Z"
+                    },
+                    "email_verification_status": {
+                      "type": "string",
+                      "enum": [
+                        "unverified",
+                        "pending",
+                        "verified",
+                        "bounced",
+                        "blocked"
+                      ],
+                      "example": "verified"
                     },
                     "timezone": {
                       "type": "string",
@@ -8921,6 +9290,23 @@
                     "employment_status": {
                       "type": "string",
                       "example": "active"
+                    },
+                    "email_verified_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "example": "2026-01-01T00:00:00.000Z"
+                    },
+                    "email_verification_status": {
+                      "type": "string",
+                      "enum": [
+                        "unverified",
+                        "pending",
+                        "verified",
+                        "bounced",
+                        "blocked"
+                      ],
+                      "example": "verified"
                     },
                     "timezone": {
                       "type": "string",
@@ -9611,6 +9997,23 @@
                       "type": "string",
                       "example": "active"
                     },
+                    "email_verified_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "example": "2026-01-01T00:00:00.000Z"
+                    },
+                    "email_verification_status": {
+                      "type": "string",
+                      "enum": [
+                        "unverified",
+                        "pending",
+                        "verified",
+                        "bounced",
+                        "blocked"
+                      ],
+                      "example": "verified"
+                    },
                     "timezone": {
                       "type": "string",
                       "example": "Asia/Kolkata"
@@ -10300,6 +10703,23 @@
                       "type": "string",
                       "example": "active"
                     },
+                    "email_verified_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "example": "2026-01-01T00:00:00.000Z"
+                    },
+                    "email_verification_status": {
+                      "type": "string",
+                      "enum": [
+                        "unverified",
+                        "pending",
+                        "verified",
+                        "bounced",
+                        "blocked"
+                      ],
+                      "example": "verified"
+                    },
                     "timezone": {
                       "type": "string",
                       "example": "Asia/Kolkata"
@@ -10973,6 +11393,23 @@
                       "type": "string",
                       "example": "active"
                     },
+                    "email_verified_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "example": "2026-01-01T00:00:00.000Z"
+                    },
+                    "email_verification_status": {
+                      "type": "string",
+                      "enum": [
+                        "unverified",
+                        "pending",
+                        "verified",
+                        "bounced",
+                        "blocked"
+                      ],
+                      "example": "verified"
+                    },
                     "timezone": {
                       "type": "string",
                       "example": "Asia/Kolkata"
@@ -11645,6 +12082,23 @@
                     "employment_status": {
                       "type": "string",
                       "example": "active"
+                    },
+                    "email_verified_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "example": "2026-01-01T00:00:00.000Z"
+                    },
+                    "email_verification_status": {
+                      "type": "string",
+                      "enum": [
+                        "unverified",
+                        "pending",
+                        "verified",
+                        "bounced",
+                        "blocked"
+                      ],
+                      "example": "verified"
                     },
                     "timezone": {
                       "type": "string",
@@ -12337,6 +12791,23 @@
                     "employment_status": {
                       "type": "string",
                       "example": "active"
+                    },
+                    "email_verified_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "example": "2026-01-01T00:00:00.000Z"
+                    },
+                    "email_verification_status": {
+                      "type": "string",
+                      "enum": [
+                        "unverified",
+                        "pending",
+                        "verified",
+                        "bounced",
+                        "blocked"
+                      ],
+                      "example": "verified"
                     },
                     "timezone": {
                       "type": "string",
@@ -14876,7 +15347,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "cloudinary-generated-csv"
+                      "example": "minio-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -15331,6 +15802,23 @@
                           "employment_status": {
                             "type": "string",
                             "example": "active"
+                          },
+                          "email_verified_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true,
+                            "example": "2026-01-01T00:00:00.000Z"
+                          },
+                          "email_verification_status": {
+                            "type": "string",
+                            "enum": [
+                              "unverified",
+                              "pending",
+                              "verified",
+                              "bounced",
+                              "blocked"
+                            ],
+                            "example": "verified"
                           },
                           "timezone": {
                             "type": "string",
@@ -28596,7 +29084,7 @@
         "tags": [
           "Documents"
         ],
-        "description": "Creates secure document metadata and stores the file through the backend Cloudinary object storage adapter. Object-storage credentials are never exposed.",
+        "description": "Creates secure document metadata and stores the file through the backend object storage adapter. Object-storage credentials are never exposed.",
         "requestBody": {
           "required": true,
           "content": {
@@ -42217,7 +42705,7 @@
                           },
                           "adapter": {
                             "type": "string",
-                            "example": "cloudinary-generated-csv"
+                            "example": "minio-generated-csv"
                           },
                           "file_name": {
                             "type": "string",
@@ -42683,7 +43171,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "cloudinary-generated-csv"
+                      "example": "minio-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -43115,7 +43603,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "cloudinary-generated-csv"
+                      "example": "minio-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -66624,7 +67112,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "cloudinary-generated-csv"
+                      "example": "minio-generated-csv"
                     },
                     "file_name": {
                       "type": "string",
@@ -72512,7 +73000,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "cloudinary-generated-csv"
+                      "example": "minio-generated-csv"
                     },
                     "file_name": {
                       "type": "string",

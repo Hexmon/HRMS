@@ -20,6 +20,7 @@ export const authPlugin = fp(async (fastify) => {
       "/api/v1/auth/login",
       "/api/v1/auth/logout",
       "/api/v1/onboarding/company-bootstrap",
+      "/api/v1/webhooks/resend",
       "/api/v1/openapi.json"
     ]);
     const path = request.url.split("?")[0] ?? request.url;

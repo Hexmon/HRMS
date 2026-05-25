@@ -2,7 +2,7 @@
 
 Date: 2026-05-01
 
-Documents are Cloudinary-backed through the backend storage adapter. API consumers never receive storage credentials.
+Documents are stored through the backend object-storage adapter. Local/demo defaults use MinIO, and production can use Cloudinary by setting `OBJECT_STORAGE_PROVIDER=cloudinary`. API consumers never receive storage credentials.
 
 ## List Documents
 
@@ -20,7 +20,7 @@ Optional filters:
 
 `POST /api/v1/documents`
 
-The endpoint accepts JSON metadata for generated/backend documents and `multipart/form-data` with a `file` field for browser uploads. Image files should be compressed by the frontend before upload; the backend also requests Cloudinary upload-time quality optimization. PDF files can be compressed server-side before Cloudinary storage with `PDF_COMPRESSION_ENABLED=true` and Ghostscript available at `PDF_COMPRESSION_BINARY` (default `gs`).
+The endpoint accepts JSON metadata for generated/backend documents and `multipart/form-data` with a `file` field for browser uploads. Image files should be compressed by the frontend before upload; Cloudinary mode also requests upload-time quality optimization. PDF files can be compressed server-side before object storage with `PDF_COMPRESSION_ENABLED=true` and Ghostscript available at `PDF_COMPRESSION_BINARY` (default `gs`).
 
 ```json
 {
@@ -53,7 +53,7 @@ The path ticket id becomes the business object id.
 ## Upload Compression
 
 - Browser image uploads are prepared before the request to reduce client-to-server upload size on slower networks.
-- Server-side PDF compression runs after the backend receives the file and before it stores the object in Cloudinary. This reduces stored/downloaded PDF size but does not reduce the original browser-to-backend upload bandwidth.
+- Server-side PDF compression runs after the backend receives the file and before it stores the object. This reduces stored/downloaded PDF size but does not reduce the original browser-to-backend upload bandwidth.
 - `PDF_COMPRESSION_FAIL_OPEN=true` keeps uploads available if Ghostscript is missing or cannot compress a file; the document metadata records whether compression was attempted, compressed, skipped, or failed.
 
 ## Classification

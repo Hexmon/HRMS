@@ -3,7 +3,7 @@
 ## Source Of Truth
 
 - The Fastify API is the only supported backend interface for frontend clients.
-- Do not query PostgreSQL, Valkey, Cloudinary, Drizzle, migrations, or internal repositories from frontend code.
+- Do not query PostgreSQL, Valkey, object storage, Drizzle, migrations, or internal repositories from frontend code.
 - Frontend route guards improve UX, but backend RBAC/ABAC is authoritative.
 - Use `openapi.json` for exact field-level schemas and `ENDPOINT_INDEX.md` for behavior and UI notes.
 

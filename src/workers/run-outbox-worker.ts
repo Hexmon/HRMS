@@ -18,15 +18,7 @@ if (!valkeyUrl) {
 const store = await createPostgresDataStore({
   databaseUrl,
   valkeyUrl,
-  objectStorage: {
-    cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? "local-cloudinary-mock",
-    apiKey: process.env.CLOUDINARY_API_KEY ?? "local-cloudinary-key",
-    apiSecret: process.env.CLOUDINARY_API_SECRET ?? "local-cloudinary-secret",
-    folder: process.env.CLOUDINARY_FOLDER ?? "hawkaii-hrms",
-    resourceType: (process.env.CLOUDINARY_RESOURCE_TYPE as "auto" | "image" | "raw" | "video" | undefined) ?? "auto",
-    uploadTransformation: process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
-    mockUploads: process.env.CLOUDINARY_MOCK_UPLOADS === "true"
-  },
+  objectStorage: objectStorageOptions(),
   documentProcessing: {
     pdfCompression: {
       enabled: process.env.PDF_COMPRESSION_ENABLED === "true",
@@ -39,6 +31,31 @@ const store = await createPostgresDataStore({
   },
   seedIfEmpty: false
 });
+
+function objectStorageOptions() {
+  if ((process.env.OBJECT_STORAGE_PROVIDER ?? "minio") === "minio") {
+    return {
+      provider: "minio" as const,
+      endpoint: process.env.MINIO_ENDPOINT ?? "http://localhost:19000",
+      publicEndpoint: process.env.MINIO_PUBLIC_ENDPOINT,
+      accessKey: process.env.MINIO_ACCESS_KEY ?? "minioadmin",
+      secretKey: process.env.MINIO_SECRET_KEY ?? "minioadmin",
+      bucket: process.env.MINIO_BUCKET ?? "hawkaii-hrms-dev",
+      region: process.env.MINIO_REGION ?? "us-east-1"
+    };
+  }
+
+  return {
+    provider: "cloudinary" as const,
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? "local-cloudinary-mock",
+    apiKey: process.env.CLOUDINARY_API_KEY ?? "local-cloudinary-key",
+    apiSecret: process.env.CLOUDINARY_API_SECRET ?? "local-cloudinary-secret",
+    folder: process.env.CLOUDINARY_FOLDER ?? "hawkaii-hrms",
+    resourceType: (process.env.CLOUDINARY_RESOURCE_TYPE as "auto" | "image" | "raw" | "video" | undefined) ?? "auto",
+    uploadTransformation: process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
+    mockUploads: process.env.CLOUDINARY_MOCK_UPLOADS === "true"
+  };
+}
 
 const publisher = new ValkeyStreamPublisher(valkeyUrl);
 const worker = new OutboxWorker(store, publisher);

@@ -82,6 +82,8 @@ export const users = core.table(
     managerUserId: uuid("manager_user_id"),
     hierarchyPath: text("hierarchy_path").notNull(),
     employmentStatus: text("employment_status").notNull(),
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    emailVerificationStatus: text("email_verification_status").notNull().default("unverified"),
     timezone: text("timezone"),
     joinedOn: date("joined_on"),
     terminatedOn: date("terminated_on"),
@@ -96,7 +98,8 @@ export const users = core.table(
     index("core_users_hierarchy_path_gist_idx").using("gist", table.hierarchyPath),
     index("core_users_department_status_idx").on(table.departmentId, table.employmentStatus),
     index("core_users_manager_idx").on(table.managerUserId),
-    index("core_users_status_updated_idx").on(table.employmentStatus, table.updatedAt)
+    index("core_users_status_updated_idx").on(table.employmentStatus, table.updatedAt),
+    index("core_users_email_verification_status_idx").on(table.emailVerificationStatus, table.updatedAt)
   ]
 );
 
@@ -244,6 +247,61 @@ export const notifications = platform.table(
   (table) => [
     index("platform_notifications_target_status_idx").on(table.targetUserId, table.status, table.createdAt),
     index("platform_notifications_type_idx").on(table.eventType, table.createdAt)
+  ]
+);
+
+export const emailDeliveries = platform.table(
+  "email_deliveries",
+  {
+    id: uuidPk.defaultRandom(),
+    provider: text("provider").notNull().default("resend"),
+    templateKey: text("template_key").notNull(),
+    purpose: text("purpose").notNull(),
+    userId: uuid("user_id"),
+    email: text("email").notNull(),
+    subject: text("subject").notNull(),
+    status: text("status").notNull().default("queued"),
+    providerEmailId: text("provider_email_id"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    queuedAt: timestamp("queued_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    bouncedAt: timestamp("bounced_at", { withTimezone: true }),
+    complainedAt: timestamp("complained_at", { withTimezone: true }),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt,
+    updatedAt,
+    version
+  },
+  (table) => [
+    uniqueIndex("platform_email_deliveries_idempotency_uq").on(table.provider, table.idempotencyKey),
+    uniqueIndex("platform_email_deliveries_provider_email_id_uq").on(table.provider, table.providerEmailId),
+    index("platform_email_deliveries_user_created_idx").on(table.userId, table.createdAt),
+    index("platform_email_deliveries_status_queued_idx").on(table.status, table.queuedAt)
+  ]
+);
+
+export const emailEvents = platform.table(
+  "email_events",
+  {
+    id: uuidPk.defaultRandom(),
+    provider: text("provider").notNull().default("resend"),
+    providerEventId: text("provider_event_id").notNull(),
+    providerEmailId: text("provider_email_id"),
+    eventType: text("event_type").notNull(),
+    email: text("email"),
+    deliveryId: uuid("delivery_id"),
+    payload: jsonb("payload").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true })
+  },
+  (table) => [
+    uniqueIndex("platform_email_events_provider_event_uq").on(table.provider, table.providerEventId),
+    index("platform_email_events_provider_email_idx").on(table.providerEmailId),
+    index("platform_email_events_type_received_idx").on(table.eventType, table.receivedAt)
   ]
 );
 

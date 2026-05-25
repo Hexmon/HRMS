@@ -6,7 +6,9 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import type { DataStore } from "./platform/data-store.js";
 import { createMemoryDataStore } from "./platform/data-store.js";
-import { createPostgresDataStore } from "./platform/postgres-data-store.js";
+import { createPostgresDataStore, type PostgresObjectStorageOptions } from "./platform/postgres-data-store.js";
+import { createEmailDeliveryService } from "./platform/email/email-delivery-service.js";
+import type { EmailProvider } from "./platform/email/types.js";
 import { openApiComponents, openApiTags, swaggerTransform, swaggerTransformObject } from "./platform/openapi.js";
 import { configPlugin } from "./plugins/config.js";
 import { requestContextPlugin } from "./plugins/request-context.js";
@@ -33,10 +35,12 @@ import projectsModule from "./modules/projects/index.js";
 import helpdeskModule from "./modules/helpdesk/index.js";
 import notificationsModule from "./modules/notifications/index.js";
 import adminModule from "./modules/admin/index.js";
+import webhooksModule from "./modules/webhooks/index.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
   dataStore?: DataStore;
+  emailProvider?: EmailProvider;
   dataStoreMode?: "postgres" | "memory";
   seedIfEmpty?: boolean;
   rateLimit?: false | {
@@ -64,6 +68,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }
   const store = options.dataStore ?? await createRuntimeStore(app.config, options);
   app.decorate("store", store);
+  app.decorate("emailDelivery", createEmailDeliveryService(store, {
+    provider: app.config.EMAIL_DELIVERY_PROVIDER,
+    mode: app.config.EMAIL_DELIVERY_MODE,
+    resendApiKey: app.config.RESEND_API_KEY,
+    resendFromEmail: app.config.RESEND_FROM_EMAIL,
+    resendFromName: app.config.RESEND_FROM_NAME,
+    resendReplyToEmail: app.config.RESEND_REPLY_TO_EMAIL,
+    resendWebhookSecret: app.config.RESEND_WEBHOOK_SECRET,
+    frontendUrl: app.config.FRONTEND_URL,
+    appUrl: app.config.APP_URL,
+    verificationTokenTtlSeconds: app.config.EMAIL_VERIFICATION_TOKEN_TTL_SECONDS,
+    verificationResendCooldownSeconds: app.config.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS,
+    verificationResendHourlyLimit: app.config.EMAIL_VERIFICATION_RESEND_HOURLY_LIMIT,
+    verificationResendDailyLimit: app.config.EMAIL_VERIFICATION_RESEND_DAILY_LIMIT
+  }, options.emailProvider));
   app.addHook("onSend", async (request, reply, payload) => {
     if (
       app.store.persistence &&
@@ -101,6 +120,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   if (options.rateLimit !== false) {
     await app.register(rateLimitPlugin);
   }
+  await app.register(webhooksModule);
   await app.register(healthModule);
   await app.register(authModule);
   await app.register(coreModule);
@@ -154,15 +174,7 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
   return createPostgresDataStore({
     databaseUrl: config.DATABASE_URL,
     valkeyUrl: config.VALKEY_URL,
-    objectStorage: {
-      cloudName: config.CLOUDINARY_CLOUD_NAME,
-      apiKey: config.CLOUDINARY_API_KEY,
-      apiSecret: config.CLOUDINARY_API_SECRET,
-      folder: config.CLOUDINARY_FOLDER,
-      resourceType: config.CLOUDINARY_RESOURCE_TYPE,
-      uploadTransformation: config.CLOUDINARY_UPLOAD_TRANSFORMATION,
-      mockUploads: config.CLOUDINARY_MOCK_UPLOADS
-    },
+    objectStorage: objectStorageOptions(config),
     documentProcessing: {
       pdfCompression: {
         enabled: config.PDF_COMPRESSION_ENABLED,
@@ -175,6 +187,31 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
     },
     seedIfEmpty: options.seedIfEmpty ?? true
   });
+}
+
+function objectStorageOptions(config: FastifyInstance["config"]): PostgresObjectStorageOptions {
+  if (config.OBJECT_STORAGE_PROVIDER === "minio") {
+    return {
+      provider: "minio",
+      endpoint: config.MINIO_ENDPOINT,
+      publicEndpoint: config.MINIO_PUBLIC_ENDPOINT,
+      accessKey: config.MINIO_ACCESS_KEY,
+      secretKey: config.MINIO_SECRET_KEY,
+      bucket: config.MINIO_BUCKET,
+      region: config.MINIO_REGION
+    };
+  }
+
+  return {
+    provider: "cloudinary",
+    cloudName: config.CLOUDINARY_CLOUD_NAME,
+    apiKey: config.CLOUDINARY_API_KEY,
+    apiSecret: config.CLOUDINARY_API_SECRET,
+    folder: config.CLOUDINARY_FOLDER,
+    resourceType: config.CLOUDINARY_RESOURCE_TYPE,
+    uploadTransformation: config.CLOUDINARY_UPLOAD_TRANSFORMATION,
+    mockUploads: config.CLOUDINARY_MOCK_UPLOADS
+  };
 }
 
 function corsOptions(config: FastifyInstance["config"]): Parameters<typeof cors>[1] {
@@ -222,7 +259,9 @@ function loggerOptions(enabled: boolean): false | {
         "*.access_token",
         "*.refresh_token",
         "*.JWT_ACCESS_SECRET",
-        "*.JWT_REFRESH_SECRET"
+        "*.JWT_REFRESH_SECRET",
+        "*.RESEND_API_KEY",
+        "*.RESEND_WEBHOOK_SECRET"
       ]
     }
   };

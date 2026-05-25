@@ -190,7 +190,7 @@ describe("non-expense reports", () => {
       report_type: "hr/employees",
       format: "csv",
       status: "ready",
-      adapter: "cloudinary-generated-csv",
+      adapter: `${app.store.objectStorage?.kind}-generated-csv`,
       download_document_id: expect.any(String)
     });
     await expect(app.store.objectStorage?.statObject(app.store.documents.find((document) => document.id === createExport.json().download_document_id)?.storage_key ?? "")).resolves.toMatchObject({
@@ -212,7 +212,7 @@ describe("non-expense reports", () => {
       report_type: "hr/employees",
       format: "xlsx",
       status: "ready",
-      adapter: "cloudinary-generated-xlsx",
+      adapter: `${app.store.objectStorage?.kind}-generated-xlsx`,
       file_name: expect.stringMatching(/\.xlsx$/u),
       download_document_id: expect.any(String)
     });

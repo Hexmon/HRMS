@@ -41,6 +41,7 @@ export type UUID = string;
 export type ISODate = string;
 export type ISODateTime = string;
 export type Money = string;
+export type EmailVerificationStatus = "unverified" | "pending" | "verified" | "bounced" | "blocked";
 
 export interface AuthUser {
   id: UUID;
@@ -51,6 +52,8 @@ export interface AuthUser {
   designation_id: UUID;
   roles: RoleKey[];
   employment_status: EmploymentStatus;
+  email_verified_at?: ISODateTime | null;
+  email_verification_status?: EmailVerificationStatus;
   hierarchy_path: string;
 }
 

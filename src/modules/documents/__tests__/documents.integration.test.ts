@@ -33,7 +33,7 @@ describe("document management integration", () => {
       }
     });
     expect(upload.statusCode).toBe(200);
-    expect(upload.json().metadata.storage_adapter).toBe("cloudinary");
+    expect(upload.json().metadata.storage_adapter).toBe(app.store.objectStorage?.kind);
     await expect(app.store.objectStorage?.statObject(upload.json().storage_key)).resolves.toMatchObject({
       size: expect.any(Number)
     });
@@ -51,7 +51,7 @@ describe("document management integration", () => {
       headers: authHeader(admin.token)
     });
     expect(allowed.statusCode).toBe(200);
-    expect(allowed.json().url).toContain("cloudinary");
+    expect(allowed.json().url).toEqual(expect.any(String));
 
     const accessLog = await app.inject({
       method: "GET",
@@ -92,7 +92,7 @@ describe("document management integration", () => {
     });
     expect(pdfUpload.statusCode).toBe(200);
     expect(pdfUpload.json().metadata).toMatchObject({
-      storage_adapter: "cloudinary",
+      storage_adapter: app.store.objectStorage?.kind,
       pdf_compression_attempted: true,
       pdf_compressed: false,
       pdf_original_size_bytes: pdfBody.length,
@@ -122,7 +122,7 @@ describe("document management integration", () => {
     });
     expect(imageUpload.statusCode).toBe(200);
     expect(imageUpload.json().metadata).toMatchObject({
-      cloudinary_upload_compressed: true,
+      object_upload_compressed: app.store.objectStorage?.kind === "cloudinary",
       pdf_compression_attempted: false,
       pdf_compressed: false,
       original_size_bytes: imageBody.length,
@@ -148,7 +148,7 @@ describe("document management integration", () => {
     });
     expect(textUpload.statusCode).toBe(200);
     expect(textUpload.json().metadata).toMatchObject({
-      cloudinary_upload_compressed: false,
+      object_upload_compressed: false,
       pdf_compression_attempted: false,
       pdf_compressed: false,
       original_size_bytes: textBody.length,
@@ -169,7 +169,7 @@ describe("document management integration", () => {
       headers: authHeader(admin.token)
     });
     expect(download.statusCode).toBe(200);
-    expect(download.json().url).toContain("cloudinary");
+    expect(download.json().url).toEqual(expect.any(String));
   });
 
   it("stores multipart uploads through expense and EMS document wrapper paths", async () => {
@@ -235,7 +235,7 @@ describe("document management integration", () => {
       size_bytes: imageBody.length
     });
     expect(emsUpload.json().document.metadata).toMatchObject({
-      cloudinary_upload_compressed: true,
+      object_upload_compressed: app.store.objectStorage?.kind === "cloudinary",
       original_size_bytes: imageBody.length,
       stored_size_bytes: imageBody.length
     });
@@ -254,7 +254,7 @@ describe("document management integration", () => {
       headers: authHeader(employee.token)
     });
     expect(emsDownload.statusCode).toBe(200);
-    expect(emsDownload.json().url).toContain("cloudinary");
+    expect(emsDownload.json().url).toEqual(expect.any(String));
   });
 });
 

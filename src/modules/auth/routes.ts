@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { verifyJwt } from "#auth";
 import { unauthorized } from "../../platform/errors.js";
 import { AuthService } from "./service.js";
@@ -17,37 +17,37 @@ import {
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/signup", async (request) => {
     const body = signupSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET).signup(body);
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).signup(body, requestContext(request));
   });
 
   fastify.post("/verify-email", async (request) => {
     const body = verifyEmailSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET).verifyEmail(body);
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).verifyEmail(body);
   });
 
   fastify.post("/email-verifications/resend", async (request) => {
     const body = resendEmailVerificationSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET).resendEmailVerification(body);
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).resendEmailVerification(body, requestContext(request));
   });
 
   fastify.post("/set-password", async (request) => {
     const body = setPasswordSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET).setPassword(body);
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).setPassword(body);
   });
 
   fastify.post("/password-reset/request", async (request) => {
     const body = passwordResetRequestSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET).requestPasswordReset(body);
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).requestPasswordReset(body, requestContext(request));
   });
 
   fastify.post("/password-reset/confirm", async (request) => {
     const body = passwordResetConfirmSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET).confirmPasswordReset(body);
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).confirmPasswordReset(body);
   });
 
   fastify.post("/login", async (request, reply) => {
     const body = loginSchema.parse(request.body);
-    const service = new AuthService(fastify.store, fastify.config.JWT_SECRET);
+    const service = new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery);
     const result = await service.login(body);
     reply.setCookie(fastify.config.SESSION_COOKIE_NAME, result.token, {
       httpOnly: true,
@@ -68,7 +68,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     if (token) {
       try {
         const claims = verifyJwt(token, fastify.config.JWT_SECRET);
-        const service = new AuthService(fastify.store, fastify.config.JWT_SECRET);
+        const service = new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery);
         await service.logout(claims.jti);
       } catch {
         // Clear stale/invalid browser cookies without leaking token validity.
@@ -87,7 +87,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET).sessionContext(request.actor);
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).sessionContext(request.actor);
   });
 
   fastify.patch("/session/preference", async (request) => {
@@ -95,13 +95,21 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const body = sessionPreferenceSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET).updateSessionPreference(request.actor, body);
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).updateSessionPreference(request.actor, body);
   });
 };
 
 export const onboardingRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/company-bootstrap", async (request) => {
     const body = companyBootstrapSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET).bootstrapCompany(body);
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).bootstrapCompany(body);
   });
 };
+
+function requestContext(request: FastifyRequest): { ip: string; userAgent?: string } {
+  const userAgent = request.headers["user-agent"];
+  return {
+    ip: request.ip,
+    userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent
+  };
+}
