@@ -9,6 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { Home, Send } from "lucide-react";
 import { useCreateWfhMutation } from "@/domains/leave-wfh";
+import { userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/leave-wfh/apply-wfh")({
   component: ApplyWfhPage,
@@ -151,5 +152,5 @@ function ApplyWfhPage() {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "WFH request failed.";
+  return userFacingErrorMessage(error, "WFH request failed.");
 }

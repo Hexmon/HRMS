@@ -28,7 +28,14 @@ import {
   useTeamAttendanceSummary,
   type AttendancePunchEventType,
 } from "@/domains/attendance";
-import { asArray, asRecord, numberValue, text, type ApiRecord } from "@/shared/api";
+import {
+  asArray,
+  asRecord,
+  numberValue,
+  text,
+  userFacingErrorMessage,
+  type ApiRecord,
+} from "@/shared/api";
 
 export const Route = createFileRoute("/_app/attendance/")({
   component: AttendanceOverview,
@@ -68,7 +75,7 @@ function displayDate(value: unknown): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Attendance request failed.";
+  return userFacingErrorMessage(error, "Attendance request failed.");
 }
 
 function AdminView() {

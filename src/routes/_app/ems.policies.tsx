@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, StatusBadge } from "@/components/ui-kit";
 import { toast } from "sonner";
 import { mapPolicy, useEmsPolicies, useEmsPolicyAcknowledgeMutation } from "@/domains/ems";
-import { pageItems, useApiRouteEnabled } from "@/shared/api";
+import { pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { BookOpen, Download, Eye } from "lucide-react";
 
 export const Route = createFileRoute("/_app/ems/policies")({
@@ -90,7 +90,7 @@ function MyPolicies() {
       { id: policy.id, expectedVersion: policy.acknowledgementVersion },
       {
         onSuccess: () => toast.success("Policy acknowledged"),
-        onError: () => toast.error("Policy could not be acknowledged."),
+        onError: (error) => toastApiError(error, "Policy could not be acknowledged."),
       },
     );
   };

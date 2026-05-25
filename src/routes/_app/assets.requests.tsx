@@ -28,6 +28,7 @@ import {
 import { Inbox, Plus, Upload, Check, X, PackageCheck } from "lucide-react";
 import type { AssetRequest, RequestPriority, RequestStatus, RequestType } from "@/lib/mock/assets";
 import { toast } from "sonner";
+import { toastApiError } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/assets/requests")({ component: RequestsScreen });
 
@@ -58,8 +59,9 @@ function RequestsScreen() {
             <AdminQueue
               rows={requests}
               onDecide={(id, status, remarks) => {
-                decideRequest(id, status, user?.name ?? "Admin", remarks);
-                toast.success(`Request ${status}`);
+                void decideRequest(id, status, user?.name ?? "Admin", remarks)
+                  .then(() => toast.success(`Request ${status}`))
+                  .catch((error) => toastApiError(error, "Request decision could not be saved."));
               }}
             />
           </TabsContent>
@@ -109,8 +111,11 @@ function RequestsScreen() {
                           variant="ghost"
                           className="text-destructive"
                           onClick={() => {
-                            cancelRequest(r.id);
-                            toast.success("Request cancelled");
+                            void cancelRequest(r.id)
+                              .then(() => toast.success("Request cancelled"))
+                              .catch((error) =>
+                                toastApiError(error, "Request could not be cancelled."),
+                              );
                           }}
                         >
                           Cancel
@@ -135,8 +140,9 @@ function RequestsScreen() {
                 status: "pending",
                 ...data,
               };
-              addRequest(r);
-              toast.success(`${r.id} submitted`);
+              void addRequest(r)
+                .then(() => toast.success(`${r.id} submitted`))
+                .catch((error) => toastApiError(error, "Asset request could not be submitted."));
             }}
           />
           {!isManagerOrAdmin && (

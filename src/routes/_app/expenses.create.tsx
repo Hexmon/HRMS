@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useAuth } from "@/lib/auth";
 import { useExpenseMetadata } from "@/domains/expenses";
-import { asArray, asRecord, text } from "@/shared/api";
+import { asArray, asRecord, text, toastApiError } from "@/shared/api";
 import {
   useExpenses,
   fmtCurrency,
@@ -365,55 +365,62 @@ function CreateExpense() {
       f.lineItems.filter((li) => li.id !== id),
     );
 
-  const submit = (asDraft: boolean) => {
+  const submit = async (asDraft: boolean) => {
     if (!asDraft && (!f.taskTitle || !f.subType)) {
       toast.error("Please complete the basics before submitting.");
       return;
     }
-    add({
-      employee: user?.name ?? "You",
-      employeeId: "self",
-      department: user?.department ?? "General",
-      manager: "Sara Iqbal",
-      expenseType: f.expenseType,
-      subType: f.subType,
-      taskTitle: f.taskTitle,
-      taskDescription: f.taskDescription,
-      startDate: f.startDate,
-      endDate: f.endDate,
-      location: f.location,
-      estimatedAmount: f.estimatedAmount,
-      paymentType: f.paymentType,
-      priority: f.priority,
-      remarks: f.remarks,
-      project:
-        f.expenseType === "project"
-          ? {
-              projectCode: f.projectCode || "PRJ-GEN",
-              projectName: f.projectName || "General",
-              projectManager: f.projectManager || "Sara Iqbal",
-              costCenter: f.costCenter || "CC-GEN",
-              projectExpenseType: f.projectExpenseType,
-            }
-          : undefined,
-      sales:
-        f.expenseType === "sales_presales"
-          ? {
-              client: f.client,
-              opportunity: f.opportunity,
-              meetingType: f.meetingType,
-              salesOwner: f.salesOwner || (user?.name ?? "You"),
-              expectedOutcome: f.expectedOutcome,
-            }
-          : undefined,
-      lineItems: f.lineItems,
-      documents: f.documents.map((d) => ({ ...d, uploadedAt: new Date().toISOString() })),
-      status: asDraft ? "draft" : "pending_manager",
-      submittedAt: asDraft ? undefined : new Date().toISOString(),
-    });
-    clearStoredDraft(user?.id);
-    toast.success(asDraft ? "Saved as draft" : "Ticket submitted for manager verification");
-    nav({ to: "/expenses/my" });
+    try {
+      await add({
+        employee: user?.name ?? "You",
+        employeeId: "self",
+        department: user?.department ?? "General",
+        manager: "Sara Iqbal",
+        expenseType: f.expenseType,
+        subType: f.subType,
+        taskTitle: f.taskTitle,
+        taskDescription: f.taskDescription,
+        startDate: f.startDate,
+        endDate: f.endDate,
+        location: f.location,
+        estimatedAmount: f.estimatedAmount,
+        paymentType: f.paymentType,
+        priority: f.priority,
+        remarks: f.remarks,
+        project:
+          f.expenseType === "project"
+            ? {
+                projectCode: f.projectCode || "PRJ-GEN",
+                projectName: f.projectName || "General",
+                projectManager: f.projectManager || "Sara Iqbal",
+                costCenter: f.costCenter || "CC-GEN",
+                projectExpenseType: f.projectExpenseType,
+              }
+            : undefined,
+        sales:
+          f.expenseType === "sales_presales"
+            ? {
+                client: f.client,
+                opportunity: f.opportunity,
+                meetingType: f.meetingType,
+                salesOwner: f.salesOwner || (user?.name ?? "You"),
+                expectedOutcome: f.expectedOutcome,
+              }
+            : undefined,
+        lineItems: f.lineItems,
+        documents: f.documents.map((d) => ({ ...d, uploadedAt: new Date().toISOString() })),
+        status: asDraft ? "draft" : "pending_manager",
+        submittedAt: asDraft ? undefined : new Date().toISOString(),
+      });
+      clearStoredDraft(user?.id);
+      toast.success(asDraft ? "Saved as draft" : "Ticket submitted for manager verification");
+      nav({ to: "/expenses/my" });
+    } catch (error) {
+      toastApiError(
+        error,
+        asDraft ? "Draft could not be saved." : "Expense could not be submitted.",
+      );
+    }
   };
 
   const startDocumentUpload = (kind: FormState["documents"][number]["kind"]) => {
@@ -444,7 +451,7 @@ function CreateExpense() {
         });
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Selected file could not be prepared.");
+      toastApiError(error, "Selected file could not be prepared.");
     }
   };
 
@@ -459,7 +466,7 @@ function CreateExpense() {
         activeStep={activeStep}
         onStepChange={setActiveStep}
         completeLabel="Submit ticket"
-        onComplete={() => submit(false)}
+        onComplete={() => void submit(false)}
         steps={[
           {
             title: "Basic Details",
@@ -865,7 +872,11 @@ function CreateExpense() {
                     />
                   </dl>
                 </DataCard>
-                <Button variant="outline" onClick={() => submit(true)} className="rounded-full">
+                <Button
+                  variant="outline"
+                  onClick={() => void submit(true)}
+                  className="rounded-full"
+                >
                   Save as draft
                 </Button>
               </div>

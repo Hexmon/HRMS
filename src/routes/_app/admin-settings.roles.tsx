@@ -15,7 +15,7 @@ import {
   type PermissionGroup,
   type RoleConfig,
 } from "@/lib/admin-settings-store";
-import { useApiRouteEnabled } from "@/shared/api";
+import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import {
   useCreateRbacRoleMutation,
   useRbacPermissions,
@@ -121,7 +121,7 @@ function RolesScreen() {
       toast.success("Role permissions saved");
       setActiveKey(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Role update failed");
+      toastApiError(error, "Role update failed");
     }
   }
 
@@ -144,7 +144,7 @@ function RolesScreen() {
       setNewRole({ name: "", key: "", description: "" });
       setActiveKey(response.role.key);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Role creation failed");
+      toastApiError(error, "Role creation failed");
     }
   }
 

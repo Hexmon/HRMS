@@ -14,7 +14,7 @@ import {
 import { DataTable, type Column, StatusBadge, EmptyState, Modal } from "@/components/ui-kit";
 import { toast } from "sonner";
 import { mapRequest, useEmsRequestMutation, useMyEmsRequests } from "@/domains/ems";
-import { pageItems, useApiRouteEnabled } from "@/shared/api";
+import { pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { Plus, Inbox, Send } from "lucide-react";
 
 export const Route = createFileRoute("/_app/ems/requests")({
@@ -121,7 +121,7 @@ function MyRequests() {
           setDetails("");
           toast.success("Request submitted");
         },
-        onError: () => toast.error("Request could not be submitted."),
+        onError: (error) => toastApiError(error, "Request could not be submitted."),
       },
     );
   };

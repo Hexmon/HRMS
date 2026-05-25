@@ -26,6 +26,7 @@ import {
 import { Undo2, Laptop } from "lucide-react";
 import type { AssetCondition } from "@/lib/mock/assets";
 import { toast } from "sonner";
+import { toastApiError } from "@/shared/api";
 import { useApiRouteEnabled } from "@/shared/api";
 import {
   useAssetRecoveryQueue,
@@ -165,8 +166,9 @@ function ReturnsScreen() {
                       </Link>
                       <ReturnInline
                         onConfirm={(d, c, r) => {
-                          returnAsset(a.id, d, c, r);
-                          toast.success(`${a.id} returned`);
+                          void returnAsset(a.id, d, c, r)
+                            .then(() => toast.success(`${a.id} returned`))
+                            .catch((error) => toastApiError(error, "Asset could not be returned."));
                         }}
                       />
                     </li>
@@ -207,8 +209,9 @@ function ReturnsScreen() {
                     />
                     <ReturnInline
                       onConfirm={(d, c, r) => {
-                        returnAsset(a.id, d, c, r);
-                        toast.success(`${a.id} returned`);
+                        void returnAsset(a.id, d, c, r)
+                          .then(() => toast.success(`${a.id} returned`))
+                          .catch((error) => toastApiError(error, "Asset could not be returned."));
                       }}
                     />
                   </div>

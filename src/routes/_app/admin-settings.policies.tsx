@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useAdminSettings, type Policies } from "@/lib/admin-settings-store";
-import { useApiRouteEnabled } from "@/shared/api";
+import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { useAdminPolicies, useUpdateAdminPolicyMutation } from "@/domains/admin/queries";
 import type { AdminPolicyRecord, AdminPolicyValue } from "@/domains/admin/api";
 import { toast } from "sonner";
@@ -66,7 +66,7 @@ function PoliciesScreen() {
       setVersions((current) => ({ ...current, [key]: response.version }));
       toast.success("Policy saved");
     } catch (saveError) {
-      toast.error(saveError instanceof Error ? saveError.message : "Policy update failed");
+      toastApiError(saveError, "Policy update failed");
     }
   }
 

@@ -24,6 +24,13 @@ export type ExpenseStatus =
   | "withdrawn";
 
 export type ExpenseStage = "draft" | "manager" | "finance" | "payment" | "settlement" | "closed";
+export type ExpenseFinanceAction =
+  | "verify"
+  | "hold"
+  | "release_payment"
+  | "mark_bills"
+  | "review_settlement"
+  | "close";
 
 export type ExpenseType = "project" | "sales_presales";
 export type PaymentType = "advance" | "reimbursement";
@@ -818,23 +825,23 @@ interface Ctx {
   byId: (id: string) => ExpenseTicket | undefined;
   add: (
     t: Omit<ExpenseTicket, "id" | "createdAt" | "audit" | "approvals" | "comments" | "stage">,
-  ) => ExpenseTicket;
+  ) => Promise<ExpenseTicket>;
   patch: (id: string, p: Partial<ExpenseTicket>) => void;
-  submitDraft: (id: string, by: string) => void;
-  withdraw: (id: string, by: string) => void;
+  submitDraft: (id: string, by: string) => Promise<void>;
+  withdraw: (id: string, by: string) => Promise<void>;
   managerAction: (
     id: string,
     action: "approve" | "return" | "reject",
     by: string,
     remark?: string,
-  ) => void;
+  ) => Promise<void>;
   financeAction: (
     id: string,
-    action: "verify" | "hold" | "release_payment" | "mark_bills" | "review_settlement" | "close",
+    action: ExpenseFinanceAction,
     by: string,
     payload?: { remark?: string; payment?: Payment; settlement?: Partial<Settlement> },
-  ) => void;
-  addComment: (id: string, by: string, text: string) => void;
+  ) => Promise<void>;
+  addComment: (id: string, by: string, text: string) => Promise<void>;
 }
 
 const C = React.createContext<Ctx | null>(null);
@@ -1010,14 +1017,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
       actualAmount,
     }: {
       id: string;
-      action: Ctx["financeAction"] extends (
-        id: string,
-        action: infer A,
-        by: string,
-        payload?: infer P,
-      ) => void
-        ? A
-        : never;
+      action: ExpenseFinanceAction;
       payload?: { remark?: string; payment?: Payment; settlement?: Partial<Settlement> };
       expectedVersion: number;
       actualAmount?: number;
@@ -1100,7 +1100,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
 
   const byId: Ctx["byId"] = (id) => visibleTickets.find((t) => t.id === id);
 
-  const add: Ctx["add"] = (t) => {
+  const add: Ctx["add"] = async (t) => {
     const id = `EXP-${9200 + Math.floor(Math.random() * 800)}`;
     const created: ExpenseTicket = {
       ...t,
@@ -1135,8 +1135,11 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
       ],
       comments: [],
     };
+    if (apiEnabled) {
+      await createExpenseMutation.mutateAsync(created);
+      return created;
+    }
     persist([created, ...tickets]);
-    if (apiEnabled) createExpenseMutation.mutate(created);
     return created;
   };
 
@@ -1148,8 +1151,13 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     audit: [...t.audit, { by, what, at: new Date().toISOString() }],
   });
 
-  const submitDraft: Ctx["submitDraft"] = (id, by) => {
+  const submitDraft: Ctx["submitDraft"] = async (id, by) => {
     const current = visibleTickets.find((ticket) => ticket.id === id);
+    if (apiEnabled) {
+      if (!current || !isUuid(id)) throw new Error("This draft is not available in the backend.");
+      await submitExpenseMutation.mutateAsync({ id, expectedVersion: current.version ?? 1 });
+      return;
+    }
     const submittedAt = new Date().toISOString();
     persist(
       tickets.map((t) => {
@@ -1183,13 +1191,19 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         );
       }),
     );
-    if (apiEnabled && current && isUuid(id)) {
-      submitExpenseMutation.mutate({ id, expectedVersion: current.version ?? 1 });
-    }
   };
 
-  const withdraw: Ctx["withdraw"] = (id, by) => {
+  const withdraw: Ctx["withdraw"] = async (id, by) => {
     const current = visibleTickets.find((ticket) => ticket.id === id);
+    if (apiEnabled) {
+      if (!current || !isUuid(id)) throw new Error("This ticket is not available in the backend.");
+      await withdrawMutation.mutateAsync({
+        id,
+        expectedVersion: current.version ?? 1,
+        remarks: current.status === "draft" ? undefined : `Withdrawn by ${by}`,
+      });
+      return;
+    }
     persist(
       tickets.map((t) => {
         if (t.id !== id) return t;
@@ -1197,16 +1211,20 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         return pushAudit({ ...t, status: "withdrawn", stage: "closed" }, by, "Withdrew ticket");
       }),
     );
-    if (apiEnabled && isUuid(id)) {
-      withdrawMutation.mutate({
-        id,
-        expectedVersion: current?.version ?? 1,
-        remarks: current?.status === "draft" ? undefined : `Withdrawn by ${by}`,
-      });
-    }
   };
 
-  const managerAction: Ctx["managerAction"] = (id, action, by, remark) => {
+  const managerAction: Ctx["managerAction"] = async (id, action, by, remark) => {
+    const current = visibleTickets.find((ticket) => ticket.id === id);
+    if (apiEnabled) {
+      if (!current || !isUuid(id)) throw new Error("This ticket is not available in the backend.");
+      await managerDecisionMutation.mutateAsync({
+        id,
+        action,
+        remark,
+        expectedVersion: current.version ?? 1,
+      });
+      return;
+    }
     persist(
       tickets.map((t) => {
         if (t.id !== id) return t;
@@ -1255,18 +1273,24 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         return pushAudit(next, by, `Manager ${action}`);
       }),
     );
-    if (apiEnabled && isUuid(id)) {
-      const current = visibleTickets.find((ticket) => ticket.id === id);
-      managerDecisionMutation.mutate({
-        id,
-        action,
-        remark,
-        expectedVersion: current?.version ?? 1,
-      });
-    }
   };
 
-  const financeAction: Ctx["financeAction"] = (id, action, by, payload = {}) => {
+  const financeAction: Ctx["financeAction"] = async (id, action, by, payload = {}) => {
+    const current = visibleTickets.find((ticket) => ticket.id === id);
+    if (apiEnabled) {
+      if (!current || !isUuid(id)) throw new Error("This ticket is not available in the backend.");
+      await financeDecisionMutation.mutateAsync({
+        id,
+        action,
+        payload,
+        expectedVersion: current.version ?? 1,
+        actualAmount:
+          payload.settlement?.actualSpent ??
+          current.settlement?.actualSpent ??
+          ticketTotal(current),
+      });
+      return;
+    }
     persist(
       tickets.map((t) => {
         if (t.id !== id) return t;
@@ -1381,23 +1405,19 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         }
       }),
     );
-    if (apiEnabled && isUuid(id)) {
-      const current = visibleTickets.find((ticket) => ticket.id === id);
-      financeDecisionMutation.mutate({
-        id,
-        action,
-        payload,
-        expectedVersion: current?.version ?? 1,
-        actualAmount:
-          payload.settlement?.actualSpent ??
-          current?.settlement?.actualSpent ??
-          (current ? ticketTotal(current) : 0),
-      });
-    }
   };
 
-  const addComment: Ctx["addComment"] = (id, by, text) => {
+  const addComment: Ctx["addComment"] = async (id, by, text) => {
     const current = visibleTickets.find((ticket) => ticket.id === id);
+    if (apiEnabled) {
+      if (!current || !isUuid(id)) throw new Error("This ticket is not available in the backend.");
+      await clarificationMutation.mutateAsync({
+        id,
+        message: text,
+        expectedVersion: current.version,
+      });
+      return;
+    }
     persist(
       tickets.map((t) =>
         t.id === id
@@ -1405,13 +1425,6 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
           : t,
       ),
     );
-    if (apiEnabled && isUuid(id)) {
-      clarificationMutation.mutate({
-        id,
-        message: text,
-        expectedVersion: current?.version,
-      });
-    }
   };
 
   return (

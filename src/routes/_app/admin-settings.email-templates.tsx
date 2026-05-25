@@ -11,7 +11,7 @@ import { useAdminSettings, type EmailTemplate } from "@/lib/admin-settings-store
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Mail } from "lucide-react";
-import { useApiRouteEnabled } from "@/shared/api";
+import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import {
   useAdminEmailTemplates,
   useUpdateAdminEmailTemplateMutation,
@@ -108,7 +108,7 @@ function EmailTemplatesScreen() {
       });
       toast.success("Template saved");
     } catch (saveError) {
-      toast.error(saveError instanceof Error ? saveError.message : "Template update failed");
+      toastApiError(saveError, "Template update failed");
     }
   }
 

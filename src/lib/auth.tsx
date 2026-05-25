@@ -8,6 +8,7 @@ import {
   isMockFallbackEnabled,
   setApiAccessToken,
   shouldUseMockFallback,
+  userFacingErrorMessage,
   type ApiRecord,
 } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
@@ -190,7 +191,7 @@ function devOnlyToken(
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+  return userFacingErrorMessage(error, fallback);
 }
 
 function mapApiRole(value: unknown): Role | null {
@@ -379,8 +380,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (isMockFallbackEnabled() && shouldUseMockFallback(error)) {
           return loginFromMock(email, password);
         }
-        const message = error instanceof Error ? error.message : "Sign in failed.";
-        return { ok: false, error: message };
+        return { ok: false, error: userFacingErrorMessage(error, "Sign in failed.") };
       }
     }
 

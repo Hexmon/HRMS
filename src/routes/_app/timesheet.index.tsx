@@ -26,7 +26,7 @@ import { useEmployees } from "@/lib/employees-store";
 import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { useTimesheetSelectors } from "@/domains/timesheets";
-import { asArray, asRecord, isApiEnabled, text } from "@/shared/api";
+import { asArray, asRecord, isApiEnabled, text, toastApiError } from "@/shared/api";
 import {
   TIMESHEET_STATUS_LABEL,
   startOfWeek,
@@ -270,9 +270,7 @@ function MyTimesheetPage() {
       await persistRows("draft");
       toast.success("Draft saved");
     } catch (err) {
-      toast.error("Could not save draft", {
-        description: err instanceof Error ? err.message : "Backend request failed.",
-      });
+      toastApiError(err, "Could not save draft");
     } finally {
       setSavingAction(null);
     }
@@ -288,9 +286,7 @@ function MyTimesheetPage() {
       await persistRows("pending");
       toast.success("Week submitted for approval");
     } catch (err) {
-      toast.error("Could not submit week", {
-        description: err instanceof Error ? err.message : "Backend request failed.",
-      });
+      toastApiError(err, "Could not submit week");
     } finally {
       setSavingAction(null);
     }

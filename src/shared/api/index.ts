@@ -6,3 +6,4 @@ export * from "./records";
 export * from "./route-gate";
 export * from "./session";
 export * from "./types";
+export * from "./user-facing-errors";

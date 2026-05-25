@@ -66,11 +66,11 @@ interface Ctx {
   loading: boolean;
   error: Error | null;
   isApiBacked: boolean;
-  upsert: (e: Employee, actor?: string) => void;
+  upsert: (e: Employee, actor?: string) => Promise<void>;
   remove: (id: string, actor?: string) => void;
-  setStatus: (id: string, status: Employee["status"], actor?: string) => void;
-  setLogin: (id: string, enabled: boolean, actor?: string) => void;
-  setRoles: (id: string, roles: string[], actor?: string) => void;
+  setStatus: (id: string, status: Employee["status"], actor?: string) => Promise<void>;
+  setLogin: (id: string, enabled: boolean, actor?: string) => Promise<void>;
+  setRoles: (id: string, roles: string[], actor?: string) => Promise<void>;
   addDepartment: (name: string, description?: string) => Department;
   addDesignation: (title: string, department: string) => Designation;
   reset: () => void;
@@ -318,25 +318,31 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
     onSuccess: invalidateCore,
   });
 
-  const upsert: Ctx["upsert"] = (e, actor = "Rahul Verma") => {
+  const upsert: Ctx["upsert"] = async (e, actor = "Rahul Verma") => {
     const exists = employees.some((x) => x.id === e.id);
     const action = exists ? "Profile updated" : "Profile created";
     const next: Employee = {
       ...e,
       audit: [newAudit(actor, action), ...(e.audit ?? [])],
     };
-    persistE(exists ? employees.map((x) => (x.id === e.id ? next : x)) : [next, ...employees]);
     if (apiEnabled) {
-      void updateMutation
-        .mutateAsync({ ...(findEmployee(e.id) ?? {}), ...next })
-        .catch(() => undefined);
+      await updateMutation.mutateAsync({ ...(findEmployee(e.id) ?? {}), ...next });
+      return;
     }
+    persistE(exists ? employees.map((x) => (x.id === e.id ? next : x)) : [next, ...employees]);
   };
 
   const remove: Ctx["remove"] = (id) => persistE(employees.filter((x) => x.id !== id));
 
-  const setStatus: Ctx["setStatus"] = (id, status, actor = "Rahul Verma") => {
+  const setStatus: Ctx["setStatus"] = async (id, status, actor = "Rahul Verma") => {
     const current = findEmployee(id);
+    if (apiEnabled && current) {
+      if (status === "notice_period") {
+        throw new Error("Notice-period status is not available from the backend yet.");
+      }
+      await statusMutation.mutateAsync({ employee: current, status });
+      return;
+    }
     persistE(
       employees.map((x) =>
         x.id === id
@@ -348,13 +354,14 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
           : x,
       ),
     );
-    if (apiEnabled && current && status !== "notice_period") {
-      void statusMutation.mutateAsync({ employee: current, status }).catch(() => undefined);
-    }
   };
 
-  const setLogin: Ctx["setLogin"] = (id, enabled, actor = "Rahul Verma") => {
+  const setLogin: Ctx["setLogin"] = async (id, enabled, actor = "Rahul Verma") => {
     const current = findEmployee(id);
+    if (apiEnabled && current) {
+      await loginMutation.mutateAsync({ employee: current, enabled });
+      return;
+    }
     persistE(
       employees.map((x) =>
         x.id === id
@@ -366,13 +373,14 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
           : x,
       ),
     );
-    if (apiEnabled && current) {
-      void loginMutation.mutateAsync({ employee: current, enabled }).catch(() => undefined);
-    }
   };
 
-  const setRoles: Ctx["setRoles"] = (id, roles, actor = "Rahul Verma") => {
+  const setRoles: Ctx["setRoles"] = async (id, roles, actor = "Rahul Verma") => {
     const current = findEmployee(id);
+    if (apiEnabled && current) {
+      await rolesMutation.mutateAsync({ employee: current, roles });
+      return;
+    }
     persistE(
       employees.map((x) => {
         if (x.id !== id) return x;
@@ -390,9 +398,6 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
         };
       }),
     );
-    if (apiEnabled && current) {
-      void rolesMutation.mutateAsync({ employee: current, roles }).catch(() => undefined);
-    }
   };
 
   const addDepartment: Ctx["addDepartment"] = (name, _description) => {

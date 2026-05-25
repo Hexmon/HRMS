@@ -6,7 +6,14 @@ import { DataCard, StatusBadge, EmptyState } from "@/components/ui-kit";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAttendanceMonthlyCalendar } from "@/domains/attendance";
-import { asArray, asRecord, numberValue, text, type ApiRecord } from "@/shared/api";
+import {
+  asArray,
+  asRecord,
+  numberValue,
+  text,
+  userFacingErrorMessage,
+  type ApiRecord,
+} from "@/shared/api";
 
 export const Route = createFileRoute("/_app/attendance/calendar")({
   component: AttendanceCalendar,
@@ -44,7 +51,7 @@ function dayStatus(record: ApiRecord | undefined): DayStatus {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Attendance calendar request failed.";
+  return userFacingErrorMessage(error, "Attendance calendar request failed.");
 }
 
 function AttendanceCalendar() {

@@ -28,7 +28,7 @@ import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { TIMESHEET_STATUS_LABEL, type TimesheetWeek, DEMO_LAST_WEEK } from "@/lib/mock/timesheets";
 import { useTimesheetMissingSubmissions } from "@/domains/timesheets";
-import { asRecord, isApiEnabled, numberValue, pageItems, text } from "@/shared/api";
+import { asRecord, isApiEnabled, numberValue, pageItems, text, toastApiError } from "@/shared/api";
 import {
   CheckCircle2,
   XCircle,
@@ -205,9 +205,7 @@ function ApprovalsPage() {
       await setWeekStatus(r.weekId, "approved", user?.name);
       toast.success("Approved", { description: `${r.employeeName} · ${r.weekStart}` });
     } catch (err) {
-      toast.error("Could not approve timesheet", {
-        description: err instanceof Error ? err.message : "Backend request failed.",
-      });
+      toastApiError(err, "Could not approve timesheet");
     }
   };
   const bulkApprove = async () => {
@@ -222,9 +220,7 @@ function ApprovalsPage() {
       toast.success(`${n} weeks approved`);
       setSelected(new Set());
     } catch (err) {
-      toast.error("Could not bulk approve timesheets", {
-        description: err instanceof Error ? err.message : "Backend request failed.",
-      });
+      toastApiError(err, "Could not bulk approve timesheets");
     }
   };
   const submitReject = async () => {
@@ -239,9 +235,7 @@ function ApprovalsPage() {
       setRejectFor(null);
       setRemarks("");
     } catch (err) {
-      toast.error("Could not reject timesheet", {
-        description: err instanceof Error ? err.message : "Backend request failed.",
-      });
+      toastApiError(err, "Could not reject timesheet");
     }
   };
   const submitReturn = async () => {
@@ -256,9 +250,7 @@ function ApprovalsPage() {
       setReturnFor(null);
       setRemarks("");
     } catch (err) {
-      toast.error("Could not return timesheet", {
-        description: err instanceof Error ? err.message : "Backend request failed.",
-      });
+      toastApiError(err, "Could not return timesheet");
     }
   };
 

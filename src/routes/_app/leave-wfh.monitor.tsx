@@ -23,7 +23,7 @@ import {
   type LeaveWfhStatus,
 } from "@/domains/leave-wfh";
 import { documentsApi } from "@/domains/documents";
-import { isApiEnabled } from "@/shared/api";
+import { isApiEnabled, userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/leave-wfh/monitor")({
   component: MonitorPage,
@@ -292,5 +292,5 @@ function MonitorPage() {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Leave/WFH monitor request failed.";
+  return userFacingErrorMessage(error, "Leave/WFH monitor request failed.");
 }

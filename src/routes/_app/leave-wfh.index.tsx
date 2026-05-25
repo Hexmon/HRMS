@@ -15,6 +15,7 @@ import {
   useMyLeaveRequests,
   useMyWfhRequests,
 } from "@/domains/leave-wfh";
+import { userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/leave-wfh/")({
   component: LeaveDashboard,
@@ -252,5 +253,5 @@ function LeaveDashboard() {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Leave/WFH request failed.";
+  return userFacingErrorMessage(error, "Leave/WFH request failed.");
 }

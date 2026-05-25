@@ -23,7 +23,7 @@ import {
   useEmsProfileChangeMutation,
   useMyProfileChanges,
 } from "@/domains/ems";
-import { asRecord, pageItems, text, useApiRouteEnabled } from "@/shared/api";
+import { asRecord, pageItems, text, toastApiError, useApiRouteEnabled } from "@/shared/api";
 import {
   User,
   Phone,
@@ -113,7 +113,7 @@ function MyProfile() {
           setVal("");
           setReason("");
         },
-        onError: () => toast.error("Profile update request could not be submitted."),
+        onError: (error) => toastApiError(error, "Profile update request could not be submitted."),
       },
     );
   };

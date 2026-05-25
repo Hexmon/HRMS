@@ -26,7 +26,13 @@ import {
   useHrEmsRequestQueue,
   useHrProfileChangeQueue,
 } from "@/domains/ems";
-import { isUuid, pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
+import {
+  isUuid,
+  pageItems,
+  toastApiError,
+  useApiRouteEnabled,
+  withApiFallback,
+} from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import { toast } from "sonner";
 import {
@@ -316,7 +322,7 @@ function DocQueue() {
       queryClient.invalidateQueries({ queryKey: queryKeys.domain("documents") });
       toast.success("Document verified");
     },
-    onError: () => toast.error("Document could not be verified."),
+    onError: (error) => toastApiError(error, "Document could not be verified."),
   });
   const rows: DocRow[] = apiEnabled
     ? (documentsQuery.data ?? [])
@@ -418,7 +424,7 @@ function ProfileQueue() {
       {
         onSuccess: () =>
           toast.success(decision === "approved" ? "Update approved" : "Update rejected"),
-        onError: () => toast.error("Profile update decision could not be saved."),
+        onError: (error) => toastApiError(error, "Profile update decision could not be saved."),
       },
     );
   };
@@ -521,7 +527,7 @@ function OnboardingChecklist() {
       },
       {
         onSuccess: () => toast.success(`${label} updated`),
-        onError: () => toast.error("Onboarding checklist could not be updated."),
+        onError: (error) => toastApiError(error, "Onboarding checklist could not be updated."),
       },
     );
   };
@@ -619,7 +625,7 @@ function ProbationQueue() {
       {
         onSuccess: () =>
           toast.success(decision === "confirmed" ? "Confirmation issued" : "Probation extended"),
-        onError: () => toast.error("Probation decision could not be saved."),
+        onError: (error) => toastApiError(error, "Probation decision could not be saved."),
       },
     );
   };
@@ -710,7 +716,7 @@ function ExitChecklist() {
       },
       {
         onSuccess: () => toast.success(`${label} updated`),
-        onError: () => toast.error("Exit checklist could not be updated."),
+        onError: (error) => toastApiError(error, "Exit checklist could not be updated."),
       },
     );
   };
@@ -804,7 +810,7 @@ function PolicyMgmt() {
       },
       {
         onSuccess: () => toast.success("New version published"),
-        onError: () => toast.error("Policy version could not be published."),
+        onError: (error) => toastApiError(error, "Policy version could not be published."),
       },
     );
   };
@@ -892,7 +898,7 @@ function LetterQueue() {
       },
       {
         onSuccess: () => toast.success("Letter generated"),
-        onError: () => toast.error("Letter could not be generated."),
+        onError: (error) => toastApiError(error, "Letter could not be generated."),
       },
     );
   };

@@ -13,7 +13,7 @@ import {
   type MasterKey,
   type MasterRow,
 } from "@/lib/admin-settings-store";
-import { useApiRouteEnabled } from "@/shared/api";
+import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import {
   useCreateDepartmentMasterMutation,
   useCreateDesignationMasterMutation,
@@ -121,7 +121,7 @@ function MasterDataScreen() {
       }
       setOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Master data update failed");
+      toastApiError(error, "Master data update failed");
     }
   };
 
@@ -253,7 +253,7 @@ function MasterDataScreen() {
       }
       toggleMasterActive(key, row.id);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Master data update failed");
+      toastApiError(error, "Master data update failed");
     }
   }
 

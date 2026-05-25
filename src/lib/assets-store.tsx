@@ -26,7 +26,7 @@ interface Ctx {
   loading: boolean;
   error: Error | null;
   isApiBacked: boolean;
-  addAsset: (a: Asset, actor?: string) => void;
+  addAsset: (a: Asset, actor?: string) => Promise<void>;
   updateAsset: (id: string, patch: Partial<Asset>, actor?: string, action?: string) => void;
   deleteAsset: (id: string) => void;
   assignAsset: (
@@ -38,21 +38,21 @@ interface Ctx {
     condition: AssetCondition,
     remarks: string,
     actor?: string,
-  ) => void;
-  acknowledgeAssignment: (assetId: string, employee: string) => void;
+  ) => Promise<void>;
+  acknowledgeAssignment: (assetId: string, employee: string) => Promise<void>;
   returnAsset: (
     id: string,
     returnedOn: string,
     conditionAtReturn: AssetCondition,
     remarks: string,
     actor?: string,
-  ) => void;
+  ) => Promise<void>;
   setStatus: (id: string, status: AssetStatus, actor?: string, remarks?: string) => void;
-  addMaintenance: (id: string, entry: MaintenanceEntry, actor?: string) => void;
+  addMaintenance: (id: string, entry: MaintenanceEntry, actor?: string) => Promise<void>;
   // requests
-  addRequest: (req: AssetRequest) => void;
-  decideRequest: (id: string, status: RequestStatus, by: string, remarks?: string) => void;
-  cancelRequest: (id: string) => void;
+  addRequest: (req: AssetRequest) => Promise<void>;
+  decideRequest: (id: string, status: RequestStatus, by: string, remarks?: string) => Promise<void>;
+  cancelRequest: (id: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -298,10 +298,13 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     ((canUseAssetInventory && !hasApiResult && apiAssetsQuery.isLoading) ||
       (!hasRequestApiResult && (apiMyRequestsQuery.isLoading || apiQueueRequestsQuery.isLoading)));
 
-  const addAsset: Ctx["addAsset"] = (a, actor = "Marco Rossi") => {
+  const addAsset: Ctx["addAsset"] = async (a, actor = "Marco Rossi") => {
     const next = { ...a, audit: [audit(actor, "Asset registered"), ...(a.audit ?? [])] };
+    if (apiEnabled) {
+      await createAssetMutation.mutateAsync(next);
+      return;
+    }
     persistA([next, ...assets]);
-    if (apiEnabled) createAssetMutation.mutate(next);
   };
 
   const updateAsset: Ctx["updateAsset"] = (
@@ -319,7 +322,7 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
 
   const deleteAsset: Ctx["deleteAsset"] = (id) => persistA(assets.filter((x) => x.id !== id));
 
-  const assignAsset: Ctx["assignAsset"] = (
+  const assignAsset: Ctx["assignAsset"] = async (
     id,
     employee,
     employeeId,
@@ -329,6 +332,18 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     remarks,
     actor = "Marco Rossi",
   ) => {
+    if (apiEnabled) {
+      if (!isUuid(id) || !employeeId || !isUuid(employeeId)) {
+        throw new Error("Select a backend employee before assigning this asset.");
+      }
+      const current = visibleAssets.find((asset) => asset.id === id);
+      await assignAssetMutation.mutateAsync({
+        id,
+        employeeId,
+        expectedVersion: current?.version ?? 1,
+      });
+      return;
+    }
     persistA(
       visibleAssets.map((x) => {
         if (x.id !== id) return x;
@@ -353,13 +368,18 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         };
       }),
     );
-    if (apiEnabled && isUuid(id) && employeeId && isUuid(employeeId)) {
-      const current = visibleAssets.find((asset) => asset.id === id);
-      assignAssetMutation.mutate({ id, employeeId, expectedVersion: current?.version ?? 1 });
-    }
   };
 
-  const acknowledgeAssignment: Ctx["acknowledgeAssignment"] = (assetId, employee) => {
+  const acknowledgeAssignment: Ctx["acknowledgeAssignment"] = async (assetId, employee) => {
+    if (apiEnabled) {
+      if (!isUuid(assetId)) throw new Error("This asset is not available in the backend.");
+      const current = visibleAssets.find((asset) => asset.id === assetId);
+      await acknowledgeMutation.mutateAsync({
+        id: assetId,
+        expectedVersion: current?.version ?? 1,
+      });
+      return;
+    }
     persistA(
       assets.map((x) => {
         if (x.id !== assetId) return x;
@@ -372,19 +392,21 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         };
       }),
     );
-    if (apiEnabled && isUuid(assetId)) {
-      const current = visibleAssets.find((asset) => asset.id === assetId);
-      acknowledgeMutation.mutate({ id: assetId, expectedVersion: current?.version ?? 1 });
-    }
   };
 
-  const returnAsset: Ctx["returnAsset"] = (
+  const returnAsset: Ctx["returnAsset"] = async (
     id,
     returnedOn,
     conditionAtReturn,
     remarks,
     actor = "Marco Rossi",
   ) => {
+    if (apiEnabled) {
+      if (!isUuid(id)) throw new Error("This asset is not available in the backend.");
+      const current = visibleAssets.find((asset) => asset.id === id);
+      await returnAssetMutation.mutateAsync({ id, expectedVersion: current?.version ?? 1 });
+      return;
+    }
     persistA(
       visibleAssets.map((x) => {
         if (x.id !== id) return x;
@@ -405,10 +427,6 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         };
       }),
     );
-    if (apiEnabled && isUuid(id)) {
-      const current = visibleAssets.find((asset) => asset.id === id);
-      returnAssetMutation.mutate({ id, expectedVersion: current?.version ?? 1 });
-    }
   };
 
   const setStatus: Ctx["setStatus"] = (id, status, actor = "Marco Rossi", remarks) => {
@@ -425,7 +443,13 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const addMaintenance: Ctx["addMaintenance"] = (id, entry, actor = "Marco Rossi") => {
+  const addMaintenance: Ctx["addMaintenance"] = async (id, entry, actor = "Marco Rossi") => {
+    if (apiEnabled) {
+      if (!isUuid(id)) throw new Error("This asset is not available in the backend.");
+      const current = visibleAssets.find((asset) => asset.id === id);
+      await maintenanceMutation.mutateAsync({ id, entry, expectedVersion: current?.version ?? 1 });
+      return;
+    }
     persistA(
       assets.map((x) =>
         x.id === id
@@ -437,18 +461,28 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
           : x,
       ),
     );
-    if (apiEnabled && isUuid(id)) {
-      const current = visibleAssets.find((asset) => asset.id === id);
-      maintenanceMutation.mutate({ id, entry, expectedVersion: current?.version ?? 1 });
+  };
+
+  const addRequest: Ctx["addRequest"] = async (req) => {
+    if (apiEnabled) {
+      await createRequestMutation.mutateAsync(req);
+      return;
     }
-  };
-
-  const addRequest: Ctx["addRequest"] = (req) => {
     persistR([req, ...requests]);
-    if (apiEnabled) createRequestMutation.mutate(req);
   };
 
-  const decideRequest: Ctx["decideRequest"] = (id, status, by, remarks) => {
+  const decideRequest: Ctx["decideRequest"] = async (id, status, by, remarks) => {
+    if (apiEnabled) {
+      if (!isUuid(id)) throw new Error("This request is not available in the backend.");
+      const current = visibleRequests.find((request) => request.id === id);
+      await decideRequestMutation.mutateAsync({
+        id,
+        status,
+        remarks,
+        expectedVersion: current?.version ?? 1,
+      });
+      return;
+    }
     persistR(
       requests.map((r) =>
         r.id === id
@@ -462,23 +496,16 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
           : r,
       ),
     );
-    if (apiEnabled && isUuid(id)) {
-      const current = visibleRequests.find((request) => request.id === id);
-      decideRequestMutation.mutate({
-        id,
-        status,
-        remarks,
-        expectedVersion: current?.version ?? 1,
-      });
-    }
   };
 
-  const cancelRequest: Ctx["cancelRequest"] = (id) => {
-    persistR(requests.filter((r) => r.id !== id));
-    if (apiEnabled && isUuid(id)) {
+  const cancelRequest: Ctx["cancelRequest"] = async (id) => {
+    if (apiEnabled) {
+      if (!isUuid(id)) throw new Error("This request is not available in the backend.");
       const current = visibleRequests.find((request) => request.id === id);
-      cancelRequestMutation.mutate({ id, expectedVersion: current?.version ?? 1 });
+      await cancelRequestMutation.mutateAsync({ id, expectedVersion: current?.version ?? 1 });
+      return;
     }
+    persistR(requests.filter((r) => r.id !== id));
   };
 
   const reset = () => {

@@ -18,7 +18,13 @@ import {
   mapApiExpenseAudit,
   mapApiExpenseTicket,
 } from "@/domains/expenses";
-import { isUuid, pageItems, withApiFallback } from "@/shared/api";
+import {
+  isUuid,
+  pageItems,
+  toastApiError,
+  userFacingErrorMessage,
+  withApiFallback,
+} from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import {
   DataCard,
@@ -130,7 +136,10 @@ function ExpenseDetail() {
           title={loading || detailQuery.isLoading ? "Loading ticket" : "Ticket not found"}
           description={
             error || detailQuery.error
-              ? "Expense ticket data could not be loaded from the backend."
+              ? userFacingErrorMessage(
+                  error ?? detailQuery.error,
+                  "Expense ticket data could not be loaded from the backend.",
+                )
               : "The expense ticket you're looking for doesn't exist."
           }
           action={<Button onClick={() => nav({ to: "/expenses/my" })}>Back to my expenses</Button>}
@@ -155,30 +164,34 @@ function ExpenseDetail() {
   const isClosed = ["closed", "withdrawn", "manager_rejected"].includes(t.status);
   const highValue = total >= HIGH_VALUE_THRESHOLD;
 
-  const submitAction = () => {
+  const submitAction = async () => {
     if (!action) return;
     const needRemark = ["manager_return", "manager_reject", "fin_hold"].includes(action);
     if (needRemark && !remark.trim()) {
       toast.error("Remarks are required for this action.");
       return;
     }
-    switch (action) {
-      case "manager_approve":
-        managerAction(t.id, "approve", me, remark);
-        break;
-      case "manager_return":
-        managerAction(t.id, "return", me, remark);
-        break;
-      case "manager_reject":
-        managerAction(t.id, "reject", me, remark);
-        break;
-      case "fin_hold":
-        financeAction(t.id, "hold", me, { remark });
-        break;
+    try {
+      switch (action) {
+        case "manager_approve":
+          await managerAction(t.id, "approve", me, remark);
+          break;
+        case "manager_return":
+          await managerAction(t.id, "return", me, remark);
+          break;
+        case "manager_reject":
+          await managerAction(t.id, "reject", me, remark);
+          break;
+        case "fin_hold":
+          await financeAction(t.id, "hold", me, { remark });
+          break;
+      }
+      toast.success("Action recorded");
+      setAction(null);
+      setRemark("");
+    } catch (error) {
+      toastApiError(error, "Expense action could not be recorded.");
     }
-    toast.success("Action recorded");
-    setAction(null);
-    setRemark("");
   };
 
   return (
@@ -263,8 +276,9 @@ function ExpenseDetail() {
               {t.status === "finance_verification" && (
                 <Button
                   onClick={() => {
-                    financeAction(t.id, "verify", me);
-                    toast.success("Verified");
+                    void financeAction(t.id, "verify", me)
+                      .then(() => toast.success("Verified"))
+                      .catch((error) => toastApiError(error, "Finance verification failed."));
                   }}
                 >
                   Verify
@@ -287,8 +301,11 @@ function ExpenseDetail() {
               {t.status === "payment_released" && t.paymentType === "advance" && (
                 <Button
                   onClick={() => {
-                    financeAction(t.id, "mark_bills", me);
-                    toast.success("Bills marked received");
+                    void financeAction(t.id, "mark_bills", me)
+                      .then(() => toast.success("Bills marked received"))
+                      .catch((error) =>
+                        toastApiError(error, "Bills could not be marked received."),
+                      );
                   }}
                 >
                   Mark bills received
@@ -306,9 +323,12 @@ function ExpenseDetail() {
           {isRequester && t.status === "draft" && (
             <Button
               onClick={() => {
-                submitDraft(t.id, me);
-                toast.success("Draft submitted for manager verification");
-                nav({ to: "/expenses/my" });
+                void submitDraft(t.id, me)
+                  .then(() => {
+                    toast.success("Draft submitted for manager verification");
+                    nav({ to: "/expenses/my" });
+                  })
+                  .catch((error) => toastApiError(error, "Draft could not be submitted."));
               }}
             >
               Submit draft
@@ -318,9 +338,12 @@ function ExpenseDetail() {
             <Button
               variant="outline"
               onClick={() => {
-                withdraw(t.id, me);
-                toast.success("Ticket withdrawn");
-                nav({ to: "/expenses/my" });
+                void withdraw(t.id, me)
+                  .then(() => {
+                    toast.success("Ticket withdrawn");
+                    nav({ to: "/expenses/my" });
+                  })
+                  .catch((error) => toastApiError(error, "Ticket could not be withdrawn."));
               }}
             >
               Withdraw ticket
@@ -590,9 +613,12 @@ function ExpenseDetail() {
                 <Button
                   onClick={() => {
                     if (!comment.trim()) return;
-                    addComment(t.id, me, comment.trim());
-                    setComment("");
-                    toast.success("Comment added");
+                    void addComment(t.id, me, comment.trim())
+                      .then(() => {
+                        setComment("");
+                        toast.success("Comment added");
+                      })
+                      .catch((error) => toastApiError(error, "Comment could not be added."));
                   }}
                 >
                   Post
@@ -627,7 +653,7 @@ function ExpenseDetail() {
             <Button variant="ghost" onClick={() => setAction(null)}>
               Cancel
             </Button>
-            <Button onClick={submitAction}>Confirm</Button>
+            <Button onClick={() => void submitAction()}>Confirm</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -746,11 +772,14 @@ function PaymentDialog({
                 toast.error("Reference number required.");
                 return;
               }
-              financeAction(ticket.id, "release_payment", me, {
+              void financeAction(ticket.id, "release_payment", me, {
                 payment: { paidAmount: amount, mode, paidOn, reference, remarks },
-              });
-              toast.success("Payment released");
-              onClose();
+              })
+                .then(() => {
+                  toast.success("Payment released");
+                  onClose();
+                })
+                .catch((error) => toastApiError(error, "Payment could not be released."));
             }}
           >
             Release
@@ -831,7 +860,7 @@ function SettlementDialog({
           </Button>
           <Button
             onClick={() => {
-              financeAction(ticket.id, "review_settlement", me, {
+              void financeAction(ticket.id, "review_settlement", me, {
                 settlement: {
                   advanceAmount: advance,
                   actualSpent: actual,
@@ -839,9 +868,12 @@ function SettlementDialog({
                   billsSubmitted: bills,
                   remarks,
                 },
-              });
-              toast.success("Settlement updated");
-              onClose();
+              })
+                .then(() => {
+                  toast.success("Settlement updated");
+                  onClose();
+                })
+                .catch((error) => toastApiError(error, "Settlement could not be updated."));
             }}
           >
             Save
@@ -887,9 +919,12 @@ function CloseDialog({
           <Button
             disabled={blocked}
             onClick={() => {
-              financeAction(ticket.id, "close", me);
-              toast.success("Ticket closed");
-              onClose();
+              void financeAction(ticket.id, "close", me)
+                .then(() => {
+                  toast.success("Ticket closed");
+                  onClose();
+                })
+                .catch((error) => toastApiError(error, "Ticket could not be closed."));
             }}
           >
             Close ticket

@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { useHelpdesk, HELPDESK_AGENT_ROLES } from "@/lib/helpdesk-store";
 import { useEmployees } from "@/lib/employees-store";
 import { documentsApi } from "@/domains/documents";
+import { toastApiError } from "@/shared/api";
 import { queryKeys } from "@/shared/query";
 import { formatBytes, prepareDocumentUploadFile } from "@/shared/uploads/documents";
 import { Card } from "@/components/ui/card";
@@ -129,7 +130,7 @@ function TicketDetailScreen() {
       });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Attachment upload failed.");
+      toastApiError(error, "Attachment upload failed.");
     },
   });
 
@@ -159,9 +160,7 @@ function TicketDetailScreen() {
     void Promise.resolve()
       .then(work)
       .then(() => toast.success(success))
-      .catch((error) =>
-        toast.error(error instanceof Error ? error.message : "Helpdesk action failed"),
-      );
+      .catch((error) => toastApiError(error, "Helpdesk action failed"));
   };
 
   const submitComment = () => {

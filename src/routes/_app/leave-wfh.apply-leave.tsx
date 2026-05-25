@@ -17,6 +17,7 @@ import { LEAVE_TYPE_LABEL, type LeaveType } from "@/lib/leave-store";
 import { toast } from "sonner";
 import { CalendarPlus, Paperclip, Send } from "lucide-react";
 import { useCreateLeaveMutation } from "@/domains/leave-wfh";
+import { userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/leave-wfh/apply-leave")({
   component: ApplyLeavePage,
@@ -178,5 +179,5 @@ function ApplyLeavePage() {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Leave request failed.";
+  return userFacingErrorMessage(error, "Leave request failed.");
 }

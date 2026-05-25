@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import type { ExpenseTicket } from "@/lib/expenses-store";
 import { toast } from "sonner";
+import { toastApiError, userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/expenses/my")({ component: MyExpenses });
 
@@ -81,7 +82,7 @@ function MyExpenses() {
       emptyTitle="No expenses yet"
       emptyDescription={
         error
-          ? "Expense data could not be loaded from the backend."
+          ? userFacingErrorMessage(error, "Expense data could not be loaded from the backend.")
           : "Create your first expense ticket to get started."
       }
       loading={loading}
@@ -98,8 +99,9 @@ function MyExpenses() {
               {
                 label: "Submit draft",
                 onClick: () => {
-                  submitDraft(r.id, me);
-                  toast.success("Draft submitted for manager verification");
+                  void submitDraft(r.id, me)
+                    .then(() => toast.success("Draft submitted for manager verification"))
+                    .catch((error) => toastApiError(error, "Draft could not be submitted."));
                 },
               },
             ]
@@ -110,8 +112,9 @@ function MyExpenses() {
                 label: "Withdraw",
                 tone: "destructive" as const,
                 onClick: () => {
-                  withdraw(r.id, me);
-                  toast.success("Ticket withdrawn");
+                  void withdraw(r.id, me)
+                    .then(() => toast.success("Ticket withdrawn"))
+                    .catch((error) => toastApiError(error, "Ticket could not be withdrawn."));
                 },
               },
             ]

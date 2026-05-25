@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { useEmployees } from "@/lib/employees-store";
 import { useAssets, warrantyDaysLeft, fmtMoney, ASSET_ADMIN_ROLES } from "@/lib/assets-store";
 import { assetsApi, mapApiAsset } from "@/domains/assets";
-import { isUuid, withApiFallback } from "@/shared/api";
+import { isUuid, toastApiError, userFacingErrorMessage, withApiFallback } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import { DataCard, StatusBadge } from "@/components/ui-kit";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -47,8 +47,16 @@ export const Route = createFileRoute("/_app/assets/$id")({ component: AssetDetai
 function AssetDetail() {
   const { id } = useParams({ from: "/_app/assets/$id" });
   const { activeRole } = useAuth();
-  const { assets, assignAsset, returnAsset, setStatus, addMaintenance, loading, error } =
-    useAssets();
+  const {
+    assets,
+    assignAsset,
+    returnAsset,
+    setStatus,
+    addMaintenance,
+    loading,
+    error,
+    isApiBacked,
+  } = useAssets();
   const { employees } = useEmployees();
   const listAsset = assets.find((a) => a.id === id);
   const detailQuery = useQuery({
@@ -72,7 +80,10 @@ function AssetDetail() {
         </h2>
         {(error || detailQuery.error) && (
           <p className="mt-3 text-sm text-destructive">
-            Asset data could not be loaded from the backend.
+            {userFacingErrorMessage(
+              error ?? detailQuery.error,
+              "Asset data could not be loaded from the backend.",
+            )}
           </p>
         )}
         <Button asChild className="mt-4">
@@ -108,18 +119,20 @@ function AssetDetail() {
           <StatusBadge status={asset.status} />
           {isAdmin && asset.status !== "assigned" && (
             <AssignDialog
-              employees={employees.map((e) => ({ id: e.id, name: e.name }))}
+              employees={employees.map((e) => ({ id: e.apiId ?? e.id, name: e.name }))}
               onAssign={(emp, eid, on, ret, cond, rem) => {
-                assignAsset(asset.id, emp, eid, on, ret, cond, rem);
-                toast.success(`Assigned to ${emp}`);
+                void assignAsset(asset.id, emp, eid, on, ret, cond, rem)
+                  .then(() => toast.success(`Assigned to ${emp}`))
+                  .catch((error) => toastApiError(error, "Asset could not be assigned."));
               }}
             />
           )}
           {isAdmin && asset.status === "assigned" && (
             <ReturnDialog
               onReturn={(d, c, r) => {
-                returnAsset(asset.id, d, c, r);
-                toast.success("Asset returned to inventory");
+                void returnAsset(asset.id, d, c, r)
+                  .then(() => toast.success("Asset returned to inventory"))
+                  .catch((error) => toastApiError(error, "Asset could not be returned."));
               }}
             />
           )}
@@ -128,6 +141,10 @@ function AssetDetail() {
               variant="outline"
               className="rounded-full"
               onClick={() => {
+                if (isApiBacked) {
+                  toast.error("Create a maintenance record to move this asset into repair.");
+                  return;
+                }
                 setStatus(asset.id, "repair", "Marco Rossi", "Sent for service");
                 toast.success("Marked as in repair");
               }}
@@ -256,8 +273,9 @@ function AssetDetail() {
               isAdmin ? (
                 <MaintenanceDialog
                   onAdd={(e) => {
-                    addMaintenance(asset.id, e);
-                    toast.success("Maintenance logged");
+                    void addMaintenance(asset.id, e)
+                      .then(() => toast.success("Maintenance logged"))
+                      .catch((error) => toastApiError(error, "Maintenance could not be logged."));
                   }}
                 />
               ) : undefined

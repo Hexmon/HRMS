@@ -10,6 +10,7 @@ import { Plus, Settings2, Trash2 } from "lucide-react";
 import type { CategoryConfig, SubCategory, TicketCategory } from "@/lib/mock/helpdesk";
 import { toast } from "sonner";
 import { SLA_MATRIX } from "@/lib/mock/helpdesk";
+import { toastApiError } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/helpdesk/categories")({ component: CategoriesScreen });
 
@@ -20,9 +21,7 @@ function CategoriesScreen() {
     void Promise.resolve()
       .then(work)
       .then(() => toast.success(success))
-      .catch((error) =>
-        toast.error(error instanceof Error ? error.message : "Category update failed"),
-      );
+      .catch((error) => toastApiError(error, "Category update failed"));
   };
 
   return (

@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Plus, MapPin, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { holidaysFromResponse, useHolidayMutation, useHolidays } from "@/domains/leave-wfh";
+import { userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/leave-wfh/holidays")({
   component: HolidaysPage,
@@ -283,5 +284,5 @@ function createId(): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Holiday request failed.";
+  return userFacingErrorMessage(error, "Holiday request failed.");
 }

@@ -9,7 +9,7 @@ import {
   useEmsLetters,
   useEmsRequestMutation,
 } from "@/domains/ems";
-import { pageItems, useApiRouteEnabled } from "@/shared/api";
+import { pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { FileSignature, Download, Send, Eye } from "lucide-react";
 
 export const Route = createFileRoute("/_app/ems/letters")({
@@ -100,7 +100,7 @@ function MyLetters() {
       },
       {
         onSuccess: () => toast.success("Letter request sent to HR"),
-        onError: () => toast.error("Letter request could not be submitted."),
+        onError: (error) => toastApiError(error, "Letter request could not be submitted."),
       },
     );
   };
@@ -110,7 +110,7 @@ function MyLetters() {
       { id: letter.id, expectedVersion: letter.expectedVersion },
       {
         onSuccess: () => toast.success("Letter acknowledged"),
-        onError: () => toast.error("Letter could not be acknowledged."),
+        onError: (error) => toastApiError(error, "Letter could not be acknowledged."),
       },
     );
   };

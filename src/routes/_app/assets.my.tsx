@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Laptop, ShieldCheck, Inbox, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { toastApiError, userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/assets/my")({ component: MyAssets });
 
@@ -23,7 +24,10 @@ function MyAssets() {
             title={loading ? "Loading assigned assets" : "Nothing assigned yet"}
             description={
               error
-                ? "Assigned asset data could not be loaded from the backend."
+                ? userFacingErrorMessage(
+                    error,
+                    "Assigned asset data could not be loaded from the backend.",
+                  )
                 : "When IT hands you a device, it will show up here."
             }
           />
@@ -84,8 +88,11 @@ function MyAssets() {
                       size="sm"
                       className="rounded-full"
                       onClick={() => {
-                        acknowledgeAssignment(a.id, user?.name ?? "You");
-                        toast.success("Receipt acknowledged");
+                        void acknowledgeAssignment(a.id, user?.name ?? "You")
+                          .then(() => toast.success("Receipt acknowledged"))
+                          .catch((error) =>
+                            toastApiError(error, "Receipt could not be acknowledged."),
+                          );
                       }}
                     >
                       Acknowledge receipt

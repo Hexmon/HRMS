@@ -10,7 +10,14 @@ import {
   useAttendanceExceptions,
   useAttendanceRegularizationDecisionMutation,
 } from "@/domains/attendance";
-import { asArray, asRecord, boolValue, numberValue, text } from "@/shared/api";
+import {
+  asArray,
+  asRecord,
+  boolValue,
+  numberValue,
+  text,
+  userFacingErrorMessage,
+} from "@/shared/api";
 
 export const Route = createFileRoute("/_app/attendance/exceptions")({
   component: ExceptionsPage,
@@ -38,7 +45,7 @@ function displayDate(value: string): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Attendance exception request failed.";
+  return userFacingErrorMessage(error, "Attendance exception request failed.");
 }
 
 function rowsFromResponse(value: unknown): Row[] {

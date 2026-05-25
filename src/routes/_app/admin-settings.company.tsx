@@ -19,7 +19,7 @@ import {
   type CompanyProfileResponse,
   type CompanyProfileUpdateInput,
 } from "@/domains/admin";
-import { useApiRouteEnabled } from "@/shared/api";
+import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
 
@@ -107,7 +107,7 @@ function CompanyProfileScreen() {
         toast.success("Company profile updated");
       },
       onError: (error) => {
-        toast.error(error instanceof Error ? error.message : "Company profile update failed");
+        toastApiError(error, "Company profile update failed");
       },
     });
   };

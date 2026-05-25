@@ -18,7 +18,7 @@ import { exportCsv, daysAgo, isoToday } from "@/lib/reports/utils";
 import { useEmployees } from "@/lib/employees-store";
 import { documentsApi } from "@/domains/documents";
 import { useCreateReportExportMutation } from "@/domains/reports";
-import { useApiRouteEnabled } from "@/shared/api";
+import { useApiRouteEnabled, userFacingErrorMessage } from "@/shared/api";
 
 export interface ReportFilters {
   from: string;
@@ -315,5 +315,5 @@ function buildBackendFilters(
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Report export could not be generated.";
+  return userFacingErrorMessage(error, "Report export could not be generated.");
 }

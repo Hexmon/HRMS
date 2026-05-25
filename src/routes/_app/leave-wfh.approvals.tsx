@@ -23,6 +23,7 @@ import {
   useLeaveWfhDecisionMutation,
   useWfhManagerQueue,
 } from "@/domains/leave-wfh";
+import { userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/leave-wfh/approvals")({
   component: ApprovalsPage,
@@ -253,5 +254,5 @@ function ApprovalsPage() {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Leave/WFH approval request failed.";
+  return userFacingErrorMessage(error, "Leave/WFH approval request failed.");
 }

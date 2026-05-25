@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useAdminSettings, type NotificationEvent } from "@/lib/admin-settings-store";
-import { useApiRouteEnabled } from "@/shared/api";
+import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import {
   useAdminNotificationChannels,
   useUpdateAdminNotificationChannelsMutation,
@@ -69,7 +69,7 @@ function NotificationsScreen() {
       toast.success("Notification preference saved");
     } catch (saveError) {
       setDraftNotifications(previous);
-      toast.error(saveError instanceof Error ? saveError.message : "Notification update failed");
+      toastApiError(saveError, "Notification update failed");
     }
   }
 

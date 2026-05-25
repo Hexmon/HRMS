@@ -19,7 +19,7 @@ import {
   type WorkflowKey,
   type WorkflowStage,
 } from "@/lib/admin-settings-store";
-import { useApiRouteEnabled } from "@/shared/api";
+import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { useAdminWorkflows, useUpdateAdminWorkflowMutation } from "@/domains/admin/queries";
 import type { AdminWorkflowRecord } from "@/domains/admin/api";
 import { Plus, Trash2, ArrowDown, AlertTriangle } from "lucide-react";
@@ -138,7 +138,7 @@ function WorkflowsScreen() {
       });
       toast.success("Workflow saved");
     } catch (saveError) {
-      toast.error(saveError instanceof Error ? saveError.message : "Workflow update failed");
+      toastApiError(saveError, "Workflow update failed");
     }
   }
 

@@ -29,6 +29,7 @@ import {
 import { EmployeeFormDrawer } from "@/components/employees/employee-form-drawer";
 import { useCreateUserExportMutation } from "@/domains/core";
 import { documentsApi } from "@/domains/documents";
+import { toastApiError, userFacingErrorMessage } from "@/shared/api";
 import {
   Users,
   UserCheck,
@@ -257,8 +258,11 @@ function EmployeesPage() {
           <Switch
             checked={e.loginEnabled}
             onCheckedChange={(c) => {
-              setLogin(e.id, c);
-              toast.success(c ? "Login enabled" : "Login disabled", { description: e.name });
+              void setLogin(e.id, c)
+                .then(() =>
+                  toast.success(c ? "Login enabled" : "Login disabled", { description: e.name }),
+                )
+                .catch((error) => toastApiError(error, "Login access could not be updated."));
             }}
           />
         ) : (
@@ -334,7 +338,7 @@ function EmployeesPage() {
         emptyTitle="No employees match these filters"
         emptyDescription={
           error
-            ? "Employee data could not be loaded from the backend."
+            ? userFacingErrorMessage(error, "Employee data could not be loaded from the backend.")
             : "Try adjusting your search or clearing filters."
         }
         loading={loading}
@@ -416,18 +420,24 @@ function EmployeesPage() {
             actions.push({
               label: e.loginEnabled ? "Disable login" : "Enable login",
               onClick: () => {
-                setLogin(e.id, !e.loginEnabled);
-                toast.success(!e.loginEnabled ? "Login enabled" : "Login disabled", {
-                  description: e.name,
-                });
+                void setLogin(e.id, !e.loginEnabled)
+                  .then(() =>
+                    toast.success(!e.loginEnabled ? "Login enabled" : "Login disabled", {
+                      description: e.name,
+                    }),
+                  )
+                  .catch((error) => toastApiError(error, "Login access could not be updated."));
               },
             });
             if (!isApiBacked && e.status !== "notice_period" && e.status !== "exited") {
               actions.push({
                 label: "Mark notice period",
                 onClick: () => {
-                  setStatus(e.id, "notice_period");
-                  toast.success("Marked notice period", { description: e.name });
+                  void setStatus(e.id, "notice_period")
+                    .then(() => toast.success("Marked notice period", { description: e.name }))
+                    .catch((error) =>
+                      toastApiError(error, "Employee status could not be updated."),
+                    );
                 },
               });
             }
@@ -435,8 +445,9 @@ function EmployeesPage() {
               label: "Deactivate",
               tone: "destructive",
               onClick: () => {
-                setStatus(e.id, "inactive");
-                toast.success("Employee deactivated", { description: e.name });
+                void setStatus(e.id, "inactive")
+                  .then(() => toast.success("Employee deactivated", { description: e.name }))
+                  .catch((error) => toastApiError(error, "Employee could not be deactivated."));
               },
             });
           }

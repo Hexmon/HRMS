@@ -19,6 +19,7 @@ import type { TicketCategory, TicketPriority } from "@/lib/mock/helpdesk";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
+import { toastApiError } from "@/shared/api";
 
 interface Props {
   open: boolean;
@@ -81,7 +82,7 @@ export function RaiseTicketDrawer({ open, onOpenChange, defaultCategory }: Props
       onOpenChange(false);
       navigate({ to: "/helpdesk/$id", params: { id: t.id } });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to create ticket");
+      toastApiError(error, "Unable to create ticket");
     }
   };
 

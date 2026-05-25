@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
-import { pageItems, useApiRouteEnabled } from "@/shared/api";
+import { pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/expenses/register")({ component: ExpenseRegister });
 
@@ -132,7 +132,7 @@ function ExpenseRegister() {
         }
         toast.success(job.download_document_id ? "Register exported" : "Register export queued");
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Expense register export failed.");
+        toastApiError(err, "Expense register export failed.");
       }
       return;
     }

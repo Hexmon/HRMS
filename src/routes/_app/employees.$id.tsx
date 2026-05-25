@@ -29,7 +29,7 @@ import {
   useUserRoleHistory,
 } from "@/domains/core";
 import { queryKeys, queryTimings } from "@/shared/query";
-import { pageItems } from "@/shared/api";
+import { pageItems, toastApiError } from "@/shared/api";
 import {
   ArrowLeft,
   Briefcase,
@@ -70,7 +70,7 @@ export const Route = createFileRoute("/_app/employees/$id")({
 function EmployeeProfilePage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const { employees, setLogin, setRoles, setStatus, loading, error } = useEmployees();
+  const { employees, setLogin, setRoles, setStatus, loading, error, isApiBacked } = useEmployees();
   const { activeRole, user } = useAuth();
   const isMain = activeRole === "main_admin";
   const isHr = activeRole === "hr_admin";
@@ -213,7 +213,7 @@ function EmployeeProfilePage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {canEdit && (
+              {canEdit && !isApiBacked && (
                 <ActionButton
                   size="sm"
                   variant="secondary"
@@ -229,15 +229,19 @@ function EmployeeProfilePage() {
                   variant="secondary"
                   icon={<History className="h-4 w-4" />}
                   onClick={() => {
-                    setStatus(
-                      employee.id,
-                      employee.status === "notice_period" ? "active" : "notice_period",
-                    );
-                    toast.success(
-                      employee.status === "notice_period"
-                        ? "Notice cleared"
-                        : "Marked notice period",
-                    );
+                    const nextStatus =
+                      employee.status === "notice_period" ? "active" : "notice_period";
+                    void setStatus(employee.id, nextStatus)
+                      .then(() =>
+                        toast.success(
+                          employee.status === "notice_period"
+                            ? "Notice cleared"
+                            : "Marked notice period",
+                        ),
+                      )
+                      .catch((error) =>
+                        toastApiError(error, "Employee status could not be updated."),
+                      );
                   }}
                 >
                   {employee.status === "notice_period" ? "Clear notice" : "Notice period"}
@@ -292,12 +296,14 @@ function EmployeeProfilePage() {
             employee={employee}
             canEdit={canEdit}
             onToggleLogin={(c) => {
-              setLogin(employee.id, c);
-              toast.success(c ? "Login enabled" : "Login disabled");
+              void setLogin(employee.id, c)
+                .then(() => toast.success(c ? "Login enabled" : "Login disabled"))
+                .catch((error) => toastApiError(error, "Login access could not be updated."));
             }}
             onSaveRoles={(rs) => {
-              setRoles(employee.id, rs);
-              toast.success("Roles updated");
+              void setRoles(employee.id, rs)
+                .then(() => toast.success("Roles updated"))
+                .catch((error) => toastApiError(error, "Roles could not be updated."));
             }}
             roleHistory={roleHistory}
             historyLoading={roleHistoryQuery.isLoading}
@@ -374,7 +380,7 @@ function OverviewTab({
 }: {
   employee: Employee;
   canEdit: boolean;
-  setLogin: (id: string, enabled: boolean) => void;
+  setLogin: (id: string, enabled: boolean) => Promise<void>;
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -406,8 +412,9 @@ function OverviewTab({
             <Switch
               checked={employee.loginEnabled}
               onCheckedChange={(c) => {
-                setLogin(employee.id, c);
-                toast.success(c ? "Login enabled" : "Login disabled");
+                void setLogin(employee.id, c)
+                  .then(() => toast.success(c ? "Login enabled" : "Login disabled"))
+                  .catch((error) => toastApiError(error, "Login access could not be updated."));
               }}
             />
           </div>

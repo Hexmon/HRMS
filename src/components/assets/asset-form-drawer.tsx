@@ -15,6 +15,7 @@ import { Upload } from "lucide-react";
 import { useAssets, nextAssetId } from "@/lib/assets-store";
 import type { Asset, AssetCondition, AssetStatus } from "@/lib/mock/assets";
 import { toast } from "sonner";
+import { toastApiError } from "@/shared/api";
 
 interface Props {
   open: boolean;
@@ -47,15 +48,19 @@ export function AssetFormDrawer({ open, onOpenChange }: Props) {
   const [a, setA] = useState<Asset>(() => blank(nextAssetId(assets)));
   const set = <K extends keyof Asset>(k: K, v: Asset[K]) => setA((s) => ({ ...s, [k]: v }));
 
-  const submit = () => {
+  const submit = async () => {
     if (!a.brand || !a.model || !a.serial) {
       toast.error("Brand, model and serial number are required.");
       return;
     }
-    addAsset(a);
-    toast.success(`${a.id} added to inventory`);
-    onOpenChange(false);
-    setA(blank(nextAssetId([a, ...assets])));
+    try {
+      await addAsset(a);
+      toast.success(`${a.id} added to inventory`);
+      onOpenChange(false);
+      setA(blank(nextAssetId([a, ...assets])));
+    } catch (error) {
+      toastApiError(error, "Asset could not be added.");
+    }
   };
 
   return (
@@ -70,7 +75,7 @@ export function AssetFormDrawer({ open, onOpenChange }: Props) {
             Cancel
           </Button>
           <Button
-            onClick={submit}
+            onClick={() => void submit()}
             className="rounded-full text-primary-foreground"
             style={{ background: "var(--gradient-primary)" }}
           >

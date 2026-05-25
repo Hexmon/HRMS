@@ -39,6 +39,7 @@ import {
 import { nextEmployeeId, useEmployees } from "@/lib/employees-store";
 import { ROLES, type Role } from "@/lib/mock/roles";
 import { QuickCreateModal } from "./quick-create-modal";
+import { toastApiError } from "@/shared/api";
 
 interface Props {
   open: boolean;
@@ -199,7 +200,7 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
     setActive((a) => Math.max(0, a - 1));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const e = validateStep(0) || validateStep(1);
     if (e) {
       setError(e);
@@ -245,14 +246,21 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
       documents: initial?.documents ?? [],
       lastLoginAt: initial?.lastLoginAt,
     };
-    upsert(employee);
-    toast.success(initial ? "Employee updated" : "Employee added", {
-      description: `${fullName} • ${form.designation}`,
-    });
-    if (form.sendInviteEmail && !initial) {
-      toast.message("Invite sent", { description: `${form.email} will receive a sign-up link.` });
+    try {
+      await upsert(employee);
+      toast.success(initial ? "Employee updated" : "Employee added", {
+        description: `${fullName} • ${form.designation}`,
+      });
+      if (form.sendInviteEmail && !initial) {
+        toast.message("Invite sent", { description: `${form.email} will receive a sign-up link.` });
+      }
+      onOpenChange(false);
+    } catch (error) {
+      toastApiError(
+        error,
+        initial ? "Employee could not be updated." : "Employee could not be added.",
+      );
     }
-    onOpenChange(false);
   };
 
   return (
@@ -354,7 +362,7 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
                 <Button
                   className="rounded-full text-primary-foreground"
                   style={{ background: "var(--gradient-primary)" }}
-                  onClick={handleSubmit}
+                  onClick={() => void handleSubmit()}
                 >
                   {initial ? "Save changes" : "Create employee"}
                 </Button>

@@ -11,7 +11,7 @@ import {
   useUpdateAdminSecuritySettingsMutation,
   type AdminSecuritySettingsRecord,
 } from "@/domains/admin";
-import { useApiRouteEnabled } from "@/shared/api";
+import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { toast } from "sonner";
 import { ShieldAlert } from "lucide-react";
 
@@ -56,7 +56,7 @@ function SecurityScreen() {
         toast.success("Security settings updated");
       },
       onError: (error) => {
-        toast.error(error instanceof Error ? error.message : "Security settings update failed");
+        toastApiError(error, "Security settings update failed");
       },
     });
   };
