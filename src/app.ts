@@ -87,7 +87,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (
       app.store.persistence &&
       !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
-      reply.statusCode < 500
+      reply.statusCode >= 200 &&
+      reply.statusCode < 400
     ) {
       await app.store.persistence.flush();
     }
@@ -219,14 +220,16 @@ function corsOptions(config: FastifyInstance["config"]): Parameters<typeof cors>
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const methods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 
   if (allowedOrigins.length === 0 && config.NODE_ENV !== "production") {
-    return { origin: true, credentials: true };
+    return { origin: true, credentials: true, methods };
   }
 
   const allowed = new Set(allowedOrigins);
   return {
     credentials: true,
+    methods,
     origin(origin, callback) {
       if (!origin) {
         callback(null, false);

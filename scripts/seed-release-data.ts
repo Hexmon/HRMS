@@ -21,7 +21,13 @@ try {
       ($2, 'REVIEWER', 'Reviewer', 6, 'active'),
       ($3, 'FINANCE_MANAGER', 'Finance Manager', 8, 'active'),
       ($4, 'EMPLOYEE', 'Employee', 1, 'active')
-     ON CONFLICT (designation_code) DO NOTHING`,
+     ON CONFLICT (id) DO UPDATE
+     SET designation_code = EXCLUDED.designation_code,
+         title = EXCLUDED.title,
+         level = EXCLUDED.level,
+         status = EXCLUDED.status,
+         updated_at = now(),
+         deleted_at = NULL`,
     [
       seedIds.designationDirector,
       seedIds.designationReviewer,
@@ -34,7 +40,13 @@ try {
      VALUES
       ($1, 'SALES', 'Sales', $2, 'active'),
       ($3, 'FIN', 'Finance', $4, 'active')
-     ON CONFLICT (department_code) DO NOTHING`,
+     ON CONFLICT (id) DO UPDATE
+     SET department_code = EXCLUDED.department_code,
+         name = EXCLUDED.name,
+         director_user_id = EXCLUDED.director_user_id,
+         status = EXCLUDED.status,
+         updated_at = now(),
+         deleted_at = NULL`,
     [seedIds.departmentSales, seedIds.director, seedIds.departmentFinance, seedIds.financeManager]
   );
 

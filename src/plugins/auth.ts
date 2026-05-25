@@ -42,7 +42,12 @@ export const authPlugin = fp(async (fastify) => {
       throw unauthorized();
     }
 
-    const claims = verifyJwt(token, fastify.config.JWT_SECRET);
+    let claims: ReturnType<typeof verifyJwt>;
+    try {
+      claims = verifyJwt(token, fastify.config.JWT_SECRET);
+    } catch {
+      throw unauthorized("Invalid or expired session");
+    }
     const session = await fastify.store.sessionStore.get(claims.jti);
     if (!session || session.revoked_at) {
       throw unauthorized("Session has been revoked");
