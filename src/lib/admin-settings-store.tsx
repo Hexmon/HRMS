@@ -4,6 +4,7 @@ import { adminApi } from "@/domains/admin";
 import { timesheetsApi } from "@/domains/timesheets";
 import { useApiRouteEnabled, withApiFallback } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
+import { useAuth } from "./auth";
 import { DEPARTMENTS as SEED_DEPTS } from "./mock/departments";
 import { DESIGNATIONS as SEED_DSGN } from "./mock/designations";
 import { ROLES, type Role, ROLE_LABELS } from "./mock/roles";
@@ -746,6 +747,8 @@ const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 8)}`;
 
 export function AdminSettingsProvider({ children }: { children: React.ReactNode }) {
   const apiEnabled = useApiRouteEnabled(["/admin-settings", "/expenses", "/timesheet"]);
+  const { user } = useAuth();
+  const canManageManagerBackups = user?.roles.includes("main_admin") ?? false;
   const [company, setCompanyState] = React.useState<CompanyProfile>(DEFAULT_COMPANY);
   const [masters, setMasters] = React.useState<MasterData>(DEFAULT_MASTERS);
   const [roles, setRoles] = React.useState<RoleConfig[]>(buildDefaultRoles());
@@ -787,7 +790,7 @@ export function AdminSettingsProvider({ children }: { children: React.ReactNode 
         () => adminApi.listManagerBackups(),
         () => [],
       ),
-    enabled: apiEnabled,
+    enabled: apiEnabled && canManageManagerBackups,
     staleTime: queryTimings.referenceStaleMs,
   });
 
