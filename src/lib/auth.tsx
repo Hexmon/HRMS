@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi, type SessionContextResponse } from "@/domains/auth";
 import {
   ApiError,
@@ -251,10 +251,12 @@ export function dashboardPathForRole(_role: Role | null): string {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = React.useState<User | null>(null);
   const [activeRole, setActiveRoleState] = React.useState<Role | null>(null);
   const [users, setUsers] = React.useState<User[]>(SEED_USERS);
   const [setupDone, setSetupDone] = React.useState(true);
+  const [sessionBlocked, setSessionBlocked] = React.useState(false);
 
   const persistSession = React.useCallback((u: User | null, role: Role | null) => {
     if (!shouldUseLocalAuthState()) return;
@@ -291,7 +293,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const apiSessionQuery = useQuery({
     queryKey: queryKeys.detail("auth", "session", "me"),
     queryFn: () => authApi.getSession(),
-    enabled: isApiEnabled() && user === null,
+    enabled: isApiEnabled() && user === null && !sessionBlocked,
     retry: false,
     staleTime: queryTimings.realtimeStaleMs,
   });
@@ -319,9 +321,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   React.useEffect(() => {
-    if (!apiSessionQuery.data) return;
+    if (!apiSessionQuery.data || sessionBlocked) return;
     applyApiSession(apiSessionQuery.data);
-  }, [apiSessionQuery.data, applyApiSession]);
+  }, [apiSessionQuery.data, applyApiSession, sessionBlocked]);
 
   React.useEffect(() => {
     if (apiSessionQuery.error instanceof ApiError && apiSessionQuery.error.status === 401) {
@@ -355,6 +357,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login: AuthState["login"] = async (email, password) => {
     if (isApiEnabled()) {
       try {
+        setSessionBlocked(false);
+        queryClient.clear();
         const response = await authApi.login({ email, password: password ?? "" });
         setApiAccessToken(response.access_token);
         try {
@@ -382,6 +386,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
+    setSessionBlocked(true);
+    queryClient.clear();
     if (isApiEnabled()) void authApi.logout().catch(() => undefined);
     clearApiAccessToken();
     setUser(null);
@@ -716,6 +722,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           },
         });
         ss.del(BOOTSTRAP_TOKEN_KEY);
+        queryClient.clear();
+        const session = await authApi.getSession();
+        applyApiSession(session);
         setSetupDone(true);
         return { ok: true };
       } catch (error) {

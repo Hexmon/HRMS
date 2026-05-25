@@ -819,6 +819,7 @@ interface Ctx {
     t: Omit<ExpenseTicket, "id" | "createdAt" | "audit" | "approvals" | "comments" | "stage">,
   ) => ExpenseTicket;
   patch: (id: string, p: Partial<ExpenseTicket>) => void;
+  submitDraft: (id: string, by: string) => void;
   withdraw: (id: string, by: string) => void;
   managerAction: (
     id: string,
@@ -915,6 +916,17 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
   const createExpenseMutation = useMutation({
     mutationFn: (ticket: ExpenseTicket) => expensesApi.create(expenseCreateBody(ticket)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("expenses") }),
+  });
+
+  const submitExpenseMutation = useMutation({
+    mutationFn: ({ id, expectedVersion }: { id: string; expectedVersion: number }) =>
+      expensesApi.submit(id, { expected_version: expectedVersion }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("expenses") });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.detail("expenses", "ticket", variables.id),
+      });
+    },
   });
 
   const managerDecisionMutation = useMutation({
@@ -1126,6 +1138,46 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     ...t,
     audit: [...t.audit, { by, what, at: new Date().toISOString() }],
   });
+
+  const submitDraft: Ctx["submitDraft"] = (id, by) => {
+    const current = visibleTickets.find((ticket) => ticket.id === id);
+    const submittedAt = new Date().toISOString();
+    persist(
+      tickets.map((t) => {
+        if (t.id !== id || !["draft", "manager_returned"].includes(t.status)) return t;
+        return pushAudit(
+          {
+            ...t,
+            status: "pending_manager",
+            stage: "manager",
+            submittedAt,
+            approvals: [
+              ...t.approvals.filter((approval) => approval.action !== "Awaiting"),
+              {
+                by: t.employee,
+                role: "Requester",
+                action: "Submitted",
+                status: "approved",
+                at: submittedAt,
+              },
+              {
+                by: t.manager,
+                role: "Manager",
+                action: "Awaiting",
+                status: "pending",
+                at: submittedAt,
+              },
+            ],
+          },
+          by,
+          "Submitted draft",
+        );
+      }),
+    );
+    if (apiEnabled && current && isUuid(id)) {
+      submitExpenseMutation.mutate({ id, expectedVersion: current.version ?? 1 });
+    }
+  };
 
   const withdraw: Ctx["withdraw"] = (id, by) => {
     const current = visibleTickets.find((ticket) => ticket.id === id);
@@ -1363,6 +1415,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
         byId,
         add,
         patch,
+        submitDraft,
         withdraw,
         managerAction,
         financeAction,

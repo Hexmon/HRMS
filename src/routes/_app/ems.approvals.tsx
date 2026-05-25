@@ -1,4 +1,4 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
 import { toast } from "sonner";
 import { CheckSquare, Inbox, Check, X } from "lucide-react";
+import { isApiEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/ems/approvals")({
   component: MyApprovals,
@@ -100,6 +101,34 @@ const HD: Row[] = [
   },
 ];
 
+const LIVE_APPROVAL_MODULES = [
+  {
+    label: "Leave & WFH",
+    description: "Approve leave and WFH requests.",
+    to: "/leave-wfh/approvals",
+  },
+  {
+    label: "Timesheets",
+    description: "Review submitted timesheets.",
+    to: "/timesheet/approvals",
+  },
+  {
+    label: "Expenses",
+    description: "Verify or return expense claims.",
+    to: "/expenses/review",
+  },
+  {
+    label: "Assets",
+    description: "Review asset requests and acknowledgements.",
+    to: "/assets/requests",
+  },
+  {
+    label: "Helpdesk",
+    description: "Work assigned support queue tickets.",
+    to: "/helpdesk/queue",
+  },
+] as const;
+
 function ApprovalTable({ rows, kind }: { rows: Row[]; kind: string }) {
   const [data, setData] = useState(rows);
   const act = (id: string, ok: boolean) => {
@@ -150,6 +179,31 @@ function ApprovalTable({ rows, kind }: { rows: Row[]; kind: string }) {
 function MyApprovals() {
   const { activeRole } = useAuth();
   if (!activeRole || !APPROVER_ROLES.includes(activeRole)) return <Navigate to="/ems" />;
+  if (isApiEnabled()) {
+    return (
+      <div className="space-y-4 pt-4">
+        <p className="text-sm text-muted-foreground">
+          Live approvals are handled inside each workflow module so this page does not show demo
+          queue data for API-backed workspaces.
+        </p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {LIVE_APPROVAL_MODULES.map((module) => (
+            <Card key={module.to} className="rounded-2xl border-border/60 p-4">
+              <div className="flex h-full flex-col gap-3">
+                <div>
+                  <p className="text-sm font-semibold">{module.label}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{module.description}</p>
+                </div>
+                <Button asChild variant="outline" className="mt-auto rounded-full">
+                  <Link to={module.to}>Open queue</Link>
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 pt-4">

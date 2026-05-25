@@ -12,7 +12,7 @@ export const Route = createFileRoute("/_app/expenses/my")({ component: MyExpense
 
 function MyExpenses() {
   const { user } = useAuth();
-  const { tickets, withdraw, loading, error } = useExpenses();
+  const { tickets, submitDraft, withdraw, loading, error } = useExpenses();
   const nav = useNavigate();
   const me = user?.name ?? "You";
   const rows = useMemo(
@@ -93,7 +93,16 @@ function MyExpenses() {
       rowActions={(r) => [
         { label: "View", onClick: () => nav({ to: "/expenses/$id", params: { id: r.id } }) },
         ...(r.status === "draft"
-          ? [{ label: "Edit draft", onClick: () => nav({ to: "/expenses/create" }) }]
+          ? [
+              { label: "Edit draft", onClick: () => nav({ to: "/expenses/create" }) },
+              {
+                label: "Submit draft",
+                onClick: () => {
+                  submitDraft(r.id, me);
+                  toast.success("Draft submitted for manager verification");
+                },
+              },
+            ]
           : []),
         ...(["pending_manager", "draft"].includes(r.status)
           ? [

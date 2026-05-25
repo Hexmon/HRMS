@@ -72,7 +72,7 @@ type Action =
 
 function ExpenseDetail() {
   const { id } = Route.useParams();
-  const { byId, managerAction, financeAction, addComment, withdraw, loading, error } =
+  const { byId, managerAction, financeAction, addComment, submitDraft, withdraw, loading, error } =
     useExpenses();
   const { activeRole, user } = useAuth();
   const nav = useNavigate();
@@ -294,6 +294,17 @@ function ExpenseDetail() {
                 <Button onClick={() => setAction("fin_close")}>Close ticket</Button>
               )}
             </>
+          )}
+          {isRequester && t.status === "draft" && (
+            <Button
+              onClick={() => {
+                submitDraft(t.id, me);
+                toast.success("Draft submitted for manager verification");
+                nav({ to: "/expenses/my" });
+              }}
+            >
+              Submit draft
+            </Button>
           )}
           {isRequester && t.status === "pending_manager" && (
             <Button

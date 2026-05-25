@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/auth";
+import { isApiEnabled } from "@/shared/api";
 import { useDashboardSummary } from "@/domains/dashboard";
 import { DashboardHero } from "@/components/dashboards/shared";
 import { BackendDashboardSummary } from "@/components/dashboards/backend-summary";
@@ -70,10 +71,12 @@ const HERO_ACTIONS: Record<Role, { label: string; to: string; variant?: "primary
 
 function DashboardPage() {
   const { user, activeRole } = useAuth();
-  const summaryQuery = useDashboardSummary(Boolean(user));
+  const apiEnabled = isApiEnabled();
+  const summaryQuery = useDashboardSummary(Boolean(user) && apiEnabled);
   if (!user || !activeRole) return null;
 
   const actions = HERO_ACTIONS[activeRole] ?? HERO_ACTIONS.employee;
+  const showDemoRoleDashboard = !apiEnabled;
 
   return (
     <>
@@ -83,14 +86,14 @@ function DashboardPage() {
         loading={summaryQuery.isLoading}
         error={summaryQuery.error instanceof Error ? summaryQuery.error : null}
       />
-      {activeRole === "main_admin" && <MainAdminDashboard />}
-      {activeRole === "hr_admin" && <HrAdminDashboard />}
-      {activeRole === "employee" && <EmployeeDashboard />}
-      {activeRole === "manager" && <ManagerDashboard />}
-      {activeRole === "project_manager" && <ProjectManagerDashboard />}
-      {activeRole === "finance_manager" && <FinanceManagerDashboard />}
-      {activeRole === "asset_admin" && <AssetAdminDashboard />}
-      {activeRole === "helpdesk_agent" && <HelpdeskAgentDashboard />}
+      {showDemoRoleDashboard && activeRole === "main_admin" && <MainAdminDashboard />}
+      {showDemoRoleDashboard && activeRole === "hr_admin" && <HrAdminDashboard />}
+      {showDemoRoleDashboard && activeRole === "employee" && <EmployeeDashboard />}
+      {showDemoRoleDashboard && activeRole === "manager" && <ManagerDashboard />}
+      {showDemoRoleDashboard && activeRole === "project_manager" && <ProjectManagerDashboard />}
+      {showDemoRoleDashboard && activeRole === "finance_manager" && <FinanceManagerDashboard />}
+      {showDemoRoleDashboard && activeRole === "asset_admin" && <AssetAdminDashboard />}
+      {showDemoRoleDashboard && activeRole === "helpdesk_agent" && <HelpdeskAgentDashboard />}
     </>
   );
 }
