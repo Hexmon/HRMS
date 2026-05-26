@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useAuth, ROLE_LABELS } from "@/lib/auth";
@@ -89,6 +89,9 @@ function EmsDashboard() {
         <Card className="rounded-2xl border-border/60 lg:col-span-1">
           <div className="p-6 text-center" style={{ background: "var(--gradient-hero)" }}>
             <Avatar className="mx-auto h-20 w-20 ring-4 ring-background">
+              {apiProfile?.user.profilePhotoUrl && (
+                <AvatarImage src={apiProfile.user.profilePhotoUrl} alt={apiProfile.user.fullName} />
+              )}
               <AvatarFallback className="bg-primary text-primary-foreground text-xl font-semibold">
                 {initials}
               </AvatarFallback>

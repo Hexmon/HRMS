@@ -1,10 +1,13 @@
 import { asRecord, numberValue, text, type ApiRecord } from "@/shared/api";
+import { apiConfig } from "@/shared/api/config";
 
 export interface EmsUserLabel {
   id: string;
   employeeCode: string;
   fullName: string;
   email: string;
+  profilePhotoDocumentId?: string;
+  profilePhotoUrl?: string;
 }
 
 export interface EmsProfileView {
@@ -112,11 +115,18 @@ export function formatDate(value: unknown, fallback = "—"): string {
 
 export function mapUserLabel(value: unknown): EmsUserLabel {
   const record = asRecord(value);
+  const profilePhotoDocumentId = text(record.profile_photo_document_id);
   return {
     id: text(record.id),
     employeeCode: text(record.employee_code, "—"),
     fullName: text(record.full_name, "—"),
     email: text(record.email, "—"),
+    profilePhotoDocumentId: profilePhotoDocumentId || undefined,
+    profilePhotoUrl:
+      text(record.profile_photo_url) ||
+      (profilePhotoDocumentId
+        ? `${apiConfig.baseUrl}/api/v1/documents/${encodeURIComponent(profilePhotoDocumentId)}/content`
+        : undefined),
   };
 }
 

@@ -27,6 +27,11 @@ export const coreApi = {
       body: input,
     });
   },
+  deleteProfilePhoto(id: string) {
+    return apiRequest<ApiRecord>(`/api/v1/core/users/${id}/profile-photo`, {
+      method: "DELETE",
+    });
+  },
   activateUser(id: string, input: ExpectedVersionBody) {
     return apiRequest<ApiRecord>(`/api/v1/core/users/${id}/activate`, {
       method: "POST",

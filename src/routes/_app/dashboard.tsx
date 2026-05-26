@@ -20,6 +20,7 @@ import { isApiEnabled } from "@/shared/api";
 import { useDashboardSummary } from "@/domains/dashboard";
 import { DashboardHero } from "@/components/dashboards/shared";
 import { BackendDashboardSummary } from "@/components/dashboards/backend-summary";
+import { EmployeeAttendanceDashboard } from "@/components/dashboards/employee-attendance-dashboard";
 import { MainAdminDashboard } from "@/components/dashboards/main-admin";
 import { HrAdminDashboard } from "@/components/dashboards/hr-admin";
 import { EmployeeDashboard } from "@/components/dashboards/employee";
@@ -73,7 +74,10 @@ const HERO_ACTIONS: Record<Role, { label: string; to: string; variant?: "primary
 function DashboardPage() {
   const { user, activeRole } = useAuth();
   const apiEnabled = isApiEnabled();
-  const summaryQuery = useDashboardSummary(Boolean(user) && apiEnabled);
+  const showEmployeeApiDashboard = apiEnabled && activeRole === "employee";
+  const summaryQuery = useDashboardSummary(
+    Boolean(user) && apiEnabled && !showEmployeeApiDashboard,
+  );
   if (!user || !activeRole) return null;
 
   const actions = HERO_ACTIONS[activeRole] ?? HERO_ACTIONS.employee;
@@ -82,11 +86,15 @@ function DashboardPage() {
   return (
     <>
       <DashboardHero user={user} activeRole={activeRole} actions={actions} />
-      <BackendDashboardSummary
-        summary={summaryQuery.data}
-        loading={summaryQuery.isLoading}
-        error={summaryQuery.error instanceof Error ? summaryQuery.error : null}
-      />
+      {showEmployeeApiDashboard ? (
+        <EmployeeAttendanceDashboard />
+      ) : (
+        <BackendDashboardSummary
+          summary={summaryQuery.data}
+          loading={summaryQuery.isLoading}
+          error={summaryQuery.error instanceof Error ? summaryQuery.error : null}
+        />
+      )}
       {showDemoRoleDashboard && activeRole === "main_admin" && <MainAdminDashboard />}
       {showDemoRoleDashboard && activeRole === "hr_admin" && <HrAdminDashboard />}
       {showDemoRoleDashboard && activeRole === "employee" && <EmployeeDashboard />}

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { Card } from "@/components/ui/card";
+import { useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,9 +14,11 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
-import { DataCard, EmptyState, StatusBadge } from "@/components/ui-kit";
+import { DataCard, EmptyState, StatusBadge, UserAvatar } from "@/components/ui-kit";
 import { Modal } from "@/components/ui-kit";
+import { coreApi } from "@/domains/core/api";
 import {
+  type EmsProfileView,
   mapProfile,
   mapProfileChange,
   useEmsProfile,
@@ -24,6 +26,12 @@ import {
   useMyProfileChanges,
 } from "@/domains/ems";
 import { asRecord, pageItems, text, toastApiError, useApiRouteEnabled } from "@/shared/api";
+import { queryKeys } from "@/shared/query";
+import {
+  DEFAULT_PROFILE_PHOTO_POLICY,
+  prepareProfilePhotoUploadFile,
+} from "@/shared/uploads/profile-photo";
+import { formatBytes } from "@/shared/uploads/documents";
 import {
   User,
   Phone,
@@ -32,6 +40,8 @@ import {
   AlertTriangle,
   Edit3,
   Inbox,
+  Upload,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -80,9 +90,37 @@ function Section({
 function MyProfile() {
   const { user } = useAuth();
   const apiEnabled = useApiRouteEnabled(["/ems"]);
+  const queryClient = useQueryClient();
   const profileQuery = useEmsProfile(apiEnabled);
   const changesQuery = useMyProfileChanges({ page: 1, page_size: 10 }, apiEnabled);
+  const profilePhotoPolicyQuery = useQuery({
+    queryKey: queryKeys.action("core", "users", "profile-photo-policy"),
+    queryFn: () => coreApi.profilePhotoPolicy(),
+    enabled: apiEnabled && Boolean(user),
+  });
   const changeMutation = useEmsProfileChangeMutation();
+  const uploadPhotoMutation = useMutation({
+    mutationFn: ({ userId, formData }: { userId: string; formData: FormData }) =>
+      coreApi.uploadProfilePhoto(userId, formData),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.domain("core") }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.domain("auth") }),
+      ]);
+    },
+  });
+  const removePhotoMutation = useMutation({
+    mutationFn: (userId: string) => coreApi.deleteProfilePhoto(userId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.domain("core") }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.domain("auth") }),
+      ]);
+    },
+  });
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [field, setField] = useState<(typeof PROFILE_FIELDS)[number]["key"]>("current_address");
   const [val, setVal] = useState("");
@@ -118,7 +156,7 @@ function MyProfile() {
     );
   };
 
-  const fallback = {
+  const fallback: EmsProfileView = {
     user: { id: user.id, fullName: user.name, employeeCode: "HK-00821", email: user.email },
     manager: {
       id: "manager",
@@ -183,6 +221,43 @@ function MyProfile() {
   const personal = asRecord(profile.personalDetails);
   const preferences = asRecord(profile.workPreferences);
   const pendingChanges = apiEnabled ? pageItems(changesQuery.data).map(mapProfileChange) : [];
+  const photoPolicy = profilePhotoPolicyQuery.data ?? DEFAULT_PROFILE_PHOTO_POLICY;
+  const photoBusy = uploadPhotoMutation.isPending || removePhotoMutation.isPending;
+  const canRemovePhoto =
+    apiEnabled && Boolean(profile.user.profilePhotoDocumentId || profile.user.profilePhotoUrl);
+
+  const handlePhotoSelected = async (file: File | null) => {
+    if (!file) return;
+    if (!apiEnabled) {
+      toast.error("Profile photo upload requires backend API mode.");
+      return;
+    }
+    try {
+      const prepared = await prepareProfilePhotoUploadFile(file, photoPolicy);
+      const formData = new FormData();
+      formData.set("file", prepared.file);
+      await uploadPhotoMutation.mutateAsync({ userId: profile.user.id, formData });
+      toast.success("Profile photo updated", {
+        description: prepared.compressed
+          ? `Compressed from ${formatBytes(prepared.originalSize)} to ${formatBytes(prepared.file.size)} before upload.`
+          : "Uploaded through Cloudinary-backed document storage.",
+      });
+    } catch (error) {
+      toastApiError(error, "Profile photo could not be uploaded.");
+    } finally {
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    if (!apiEnabled || !canRemovePhoto) return;
+    try {
+      await removePhotoMutation.mutateAsync(profile.user.id);
+      toast.success("Profile photo removed");
+    } catch (error) {
+      toastApiError(error, "Profile photo could not be removed.");
+    }
+  };
 
   return (
     <div className="space-y-4 pt-4">
@@ -194,6 +269,59 @@ function MyProfile() {
           <Edit3 className="mr-2 h-4 w-4" /> Request profile update
         </Button>
       </div>
+
+      <DataCard title="Profile photo" description="Shown on your employee profile and directory">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
+            <UserAvatar
+              name={profile.user.fullName}
+              email={profile.user.email}
+              src={profile.user.profilePhotoUrl}
+              size="lg"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{profile.user.fullName}</p>
+              <p className="text-xs text-muted-foreground">
+                {photoPolicy.allowed_mime_types
+                  .map((type) => type.replace("image/", "").toUpperCase())
+                  .join(", ")}
+                , up to {formatBytes(photoPolicy.max_bytes)}. Images are compressed before upload.
+              </p>
+            </div>
+          </div>
+          <input
+            ref={photoInputRef}
+            type="file"
+            className="hidden"
+            accept={photoPolicy.allowed_mime_types.join(",")}
+            onChange={(event) => handlePhotoSelected(event.currentTarget.files?.[0] ?? null)}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              disabled={!apiEnabled || photoBusy}
+              onClick={() => photoInputRef.current?.click()}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              {profile.user.profilePhotoUrl ? "Replace photo" : "Upload photo"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full text-destructive hover:text-destructive"
+              disabled={!canRemovePhoto || photoBusy}
+              onClick={handleRemovePhoto}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Remove photo
+            </Button>
+          </div>
+        </div>
+      </DataCard>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Section
