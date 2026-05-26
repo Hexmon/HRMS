@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { coreApi, mapApiUsersToEmployees } from "@/domains/core";
+import { coreApi, mapApiUserToEmployee, mapApiUsersToEmployees } from "@/domains/core";
 import {
   asArray,
   asRecord,
@@ -15,6 +15,7 @@ import { queryKeys, queryTimings } from "@/shared/query";
 import { EMPLOYEES, type Employee, type AuditEntry, type RoleHistoryEntry } from "./mock/employees";
 import { DEPARTMENTS as SEED_DEPTS, type Department } from "./mock/departments";
 import { DESIGNATIONS as SEED_DESIGS, type Designation } from "./mock/designations";
+import type { ProfilePhotoPolicy } from "@/shared/uploads/profile-photo";
 
 const EMP_KEY = "hawkaii_employees_v2";
 const DEPT_KEY = "hawkaii_departments_v1";
@@ -66,7 +67,9 @@ interface Ctx {
   loading: boolean;
   error: Error | null;
   isApiBacked: boolean;
-  upsert: (e: Employee, actor?: string) => Promise<void>;
+  profilePhotoPolicy?: ProfilePhotoPolicy;
+  upsert: (e: Employee, actor?: string) => Promise<Employee>;
+  uploadProfilePhoto: (id: string, file: File) => Promise<Employee>;
   remove: (id: string, actor?: string) => void;
   setStatus: (id: string, status: Employee["status"], actor?: string) => Promise<void>;
   setLogin: (id: string, enabled: boolean, actor?: string) => Promise<void>;
@@ -140,6 +143,13 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
         async () => coreApi.orgSelectors(),
         () => ({ departments, designations, managers: [], roles: [] }),
       ),
+    enabled: apiEnabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+
+  const profilePhotoPolicyQuery = useQuery({
+    queryKey: queryKeys.action("core", "users", "profile-photo-policy"),
+    queryFn: () => coreApi.profilePhotoPolicy(),
     enabled: apiEnabled,
     staleTime: queryTimings.referenceStaleMs,
   });
@@ -318,6 +328,15 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
     onSuccess: invalidateCore,
   });
 
+  const profilePhotoMutation = useMutation({
+    mutationFn: ({ userId, file }: { userId: string; file: File }) => {
+      const formData = new FormData();
+      formData.set("file", file);
+      return coreApi.uploadProfilePhoto(userId, formData);
+    },
+    onSuccess: invalidateCore,
+  });
+
   const upsert: Ctx["upsert"] = async (e, actor = "Rahul Verma") => {
     const exists = employees.some((x) => x.id === e.id);
     const action = exists ? "Profile updated" : "Profile created";
@@ -326,10 +345,34 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
       audit: [newAudit(actor, action), ...(e.audit ?? [])],
     };
     if (apiEnabled) {
-      await updateMutation.mutateAsync({ ...(findEmployee(e.id) ?? {}), ...next });
-      return;
+      const response = await updateMutation.mutateAsync({ ...(findEmployee(e.id) ?? {}), ...next });
+      return mapApiUserToEmployee(response, next);
     }
     persistE(exists ? employees.map((x) => (x.id === e.id ? next : x)) : [next, ...employees]);
+    return next;
+  };
+
+  const uploadProfilePhoto: Ctx["uploadProfilePhoto"] = async (id, file) => {
+    const current = findEmployee(id);
+    const apiUserId =
+      current?.apiId && isUuid(current.apiId) ? current.apiId : isUuid(id) ? id : null;
+    if (apiEnabled) {
+      if (!apiUserId) {
+        throw new Error("Employee must be saved before uploading a profile photo.");
+      }
+      const response = await profilePhotoMutation.mutateAsync({ userId: apiUserId, file });
+      return mapApiUserToEmployee(response, current);
+    }
+    const previewUrl = URL.createObjectURL(file);
+    const next = employees.map((employee) =>
+      employee.id === id || employee.apiId === id
+        ? { ...employee, avatarUrl: previewUrl, profilePhotoDocumentId: undefined }
+        : employee,
+    );
+    persistE(next);
+    const updated = next.find((employee) => employee.id === id || employee.apiId === id) ?? current;
+    if (!updated) throw new Error("Employee must be saved before uploading a profile photo.");
+    return updated;
   };
 
   const remove: Ctx["remove"] = (id) => persistE(employees.filter((x) => x.id !== id));
@@ -429,7 +472,9 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
         loading: apiEnabled && (apiEmployeesQuery.isLoading || apiSelectorsQuery.isLoading),
         error: apiError,
         isApiBacked: apiEnabled && Boolean(apiEmployeesQuery.data),
+        profilePhotoPolicy: profilePhotoPolicyQuery.data,
         upsert,
+        uploadProfilePhoto,
         remove,
         setStatus,
         setLogin,

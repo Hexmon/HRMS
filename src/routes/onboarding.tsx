@@ -6,6 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useDocumentUploadPolicy } from "@/domains/documents";
+import {
+  DEFAULT_MEDIA_UPLOAD_POLICY,
+  formatBytes,
+  prepareDocumentUploadFile,
+  uploadPolicyAccept,
+  type MediaUploadPolicy,
+} from "@/shared/uploads/documents";
 import {
   ArrowLeft,
   ArrowRight,
@@ -94,10 +102,6 @@ const DEFAULT_PROFILE: CompanyProfile = {
 };
 
 const ONBOARDING_DRAFT_KEY_PREFIX = "hawkaii_onboarding_draft_v1";
-const MAX_LOGO_BYTES = 2 * 1024 * 1024;
-const ACCEPTED_LOGO_TYPES = new Set(["image/png", "image/svg+xml"]);
-const ACCEPTED_LOGO_EXTENSIONS = [".png", ".svg"];
-
 const POLICIES = [
   {
     key: "attendance",
@@ -204,14 +208,6 @@ function clearOnboardingDraft(key: string) {
   window.localStorage.removeItem(key);
 }
 
-function isAcceptedLogo(file: File) {
-  const lowerName = file.name.toLowerCase();
-  return (
-    ACCEPTED_LOGO_TYPES.has(file.type) ||
-    ACCEPTED_LOGO_EXTENSIONS.some((extension) => lowerName.endsWith(extension))
-  );
-}
-
 function readLogoFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -224,16 +220,38 @@ function readLogoFile(file: File): Promise<string> {
   });
 }
 
-function formatBytes(bytes: number | null) {
-  if (!bytes) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`;
-  return `${Math.round(bytes / (1024 * 102.4)) / 10} MB`;
+function logoOnlyPolicy(
+  policy: MediaUploadPolicy = DEFAULT_MEDIA_UPLOAD_POLICY,
+): MediaUploadPolicy {
+  const imageMimeTypes = policy.allowed_mime_types.filter(
+    (mimeType) => mimeType.startsWith("image/") && mimeType !== "image/svg+xml",
+  );
+  return {
+    ...policy,
+    allowed_mime_types: imageMimeTypes.length
+      ? imageMimeTypes
+      : ["image/jpeg", "image/png", "image/webp"],
+  };
+}
+
+async function logoFileFromProfile(profile: CompanyProfile): Promise<File | null> {
+  if (!profile.logoDataUrl || !profile.logoName) return null;
+  try {
+    const response = await fetch(profile.logoDataUrl);
+    const blob = await response.blob();
+    if (!blob.size) return null;
+    return new File([blob], profile.logoName, {
+      type: profile.logoMimeType || blob.type || "image/jpeg",
+    });
+  } catch {
+    return null;
+  }
 }
 
 function OnboardingPage() {
   const { user, activeRole, isCompanySetupComplete, completeCompanySetup } = useAuth();
   const navigate = useNavigate();
+  const uploadPolicyQuery = useDocumentUploadPolicy(Boolean(user));
   const [step, setStep] = useState(1);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [done, setDone] = useState(false);
@@ -241,6 +259,7 @@ function OnboardingPage() {
   const [error, setError] = useState("");
 
   const [profile, setProfile] = useState<CompanyProfile>(DEFAULT_PROFILE);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
   const [designations, setDesignations] = useState<string[]>(DEFAULT_DESIGNATIONS);
   const [enabledRoles, setEnabledRoles] = useState<string[]>(ROLES.map((r) => r.key));
@@ -259,6 +278,7 @@ function OnboardingPage() {
       setDepartments(draft.departments);
       setDesignations(draft.designations);
       setEnabledRoles(draft.enabledRoles);
+      setLogoFile(null);
     }
     setDraftLoaded(true);
   }, [draftKey]);
@@ -308,12 +328,14 @@ function OnboardingPage() {
     setError("");
     setSubmitting(true);
     try {
+      const companyLogoFile = logoFile ?? (await logoFileFromProfile(profile));
       const result = await completeCompanySetup({
         companyName: profile.companyName || undefined,
         timezone: profile.timezone,
         locale: "en-IN",
         fullName: user.name,
         landingPage: dashboardPathForRole(activeRole),
+        companyLogoFile,
       });
       if (!result.ok) {
         setError(result.error ?? "Could not finish setup.");
@@ -415,7 +437,14 @@ function OnboardingPage() {
           </div>
 
           <div className="mt-2 min-h-[300px]">
-            {step === 1 && <StepProfile profile={profile} setProfile={setProfile} />}
+            {step === 1 && (
+              <StepProfile
+                profile={profile}
+                setProfile={setProfile}
+                setLogoFile={setLogoFile}
+                uploadPolicy={uploadPolicyQuery.data}
+              />
+            )}
             {step === 2 && (
               <StepList
                 title="Departments"
@@ -478,9 +507,13 @@ function OnboardingPage() {
 function StepProfile({
   profile,
   setProfile,
+  setLogoFile,
+  uploadPolicy,
 }: {
   profile: CompanyProfile;
   setProfile: React.Dispatch<React.SetStateAction<CompanyProfile>>;
+  setLogoFile: React.Dispatch<React.SetStateAction<File | null>>;
+  uploadPolicy?: MediaUploadPolicy;
 }) {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [logoError, setLogoError] = useState("");
@@ -491,29 +524,28 @@ function StepProfile({
   const applyLogo = async (file: File | null | undefined) => {
     setLogoError("");
     if (!file) return;
-    if (!isAcceptedLogo(file)) {
-      setLogoError("Use a PNG or SVG logo.");
-      return;
-    }
-    if (file.size > MAX_LOGO_BYTES) {
-      setLogoError("Logo must be 2 MB or smaller.");
+    if (file.type && !file.type.startsWith("image/")) {
+      setLogoError("Use an image logo.");
       return;
     }
     try {
-      const logoDataUrl = await readLogoFile(file);
+      const prepared = await prepareDocumentUploadFile(file, logoOnlyPolicy(uploadPolicy));
+      const logoDataUrl = await readLogoFile(prepared.file);
+      setLogoFile(prepared.file);
       setProfile((p) => ({
         ...p,
-        logoName: file.name,
+        logoName: prepared.file.name,
         logoDataUrl,
-        logoMimeType: file.type,
-        logoSizeBytes: file.size,
+        logoMimeType: prepared.file.type,
+        logoSizeBytes: prepared.file.size,
       }));
-    } catch {
-      setLogoError("Could not read this logo file. Try another PNG or SVG.");
+    } catch (error) {
+      setLogoError(error instanceof Error ? error.message : "Could not prepare this logo file.");
     }
   };
   const clearLogo = () => {
     setLogoError("");
+    setLogoFile(null);
     setProfile((p) => ({
       ...p,
       logoName: "",
@@ -615,7 +647,8 @@ function StepProfile({
           <div className="flex-1">
             <p className="text-sm font-medium">Company logo</p>
             <p className="text-xs text-muted-foreground">
-              PNG or SVG, up to 2 MB. Drop here or click to upload.
+              JPG, PNG, or WebP up to {formatBytes(logoOnlyPolicy(uploadPolicy).max_bytes)}. Images
+              are compressed before Cloudinary upload.
             </p>
             {profile.logoName && (
               <p className="mt-1 text-xs text-foreground">
@@ -629,7 +662,7 @@ function StepProfile({
             <input
               ref={logoInputRef}
               type="file"
-              accept="image/png,image/svg+xml"
+              accept={uploadPolicyAccept(logoOnlyPolicy(uploadPolicy))}
               className="hidden"
               onChange={(event) => {
                 void applyLogo(event.currentTarget.files?.item(0));

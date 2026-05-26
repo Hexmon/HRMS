@@ -22,6 +22,15 @@ export function useDocumentDetail(id: string | undefined, enabled = true) {
   });
 }
 
+export function useDocumentUploadPolicy(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.detail("documents", "upload-policy", "current"),
+    queryFn: () => documentsApi.uploadPolicy(),
+    enabled,
+    staleTime: 15 * 60 * 1000,
+  });
+}
+
 export function useDocumentMutation() {
   const queryClient = useQueryClient();
   return useMutation({

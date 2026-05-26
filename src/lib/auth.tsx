@@ -49,6 +49,7 @@ interface CompanySetupInput {
   locale?: string;
   fullName?: string;
   landingPage?: string;
+  companyLogoFile?: File | null;
 }
 
 interface CompanySetupResult {
@@ -724,6 +725,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
       try {
+        if (input?.companyLogoFile) {
+          const formData = new FormData();
+          formData.set("bootstrap_token", bootstrapToken);
+          formData.set("file", input.companyLogoFile);
+          await authApi.uploadCompanyLogo(formData);
+        }
         await authApi.bootstrapCompany({
           bootstrap_token: bootstrapToken,
           company_profile: {

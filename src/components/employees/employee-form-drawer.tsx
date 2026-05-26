@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,8 @@ import {
   ChevronRight,
   ChevronLeft,
   Camera,
+  Upload,
+  X,
   ShieldCheck,
   Mail,
   Briefcase,
@@ -40,6 +42,12 @@ import { nextEmployeeId, useEmployees } from "@/lib/employees-store";
 import { ROLES, type Role } from "@/lib/mock/roles";
 import { QuickCreateModal } from "./quick-create-modal";
 import { toastApiError } from "@/shared/api";
+import { formatBytes } from "@/shared/uploads/documents";
+import {
+  DEFAULT_PROFILE_PHOTO_POLICY,
+  prepareProfilePhotoUploadFile,
+  type ProfilePhotoPolicy,
+} from "@/shared/uploads/profile-photo";
 
 interface Props {
   open: boolean;
@@ -91,12 +99,18 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
     addDepartment,
     addDesignation,
     upsert,
+    uploadProfilePhoto,
+    profilePhotoPolicy,
     isApiBacked,
   } = useEmployees();
   const [active, setActive] = useState(0);
   const [error, setError] = useState("");
   const [deptOpen, setDeptOpen] = useState(false);
   const [desigOpen, setDesigOpen] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
+  const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string>("");
+  const [profilePhotoCompressed, setProfilePhotoCompressed] = useState(false);
 
   const empty = useMemo<FormState>(
     () => ({
@@ -166,7 +180,17 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
     } else {
       setForm(empty);
     }
+    setProfilePhotoFile(null);
+    setProfilePhotoCompressed(false);
+    setProfilePhotoPreviewUrl(initial?.avatarUrl ?? "");
   }, [open, initial, empty]);
+
+  useEffect(
+    () => () => {
+      if (profilePhotoPreviewUrl.startsWith("blob:")) URL.revokeObjectURL(profilePhotoPreviewUrl);
+    },
+    [profilePhotoPreviewUrl],
+  );
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -198,6 +222,34 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
   const back = () => {
     setError("");
     setActive((a) => Math.max(0, a - 1));
+  };
+
+  const clearProfilePhoto = () => {
+    if (profilePhotoPreviewUrl.startsWith("blob:")) URL.revokeObjectURL(profilePhotoPreviewUrl);
+    setProfilePhotoFile(null);
+    setProfilePhotoCompressed(false);
+    setProfilePhotoPreviewUrl(initial?.avatarUrl ?? "");
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  };
+
+  const chooseProfilePhoto = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const policy = profilePhotoPolicy ?? DEFAULT_PROFILE_PHOTO_POLICY;
+      const prepared = await prepareProfilePhotoUploadFile(file, policy);
+      if (profilePhotoPreviewUrl.startsWith("blob:")) URL.revokeObjectURL(profilePhotoPreviewUrl);
+      setProfilePhotoFile(prepared.file);
+      setProfilePhotoCompressed(prepared.compressed);
+      setProfilePhotoPreviewUrl(URL.createObjectURL(prepared.file));
+      if (prepared.compressed) {
+        toast.message("Profile photo compressed", {
+          description: `${formatBytes(prepared.originalSize)} → ${formatBytes(prepared.file.size)}`,
+        });
+      }
+    } catch (error) {
+      toastApiError(error, "Profile photo could not be prepared.");
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
   };
 
   const handleSubmit = async () => {
@@ -232,6 +284,8 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
       shift: form.shift,
       loginEnabled: form.loginEnabled || form.inviteForLogin,
       systemRoles: form.systemRoles.length ? form.systemRoles : ["employee"],
+      avatarUrl: profilePhotoPreviewUrl || initial?.avatarUrl,
+      profilePhotoDocumentId: initial?.profilePhotoDocumentId,
       avatarTone: initial?.avatarTone ?? "primary",
       roleHistory: initial?.roleHistory ?? [
         {
@@ -247,9 +301,14 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
       lastLoginAt: initial?.lastLoginAt,
     };
     try {
-      await upsert(employee);
+      const saved = await upsert(employee);
+      if (profilePhotoFile && isApiBacked) {
+        await uploadProfilePhoto(saved.apiId ?? saved.id, profilePhotoFile);
+      }
       toast.success(initial ? "Employee updated" : "Employee added", {
-        description: `${fullName} • ${form.designation}`,
+        description: profilePhotoFile
+          ? `${fullName} • ${form.designation} • photo uploaded`
+          : `${fullName} • ${form.designation}`,
       });
       if (form.sendInviteEmail && !initial) {
         toast.message("Invite sent", { description: `${form.email} will receive a sign-up link.` });
@@ -317,7 +376,20 @@ export function EmployeeFormDrawer({ open, onOpenChange, initial }: Props) {
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            {active === 0 && <Step1 form={form} set={set} fullName={fullName} />}
+            {active === 0 && (
+              <Step1
+                form={form}
+                set={set}
+                fullName={fullName}
+                photoInputRef={photoInputRef}
+                profilePhotoPolicy={profilePhotoPolicy}
+                profilePhotoPreviewUrl={profilePhotoPreviewUrl}
+                profilePhotoFile={profilePhotoFile}
+                profilePhotoCompressed={profilePhotoCompressed}
+                onChooseProfilePhoto={(file) => void chooseProfilePhoto(file)}
+                onClearProfilePhoto={clearProfilePhoto}
+              />
+            )}
             {active === 1 && (
               <Step2
                 form={form}
@@ -404,24 +476,86 @@ function Step1({
   form,
   set,
   fullName,
+  photoInputRef,
+  profilePhotoPolicy,
+  profilePhotoPreviewUrl,
+  profilePhotoFile,
+  profilePhotoCompressed,
+  onChooseProfilePhoto,
+  onClearProfilePhoto,
 }: {
   form: FormState;
   set: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
   fullName: string;
+  photoInputRef: RefObject<HTMLInputElement | null>;
+  profilePhotoPolicy?: ProfilePhotoPolicy;
+  profilePhotoPreviewUrl: string;
+  profilePhotoFile: File | null;
+  profilePhotoCompressed: boolean;
+  onChooseProfilePhoto: (file: File | null) => void;
+  onClearProfilePhoto: () => void;
 }) {
+  const policy = profilePhotoPolicy ?? DEFAULT_PROFILE_PHOTO_POLICY;
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-4 rounded-2xl border bg-secondary/30 p-4">
-        <div className="grid h-16 w-16 place-items-center rounded-2xl border-2 border-dashed border-border bg-card text-muted-foreground">
-          <Camera className="h-5 w-5" />
+        <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl border-2 border-dashed border-border bg-card text-muted-foreground">
+          {profilePhotoPreviewUrl ? (
+            <img
+              src={profilePhotoPreviewUrl}
+              alt={`${fullName} profile preview`}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <Camera className="h-5 w-5" />
+          )}
         </div>
         <div className="flex-1">
           <p className="text-sm font-medium">Profile photo</p>
-          <p className="text-xs text-muted-foreground">PNG or JPG, up to 2 MB. Optional.</p>
+          <p className="text-xs text-muted-foreground">
+            {policy.allowed_mime_types
+              .map((type) => type.replace("image/", "").toUpperCase())
+              .join(", ")}
+            , up to {formatBytes(policy.max_bytes)}. Optional.
+          </p>
+          {profilePhotoFile && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Ready: {profilePhotoFile.name} ({formatBytes(profilePhotoFile.size)})
+              {profilePhotoCompressed ? " • compressed before upload" : ""}
+            </p>
+          )}
         </div>
-        <Button variant="outline" size="sm" className="rounded-full" disabled>
-          Upload
-        </Button>
+        <input
+          ref={photoInputRef}
+          type="file"
+          className="hidden"
+          accept={policy.allowed_mime_types.join(",")}
+          onChange={(event) => onChooseProfilePhoto(event.currentTarget.files?.[0] ?? null)}
+        />
+        <div className="flex items-center gap-2">
+          {profilePhotoFile && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full"
+              onClick={onClearProfilePhoto}
+              aria-label="Remove selected profile photo"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="rounded-full"
+            onClick={() => photoInputRef.current?.click()}
+          >
+            <Upload className="mr-1 h-4 w-4" />
+            Upload
+          </Button>
+        </div>
       </div>
 
       <Section title="Identity">

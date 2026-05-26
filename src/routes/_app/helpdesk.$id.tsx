@@ -4,10 +4,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useHelpdesk, HELPDESK_AGENT_ROLES } from "@/lib/helpdesk-store";
 import { useEmployees } from "@/lib/employees-store";
-import { documentsApi } from "@/domains/documents";
+import { documentsApi, useDocumentUploadPolicy } from "@/domains/documents";
 import { toastApiError } from "@/shared/api";
 import { queryKeys } from "@/shared/query";
-import { formatBytes, prepareDocumentUploadFile } from "@/shared/uploads/documents";
+import {
+  formatBytes,
+  prepareDocumentUploadFile,
+  uploadPolicyAccept,
+} from "@/shared/uploads/documents";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -80,6 +84,7 @@ function TicketDetailScreen() {
   const queryClient = useQueryClient();
   const t = tickets.find((x) => x.id === id);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadPolicyQuery = useDocumentUploadPolicy(isApiBacked);
 
   const isAgent = !!activeRole && (HELPDESK_AGENT_ROLES as readonly string[]).includes(activeRole);
   const actor = user?.name ?? "Anonymous";
@@ -93,7 +98,7 @@ function TicketDetailScreen() {
   const uploadAttachment = useMutation({
     mutationFn: async (file: File) => {
       if (!t) throw new Error("Ticket is not loaded.");
-      const prepared = await prepareDocumentUploadFile(file);
+      const prepared = await prepareDocumentUploadFile(file, uploadPolicyQuery.data);
       const formData = new FormData();
       formData.set("business_object_type", "helpdesk_ticket");
       formData.set("business_object_id", t.id);
@@ -373,6 +378,7 @@ function TicketDetailScreen() {
                     <input
                       ref={fileInputRef}
                       type="file"
+                      accept={uploadPolicyAccept(uploadPolicyQuery.data)}
                       className="hidden"
                       onChange={(event) => {
                         uploadSelectedAttachment(event.target.files?.[0]);

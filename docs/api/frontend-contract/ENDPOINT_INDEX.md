@@ -6,13 +6,59 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 233
+Documented operations: 240
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
 ## Platform / Health
 
 Health and OpenAPI routes support runtime readiness checks and API tooling.
+
+### POST /api/v1/webhooks/resend
+
+| Field | Contract |
+|---|---|
+| Purpose | Resend webhook |
+| Frontend use | Resend webhook |
+| Auth | Public. No bearer token or session cookie required. |
+| Roles/scope | Public health/OpenAPI surface only; no sensitive config values. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+Schema: `object`.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `received` | boolean | required | - |
+| `duplicate` | boolean | required | - |
+| `event_type` | string | optional | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
 
 ### GET /health/live
 
@@ -369,7 +415,6 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `accepted` | boolean | required | - |
-| `sent` | boolean | required | False can be returned for already verified/unknown emails without exposing sensitive account state. |
 | `masked_email` | string | required | - |
 | `retry_after_seconds` | integer | required | minimum 1 |
 | `dev_only` | object | optional, nullable | Local/QA only token echo for automated testing. Production responses omit this object. |
@@ -744,6 +789,55 @@ Success body highlights:
 - Treat `401` as authentication failure and `403` as real permission denial.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
+### POST /api/v1/onboarding/company-logo
+
+| Field | Contract |
+|---|---|
+| Purpose | Upload onboarding company logo |
+| Frontend use | Upload onboarding company logo |
+| Auth | Public. No bearer token or session cookie required. |
+| Roles/scope | Authenticated current user only. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `bootstrap_token` | string | required | Active company bootstrap token issued after email verification.; minLength 16 |
+| `file` | string<binary> | required | Company logo image. Backend media upload policy controls type, compression, and size. |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `company` | object | required | - |
+| `document` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
 ### POST /api/v1/onboarding/company-bootstrap
 
 | Field | Contract |
@@ -959,6 +1053,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -968,6 +1064,8 @@ Success body highlights:
 | `status` | string | required | - |
 | `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
 | `role_labels` | array of string | required | - |
+| `profile_photo_document_id` | string<uuid> | optional, nullable | Profile photo document UUID |
+| `profile_photo_url` | string | optional, nullable | - |
 | `reporting_line` | array of object | required | - |
 | `role_assignments` | array of object | required | - |
 | `direct_reports_summary` | object | required | - |
@@ -976,10 +1074,134 @@ Success body highlights:
 | `attendance_summary` | object | required | - |
 | `leave_summary` | object | required | - |
 | `timesheet_summary` | object | required | - |
-| `expense_summary` | object | required | - |
-| `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/core/users/profile-photo-policy
+
+| Field | Contract |
+|---|---|
+| Purpose | Get profile photo upload policy |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `max_bytes` | integer | required | minimum 1 |
+| `max_width` | integer | required | minimum 1 |
+| `max_height` | integer | required | minimum 1 |
+| `jpeg_quality` | number | required | minimum 0.5 |
+| `allowed_mime_types` | array of string | required | - |
+| `output_mime_type` | string | required | - |
+| `cloudinary_transformation` | string | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/core/users/{id}/profile-photo
+
+| Field | Contract |
+|---|---|
+| Purpose | Upload profile photo |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `file` | string<binary> | required | JPEG, PNG, or WebP profile photo. The backend validates size and type from policy. |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Authenticated user UUID |
+| `employee_code` | string | required | - |
+| `email` | string<email> | required | - |
+| `full_name` | string | required | - |
+| `department_id` | string<uuid> | optional | Department UUID |
+| `designation_id` | string<uuid> | optional | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
+| `hierarchy_path` | string | optional | - |
+| `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
+| `timezone` | string | optional | - |
+| `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
+| `role_labels` | array of string | required | - |
+| `profile_photo_document_id` | string<uuid> | optional, nullable | Profile photo document UUID |
+| `profile_photo_url` | string | optional, nullable | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1030,6 +1252,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1039,6 +1263,8 @@ Success body highlights:
 | `status` | string | required | - |
 | `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
 | `role_labels` | array of string | required | - |
+| `profile_photo_document_id` | string<uuid> | optional, nullable | Profile photo document UUID |
+| `profile_photo_url` | string | optional, nullable | - |
 | `reporting_line` | array of object | required | - |
 | `role_assignments` | array of object | required | - |
 | `direct_reports_summary` | object | required | - |
@@ -1047,8 +1273,8 @@ Success body highlights:
 | `attendance_summary` | object | required | - |
 | `leave_summary` | object | required | - |
 | `timesheet_summary` | object | required | - |
-| `expense_summary` | object | required | - |
-| `profile_tabs_available` | array of string | required | - |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1114,6 +1340,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1123,6 +1351,8 @@ Success body highlights:
 | `status` | string | required | - |
 | `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
 | `role_labels` | array of string | required | - |
+| `profile_photo_document_id` | string<uuid> | optional, nullable | Profile photo document UUID |
+| `profile_photo_url` | string | optional, nullable | - |
 | `reporting_line` | array of object | required | - |
 | `role_assignments` | array of object | required | - |
 | `direct_reports_summary` | object | required | - |
@@ -1131,10 +1361,8 @@ Success body highlights:
 | `attendance_summary` | object | required | - |
 | `leave_summary` | object | required | - |
 | `timesheet_summary` | object | required | - |
-| `expense_summary` | object | required | - |
-| `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1196,6 +1424,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1205,6 +1435,8 @@ Success body highlights:
 | `status` | string | required | - |
 | `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
 | `role_labels` | array of string | required | - |
+| `profile_photo_document_id` | string<uuid> | optional, nullable | Profile photo document UUID |
+| `profile_photo_url` | string | optional, nullable | - |
 | `reporting_line` | array of object | required | - |
 | `role_assignments` | array of object | required | - |
 | `direct_reports_summary` | object | required | - |
@@ -1213,10 +1445,8 @@ Success body highlights:
 | `attendance_summary` | object | required | - |
 | `leave_summary` | object | required | - |
 | `timesheet_summary` | object | required | - |
-| `expense_summary` | object | required | - |
-| `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1278,6 +1508,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1287,6 +1519,8 @@ Success body highlights:
 | `status` | string | required | - |
 | `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
 | `role_labels` | array of string | required | - |
+| `profile_photo_document_id` | string<uuid> | optional, nullable | Profile photo document UUID |
+| `profile_photo_url` | string | optional, nullable | - |
 | `reporting_line` | array of object | required | - |
 | `role_assignments` | array of object | required | - |
 | `direct_reports_summary` | object | required | - |
@@ -1295,10 +1529,8 @@ Success body highlights:
 | `attendance_summary` | object | required | - |
 | `leave_summary` | object | required | - |
 | `timesheet_summary` | object | required | - |
-| `expense_summary` | object | required | - |
-| `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1358,6 +1590,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1367,6 +1601,8 @@ Success body highlights:
 | `status` | string | required | - |
 | `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
 | `role_labels` | array of string | required | - |
+| `profile_photo_document_id` | string<uuid> | optional, nullable | Profile photo document UUID |
+| `profile_photo_url` | string | optional, nullable | - |
 | `reporting_line` | array of object | required | - |
 | `role_assignments` | array of object | required | - |
 | `direct_reports_summary` | object | required | - |
@@ -1375,10 +1611,8 @@ Success body highlights:
 | `attendance_summary` | object | required | - |
 | `leave_summary` | object | required | - |
 | `timesheet_summary` | object | required | - |
-| `expense_summary` | object | required | - |
-| `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1438,6 +1672,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1447,6 +1683,8 @@ Success body highlights:
 | `status` | string | required | - |
 | `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
 | `role_labels` | array of string | required | - |
+| `profile_photo_document_id` | string<uuid> | optional, nullable | Profile photo document UUID |
+| `profile_photo_url` | string | optional, nullable | - |
 | `reporting_line` | array of object | required | - |
 | `role_assignments` | array of object | required | - |
 | `direct_reports_summary` | object | required | - |
@@ -1455,10 +1693,8 @@ Success body highlights:
 | `attendance_summary` | object | required | - |
 | `leave_summary` | object | required | - |
 | `timesheet_summary` | object | required | - |
-| `expense_summary` | object | required | - |
-| `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -1518,6 +1754,8 @@ Success body highlights:
 | `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
 | `hierarchy_path` | string | optional | - |
 | `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
 | `timezone` | string | optional | - |
 | `roles` | array of string | required | - |
 | `department` | object | required, nullable | - |
@@ -1527,6 +1765,8 @@ Success body highlights:
 | `status` | string | required | - |
 | `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
 | `role_labels` | array of string | required | - |
+| `profile_photo_document_id` | string<uuid> | optional, nullable | Profile photo document UUID |
+| `profile_photo_url` | string | optional, nullable | - |
 | `reporting_line` | array of object | required | - |
 | `role_assignments` | array of object | required | - |
 | `direct_reports_summary` | object | required | - |
@@ -1535,10 +1775,8 @@ Success body highlights:
 | `attendance_summary` | object | required | - |
 | `leave_summary` | object | required | - |
 | `timesheet_summary` | object | required | - |
-| `expense_summary` | object | required | - |
-| `profile_tabs_available` | array of string | required | - |
-| `onboarding` | object | optional | - |
-| `sessions_revoked` | integer | optional | minimum 0 |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
 
 **Frontend behavior notes**
 
@@ -2270,6 +2508,13 @@ Success body highlights:
 | `work_hours` | number | optional | minimum 1 |
 | `logo_label` | string | optional, nullable | - |
 | `logoLabel` | string | optional, nullable | - |
+| `logo_document_id` | string<uuid> | optional, nullable | Company logo document UUID |
+| `logoDocumentId` | string<uuid> | optional, nullable | Company logo document UUID |
+| `logo_url` | string | optional, nullable | - |
+| `logoUrl` | string | optional, nullable | - |
+| `logo_file_name` | string | optional, nullable | - |
+| `logo_mime_type` | string | optional, nullable | - |
+| `logo_size_bytes` | integer | optional, nullable | minimum 0 |
 | `status` | string enum("pending", "active", "inactive") | required | - |
 | `bootstrap_completed_at` | string<date-time> | optional, nullable | Bootstrap completion timestamp |
 | `updated_at` | string<date-time> | required | Last update timestamp |
@@ -2348,6 +2593,13 @@ Success body highlights:
 | `work_hours` | number | optional | minimum 1 |
 | `logo_label` | string | optional, nullable | - |
 | `logoLabel` | string | optional, nullable | - |
+| `logo_document_id` | string<uuid> | optional, nullable | Company logo document UUID |
+| `logoDocumentId` | string<uuid> | optional, nullable | Company logo document UUID |
+| `logo_url` | string | optional, nullable | - |
+| `logoUrl` | string | optional, nullable | - |
+| `logo_file_name` | string | optional, nullable | - |
+| `logo_mime_type` | string | optional, nullable | - |
+| `logo_size_bytes` | integer | optional, nullable | minimum 0 |
 | `status` | string enum("pending", "active", "inactive") | required | - |
 | `bootstrap_completed_at` | string<date-time> | optional, nullable | Bootstrap completion timestamp |
 | `updated_at` | string<date-time> | required | Last update timestamp |
@@ -5386,6 +5638,54 @@ Success body highlights:
 - Use backend document APIs only; never expose object-storage credentials or direct bucket paths.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
+### GET /api/v1/documents/upload-policy
+
+| Field | Contract |
+|---|---|
+| Purpose | Get media upload policy |
+| Frontend use | Document upload, list, metadata, download URL, verification, and access-log widgets. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Classification and business-object policy apply; storage credentials are never exposed. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `max_bytes` | integer | required | minimum 131072 |
+| `image_max_width` | integer | required | minimum 256 |
+| `image_max_height` | integer | required | minimum 256 |
+| `image_jpeg_quality` | number | required | minimum 0.5 |
+| `allowed_mime_types` | array of string | required | - |
+| `image_output_mime_type` | string enum("image/jpeg") | required | - |
+| `cloudinary_transformation` | string | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Use backend document APIs only; never expose object-storage credentials or direct bucket paths.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
 ### GET /api/v1/documents/{id}
 
 | Field | Contract |
@@ -5437,6 +5737,50 @@ Success body highlights:
 - Use backend document APIs only; never expose object-storage credentials or direct bucket paths.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
+### DELETE /api/v1/documents/{id}
+
+| Field | Contract |
+|---|---|
+| Purpose | Delete document |
+| Frontend use | Document upload, list, metadata, download URL, verification, and access-log widgets. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Classification and business-object policy apply; storage credentials are never exposed. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `document_id` | string<uuid> | required | - |
+| `status` | string enum("deleted") | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Use backend document APIs only; never expose object-storage credentials or direct bucket paths.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
 ### POST /api/v1/documents/{id}/download-url
 
 | Field | Contract |
@@ -5480,6 +5824,47 @@ Success body highlights:
 - Treat `401` as authentication failure and `403` as real permission denial.
 - Use backend document APIs only; never expose object-storage credentials or direct bucket paths.
 - Download URLs are short-lived sensitive values; do not log or persist them.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/documents/{id}/content
+
+| Field | Contract |
+|---|---|
+| Purpose | Download local document content |
+| Frontend use | Document upload, list, metadata, download URL, verification, and access-log widgets. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Classification and business-object policy apply; storage credentials are never exposed. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+Schema: `string<binary>`.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Use backend document APIs only; never expose object-storage credentials or direct bucket paths.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
 ### POST /api/v1/documents/{id}/verify
@@ -11077,6 +11462,7 @@ Required: yes
 | `mime_type` | string | required | minLength 1 |
 | `size_bytes` | integer | required | minimum 1 |
 | `checksum_sha256` | string | optional | - |
+| `replace_document_id` | string<uuid> | optional | Existing EMS document UUID to replace |
 
 **Responses**
 | Status | Meaning |

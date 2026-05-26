@@ -19,9 +19,9 @@ import {
 import { useProjects } from "@/lib/projects-store";
 import { useAuth } from "@/lib/auth";
 import { ProjectFormDrawer } from "@/components/projects/project-form-drawer";
-import { documentsApi } from "@/domains/documents";
+import { documentsApi, useDocumentUploadPolicy } from "@/domains/documents";
 import { queryKeys } from "@/shared/query";
-import { prepareDocumentUploadFile } from "@/shared/uploads/documents";
+import { prepareDocumentUploadFile, uploadPolicyAccept } from "@/shared/uploads/documents";
 import {
   type ProjectMember,
   type ProjectModule,
@@ -77,11 +77,12 @@ function ProjectDetailPage() {
   const isFinance = activeRole === "finance_manager";
   const canEdit = project?.permissions?.can_edit ?? (isMain || isPM);
   const canManageDocuments = canEdit && isApiBacked;
+  const uploadPolicyQuery = useDocumentUploadPolicy(canManageDocuments);
 
   const uploadDocument = useMutation({
     mutationFn: async (file: File) => {
       if (!project) throw new Error("Project is not loaded.");
-      const prepared = await prepareDocumentUploadFile(file);
+      const prepared = await prepareDocumentUploadFile(file, uploadPolicyQuery.data);
       const formData = new FormData();
       formData.set("business_object_type", "project");
       formData.set("business_object_id", project.id);
@@ -751,6 +752,7 @@ function ProjectDetailPage() {
             <input
               ref={fileInputRef}
               type="file"
+              accept={uploadPolicyAccept(uploadPolicyQuery.data)}
               className="hidden"
               onChange={(event) => {
                 handleDocumentUpload(event.target.files?.[0]);

@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useAuth } from "@/lib/auth";
 import { useExpenseMetadata } from "@/domains/expenses";
+import { useDocumentUploadPolicy } from "@/domains/documents";
 import { asArray, asRecord, text, toastApiError } from "@/shared/api";
 import {
   useExpenses,
@@ -26,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus, Trash2, Upload, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { prepareDocumentUploadFile } from "@/shared/uploads/documents";
+import { prepareDocumentUploadFile, uploadPolicyAccept } from "@/shared/uploads/documents";
 
 interface SearchParams {
   step?: number;
@@ -262,6 +263,7 @@ function CreateExpense() {
   const { user } = useAuth();
   const { add } = useExpenses();
   const metadataQuery = useExpenseMetadata();
+  const uploadPolicyQuery = useDocumentUploadPolicy();
   const nav = useNavigate();
   const search = Route.useSearch();
   const [f, setF] = useState<FormState>(
@@ -436,7 +438,7 @@ function CreateExpense() {
     if (!file) return;
 
     try {
-      const prepared = await prepareDocumentUploadFile(file);
+      const prepared = await prepareDocumentUploadFile(file, uploadPolicyQuery.data);
       set("documents", [
         ...f.documents,
         {
@@ -786,7 +788,7 @@ function CreateExpense() {
                 <input
                   ref={documentInputRef}
                   type="file"
-                  accept="image/*,application/pdf"
+                  accept={uploadPolicyAccept(uploadPolicyQuery.data)}
                   className="sr-only"
                   onChange={(event) => void attachSelectedDocument(event)}
                 />

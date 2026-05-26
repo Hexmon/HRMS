@@ -1,5 +1,6 @@
 import { apiRequest } from "@/shared/api";
 import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } from "@/shared/api";
+import type { ProfilePhotoPolicy } from "@/shared/uploads/profile-photo";
 
 export const coreApi = {
   orgSelectors() {
@@ -16,6 +17,15 @@ export const coreApi = {
   },
   updateUser(id: string, input: ExpectedVersionBody) {
     return apiRequest<ApiRecord>(`/api/v1/core/users/${id}`, { method: "PATCH", body: input });
+  },
+  profilePhotoPolicy() {
+    return apiRequest<ProfilePhotoPolicy>("/api/v1/core/users/profile-photo-policy");
+  },
+  uploadProfilePhoto(id: string, input: FormData) {
+    return apiRequest<ApiRecord>(`/api/v1/core/users/${id}/profile-photo`, {
+      method: "POST",
+      body: input,
+    });
   },
   activateUser(id: string, input: ExpectedVersionBody) {
     return apiRequest<ApiRecord>(`/api/v1/core/users/${id}/activate`, {

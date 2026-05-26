@@ -153,6 +153,12 @@ export interface CompanyBootstrapResponse {
   [key: string]: unknown;
 }
 
+export interface CompanyLogoUploadResponse {
+  company: ApiRecord;
+  document: ApiRecord;
+  [key: string]: unknown;
+}
+
 export const authApi = {
   login(input: LoginRequest) {
     return apiRequest<LoginResponse>("/api/v1/auth/login", {
@@ -213,6 +219,13 @@ export const authApi = {
   },
   confirmPasswordReset(input: SetPasswordRequest) {
     return apiRequest<PasswordResetConfirmResponse>("/api/v1/auth/password-reset/confirm", {
+      method: "POST",
+      body: input,
+      auth: false,
+    });
+  },
+  uploadCompanyLogo(input: FormData) {
+    return apiRequest<CompanyLogoUploadResponse>("/api/v1/onboarding/company-logo", {
       method: "POST",
       body: input,
       auth: false,

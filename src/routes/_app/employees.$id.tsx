@@ -182,7 +182,12 @@ function EmployeeProfilePage() {
         <div className="p-6" style={{ background: "var(--gradient-hero)" }}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-start gap-4">
-              <UserAvatar name={employee.name} size="lg" tone={employee.avatarTone ?? "primary"} />
+              <UserAvatar
+                name={employee.name}
+                src={employee.avatarUrl}
+                size="lg"
+                tone={employee.avatarTone ?? "primary"}
+              />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="truncate text-2xl font-semibold tracking-tight">

@@ -196,6 +196,7 @@ function EmployeesPage() {
           <UserAvatar
             name={e.name}
             email={e.email}
+            src={e.avatarUrl}
             tone={e.avatarTone ?? "primary"}
             showMeta
             subtitle={e.email}

@@ -1,4 +1,5 @@
 import { asArray, asRecord, dateText, text, boolValue, type ApiRecord } from "@/shared/api";
+import { apiConfig } from "@/shared/api/config";
 import type { AuditEntry, Employee, RoleHistoryEntry } from "@/lib/mock/employees";
 
 function splitName(fullName: string) {
@@ -60,6 +61,15 @@ export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee
   const roles = Array.isArray(roleValues)
     ? roleValues.map(mapBackendRoleToUiRole).filter(Boolean)
     : (fallback?.systemRoles ?? ["employee"]);
+  const profilePhotoDocumentId = text(
+    row.profile_photo_document_id,
+    fallback?.profilePhotoDocumentId,
+  );
+  const profilePhotoUrl =
+    text(row.profile_photo_url, fallback?.avatarUrl) ||
+    (profilePhotoDocumentId
+      ? `${apiConfig.baseUrl}/api/v1/documents/${encodeURIComponent(profilePhotoDocumentId)}/content`
+      : undefined);
 
   return {
     id: text(row.employee_code, fallback?.id ?? text(row.id, "EMP-API")),
@@ -108,6 +118,8 @@ export function mapApiUserToEmployee(value: unknown, fallback?: Partial<Employee
           : boolValue(row.login_enabled, fallback?.loginEnabled ?? false),
     systemRoles: roles.length ? roles : ["employee"],
     lastLoginAt: text(row.last_login_at, fallback?.lastLoginAt),
+    avatarUrl: profilePhotoUrl || undefined,
+    profilePhotoDocumentId: profilePhotoDocumentId || undefined,
     avatarTone: fallback?.avatarTone ?? "primary",
     roleHistory: fallback?.roleHistory ?? [],
     audit: fallback?.audit ?? [],

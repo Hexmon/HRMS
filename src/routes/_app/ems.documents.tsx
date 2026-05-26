@@ -25,7 +25,12 @@ import {
   Trash2,
   AlertTriangle,
 } from "lucide-react";
-import { documentsApi, mapApiDocuments, useDocumentDeleteMutation } from "@/domains/documents";
+import {
+  documentsApi,
+  mapApiDocuments,
+  useDocumentDeleteMutation,
+  useDocumentUploadPolicy,
+} from "@/domains/documents";
 import {
   type EmsDocumentUploadBody,
   useEmsDocumentMutation,
@@ -34,7 +39,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { isUuid, pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { queryKeys } from "@/shared/query";
-import { prepareDocumentUploadFile } from "@/shared/uploads/documents";
+import { prepareDocumentUploadFile, uploadPolicyAccept } from "@/shared/uploads/documents";
 
 export const Route = createFileRoute("/_app/ems/documents")({
   component: MyDocuments,
@@ -119,6 +124,7 @@ function MyDocuments() {
   const [uploadTarget, setUploadTarget] = useState<Doc | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Doc | null>(null);
   const documentsQuery = useEmsEmployeeDocuments(user?.id, { page: 1, page_size: 100 }, apiEnabled);
+  const uploadPolicyQuery = useDocumentUploadPolicy(apiEnabled);
   const uploadMutation = useEmsDocumentMutation(user?.id);
   const deleteMutation = useDocumentDeleteMutation();
   const docs = apiEnabled ? mapApiDocuments(pageItems(documentsQuery.data)) : DOCS;
@@ -182,7 +188,7 @@ function MyDocuments() {
 
     const target = uploadTarget;
     try {
-      const prepared = await prepareDocumentUploadFile(file);
+      const prepared = await prepareDocumentUploadFile(file, uploadPolicyQuery.data);
       const formData = new FormData();
       formData.set("file", prepared.file);
       formData.set("classification", classificationFor(target));
@@ -208,7 +214,7 @@ function MyDocuments() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,application/pdf"
+        accept={uploadPolicyAccept(uploadPolicyQuery.data)}
         className="sr-only"
         onChange={(event) => void uploadSelectedFile(event)}
       />

@@ -71,6 +71,8 @@ export interface Employee {
   loginEnabled: boolean;
   systemRoles: string[]; // role keys
   lastLoginAt?: string;
+  avatarUrl?: string;
+  profilePhotoDocumentId?: string;
   avatarTone?: "primary" | "info" | "success" | "warning";
   roleHistory: RoleHistoryEntry[];
   audit: AuditEntry[];
