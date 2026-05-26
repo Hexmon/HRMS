@@ -144,7 +144,7 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
     if (!managerUserId) {
       throw new Error("Project manager must be selected from backend employees.");
     }
-    return {
+    const body: ProjectCreateBody = {
       project_code: project.code,
       name: project.name,
       client_name: project.client,
@@ -161,8 +161,10 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
       estimated_budget: project.estimatedBudget.toFixed(2),
       tech_stack: project.techStack,
       priority: project.priority,
-      cost_center: project.costCenter || null,
     };
+    const costCenter = project.costCenter.trim();
+    if (costCenter) body.cost_center = costCenter;
+    return body;
   };
 
   const projectUpdateBody = (project: Project, expectedVersion: number): ProjectUpdateBody => ({

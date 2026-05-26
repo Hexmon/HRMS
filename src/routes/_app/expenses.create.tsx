@@ -395,7 +395,7 @@ function CreateExpense() {
                 projectCode: f.projectCode || "PRJ-GEN",
                 projectName: f.projectName || "General",
                 projectManager: f.projectManager || "Sara Iqbal",
-                costCenter: f.costCenter || "CC-GEN",
+                costCenter: f.costCenter.trim(),
                 projectExpenseType: f.projectExpenseType,
               }
             : undefined,
@@ -609,11 +609,11 @@ function CreateExpense() {
                       onChange={(e) => set("projectManager", e.target.value)}
                     />
                   </Field>
-                  <Field label="Cost Center">
+                  <Field label="Cost Center (optional)">
                     <Input
                       value={f.costCenter}
                       onChange={(e) => set("costCenter", e.target.value)}
-                      placeholder="CC-XXX"
+                      placeholder="Optional finance/reporting bucket"
                     />
                   </Field>
                   <Field label="Project Expense Type" className="md:col-span-2">

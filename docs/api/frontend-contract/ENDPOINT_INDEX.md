@@ -11874,7 +11874,7 @@ Required: yes
 | `estimated_budget` | string | optional | Estimated project budget; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
 | `tech_stack` | array of string | optional | - |
 | `priority` | string enum("low", "medium", "high", "critical") | optional | default "medium" |
-| `cost_center` | string | optional | - |
+| `cost_center` | string | optional, nullable | - |
 
 **Responses**
 | Status | Meaning |
@@ -12029,7 +12029,7 @@ Required: yes
 | `estimated_budget` | string | optional | Estimated project budget; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
 | `tech_stack` | array of string | optional | - |
 | `priority` | string enum("low", "medium", "high", "critical") | optional | default "medium" |
-| `cost_center` | string | optional | - |
+| `cost_center` | string | optional, nullable | - |
 | `expected_version` | integer | required | minimum 1 |
 
 **Responses**
