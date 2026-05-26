@@ -1,10 +1,11 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import type { AuthUser, CoreUser, Department, Designation, OutboxEvent, RoleKey, UUID } from "#shared";
-import { EmploymentStatuses, Roles } from "#shared";
+import type { AuthUser, CoreUser, Department, Designation, DocumentMetadata, OutboxEvent, RoleKey, UUID } from "#shared";
+import { DocumentClassifications, EmploymentStatuses, Roles } from "#shared";
 import { badRequest, conflict, forbidden, notFound } from "../../platform/errors.js";
 import type { AuthTokenRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
+import { DocumentService } from "../documents/service.js";
 import { appendCoreOutboxEvent } from "./events.js";
 import { CoreRepository } from "./repository.js";
 
@@ -197,6 +198,23 @@ export interface UserExportInput {
   columns?: string[];
 }
 
+export interface ProfilePhotoPolicy {
+  max_bytes: number;
+  max_width: number;
+  max_height: number;
+  jpeg_quality: number;
+  allowed_mime_types: string[];
+  output_mime_type: "image/jpeg";
+  cloudinary_transformation: string;
+}
+
+export interface ProfilePhotoUploadInput {
+  file_buffer: Buffer;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+}
+
 export interface CoreUserMutationResult extends CoreUserDetail {
   onboarding?: {
     setup_required: boolean;
@@ -356,6 +374,78 @@ export class CoreService {
       eventType: "core.user.updated",
       payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id },
       idempotencyKey: `core.user.updated:${user.id}:${user.version}`
+    });
+    return this.toDetail(user);
+  }
+
+  async uploadProfilePhoto(
+    actor: AuthUser,
+    id: UUID,
+    input: ProfilePhotoUploadInput,
+    policy: ProfilePhotoPolicy
+  ): Promise<CoreUserMutationResult> {
+    const user = this.requireUserForRead(actor, id);
+    if (actor.id !== user.id) {
+      requirePeopleManager(actor);
+    }
+    const normalizedMime = input.mime_type.trim().toLowerCase();
+    if (!policy.allowed_mime_types.includes(normalizedMime)) {
+      throw badRequest("Profile photo must be a JPEG, PNG, or WebP image.", {
+        allowed_mime_types: policy.allowed_mime_types
+      });
+    }
+    if (input.file_buffer.length <= 0) {
+      throw badRequest("Profile photo upload is empty.");
+    }
+    if (input.file_buffer.length > policy.max_bytes || input.size_bytes > policy.max_bytes) {
+      throw badRequest("Profile photo is larger than the configured upload limit.", {
+        max_bytes: policy.max_bytes,
+        actual_bytes: Math.max(input.file_buffer.length, input.size_bytes)
+      });
+    }
+
+    const documentService = new DocumentService(this.store);
+    const document = await documentService.upload(actor, {
+      business_object_type: "core_user",
+      business_object_id: user.id,
+      owner_user_id: user.id,
+      classification: DocumentClassifications.Normal,
+      document_type: "profile_photo",
+      file_name: input.file_name,
+      mime_type: normalizedMime,
+      size_bytes: input.size_bytes,
+      file_buffer: input.file_buffer,
+      storage_metadata: {
+        "x-cloudinary-transformation": policy.cloudinary_transformation,
+        "x-hrms-profile-photo": "true"
+      }
+    });
+
+    const previousDocumentId = user.profile_photo_document_id;
+    user.profile_photo_document_id = document.id;
+    user.profile_photo_url = profilePhotoUrl(document);
+    user.version += 1;
+
+    if (previousDocumentId && previousDocumentId !== document.id) {
+      const previous = this.store.documents.find((candidate) => candidate.id === previousDocumentId && !candidate.deleted_at);
+      if (previous) {
+        await documentService.delete(actor, previous.id);
+      }
+    }
+
+    appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user",
+      aggregateId: user.id,
+      eventType: "core.user.profile_photo_uploaded",
+      payload: {
+        user_id: user.id,
+        employee_code: user.employee_code,
+        document_id: document.id,
+        actor_user_id: actor.id,
+        mime_type: normalizedMime,
+        size_bytes: input.size_bytes
+      },
+      idempotencyKey: `core.user.profile_photo_uploaded:${user.id}:${document.id}`
     });
     return this.toDetail(user);
   }
@@ -1275,6 +1365,13 @@ function toDesignationReference(designation: Designation): DesignationReference 
   };
 }
 
+function profilePhotoUrl(document: DocumentMetadata): string | null {
+  const objectUrl = typeof document.metadata.object_url === "string" ? document.metadata.object_url : "";
+  const cloudinaryUrl = typeof document.metadata.cloudinary_url === "string" ? document.metadata.cloudinary_url : "";
+  const candidate = cloudinaryUrl || objectUrl;
+  return /^https?:\/\//iu.test(candidate) ? candidate : null;
+}
+
 function appliedFilters(params: UserDirectoryQuery): string[] {
   return ["q", "department_id", "designation_id", "role", "employment_status", "manager_user_id", "login_state"].filter((key) => Boolean(params[key as keyof UserDirectoryQuery]));
 }
@@ -1371,6 +1468,8 @@ function auditAction(eventType: string): string {
       return "Login setup requested";
     case "core.user.roles_replaced":
       return "Roles updated";
+    case "core.user.profile_photo_uploaded":
+      return "Profile photo uploaded";
     default:
       return eventType;
   }

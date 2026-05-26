@@ -48,6 +48,13 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     return new DocumentService(fastify.store).list(request.actor, query);
   });
 
+  fastify.get("/documents/upload-policy", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new DocumentService(fastify.store).uploadPolicy();
+  });
+
   fastify.get("/documents/:id", async (request) => {
     if (!request.actor) {
       throw unauthorized();

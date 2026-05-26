@@ -27,6 +27,26 @@ const store = await createPostgresDataStore({
       minBytes: Number(process.env.PDF_COMPRESSION_MIN_BYTES ?? "131072"),
       timeoutMs: Number(process.env.PDF_COMPRESSION_TIMEOUT_MS ?? "30000"),
       failOpen: process.env.PDF_COMPRESSION_FAIL_OPEN !== "false"
+    },
+    mediaUploads: {
+      maxBytes: Number(process.env.MEDIA_UPLOAD_MAX_BYTES ?? String(10 * 1024 * 1024)),
+      imageMaxWidth: Number(process.env.MEDIA_IMAGE_MAX_WIDTH ?? "1600"),
+      imageMaxHeight: Number(process.env.MEDIA_IMAGE_MAX_HEIGHT ?? "1600"),
+      imageJpegQuality: Number(process.env.MEDIA_IMAGE_JPEG_QUALITY ?? "0.82"),
+      allowedMimeTypes: (process.env.MEDIA_ALLOWED_MIME_TYPES ?? [
+        "application/pdf",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "text/plain",
+        "text/csv",
+        "application/msword",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      ].join(",")).split(",").map((value) => value.trim().toLowerCase()).filter(Boolean),
+      imageOutputMimeType: "image/jpeg",
+      cloudinaryTransformation: process.env.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto"
     }
   },
   seedIfEmpty: false
@@ -39,7 +59,7 @@ function objectStorageOptions() {
     apiSecret: process.env.CLOUDINARY_API_SECRET ?? "local-cloudinary-secret",
     folder: process.env.CLOUDINARY_FOLDER ?? "hawkaii-hrms",
     resourceType: (process.env.CLOUDINARY_RESOURCE_TYPE as "auto" | "image" | "raw" | "video" | undefined) ?? "auto",
-    uploadTransformation: process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
+    uploadTransformation: process.env.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION ?? process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
     mockUploads: process.env.CLOUDINARY_MOCK_UPLOADS === "true"
   };
 }

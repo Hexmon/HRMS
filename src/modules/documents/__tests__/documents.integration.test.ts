@@ -182,6 +182,64 @@ describe("document management integration", () => {
     expect(content.body).toContain("%PDF");
   });
 
+  it("exposes and enforces the backend media upload policy", async () => {
+    const admin = await loginAs(app, "ADM");
+
+    const policy = await app.inject({
+      method: "GET",
+      url: "/api/v1/documents/upload-policy",
+      headers: authHeader(admin.token)
+    });
+    expect(policy.statusCode).toBe(200);
+    expect(policy.json()).toMatchObject({
+      max_bytes: app.store.documentProcessing.mediaUploads.maxBytes,
+      image_max_width: app.store.documentProcessing.mediaUploads.imageMaxWidth,
+      image_max_height: app.store.documentProcessing.mediaUploads.imageMaxHeight,
+      image_jpeg_quality: app.store.documentProcessing.mediaUploads.imageJpegQuality,
+      image_output_mime_type: "image/jpeg"
+    });
+    expect(policy.json().allowed_mime_types).toContain("application/pdf");
+
+    const disallowed = await multipartUpload(app, {
+      url: "/api/v1/documents",
+      token: admin.token,
+      fields: {
+        business_object_type: "employee",
+        business_object_id: admin.user.id,
+        classification: "normal",
+        document_type: "unsupported"
+      },
+      file: {
+        fieldName: "file",
+        fileName: "unsafe.exe",
+        mimeType: "application/x-msdownload",
+        body: Buffer.from("unsafe", "utf8")
+      }
+    });
+    expect(disallowed.statusCode).toBe(400);
+    expect(disallowed.json().message).toBe("This file type is not allowed for media uploads");
+
+    app.store.documentProcessing.mediaUploads.maxBytes = 8;
+    const oversized = await multipartUpload(app, {
+      url: "/api/v1/documents",
+      token: admin.token,
+      fields: {
+        business_object_type: "employee",
+        business_object_id: admin.user.id,
+        classification: "normal",
+        document_type: "oversized"
+      },
+      file: {
+        fieldName: "file",
+        fileName: "too-large.txt",
+        mimeType: "text/plain",
+        body: Buffer.from("too large", "utf8")
+      }
+    });
+    expect(oversized.statusCode).toBe(400);
+    expect(oversized.json().message).toBe("File is larger than the configured media upload limit");
+  });
+
   it("stores multipart uploads through expense and EMS document wrapper paths", async () => {
     const employee = await loginAs(app, "E1");
 

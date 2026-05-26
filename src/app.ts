@@ -101,7 +101,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(errorsPlugin);
   await app.register(securityHeadersPlugin);
   await app.register(cors, corsOptions(app.config));
-  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
+  await app.register(multipart, {
+    limits: { fileSize: Math.max(app.config.MEDIA_UPLOAD_MAX_BYTES, app.config.PROFILE_PHOTO_MAX_BYTES) }
+  });
   await app.register(compressionPlugin);
   await app.register(cookiesPlugin);
   await app.register(swagger, {
@@ -160,7 +162,8 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
         minBytes: config.PDF_COMPRESSION_MIN_BYTES,
         timeoutMs: config.PDF_COMPRESSION_TIMEOUT_MS,
         failOpen: config.PDF_COMPRESSION_FAIL_OPEN
-      }
+      },
+      mediaUploads: mediaUploadPolicyFromConfig(config)
     };
     return store;
   }
@@ -184,7 +187,8 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
         minBytes: config.PDF_COMPRESSION_MIN_BYTES,
         timeoutMs: config.PDF_COMPRESSION_TIMEOUT_MS,
         failOpen: config.PDF_COMPRESSION_FAIL_OPEN
-      }
+      },
+      mediaUploads: mediaUploadPolicyFromConfig(config)
     },
     seedIfEmpty: options.seedIfEmpty ?? true
   });
@@ -197,8 +201,23 @@ function objectStorageOptions(config: FastifyInstance["config"]): PostgresObject
     apiSecret: config.CLOUDINARY_API_SECRET,
     folder: config.CLOUDINARY_FOLDER,
     resourceType: config.CLOUDINARY_RESOURCE_TYPE,
-    uploadTransformation: config.CLOUDINARY_UPLOAD_TRANSFORMATION,
+    uploadTransformation: config.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION || config.CLOUDINARY_UPLOAD_TRANSFORMATION,
     mockUploads: config.CLOUDINARY_MOCK_UPLOADS
+  };
+}
+
+function mediaUploadPolicyFromConfig(config: FastifyInstance["config"]) {
+  return {
+    maxBytes: config.MEDIA_UPLOAD_MAX_BYTES,
+    imageMaxWidth: config.MEDIA_IMAGE_MAX_WIDTH,
+    imageMaxHeight: config.MEDIA_IMAGE_MAX_HEIGHT,
+    imageJpegQuality: config.MEDIA_IMAGE_JPEG_QUALITY,
+    allowedMimeTypes: config.MEDIA_ALLOWED_MIME_TYPES
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+    imageOutputMimeType: "image/jpeg" as const,
+    cloudinaryTransformation: config.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION
   };
 }
 

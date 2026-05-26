@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { verifyJwt } from "#auth";
-import { unauthorized } from "../../platform/errors.js";
+import { badRequest, unauthorized } from "../../platform/errors.js";
 import { AuthService } from "./service.js";
 import {
   companyBootstrapSchema,
@@ -100,11 +100,49 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export const onboardingRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.post("/company-logo", async (request) => {
+    const upload = await parseCompanyLogoUpload(request);
+    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).uploadCompanyLogo(upload);
+  });
+
   fastify.post("/company-bootstrap", async (request) => {
     const body = companyBootstrapSchema.parse(request.body);
     return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).bootstrapCompany(body);
   });
 };
+
+async function parseCompanyLogoUpload(request: FastifyRequest) {
+  if (!request.isMultipart()) {
+    throw badRequest("Company logo upload must be multipart form data");
+  }
+  const fields: Record<string, unknown> = {};
+  let fileBuffer: Buffer | undefined;
+  let fileName = "";
+  let mimeType = "";
+  for await (const part of request.parts()) {
+    if (part.type === "file") {
+      fileBuffer = await part.toBuffer();
+      fileName = part.filename;
+      mimeType = part.mimetype || "application/octet-stream";
+      continue;
+    }
+    fields[part.fieldname] = part.value;
+  }
+  const bootstrapToken = typeof fields.bootstrap_token === "string" ? fields.bootstrap_token : "";
+  if (!bootstrapToken) {
+    throw badRequest("Company setup token is required for logo upload");
+  }
+  if (!fileBuffer || fileBuffer.length <= 0) {
+    throw badRequest("Company logo file is required");
+  }
+  return {
+    bootstrap_token: bootstrapToken,
+    file_buffer: fileBuffer,
+    file_name: fileName || "company-logo",
+    mime_type: mimeType,
+    size_bytes: fileBuffer.length
+  };
+}
 
 function requestContext(request: FastifyRequest): { ip: string; userAgent?: string } {
   const userAgent = request.headers["user-agent"];

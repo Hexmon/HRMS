@@ -24,6 +24,18 @@ declare module "fastify" {
       CLOUDINARY_RESOURCE_TYPE: "auto" | "image" | "raw" | "video";
       CLOUDINARY_UPLOAD_TRANSFORMATION: string;
       CLOUDINARY_MOCK_UPLOADS: boolean;
+      MEDIA_UPLOAD_MAX_BYTES: number;
+      MEDIA_IMAGE_MAX_WIDTH: number;
+      MEDIA_IMAGE_MAX_HEIGHT: number;
+      MEDIA_IMAGE_JPEG_QUALITY: number;
+      MEDIA_ALLOWED_MIME_TYPES: string;
+      MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION: string;
+      PROFILE_PHOTO_MAX_BYTES: number;
+      PROFILE_PHOTO_MAX_WIDTH: number;
+      PROFILE_PHOTO_MAX_HEIGHT: number;
+      PROFILE_PHOTO_JPEG_QUALITY: number;
+      PROFILE_PHOTO_ALLOWED_MIME_TYPES: string;
+      PROFILE_PHOTO_CLOUDINARY_TRANSFORMATION: string;
       PDF_COMPRESSION_ENABLED: boolean;
       PDF_COMPRESSION_BINARY: string;
       PDF_COMPRESSION_QUALITY: "screen" | "ebook" | "printer" | "prepress" | "default";

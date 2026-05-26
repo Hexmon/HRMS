@@ -196,6 +196,8 @@ export interface AdminSecuritySettingsRecord {
 
 export interface CoreUser extends AuthUser {
   manager_user_id: UUID | null;
+  profile_photo_document_id?: UUID | null;
+  profile_photo_url?: string | null;
   timezone: string | null;
   joined_on: ISODate | null;
   terminated_on: ISODate | null;

@@ -426,6 +426,9 @@ function isProtected(method: string, path: string): boolean {
   if (method === "POST" && path === "/api/v1/onboarding/company-bootstrap") {
     return false;
   }
+  if (method === "POST" && path === "/api/v1/onboarding/company-logo") {
+    return false;
+  }
   if (method === "POST" && path === "/api/v1/webhooks/resend") {
     return false;
   }

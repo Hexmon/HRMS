@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { AuthUser, DocumentMetadata, UUID } from "#shared";
 import { documentUploadSchema, paginationQuerySchema, RetryableMutationScopes } from "#shared";
 import type { z } from "zod";
-import type { MemoryDataStore } from "../../platform/data-store.js";
+import type { MediaUploadPolicy, MemoryDataStore } from "../../platform/data-store.js";
 import { makeStorageKey, nowIso } from "../../platform/data-store.js";
-import { forbidden, notFound } from "../../platform/errors.js";
+import { badRequest, forbidden, notFound } from "../../platform/errors.js";
 import { compressPdfBuffer, isPdfUpload, type PdfCompressionResult } from "../../platform/pdf-compression.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { ExpenseService } from "../expenses/service.js";
@@ -14,6 +14,8 @@ import { DocumentRepository } from "./repository.js";
 export type DocumentUploadInput = z.infer<typeof documentUploadSchema>;
 export type DocumentUploadBody = DocumentUploadInput & {
   file_buffer?: Buffer;
+  owner_user_id?: UUID | null;
+  storage_metadata?: Record<string, string>;
 };
 export type DocumentListQuery = z.infer<typeof paginationQuerySchema> & {
   business_object_type?: string;
@@ -32,11 +34,34 @@ export interface DocumentDeleteResult {
   status: "deleted";
 }
 
+export interface DocumentUploadPolicyResponse {
+  max_bytes: number;
+  image_max_width: number;
+  image_max_height: number;
+  image_jpeg_quality: number;
+  allowed_mime_types: string[];
+  image_output_mime_type: "image/jpeg";
+  cloudinary_transformation: string;
+}
+
 export class DocumentService {
   private readonly repository: DocumentRepository;
 
   constructor(private readonly store: MemoryDataStore) {
     this.repository = new DocumentRepository(store);
+  }
+
+  uploadPolicy(): DocumentUploadPolicyResponse {
+    const policy = this.store.documentProcessing.mediaUploads;
+    return {
+      max_bytes: policy.maxBytes,
+      image_max_width: policy.imageMaxWidth,
+      image_max_height: policy.imageMaxHeight,
+      image_jpeg_quality: policy.imageJpegQuality,
+      allowed_mime_types: [...policy.allowedMimeTypes],
+      image_output_mime_type: policy.imageOutputMimeType,
+      cloudinary_transformation: policy.cloudinaryTransformation
+    };
   }
 
   async upload(actor: AuthUser, input: DocumentUploadBody): Promise<DocumentMetadata> {
@@ -51,7 +76,7 @@ export class DocumentService {
       id: randomUUID(),
       business_object_type: input.business_object_type,
       business_object_id: input.business_object_id,
-      owner_user_id: input.business_object_type === "expense_ticket" ? null : actor.id,
+      owner_user_id: input.owner_user_id ?? (input.business_object_type === "expense_ticket" ? null : actor.id),
       classification: input.classification,
       document_type: input.document_type,
       current_version: 1,
@@ -86,13 +111,16 @@ export class DocumentService {
         checksum_sha256: document.checksum_sha256
       })
     );
+    this.assertUploadAllowed(document, rawBody, this.store.documentProcessing.mediaUploads);
     const pdfCompression = input.file_buffer
       ? await this.preparePdfUploadBody(rawBody, document)
       : null;
     const uploadBody = pdfCompression?.buffer ?? rawBody;
     const stored = await this.store.objectStorage.putObject(document.storage_key, uploadBody, {
       "content-type": document.mime_type,
-      "x-hrms-document-id": document.id
+      "x-hrms-document-id": document.id,
+      "x-cloudinary-transformation": this.store.documentProcessing.mediaUploads.cloudinaryTransformation,
+      ...input.storage_metadata
     });
     document.metadata = {
       ...document.metadata,
@@ -110,7 +138,9 @@ export class DocumentService {
       pdf_original_size_bytes: pdfCompression?.originalSize ?? null,
       pdf_output_size_bytes: pdfCompression?.outputSize ?? null,
       original_size_bytes: input.file_buffer ? input.size_bytes : null,
-      stored_size_bytes: stored.size
+      stored_size_bytes: stored.size,
+      media_upload_policy_max_bytes: this.store.documentProcessing.mediaUploads.maxBytes,
+      media_upload_policy_applied: true
     };
     this.repository.insert(document);
     this.store.documentVersions.push({
@@ -155,6 +185,27 @@ export class DocumentService {
       return null;
     }
     return compressPdfBuffer(body, this.store.documentProcessing.pdfCompression);
+  }
+
+  private assertUploadAllowed(
+    document: Pick<DocumentMetadata, "mime_type" | "file_name" | "size_bytes">,
+    body: Buffer,
+    policy: MediaUploadPolicy
+  ): void {
+    const mimeType = document.mime_type.trim().toLowerCase();
+    if (!policy.allowedMimeTypes.includes(mimeType)) {
+      throw badRequest("This file type is not allowed for media uploads", {
+        mime_type: mimeType,
+        allowed_mime_types: policy.allowedMimeTypes
+      });
+    }
+    const size = Math.max(document.size_bytes, body.length);
+    if (size > policy.maxBytes) {
+      throw badRequest("File is larger than the configured media upload limit", {
+        max_bytes: policy.maxBytes,
+        actual_bytes: size
+      });
+    }
   }
 
   metadata(actor: AuthUser, id: UUID): DocumentMetadata {

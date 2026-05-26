@@ -93,7 +93,9 @@ export class CloudinaryObjectStorage implements ObjectStoragePort {
   ): Promise<ObjectStoragePutResult> {
     const publicId = this.publicIdForKey(key);
     const contentType = metadata["content-type"] ?? "application/octet-stream";
-    const uploadTransformation = contentType.startsWith("image/") ? this.options.uploadTransformation : undefined;
+    const uploadTransformation = contentType.startsWith("image/")
+      ? metadata["x-cloudinary-transformation"] ?? this.options.uploadTransformation
+      : undefined;
     if (this.options.mockUploads) {
       const resourceType = this.resourceTypeFromMime(contentType);
       const url = `cloudinary-mock://${encodeURIComponent(publicId)}`;

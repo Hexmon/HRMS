@@ -194,6 +194,11 @@ export interface CompanyProfileRecord {
   working_week: string;
   work_hours_per_day: number;
   logo_label: string | null;
+  logo_document_id: UUID | null;
+  logo_url: string | null;
+  logo_file_name: string | null;
+  logo_mime_type: string | null;
+  logo_size_bytes: number | null;
   status: "pending" | "active" | "inactive";
   bootstrap_completed_at: string | null;
   created_at: string;
@@ -380,6 +385,17 @@ export interface DataStorePersistence {
 
 export interface DocumentProcessingConfig {
   pdfCompression: PdfCompressionOptions;
+  mediaUploads: MediaUploadPolicy;
+}
+
+export interface MediaUploadPolicy {
+  maxBytes: number;
+  imageMaxWidth: number;
+  imageMaxHeight: number;
+  imageJpegQuality: number;
+  allowedMimeTypes: string[];
+  imageOutputMimeType: "image/jpeg";
+  cloudinaryTransformation: string;
 }
 
 export interface DataStore {
@@ -558,6 +574,8 @@ function makeUser(input: {
     employment_status: EmploymentStatuses.Active,
     email_verified_at: "2026-01-01T00:00:00.000Z",
     email_verification_status: "verified",
+    profile_photo_document_id: null,
+    profile_photo_url: null,
     hierarchy_path: input.path,
     manager_user_id: input.managerId,
     timezone: "Asia/Kolkata",
@@ -1972,12 +1990,36 @@ export function createMemoryDataStore(): MemoryDataStore {
     sessionStore: new MemorySessionStore(),
     objectStorage: null,
     documentProcessing: {
-      pdfCompression: defaultPdfCompressionOptions()
+      pdfCompression: defaultPdfCompressionOptions(),
+      mediaUploads: defaultMediaUploadPolicy()
     },
     persistence: null,
     pgPool: null,
     nextOutboxId: 1,
     nextTicketNo: 1
+  };
+}
+
+function defaultMediaUploadPolicy(): MediaUploadPolicy {
+  return {
+    maxBytes: 10 * 1024 * 1024,
+    imageMaxWidth: 1600,
+    imageMaxHeight: 1600,
+    imageJpegQuality: 0.82,
+    allowedMimeTypes: [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "text/plain",
+      "text/csv",
+      "application/msword",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ],
+    imageOutputMimeType: "image/jpeg",
+    cloudinaryTransformation: "q_auto:eco,f_auto"
   };
 }
 

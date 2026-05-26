@@ -754,6 +754,13 @@ export interface CompanyProfileResponse {
   work_hours: number;
   logo_label: string | null;
   logoLabel: string | null;
+  logo_document_id: string | null;
+  logoDocumentId: string | null;
+  logo_url: string | null;
+  logoUrl: string | null;
+  logo_file_name: string | null;
+  logo_mime_type: string | null;
+  logo_size_bytes: number | null;
   status: CompanyProfileRecord["status"];
   bootstrap_completed_at: string | null;
   updated_at: string;
@@ -809,6 +816,13 @@ function presentCompanyProfile(company: CompanyProfileRecord): CompanyProfileRes
     work_hours: company.work_hours_per_day,
     logo_label: company.logo_label,
     logoLabel: company.logo_label,
+    logo_document_id: company.logo_document_id,
+    logoDocumentId: company.logo_document_id,
+    logo_url: company.logo_url,
+    logoUrl: company.logo_url,
+    logo_file_name: company.logo_file_name,
+    logo_mime_type: company.logo_mime_type,
+    logo_size_bytes: company.logo_size_bytes,
     status: company.status,
     bootstrap_completed_at: company.bootstrap_completed_at,
     updated_at: company.updated_at,

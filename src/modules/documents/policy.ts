@@ -13,6 +13,9 @@ export function canAccessDocument(actor: AuthUser, document: DocumentMetadata, p
   if (permission === "verify") {
     return actor.roles.includes(Roles.FinanceManager) || actor.roles.includes(Roles.HRManager);
   }
+  if (document.document_type === "profile_photo" && actor.roles.includes(Roles.HRManager)) {
+    return true;
+  }
   if (restricted.has(document.classification)) {
     return actor.roles.includes(Roles.HRManager);
   }

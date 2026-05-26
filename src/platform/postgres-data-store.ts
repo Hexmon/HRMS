@@ -626,6 +626,7 @@ class PostgresPersistence {
         u.id, u.employee_code, u.email, u.full_name, u.department_id, u.designation_id,
         u.manager_user_id, u.hierarchy_path::text AS hierarchy_path, u.employment_status,
         u.email_verified_at, u.email_verification_status,
+        u.profile_photo_document_id, u.profile_photo_url,
         u.timezone, u.joined_on, u.terminated_on, u.deleted_at, u.version,
         COALESCE(array_agg(DISTINCT ur.role_key) FILTER (WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL), '{}') AS roles
       FROM core.users u
@@ -694,6 +695,7 @@ class PostgresPersistence {
     const { rows } = await client.query(`
       SELECT id, company_name, company_slug, website, industry, address, timezone, locale, currency,
         fiscal_year_start_month, working_week, work_hours_per_day, logo_label,
+        logo_document_id, logo_url, logo_file_name, logo_mime_type, logo_size_bytes,
         status, bootstrap_completed_at, created_at, updated_at, version
       FROM platform.company_profiles
       ORDER BY created_at, id
@@ -712,6 +714,11 @@ class PostgresPersistence {
       working_week: row.working_week,
       work_hours_per_day: Number(row.work_hours_per_day),
       logo_label: row.logo_label,
+      logo_document_id: row.logo_document_id,
+      logo_url: row.logo_url,
+      logo_file_name: row.logo_file_name,
+      logo_mime_type: row.logo_mime_type,
+      logo_size_bytes: row.logo_size_bytes === null ? null : Number(row.logo_size_bytes),
       status: row.status,
       bootstrap_completed_at: asIsoOrNull(row.bootstrap_completed_at),
       created_at: asIso(row.created_at),
@@ -1813,9 +1820,9 @@ class PostgresPersistence {
         `INSERT INTO core.users (
           id, employee_code, email, full_name, department_id, designation_id, manager_user_id,
           hierarchy_path, employment_status, email_verified_at, email_verification_status,
-          timezone, joined_on, terminated_on, deleted_at, version
+          profile_photo_document_id, profile_photo_url, timezone, joined_on, terminated_on, deleted_at, version
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::ltree, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::ltree, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         ON CONFLICT (id) DO UPDATE
         SET employee_code = EXCLUDED.employee_code, email = EXCLUDED.email, full_name = EXCLUDED.full_name,
             department_id = EXCLUDED.department_id, designation_id = EXCLUDED.designation_id,
@@ -1823,6 +1830,8 @@ class PostgresPersistence {
             employment_status = EXCLUDED.employment_status,
             email_verified_at = EXCLUDED.email_verified_at,
             email_verification_status = EXCLUDED.email_verification_status,
+            profile_photo_document_id = EXCLUDED.profile_photo_document_id,
+            profile_photo_url = EXCLUDED.profile_photo_url,
             timezone = EXCLUDED.timezone,
             joined_on = EXCLUDED.joined_on, terminated_on = EXCLUDED.terminated_on,
             deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version, updated_at = now()`,
@@ -1838,6 +1847,8 @@ class PostgresPersistence {
           user.employment_status,
           user.email_verified_at,
           user.email_verification_status ?? "unverified",
+          user.profile_photo_document_id ?? null,
+          user.profile_photo_url ?? null,
           user.timezone,
           user.joined_on,
           user.terminated_on,
@@ -1884,9 +1895,10 @@ class PostgresPersistence {
         `INSERT INTO platform.company_profiles (
           id, company_name, company_slug, website, industry, address, timezone, locale, currency,
           fiscal_year_start_month, working_week, work_hours_per_day, logo_label,
+          logo_document_id, logo_url, logo_file_name, logo_mime_type, logo_size_bytes,
           status, bootstrap_completed_at, created_at, updated_at, version
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
         ON CONFLICT (id) DO UPDATE
         SET company_name = EXCLUDED.company_name, website = EXCLUDED.website,
             industry = EXCLUDED.industry, address = EXCLUDED.address, timezone = EXCLUDED.timezone,
@@ -1894,6 +1906,11 @@ class PostgresPersistence {
             fiscal_year_start_month = EXCLUDED.fiscal_year_start_month,
             working_week = EXCLUDED.working_week, work_hours_per_day = EXCLUDED.work_hours_per_day,
             logo_label = EXCLUDED.logo_label,
+            logo_document_id = EXCLUDED.logo_document_id,
+            logo_url = EXCLUDED.logo_url,
+            logo_file_name = EXCLUDED.logo_file_name,
+            logo_mime_type = EXCLUDED.logo_mime_type,
+            logo_size_bytes = EXCLUDED.logo_size_bytes,
             status = EXCLUDED.status, bootstrap_completed_at = EXCLUDED.bootstrap_completed_at,
             updated_at = EXCLUDED.updated_at, version = EXCLUDED.version`,
         [
@@ -1910,6 +1927,11 @@ class PostgresPersistence {
           company.working_week,
           company.work_hours_per_day,
           company.logo_label,
+          company.logo_document_id,
+          company.logo_url,
+          company.logo_file_name,
+          company.logo_mime_type,
+          company.logo_size_bytes,
           company.status,
           company.bootstrap_completed_at,
           company.created_at,

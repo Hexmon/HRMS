@@ -84,6 +84,8 @@ export const users = core.table(
     employmentStatus: text("employment_status").notNull(),
     emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
     emailVerificationStatus: text("email_verification_status").notNull().default("unverified"),
+    profilePhotoDocumentId: uuid("profile_photo_document_id"),
+    profilePhotoUrl: text("profile_photo_url"),
     timezone: text("timezone"),
     joinedOn: date("joined_on"),
     terminatedOn: date("terminated_on"),

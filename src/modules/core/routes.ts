@@ -1,9 +1,9 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { EmploymentStatuses, Roles } from "#shared";
 import { paginationQuerySchema } from "#shared";
-import { unauthorized } from "../../platform/errors.js";
-import { CoreService } from "./service.js";
+import { badRequest, unauthorized } from "../../platform/errors.js";
+import { CoreService, type ProfilePhotoPolicy, type ProfilePhotoUploadInput } from "./service.js";
 
 const roleValues = [
   Roles.Employee,
@@ -133,6 +133,28 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
     return service.createUser(request.actor, body);
   });
 
+  fastify.get("/users/profile-photo-policy", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return profilePhotoPolicyFromConfig(fastify.config);
+  });
+
+  fastify.post("/users/:id/profile-photo", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = z.object({ id: z.uuid() }).parse(request.params);
+    const upload = await parseProfilePhotoUpload(request);
+    const service = new CoreService(fastify.store);
+    return service.uploadProfilePhoto(
+      request.actor,
+      params.id,
+      upload,
+      profilePhotoPolicyFromConfig(fastify.config)
+    );
+  });
+
   fastify.get("/users/:id", async (request) => {
     if (!request.actor) {
       throw unauthorized();
@@ -259,3 +281,37 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
     return service.resolveSubtreeView(request.actor, params.id, query.page, query.page_size);
   });
 };
+
+function profilePhotoPolicyFromConfig(config: FastifyInstance["config"]): ProfilePhotoPolicy {
+  return {
+    max_bytes: config.PROFILE_PHOTO_MAX_BYTES,
+    max_width: config.PROFILE_PHOTO_MAX_WIDTH,
+    max_height: config.PROFILE_PHOTO_MAX_HEIGHT,
+    jpeg_quality: config.PROFILE_PHOTO_JPEG_QUALITY,
+    allowed_mime_types: config.PROFILE_PHOTO_ALLOWED_MIME_TYPES
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+    output_mime_type: "image/jpeg",
+    cloudinary_transformation: config.PROFILE_PHOTO_CLOUDINARY_TRANSFORMATION
+  };
+}
+
+async function parseProfilePhotoUpload(request: FastifyRequest): Promise<ProfilePhotoUploadInput> {
+  if (!request.isMultipart()) {
+    throw badRequest("Profile photo upload must be multipart/form-data.");
+  }
+
+  for await (const part of request.parts()) {
+    if (part.type !== "file") continue;
+    const fileBuffer = await part.toBuffer();
+    return {
+      file_buffer: fileBuffer,
+      file_name: part.filename || "profile-photo.jpg",
+      mime_type: part.mimetype || "application/octet-stream",
+      size_bytes: fileBuffer.length
+    };
+  }
+
+  throw badRequest("Profile photo file is required.");
+}

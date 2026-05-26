@@ -94,6 +94,25 @@ describe("auth onboarding and password APIs", () => {
     expect(loginBeforeBootstrap.statusCode).toBe(200);
     expect(loginBeforeBootstrap.json().user.roles).toEqual(["Employee"]);
 
+    const logoBody = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00]);
+    const logoUpload = await multipartUpload(app, {
+      url: "/api/v1/onboarding/company-logo",
+      fields: { bootstrap_token: bootstrapToken },
+      file: {
+        fieldName: "file",
+        fileName: "acme-logo.jpg",
+        mimeType: "image/jpeg",
+        body: logoBody
+      }
+    });
+    expect(logoUpload.statusCode).toBe(200);
+    expect(logoUpload.json().company).toMatchObject({
+      logo_document_id: expect.any(String),
+      logo_file_name: "acme-logo.jpg",
+      logo_mime_type: "image/jpeg",
+      logo_size_bytes: logoBody.length
+    });
+
     const bootstrap = await app.inject({
       method: "POST",
       url: "/api/v1/onboarding/company-bootstrap",
@@ -112,7 +131,11 @@ describe("auth onboarding and password APIs", () => {
       }
     });
     expect(bootstrap.statusCode).toBe(200);
-    expect(bootstrap.json().company).toMatchObject({ company_name: "Acme HRMS India", status: "active" });
+    expect(bootstrap.json().company).toMatchObject({
+      company_name: "Acme HRMS India",
+      status: "active",
+      logo_document_id: logoUpload.json().company.logo_document_id
+    });
     expect(bootstrap.json().admin_user.roles).toContain("Admin");
     expect(bootstrap.json().setup_progress).toMatchObject({ company_profile: "completed", first_admin: "completed" });
 
@@ -244,3 +267,42 @@ describe("auth onboarding and password APIs", () => {
     expect(reusedReset.statusCode).toBe(409);
   });
 });
+
+interface MultipartUploadInput {
+  url: string;
+  fields: Record<string, string>;
+  file: {
+    fieldName: string;
+    fileName: string;
+    mimeType: string;
+    body: Buffer;
+  };
+}
+
+function multipartUpload(app: FastifyInstance, input: MultipartUploadInput) {
+  const boundary = `----hawkaii-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const chunks: Buffer[] = [];
+  for (const [name, value] of Object.entries(input.fields)) {
+    chunks.push(Buffer.from(`--${boundary}\r\n`));
+    chunks.push(Buffer.from(`Content-Disposition: form-data; name="${name}"\r\n\r\n`));
+    chunks.push(Buffer.from(`${value}\r\n`));
+  }
+  chunks.push(Buffer.from(`--${boundary}\r\n`));
+  chunks.push(
+    Buffer.from(
+      `Content-Disposition: form-data; name="${input.file.fieldName}"; filename="${input.file.fileName}"\r\n`
+    )
+  );
+  chunks.push(Buffer.from(`Content-Type: ${input.file.mimeType}\r\n\r\n`));
+  chunks.push(input.file.body);
+  chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+
+  return app.inject({
+    method: "POST",
+    url: input.url,
+    headers: {
+      "content-type": `multipart/form-data; boundary=${boundary}`
+    },
+    payload: Buffer.concat(chunks)
+  });
+}

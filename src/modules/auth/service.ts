@@ -5,6 +5,7 @@ import { badRequest, conflict, forbidden, notFound, unauthorized } from "../../p
 import type { AuthTokenRecord, CompanyProfileRecord, MemoryDataStore, UserCredentialRecord, UserSessionPreferenceRecord } from "../../platform/data-store.js";
 import { nowIso, seedIds } from "../../platform/data-store.js";
 import type { EmailDeliveryService } from "../../platform/email/email-delivery-service.js";
+import { DocumentService } from "../documents/service.js";
 import { AuthRepository } from "./repository.js";
 import type {
   CompanyBootstrapInput,
@@ -42,6 +43,8 @@ export interface SessionContext {
     id: string;
     name: string;
     timezone: string;
+    logo_document_id?: string | null;
+    logo_url?: string | null;
   };
   preferences: {
     active_role: string;
@@ -57,6 +60,14 @@ export interface SessionContext {
       use_include_for_nested_data: boolean;
     };
   };
+}
+
+export interface CompanyLogoUploadInput {
+  bootstrap_token: string;
+  file_buffer: Buffer;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
 }
 
 interface GeneratedToken {
@@ -384,6 +395,55 @@ export class AuthService {
     };
   }
 
+  async uploadCompanyLogo(input: CompanyLogoUploadInput) {
+    const token = this.requireActiveToken(input.bootstrap_token, "company_bootstrap");
+    const user = this.requireTokenUser(token);
+    const company = token.company_id ? this.repository.findCompanyById(token.company_id) : null;
+    if (!company) {
+      throw notFound("Company bootstrap context not found");
+    }
+    if (company.bootstrap_completed_at || company.status === "active") {
+      throw conflict("Company bootstrap has already been completed.", { company_id: company.id });
+    }
+
+    const documentService = new DocumentService(this.store);
+    if (company.logo_document_id) {
+      try {
+        await documentService.delete(user, company.logo_document_id);
+      } catch {
+        // A missing previous draft logo should not block replacing it.
+      }
+    }
+
+    const document = await documentService.upload(user, {
+      business_object_type: "company_profile",
+      business_object_id: company.id,
+      owner_user_id: user.id,
+      classification: "normal",
+      document_type: "company_logo",
+      file_name: input.file_name,
+      mime_type: input.mime_type.trim().toLowerCase(),
+      size_bytes: input.size_bytes,
+      file_buffer: input.file_buffer,
+      storage_metadata: {
+        "x-cloudinary-transformation": this.store.documentProcessing.mediaUploads.cloudinaryTransformation
+      }
+    });
+    const objectUrl = stringFromMetadata(document.metadata.cloudinary_url) ?? stringFromMetadata(document.metadata.object_url);
+    company.logo_document_id = document.id;
+    company.logo_url = objectUrl && /^https?:\/\//iu.test(objectUrl) ? objectUrl : null;
+    company.logo_file_name = document.file_name;
+    company.logo_mime_type = document.mime_type;
+    company.logo_size_bytes = document.size_bytes;
+    company.updated_at = nowIso();
+    company.version += 1;
+
+    return {
+      company: presentCompany(company),
+      document
+    };
+  }
+
   updateSessionPreference(actor: AuthUser, input: SessionPreferenceInput) {
     const user = this.store.users.find((candidate) => candidate.id === actor.id && !candidate.deleted_at);
     if (!user) {
@@ -424,7 +484,9 @@ export class AuthService {
       company: {
         id: company.id,
         name: company.company_name,
-        timezone
+        timezone,
+        logo_document_id: company.logo_document_id,
+        logo_url: company.logo_url
       },
       preferences: {
         active_role: activeRole.key,
@@ -514,6 +576,11 @@ export class AuthService {
       working_week: "Mon-Fri",
       work_hours_per_day: 8,
       logo_label: companyName.slice(0, 2).toUpperCase(),
+      logo_document_id: null,
+      logo_url: null,
+      logo_file_name: null,
+      logo_mime_type: null,
+      logo_size_bytes: null,
       status: "pending",
       bootstrap_completed_at: null,
       created_at: now,
@@ -852,6 +919,11 @@ function presentCompany(company: CompanyProfileRecord) {
     working_week: company.working_week,
     work_hours_per_day: company.work_hours_per_day,
     logo_label: company.logo_label,
+    logo_document_id: company.logo_document_id,
+    logo_url: company.logo_url,
+    logo_file_name: company.logo_file_name,
+    logo_mime_type: company.logo_mime_type,
+    logo_size_bytes: company.logo_size_bytes,
     status: company.status,
     bootstrap_completed_at: company.bootstrap_completed_at,
     version: company.version
@@ -892,10 +964,19 @@ function defaultCompany(user: AuthUser): CompanyProfileRecord {
     working_week: "Mon-Fri",
     work_hours_per_day: 8,
     logo_label: "HK",
+    logo_document_id: null,
+    logo_url: null,
+    logo_file_name: null,
+    logo_mime_type: null,
+    logo_size_bytes: null,
     status: "active",
     bootstrap_completed_at: null,
     created_at: nowIso(),
     updated_at: nowIso(),
     version: 1
   };
+}
+
+function stringFromMetadata(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }

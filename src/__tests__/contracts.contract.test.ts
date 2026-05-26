@@ -37,6 +37,7 @@ const protectedExceptions = new Set([
   "POST /api/v1/auth/set-password",
   "POST /api/v1/auth/password-reset/request",
   "POST /api/v1/auth/password-reset/confirm",
+  "POST /api/v1/onboarding/company-logo",
   "POST /api/v1/onboarding/company-bootstrap",
   "POST /api/v1/webhooks/resend",
   "POST /api/v1/auth/login",
@@ -79,9 +80,11 @@ const expectedOperations = [
   "GET /api/v1/attendance/summary/team",
   "GET /api/v1/auth/me",
   "POST /api/v1/webhooks/resend",
+  "POST /api/v1/onboarding/company-logo",
   "GET /api/v1/core/master-data/org-selectors",
   "GET /api/v1/core/users",
   "GET /api/v1/core/users/imports/{job_id}",
+  "GET /api/v1/core/users/profile-photo-policy",
   "GET /api/v1/core/users/{id}",
   "GET /api/v1/core/users/{id}/audit",
   "GET /api/v1/core/users/{id}/roles/history",
@@ -89,6 +92,7 @@ const expectedOperations = [
   "GET /api/v1/dashboard/summary",
   "DELETE /api/v1/documents/{id}",
   "GET /api/v1/documents",
+  "GET /api/v1/documents/upload-policy",
   "GET /api/v1/documents/{id}",
   "GET /api/v1/documents/{id}/access-log",
   "GET /api/v1/documents/{id}/content",
@@ -214,6 +218,7 @@ const expectedOperations = [
   "POST /api/v1/core/users/{id}/deactivate",
   "POST /api/v1/core/users/{id}/login/disable",
   "POST /api/v1/core/users/{id}/login/enable",
+  "POST /api/v1/core/users/{id}/profile-photo",
   "POST /api/v1/documents",
   "POST /api/v1/documents/{id}/download-url",
   "POST /api/v1/documents/{id}/verify",
@@ -962,7 +967,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(236);
+    expect(rows.length).toBe(240);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);

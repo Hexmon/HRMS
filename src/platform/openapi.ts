@@ -339,6 +339,16 @@ const companyBootstrapBodySchema = {
   additionalProperties: false
 };
 
+const companyLogoUploadBodySchema = {
+  type: "object",
+  required: ["bootstrap_token", "file"],
+  properties: {
+    bootstrap_token: { type: "string", minLength: 16, description: "Active company bootstrap token issued after email verification." },
+    file: { type: "string", format: "binary", description: "Company logo image. Backend media upload policy controls type, compression, and size." }
+  },
+  additionalProperties: false
+};
+
 const companyBootstrapResponseSchema = {
   type: "object",
   required: ["company", "admin_user", "setup_progress", "next_steps", "preferences"],
@@ -496,6 +506,13 @@ const adminCompanyProfileSchema = {
     work_hours: { type: "number", minimum: 1, maximum: 24, example: 8 },
     logo_label: { type: "string", nullable: true, example: "HK" },
     logoLabel: { type: "string", nullable: true, example: "HK" },
+    logo_document_id: { ...uuid("Company logo document UUID"), nullable: true },
+    logoDocumentId: { ...uuid("Company logo document UUID"), nullable: true },
+    logo_url: { type: "string", nullable: true, example: "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg" },
+    logoUrl: { type: "string", nullable: true, example: "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg" },
+    logo_file_name: { type: "string", nullable: true, example: "company-logo.jpg" },
+    logo_mime_type: { type: "string", nullable: true, example: "image/jpeg" },
+    logo_size_bytes: { type: "integer", nullable: true, minimum: 0, example: 48120 },
     status: { type: "string", enum: ["pending", "active", "inactive"], example: "active" },
     bootstrap_completed_at: { ...dateTime("Bootstrap completion timestamp"), nullable: true },
     updated_at: dateTime("Last update timestamp"),
@@ -1129,7 +1146,9 @@ const coreUserListItemSchema = {
     display_label: { type: "string", example: "E1 - Employee E1" },
     status: { type: "string", example: "active" },
     login_state: { type: "string", enum: ["enabled", "disabled", "setup_pending"], example: "enabled" },
-    role_labels: { type: "array", items: { type: "string" }, example: ["Employee"] }
+    role_labels: { type: "array", items: { type: "string" }, example: ["Employee"] },
+    profile_photo_document_id: { ...uuid("Profile photo document UUID"), nullable: true },
+    profile_photo_url: { type: "string", nullable: true, example: "https://res.cloudinary.com/example/image/upload/profile.jpg" }
   },
   additionalProperties: true
 };
@@ -1231,6 +1250,30 @@ const coreUserUpdateBodySchema = {
     terminated_on: { ...date("Termination date"), nullable: true }
   },
   additionalProperties: false
+};
+
+const coreProfilePhotoPolicySchema = {
+  type: "object",
+  required: ["max_bytes", "max_width", "max_height", "jpeg_quality", "allowed_mime_types", "output_mime_type", "cloudinary_transformation"],
+  properties: {
+    max_bytes: { type: "integer", minimum: 1, example: 2097152 },
+    max_width: { type: "integer", minimum: 1, example: 512 },
+    max_height: { type: "integer", minimum: 1, example: 512 },
+    jpeg_quality: { type: "number", minimum: 0.5, maximum: 0.95, example: 0.82 },
+    allowed_mime_types: { type: "array", items: { type: "string" }, example: ["image/jpeg", "image/png", "image/webp"] },
+    output_mime_type: { type: "string", example: "image/jpeg" },
+    cloudinary_transformation: { type: "string", example: "c_fill,g_face,w_512,h_512,q_auto:eco,f_auto" }
+  },
+  additionalProperties: false
+};
+
+const coreProfilePhotoUploadBodySchema = {
+  type: "object",
+  required: ["file"],
+  properties: {
+    file: { type: "string", format: "binary", description: "JPEG, PNG, or WebP profile photo. The backend validates size and type from policy." }
+  },
+  additionalProperties: true
 };
 
 const coreUserStatusBodySchema = {
@@ -3881,6 +3924,33 @@ const documentUploadBody = {
   description: "Document binary is handled through the backend object-storage adapter. Do not send object-storage credentials."
 };
 
+const documentUploadPolicySchema = {
+  type: "object",
+  required: [
+    "max_bytes",
+    "image_max_width",
+    "image_max_height",
+    "image_jpeg_quality",
+    "allowed_mime_types",
+    "image_output_mime_type",
+    "cloudinary_transformation"
+  ],
+  properties: {
+    max_bytes: { type: "integer", minimum: 131072, example: 10485760 },
+    image_max_width: { type: "integer", minimum: 256, example: 1600 },
+    image_max_height: { type: "integer", minimum: 256, example: 1600 },
+    image_jpeg_quality: { type: "number", minimum: 0.5, maximum: 0.95, example: 0.82 },
+    allowed_mime_types: {
+      type: "array",
+      items: { type: "string" },
+      example: ["application/pdf", "image/jpeg", "image/png", "image/webp"]
+    },
+    image_output_mime_type: { type: "string", enum: ["image/jpeg"], example: "image/jpeg" },
+    cloudinary_transformation: { type: "string", example: "q_auto:eco,f_auto" }
+  },
+  additionalProperties: false
+};
+
 const expenseDocumentUploadBody = {
   ...documentUploadBody,
   required: ["classification", "document_type", "file_name", "mime_type", "size_bytes"],
@@ -3922,6 +3992,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/auth/set-password": operation("Auth & Sessions", "Set password", "Sets the initial password for an invited or verified account using a one-time password_setup token. Password confirmation is required, reused tokens return 409, and successful setup enables login.", { body: passwordSetBodySchema, response200: setPasswordResponseSchema }, false),
   "POST /api/v1/auth/password-reset/request": operation("Auth & Sessions", "Request password reset", "Enumeration-safe password reset request. The response shape is the same for existing and unknown emails; Local/QA may include a dev_only token only for automation.", { body: resendEmailVerificationBodySchema, response200: passwordResetRequestResponseSchema }, false),
   "POST /api/v1/auth/password-reset/confirm": operation("Auth & Sessions", "Confirm password reset", "Consumes a one-time password_reset token, replaces the active password hash, and revokes active sessions for the user. Reused tokens return 409 and invalid/expired tokens return 400.", { body: passwordSetBodySchema, response200: passwordResetConfirmResponseSchema }, false),
+  "POST /api/v1/onboarding/company-logo": operation("Auth & Sessions", "Upload onboarding company logo", "Uploads the pending company logo through the backend object-storage adapter using an active company bootstrap token. Images follow the global media upload policy and are transformed by Cloudinary when real storage is configured.", { body: companyLogoUploadBodySchema, response200: { type: "object", required: ["company", "document"], properties: { company: adminCompanyProfileSchema, document: documentSchema }, additionalProperties: true } }, false),
   "POST /api/v1/onboarding/company-bootstrap": operation("Auth & Sessions", "Company bootstrap", "Completes first-company setup using the one-time company bootstrap token issued after email verification. The bootstrap user is promoted to Admin, company preferences are saved, and duplicate bootstrap attempts return 409.", { body: companyBootstrapBodySchema, response200: companyBootstrapResponseSchema }, false),
   "PATCH /api/v1/auth/session/preference": operation("Auth & Sessions", "Update session preference", "Persists active role, optional company context, landing page, locale, and timezone for the current authenticated user. The selected role must already be assigned to the user; otherwise the backend returns 403.", { body: sessionPreferenceBodySchema, response200: authSessionContextSchema }),
   "POST /api/v1/auth/login": operation(
@@ -3978,8 +4049,10 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/core/master-data/org-selectors": operation("Core / Employees & Hierarchy", "Org selectors", "Returns active departments, designations, manager candidates, and backend role labels used by employee create/edit forms. The list is scoped by the authenticated actor where manager visibility is restricted.", { response200: orgSelectorsResponseSchema }),
   "GET /api/v1/core/users": operation("Core / Employees & Hierarchy", "List users", "Paginated employee/user search for authorized modules and admins. Supports frontend table filters, manager scoping, login-state filters, sorting, compact org references, and summary counts.", { querystring: { ...paginationQuerySchema, properties: { ...paginationQuerySchema.properties, q: { type: "string", description: "Optional employee code/name/email search.", example: "E1" }, department_id: uuid("Filter by department UUID"), designation_id: uuid("Filter by designation UUID"), role: { type: "string", description: "Filter by assigned role label.", example: "Employee" }, employment_status: { type: "string", enum: ["active", "inactive", "terminated", "suspended"], example: "active" }, manager_user_id: uuid("Filter by direct manager UUID"), login_state: { type: "string", enum: ["enabled", "disabled", "setup_pending"], example: "enabled" } } }, response200: coreUserListResponseSchema }),
   "POST /api/v1/core/users": operation("Core / Employees & Hierarchy", "Create user", "Creates a Core employee profile with department, designation, reporting manager, roles, lifecycle status, and optional password setup action. The API never creates a shared/default production password; login enablement queues password setup.", { body: coreUserCreateBodySchema, response200: coreUserMutationResponseSchema }),
+  "GET /api/v1/core/users/profile-photo-policy": operation("Core / Employees & Hierarchy", "Get profile photo upload policy", "Returns backend-owned profile photo upload limits, allowed image MIME types, compression dimensions, and Cloudinary upload transformation so clients can compress before upload.", { response200: coreProfilePhotoPolicySchema }),
   "GET /api/v1/core/users/{id}": operation("Core / Employees & Hierarchy", "Get user", "Returns one Core employee/user record with reporting line, role assignments, login state, and compact cross-module summaries for employee detail tabs.", { params: idParamSchema, response200: coreUserDetailSchema }),
   "PATCH /api/v1/core/users/{id}": operation("Core / Employees & Hierarchy", "Update user", "Updates an employee profile, org placement, manager, lifecycle fields, and optimistic concurrency version. Manager changes update descendant hierarchy paths and block hierarchy cycles.", { params: idParamSchema, body: coreUserUpdateBodySchema, response200: coreUserMutationResponseSchema }),
+  "POST /api/v1/core/users/{id}/profile-photo": operation("Core / Employees & Hierarchy", "Upload profile photo", "Uploads a compressed employee profile photo through the document storage pipeline. Admin/HR can update employee photos; employees can update their own. Real storage uses Cloudinary with a profile-specific transformation.", { params: idParamSchema, body: coreProfilePhotoUploadBodySchema, response200: coreUserMutationResponseSchema }),
   "POST /api/v1/core/users/{id}/activate": operation("Core / Employees & Hierarchy", "Activate user", "Reactivates an inactive, suspended, or terminated employee profile with optimistic concurrency protection.", { params: idParamSchema, body: coreUserStatusBodySchema, response200: coreUserMutationResponseSchema }),
   "POST /api/v1/core/users/{id}/deactivate": operation("Core / Employees & Hierarchy", "Deactivate user", "Deactivates, suspends, or terminates an employee, revokes active login credentials, and emits a platform event for downstream offboarding workflows such as asset recovery.", { params: idParamSchema, body: coreUserStatusBodySchema, response200: coreUserMutationResponseSchema }),
   "POST /api/v1/core/users/{id}/login/enable": operation("Core / Employees & Hierarchy", "Enable login setup", "Starts login enablement by issuing a one-time password setup action. Local/QA responses include a dev_only token; production must deliver the setup action via configured email/notification provider before sign-in succeeds.", { params: idParamSchema, body: coreUserLoginBodySchema, response200: coreUserMutationResponseSchema }),
@@ -4774,6 +4847,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/documents": operation("Documents", "Upload document metadata", "Creates secure document metadata and stores the file through the backend object storage adapter. Object-storage credentials are never exposed.", { body: documentUploadBody, response200: documentSchema }),
   "POST /api/v1/expenses/{id}/documents": operation("Documents", "Upload expense document", "Uploads metadata for an expense ticket document using the path ticket id as business object id.", { params: idParamSchema, body: expenseDocumentUploadBody, response200: documentSchema }),
   "GET /api/v1/documents": operation("Documents", "List documents", "Lists documents visible to the actor with optional business object filters.", { querystring: { ...paginationQuerySchema, properties: { ...paginationQuerySchema.properties, business_object_type: { type: "string", example: "expense_ticket" }, business_object_id: uuid("Business object UUID") } }, response200: paginated(documentSchema) }),
+  "GET /api/v1/documents/upload-policy": operation("Documents", "Get media upload policy", "Returns backend-owned media upload limits, allowed MIME types, image compression settings, and Cloudinary transformation used by EMS, expenses, projects, helpdesk, and document uploads.", { response200: documentUploadPolicySchema }),
   "GET /api/v1/documents/{id}": operation("Documents", "Document metadata", "Returns document metadata if classification and object-level access policies allow.", { params: idParamSchema, response200: documentSchema }),
   "DELETE /api/v1/documents/{id}": operation("Documents", "Delete document", "Removes the stored document object and marks the document metadata as deleted after the same write-access policy check. Deleted documents no longer appear in document lists.", { params: idParamSchema, response200: { type: "object", required: ["document_id", "status"], properties: { document_id: { type: "string", format: "uuid" }, status: { type: "string", enum: ["deleted"] } } } }),
   "POST /api/v1/documents/{id}/download-url": operation("Documents", "Create download URL", "Returns a short-lived backend-generated download URL for allowed actors. Does not expose storage credentials.", { params: idParamSchema, response200: { type: "object", required: ["url", "expires_at"], properties: { url: { type: "string", format: "uri", example: "http://localhost:3001/api/v1/documents/downloads/local-token" }, expires_at: dateTime("Download URL expiration") } } }),

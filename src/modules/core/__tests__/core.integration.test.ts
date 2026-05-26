@@ -369,4 +369,100 @@ describe("core hierarchy API", () => {
     expect(activate.json()).toMatchObject({ employment_status: "active", version: 8 });
   });
 
+  it("uploads employee profile photos through the document storage policy", async () => {
+    const admin = await loginAs(app, "ADM");
+    const employee = await loginAs(app, "E1");
+
+    const policy = await app.inject({
+      method: "GET",
+      url: "/api/v1/core/users/profile-photo-policy",
+      headers: authHeader(admin.token)
+    });
+    expect(policy.statusCode).toBe(200);
+    expect(policy.json()).toMatchObject({
+      max_bytes: 2 * 1024 * 1024,
+      max_width: 512,
+      max_height: 512,
+      allowed_mime_types: expect.arrayContaining(["image/jpeg", "image/png", "image/webp"])
+    });
+
+    const body = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
+    const upload = await multipartUpload(app, {
+      url: `/api/v1/core/users/${employee.user.id}/profile-photo`,
+      token: admin.token,
+      file: {
+        fieldName: "file",
+        fileName: "employee-profile.jpg",
+        mimeType: "image/jpeg",
+        body
+      }
+    });
+    expect(upload.statusCode).toBe(200);
+    expect(upload.json()).toMatchObject({
+      id: employee.user.id,
+      profile_photo_document_id: expect.any(String),
+      version: 2
+    });
+    const document = app.store.documents.find((candidate) => candidate.id === upload.json().profile_photo_document_id);
+    expect(document).toMatchObject({
+      business_object_type: "core_user",
+      business_object_id: employee.user.id,
+      owner_user_id: employee.user.id,
+      document_type: "profile_photo",
+      mime_type: "image/jpeg"
+    });
+    expect(document?.metadata).toMatchObject({
+      cloudinary_upload_compressed: app.store.objectStorage?.kind === "cloudinary",
+      stored_size_bytes: body.length
+    });
+
+    const oversized = await multipartUpload(app, {
+      url: `/api/v1/core/users/${employee.user.id}/profile-photo`,
+      token: admin.token,
+      file: {
+        fieldName: "file",
+        fileName: "too-large.jpg",
+        mimeType: "image/jpeg",
+        body: Buffer.alloc(policy.json().max_bytes + 1, 1)
+      }
+    });
+    expect(oversized.statusCode).toBe(400);
+    expect(oversized.json().message).toContain("larger than the configured upload limit");
+  });
+
 });
+
+interface MultipartUploadInput {
+  url: string;
+  token: string;
+  file: {
+    fieldName: string;
+    fileName: string;
+    mimeType: string;
+    body: Buffer;
+  };
+}
+
+function multipartUpload(app: FastifyInstance, input: MultipartUploadInput) {
+  const boundary = `----hawkaii-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const chunks: Buffer[] = [];
+  chunks.push(Buffer.from(`--${boundary}\r\n`));
+  chunks.push(
+    Buffer.from(
+      `Content-Disposition: form-data; name="${input.file.fieldName}"; filename="${input.file.fileName}"\r\n`
+    )
+  );
+  chunks.push(Buffer.from(`Content-Type: ${input.file.mimeType}\r\n\r\n`));
+  chunks.push(input.file.body);
+  chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+
+  return app.inject({
+    method: "POST",
+    url: input.url,
+    headers: {
+      ...authHeader(input.token),
+      "content-type": `multipart/form-data; boundary=${boundary}`
+    },
+    payload: Buffer.concat(chunks)
+  });
+}
