@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,11 +15,20 @@ import {
 import { useAdminSettings, type CompanyProfile } from "@/lib/admin-settings-store";
 import {
   useCompanyProfile,
+  useUploadCompanyLogoMutation,
   useUpdateCompanyProfileMutation,
   type CompanyProfileResponse,
   type CompanyProfileUpdateInput,
 } from "@/domains/admin";
-import { toastApiError, useApiRouteEnabled } from "@/shared/api";
+import { useDocumentUploadPolicy } from "@/domains/documents";
+import { apiConfig, toastApiError, useApiRouteEnabled } from "@/shared/api";
+import {
+  DEFAULT_MEDIA_UPLOAD_POLICY,
+  formatBytes,
+  prepareDocumentUploadFile,
+  uploadPolicyAccept,
+  type MediaUploadPolicy,
+} from "@/shared/uploads/documents";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
 
@@ -74,12 +83,16 @@ function CompanyProfileScreen() {
   const { company, setCompany } = useAdminSettings();
   const apiEnabled = useApiRouteEnabled(["/admin-settings"]);
   const companyQuery = useCompanyProfile(apiEnabled);
+  const uploadPolicyQuery = useDocumentUploadPolicy(apiEnabled);
   const updateCompanyMutation = useUpdateCompanyProfileMutation();
+  const uploadLogoMutation = useUploadCompanyLogoMutation();
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const apiCompany = useMemo(
     () => (companyQuery.data ? mapApiCompanyProfile(companyQuery.data) : null),
     [companyQuery.data],
   );
   const [draft, setDraft] = useState<CompanyProfile>(apiCompany ?? company);
+  const logoPolicy = companyLogoPolicy(uploadPolicyQuery.data);
 
   useEffect(() => {
     setDraft(apiCompany ?? company);
@@ -112,6 +125,32 @@ function CompanyProfileScreen() {
     });
   };
 
+  const onLogoSelected = async (file: File | null) => {
+    if (!file) return;
+    if (!apiEnabled) {
+      toast.error("Logo upload requires backend API mode.");
+      return;
+    }
+    try {
+      const prepared = await prepareDocumentUploadFile(file, logoPolicy);
+      const formData = new FormData();
+      formData.set("file", prepared.file);
+      const response = await uploadLogoMutation.mutateAsync(formData);
+      const next = mapApiCompanyProfile(response.company);
+      setCompany(next);
+      setDraft(next);
+      toast.success("Company logo updated", {
+        description: prepared.compressed
+          ? `Compressed from ${formatBytes(prepared.originalSize)} to ${formatBytes(prepared.file.size)} before Cloudinary upload.`
+          : "Uploaded through Cloudinary-backed document storage.",
+      });
+    } catch (error) {
+      toastApiError(error, "Company logo could not be uploaded.");
+    } finally {
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  };
+
   return (
     <Card className="max-w-4xl rounded-2xl border-border/60 p-6">
       {apiEnabled && companyQuery.isLoading ? (
@@ -125,20 +164,53 @@ function CompanyProfileScreen() {
         </div>
       ) : null}
       <div className="mb-6 flex items-center gap-4">
-        <div className="grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-primary to-primary-glow text-2xl font-semibold text-primary-foreground shadow-md">
-          {draft.logoLabel}
-        </div>
+        {draft.logoUrl ? (
+          <img
+            src={draft.logoUrl}
+            alt={`${draft.name || "Company"} logo`}
+            className="h-16 w-16 rounded-2xl border border-border/60 object-contain p-2 shadow-md"
+          />
+        ) : (
+          <div className="grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-primary to-primary-glow text-2xl font-semibold text-primary-foreground shadow-md">
+            {draft.logoLabel}
+          </div>
+        )}
         <div>
           <p className="text-sm font-medium">Company logo</p>
-          <p className="text-xs text-muted-foreground">PNG or SVG, square. Recommended 256×256.</p>
+          <p className="text-xs text-muted-foreground">
+            {logoPolicy.allowed_mime_types
+              .map((type) => type.replace("image/", "").toUpperCase())
+              .join(", ")}
+            , up to {formatBytes(logoPolicy.max_bytes)}. Images are compressed before Cloudinary
+            upload.
+          </p>
+          {draft.logoFileName ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Current file: {draft.logoFileName}
+              {draft.logoSizeBytes ? ` (${formatBytes(draft.logoSizeBytes)})` : ""}
+            </p>
+          ) : null}
+          <input
+            ref={logoInputRef}
+            type="file"
+            className="hidden"
+            accept={uploadPolicyAccept(logoPolicy)}
+            onChange={(event) => onLogoSelected(event.currentTarget.files?.[0] ?? null)}
+          />
           <Button
             size="sm"
             variant="outline"
             className="mt-2"
             type="button"
-            onClick={() => toast.info("Logo upload is not wired in this preview.")}
+            disabled={apiEnabled && (uploadLogoMutation.isPending || uploadPolicyQuery.isLoading)}
+            onClick={() => logoInputRef.current?.click()}
           >
-            <Upload className="mr-1 h-3.5 w-3.5" /> Upload logo
+            <Upload className="mr-1 h-3.5 w-3.5" />
+            {uploadLogoMutation.isPending
+              ? "Uploading..."
+              : draft.logoUrl || draft.logoDocumentId
+                ? "Replace logo"
+                : "Upload logo"}
           </Button>
         </div>
       </div>
@@ -231,7 +303,7 @@ function CompanyProfileScreen() {
       </div>
 
       <div className="mt-6 flex justify-end gap-2 border-t pt-4">
-        <Button variant="ghost" onClick={() => setDraft(company)}>
+        <Button variant="ghost" onClick={() => setDraft(apiCompany ?? company)}>
           Reset
         </Button>
         <Button
@@ -262,6 +334,11 @@ function mapApiCompanyProfile(profile: CompanyProfileResponse): CompanyProfile {
     workingWeek: WORK_WEEK_OPTIONS[profile.working_week] ?? profile.working_week,
     workHours: Number(profile.work_hours_per_day || 8),
     logoLabel: profile.logo_label ?? "HK",
+    logoUrl: logoPreviewUrl(profile),
+    logoDocumentId: profile.logo_document_id ?? profile.logoDocumentId ?? null,
+    logoFileName: profile.logo_file_name ?? null,
+    logoMimeType: profile.logo_mime_type ?? null,
+    logoSizeBytes: profile.logo_size_bytes ?? null,
   };
 }
 
@@ -281,6 +358,41 @@ function toApiCompanyPayload(
     work_hours_per_day: company.workHours,
     logo_label: company.logoLabel || null,
     expected_version: expectedVersion,
+  };
+}
+
+function logoPreviewUrl(profile: CompanyProfileResponse): string | null {
+  const directUrl = profile.logo_url ?? profile.logoUrl ?? null;
+  if (directUrl) return directUrl;
+  const documentId = profile.logo_document_id ?? profile.logoDocumentId ?? null;
+  return documentId
+    ? `${apiConfig.baseUrl}/api/v1/documents/${encodeURIComponent(documentId)}/content`
+    : null;
+}
+
+function companyLogoPolicy(policy?: MediaUploadPolicy): MediaUploadPolicy {
+  const companyLogo = policy?.company_logo;
+  if (companyLogo) return companyLogo;
+  const imageMimeTypes = (policy ?? DEFAULT_MEDIA_UPLOAD_POLICY).allowed_mime_types.filter(
+    (mimeType) => mimeType.startsWith("image/") && mimeType !== "image/svg+xml",
+  );
+  return {
+    ...(policy ?? DEFAULT_MEDIA_UPLOAD_POLICY),
+    max_bytes: Math.min(
+      policy?.max_bytes ?? DEFAULT_MEDIA_UPLOAD_POLICY.max_bytes,
+      2 * 1024 * 1024,
+    ),
+    image_max_width: Math.min(
+      policy?.image_max_width ?? DEFAULT_MEDIA_UPLOAD_POLICY.image_max_width,
+      512,
+    ),
+    image_max_height: Math.min(
+      policy?.image_max_height ?? DEFAULT_MEDIA_UPLOAD_POLICY.image_max_height,
+      512,
+    ),
+    allowed_mime_types: imageMimeTypes.length
+      ? imageMimeTypes
+      : ["image/jpeg", "image/png", "image/webp"],
   };
 }
 

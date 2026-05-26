@@ -5,6 +5,7 @@ export interface MediaUploadPolicy {
   image_jpeg_quality: number;
   allowed_mime_types: string[];
   image_output_mime_type: "image/jpeg";
+  company_logo?: MediaUploadPolicy;
 }
 
 export const DEFAULT_MEDIA_UPLOAD_POLICY: MediaUploadPolicy = {

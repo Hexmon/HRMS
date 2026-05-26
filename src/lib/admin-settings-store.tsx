@@ -38,6 +38,11 @@ export interface CompanyProfile {
   workingWeek: string; // e.g. "Mon-Fri"
   workHours: number;
   logoLabel: string; // placeholder
+  logoUrl?: string | null;
+  logoDocumentId?: string | null;
+  logoFileName?: string | null;
+  logoMimeType?: string | null;
+  logoSizeBytes?: number | null;
 }
 
 export interface MasterRow {

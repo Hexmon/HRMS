@@ -3,6 +3,19 @@ import { Card } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
 import { useAdminSettings } from "@/lib/admin-settings-store";
 import {
+  useAdminAuditLog,
+  useAdminEmailTemplates,
+  useAdminNotificationChannels,
+  useAdminPolicies,
+  useAdminWorkflows,
+  useCompanyProfile,
+  useDepartmentMasters,
+  useDesignationMasters,
+  useExtendedMasterData,
+  useRbacRoles,
+} from "@/domains/admin/queries";
+import { useApiRouteEnabled } from "@/shared/api";
+import {
   Building2,
   Database,
   ShieldCheck,
@@ -38,6 +51,19 @@ function AdminSettingsIndex() {
   const isMain = activeRole === "main_admin";
   const { company, masters, roles, workflows, templates, notifications, audit } =
     useAdminSettings();
+  const apiEnabled = useApiRouteEnabled(["/admin-settings"]);
+  const companyQuery = useCompanyProfile(apiEnabled);
+  const departmentsQuery = useDepartmentMasters(apiEnabled);
+  const designationsQuery = useDesignationMasters(apiEnabled);
+  const employmentTypesQuery = useExtendedMasterData("employmentTypes", apiEnabled);
+  const workLocationsQuery = useExtendedMasterData("workLocations", apiEnabled);
+  const shiftsQuery = useExtendedMasterData("shifts", apiEnabled);
+  const rolesQuery = useRbacRoles(apiEnabled && isMain);
+  const workflowsQuery = useAdminWorkflows(apiEnabled && isMain);
+  const policiesQuery = useAdminPolicies(apiEnabled);
+  const templatesQuery = useAdminEmailTemplates(apiEnabled);
+  const notificationsQuery = useAdminNotificationChannels(apiEnabled);
+  const auditQuery = useAdminAuditLog(apiEnabled && isMain);
 
   const cards: CardDef[] = [
     {
@@ -45,49 +71,104 @@ function AdminSettingsIndex() {
       description: "Identity, currency, timezone & working week.",
       icon: Building2,
       to: "/admin-settings/company",
-      meta: () => company.name,
+      meta: () =>
+        textMeta(
+          apiEnabled,
+          companyQuery.isLoading,
+          companyQuery.error,
+          companyQuery.data?.company_name,
+          company.name,
+        ),
     },
     {
       title: "Departments",
       description: "Org units that group teams and reporting lines.",
       icon: Users,
       to: "/admin-settings/master-data",
-      meta: () => `${masters.departments.length} configured`,
+      meta: () =>
+        countMeta(
+          apiEnabled,
+          departmentsQuery.isLoading,
+          departmentsQuery.error,
+          departmentsQuery.data?.total ?? departmentsQuery.data?.items.length,
+          masters.departments.length,
+          "configured",
+        ),
     },
     {
       title: "Designations",
       description: "Job titles and seniority levels.",
       icon: Users,
       to: "/admin-settings/master-data",
-      meta: () => `${masters.designations.length} configured`,
+      meta: () =>
+        countMeta(
+          apiEnabled,
+          designationsQuery.isLoading,
+          designationsQuery.error,
+          designationsQuery.data?.total ?? designationsQuery.data?.items.length,
+          masters.designations.length,
+          "configured",
+        ),
     },
     {
       title: "Employment Types",
       description: "Full-time, part-time, intern, contractor.",
       icon: Users,
       to: "/admin-settings/master-data",
-      meta: () => `${masters.employmentTypes.length} configured`,
+      meta: () =>
+        countMeta(
+          apiEnabled,
+          employmentTypesQuery.isLoading,
+          employmentTypesQuery.error,
+          employmentTypesQuery.data?.total ?? employmentTypesQuery.data?.items.length,
+          masters.employmentTypes.length,
+          "configured",
+        ),
     },
     {
       title: "Work Locations",
       description: "Offices, hubs and remote regions.",
       icon: Building2,
       to: "/admin-settings/master-data",
-      meta: () => `${masters.workLocations.length} configured`,
+      meta: () =>
+        countMeta(
+          apiEnabled,
+          workLocationsQuery.isLoading,
+          workLocationsQuery.error,
+          workLocationsQuery.data?.total ?? workLocationsQuery.data?.items.length,
+          masters.workLocations.length,
+          "configured",
+        ),
     },
     {
       title: "Shifts",
       description: "Working hours and overlap windows.",
       icon: Clock,
       to: "/admin-settings/master-data",
-      meta: () => `${masters.shifts.length} configured`,
+      meta: () =>
+        countMeta(
+          apiEnabled,
+          shiftsQuery.isLoading,
+          shiftsQuery.error,
+          shiftsQuery.data?.total ?? shiftsQuery.data?.items.length,
+          masters.shifts.length,
+          "configured",
+        ),
     },
     {
       title: "Roles & Permissions",
       description: "Granular RBAC across every module.",
       icon: ShieldCheck,
       to: "/admin-settings/roles",
-      meta: () => `${roles.length} roles`,
+      meta: () =>
+        countMeta(
+          apiEnabled,
+          rolesQuery.isLoading,
+          rolesQuery.error,
+          rolesQuery.data?.total ?? rolesQuery.data?.items.length,
+          roles.length,
+          "roles",
+        ),
       mainOnly: true,
     },
     {
@@ -95,7 +176,14 @@ function AdminSettingsIndex() {
       description: "Multi-stage approvals with escalations.",
       icon: GitBranch,
       to: "/admin-settings/workflows",
-      meta: () => `${workflows.filter((w) => w.active).length}/${workflows.length} active`,
+      meta: () =>
+        activeRatioMeta(
+          apiEnabled,
+          workflowsQuery.isLoading,
+          workflowsQuery.error,
+          workflowsQuery.data?.items,
+          workflows,
+        ),
       mainOnly: true,
     },
     {
@@ -103,56 +191,71 @@ function AdminSettingsIndex() {
       description: "Quotas, carry-forward, encashment.",
       icon: Plane,
       to: "/admin-settings/policies",
-      meta: () => "Configured",
+      meta: () => policyMeta(apiEnabled, policiesQuery.isLoading, policiesQuery.error),
     },
     {
       title: "Attendance Policy",
       description: "Grace, half-day and absent rules.",
       icon: Clock,
       to: "/admin-settings/policies",
-      meta: () => "Configured",
+      meta: () => policyMeta(apiEnabled, policiesQuery.isLoading, policiesQuery.error),
     },
     {
       title: "Timesheet Policy",
       description: "Weekly hours, lock & deadlines.",
       icon: Timer,
       to: "/admin-settings/policies",
-      meta: () => "Configured",
+      meta: () => policyMeta(apiEnabled, policiesQuery.isLoading, policiesQuery.error),
     },
     {
       title: "Expense Policy",
       description: "Limits, receipts and self-approval rule.",
       icon: Wallet,
       to: "/admin-settings/policies",
-      meta: () => "Configured",
+      meta: () => policyMeta(apiEnabled, policiesQuery.isLoading, policiesQuery.error),
     },
     {
       title: "Asset Policy",
       description: "Acknowledgements, returns, warranty alerts.",
       icon: Boxes,
       to: "/admin-settings/policies",
-      meta: () => "Configured",
+      meta: () => policyMeta(apiEnabled, policiesQuery.isLoading, policiesQuery.error),
     },
     {
       title: "Helpdesk SLA",
       description: "Response & resolution targets per priority.",
       icon: LifeBuoy,
       to: "/admin-settings/policies",
-      meta: () => "Configured",
+      meta: () => policyMeta(apiEnabled, policiesQuery.isLoading, policiesQuery.error),
     },
     {
       title: "Email Templates",
       description: "Transactional emails to employees.",
       icon: Mail,
       to: "/admin-settings/email-templates",
-      meta: () => `${templates.filter((t) => t.active).length}/${templates.length} active`,
+      meta: () =>
+        activeRatioMeta(
+          apiEnabled,
+          templatesQuery.isLoading,
+          templatesQuery.error,
+          templatesQuery.data?.items,
+          templates,
+        ),
     },
     {
       title: "Notification Settings",
       description: "Channels and event preferences.",
       icon: BellRing,
       to: "/admin-settings/notifications",
-      meta: () => `${notifications.length} events`,
+      meta: () =>
+        countMeta(
+          apiEnabled,
+          notificationsQuery.isLoading,
+          notificationsQuery.error,
+          notificationsQuery.data?.items.length,
+          notifications.length,
+          "events",
+        ),
     },
     {
       title: "Security Settings",
@@ -167,7 +270,15 @@ function AdminSettingsIndex() {
       description: "Immutable record of critical actions.",
       icon: ScrollText,
       to: "/admin-settings/audit",
-      meta: () => `${audit.length} entries`,
+      meta: () =>
+        countMeta(
+          apiEnabled,
+          auditQuery.isLoading,
+          auditQuery.error,
+          auditQuery.data?.total ?? auditQuery.data?.items.length,
+          audit.length,
+          "entries",
+        ),
       mainOnly: true,
     },
   ];
@@ -202,4 +313,51 @@ function AdminSettingsIndex() {
       </div>
     </div>
   );
+}
+
+function textMeta(
+  apiEnabled: boolean,
+  loading: boolean,
+  error: unknown,
+  value: string | null | undefined,
+  fallback: string,
+) {
+  if (!apiEnabled) return fallback;
+  if (loading) return "Loading...";
+  if (error) return "Load failed";
+  return value?.trim() || fallback;
+}
+
+function countMeta(
+  apiEnabled: boolean,
+  loading: boolean,
+  error: unknown,
+  value: number | undefined,
+  fallback: number,
+  label: string,
+) {
+  if (!apiEnabled) return `${fallback} ${label}`;
+  if (loading) return "Loading...";
+  if (error) return "Load failed";
+  return `${value ?? 0} ${label}`;
+}
+
+function activeRatioMeta(
+  apiEnabled: boolean,
+  loading: boolean,
+  error: unknown,
+  apiItems: Array<{ active?: boolean }> | undefined,
+  fallbackItems: Array<{ active?: boolean }>,
+) {
+  const items = apiEnabled ? apiItems : fallbackItems;
+  if (apiEnabled && loading) return "Loading...";
+  if (apiEnabled && error) return "Load failed";
+  return `${(items ?? []).filter((item) => item.active).length}/${(items ?? []).length} active`;
+}
+
+function policyMeta(apiEnabled: boolean, loading: boolean, error: unknown) {
+  if (!apiEnabled) return "Configured";
+  if (loading) return "Loading...";
+  if (error) return "Load failed";
+  return "Configured";
 }

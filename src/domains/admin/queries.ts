@@ -10,6 +10,8 @@ import {
   type CompanyProfileUpdateInput,
   type DepartmentMasterInput,
   type DesignationMasterInput,
+  type ExtendedMasterDataInput,
+  type ExtendedMasterDataKey,
   type RbacRoleInput,
   type RbacRolePermissionsInput,
   type RbacRoleUpdateInput,
@@ -35,6 +37,20 @@ export function useUpdateCompanyProfileMutation() {
   });
 }
 
+export function useUploadCompanyLogoMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: FormData) => adminApi.uploadCompanyLogo(input),
+    onSuccess: (response) => {
+      queryClient.setQueryData(
+        queryKeys.detail("admin", "company-profile", "current"),
+        response.company,
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") });
+    },
+  });
+}
+
 export function useDepartmentMasters(enabled = true) {
   return useQuery({
     queryKey: queryKeys.list("admin", "master-data", "departments"),
@@ -48,6 +64,15 @@ export function useDesignationMasters(enabled = true) {
   return useQuery({
     queryKey: queryKeys.list("admin", "master-data", "designations"),
     queryFn: () => adminApi.listDesignations({ page: 1, page_size: 100 }),
+    enabled,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+}
+
+export function useExtendedMasterData(masterKey: ExtendedMasterDataKey, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.list("admin", "master-data", masterKey),
+    queryFn: () => adminApi.listExtendedMasterData(masterKey, { page: 1, page_size: 100 }),
     enabled,
     staleTime: queryTimings.referenceStaleMs,
   });
@@ -93,6 +118,36 @@ export function useUpdateDesignationMasterMutation() {
       id: string;
       input: DesignationMasterInput & { expected_version: number };
     }) => adminApi.updateDesignation(id, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
+  });
+}
+
+export function useCreateExtendedMasterDataMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      masterKey,
+      input,
+    }: {
+      masterKey: ExtendedMasterDataKey;
+      input: ExtendedMasterDataInput;
+    }) => adminApi.createExtendedMasterData(masterKey, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
+  });
+}
+
+export function useUpdateExtendedMasterDataMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      masterKey,
+      id,
+      input,
+    }: {
+      masterKey: ExtendedMasterDataKey;
+      id: string;
+      input: ExtendedMasterDataInput & { expected_version: number };
+    }) => adminApi.updateExtendedMasterData(masterKey, id, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin") }),
   });
 }

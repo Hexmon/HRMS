@@ -44,4 +44,13 @@ export interface DocumentUploadPolicy {
   allowed_mime_types: string[];
   image_output_mime_type: "image/jpeg";
   cloudinary_transformation: string;
+  company_logo?: {
+    max_bytes: number;
+    image_max_width: number;
+    image_max_height: number;
+    image_jpeg_quality: number;
+    allowed_mime_types: string[];
+    image_output_mime_type: "image/jpeg";
+    cloudinary_transformation: string;
+  };
 }

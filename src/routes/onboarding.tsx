@@ -223,6 +223,7 @@ function readLogoFile(file: File): Promise<string> {
 function logoOnlyPolicy(
   policy: MediaUploadPolicy = DEFAULT_MEDIA_UPLOAD_POLICY,
 ): MediaUploadPolicy {
+  if (policy.company_logo) return policy.company_logo;
   const imageMimeTypes = policy.allowed_mime_types.filter(
     (mimeType) => mimeType.startsWith("image/") && mimeType !== "image/svg+xml",
   );

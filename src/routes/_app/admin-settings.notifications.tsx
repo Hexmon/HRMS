@@ -49,6 +49,10 @@ function NotificationsScreen() {
   const error = apiEnabled && channelsQuery.error instanceof Error ? channelsQuery.error : null;
 
   async function toggleNotification(key: string, channel: NotificationChannel) {
+    if (channel === "push") {
+      toast.info("Push notifications are not enabled for this deployment.");
+      return;
+    }
     if (!apiEnabled) {
       localSettings.toggleNotification(key, channel);
       return;
@@ -94,8 +98,7 @@ function NotificationsScreen() {
       <div className="border-b p-4">
         <p className="text-sm font-semibold">Notification preferences</p>
         <p className="text-xs text-muted-foreground">
-          Choose how each event is delivered. Mobile push is a planned channel — toggles are saved
-          but not yet sent.
+          Choose how each event is delivered. Mobile push is planned and stays disabled here.
         </p>
       </div>
 
@@ -144,8 +147,8 @@ function NotificationsScreen() {
                 </td>
                 <td className="px-3 py-3 text-center">
                   <Switch
-                    checked={e.push}
-                    disabled={updateChannelsMutation.isPending}
+                    checked={false}
+                    disabled
                     onCheckedChange={() => void toggleNotification(e.key, "push")}
                   />
                 </td>
@@ -164,7 +167,7 @@ function channelFromApi(channel: AdminNotificationChannelRecord): ScreenNotifica
     label: channel.label,
     inApp: channel.inApp,
     email: channel.email,
-    push: channel.push,
+    push: false,
     module: channel.module,
     version: channel.version,
   };

@@ -16,6 +16,14 @@ export interface CompanyProfileResponse extends ApiRecord {
   working_week: string;
   work_hours_per_day: number;
   logo_label: string | null;
+  logoLabel?: string | null;
+  logo_document_id: string | null;
+  logoDocumentId?: string | null;
+  logo_url: string | null;
+  logoUrl?: string | null;
+  logo_file_name: string | null;
+  logo_mime_type: string | null;
+  logo_size_bytes: number | null;
   status: string;
   updated_at: string;
   version: number;
@@ -34,6 +42,11 @@ export interface CompanyProfileUpdateInput extends ApiRecord {
   work_hours_per_day?: number;
   logo_label?: string | null;
   expected_version: number;
+}
+
+export interface AdminCompanyLogoUploadResponse extends ApiRecord {
+  company: CompanyProfileResponse;
+  document: ApiRecord;
 }
 
 export interface MasterDataListResponse<T extends ApiRecord> extends ApiRecord {
@@ -70,6 +83,32 @@ export interface DesignationMasterRecord extends ApiRecord {
   version: number;
 }
 
+export type ExtendedMasterDataKey =
+  | "employmentTypes"
+  | "workLocations"
+  | "shifts"
+  | "leaveTypes"
+  | "expenseCategories"
+  | "assetCategories"
+  | "helpdeskCategories"
+  | "projectRoles";
+
+export interface ExtendedMasterDataRecord extends ApiRecord {
+  id: string;
+  master_key: ExtendedMasterDataKey;
+  key: ExtendedMasterDataKey;
+  code: string;
+  name: string;
+  description: string | null;
+  status: "active" | "inactive";
+  active: boolean;
+  sort_order: number;
+  metadata: ApiRecord;
+  updated_at: string;
+  deleted_at: string | null;
+  version: number;
+}
+
 export interface DepartmentMasterInput extends ApiRecord {
   name?: string;
   code?: string;
@@ -87,6 +126,15 @@ export interface DesignationMasterInput extends ApiRecord {
   designation_code?: string;
   level?: number | null;
   status?: "active" | "inactive";
+  expected_version?: number;
+}
+
+export interface ExtendedMasterDataInput extends ApiRecord {
+  name?: string;
+  code?: string;
+  description?: string | null;
+  status?: "active" | "inactive";
+  sort_order?: number;
   expected_version?: number;
 }
 
@@ -371,6 +419,12 @@ export const adminApi = {
       body: input,
     });
   },
+  uploadCompanyLogo(input: FormData) {
+    return apiRequest<AdminCompanyLogoUploadResponse>("/api/v1/admin/company-profile/logo", {
+      method: "POST",
+      body: input,
+    });
+  },
   listDepartments(
     params: { page?: number; page_size?: number; active_only?: boolean; search?: string } = {},
   ) {
@@ -417,6 +471,37 @@ export const adminApi = {
   updateDesignation(id: string, input: DesignationMasterInput & { expected_version: number }) {
     return apiRequest<{ designation: DesignationMasterRecord; version: number }>(
       `/api/v1/admin/master-data/designations/${id}`,
+      {
+        method: "PATCH",
+        body: input,
+      },
+    );
+  },
+  listExtendedMasterData(
+    masterKey: ExtendedMasterDataKey,
+    params: { page?: number; page_size?: number; active_only?: boolean; search?: string } = {},
+  ) {
+    const path = `/api/v1/admin/master-data/${masterKey}`;
+    return apiRequest<MasterDataListResponse<ExtendedMasterDataRecord>>(
+      `${path}${queryString(params)}`,
+    );
+  },
+  createExtendedMasterData(masterKey: ExtendedMasterDataKey, input: ExtendedMasterDataInput) {
+    return apiRequest<{ item: ExtendedMasterDataRecord; version: number }>(
+      `/api/v1/admin/master-data/${masterKey}`,
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+  },
+  updateExtendedMasterData(
+    masterKey: ExtendedMasterDataKey,
+    id: string,
+    input: ExtendedMasterDataInput & { expected_version: number },
+  ) {
+    return apiRequest<{ item: ExtendedMasterDataRecord; version: number }>(
+      `/api/v1/admin/master-data/${masterKey}/${id}`,
       {
         method: "PATCH",
         body: input,

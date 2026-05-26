@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
@@ -17,17 +17,16 @@ import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import {
   useCreateDepartmentMasterMutation,
   useCreateDesignationMasterMutation,
+  useCreateExtendedMasterDataMutation,
   useDepartmentMasters,
   useDesignationMasters,
+  useExtendedMasterData,
   useUpdateDepartmentMasterMutation,
   useUpdateDesignationMasterMutation,
+  useUpdateExtendedMasterDataMutation,
 } from "@/domains/admin/queries";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-
-export const Route = createFileRoute("/_app/admin-settings/master-data")({
-  component: MasterDataScreen,
-});
 
 const KEYS: MasterKey[] = [
   "departments",
@@ -42,25 +41,68 @@ const KEYS: MasterKey[] = [
   "projectRoles",
 ];
 
-type ApiMasterKey = "departments" | "designations";
+interface SearchParams {
+  tab?: MasterKey;
+}
+
+const toMasterKey = (value: unknown): MasterKey | undefined => {
+  return typeof value === "string" && KEYS.includes(value as MasterKey)
+    ? (value as MasterKey)
+    : undefined;
+};
+
+export const Route = createFileRoute("/_app/admin-settings/master-data")({
+  validateSearch: (s: Record<string, unknown>): SearchParams => ({
+    tab: toMasterKey(s.tab),
+  }),
+  component: MasterDataScreen,
+});
+
+type CoreApiMasterKey = "departments" | "designations";
+type ExtendedApiMasterKey = Exclude<MasterKey, CoreApiMasterKey>;
+type ApiMasterKey = CoreApiMasterKey | ExtendedApiMasterKey;
 type ApiMasterRow = MasterRow & {
   code: string;
   version: number;
   apiKind: ApiMasterKey;
+  sortOrder?: number;
 };
 
-const API_MASTER_KEYS: readonly ApiMasterKey[] = ["departments", "designations"];
+const EXTENDED_MASTER_KEYS: readonly ExtendedApiMasterKey[] = [
+  "employmentTypes",
+  "workLocations",
+  "shifts",
+  "leaveTypes",
+  "expenseCategories",
+  "assetCategories",
+  "helpdeskCategories",
+  "projectRoles",
+];
+
+const API_MASTER_KEYS: readonly ApiMasterKey[] = [...KEYS];
 
 function MasterDataScreen() {
   const { masters, addMaster, updateMaster, toggleMasterActive, deleteMaster } = useAdminSettings();
+  const navigate = useNavigate();
+  const search = Route.useSearch();
+  const activeKey = search.tab ?? "departments";
   const apiEnabled = useApiRouteEnabled(["/admin-settings"]);
   const departmentsQuery = useDepartmentMasters(apiEnabled);
   const designationsQuery = useDesignationMasters(apiEnabled);
+  const employmentTypesQuery = useExtendedMasterData("employmentTypes", apiEnabled);
+  const workLocationsQuery = useExtendedMasterData("workLocations", apiEnabled);
+  const shiftsQuery = useExtendedMasterData("shifts", apiEnabled);
+  const leaveTypesQuery = useExtendedMasterData("leaveTypes", apiEnabled);
+  const expenseCategoriesQuery = useExtendedMasterData("expenseCategories", apiEnabled);
+  const assetCategoriesQuery = useExtendedMasterData("assetCategories", apiEnabled);
+  const helpdeskCategoriesQuery = useExtendedMasterData("helpdeskCategories", apiEnabled);
+  const projectRolesQuery = useExtendedMasterData("projectRoles", apiEnabled);
   const createDepartment = useCreateDepartmentMasterMutation();
   const updateDepartment = useUpdateDepartmentMasterMutation();
   const createDesignation = useCreateDesignationMasterMutation();
   const updateDesignation = useUpdateDesignationMasterMutation();
-  const [activeKey, setActiveKey] = useState<MasterKey>("departments");
+  const createExtendedMaster = useCreateExtendedMasterDataMutation();
+  const updateExtendedMaster = useUpdateExtendedMasterDataMutation();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<MasterRow | null>(null);
   const [form, setForm] = useState({ name: "", description: "" });
@@ -93,6 +135,16 @@ function MasterDataScreen() {
       })),
     [designationsQuery.data?.items],
   );
+  const extendedQueries: Record<ExtendedApiMasterKey, ReturnType<typeof useExtendedMasterData>> = {
+    employmentTypes: employmentTypesQuery,
+    workLocations: workLocationsQuery,
+    shifts: shiftsQuery,
+    leaveTypes: leaveTypesQuery,
+    expenseCategories: expenseCategoriesQuery,
+    assetCategories: assetCategoriesQuery,
+    helpdeskCategories: helpdeskCategoriesQuery,
+    projectRoles: projectRolesQuery,
+  };
 
   const startAdd = () => {
     if (!canMutate(activeKey)) return;
@@ -105,6 +157,16 @@ function MasterDataScreen() {
     setEditing(row);
     setForm({ name: row.name, description: row.description ?? "" });
     setOpen(true);
+  };
+
+  const setActiveKey = (key: MasterKey) => {
+    setOpen(false);
+    setEditing(null);
+    void navigate({
+      to: "/admin-settings/master-data",
+      search: { tab: key },
+      replace: true,
+    });
   };
 
   const onSave = async () => {
@@ -167,15 +229,16 @@ function MasterDataScreen() {
     if (!apiEnabled) return masters[key];
     if (key === "departments") return departmentRows;
     if (key === "designations") return designationRows;
+    if (isExtendedApiMasterKey(key)) return extendedRowsFor(key);
     return [];
   }
 
   function loadingFor(key: MasterKey): boolean {
-    return (
-      apiEnabled &&
-      ((key === "departments" && departmentsQuery.isLoading) ||
-        (key === "designations" && designationsQuery.isLoading))
-    );
+    if (!apiEnabled) return false;
+    if (key === "departments") return departmentsQuery.isLoading;
+    if (key === "designations") return designationsQuery.isLoading;
+    if (isExtendedApiMasterKey(key)) return extendedQueries[key].isLoading;
+    return false;
   }
 
   function errorFor(key: MasterKey): Error | null {
@@ -184,7 +247,29 @@ function MasterDataScreen() {
       return departmentsQuery.error instanceof Error ? departmentsQuery.error : null;
     if (key === "designations")
       return designationsQuery.error instanceof Error ? designationsQuery.error : null;
+    if (isExtendedApiMasterKey(key)) {
+      const error = extendedQueries[key].error;
+      return error instanceof Error ? error : null;
+    }
     return null;
+  }
+
+  function isExtendedApiMasterKey(key: MasterKey): key is ExtendedApiMasterKey {
+    return EXTENDED_MASTER_KEYS.includes(key as ExtendedApiMasterKey);
+  }
+
+  function extendedRowsFor(key: ExtendedApiMasterKey): ApiMasterRow[] {
+    return (extendedQueries[key].data?.items ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? "",
+      meta: row.description ? `${row.code} · ${row.description}` : row.code,
+      active: row.active,
+      code: row.code,
+      version: row.version,
+      apiKind: key,
+      sortOrder: row.sort_order,
+    }));
   }
 
   async function saveApiMaster() {
@@ -208,20 +293,56 @@ function MasterDataScreen() {
       return;
     }
 
+    if (activeKey === "designations") {
+      const current = editing as ApiMasterRow | null;
+      if (current) {
+        await updateDesignation.mutateAsync({
+          id: current.id,
+          input: {
+            title: form.name,
+            code,
+            expected_version: current.version,
+          },
+        });
+        toast.success("Designation updated");
+      } else {
+        await createDesignation.mutateAsync({ title: form.name, code });
+        toast.success("Designation added");
+      }
+      return;
+    }
+
+    if (isExtendedApiMasterKey(activeKey)) {
+      const current = editing as ApiMasterRow | null;
+      const extendedCode = normalizeCode(current?.code || form.name);
+      const description = form.description.trim() || null;
+      if (current) {
+        await updateExtendedMaster.mutateAsync({
+          masterKey: activeKey,
+          id: current.id,
+          input: {
+            name: form.name,
+            code: extendedCode,
+            description,
+            expected_version: current.version,
+          },
+        });
+        toast.success(`${MASTER_LABELS[activeKey].replace(/s$/, "")} updated`);
+      } else {
+        await createExtendedMaster.mutateAsync({
+          masterKey: activeKey,
+          input: { name: form.name, code: extendedCode, description },
+        });
+        toast.success(`Added to ${MASTER_LABELS[activeKey]}`);
+      }
+      return;
+    }
+
     const current = editing as ApiMasterRow | null;
     if (current) {
-      await updateDesignation.mutateAsync({
-        id: current.id,
-        input: {
-          title: form.name,
-          code,
-          expected_version: current.version,
-        },
-      });
-      toast.success("Designation updated");
+      throw new Error(`Unsupported master data group: ${activeKey}`);
     } else {
-      await createDesignation.mutateAsync({ title: form.name, code });
-      toast.success("Designation added");
+      throw new Error(`Unsupported master data group: ${activeKey}`);
     }
   }
 
@@ -249,6 +370,23 @@ function MasterDataScreen() {
           },
         });
         toast.success(apiRow.active ? "Designation deactivated" : "Designation activated");
+        return;
+      }
+      if (apiEnabled && isExtendedApiMasterKey(key)) {
+        const apiRow = row as ApiMasterRow;
+        await updateExtendedMaster.mutateAsync({
+          masterKey: key,
+          id: apiRow.id,
+          input: {
+            status: apiRow.active ? "inactive" : "active",
+            expected_version: apiRow.version,
+          },
+        });
+        toast.success(
+          apiRow.active
+            ? `${MASTER_LABELS[key].replace(/s$/, "")} deactivated`
+            : `${MASTER_LABELS[key].replace(/s$/, "")} activated`,
+        );
         return;
       }
       toggleMasterActive(key, row.id);
@@ -284,9 +422,7 @@ function MasterDataScreen() {
               <div>
                 <p className="text-sm font-semibold">{MASTER_LABELS[k]}</p>
                 <p className="text-xs text-muted-foreground">
-                  {apiEnabled && !isApiMasterKey(k)
-                    ? "Backend persistence pending"
-                    : `${rowsFor(k).length} record${rowsFor(k).length === 1 ? "" : "s"}`}
+                  {`${rowsFor(k).length} record${rowsFor(k).length === 1 ? "" : "s"}`}
                 </p>
                 {errorFor(k) && (
                   <p className="mt-1 text-xs text-destructive">{errorFor(k)?.message}</p>
@@ -323,11 +459,7 @@ function MasterDataScreen() {
                   : []),
               ]}
               emptyTitle={`No ${MASTER_LABELS[k].toLowerCase()} yet`}
-              emptyDescription={
-                apiEnabled && !isApiMasterKey(k)
-                  ? "This master-data group is waiting for a backend API in a later Admin Settings phase."
-                  : undefined
-              }
+              emptyDescription={undefined}
             />
           </Card>
         </TabsContent>
@@ -371,7 +503,7 @@ function MasterDataScreen() {
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder={
-                apiEnabled && isApiMasterKey(activeKey)
+                apiEnabled && (activeKey === "departments" || activeKey === "designations")
                   ? "Optional code, e.g. ENG"
                   : "Short description"
               }
@@ -386,9 +518,7 @@ function MasterDataScreen() {
               className="mt-2 inline-flex items-center gap-1.5 text-xs text-destructive hover:underline"
             >
               <Trash2 className="h-3.5 w-3.5" />{" "}
-              {apiEnabled && isApiMasterKey(activeKey)
-                ? "Deactivate this record"
-                : "Delete this record"}
+              {apiEnabled ? "Deactivate this record" : "Delete this record"}
             </button>
           )}
         </div>
