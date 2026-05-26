@@ -38,7 +38,8 @@ describe("projects and utilization", () => {
         estimated_hours: "1200.00",
         estimated_budget: "240000.00",
         tech_stack: ["TypeScript"],
-        priority: "high"
+        priority: "high",
+        cost_center: null
       }
     });
     expect(create.statusCode).toBe(200);
@@ -46,6 +47,7 @@ describe("projects and utilization", () => {
     expect(project).toMatchObject({
       project_code: "QA-PROJ",
       manager_user_id: manager.user.id,
+      cost_center: null,
       version: 1
     });
 

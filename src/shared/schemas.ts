@@ -430,7 +430,7 @@ export const projectCreateSchema = z.object({
       ProjectPriorities.Critical
     ])
     .default(ProjectPriorities.Medium),
-  cost_center: z.string().trim().max(80).optional()
+  cost_center: z.string().trim().max(80).nullable().optional()
 });
 
 export type ProjectCreateInput = z.infer<typeof projectCreateSchema>;

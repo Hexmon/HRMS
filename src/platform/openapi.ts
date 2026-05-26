@@ -3532,7 +3532,7 @@ const projectBody = {
     estimated_budget: money("Estimated project budget", "250000.00"),
     tech_stack: { type: "array", items: { type: "string" }, example: ["TypeScript", "PostgreSQL"] },
     priority: { type: "string", enum: ["low", "medium", "high", "critical"], default: "medium", example: "high" },
-    cost_center: { type: "string", example: "CC-DEL-01" }
+    cost_center: { type: "string", nullable: true, example: "CC-DEL-01" }
   },
   additionalProperties: false
 };
