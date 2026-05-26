@@ -49,6 +49,8 @@ export interface ReportExportJob extends ApiRecord {
   updated_at: string;
 }
 
+const MAX_REPORT_PAGE_SIZE = 100;
+
 const reportPaths = {
   hrEmployees: "/api/v1/reports/hr/employees",
   attendanceSummary: "/api/v1/reports/attendance/summary",
@@ -124,8 +126,18 @@ function withQuery(path: string, params: ReportParams): string {
 function queryString(params: ReportParams): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== "") query.set(key, String(value));
+    if (value !== undefined && value !== "") query.set(key, queryValue(key, value));
   }
   const serialized = query.toString();
   return serialized ? `?${serialized}` : "";
+}
+
+function queryValue(key: string, value: unknown): string {
+  if (key === "page_size") {
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue) && numericValue > MAX_REPORT_PAGE_SIZE) {
+      return String(MAX_REPORT_PAGE_SIZE);
+    }
+  }
+  return String(value);
 }

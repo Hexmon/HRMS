@@ -27,11 +27,11 @@ function totalOf(t: ExpenseTicket) {
 function ExpenseReports() {
   const { tickets } = useExpenses();
   const apiMode = useApiRouteEnabled(["/reports"]);
-  const registerQuery = useExpenseRegisterReport(apiMode, { page: 1, page_size: 500 });
-  const managerQueueQuery = useExpenseManagerQueueReport(apiMode, { page: 1, page_size: 500 });
+  const registerQuery = useExpenseRegisterReport(apiMode, { page: 1, page_size: 100 });
+  const managerQueueQuery = useExpenseManagerQueueReport(apiMode, { page: 1, page_size: 100 });
   const financeDashboardQuery = useExpenseFinanceDashboardReport(apiMode, {
     page: 1,
-    page_size: 500,
+    page_size: 100,
   });
   const analyticsQuery = useExpenseFinanceAnalyticsReport(apiMode);
 

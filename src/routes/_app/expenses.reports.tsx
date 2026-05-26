@@ -26,7 +26,7 @@ function ageDays(iso?: string) {
 function ExpenseReports() {
   const { tickets } = useExpenses();
   const apiMode = useApiRouteEnabled(["/expenses", "/reports"]);
-  const registerQuery = useExpenseRegisterReport(apiMode, { page: 1, page_size: 500 });
+  const registerQuery = useExpenseRegisterReport(apiMode, { page: 1, page_size: 100 });
   const analyticsQuery = useExpenseFinanceAnalyticsReport(apiMode);
   const sourceTickets = useMemo(
     () => (apiMode ? mapApiExpenseTickets(pageItems(registerQuery.data), tickets) : tickets),

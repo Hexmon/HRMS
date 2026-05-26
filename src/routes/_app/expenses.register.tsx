@@ -22,7 +22,7 @@ export const Route = createFileRoute("/_app/expenses/register")({ component: Exp
 function ExpenseRegister() {
   const { tickets, loading, error, isApiBacked } = useExpenses();
   const apiMode = useApiRouteEnabled(["/expenses", "/reports"]);
-  const registerQuery = useExpenseRegisterReport(apiMode, { page: 1, page_size: 500 });
+  const registerQuery = useExpenseRegisterReport(apiMode, { page: 1, page_size: 100 });
   const exportMutation = useCreateReportExportMutation();
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
