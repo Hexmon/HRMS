@@ -155,6 +155,15 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
     );
   });
 
+  fastify.delete("/users/:id/profile-photo", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = z.object({ id: z.uuid() }).parse(request.params);
+    const service = new CoreService(fastify.store);
+    return service.removeProfilePhoto(request.actor, params.id);
+  });
+
   fastify.get("/users/:id", async (request) => {
     if (!request.actor) {
       throw unauthorized();

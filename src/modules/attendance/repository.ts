@@ -9,6 +9,27 @@ import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { conflict, notFound } from "../../platform/errors.js";
 
+function dateInTimeZone(value: string, timeZone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(new Date(value));
+    const map = new Map(parts.map((part) => [part.type, part.value]));
+    const year = map.get("year");
+    const month = map.get("month");
+    const day = map.get("day");
+    if (year && month && day) {
+      return `${year}-${month}-${day}`;
+    }
+  } catch {
+    // Fall back to UTC below.
+  }
+  return value.slice(0, 10);
+}
+
 export class AttendanceRepository {
   constructor(private readonly store: MemoryDataStore) {}
 
@@ -23,13 +44,18 @@ export class AttendanceRepository {
     return punch;
   }
 
-  listPunches(employeeUserId: UUID, dateFrom?: string, dateTo?: string): AttendancePunch[] {
+  listPunches(
+    employeeUserId: UUID,
+    dateFrom?: string,
+    dateTo?: string,
+    timeZone = "UTC"
+  ): AttendancePunch[] {
     return this.store.attendancePunches
       .filter((punch) => {
         if (punch.employee_user_id !== employeeUserId || punch.deleted_at) {
           return false;
         }
-        const date = punch.occurred_at.slice(0, 10);
+        const date = dateInTimeZone(punch.occurred_at, timeZone);
         if (dateFrom && date < dateFrom) {
           return false;
         }

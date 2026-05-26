@@ -65,6 +65,8 @@ function userLabel(user: CoreUser | undefined) {
     employee_code: user?.employee_code ?? "UNKNOWN",
     full_name: user?.full_name ?? "Unknown employee",
     email: user?.email ?? null,
+    profile_photo_document_id: user?.profile_photo_document_id ?? null,
+    profile_photo_url: user?.profile_photo_url ?? null,
     department_id: user?.department_id ?? null,
     designation_id: user?.designation_id ?? null
   };

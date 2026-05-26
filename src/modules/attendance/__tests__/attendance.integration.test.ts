@@ -25,7 +25,7 @@ describe("attendance", () => {
       headers: authHeader(employee.token),
       payload: {
         event_type: "check_in",
-        occurred_at: "2026-05-20T09:40:00.000Z",
+        occurred_at: "2026-05-20T04:10:00.000Z",
         work_mode: "office"
       }
     });
@@ -35,6 +35,7 @@ describe("attendance", () => {
       status: "late",
       late_minutes: 10
     });
+    expect(checkIn.json().day_status.in_time).toBe("09:40");
     expect(checkIn.json().next_allowed_actions).toEqual(["break_start", "check_out"]);
 
     const checkOut = await app.inject({
@@ -43,12 +44,13 @@ describe("attendance", () => {
       headers: authHeader(employee.token),
       payload: {
         event_type: "check_out",
-        occurred_at: "2026-05-20T18:15:00.000Z",
+        occurred_at: "2026-05-20T12:45:00.000Z",
         work_mode: "office"
       }
     });
     expect(checkOut.statusCode).toBe(200);
     expect(checkOut.json().day_status.work_minutes).toBeGreaterThan(500);
+    expect(checkOut.json().day_status.detail).toBe("Late by 10 min");
 
     const duplicate = await app.inject({
       method: "POST",
@@ -61,6 +63,32 @@ describe("attendance", () => {
       }
     });
     expect(duplicate.statusCode).toBe(409);
+
+    const lateAfterHour = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: "2026-05-22T05:35:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(lateAfterHour.statusCode).toBe(200);
+    expect(lateAfterHour.json().day_status.in_time).toBe("11:05");
+
+    const lateAfterHourOut = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_out",
+        occurred_at: "2026-05-22T12:45:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(lateAfterHourOut.statusCode).toBe(200);
+    expect(lateAfterHourOut.json().day_status.detail).toBe("Late by 1h 35m");
 
     const punches = await app.inject({
       method: "GET",
@@ -117,8 +145,8 @@ describe("attendance", () => {
         work_date: "2026-05-21",
         reason: "Forgot to punch out after office work.",
         requested_punches: [
-          { event_type: "check_in", occurred_at: "2026-05-21T09:05:00.000Z" },
-          { event_type: "check_out", occurred_at: "2026-05-21T18:30:00.000Z" }
+          { event_type: "check_in", occurred_at: "2026-05-21T03:35:00.000Z" },
+          { event_type: "check_out", occurred_at: "2026-05-21T13:00:00.000Z" }
         ]
       }
     });

@@ -54,16 +54,33 @@ function page<T>(items: T[], pageNumber: number, pageSize: number) {
   return { items: items.slice(start, start + pageSize), page: pageNumber, page_size: pageSize, total: items.length };
 }
 
-function todayDate(): string {
-  return new Date().toISOString().slice(0, 10);
+function todayDate(timeZone = "UTC"): string {
+  return dateInTimeZone(nowIso(), timeZone);
 }
 
-function dateFromIso(value: string): string {
+function dateInTimeZone(value: string, timeZone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(new Date(value));
+    const map = new Map(parts.map((part) => [part.type, part.value]));
+    const year = map.get("year");
+    const month = map.get("month");
+    const day = map.get("day");
+    if (year && month && day) {
+      return `${year}-${month}-${day}`;
+    }
+  } catch {
+    // Fall back to UTC below.
+  }
   return value.slice(0, 10);
 }
 
-function monthRange(monthInput?: string): { month: string; from: string; to: string } {
-  const month = monthInput && /^\d{4}-\d{2}$/u.test(monthInput) ? monthInput : todayDate().slice(0, 7);
+function monthRange(monthInput?: string, timeZone = "UTC"): { month: string; from: string; to: string } {
+  const month = monthInput && /^\d{4}-\d{2}$/u.test(monthInput) ? monthInput : todayDate(timeZone).slice(0, 7);
   const [yearText, monthText] = month.split("-");
   const year = Number(yearText);
   const monthNumber = Number(monthText);
@@ -71,14 +88,14 @@ function monthRange(monthInput?: string): { month: string; from: string; to: str
   return { month, from: `${month}-01`, to: `${month}-${String(lastDay).padStart(2, "0")}` };
 }
 
-function dateRange(query: AttendancePageQuery): { from: string; to: string } {
+function dateRange(query: AttendancePageQuery, timeZone = "UTC"): { from: string; to: string } {
   if (query.month) {
-    const range = monthRange(query.month);
+    const range = monthRange(query.month, timeZone);
     return { from: range.from, to: range.to };
   }
   return {
-    from: query.date_from ?? todayDate().slice(0, 7) + "-01",
-    to: query.date_to ?? todayDate()
+    from: query.date_from ?? todayDate(timeZone).slice(0, 7) + "-01",
+    to: query.date_to ?? todayDate(timeZone)
   };
 }
 
@@ -95,17 +112,74 @@ function clockIso(workDate: string, hour: number, minute: number): string {
   return `${workDate}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00.000Z`;
 }
 
+function zonedClockIso(workDate: string, hour: number, minute: number, timeZone: string): string {
+  const [yearText, monthText, dayText] = workDate.split("-");
+  const utcGuess = new Date(
+    Date.UTC(Number(yearText), Number(monthText) - 1, Number(dayText), hour, minute)
+  );
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(utcGuess);
+    const map = new Map(parts.map((part) => [part.type, part.value]));
+    const renderedAsUtc = Date.UTC(
+      Number(map.get("year")),
+      Number(map.get("month")) - 1,
+      Number(map.get("day")),
+      Number(map.get("hour")),
+      Number(map.get("minute")),
+      Number(map.get("second"))
+    );
+    const desiredUtc = Date.UTC(
+      Number(yearText),
+      Number(monthText) - 1,
+      Number(dayText),
+      hour,
+      minute,
+      0
+    );
+    return new Date(utcGuess.getTime() - (renderedAsUtc - desiredUtc)).toISOString();
+  } catch {
+    return clockIso(workDate, hour, minute);
+  }
+}
+
 function minutesToHours(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return `${hours}h ${String(mins).padStart(2, "0")}m`;
 }
 
-function timeText(value: string | null): string | null {
+function minutesToText(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `${hours}h ${String(mins).padStart(2, "0")}m` : `${hours}h`;
+}
+
+function timeText(value: string | null, timeZone: string): string | null {
   if (!value) {
     return null;
   }
-  return value.slice(11, 16);
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).format(new Date(value));
+  } catch {
+    return value.slice(11, 16);
+  }
 }
 
 function userLabel(user: CoreUser | undefined): { employee_code: string; full_name: string } {
@@ -139,8 +213,9 @@ export class AttendanceService {
     }
   ) {
     const occurredAt = input.occurred_at ?? nowIso();
-    const workDate = dateFromIso(occurredAt);
-    const dayPunches = this.repository.listPunches(actor.id, workDate, workDate);
+    const timeZone = this.timezoneForUser(actor.id);
+    const workDate = dateInTimeZone(occurredAt, timeZone);
+    const dayPunches = this.repository.listPunches(actor.id, workDate, workDate, timeZone);
     const allowed = this.nextAllowedActions(dayPunches);
     if (!allowed.includes(input.event_type)) {
       throw conflict("Attendance punch is duplicate or out of sequence.", {
@@ -156,7 +231,7 @@ export class AttendanceService {
       source: input.source,
       metadata: input.metadata
     });
-    const day = this.recomputeDay(actor.id, workDate);
+    const day = this.recomputeDay(actor.id, workDate, timeZone);
     appendAttendanceOutboxEvent(this.store, {
       aggregateId: punch.id,
       eventType: attendanceEvents.Punched,
@@ -170,26 +245,34 @@ export class AttendanceService {
       },
       idempotencyKey: `attendance.punched:${punch.id}`
     });
+    const nextAllowedActions = this.nextAllowedActions(
+      this.repository.listPunches(actor.id, workDate, workDate, timeZone)
+    );
     return {
       punch_id: punch.id,
       punch,
-      day_status: this.presentDay(day),
-      next_allowed_actions: this.nextAllowedActions(this.repository.listPunches(actor.id, workDate, workDate)),
-      next_allowed_action: this.nextAllowedActions(this.repository.listPunches(actor.id, workDate, workDate))[0] ?? null
+      day_status: this.presentDay(day, timeZone),
+      next_allowed_actions: nextAllowedActions,
+      next_allowed_action: nextAllowedActions[0] ?? null
     };
   }
 
   listMyPunches(actor: AuthUser, query: AttendancePageQuery) {
-    const range = dateRange(query);
-    const punches = this.repository.listPunches(actor.id, range.from, range.to).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
-    return page(punches.map((punch) => this.presentPunch(punch)), query.page, query.page_size);
+    const timeZone = this.timezoneForUser(actor.id);
+    const range = dateRange(query, timeZone);
+    const punches = this.repository.listPunches(actor.id, range.from, range.to, timeZone).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
+    return page(punches.map((punch) => this.presentPunch(punch, timeZone)), query.page, query.page_size);
   }
 
   mySummary(actor: AuthUser, query: AttendancePageQuery) {
-    const range = dateRange(query);
-    const records = this.recordsForUsers(new Set([actor.id]), range.from, range.to);
-    const today = this.getOrSynthesizeDay(actor.id, todayDate());
-    const weekRecords = this.weekRecords(actor.id);
+    const timeZone = this.timezoneForUser(actor.id);
+    const range = dateRange(query, timeZone);
+    const today = this.recomputeDay(actor.id, todayDate(timeZone), timeZone);
+    const records = this.recordsForUsers(new Set([actor.id]), range.from, range.to).map((record) =>
+      record.employee_user_id === actor.id && record.work_date === today.work_date ? today : record
+    );
+    const weekRecords = this.weekRecords(actor.id, timeZone);
+    const targetWorkMinutes = this.targetWorkMinutes();
     const exceptionHistory = records
       .filter((record) => record.exception_type || record.regularization_status)
       .sort((a, b) => b.work_date.localeCompare(a.work_date))
@@ -203,21 +286,27 @@ export class AttendanceService {
       generated_at: nowIso(),
       range,
       today: {
-        ...this.presentDay(today),
-        next_allowed_actions: this.nextAllowedActions(this.repository.listPunches(actor.id, today.work_date, today.work_date)),
-        next_allowed_action: this.nextAllowedActions(this.repository.listPunches(actor.id, today.work_date, today.work_date))[0] ?? null
+        ...this.presentDay(today, timeZone),
+        target_work_minutes: targetWorkMinutes,
+        target_hours: minutesToHours(targetWorkMinutes),
+        next_allowed_actions: this.nextAllowedActions(this.repository.listPunches(actor.id, today.work_date, today.work_date, timeZone)),
+        next_allowed_action: this.nextAllowedActions(this.repository.listPunches(actor.id, today.work_date, today.work_date, timeZone))[0] ?? null
       },
-      summary: this.daySummary(records),
-      week_records: weekRecords.map((record) => this.presentDay(record)),
+      summary: {
+        ...this.daySummary(records),
+        target_work_minutes: targetWorkMinutes,
+        target_hours: minutesToHours(targetWorkMinutes)
+      },
+      week_records: weekRecords.map((record) => this.presentDay(record, timeZone)),
       exception_history: exceptionHistory
     };
   }
 
   teamSummary(actor: AuthUser, query: AttendancePageQuery) {
-    const date = query.date_from ?? todayDate();
+    const date = query.date_from ?? todayDate(this.timezoneForUser(actor.id));
     const visibleUsers = this.visibleUsers(actor, query.department_id);
     const activeUsers = visibleUsers.filter((user) => user.employment_status === EmploymentStatuses.Active);
-    const records = activeUsers.map((user) => this.getOrSynthesizeDay(user.id, date));
+    const records = activeUsers.map((user) => this.getOrSynthesizeDay(user.id, date, this.timezoneForUser(user.id)));
     const exceptions = this.exceptions(actor, { ...query, page: 1, page_size: 8, date_from: date, date_to: date }).items;
     return {
       generated_at: nowIso(),
@@ -229,13 +318,14 @@ export class AttendanceService {
   }
 
   monthlyCalendar(actor: AuthUser, query: AttendancePageQuery) {
-    const range = monthRange(query.month);
     const user = query.user_id ? this.requireUser(query.user_id) : this.requireUser(actor.id);
     assertCanSeeAttendanceUser(actor, user);
+    const timeZone = this.timezoneForUser(user.id);
+    const range = monthRange(query.month, timeZone);
     const days = new Date(`${range.to}T00:00:00.000Z`).getUTCDate();
     const calendarDays = Array.from({ length: days }, (_, index) => {
       const date = `${range.month}-${String(index + 1).padStart(2, "0")}`;
-      return this.presentDay(this.getOrSynthesizeDay(user.id, date));
+      return this.presentDay(this.getOrSynthesizeDay(user.id, date, timeZone), timeZone);
     });
     return {
       generated_at: nowIso(),
@@ -247,14 +337,14 @@ export class AttendanceService {
   }
 
   dailyCalendar(actor: AuthUser, query: AttendancePageQuery) {
-    const date = query.date ?? query.date_from ?? todayDate();
+    const date = query.date ?? query.date_from ?? todayDate(this.timezoneForUser(actor.id));
     const users = query.user_id ? [this.requireUser(query.user_id)] : this.visibleUsers(actor, query.department_id);
     for (const user of users) {
       assertCanSeeAttendanceUser(actor, user);
     }
     const activeUsers = users.filter((user) => user.employment_status === EmploymentStatuses.Active);
     const userIds = new Set(activeUsers.map((user) => user.id));
-    const records = activeUsers.map((user) => this.getOrSynthesizeDay(user.id, date));
+    const records = activeUsers.map((user) => this.getOrSynthesizeDay(user.id, date, this.timezoneForUser(user.id)));
     const regularizations = this.repository.listRegularizations({
       userIds,
       dateFrom: date,
@@ -265,8 +355,9 @@ export class AttendanceService {
       .map((record) => {
         const user = activeUsers.find((candidate) => candidate.id === record.employee_user_id);
         const request = regularizationByUser.get(record.employee_user_id);
+        const timeZone = this.timezoneForUser(record.employee_user_id);
         return {
-          ...this.presentDay(record),
+          ...this.presentDay(record, timeZone),
           employee: userLabel(user),
           regularization: request ? this.presentRegularization(request) : null,
           regularization_pending: request?.status === AttendanceRegularizationStatuses.Pending,
@@ -306,7 +397,7 @@ export class AttendanceService {
       status: AttendanceRegularizationStatuses.Pending,
       current_approver_user_id: approver?.id ?? null
     });
-    const day = this.getOrSynthesizeDay(actor.id, input.work_date);
+    const day = this.getOrSynthesizeDay(actor.id, input.work_date, this.timezoneForUser(actor.id));
     day.regularization_status = AttendanceRegularizationStatuses.Pending;
     day.updated_at = nowIso();
     appendAttendanceOutboxEvent(this.store, {
@@ -325,7 +416,7 @@ export class AttendanceService {
   }
 
   myRegularizations(actor: AuthUser, query: AttendancePageQuery) {
-    const range = dateRange(query);
+    const range = dateRange(query, this.timezoneForUser(actor.id));
     const requests = this.repository.listRegularizations({
       userIds: new Set([actor.id]),
       status: query.status,
@@ -339,7 +430,7 @@ export class AttendanceService {
     if (!canSeeAllAttendance(actor) && !this.hasVisibleSubordinates(actor)) {
       throw forbidden("Only managers, HR, Admin, or Auditor users can read attendance regularization queues.");
     }
-    const range = dateRange(query);
+    const range = dateRange(query, this.timezoneForUser(actor.id));
     const visibleUsers = this.visibleUsers(actor, query.department_id).filter((user) => user.id !== actor.id);
     const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
     const scoped = this.repository
@@ -354,9 +445,10 @@ export class AttendanceService {
   }
 
   exceptions(actor: AuthUser, query: AttendancePageQuery) {
+    const actorTimeZone = this.timezoneForUser(actor.id);
     const range = {
-      from: query.date_from ?? todayDate().slice(0, 7) + "-01",
-      to: query.date_to ?? todayDate()
+      from: query.date_from ?? todayDate(actorTimeZone).slice(0, 7) + "-01",
+      to: query.date_to ?? todayDate(actorTimeZone)
     };
     const visibleUsers = this.visibleUsers(actor, query.department_id);
     const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
@@ -426,7 +518,8 @@ export class AttendanceService {
     if (input.decision === "approve" && request.requested_punches.length > 0) {
       this.applyApprovedPunches(request, actor.id);
     }
-    const day = this.getOrSynthesizeDay(request.employee_user_id, request.work_date);
+    const requestTimeZone = this.timezoneForUser(request.employee_user_id);
+    const day = this.getOrSynthesizeDay(request.employee_user_id, request.work_date, requestTimeZone);
     day.regularization_status = nextStatus;
     if (nextStatus === AttendanceRegularizationStatuses.Approved && day.exception_type) {
       day.exception_type = null;
@@ -453,7 +546,7 @@ export class AttendanceService {
       ...this.presentRegularization(request),
       previous_status: previousStatus,
       next_status: nextStatus,
-      day_status: this.presentDay(day)
+      day_status: this.presentDay(day, requestTimeZone)
     };
   }
 
@@ -534,6 +627,7 @@ export class AttendanceService {
       .map((record) => {
         const user = this.store.users.find((candidate) => candidate.id === record.employee_user_id);
         const department = user ? this.store.departments.find((candidate) => candidate.id === user.department_id) : null;
+        const timeZone = this.timezoneForUser(record.employee_user_id);
         return {
           id: record.id,
           employee_user_id: record.employee_user_id,
@@ -543,8 +637,8 @@ export class AttendanceService {
           date: record.work_date,
           work_date: record.work_date,
           status: record.status,
-          in_time: record.first_check_in?.slice(11, 16) ?? "",
-          out_time: record.last_check_out?.slice(11, 16) ?? "",
+          in_time: timeText(record.first_check_in, timeZone) ?? "",
+          out_time: timeText(record.last_check_out, timeZone) ?? "",
           hours: Math.round((record.work_minutes / 60) * 100) / 100,
           late_minutes: record.late_minutes,
           early_out_minutes: record.early_out_minutes,
@@ -570,19 +664,20 @@ export class AttendanceService {
     return [];
   }
 
-  private recomputeDay(employeeUserId: UUID, workDate: string): AttendanceDayRecord {
-    const punches = this.repository.listPunches(employeeUserId, workDate, workDate);
+  private recomputeDay(employeeUserId: UUID, workDate: string, timeZone = this.timezoneForUser(employeeUserId)): AttendanceDayRecord {
+    const punches = this.repository.listPunches(employeeUserId, workDate, workDate, timeZone);
     const checkIns = punches.filter((punch) => punch.event_type === AttendancePunchEventTypes.CheckIn);
     const checkOuts = punches.filter((punch) => punch.event_type === AttendancePunchEventTypes.CheckOut);
     const firstCheckIn = checkIns[0]?.occurred_at ?? null;
     const lastCheckOut = checkOuts.at(-1)?.occurred_at ?? null;
     const workMode = punches.find((punch) => punch.work_mode)?.work_mode ?? null;
-    const breakMinutes = this.breakMinutes(punches);
-    const isPast = workDate < todayDate();
-    const isFuture = workDate > todayDate();
-    const lateMinutes = firstCheckIn ? Math.max(0, minutesBetween(clockIso(workDate, 9, 30), firstCheckIn)) : 0;
-    const earlyOutMinutes = lastCheckOut && isPast ? Math.max(0, minutesBetween(lastCheckOut, clockIso(workDate, 17, 30))) : 0;
-    const workEnd = lastCheckOut ?? (workDate === todayDate() ? nowIso() : firstCheckIn);
+    const localToday = todayDate(timeZone);
+    const isPast = workDate < localToday;
+    const isFuture = workDate > localToday;
+    const lateMinutes = firstCheckIn ? Math.max(0, minutesBetween(zonedClockIso(workDate, 9, 30, timeZone), firstCheckIn)) : 0;
+    const earlyOutMinutes = lastCheckOut && isPast ? Math.max(0, minutesBetween(lastCheckOut, zonedClockIso(workDate, 17, 30, timeZone))) : 0;
+    const workEnd = lastCheckOut ?? (workDate === localToday ? nowIso() : firstCheckIn);
+    const breakMinutes = this.breakMinutesUntil(punches, workDate === localToday ? workEnd : null);
     const totalMinutes = firstCheckIn && workEnd ? Math.max(0, minutesBetween(firstCheckIn, workEnd) - breakMinutes) : 0;
     const missingPunch = Boolean(firstCheckIn && !lastCheckOut && isPast);
     const absent = !firstCheckIn && isPast && !isWeekend(workDate);
@@ -611,7 +706,7 @@ export class AttendanceService {
     });
   }
 
-  private breakMinutes(punches: AttendancePunch[]): number {
+  private breakMinutesUntil(punches: AttendancePunch[], openBreakEndAt: string | null): number {
     let total = 0;
     let breakStartedAt: string | null = null;
     for (const punch of punches) {
@@ -623,16 +718,19 @@ export class AttendanceService {
         breakStartedAt = null;
       }
     }
+    if (breakStartedAt && openBreakEndAt) {
+      total += minutesBetween(breakStartedAt, openBreakEndAt);
+    }
     return total;
   }
 
-  private getOrSynthesizeDay(employeeUserId: UUID, workDate: string): AttendanceDayRecord {
+  private getOrSynthesizeDay(employeeUserId: UUID, workDate: string, timeZone = this.timezoneForUser(employeeUserId)): AttendanceDayRecord {
     const existing = this.repository.dayRecord(employeeUserId, workDate);
     if (existing) {
       return existing;
     }
     const status =
-      workDate > todayDate()
+      workDate > todayDate(timeZone)
         ? AttendanceDayStatuses.Future
         : isWeekend(workDate)
           ? AttendanceDayStatuses.Weekend
@@ -654,16 +752,35 @@ export class AttendanceService {
     });
   }
 
-  private weekRecords(employeeUserId: UUID): AttendanceDayRecord[] {
-    const today = new Date(`${todayDate()}T00:00:00.000Z`);
+  private weekRecords(employeeUserId: UUID, timeZone = this.timezoneForUser(employeeUserId)): AttendanceDayRecord[] {
+    const localToday = todayDate(timeZone);
+    const today = new Date(`${localToday}T00:00:00.000Z`);
     const start = new Date(today);
     const day = start.getUTCDay();
     start.setUTCDate(start.getUTCDate() - (day === 0 ? 6 : day - 1));
     return Array.from({ length: 7 }, (_, index) => {
       const date = new Date(start);
       date.setUTCDate(start.getUTCDate() + index);
-      return this.getOrSynthesizeDay(employeeUserId, date.toISOString().slice(0, 10));
+      const workDate = date.toISOString().slice(0, 10);
+      return workDate === localToday
+        ? this.recomputeDay(employeeUserId, workDate, timeZone)
+        : this.getOrSynthesizeDay(employeeUserId, workDate, timeZone);
     });
+  }
+
+  private targetWorkMinutes(): number {
+    const company =
+      this.store.companyProfiles.find((candidate) => candidate.status === "active") ??
+      this.store.companyProfiles[0];
+    return Math.max(0, Math.round((company?.work_hours_per_day ?? 8) * 60));
+  }
+
+  private timezoneForUser(userId: UUID): string {
+    const user = this.store.users.find((candidate) => candidate.id === userId && !candidate.deleted_at);
+    const company =
+      this.store.companyProfiles.find((candidate) => candidate.status === "active") ??
+      this.store.companyProfiles[0];
+    return user?.timezone ?? company?.timezone ?? "Asia/Kolkata";
   }
 
   private recordsForUsers(userIds: Set<UUID>, from: string, to: string): AttendanceDayRecord[] {
@@ -672,7 +789,7 @@ export class AttendanceService {
     for (const userId of userIds) {
       for (const date of datesInclusive(from, to)) {
         if (!output.some((record) => record.employee_user_id === userId && record.work_date === date)) {
-          output.push(this.getOrSynthesizeDay(userId, date));
+          output.push(this.getOrSynthesizeDay(userId, date, this.timezoneForUser(userId)));
         }
       }
     }
@@ -775,8 +892,9 @@ export class AttendanceService {
   }
 
   private applyApprovedPunches(request: AttendanceRegularizationRequest, actorUserId: UUID): void {
+    const timeZone = this.timezoneForUser(request.employee_user_id);
     for (const requested of request.requested_punches) {
-      const date = dateFromIso(requested.occurred_at);
+      const date = dateInTimeZone(requested.occurred_at, timeZone);
       if (date !== request.work_date) {
         throw badRequest("Requested punch timestamps must fall on the regularization work_date.");
       }
@@ -789,22 +907,22 @@ export class AttendanceService {
         metadata: { regularization_request_id: request.id, decided_by_user_id: actorUserId }
       });
     }
-    this.recomputeDay(request.employee_user_id, request.work_date);
+    this.recomputeDay(request.employee_user_id, request.work_date, timeZone);
   }
 
-  private presentPunch(punch: AttendancePunch) {
+  private presentPunch(punch: AttendancePunch, timeZone: string) {
     return {
       ...punch,
-      work_date: dateFromIso(punch.occurred_at),
-      time: timeText(punch.occurred_at)
+      work_date: dateInTimeZone(punch.occurred_at, timeZone),
+      time: timeText(punch.occurred_at, timeZone)
     };
   }
 
-  private presentDay(day: AttendanceDayRecord) {
+  private presentDay(day: AttendanceDayRecord, timeZone: string) {
     return {
       ...day,
-      in_time: timeText(day.first_check_in),
-      out_time: timeText(day.last_check_out),
+      in_time: timeText(day.first_check_in, timeZone),
+      out_time: timeText(day.last_check_out, timeZone),
       hours: minutesToHours(day.work_minutes),
       break_hours: minutesToHours(day.break_minutes),
       detail: this.exceptionDetail(day)
@@ -838,26 +956,26 @@ export class AttendanceService {
       status: request?.status ?? record.regularization_status ?? "pending",
       expected_version: request?.version ?? record.version,
       can_decide: Boolean(request && request.status === AttendanceRegularizationStatuses.Pending && actor.id !== request.employee_user_id && (canSeeAllAttendance(actor) || request.current_approver_user_id === actor.id)),
-      record: this.presentDay(record),
+      record: this.presentDay(record, this.timezoneForUser(record.employee_user_id)),
       request: request ? this.presentRegularization(request) : null
     };
   }
 
   private exceptionDetail(record: Pick<AttendanceDayRecord, "exception_type" | "late_minutes" | "early_out_minutes" | "work_minutes" | "note">): string {
+    if (record.exception_type === "late") {
+      return `Late by ${minutesToText(record.late_minutes)}`;
+    }
+    if (record.exception_type === "early_out") {
+      return `Early out by ${minutesToText(record.early_out_minutes)}`;
+    }
     if (record.note) {
       return record.note;
-    }
-    if (record.exception_type === "late") {
-      return `Late by ${record.late_minutes} min`;
     }
     if (record.exception_type === "missing_punch") {
       return "Missing punch-out";
     }
     if (record.exception_type === "absent") {
       return "No punch-in recorded";
-    }
-    if (record.exception_type === "early_out") {
-      return `Early out by ${record.early_out_minutes} min`;
     }
     return record.work_minutes > 0 ? minutesToHours(record.work_minutes) : "No attendance for this day";
   }

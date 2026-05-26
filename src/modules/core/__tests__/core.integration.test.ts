@@ -416,6 +416,20 @@ describe("core hierarchy API", () => {
       stored_size_bytes: body.length
     });
 
+    const remove = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/core/users/${employee.user.id}/profile-photo`,
+      headers: authHeader(employee.token)
+    });
+    expect(remove.statusCode).toBe(200);
+    expect(remove.json()).toMatchObject({
+      id: employee.user.id,
+      profile_photo_document_id: null,
+      profile_photo_url: null,
+      version: 3
+    });
+    expect(document?.deleted_at).toEqual(expect.any(String));
+
     const oversized = await multipartUpload(app, {
       url: `/api/v1/core/users/${employee.user.id}/profile-photo`,
       token: admin.token,

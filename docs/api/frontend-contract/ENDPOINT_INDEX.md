@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 240
+Documented operations: 241
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -1153,6 +1153,79 @@ Required: yes
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `file` | string<binary> | required | JPEG, PNG, or WebP profile photo. The backend validates size and type from policy. |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string<uuid> | required | Authenticated user UUID |
+| `employee_code` | string | required | - |
+| `email` | string<email> | required | - |
+| `full_name` | string | required | - |
+| `department_id` | string<uuid> | optional | Department UUID |
+| `designation_id` | string<uuid> | optional | Designation UUID |
+| `manager_user_id` | string<uuid> | optional, nullable | Manager user UUID |
+| `hierarchy_path` | string | optional | - |
+| `employment_status` | string | optional | - |
+| `email_verified_at` | string<date-time> | optional, nullable | - |
+| `email_verification_status` | string enum("unverified", "pending", "verified", "bounced", "blocked") | optional | - |
+| `timezone` | string | optional | - |
+| `roles` | array of string | required | - |
+| `department` | object | required, nullable | - |
+| `designation` | object | required, nullable | - |
+| `manager` | object | required, nullable | - |
+| `display_label` | string | required | - |
+| `status` | string | required | - |
+| `login_state` | string enum("enabled", "disabled", "setup_pending") | required | - |
+| `role_labels` | array of string | required | - |
+| `profile_photo_document_id` | string<uuid> | optional, nullable | Profile photo document UUID |
+| `profile_photo_url` | string | optional, nullable | - |
+| `reporting_line` | array of object | required | - |
+| `role_assignments` | array of object | required | - |
+| `direct_reports_summary` | object | required | - |
+| `documents_summary` | object | required | - |
+| `assets_summary` | object | required | - |
+| `attendance_summary` | object | required | - |
+| `leave_summary` | object | required | - |
+| `timesheet_summary` | object | required | - |
+
+Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### DELETE /api/v1/core/users/{id}/profile-photo
+
+| Field | Contract |
+|---|---|
+| Purpose | Remove profile photo |
+| Frontend use | Employee directory, hierarchy, selectors, and audit context. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/HR/Auditor broad read; other users scoped to self or own hierarchy. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+No request body.
 
 **Responses**
 | Status | Meaning |

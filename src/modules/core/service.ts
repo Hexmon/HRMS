@@ -450,6 +450,43 @@ export class CoreService {
     return this.toDetail(user);
   }
 
+  async removeProfilePhoto(actor: AuthUser, id: UUID): Promise<CoreUserMutationResult> {
+    const user = this.requireUserForRead(actor, id);
+    if (actor.id !== user.id) {
+      requirePeopleManager(actor);
+    }
+
+    const previousDocumentId = user.profile_photo_document_id;
+    if (previousDocumentId) {
+      const previous = this.store.documents.find((candidate) => candidate.id === previousDocumentId && !candidate.deleted_at);
+      if (previous) {
+        await new DocumentService(this.store).delete(actor, previous.id);
+      }
+    }
+
+    if (!previousDocumentId && !user.profile_photo_url) {
+      return this.toDetail(user);
+    }
+
+    user.profile_photo_document_id = null;
+    user.profile_photo_url = null;
+    user.version += 1;
+
+    appendCoreOutboxEvent(this.store, {
+      aggregateType: "core.user",
+      aggregateId: user.id,
+      eventType: "core.user.profile_photo_removed",
+      payload: {
+        user_id: user.id,
+        employee_code: user.employee_code,
+        previous_document_id: previousDocumentId,
+        actor_user_id: actor.id
+      },
+      idempotencyKey: `core.user.profile_photo_removed:${user.id}:${user.version}`
+    });
+    return this.toDetail(user);
+  }
+
   activateUser(actor: AuthUser, id: UUID, input: UserStatusInput): CoreUserMutationResult {
     requirePeopleManager(actor);
     const user = this.requireUserForWrite(id);
@@ -1470,6 +1507,8 @@ function auditAction(eventType: string): string {
       return "Roles updated";
     case "core.user.profile_photo_uploaded":
       return "Profile photo uploaded";
+    case "core.user.profile_photo_removed":
+      return "Profile photo removed";
     default:
       return eventType;
   }

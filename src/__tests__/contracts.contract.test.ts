@@ -83,6 +83,7 @@ const expectedOperations = [
   "POST /api/v1/onboarding/company-logo",
   "GET /api/v1/core/master-data/org-selectors",
   "GET /api/v1/core/users",
+  "DELETE /api/v1/core/users/{id}/profile-photo",
   "GET /api/v1/core/users/imports/{job_id}",
   "GET /api/v1/core/users/profile-photo-policy",
   "GET /api/v1/core/users/{id}",
@@ -967,7 +968,7 @@ describe("API contracts", () => {
 
     expect(spec.openapi).toBe("3.0.3");
     expect(rows.map((row) => row.key).sort()).toEqual([...expectedOperations].sort());
-    expect(rows.length).toBe(240);
+    expect(rows.length).toBe(241);
 
     for (const row of rows) {
       expect(row.operation.tags?.length, `${row.key} tag`).toBeGreaterThan(0);
