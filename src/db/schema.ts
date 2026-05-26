@@ -391,6 +391,28 @@ export const adminNotificationChannels = platform.table(
   ]
 );
 
+export const adminMasterDataItems = platform.table(
+  "admin_master_data_items",
+  {
+    id: uuidPk.defaultRandom(),
+    masterKey: text("master_key").notNull(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("active"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt,
+    updatedAt,
+    deletedAt,
+    version
+  },
+  (table) => [
+    uniqueIndex("platform_admin_master_data_items_key_code_uq").on(table.masterKey, table.code),
+    index("platform_admin_master_data_items_key_status_idx").on(table.masterKey, table.status, table.sortOrder, table.name)
+  ]
+);
+
 export const adminSecuritySettings = platform.table(
   "admin_security_settings",
   {
@@ -1482,6 +1504,7 @@ export const schema = {
   adminPolicies,
   adminEmailTemplates,
   adminNotificationChannels,
+  adminMasterDataItems,
   adminSecuritySettings,
   processedEvents,
   expenseTickets,

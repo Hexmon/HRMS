@@ -205,6 +205,38 @@ export const designationUpdateSchema = z.object({
   expected_version: z.number().int().min(1)
 });
 
+export const extendedMasterDataKeys = [
+  "employmentTypes",
+  "workLocations",
+  "shifts",
+  "leaveTypes",
+  "expenseCategories",
+  "assetCategories",
+  "helpdeskCategories",
+  "projectRoles"
+] as const;
+
+export const extendedMasterDataKeyParamSchema = z.object({
+  master_key: z.enum(extendedMasterDataKeys)
+});
+
+export const extendedMasterDataCreateSchema = z.object({
+  name: z.string().min(2).max(160),
+  code: z.string().min(2).max(40).optional(),
+  description: z.string().max(1000).nullable().optional(),
+  status: statusSchema.optional(),
+  sort_order: z.number().int().min(0).max(100000).optional()
+});
+
+export const extendedMasterDataUpdateSchema = z.object({
+  name: z.string().min(2).max(160).optional(),
+  code: z.string().min(2).max(40).optional(),
+  description: z.string().max(1000).nullable().optional(),
+  status: statusSchema.optional(),
+  sort_order: z.number().int().min(0).max(100000).optional(),
+  expected_version: z.number().int().min(1)
+});
+
 export const companyProfileUpdateSchema = z.object({
   company_name: z.string().min(2).max(160).optional(),
   website: z.string().max(240).nullable().optional(),
@@ -242,4 +274,7 @@ export type DepartmentCreateInput = z.infer<typeof departmentCreateSchema>;
 export type DepartmentUpdateInput = z.infer<typeof departmentUpdateSchema>;
 export type DesignationCreateInput = z.infer<typeof designationCreateSchema>;
 export type DesignationUpdateInput = z.infer<typeof designationUpdateSchema>;
+export type ExtendedMasterDataKey = (typeof extendedMasterDataKeys)[number];
+export type ExtendedMasterDataCreateInput = z.infer<typeof extendedMasterDataCreateSchema>;
+export type ExtendedMasterDataUpdateInput = z.infer<typeof extendedMasterDataUpdateSchema>;
 export type CompanyProfileUpdateInput = z.infer<typeof companyProfileUpdateSchema>;

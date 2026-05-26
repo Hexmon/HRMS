@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
+import type { FastifyRequest } from "fastify";
 import { z } from "zod";
-import { unauthorized } from "../../platform/errors.js";
+import { badRequest, unauthorized } from "../../platform/errors.js";
 import { AdminService } from "./service.js";
 import {
   adminAuditLogQuerySchema,
@@ -18,6 +19,9 @@ import {
   departmentUpdateSchema,
   designationCreateSchema,
   designationUpdateSchema,
+  extendedMasterDataCreateSchema,
+  extendedMasterDataKeyParamSchema,
+  extendedMasterDataUpdateSchema,
   emailTemplateKeyParamSchema,
   masterDataQuerySchema,
   rbacPermissionsQuerySchema,
@@ -43,6 +47,12 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor,
       companyProfileUpdateSchema.parse(request.body)
     );
+  });
+
+  fastify.post("/company-profile/logo", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const upload = await parseCompanyLogoUpload(request);
+    return new AdminService(fastify.store).uploadCompanyLogo(request.actor, upload);
   });
 
   fastify.get("/master-data/departments", async (request) => {
@@ -94,6 +104,37 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor,
       params.id,
       designationUpdateSchema.parse(request.body)
+    );
+  });
+
+  fastify.get("/master-data/:master_key", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = extendedMasterDataKeyParamSchema.parse(request.params);
+    return new AdminService(fastify.store).listExtendedMasterData(
+      request.actor,
+      params.master_key,
+      masterDataQuerySchema.parse(request.query)
+    );
+  });
+
+  fastify.post("/master-data/:master_key", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = extendedMasterDataKeyParamSchema.parse(request.params);
+    return new AdminService(fastify.store).createExtendedMasterData(
+      request.actor,
+      params.master_key,
+      extendedMasterDataCreateSchema.parse(request.body)
+    );
+  });
+
+  fastify.patch("/master-data/:master_key/:id", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const params = extendedMasterDataKeyParamSchema.merge(idParamSchema).parse(request.params);
+    return new AdminService(fastify.store).updateExtendedMasterData(
+      request.actor,
+      params.master_key,
+      params.id,
+      extendedMasterDataUpdateSchema.parse(request.body)
     );
   });
 
@@ -232,3 +273,28 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
     );
   });
 };
+
+async function parseCompanyLogoUpload(request: FastifyRequest) {
+  if (!request.isMultipart()) {
+    throw badRequest("Company logo upload must be multipart form data");
+  }
+  let fileBuffer: Buffer | undefined;
+  let fileName = "";
+  let mimeType = "";
+  for await (const part of request.parts()) {
+    if (part.type !== "file") continue;
+    fileBuffer = await part.toBuffer();
+    fileName = part.filename;
+    mimeType = part.mimetype || "application/octet-stream";
+    break;
+  }
+  if (!fileBuffer || fileBuffer.length <= 0) {
+    throw badRequest("Company logo file is required");
+  }
+  return {
+    file_buffer: fileBuffer,
+    file_name: fileName || "company-logo",
+    mime_type: mimeType,
+    size_bytes: fileBuffer.length
+  };
+}

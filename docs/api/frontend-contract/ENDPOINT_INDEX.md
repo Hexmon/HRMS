@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 241
+Documented operations: 245
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -2685,6 +2685,54 @@ Success body highlights:
 - OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
+### POST /api/v1/admin/company-profile/logo
+
+| Field | Contract |
+|---|---|
+| Purpose | Upload company logo |
+| Frontend use | Upload company logo |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/configuration persona only unless backend grants narrower operational permission. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `file` | string<binary> | required | Company logo image. Backend company-logo policy controls type, compression dimensions, and size. |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `company` | object | required | - |
+| `document` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
 ### GET /api/v1/admin/master-data/departments
 
 | Field | Contract |
@@ -2994,6 +3042,166 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `designation` | object | required | - |
+| `version` | integer | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- OCC mutation: send `expected_version`; on `409`, refetch latest object/version and ask the user to retry.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/admin/master-data/{master_key}
+
+| Field | Contract |
+|---|---|
+| Purpose | List extended master data |
+| Frontend use | List extended master data |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/configuration persona only unless backend grants narrower operational permission. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+| `active_only` | query | no | boolean | - |
+| `search` | query | no | string | - |
+| `master_key` | path | yes | string enum("employmentTypes", "workLocations", "shifts", "leaveTypes", "expenseCategories", "assetCategories", "helpdeskCategories", "projectRoles") | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `items` | array of object | required | - |
+| `page` | integer | required | minimum 1 |
+| `page_size` | integer | required | minimum 1 |
+| `total` | integer | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### POST /api/v1/admin/master-data/{master_key}
+
+| Field | Contract |
+|---|---|
+| Purpose | Create extended master data |
+| Frontend use | Create extended master data |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/configuration persona only unless backend grants narrower operational permission. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `master_key` | path | yes | string enum("employmentTypes", "workLocations", "shifts", "leaveTypes", "expenseCategories", "assetCategories", "helpdeskCategories", "projectRoles") | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | required | minLength 2 |
+| `code` | string | optional | minLength 2 |
+| `description` | string | optional, nullable | - |
+| `status` | string enum("active", "inactive") | optional | - |
+| `sort_order` | integer | optional | minimum 0 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `item` | object | required | - |
+| `version` | integer | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### PATCH /api/v1/admin/master-data/{master_key}/{id}
+
+| Field | Contract |
+|---|---|
+| Purpose | Update extended master data |
+| Frontend use | Update extended master data |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Admin/configuration persona only unless backend grants narrower operational permission. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `master_key` | path | yes | string enum("employmentTypes", "workLocations", "shifts", "leaveTypes", "expenseCategories", "assetCategories", "helpdeskCategories", "projectRoles") | - |
+| `id` | path | yes | string<uuid> | - |
+
+**Request body**
+
+Content type: `application/json`
+
+Required: yes
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | optional | minLength 2 |
+| `code` | string | optional | minLength 2 |
+| `description` | string | optional, nullable | - |
+| `status` | string enum("active", "inactive") | optional | - |
+| `sort_order` | integer | optional | minimum 0 |
+| `expected_version` | integer | required | minimum 1 |
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `item` | object | required | - |
 | `version` | integer | required | - |
 
 **Frontend behavior notes**
@@ -5751,6 +5959,7 @@ Success body highlights:
 | `allowed_mime_types` | array of string | required | - |
 | `image_output_mime_type` | string enum("image/jpeg") | required | - |
 | `cloudinary_transformation` | string | required | - |
+| `company_logo` | object | required | - |
 
 **Frontend behavior notes**
 

@@ -206,6 +206,21 @@ export interface CompanyProfileRecord {
   version: number;
 }
 
+export interface AdminMasterDataItemRecord {
+  id: UUID;
+  master_key: string;
+  code: string;
+  name: string;
+  description: string | null;
+  status: "active" | "inactive";
+  sort_order: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  version: number;
+}
+
 export interface UserSessionPreferenceRecord {
   id: UUID;
   user_id: UUID;
@@ -386,6 +401,7 @@ export interface DataStorePersistence {
 export interface DocumentProcessingConfig {
   pdfCompression: PdfCompressionOptions;
   mediaUploads: MediaUploadPolicy;
+  companyLogoUploads: MediaUploadPolicy;
 }
 
 export interface MediaUploadPolicy {
@@ -409,6 +425,7 @@ export interface DataStore {
   adminEmailTemplates: AdminEmailTemplateRecord[];
   adminNotificationChannels: AdminNotificationChannelRecord[];
   adminSecuritySettings: AdminSecuritySettingsRecord;
+  adminMasterDataItems: AdminMasterDataItemRecord[];
   users: CoreUser[];
   userCredentials: UserCredentialRecord[];
   authTokens: AuthTokenRecord[];
@@ -1005,6 +1022,49 @@ export function buildDefaultAdminSecuritySettings(created: string): AdminSecurit
   };
 }
 
+export function buildDefaultAdminMasterDataItems(created: string): AdminMasterDataItemRecord[] {
+  const definitions: Array<{
+    masterKey: string;
+    code: string;
+    name: string;
+    description?: string;
+  }> = [
+    { masterKey: "employmentTypes", code: "FULL_TIME", name: "Full-time" },
+    { masterKey: "employmentTypes", code: "PART_TIME", name: "Part-time" },
+    { masterKey: "employmentTypes", code: "INTERN", name: "Intern" },
+    { masterKey: "employmentTypes", code: "CONTRACTOR", name: "Contractor" },
+    { masterKey: "workLocations", code: "BENGALURU_HQ", name: "Bengaluru HQ", description: "India" },
+    { masterKey: "workLocations", code: "REMOTE_INDIA", name: "Remote India", description: "Distributed" },
+    { masterKey: "shifts", code: "GENERAL", name: "General Shift", description: "09:30 - 18:30 IST" },
+    { masterKey: "shifts", code: "EU_OVERLAP", name: "EU Overlap", description: "12:00 - 21:00 IST" },
+    { masterKey: "leaveTypes", code: "CASUAL", name: "Casual Leave", description: "Annual entitlement" },
+    { masterKey: "leaveTypes", code: "SICK", name: "Sick Leave", description: "Medical leave" },
+    { masterKey: "expenseCategories", code: "TRAVEL", name: "Travel" },
+    { masterKey: "expenseCategories", code: "MEALS", name: "Meals" },
+    { masterKey: "assetCategories", code: "LAPTOP", name: "Laptop" },
+    { masterKey: "assetCategories", code: "MOBILE", name: "Mobile Device" },
+    { masterKey: "helpdeskCategories", code: "IT_SUPPORT", name: "IT Support" },
+    { masterKey: "helpdeskCategories", code: "FACILITIES", name: "Facilities" },
+    { masterKey: "projectRoles", code: "PROJECT_MANAGER", name: "Project Manager" },
+    { masterKey: "projectRoles", code: "DEVELOPER", name: "Developer" }
+  ];
+
+  return definitions.map((definition, index) => ({
+    id: uuidFromName(`admin-master-data:${definition.masterKey}:${definition.code}`),
+    master_key: definition.masterKey,
+    code: definition.code,
+    name: definition.name,
+    description: definition.description ?? null,
+    status: "active",
+    sort_order: (index + 1) * 10,
+    metadata: {},
+    created_at: created,
+    updated_at: created,
+    deleted_at: null,
+    version: 1
+  }));
+}
+
 export function createMemoryDataStore(): MemoryDataStore {
   const created = nowIso();
   const releaseSeedEmails = getReleaseSeedEmails();
@@ -1014,6 +1074,7 @@ export function createMemoryDataStore(): MemoryDataStore {
   const defaultAdminEmailTemplates = buildDefaultAdminEmailTemplates(created);
   const defaultAdminNotificationChannels = buildDefaultAdminNotificationChannels(created);
   const defaultAdminSecuritySettings = buildDefaultAdminSecuritySettings(created);
+  const defaultAdminMasterDataItems = buildDefaultAdminMasterDataItems(created);
   const departments: Department[] = [
     {
       id: seedIds.departmentSales,
@@ -1834,6 +1895,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     adminEmailTemplates: defaultAdminEmailTemplates,
     adminNotificationChannels: defaultAdminNotificationChannels,
     adminSecuritySettings: defaultAdminSecuritySettings,
+    adminMasterDataItems: defaultAdminMasterDataItems,
     users,
     userCredentials,
     authTokens: [],
@@ -1991,7 +2053,8 @@ export function createMemoryDataStore(): MemoryDataStore {
     objectStorage: null,
     documentProcessing: {
       pdfCompression: defaultPdfCompressionOptions(),
-      mediaUploads: defaultMediaUploadPolicy()
+      mediaUploads: defaultMediaUploadPolicy(),
+      companyLogoUploads: defaultCompanyLogoUploadPolicy()
     },
     persistence: null,
     pgPool: null,
@@ -2020,6 +2083,18 @@ function defaultMediaUploadPolicy(): MediaUploadPolicy {
     ],
     imageOutputMimeType: "image/jpeg",
     cloudinaryTransformation: "q_auto:eco,f_auto"
+  };
+}
+
+function defaultCompanyLogoUploadPolicy(): MediaUploadPolicy {
+  return {
+    maxBytes: 2 * 1024 * 1024,
+    imageMaxWidth: 512,
+    imageMaxHeight: 512,
+    imageJpegQuality: 0.82,
+    allowedMimeTypes: ["image/jpeg", "image/png", "image/webp"],
+    imageOutputMimeType: "image/jpeg",
+    cloudinaryTransformation: "c_fit,w_512,h_512,q_auto:eco,f_auto"
   };
 }
 

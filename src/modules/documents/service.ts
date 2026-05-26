@@ -42,6 +42,15 @@ export interface DocumentUploadPolicyResponse {
   allowed_mime_types: string[];
   image_output_mime_type: "image/jpeg";
   cloudinary_transformation: string;
+  company_logo: {
+    max_bytes: number;
+    image_max_width: number;
+    image_max_height: number;
+    image_jpeg_quality: number;
+    allowed_mime_types: string[];
+    image_output_mime_type: "image/jpeg";
+    cloudinary_transformation: string;
+  };
 }
 
 export class DocumentService {
@@ -53,6 +62,7 @@ export class DocumentService {
 
   uploadPolicy(): DocumentUploadPolicyResponse {
     const policy = this.store.documentProcessing.mediaUploads;
+    const companyLogoPolicy = this.store.documentProcessing.companyLogoUploads;
     return {
       max_bytes: policy.maxBytes,
       image_max_width: policy.imageMaxWidth,
@@ -60,7 +70,16 @@ export class DocumentService {
       image_jpeg_quality: policy.imageJpegQuality,
       allowed_mime_types: [...policy.allowedMimeTypes],
       image_output_mime_type: policy.imageOutputMimeType,
-      cloudinary_transformation: policy.cloudinaryTransformation
+      cloudinary_transformation: policy.cloudinaryTransformation,
+      company_logo: {
+        max_bytes: companyLogoPolicy.maxBytes,
+        image_max_width: companyLogoPolicy.imageMaxWidth,
+        image_max_height: companyLogoPolicy.imageMaxHeight,
+        image_jpeg_quality: companyLogoPolicy.imageJpegQuality,
+        allowed_mime_types: [...companyLogoPolicy.allowedMimeTypes],
+        image_output_mime_type: companyLogoPolicy.imageOutputMimeType,
+        cloudinary_transformation: companyLogoPolicy.cloudinaryTransformation
+      }
     };
   }
 
@@ -111,7 +130,8 @@ export class DocumentService {
         checksum_sha256: document.checksum_sha256
       })
     );
-    this.assertUploadAllowed(document, rawBody, this.store.documentProcessing.mediaUploads);
+    const uploadPolicy = this.uploadPolicyForDocument(document);
+    this.assertUploadAllowed(document, rawBody, uploadPolicy);
     const pdfCompression = input.file_buffer
       ? await this.preparePdfUploadBody(rawBody, document)
       : null;
@@ -119,7 +139,7 @@ export class DocumentService {
     const stored = await this.store.objectStorage.putObject(document.storage_key, uploadBody, {
       "content-type": document.mime_type,
       "x-hrms-document-id": document.id,
-      "x-cloudinary-transformation": this.store.documentProcessing.mediaUploads.cloudinaryTransformation,
+      "x-cloudinary-transformation": uploadPolicy.cloudinaryTransformation,
       ...input.storage_metadata
     });
     document.metadata = {
@@ -139,7 +159,7 @@ export class DocumentService {
       pdf_output_size_bytes: pdfCompression?.outputSize ?? null,
       original_size_bytes: input.file_buffer ? input.size_bytes : null,
       stored_size_bytes: stored.size,
-      media_upload_policy_max_bytes: this.store.documentProcessing.mediaUploads.maxBytes,
+      media_upload_policy_max_bytes: uploadPolicy.maxBytes,
       media_upload_policy_applied: true
     };
     this.repository.insert(document);
@@ -206,6 +226,12 @@ export class DocumentService {
         actual_bytes: size
       });
     }
+  }
+
+  private uploadPolicyForDocument(document: Pick<DocumentMetadata, "document_type">): MediaUploadPolicy {
+    return document.document_type === "company_logo"
+      ? this.store.documentProcessing.companyLogoUploads
+      : this.store.documentProcessing.mediaUploads;
   }
 
   metadata(actor: AuthUser, id: UUID): DocumentMetadata {

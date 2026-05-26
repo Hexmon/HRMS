@@ -18,11 +18,12 @@ import {
   type AuthUser,
   type Department,
   type Designation,
+  type DocumentMetadata,
   type OutboxEvent,
   type RbacPermissionDefinition,
   type RbacRoleRecord
 } from "#shared";
-import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
+import type { AdminMasterDataItemRecord, CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { AdminRepository } from "./repository.js";
 import type {
@@ -43,6 +44,9 @@ import type {
   DepartmentUpdateInput,
   DesignationCreateInput,
   DesignationUpdateInput,
+  ExtendedMasterDataCreateInput,
+  ExtendedMasterDataKey,
+  ExtendedMasterDataUpdateInput,
   MasterDataQuery,
   RbacPermissionsQuery,
   RbacRoleCreateInput,
@@ -52,6 +56,19 @@ import type {
 } from "./schemas.js";
 import { assertCanManageAdminSettings, assertCanManageEmailTemplates, assertCanManageMasterData, assertCanManageNotificationChannels, assertCanManagePolicySettings, assertCanManageRbac, assertCanManageWorkflowSettings, assertCanReadAdminAuditLog } from "./policy.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
+import { DocumentService } from "../documents/service.js";
+
+export interface CompanyLogoUploadInput {
+  file_buffer: Buffer;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+}
+
+export interface CompanyLogoUploadResponse {
+  company: CompanyProfileResponse;
+  document: DocumentMetadata;
+}
 
 function page<T>(items: readonly T[], pageNumber = 1, pageSize = 25): Paginated<T> {
   const start = (pageNumber - 1) * pageSize;
@@ -90,6 +107,58 @@ export class AdminService {
       idempotencyKey: `admin.company_profile.updated:${company.id}:${company.version}`
     });
     return presentCompanyProfile(company);
+  }
+
+  async uploadCompanyLogo(actor: AuthUser, input: CompanyLogoUploadInput): Promise<CompanyLogoUploadResponse> {
+    assertCanManageAdminSettings(actor);
+    const company = this.repository.getCurrentCompanyProfile();
+    const documentService = new DocumentService(this.store);
+    if (company.logo_document_id) {
+      try {
+        await documentService.delete(actor, company.logo_document_id);
+      } catch {
+        // A missing previous logo should not block replacing it with a new one.
+      }
+    }
+    const document = await documentService.upload(actor, {
+      business_object_type: "company_profile",
+      business_object_id: company.id,
+      owner_user_id: actor.id,
+      classification: "normal",
+      document_type: "company_logo",
+      file_name: input.file_name,
+      mime_type: input.mime_type.trim().toLowerCase(),
+      size_bytes: input.size_bytes,
+      file_buffer: input.file_buffer,
+      storage_metadata: {
+        "x-cloudinary-transformation": this.store.documentProcessing.companyLogoUploads.cloudinaryTransformation
+      }
+    });
+    const objectUrl = stringFromMetadata(document.metadata.cloudinary_url) ?? stringFromMetadata(document.metadata.object_url);
+    company.logo_document_id = document.id;
+    company.logo_url = objectUrl && /^https?:\/\//iu.test(objectUrl) ? objectUrl : null;
+    company.logo_file_name = document.file_name;
+    company.logo_mime_type = document.mime_type;
+    company.logo_size_bytes = document.size_bytes;
+    company.updated_at = new Date().toISOString();
+    company.version += 1;
+    appendOutboxEvent(this.store, {
+      aggregateType: "company_profile",
+      aggregateId: company.id,
+      eventType: "admin.company_profile.logo_uploaded",
+      payload: {
+        actor_user_id: actor.id,
+        document_id: document.id,
+        file_name: document.file_name,
+        mime_type: document.mime_type,
+        size_bytes: document.size_bytes
+      },
+      idempotencyKey: `admin.company_profile.logo_uploaded:${company.id}:${document.id}`
+    });
+    return {
+      company: presentCompanyProfile(company),
+      document
+    };
   }
 
   updateAdminSecuritySettings(actor: AuthUser, input: AdminSecuritySettingsUpdateInput): AdminSecuritySettingsMutationResponse {
@@ -482,6 +551,65 @@ export class AdminService {
     return { designation: presentDesignation(designation), version: designation.version };
   }
 
+  listExtendedMasterData(actor: AuthUser, masterKey: ExtendedMasterDataKey, query: MasterDataQuery): Paginated<ExtendedMasterDataResponse> {
+    assertCanManageMasterData(actor);
+    const search = query.search?.trim().toLowerCase();
+    const filtered = this.repository
+      .listExtendedMasterData(masterKey)
+      .filter((item) => !query.active_only || item.status === "active")
+      .filter((item) => {
+        if (!search) return true;
+        return (
+          item.name.toLowerCase().includes(search) ||
+          item.code.toLowerCase().includes(search) ||
+          (item.description ?? "").toLowerCase().includes(search)
+        );
+      })
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    return page(filtered.map((item) => presentExtendedMasterData(item)), query.page, query.page_size);
+  }
+
+  createExtendedMasterData(
+    actor: AuthUser,
+    masterKey: ExtendedMasterDataKey,
+    input: ExtendedMasterDataCreateInput
+  ): MasterDataMutationResponse<ExtendedMasterDataResponse> {
+    assertCanManageMasterData(actor);
+    const item = this.repository.createExtendedMasterData(masterKey, input);
+    appendOutboxEvent(this.store, {
+      aggregateType: "admin_master_data_item",
+      aggregateId: item.id,
+      eventType: "admin.master_data.item.created",
+      payload: { actor_user_id: actor.id, master_key: item.master_key, code: item.code, name: item.name },
+      idempotencyKey: `admin.master_data.item.created:${item.id}:${item.version}`
+    });
+    return { item: presentExtendedMasterData(item), version: item.version };
+  }
+
+  updateExtendedMasterData(
+    actor: AuthUser,
+    masterKey: ExtendedMasterDataKey,
+    id: string,
+    input: ExtendedMasterDataUpdateInput
+  ): MasterDataMutationResponse<ExtendedMasterDataResponse> {
+    assertCanManageMasterData(actor);
+    const item = this.repository.updateExtendedMasterData(masterKey, id, input);
+    appendOutboxEvent(this.store, {
+      aggregateType: "admin_master_data_item",
+      aggregateId: item.id,
+      eventType: "admin.master_data.item.updated",
+      payload: {
+        actor_user_id: actor.id,
+        master_key: item.master_key,
+        code: item.code,
+        name: item.name,
+        changed_fields: Object.keys(input).filter((field) => field !== "expected_version")
+      },
+      idempotencyKey: `admin.master_data.item.updated:${item.id}:${item.version}`
+    });
+    return { item: presentExtendedMasterData(item), version: item.version };
+  }
+
   private assertValidDepartmentParent(parentId: string | null, currentId?: string): void {
     if (!parentId) return;
     if (parentId === currentId) {
@@ -577,10 +705,27 @@ export interface DesignationResponse {
   version: number;
 }
 
+export interface ExtendedMasterDataResponse {
+  id: string;
+  master_key: string;
+  key: string;
+  code: string;
+  name: string;
+  description: string | null;
+  status: "active" | "inactive";
+  active: boolean;
+  sort_order: number;
+  metadata: Record<string, unknown>;
+  updated_at: string;
+  deleted_at: string | null;
+  version: number;
+}
+
 export interface MasterDataMutationResponse<T> {
   version: number;
   department?: T;
   designation?: T;
+  item?: T;
 }
 
 export interface RbacRoleResponse {
@@ -830,6 +975,10 @@ function presentCompanyProfile(company: CompanyProfileRecord): CompanyProfileRes
   };
 }
 
+function stringFromMetadata(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 function presentAdminSecuritySettings(settings: AdminSecuritySettingsRecord): AdminSecuritySettingsResponse {
   return {
     id: settings.id,
@@ -885,6 +1034,24 @@ function presentDesignation(designation: Designation): DesignationResponse {
     active: designation.status === "active",
     deleted_at: designation.deleted_at,
     version: designation.version
+  };
+}
+
+function presentExtendedMasterData(item: AdminMasterDataItemRecord): ExtendedMasterDataResponse {
+  return {
+    id: item.id,
+    master_key: item.master_key,
+    key: item.master_key,
+    code: item.code,
+    name: item.name,
+    description: item.description,
+    status: item.status,
+    active: item.status === "active",
+    sort_order: item.sort_order,
+    metadata: item.metadata,
+    updated_at: item.updated_at,
+    deleted_at: item.deleted_at,
+    version: item.version
   };
 }
 

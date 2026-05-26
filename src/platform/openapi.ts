@@ -349,6 +349,15 @@ const companyLogoUploadBodySchema = {
   additionalProperties: false
 };
 
+const adminCompanyLogoUploadBodySchema = {
+  type: "object",
+  required: ["file"],
+  properties: {
+    file: { type: "string", format: "binary", description: "Company logo image. Backend company-logo policy controls type, compression dimensions, and size." }
+  },
+  additionalProperties: false
+};
+
 const companyBootstrapResponseSchema = {
   type: "object",
   required: ["company", "admin_user", "setup_progress", "next_steps", "preferences"],
@@ -628,6 +637,79 @@ const adminDesignationUpdateBody = {
   required: ["expected_version"],
   properties: {
     ...adminDesignationCreateBody.properties,
+    expected_version: { type: "integer", minimum: 1, example: 1 }
+  }
+};
+
+const adminExtendedMasterDataKeyParamSchema = {
+  type: "object",
+  required: ["master_key"],
+  properties: {
+    master_key: {
+      type: "string",
+      enum: [
+        "employmentTypes",
+        "workLocations",
+        "shifts",
+        "leaveTypes",
+        "expenseCategories",
+        "assetCategories",
+        "helpdeskCategories",
+        "projectRoles"
+      ],
+      example: "employmentTypes"
+    }
+  }
+};
+
+const adminExtendedMasterDataIdParamSchema = {
+  type: "object",
+  required: ["master_key", "id"],
+  properties: {
+    ...adminExtendedMasterDataKeyParamSchema.properties,
+    id: uuid("Master data item UUID")
+  }
+};
+
+const adminExtendedMasterDataSchema = {
+  type: "object",
+  required: ["id", "master_key", "key", "code", "name", "status", "active", "sort_order", "metadata", "updated_at", "version"],
+  properties: {
+    id: uuid("Master data item UUID"),
+    master_key: { type: "string", example: "employmentTypes" },
+    key: { type: "string", example: "employmentTypes" },
+    code: { type: "string", example: "FULL_TIME" },
+    name: { type: "string", example: "Full-time" },
+    description: { type: "string", nullable: true, example: "Regular employment type" },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    active: { type: "boolean", example: true },
+    sort_order: { type: "integer", minimum: 0, example: 10 },
+    metadata: { type: "object", additionalProperties: true },
+    updated_at: dateTime("Last update timestamp"),
+    deleted_at: { ...dateTime("Soft-delete timestamp"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 }
+  },
+  additionalProperties: false
+};
+
+const adminExtendedMasterDataCreateBody = {
+  type: "object",
+  required: ["name"],
+  properties: {
+    name: { type: "string", minLength: 2, maxLength: 160, example: "Full-time" },
+    code: { type: "string", minLength: 2, maxLength: 40, example: "FULL_TIME" },
+    description: { type: "string", nullable: true, maxLength: 1000, example: "Regular employment type" },
+    status: { type: "string", enum: ["active", "inactive"], example: "active" },
+    sort_order: { type: "integer", minimum: 0, maximum: 100000, example: 10 }
+  },
+  additionalProperties: false
+};
+
+const adminExtendedMasterDataUpdateBody = {
+  ...adminExtendedMasterDataCreateBody,
+  required: ["expected_version"],
+  properties: {
+    ...adminExtendedMasterDataCreateBody.properties,
     expected_version: { type: "integer", minimum: 1, example: 1 }
   }
 };
@@ -3935,7 +4017,8 @@ const documentUploadPolicySchema = {
     "image_jpeg_quality",
     "allowed_mime_types",
     "image_output_mime_type",
-    "cloudinary_transformation"
+    "cloudinary_transformation",
+    "company_logo"
   ],
   properties: {
     max_bytes: { type: "integer", minimum: 131072, example: 10485760 },
@@ -3948,7 +4031,33 @@ const documentUploadPolicySchema = {
       example: ["application/pdf", "image/jpeg", "image/png", "image/webp"]
     },
     image_output_mime_type: { type: "string", enum: ["image/jpeg"], example: "image/jpeg" },
-    cloudinary_transformation: { type: "string", example: "q_auto:eco,f_auto" }
+    cloudinary_transformation: { type: "string", example: "q_auto:eco,f_auto" },
+    company_logo: {
+      type: "object",
+      required: [
+        "max_bytes",
+        "image_max_width",
+        "image_max_height",
+        "image_jpeg_quality",
+        "allowed_mime_types",
+        "image_output_mime_type",
+        "cloudinary_transformation"
+      ],
+      properties: {
+        max_bytes: { type: "integer", minimum: 51200, example: 2097152 },
+        image_max_width: { type: "integer", minimum: 128, example: 512 },
+        image_max_height: { type: "integer", minimum: 128, example: 512 },
+        image_jpeg_quality: { type: "number", minimum: 0.5, maximum: 0.95, example: 0.82 },
+        allowed_mime_types: {
+          type: "array",
+          items: { type: "string" },
+          example: ["image/jpeg", "image/png", "image/webp"]
+        },
+        image_output_mime_type: { type: "string", enum: ["image/jpeg"], example: "image/jpeg" },
+        cloudinary_transformation: { type: "string", example: "c_fit,w_512,h_512,q_auto:eco,f_auto" }
+      },
+      additionalProperties: false
+    }
   },
   additionalProperties: false
 };
@@ -4438,6 +4547,12 @@ const routeDocs: Record<string, RouteSchema> = {
     "Updates company profile and locale/fiscal settings with optimistic concurrency. Admin role is required and the company slug remains stable.",
     { body: adminCompanyProfileUpdateBody, response200: adminCompanyProfileSchema }
   ),
+  "POST /api/v1/admin/company-profile/logo": operation(
+    "Admin / Configuration",
+    "Upload company logo",
+    "Uploads or replaces the active company logo through the backend document storage adapter. The company-logo upload policy is returned from /api/v1/documents/upload-policy and uses stricter image-only size and compression limits before Cloudinary upload.",
+    { body: adminCompanyLogoUploadBodySchema, response200: { type: "object", required: ["company", "document"], properties: { company: adminCompanyProfileSchema, document: documentSchema }, additionalProperties: true } }
+  ),
   "GET /api/v1/admin/master-data/departments": operation(
     "Admin / Configuration",
     "List departments",
@@ -4504,6 +4619,42 @@ const routeDocs: Record<string, RouteSchema> = {
         type: "object",
         required: ["designation", "version"],
         properties: { designation: adminDesignationSchema, version: { type: "integer", example: 2 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "GET /api/v1/admin/master-data/{master_key}": operation(
+    "Admin / Configuration",
+    "List extended master data",
+    "Lists persistent Admin Settings master-data rows for employment types, work locations, shifts, leave types, expense categories, asset categories, helpdesk categories, and project roles.",
+    { params: adminExtendedMasterDataKeyParamSchema, querystring: adminMasterDataQuerySchema, response200: paginated(adminExtendedMasterDataSchema) }
+  ),
+  "POST /api/v1/admin/master-data/{master_key}": operation(
+    "Admin / Configuration",
+    "Create extended master data",
+    "Creates a persistent row for an Admin Settings master-data group with duplicate-code protection. Admin and HR Manager roles can mutate master data.",
+    {
+      params: adminExtendedMasterDataKeyParamSchema,
+      body: adminExtendedMasterDataCreateBody,
+      response200: {
+        type: "object",
+        required: ["item", "version"],
+        properties: { item: adminExtendedMasterDataSchema, version: { type: "integer", example: 1 } },
+        additionalProperties: false
+      }
+    }
+  ),
+  "PATCH /api/v1/admin/master-data/{master_key}/{id}": operation(
+    "Admin / Configuration",
+    "Update extended master data",
+    "Updates an Admin Settings master-data row name, code, description, sort order, or active status with optimistic concurrency.",
+    {
+      params: adminExtendedMasterDataIdParamSchema,
+      body: adminExtendedMasterDataUpdateBody,
+      response200: {
+        type: "object",
+        required: ["item", "version"],
+        properties: { item: adminExtendedMasterDataSchema, version: { type: "integer", example: 2 } },
         additionalProperties: false
       }
     }

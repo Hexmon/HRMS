@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Department, Designation, AdminEmailTemplateRecord, AdminNotificationChannelRecord, AdminPolicyConfigRecord, AdminSecuritySettingsRecord, AdminWorkflowConfigRecord, RbacRolePermissionRecord, RbacRoleRecord } from "#shared";
-import type { CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
-import { buildDefaultAdminEmailTemplates, buildDefaultAdminNotificationChannels, buildDefaultAdminPolicies, buildDefaultAdminWorkflows, nowIso } from "../../platform/data-store.js";
+import type { AdminMasterDataItemRecord, CompanyProfileRecord, MemoryDataStore } from "../../platform/data-store.js";
+import { buildDefaultAdminEmailTemplates, buildDefaultAdminMasterDataItems, buildDefaultAdminNotificationChannels, buildDefaultAdminPolicies, buildDefaultAdminWorkflows, nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 import type {
   CompanyProfileUpdateInput,
@@ -9,6 +9,9 @@ import type {
   DepartmentUpdateInput,
   DesignationCreateInput,
   DesignationUpdateInput,
+  ExtendedMasterDataCreateInput,
+  ExtendedMasterDataKey,
+  ExtendedMasterDataUpdateInput,
   AdminSecuritySettingsUpdateInput,
   RbacRoleCreateInput,
   RbacRolePermissionsReplaceInput,
@@ -398,6 +401,61 @@ export class AdminRepository {
     return designation;
   }
 
+  listExtendedMasterData(masterKey: ExtendedMasterDataKey): AdminMasterDataItemRecord[] {
+    this.ensureAdminMasterDataItems();
+    return this.store.adminMasterDataItems.filter((item) => item.master_key === masterKey && !item.deleted_at);
+  }
+
+  createExtendedMasterData(masterKey: ExtendedMasterDataKey, input: ExtendedMasterDataCreateInput): AdminMasterDataItemRecord {
+    this.ensureAdminMasterDataItems();
+    const code = normalizeCode(input.code ?? input.name);
+    this.assertUniqueExtendedMasterDataCode(masterKey, code);
+    const now = nowIso();
+    const item: AdminMasterDataItemRecord = {
+      id: randomUUID(),
+      master_key: masterKey,
+      code,
+      name: input.name.trim(),
+      description: normalizeNullable(input.description ?? null, null),
+      status: input.status ?? "active",
+      sort_order: input.sort_order ?? this.nextExtendedMasterDataSortOrder(masterKey),
+      metadata: {},
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+      version: 1
+    };
+    this.store.adminMasterDataItems.push(item);
+    return item;
+  }
+
+  updateExtendedMasterData(masterKey: ExtendedMasterDataKey, id: string, input: ExtendedMasterDataUpdateInput): AdminMasterDataItemRecord {
+    this.ensureAdminMasterDataItems();
+    const item = this.store.adminMasterDataItems.find((candidate) => candidate.master_key === masterKey && candidate.id === id && !candidate.deleted_at);
+    if (!item) throw notFound("Master data item not found", { master_key: masterKey, id });
+    if (item.version !== input.expected_version) {
+      throw conflict("Master data item was modified by another actor.", {
+        aggregate: "admin_master_data_item",
+        master_key: masterKey,
+        id,
+        expected_version: input.expected_version,
+        current_version: item.version
+      });
+    }
+    if (input.code) {
+      const normalized = normalizeCode(input.code);
+      this.assertUniqueExtendedMasterDataCode(masterKey, normalized, id);
+      item.code = normalized;
+    }
+    if (input.name) item.name = input.name.trim();
+    if (input.description !== undefined) item.description = normalizeNullable(input.description, null);
+    if (input.status) item.status = input.status;
+    if (input.sort_order !== undefined) item.sort_order = input.sort_order;
+    item.updated_at = nowIso();
+    item.version += 1;
+    return item;
+  }
+
   private assertUniqueDepartmentCode(code: string, currentId?: string): void {
     const duplicate = this.store.departments.find(
       (candidate) => !candidate.deleted_at && candidate.id !== currentId && candidate.department_code.toUpperCase() === code
@@ -414,6 +472,26 @@ export class AdminRepository {
     if (duplicate) {
       throw conflict("Designation code already exists", { designation_code: code });
     }
+  }
+
+  private assertUniqueExtendedMasterDataCode(masterKey: ExtendedMasterDataKey, code: string, currentId?: string): void {
+    const duplicate = this.store.adminMasterDataItems.find(
+      (candidate) =>
+        !candidate.deleted_at &&
+        candidate.master_key === masterKey &&
+        candidate.id !== currentId &&
+        candidate.code.toUpperCase() === code
+    );
+    if (duplicate) {
+      throw conflict("Master data code already exists", { master_key: masterKey, code });
+    }
+  }
+
+  private nextExtendedMasterDataSortOrder(masterKey: ExtendedMasterDataKey): number {
+    const max = this.store.adminMasterDataItems
+      .filter((candidate) => candidate.master_key === masterKey && !candidate.deleted_at)
+      .reduce((current, item) => Math.max(current, item.sort_order), 0);
+    return max + 10;
   }
 
   private assertUniqueRbacRoleKey(roleKey: string): void {
@@ -445,6 +523,18 @@ export class AdminRepository {
     const existingKeys = new Set(this.store.adminNotificationChannels.filter((channel) => !channel.deleted_at).map((channel) => channel.event_key));
     const missingDefaults = buildDefaultAdminNotificationChannels(nowIso()).filter((channel) => !existingKeys.has(channel.event_key));
     this.store.adminNotificationChannels.push(...missingDefaults);
+  }
+
+  private ensureAdminMasterDataItems(): void {
+    const existingKeys = new Set(
+      this.store.adminMasterDataItems
+        .filter((item) => !item.deleted_at)
+        .map((item) => `${item.master_key}:${item.code.toUpperCase()}`)
+    );
+    const missingDefaults = buildDefaultAdminMasterDataItems(nowIso()).filter(
+      (item) => !existingKeys.has(`${item.master_key}:${item.code.toUpperCase()}`)
+    );
+    this.store.adminMasterDataItems.push(...missingDefaults);
   }
 }
 

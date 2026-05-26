@@ -102,7 +102,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(securityHeadersPlugin);
   await app.register(cors, corsOptions(app.config));
   await app.register(multipart, {
-    limits: { fileSize: Math.max(app.config.MEDIA_UPLOAD_MAX_BYTES, app.config.PROFILE_PHOTO_MAX_BYTES) }
+    limits: {
+      fileSize: Math.max(
+        app.config.MEDIA_UPLOAD_MAX_BYTES,
+        app.config.PROFILE_PHOTO_MAX_BYTES,
+        app.config.COMPANY_LOGO_MAX_BYTES
+      )
+    }
   });
   await app.register(compressionPlugin);
   await app.register(cookiesPlugin);
@@ -163,7 +169,8 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
         timeoutMs: config.PDF_COMPRESSION_TIMEOUT_MS,
         failOpen: config.PDF_COMPRESSION_FAIL_OPEN
       },
-      mediaUploads: mediaUploadPolicyFromConfig(config)
+      mediaUploads: mediaUploadPolicyFromConfig(config),
+      companyLogoUploads: companyLogoUploadPolicyFromConfig(config)
     };
     return store;
   }
@@ -188,7 +195,8 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
         timeoutMs: config.PDF_COMPRESSION_TIMEOUT_MS,
         failOpen: config.PDF_COMPRESSION_FAIL_OPEN
       },
-      mediaUploads: mediaUploadPolicyFromConfig(config)
+      mediaUploads: mediaUploadPolicyFromConfig(config),
+      companyLogoUploads: companyLogoUploadPolicyFromConfig(config)
     },
     seedIfEmpty: options.seedIfEmpty ?? true
   });
@@ -218,6 +226,21 @@ function mediaUploadPolicyFromConfig(config: FastifyInstance["config"]) {
       .filter(Boolean),
     imageOutputMimeType: "image/jpeg" as const,
     cloudinaryTransformation: config.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION
+  };
+}
+
+function companyLogoUploadPolicyFromConfig(config: FastifyInstance["config"]) {
+  return {
+    maxBytes: config.COMPANY_LOGO_MAX_BYTES,
+    imageMaxWidth: config.COMPANY_LOGO_MAX_WIDTH,
+    imageMaxHeight: config.COMPANY_LOGO_MAX_HEIGHT,
+    imageJpegQuality: config.COMPANY_LOGO_JPEG_QUALITY,
+    allowedMimeTypes: config.COMPANY_LOGO_ALLOWED_MIME_TYPES
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+    imageOutputMimeType: "image/jpeg" as const,
+    cloudinaryTransformation: config.COMPANY_LOGO_CLOUDINARY_TRANSFORMATION
   };
 }
 

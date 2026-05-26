@@ -49,6 +49,7 @@ import type {
 import {
   type AssetAssignmentRecord,
   type AssetStateEventRecord,
+  type AdminMasterDataItemRecord,
   type AuthTokenRecord,
   type CompanyProfileRecord,
   type DataStore,
@@ -62,6 +63,7 @@ import {
   type UserSessionPreferenceRecord,
   type WorkSegment,
   type WorkflowDefinitionRecord,
+  buildDefaultAdminMasterDataItems,
   buildDefaultAdminSecuritySettings,
   createMemoryDataStore
 } from "./data-store.js";
@@ -140,6 +142,7 @@ const resetTables = [
   "platform.processed_events",
   "platform.email_events",
   "platform.email_deliveries",
+  "platform.admin_master_data_items",
   "platform.admin_notification_channels",
   "platform.admin_email_templates",
   "platform.admin_policies",
@@ -207,6 +210,7 @@ function copyData(target: DataStore, source: DataStore): void {
   target.adminEmailTemplates = source.adminEmailTemplates;
   target.adminNotificationChannels = source.adminNotificationChannels;
   target.adminSecuritySettings = source.adminSecuritySettings;
+  target.adminMasterDataItems = source.adminMasterDataItems;
   target.users = source.users;
   target.userCredentials = source.userCredentials;
   target.authTokens = source.authTokens;
@@ -357,6 +361,7 @@ class PostgresPersistence {
       loaded.adminEmailTemplates = await this.loadAdminEmailTemplates(client);
       loaded.adminNotificationChannels = await this.loadAdminNotificationChannels(client);
       loaded.adminSecuritySettings = await this.loadAdminSecuritySettings(client);
+      loaded.adminMasterDataItems = await this.loadAdminMasterDataItems(client);
       loaded.users = await this.loadUsers(client);
       loaded.userCredentials = await this.loadUserCredentials(client);
       loaded.authTokens = await this.loadAuthTokens(client);
@@ -618,6 +623,31 @@ class PostgresPersistence {
       deleted_at: asIsoOrNull(row.deleted_at),
       version: row.version
     };
+  }
+
+  private async loadAdminMasterDataItems(client: PoolClient): Promise<AdminMasterDataItemRecord[]> {
+    const { rows } = await client.query(`
+      SELECT id, master_key, code, name, description, status, sort_order, metadata, created_at, updated_at, deleted_at, version
+      FROM platform.admin_master_data_items
+      ORDER BY master_key, sort_order, name
+    `);
+    if (rows.length === 0) {
+      return buildDefaultAdminMasterDataItems(new Date().toISOString());
+    }
+    return rows.map((row) => ({
+      id: row.id,
+      master_key: row.master_key,
+      code: row.code,
+      name: row.name,
+      description: row.description,
+      status: row.status,
+      sort_order: row.sort_order,
+      metadata: json(row.metadata),
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+      version: row.version
+    }));
   }
 
   private async loadUsers(client: PoolClient): Promise<CoreUser[]> {
@@ -2040,6 +2070,39 @@ class PostgresPersistence {
           channel.updated_at,
           channel.deleted_at,
           channel.version
+        ]
+      );
+    }
+    for (const item of this.store.adminMasterDataItems) {
+      await client.query(
+        `INSERT INTO platform.admin_master_data_items (
+          id, master_key, code, name, description, status, sort_order, metadata, created_at, updated_at, deleted_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12)
+        ON CONFLICT (id) DO UPDATE
+        SET master_key = EXCLUDED.master_key,
+            code = EXCLUDED.code,
+            name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            status = EXCLUDED.status,
+            sort_order = EXCLUDED.sort_order,
+            metadata = EXCLUDED.metadata,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at,
+            version = EXCLUDED.version`,
+        [
+          item.id,
+          item.master_key,
+          item.code,
+          item.name,
+          item.description,
+          item.status,
+          item.sort_order,
+          JSON.stringify(item.metadata),
+          item.created_at,
+          item.updated_at,
+          item.deleted_at,
+          item.version
         ]
       );
     }

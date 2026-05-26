@@ -47,6 +47,18 @@ const store = await createPostgresDataStore({
       ].join(",")).split(",").map((value) => value.trim().toLowerCase()).filter(Boolean),
       imageOutputMimeType: "image/jpeg",
       cloudinaryTransformation: process.env.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto"
+    },
+    companyLogoUploads: {
+      maxBytes: Number(process.env.COMPANY_LOGO_MAX_BYTES ?? String(2 * 1024 * 1024)),
+      imageMaxWidth: Number(process.env.COMPANY_LOGO_MAX_WIDTH ?? "512"),
+      imageMaxHeight: Number(process.env.COMPANY_LOGO_MAX_HEIGHT ?? "512"),
+      imageJpegQuality: Number(process.env.COMPANY_LOGO_JPEG_QUALITY ?? "0.82"),
+      allowedMimeTypes: (process.env.COMPANY_LOGO_ALLOWED_MIME_TYPES ?? "image/jpeg,image/png,image/webp")
+        .split(",")
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
+      imageOutputMimeType: "image/jpeg",
+      cloudinaryTransformation: process.env.COMPANY_LOGO_CLOUDINARY_TRANSFORMATION ?? "c_fit,w_512,h_512,q_auto:eco,f_auto"
     }
   },
   seedIfEmpty: false

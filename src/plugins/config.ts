@@ -45,6 +45,12 @@ const configSchema = z.object({
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   ].join(",")),
   MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION: z.string().default("q_auto:eco,f_auto"),
+  COMPANY_LOGO_MAX_BYTES: z.coerce.number().int().min(50 * 1024).default(2 * 1024 * 1024),
+  COMPANY_LOGO_MAX_WIDTH: z.coerce.number().int().min(128).max(2048).default(512),
+  COMPANY_LOGO_MAX_HEIGHT: z.coerce.number().int().min(128).max(2048).default(512),
+  COMPANY_LOGO_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(0.82),
+  COMPANY_LOGO_ALLOWED_MIME_TYPES: z.string().default("image/jpeg,image/png,image/webp"),
+  COMPANY_LOGO_CLOUDINARY_TRANSFORMATION: z.string().default("c_fit,w_512,h_512,q_auto:eco,f_auto"),
   PROFILE_PHOTO_MAX_BYTES: z.coerce.number().int().min(50 * 1024).default(2 * 1024 * 1024),
   PROFILE_PHOTO_MAX_WIDTH: z.coerce.number().int().min(128).max(2048).default(512),
   PROFILE_PHOTO_MAX_HEIGHT: z.coerce.number().int().min(128).max(2048).default(512),
