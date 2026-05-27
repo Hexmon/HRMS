@@ -1,0 +1,74 @@
+# Hawkaii HRMS monorepo ignore rules
+
+# Dependencies
+node_modules/
+hrms_backend/node_modules/
+hrms-client/node_modules/
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+.output/
+.vinxi/
+.nitro/
+hrms_backend/dist/
+hrms-client/dist/
+hrms-client/dist-ssr/
+hrms-client/.output/
+hrms-client/.vinxi/
+hrms-client/.tanstack/
+hrms-client/.nitro/
+
+# Test and coverage outputs
+coverage/
+.vitest/
+playwright-report/
+test-results/
+hrms_backend/coverage/
+hrms_backend/.vitest/
+hrms-client/coverage/
+hrms-client/playwright-report/
+hrms-client/test-results/
+
+# Runtime logs and debug output
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment and secret files
+.env
+.env.*
+**/.env
+**/.env.*
+*.local
+
+# Keep committed examples/templates
+!.env.example
+!.env.*.example
+!**/.env.example
+!**/.env.*.example
+
+# Backend local runtime data
+hrms_backend/backups/
+
+# Cloudflare / Wrangler local state
+.wrangler/
+.dev.vars
+hrms-client/.wrangler/
+hrms-client/.dev.vars
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
