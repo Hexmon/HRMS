@@ -1,0 +1,443 @@
+{
+  "info": {
+    "name": "Hawkaii HRMS API Consumer Smoke",
+    "description": "Safe local Docker QA collection. Uses seeded email/password values; employee_code remains a DEV fallback for legacy scripts. No production credentials.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3101" },
+    { "key": "local_demo_password", "value": "LocalDev@123" },
+    { "key": "access_token", "value": "" },
+    { "key": "employee_token", "value": "" },
+    { "key": "ticket_id", "value": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001" },
+    { "key": "core_user_id", "value": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001" },
+    { "key": "document_id", "value": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001" },
+    { "key": "asset_id", "value": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001" },
+    { "key": "submission_id", "value": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001" }
+  ],
+  "item": [
+    {
+      "name": "Platform / Health",
+      "item": [
+        {
+          "name": "Health Ready",
+          "request": { "method": "GET", "url": "{{base_url}}/api/v1/health/ready" }
+        },
+        {
+          "name": "OpenAPI JSON",
+          "request": { "method": "GET", "url": "{{base_url}}/api/v1/openapi.json" }
+        }
+      ]
+    },
+    {
+      "name": "Auth & Sessions",
+      "item": [
+        {
+          "name": "Login Finance Manager N1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) pm.collectionVariables.set('access_token', json.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"finance@example.test\",\n  \"password\": \"{{local_demo_password}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "Login Employee E1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) pm.collectionVariables.set('employee_token', json.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"e1@example.test\",\n  \"password\": \"{{local_demo_password}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "Login Invalid Body",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "Current Session",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/auth/me"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Expenses Workflow",
+      "item": [
+        {
+          "name": "My Expenses",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{employee_token}}" }],
+            "url": "{{base_url}}/api/v1/expenses/my?page=1&page_size=25"
+          }
+        },
+        {
+          "name": "Create Expense",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{employee_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"submit\": true,\n  \"expense_type\": \"Project\",\n  \"expense_sub_type\": \"Project Travel\",\n  \"project_code\": \"PRJ-100\",\n  \"task_title\": \"Client implementation travel\",\n  \"task_description\": \"Travel for implementation workshop\",\n  \"location\": \"Mumbai\",\n  \"start_date\": \"2026-05-01\",\n  \"end_date\": \"2026-05-03\",\n  \"estimated_amount\": \"1000.00\",\n  \"payment_type\": \"Advance\",\n  \"advance_amount\": \"500.00\",\n  \"line_items\": [\n    { \"line_category\": \"travel\", \"description\": \"Flight\", \"line_total\": \"700.00\" },\n    { \"line_category\": \"lodging\", \"description\": \"Hotel\", \"line_total\": \"300.00\" }\n  ]\n}"
+            },
+            "url": "{{base_url}}/api/v1/expenses"
+          }
+        },
+        {
+          "name": "Manager Queue",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/expenses/queue/manager?page=1&page_size=25"
+          }
+        },
+        {
+          "name": "Manager Verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"verify\",\n  \"remarks\": \"Verified.\",\n  \"expected_version\": 2\n}"
+            },
+            "url": "{{base_url}}/api/v1/expenses/{{ticket_id}}/manager/verify"
+          }
+        },
+        {
+          "name": "Expense Timeline",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{employee_token}}" }],
+            "url": "{{base_url}}/api/v1/expenses/{{ticket_id}}/timeline"
+          }
+        },
+        {
+          "name": "OCC Conflict Sample",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"expected_version\": 1\n}" },
+            "url": "{{base_url}}/api/v1/expenses/{{ticket_id}}/submit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Finance Management",
+      "item": [
+        {
+          "name": "Finance Analytics",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/reports/expenses/finance-analytics"
+          }
+        },
+        {
+          "name": "Finance Queue",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/expenses/queue/finance?page=1&page_size=25&sort=sla"
+          }
+        },
+        {
+          "name": "Finance Detail",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/expenses/{{ticket_id}}/finance-detail"
+          }
+        },
+        {
+          "name": "Finance Approve",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approve\",\n  \"remarks\": \"Manager verification complete.\",\n  \"expected_version\": 3\n}"
+            },
+            "url": "{{base_url}}/api/v1/expenses/{{ticket_id}}/finance/approve"
+          }
+        },
+        {
+          "name": "Finance Hold",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"hold\",\n  \"remarks\": \"Receipt is unreadable.\",\n  \"expected_version\": 3\n}"
+            },
+            "url": "{{base_url}}/api/v1/expenses/{{ticket_id}}/finance/approve"
+          }
+        },
+        {
+          "name": "Payment Release",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_date\": \"2026-05-04\",\n  \"amount\": \"500.00\",\n  \"payment_mode\": \"NEFT\",\n  \"reference_no\": \"PAY-001\",\n  \"expected_version\": 4\n}"
+            },
+            "url": "{{base_url}}/api/v1/expenses/{{ticket_id}}/finance/payment"
+          }
+        },
+        {
+          "name": "Settlement",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actual_amount\": \"500.00\",\n  \"remarks\": \"Bills verified and settlement complete.\",\n  \"expected_version\": 5\n}"
+            },
+            "url": "{{base_url}}/api/v1/expenses/{{ticket_id}}/settlement"
+          }
+        },
+        {
+          "name": "Payment Register",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/reports/expenses/payments?page=1&page_size=25"
+          }
+        },
+        {
+          "name": "Advance Aging",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/reports/expenses/advance-aging?page=1&page_size=25"
+          }
+        },
+        {
+          "name": "Finance Audit",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/reports/expenses/audit?page=1&page_size=25"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "Documents List",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/documents?page=1&page_size=25"
+          }
+        },
+        {
+          "name": "Document Upload Metadata",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"business_object_type\": \"expense_ticket\",\n  \"business_object_id\": \"{{ticket_id}}\",\n  \"classification\": \"finance\",\n  \"document_type\": \"receipt\",\n  \"file_name\": \"receipt.pdf\",\n  \"mime_type\": \"application/pdf\",\n  \"size_bytes\": 2000\n}"
+            },
+            "url": "{{base_url}}/api/v1/documents"
+          }
+        },
+        {
+          "name": "Document Detail",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/documents/{{document_id}}"
+          }
+        },
+        {
+          "name": "Document Access Log",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/documents/{{document_id}}/access-log?page=1&page_size=25"
+          }
+        },
+        {
+          "name": "Restricted Denial Sample",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{employee_token}}" }],
+            "url": "{{base_url}}/api/v1/documents/{{document_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Assets",
+      "item": [
+        {
+          "name": "Asset QR Scan",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/assets/scan/release-qr-hash-lap-available"
+          }
+        },
+        {
+          "name": "Asset Inventory",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/assets/?page=1&page_size=25"
+          }
+        },
+        {
+          "name": "Asset Assign",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigned_to_user_id\": \"018f9f4a-7f9a-7c15-8f25-6f7f96f9f001\",\n  \"expected_version\": 1\n}"
+            },
+            "url": "{{base_url}}/api/v1/assets/{{asset_id}}/assign"
+          }
+        },
+        {
+          "name": "License Activate",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"018f9f4a-7f9a-7c15-8f25-6f7f96f9f001\",\n  \"entitlement_id\": \"018f9f4a-7f9a-7c15-8f25-6f7f96f9f002\",\n  \"hardware_fingerprint\": \"HW-FINGERPRINT-001\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/assets/licenses/activate"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Timesheets Core Reports",
+      "item": [
+        {
+          "name": "Core Users",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/core/users?page=1&page_size=25"
+          }
+        },
+        {
+          "name": "Core Hierarchy Subtree",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/core/users/{{core_user_id}}/subtree?page=1&page_size=25"
+          }
+        },
+        {
+          "name": "Timesheet Submit",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{employee_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cycle_start\": \"2026-06-01\",\n  \"cycle_end\": \"2026-06-07\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/timesheets/submissions"
+          }
+        },
+        {
+          "name": "Timesheet Approve",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approve\",\n  \"remarks\": \"Approved.\",\n  \"expected_version\": 1\n}"
+            },
+            "url": "{{base_url}}/api/v1/timesheets/submissions/{{submission_id}}/approve"
+          }
+        },
+        {
+          "name": "Expense Register Report",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/reports/expenses/register?page=1&page_size=25"
+          }
+        }
+      ]
+    }
+  ]
+}
