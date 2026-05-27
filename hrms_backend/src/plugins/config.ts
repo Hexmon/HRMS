@@ -1,5 +1,6 @@
 import fp from "fastify-plugin";
 import { z } from "zod";
+import { runtimeDefaults } from "../config/runtime-defaults.js";
 
 const optionalUrl = z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional());
 const booleanEnv = z.preprocess((value) => {
@@ -28,39 +29,28 @@ const configSchema = z.object({
   CLOUDINARY_RESOURCE_TYPE: z.enum(["auto", "image", "raw", "video"]).default("auto"),
   CLOUDINARY_UPLOAD_TRANSFORMATION: z.string().default("q_auto:eco,f_auto"),
   CLOUDINARY_MOCK_UPLOADS: booleanEnv.default(true),
-  MEDIA_UPLOAD_MAX_BYTES: z.coerce.number().int().min(128 * 1024).default(10 * 1024 * 1024),
-  MEDIA_IMAGE_MAX_WIDTH: z.coerce.number().int().min(256).max(4096).default(1600),
-  MEDIA_IMAGE_MAX_HEIGHT: z.coerce.number().int().min(256).max(4096).default(1600),
-  MEDIA_IMAGE_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(0.82),
-  MEDIA_ALLOWED_MIME_TYPES: z.string().default([
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "text/plain",
-    "text/csv",
-    "application/msword",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  ].join(",")),
-  MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION: z.string().default("q_auto:eco,f_auto"),
-  COMPANY_LOGO_MAX_BYTES: z.coerce.number().int().min(50 * 1024).default(2 * 1024 * 1024),
-  COMPANY_LOGO_MAX_WIDTH: z.coerce.number().int().min(128).max(2048).default(512),
-  COMPANY_LOGO_MAX_HEIGHT: z.coerce.number().int().min(128).max(2048).default(512),
-  COMPANY_LOGO_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(0.82),
-  COMPANY_LOGO_ALLOWED_MIME_TYPES: z.string().default("image/jpeg,image/png,image/webp"),
-  COMPANY_LOGO_CLOUDINARY_TRANSFORMATION: z.string().default("c_fit,w_512,h_512,q_auto:eco,f_auto"),
-  PROFILE_PHOTO_MAX_BYTES: z.coerce.number().int().min(50 * 1024).default(2 * 1024 * 1024),
-  PROFILE_PHOTO_MAX_WIDTH: z.coerce.number().int().min(128).max(2048).default(512),
-  PROFILE_PHOTO_MAX_HEIGHT: z.coerce.number().int().min(128).max(2048).default(512),
-  PROFILE_PHOTO_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(0.82),
-  PROFILE_PHOTO_ALLOWED_MIME_TYPES: z.string().default("image/jpeg,image/png,image/webp"),
-  PROFILE_PHOTO_CLOUDINARY_TRANSFORMATION: z.string().default("c_fill,g_face,w_512,h_512,q_auto:eco,f_auto"),
-  PDF_COMPRESSION_ENABLED: booleanEnv.default(false),
+  MEDIA_UPLOAD_MAX_BYTES: z.coerce.number().int().min(128 * 1024).default(runtimeDefaults.MEDIA_UPLOAD_MAX_BYTES),
+  MEDIA_IMAGE_MAX_WIDTH: z.coerce.number().int().min(256).max(4096).default(runtimeDefaults.MEDIA_IMAGE_MAX_WIDTH),
+  MEDIA_IMAGE_MAX_HEIGHT: z.coerce.number().int().min(256).max(4096).default(runtimeDefaults.MEDIA_IMAGE_MAX_HEIGHT),
+  MEDIA_IMAGE_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(runtimeDefaults.MEDIA_IMAGE_JPEG_QUALITY),
+  MEDIA_ALLOWED_MIME_TYPES: z.string().default(runtimeDefaults.MEDIA_ALLOWED_MIME_TYPES),
+  MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION: z.string().default(runtimeDefaults.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION),
+  COMPANY_LOGO_MAX_BYTES: z.coerce.number().int().min(50 * 1024).default(runtimeDefaults.COMPANY_LOGO_MAX_BYTES),
+  COMPANY_LOGO_MAX_WIDTH: z.coerce.number().int().min(128).max(2048).default(runtimeDefaults.COMPANY_LOGO_MAX_WIDTH),
+  COMPANY_LOGO_MAX_HEIGHT: z.coerce.number().int().min(128).max(2048).default(runtimeDefaults.COMPANY_LOGO_MAX_HEIGHT),
+  COMPANY_LOGO_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(runtimeDefaults.COMPANY_LOGO_JPEG_QUALITY),
+  COMPANY_LOGO_ALLOWED_MIME_TYPES: z.string().default(runtimeDefaults.COMPANY_LOGO_ALLOWED_MIME_TYPES),
+  COMPANY_LOGO_CLOUDINARY_TRANSFORMATION: z.string().default(runtimeDefaults.COMPANY_LOGO_CLOUDINARY_TRANSFORMATION),
+  PROFILE_PHOTO_MAX_BYTES: z.coerce.number().int().min(50 * 1024).default(runtimeDefaults.PROFILE_PHOTO_MAX_BYTES),
+  PROFILE_PHOTO_MAX_WIDTH: z.coerce.number().int().min(128).max(2048).default(runtimeDefaults.PROFILE_PHOTO_MAX_WIDTH),
+  PROFILE_PHOTO_MAX_HEIGHT: z.coerce.number().int().min(128).max(2048).default(runtimeDefaults.PROFILE_PHOTO_MAX_HEIGHT),
+  PROFILE_PHOTO_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(runtimeDefaults.PROFILE_PHOTO_JPEG_QUALITY),
+  PROFILE_PHOTO_ALLOWED_MIME_TYPES: z.string().default(runtimeDefaults.PROFILE_PHOTO_ALLOWED_MIME_TYPES),
+  PROFILE_PHOTO_CLOUDINARY_TRANSFORMATION: z.string().default(runtimeDefaults.PROFILE_PHOTO_CLOUDINARY_TRANSFORMATION),
+  PDF_COMPRESSION_ENABLED: booleanEnv.default(true),
   PDF_COMPRESSION_BINARY: z.string().default("gs"),
   PDF_COMPRESSION_QUALITY: z.enum(["screen", "ebook", "printer", "prepress", "default"]).default("ebook"),
-  PDF_COMPRESSION_MIN_BYTES: z.coerce.number().int().min(0).default(128 * 1024),
+  PDF_COMPRESSION_MIN_BYTES: z.coerce.number().int().min(0).default(runtimeDefaults.PDF_COMPRESSION_MIN_BYTES),
   PDF_COMPRESSION_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30_000),
   PDF_COMPRESSION_FAIL_OPEN: booleanEnv.default(true),
   API_BASE_URL: z.string().default("http://localhost:3001"),
@@ -74,10 +64,10 @@ const configSchema = z.object({
   RESEND_REPLY_TO_EMAIL: z.string().optional(),
   RESEND_WEBHOOK_SECRET: z.string().optional(),
   RESEND_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS: z.coerce.number().int().positive().default(300),
-  EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: z.coerce.number().int().min(300).default(24 * 60 * 60),
-  EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(1).default(60),
-  EMAIL_VERIFICATION_RESEND_HOURLY_LIMIT: z.coerce.number().int().min(1).default(5),
-  EMAIL_VERIFICATION_RESEND_DAILY_LIMIT: z.coerce.number().int().min(1).default(10),
+  EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: z.coerce.number().int().min(300).default(runtimeDefaults.EMAIL_VERIFICATION_TOKEN_TTL_SECONDS),
+  EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(1).default(runtimeDefaults.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS),
+  EMAIL_VERIFICATION_RESEND_HOURLY_LIMIT: z.coerce.number().int().min(1).default(runtimeDefaults.EMAIL_VERIFICATION_RESEND_HOURLY_LIMIT),
+  EMAIL_VERIFICATION_RESEND_DAILY_LIMIT: z.coerce.number().int().min(1).default(runtimeDefaults.EMAIL_VERIFICATION_RESEND_DAILY_LIMIT),
   CORS_ALLOWED_ORIGINS: z.string().default(""),
   RATE_LIMIT_ENABLED: booleanEnv.default(true),
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(60),
@@ -86,7 +76,7 @@ const configSchema = z.object({
   RATE_LIMIT_AUTH_MAX: z.coerce.number().int().min(1).default(10),
   RATE_LIMIT_PUBLIC_MAX: z.coerce.number().int().min(1).default(60)
 }).superRefine((config, context) => {
-  const requireField = (field: "RESEND_API_KEY" | "RESEND_FROM_EMAIL" | "RESEND_WEBHOOK_SECRET" | "FRONTEND_URL") => {
+  const requireField = (field: "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET" | "RESEND_API_KEY" | "RESEND_FROM_EMAIL" | "RESEND_WEBHOOK_SECRET" | "FRONTEND_URL") => {
     if (!config[field]) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -109,6 +99,16 @@ const configSchema = z.object({
     requireField("FRONTEND_URL");
   }
   if (config.NODE_ENV === "production") {
+    for (const field of ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const) {
+      requireField(field);
+      if (/local-|change-me|replace-/iu.test(config[field])) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} must be a production-owned secret.`
+        });
+      }
+    }
     requireField("RESEND_WEBHOOK_SECRET");
     if (config.CLOUDINARY_MOCK_UPLOADS) {
       context.addIssue({
@@ -134,6 +134,9 @@ const configSchema = z.object({
 }));
 
 export const configPlugin = fp(async (fastify) => {
-  const config = configSchema.parse(process.env);
+  const config = configSchema.parse({
+    ...runtimeDefaults,
+    ...process.env
+  });
   fastify.decorate("config", config);
 });

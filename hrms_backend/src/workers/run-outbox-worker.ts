@@ -1,4 +1,5 @@
 import { loadEnvFile } from "../../scripts/env.js";
+import { runtimeDefaults } from "../config/runtime-defaults.js";
 import { createPostgresDataStore } from "../platform/postgres-data-store.js";
 import { OutboxWorker, ValkeyStreamPublisher } from "./outbox-worker.js";
 
@@ -21,44 +22,30 @@ const store = await createPostgresDataStore({
   objectStorage: objectStorageOptions(),
   documentProcessing: {
     pdfCompression: {
-      enabled: process.env.PDF_COMPRESSION_ENABLED === "true",
+      enabled: booleanFromEnv("PDF_COMPRESSION_ENABLED", true),
       binary: process.env.PDF_COMPRESSION_BINARY ?? "gs",
       quality: (process.env.PDF_COMPRESSION_QUALITY as "screen" | "ebook" | "printer" | "prepress" | "default" | undefined) ?? "ebook",
-      minBytes: Number(process.env.PDF_COMPRESSION_MIN_BYTES ?? "131072"),
-      timeoutMs: Number(process.env.PDF_COMPRESSION_TIMEOUT_MS ?? "30000"),
-      failOpen: process.env.PDF_COMPRESSION_FAIL_OPEN !== "false"
+      minBytes: numberFromEnv("PDF_COMPRESSION_MIN_BYTES", runtimeDefaults.PDF_COMPRESSION_MIN_BYTES),
+      timeoutMs: numberFromEnv("PDF_COMPRESSION_TIMEOUT_MS", 30_000),
+      failOpen: booleanFromEnv("PDF_COMPRESSION_FAIL_OPEN", true)
     },
     mediaUploads: {
-      maxBytes: Number(process.env.MEDIA_UPLOAD_MAX_BYTES ?? String(10 * 1024 * 1024)),
-      imageMaxWidth: Number(process.env.MEDIA_IMAGE_MAX_WIDTH ?? "1600"),
-      imageMaxHeight: Number(process.env.MEDIA_IMAGE_MAX_HEIGHT ?? "1600"),
-      imageJpegQuality: Number(process.env.MEDIA_IMAGE_JPEG_QUALITY ?? "0.82"),
-      allowedMimeTypes: (process.env.MEDIA_ALLOWED_MIME_TYPES ?? [
-        "application/pdf",
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-        "text/plain",
-        "text/csv",
-        "application/msword",
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      ].join(",")).split(",").map((value) => value.trim().toLowerCase()).filter(Boolean),
+      maxBytes: numberFromEnv("MEDIA_UPLOAD_MAX_BYTES", runtimeDefaults.MEDIA_UPLOAD_MAX_BYTES),
+      imageMaxWidth: numberFromEnv("MEDIA_IMAGE_MAX_WIDTH", runtimeDefaults.MEDIA_IMAGE_MAX_WIDTH),
+      imageMaxHeight: numberFromEnv("MEDIA_IMAGE_MAX_HEIGHT", runtimeDefaults.MEDIA_IMAGE_MAX_HEIGHT),
+      imageJpegQuality: numberFromEnv("MEDIA_IMAGE_JPEG_QUALITY", runtimeDefaults.MEDIA_IMAGE_JPEG_QUALITY),
+      allowedMimeTypes: listFromEnv("MEDIA_ALLOWED_MIME_TYPES", runtimeDefaults.MEDIA_ALLOWED_MIME_TYPES),
       imageOutputMimeType: "image/jpeg",
-      cloudinaryTransformation: process.env.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto"
+      cloudinaryTransformation: process.env.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION ?? runtimeDefaults.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION
     },
     companyLogoUploads: {
-      maxBytes: Number(process.env.COMPANY_LOGO_MAX_BYTES ?? String(2 * 1024 * 1024)),
-      imageMaxWidth: Number(process.env.COMPANY_LOGO_MAX_WIDTH ?? "512"),
-      imageMaxHeight: Number(process.env.COMPANY_LOGO_MAX_HEIGHT ?? "512"),
-      imageJpegQuality: Number(process.env.COMPANY_LOGO_JPEG_QUALITY ?? "0.82"),
-      allowedMimeTypes: (process.env.COMPANY_LOGO_ALLOWED_MIME_TYPES ?? "image/jpeg,image/png,image/webp")
-        .split(",")
-        .map((value) => value.trim().toLowerCase())
-        .filter(Boolean),
+      maxBytes: numberFromEnv("COMPANY_LOGO_MAX_BYTES", runtimeDefaults.COMPANY_LOGO_MAX_BYTES),
+      imageMaxWidth: numberFromEnv("COMPANY_LOGO_MAX_WIDTH", runtimeDefaults.COMPANY_LOGO_MAX_WIDTH),
+      imageMaxHeight: numberFromEnv("COMPANY_LOGO_MAX_HEIGHT", runtimeDefaults.COMPANY_LOGO_MAX_HEIGHT),
+      imageJpegQuality: numberFromEnv("COMPANY_LOGO_JPEG_QUALITY", runtimeDefaults.COMPANY_LOGO_JPEG_QUALITY),
+      allowedMimeTypes: listFromEnv("COMPANY_LOGO_ALLOWED_MIME_TYPES", runtimeDefaults.COMPANY_LOGO_ALLOWED_MIME_TYPES),
       imageOutputMimeType: "image/jpeg",
-      cloudinaryTransformation: process.env.COMPANY_LOGO_CLOUDINARY_TRANSFORMATION ?? "c_fit,w_512,h_512,q_auto:eco,f_auto"
+      cloudinaryTransformation: process.env.COMPANY_LOGO_CLOUDINARY_TRANSFORMATION ?? runtimeDefaults.COMPANY_LOGO_CLOUDINARY_TRANSFORMATION
     }
   },
   seedIfEmpty: false
@@ -72,13 +59,33 @@ function objectStorageOptions() {
     folder: process.env.CLOUDINARY_FOLDER ?? "hawkaii-hrms",
     resourceType: (process.env.CLOUDINARY_RESOURCE_TYPE as "auto" | "image" | "raw" | "video" | undefined) ?? "auto",
     uploadTransformation: process.env.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION ?? process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
-    mockUploads: process.env.CLOUDINARY_MOCK_UPLOADS === "true"
+    mockUploads: booleanFromEnv("CLOUDINARY_MOCK_UPLOADS", true)
   };
+}
+
+function booleanFromEnv(name: string, fallback: boolean): boolean {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (value === undefined || value === "") return fallback;
+  return ["true", "1", "yes", "on"].includes(value);
+}
+
+function numberFromEnv(name: string, fallback: number): number {
+  const value = process.env[name];
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function listFromEnv(name: string, fallback: string): string[] {
+  return (process.env[name] ?? fallback)
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 const publisher = new ValkeyStreamPublisher(valkeyUrl);
 const worker = new OutboxWorker(store, publisher);
-const intervalMs = Number(process.env.OUTBOX_WORKER_INTERVAL_MS ?? "2000");
+const intervalMs = numberFromEnv("OUTBOX_WORKER_INTERVAL_MS", 2000);
 let stopping = false;
 
 async function tick(): Promise<void> {
