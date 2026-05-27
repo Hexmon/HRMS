@@ -751,7 +751,7 @@ const K = {
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 8)}`;
 
 export function AdminSettingsProvider({ children }: { children: React.ReactNode }) {
-  const apiEnabled = useApiRouteEnabled(["/admin-settings", "/expenses", "/timesheet"]);
+  const apiEnabled = useApiRouteEnabled(["/admin-settings"]);
   const { user } = useAuth();
   const canManageManagerBackups = user?.roles.includes("main_admin") ?? false;
   const [company, setCompanyState] = React.useState<CompanyProfile>(DEFAULT_COMPANY);

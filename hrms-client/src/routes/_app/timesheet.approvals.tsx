@@ -26,7 +26,12 @@ import { useAuth } from "@/lib/auth";
 import { useEmployees } from "@/lib/employees-store";
 import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
-import { TIMESHEET_STATUS_LABEL, type TimesheetWeek, DEMO_LAST_WEEK } from "@/lib/mock/timesheets";
+import {
+  TIMESHEET_STATUS_LABEL,
+  type TimesheetWeek,
+  DEMO_LAST_WEEK,
+  previousWeekStartIso,
+} from "@/lib/mock/timesheets";
 import { useTimesheetMissingSubmissions } from "@/domains/timesheets";
 import { asRecord, isApiEnabled, numberValue, pageItems, text, toastApiError } from "@/shared/api";
 import {
@@ -72,8 +77,17 @@ function ApprovalsPage() {
   const { projects } = useProjects();
   const { entries, weeks, loading, error, isApiBacked, setWeekStatus } = useTimesheets();
   const apiMode = isApiEnabled();
+  const defaultReviewWeek = useMemo(
+    () => (apiMode ? previousWeekStartIso() : DEMO_LAST_WEEK),
+    [apiMode],
+  );
   const missingQuery = useTimesheetMissingSubmissions(
-    { page: 1, page_size: 100, cycle_start: DEMO_LAST_WEEK, cycle_end: cycleEnd(DEMO_LAST_WEEK) },
+    {
+      page: 1,
+      page_size: 100,
+      cycle_start: defaultReviewWeek,
+      cycle_end: cycleEnd(defaultReviewWeek),
+    },
     apiMode,
   );
 
@@ -133,7 +147,7 @@ function ApprovalsPage() {
   // Missing: scoped employees who have no week record for last week
   const localMissing: Row[] = useMemo(() => {
     const submittedIds = new Set(
-      scopedWeeks.filter((w) => w.weekStart === DEMO_LAST_WEEK).map((w) => w.employeeId),
+      scopedWeeks.filter((w) => w.weekStart === defaultReviewWeek).map((w) => w.employeeId),
     );
     return scopedEmployees
       .filter(
@@ -147,13 +161,13 @@ function ApprovalsPage() {
         employeeId: e.id,
         employeeName: e.name,
         department: e.department,
-        weekStart: DEMO_LAST_WEEK,
+        weekStart: defaultReviewWeek,
         total: 0,
         billable: 0,
         missing: TARGET,
         status: "draft" as const,
       }));
-  }, [scopedEmployees, scopedWeeks]);
+  }, [defaultReviewWeek, scopedEmployees, scopedWeeks]);
 
   const apiMissing: Row[] = useMemo(
     () =>
@@ -167,14 +181,14 @@ function ApprovalsPage() {
           employeeId: text(userRecord.employee_code ?? row.employee_user_id, "EMP"),
           employeeName: text(userRecord.full_name, "Employee"),
           department: text(asRecord(userRecord.department).name, "General"),
-          weekStart: text(cycle.start, DEMO_LAST_WEEK),
+          weekStart: text(cycle.start, defaultReviewWeek),
           total: numberValue(row.submitted_hours, 0),
           billable: 0,
           missing: numberValue(row.missing_hours, TARGET),
           status: "draft" as const,
         };
       }),
-    [missingQuery.data],
+    [defaultReviewWeek, missingQuery.data],
   );
 
   const missing = apiMode && missingQuery.data ? apiMissing : localMissing;

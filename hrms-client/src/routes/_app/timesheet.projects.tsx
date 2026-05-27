@@ -20,7 +20,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
-import { DEMO_LAST_WEEK } from "@/lib/mock/timesheets";
+import { DEMO_LAST_WEEK, previousWeekStartIso } from "@/lib/mock/timesheets";
 import { useTimesheetProjectSummary } from "@/domains/timesheets";
 import {
   asArray,
@@ -66,7 +66,9 @@ function ProjectViewPage() {
   );
 
   const [projectId, setProjectId] = useState<string>(myProjects[0]?.id ?? "");
-  const [weekStart, setWeekStart] = useState<string>(DEMO_LAST_WEEK);
+  const [weekStart, setWeekStart] = useState<string>(() =>
+    apiMode ? previousWeekStartIso() : DEMO_LAST_WEEK,
+  );
 
   const project = myProjects.find((p) => p.id === projectId);
 

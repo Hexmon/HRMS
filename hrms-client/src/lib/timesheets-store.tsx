@@ -99,10 +99,15 @@ function decisionForStatus(status: TimesheetEntryStatus): "approve" | "reject" |
 
 export function TimesheetsProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, activeRole } = useAuth();
   const { employees } = useEmployees();
   const { projects } = useProjects();
   const apiEnabled = useApiRouteEnabled(["/dashboard", "/timesheet", "/reports"]);
+  const canLoadApprovalQueue =
+    activeRole === "main_admin" ||
+    activeRole === "hr_admin" ||
+    activeRole === "manager" ||
+    activeRole === "project_manager";
   const [entries, setEntries] = React.useState<TimesheetEntry[]>(TIMESHEET_ENTRIES);
   const [weeks, setWeeks] = React.useState<TimesheetWeek[]>(TIMESHEET_WEEKS);
 
@@ -240,7 +245,7 @@ export function TimesheetsProvider({ children }: { children: React.ReactNode }) 
         },
         () => weeks.filter((week) => week.status === "pending" || week.status === "submitted"),
       ),
-    enabled: apiEnabled,
+    enabled: apiEnabled && canLoadApprovalQueue,
     staleTime: queryTimings.listStaleMs,
   });
 
@@ -280,7 +285,7 @@ export function TimesheetsProvider({ children }: { children: React.ReactNode }) 
 
   const hasApiEntriesResult = apiEntriesQuery.data !== undefined;
   const hasApiWeeksResult = apiWeeksQuery.data !== undefined;
-  const hasApiQueueResult = apiApprovalQueueQuery.data !== undefined;
+  const hasApiQueueResult = !canLoadApprovalQueue || apiApprovalQueueQuery.data !== undefined;
   const visibleEntries = React.useMemo(() => {
     if (!apiEnabled) return entries;
     if (!hasApiEntriesResult) return [];
@@ -290,12 +295,14 @@ export function TimesheetsProvider({ children }: { children: React.ReactNode }) 
     if (!apiEnabled) return weeks;
     if (!hasApiWeeksResult && !hasApiQueueResult) return [];
     const byId = new Map<string, TimesheetWeek>();
-    for (const week of [...(apiWeeksQuery.data ?? []), ...(apiApprovalQueueQuery.data ?? [])]) {
+    const queueWeeks = canLoadApprovalQueue ? (apiApprovalQueueQuery.data ?? []) : [];
+    for (const week of [...(apiWeeksQuery.data ?? []), ...queueWeeks]) {
       byId.set(week.id, week);
     }
     return Array.from(byId.values());
   }, [
     apiApprovalQueueQuery.data,
+    canLoadApprovalQueue,
     apiEnabled,
     apiWeeksQuery.data,
     hasApiQueueResult,
@@ -307,16 +314,18 @@ export function TimesheetsProvider({ children }: { children: React.ReactNode }) 
     apiEnabled &&
     ((!hasApiEntriesResult && apiEntriesQuery.isLoading) ||
       (!hasApiWeeksResult && apiWeeksQuery.isLoading) ||
-      (!hasApiQueueResult && apiApprovalQueueQuery.isLoading));
+      (canLoadApprovalQueue && !hasApiQueueResult && apiApprovalQueueQuery.isLoading));
   const apiError =
     apiEntriesQuery.error instanceof Error
       ? apiEntriesQuery.error
       : apiWeeksQuery.error instanceof Error
         ? apiWeeksQuery.error
-        : apiApprovalQueueQuery.error instanceof Error
+        : canLoadApprovalQueue && apiApprovalQueueQuery.error instanceof Error
           ? apiApprovalQueueQuery.error
           : null;
-  const isApiBacked = apiEnabled && (hasApiEntriesResult || hasApiWeeksResult || hasApiQueueResult);
+  const isApiBacked =
+    apiEnabled &&
+    (hasApiEntriesResult || hasApiWeeksResult || (canLoadApprovalQueue && hasApiQueueResult));
 
   const addEntry: Ctx["addEntry"] = (e) => {
     const id = "te_" + Math.random().toString(36).slice(2, 10);

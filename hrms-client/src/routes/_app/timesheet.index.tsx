@@ -32,7 +32,7 @@ import {
   startOfWeek,
   isoDate,
   addDays,
-  DEMO_TODAY_ISO,
+  currentWeekStartIso,
   type TimesheetEntry,
 } from "@/lib/mock/timesheets";
 import {
@@ -99,9 +99,11 @@ function MyTimesheetPage() {
   // Week navigation
   const [weekOffset, setWeekOffset] = useState(0);
   const weekStart = useMemo(() => {
-    const base = startOfWeek(new Date(DEMO_TODAY_ISO));
+    const base = apiMode
+      ? new Date(currentWeekStartIso() + "T00:00:00.000Z")
+      : startOfWeek(new Date("2026-05-11T00:00:00.000Z"));
     return isoDate(addDays(base, weekOffset * 7));
-  }, [weekOffset]);
+  }, [apiMode, weekOffset]);
 
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => isoDate(addDays(new Date(weekStart), i))),

@@ -9,6 +9,23 @@ export class TimesheetRepository {
 
   addSegment(segment: Omit<WorkSegment, "id" | "created_at" | "updated_at" | "deleted_at">): WorkSegment {
     const now = nowIso();
+    const existing = this.store.workSegments.find(
+      (candidate) =>
+        !candidate.deleted_at &&
+        candidate.employee_user_id === segment.employee_user_id &&
+        candidate.work_date === segment.work_date &&
+        candidate.project_code === segment.project_code &&
+        candidate.task_code === segment.task_code &&
+        candidate.billable === segment.billable
+    );
+
+    if (existing) {
+      existing.hours = segment.hours;
+      existing.description = segment.description;
+      existing.updated_at = now;
+      return existing;
+    }
+
     const record: WorkSegment = {
       id: randomUUID(),
       created_at: now,

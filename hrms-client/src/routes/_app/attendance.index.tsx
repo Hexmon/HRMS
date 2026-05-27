@@ -28,6 +28,7 @@ import {
   useTeamAttendanceSummary,
   type AttendancePunchEventType,
 } from "@/domains/attendance";
+import { currentLocalMonth, localIsoDate, liveAttendanceToday } from "@/domains/attendance/live";
 import {
   asArray,
   asRecord,
@@ -54,11 +55,11 @@ function records(value: unknown): ApiRecord[] {
 }
 
 function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localIsoDate();
 }
 
 function currentMonth(): string {
-  return new Date().toISOString().slice(0, 7);
+  return currentLocalMonth();
 }
 
 function formatMinutes(minutes: number): string {
@@ -221,11 +222,20 @@ function EmployeeView() {
   const data = asRecord(query.data);
   const today = asRecord(data.today);
   const summary = asRecord(data.summary);
-  const weekRecords = records(data.week_records);
+  const liveToday = liveAttendanceToday(today, data.generated_at, now);
+  const weekRecords = records(data.week_records).map((record) =>
+    text(record.work_date) === text(today.work_date)
+      ? {
+          ...record,
+          hours: liveToday.hours,
+          break_hours: liveToday.breakHours,
+          work_minutes: liveToday.workMinutes,
+          break_minutes: liveToday.breakMinutes,
+        }
+      : record,
+  );
   const exceptionHistory = records(data.exception_history);
-  const nextAllowedActions = asArray(today.next_allowed_actions)
-    .map((value) => text(value))
-    .filter(Boolean);
+  const nextAllowedActions = liveToday.nextAllowedActions;
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -305,18 +315,22 @@ function EmployeeView() {
             <div className="p-4">
               <p className="text-xs text-muted-foreground">Total today</p>
               <p className="mt-1 text-lg font-semibold tabular-nums">
-                {query.isLoading ? "..." : text(today.hours, "0h 00m")}
+                {query.isLoading ? "..." : liveToday.hours}
               </p>
             </div>
             <div className="p-4">
               <p className="text-xs text-muted-foreground">Break</p>
               <p className="mt-1 text-lg font-semibold tabular-nums">
-                {query.isLoading ? "..." : text(today.break_hours, "0h 00m")}
+                {query.isLoading ? "..." : liveToday.breakHours}
               </p>
             </div>
             <div className="p-4">
               <p className="text-xs text-muted-foreground">Target</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums">8h 30m</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums">
+                {query.isLoading
+                  ? "..."
+                  : text(today.target_hours, text(summary.target_hours, "0h 00m"))}
+              </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 border-t p-4">
@@ -402,7 +416,14 @@ function EmployeeView() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <StatCard
           label="MTD work hours"
-          value={query.isLoading ? "..." : formatMinutes(numberValue(summary.work_minutes))}
+          value={
+            query.isLoading
+              ? "..."
+              : formatMinutes(
+                  numberValue(summary.work_minutes) +
+                    (liveToday.workMinutes - numberValue(today.work_minutes)),
+                )
+          }
           hint="current month"
           icon={Clock}
           tone="primary"

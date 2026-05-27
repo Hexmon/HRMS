@@ -10,10 +10,15 @@ import {
   useMyAttendanceSummary,
   type AttendancePunchEventType,
 } from "@/domains/attendance";
-import { asArray, asRecord, numberValue, text, userFacingErrorMessage } from "@/shared/api";
+import {
+  currentLocalMonth,
+  formatAttendanceMinutes,
+  liveAttendanceToday,
+} from "@/domains/attendance/live";
+import { asRecord, numberValue, text, userFacingErrorMessage } from "@/shared/api";
 
 function currentMonth(): string {
-  return new Date().toISOString().slice(0, 7);
+  return currentLocalMonth();
 }
 
 function errorMessage(error: unknown): string {
@@ -21,8 +26,7 @@ function errorMessage(error: unknown): string {
 }
 
 function formatMinutes(minutes: number): string {
-  const safeMinutes = Math.max(0, Math.round(minutes));
-  return `${Math.floor(safeMinutes / 60)}h ${String(safeMinutes % 60).padStart(2, "0")}m`;
+  return formatAttendanceMinutes(minutes);
 }
 
 export function EmployeeAttendanceDashboard() {
@@ -32,9 +36,8 @@ export function EmployeeAttendanceDashboard() {
   const data = asRecord(query.data);
   const today = asRecord(data.today);
   const summary = asRecord(data.summary);
-  const nextAllowedActions = asArray(today.next_allowed_actions)
-    .map((value) => text(value))
-    .filter(Boolean);
+  const liveToday = liveAttendanceToday(today, data.generated_at, now);
+  const nextAllowedActions = liveToday.nextAllowedActions;
   const targetHours = text(today.target_hours, text(summary.target_hours));
 
   useEffect(() => {
@@ -174,13 +177,13 @@ export function EmployeeAttendanceDashboard() {
           <div className="p-4">
             <p className="text-xs text-muted-foreground">Today</p>
             <p className="mt-1 text-lg font-semibold tabular-nums">
-              {query.isLoading ? "..." : text(today.hours)}
+              {query.isLoading ? "..." : liveToday.hours}
             </p>
           </div>
           <div className="p-4">
             <p className="text-xs text-muted-foreground">Break</p>
             <p className="mt-1 text-lg font-semibold tabular-nums">
-              {query.isLoading ? "..." : text(today.break_hours)}
+              {query.isLoading ? "..." : liveToday.breakHours}
             </p>
           </div>
           <div className="p-4">
@@ -195,7 +198,14 @@ export function EmployeeAttendanceDashboard() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <StatCard
           label="MTD work hours"
-          value={query.isLoading ? "..." : formatMinutes(numberValue(summary.work_minutes))}
+          value={
+            query.isLoading
+              ? "..."
+              : formatMinutes(
+                  numberValue(summary.work_minutes) +
+                    (liveToday.workMinutes - numberValue(today.work_minutes)),
+                )
+          }
           hint="current month"
           icon={Clock}
           tone="primary"

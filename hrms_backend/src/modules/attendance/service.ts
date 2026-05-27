@@ -267,7 +267,7 @@ export class AttendanceService {
   mySummary(actor: AuthUser, query: AttendancePageQuery) {
     const timeZone = this.timezoneForUser(actor.id);
     const range = dateRange(query, timeZone);
-    const today = this.recomputeDay(actor.id, todayDate(timeZone), timeZone);
+    const today = this.resolveDay(actor.id, todayDate(timeZone), timeZone);
     const records = this.recordsForUsers(new Set([actor.id]), range.from, range.to).map((record) =>
       record.employee_user_id === actor.id && record.work_date === today.work_date ? today : record
     );
@@ -306,7 +306,7 @@ export class AttendanceService {
     const date = query.date_from ?? todayDate(this.timezoneForUser(actor.id));
     const visibleUsers = this.visibleUsers(actor, query.department_id);
     const activeUsers = visibleUsers.filter((user) => user.employment_status === EmploymentStatuses.Active);
-    const records = activeUsers.map((user) => this.getOrSynthesizeDay(user.id, date, this.timezoneForUser(user.id)));
+    const records = activeUsers.map((user) => this.resolveDay(user.id, date, this.timezoneForUser(user.id)));
     const exceptions = this.exceptions(actor, { ...query, page: 1, page_size: 8, date_from: date, date_to: date }).items;
     return {
       generated_at: nowIso(),
@@ -325,7 +325,7 @@ export class AttendanceService {
     const days = new Date(`${range.to}T00:00:00.000Z`).getUTCDate();
     const calendarDays = Array.from({ length: days }, (_, index) => {
       const date = `${range.month}-${String(index + 1).padStart(2, "0")}`;
-      return this.presentDay(this.getOrSynthesizeDay(user.id, date, timeZone), timeZone);
+      return this.presentDay(this.resolveDay(user.id, date, timeZone), timeZone);
     });
     return {
       generated_at: nowIso(),
@@ -344,7 +344,7 @@ export class AttendanceService {
     }
     const activeUsers = users.filter((user) => user.employment_status === EmploymentStatuses.Active);
     const userIds = new Set(activeUsers.map((user) => user.id));
-    const records = activeUsers.map((user) => this.getOrSynthesizeDay(user.id, date, this.timezoneForUser(user.id)));
+    const records = activeUsers.map((user) => this.resolveDay(user.id, date, this.timezoneForUser(user.id)));
     const regularizations = this.repository.listRegularizations({
       userIds,
       dateFrom: date,
@@ -397,7 +397,7 @@ export class AttendanceService {
       status: AttendanceRegularizationStatuses.Pending,
       current_approver_user_id: approver?.id ?? null
     });
-    const day = this.getOrSynthesizeDay(actor.id, input.work_date, this.timezoneForUser(actor.id));
+    const day = this.resolveDay(actor.id, input.work_date, this.timezoneForUser(actor.id));
     day.regularization_status = AttendanceRegularizationStatuses.Pending;
     day.updated_at = nowIso();
     appendAttendanceOutboxEvent(this.store, {
@@ -461,13 +461,19 @@ export class AttendanceService {
     const regularizationByUserDate = new Map(
       regularizations.map((request) => [`${request.employee_user_id}:${request.work_date}`, request])
     );
+    for (const user of visibleUsers) {
+      const timeZone = this.timezoneForUser(user.id);
+      for (const date of datesInclusive(range.from, range.to)) {
+        this.resolveDay(user.id, date, timeZone);
+      }
+    }
     const dayExceptions = this.repository
       .listDayRecords({ userIds: visibleUserIds, dateFrom: range.from, dateTo: range.to })
       .filter((record) => record.exception_type || record.regularization_status === AttendanceRegularizationStatuses.Pending)
       .map((record) => this.presentException(record, regularizationByUserDate.get(`${record.employee_user_id}:${record.work_date}`), actor));
     const requestExceptions = regularizations
       .filter((request) => !dayExceptions.some((exception) => exception.request_id === request.id))
-      .map((request) => this.presentException(this.getOrSynthesizeDay(request.employee_user_id, request.work_date), request, actor));
+      .map((request) => this.presentException(this.resolveDay(request.employee_user_id, request.work_date), request, actor));
     const items = [...dayExceptions, ...requestExceptions]
       .filter((exception) => !query.exception_type || exception.exception_type === query.exception_type)
       .sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -519,7 +525,7 @@ export class AttendanceService {
       this.applyApprovedPunches(request, actor.id);
     }
     const requestTimeZone = this.timezoneForUser(request.employee_user_id);
-    const day = this.getOrSynthesizeDay(request.employee_user_id, request.work_date, requestTimeZone);
+    const day = this.resolveDay(request.employee_user_id, request.work_date, requestTimeZone);
     day.regularization_status = nextStatus;
     if (nextStatus === AttendanceRegularizationStatuses.Approved && day.exception_type) {
       day.exception_type = null;
@@ -724,6 +730,27 @@ export class AttendanceService {
     return total;
   }
 
+  private resolveDay(employeeUserId: UUID, workDate: string, timeZone = this.timezoneForUser(employeeUserId)): AttendanceDayRecord {
+    const existing = this.repository.dayRecord(employeeUserId, workDate);
+    const punches = this.repository.listPunches(employeeUserId, workDate, workDate, timeZone);
+    if (existing && punches.length === 0 && this.shouldPreserveManualDay(existing)) {
+      return existing;
+    }
+    if (punches.length > 0 || workDate <= todayDate(timeZone)) {
+      return this.recomputeDay(employeeUserId, workDate, timeZone);
+    }
+    return this.getOrSynthesizeDay(employeeUserId, workDate, timeZone);
+  }
+
+  private shouldPreserveManualDay(record: AttendanceDayRecord): boolean {
+    return (
+      record.status === AttendanceDayStatuses.Leave ||
+      record.status === AttendanceDayStatuses.Wfh ||
+      record.status === AttendanceDayStatuses.Holiday ||
+      record.regularization_status === AttendanceRegularizationStatuses.Approved
+    );
+  }
+
   private getOrSynthesizeDay(employeeUserId: UUID, workDate: string, timeZone = this.timezoneForUser(employeeUserId)): AttendanceDayRecord {
     const existing = this.repository.dayRecord(employeeUserId, workDate);
     if (existing) {
@@ -762,9 +789,7 @@ export class AttendanceService {
       const date = new Date(start);
       date.setUTCDate(start.getUTCDate() + index);
       const workDate = date.toISOString().slice(0, 10);
-      return workDate === localToday
-        ? this.recomputeDay(employeeUserId, workDate, timeZone)
-        : this.getOrSynthesizeDay(employeeUserId, workDate, timeZone);
+      return this.resolveDay(employeeUserId, workDate, timeZone);
     });
   }
 
@@ -784,13 +809,11 @@ export class AttendanceService {
   }
 
   private recordsForUsers(userIds: Set<UUID>, from: string, to: string): AttendanceDayRecord[] {
-    const records = this.repository.listDayRecords({ userIds, dateFrom: from, dateTo: to });
-    const output = [...records];
+    const output: AttendanceDayRecord[] = [];
     for (const userId of userIds) {
+      const timeZone = this.timezoneForUser(userId);
       for (const date of datesInclusive(from, to)) {
-        if (!output.some((record) => record.employee_user_id === userId && record.work_date === date)) {
-          output.push(this.getOrSynthesizeDay(userId, date, this.timezoneForUser(userId)));
-        }
+        output.push(this.resolveDay(userId, date, timeZone));
       }
     }
     return output.sort((a, b) => a.work_date.localeCompare(b.work_date));

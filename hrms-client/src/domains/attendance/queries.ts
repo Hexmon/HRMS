@@ -14,7 +14,8 @@ export function useMyAttendanceSummary(query: AttendanceQuery = {}, enabled = tr
     queryKey: queryKeys.list("attendance", "summary-my", query),
     queryFn: () => attendanceApi.mySummary(query),
     enabled,
-    staleTime: queryTimings.listStaleMs,
+    staleTime: queryTimings.realtimeStaleMs,
+    refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   });
 }

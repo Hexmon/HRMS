@@ -1,7 +1,35 @@
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
+
+function localDate(offsetDays = 0, timeZone = "Asia/Kolkata"): string {
+  const value = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(value);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+  return map.get("year") + "-" + map.get("month") + "-" + map.get("day");
+}
+
+function isWeekend(date: string): boolean {
+  const day = new Date(date + "T00:00:00.000Z").getUTCDay();
+  return day === 0 || day === 6;
+}
+
+function previousWorkday(): string {
+  for (let offset = -1; offset >= -7; offset -= 1) {
+    const date = localDate(offset);
+    if (!isWeekend(date)) {
+      return date;
+    }
+  }
+  return localDate(-1);
+}
 
 describe("attendance", () => {
   let app: FastifyInstance;
@@ -130,6 +158,88 @@ describe("attendance", () => {
     expect(dailyCalendar.json().items.some((item: { employee_user_id: string }) => item.employee_user_id === employee.user.id)).toBe(true);
     expect(dailyCalendar.json().summary.late).toBeGreaterThanOrEqual(1);
     expect(dailyCalendar.json().totals.total).toBeGreaterThanOrEqual(2);
+  });
+
+
+  it("refreshes stale day statuses and returns live work minutes for open punches", async () => {
+    const employee = await loginAs(app, "E1");
+    const staleDate = previousWorkday();
+    const staleExisting = app.store.attendanceDayRecords.find(
+      (record) => record.employee_user_id === employee.user.id && record.work_date === staleDate && !record.deleted_at
+    );
+
+    if (staleExisting) {
+      Object.assign(staleExisting, {
+        status: "future",
+        first_check_in: null,
+        last_check_out: null,
+        work_minutes: 0,
+        break_minutes: 0,
+        late_minutes: 0,
+        early_out_minutes: 0,
+        work_mode: null,
+        note: null,
+        exception_type: null,
+        regularization_status: null
+      });
+    } else {
+      app.store.attendanceDayRecords.push({
+        id: randomUUID(),
+        employee_user_id: employee.user.id,
+        work_date: staleDate,
+        status: "future",
+        first_check_in: null,
+        last_check_out: null,
+        work_minutes: 0,
+        break_minutes: 0,
+        late_minutes: 0,
+        early_out_minutes: 0,
+        work_mode: null,
+        note: null,
+        exception_type: null,
+        regularization_status: null,
+        version: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        deleted_at: null
+      });
+    }
+
+    const checkIn = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: new Date(Date.now() - 75 * 60_000).toISOString(),
+        work_mode: "office"
+      }
+    });
+    expect(checkIn.statusCode).toBe(200);
+
+    const summary = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/summary/my?month=" + localDate().slice(0, 7) + "&page=1&page_size=50",
+      headers: authHeader(employee.token)
+    });
+    expect(summary.statusCode).toBe(200);
+    expect(summary.json().today.work_minutes).toBeGreaterThanOrEqual(70);
+    const refreshedStoreRecord = app.store.attendanceDayRecords.find(
+      (record) => record.employee_user_id === employee.user.id && record.work_date === staleDate && !record.deleted_at
+    );
+    expect(refreshedStoreRecord).toMatchObject({
+      status: "absent",
+      exception_type: "absent",
+      note: "No punch-in recorded"
+    });
+    const refreshedWeekRecord = summary.json().week_records.find((record: { work_date: string }) => record.work_date === staleDate);
+    if (refreshedWeekRecord) {
+      expect(refreshedWeekRecord).toMatchObject({
+        status: "absent",
+        exception_type: "absent",
+        detail: "No punch-in recorded"
+      });
+    }
   });
 
   it("submits and approves regularization with manager scope, OCC, and exception visibility", async () => {

@@ -69,6 +69,21 @@ export function addDays(d: Date, n: number): Date {
   return out;
 }
 
+function localIsoDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return year + "-" + month + "-" + day;
+}
+
+export function currentWeekStartIso(reference = new Date()): string {
+  return localIsoDate(startOfWeek(reference));
+}
+
+export function previousWeekStartIso(reference = new Date()): string {
+  return localIsoDate(addDays(startOfWeek(reference), -7));
+}
+
 const TODAY = new Date("2026-05-11"); // app demo date — Monday
 const THIS_WEEK = isoDate(startOfWeek(TODAY));
 const LAST_WEEK = isoDate(addDays(startOfWeek(TODAY), -7));
