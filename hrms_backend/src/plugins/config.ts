@@ -1,0 +1,139 @@
+import fp from "fastify-plugin";
+import { z } from "zod";
+
+const optionalUrl = z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional());
+const booleanEnv = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off", ""].includes(normalized)) return false;
+  return value;
+}, z.boolean());
+
+const configSchema = z.object({
+  NODE_ENV: z.string().default("development"),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+  JWT_ACCESS_SECRET: z.string().min(16).default("local-dev-access-secret-change-me"),
+  JWT_REFRESH_SECRET: z.string().min(16).default("local-dev-refresh-secret-change-me"),
+  SESSION_COOKIE_NAME: z.string().default("hrms_session"),
+  JWT_SECRET: z.string().min(16).optional(),
+  COOKIE_SECURE: booleanEnv.default(false),
+  DATABASE_URL: z.string().optional(),
+  TEST_DATABASE_URL: z.string().optional(),
+  VALKEY_URL: z.string().optional(),
+  CLOUDINARY_CLOUD_NAME: z.string().default("local-cloudinary-mock"),
+  CLOUDINARY_API_KEY: z.string().default("local-cloudinary-key"),
+  CLOUDINARY_API_SECRET: z.string().default("local-cloudinary-secret"),
+  CLOUDINARY_FOLDER: z.string().default("hawkaii-hrms"),
+  CLOUDINARY_RESOURCE_TYPE: z.enum(["auto", "image", "raw", "video"]).default("auto"),
+  CLOUDINARY_UPLOAD_TRANSFORMATION: z.string().default("q_auto:eco,f_auto"),
+  CLOUDINARY_MOCK_UPLOADS: booleanEnv.default(true),
+  MEDIA_UPLOAD_MAX_BYTES: z.coerce.number().int().min(128 * 1024).default(10 * 1024 * 1024),
+  MEDIA_IMAGE_MAX_WIDTH: z.coerce.number().int().min(256).max(4096).default(1600),
+  MEDIA_IMAGE_MAX_HEIGHT: z.coerce.number().int().min(256).max(4096).default(1600),
+  MEDIA_IMAGE_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(0.82),
+  MEDIA_ALLOWED_MIME_TYPES: z.string().default([
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "text/plain",
+    "text/csv",
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  ].join(",")),
+  MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION: z.string().default("q_auto:eco,f_auto"),
+  COMPANY_LOGO_MAX_BYTES: z.coerce.number().int().min(50 * 1024).default(2 * 1024 * 1024),
+  COMPANY_LOGO_MAX_WIDTH: z.coerce.number().int().min(128).max(2048).default(512),
+  COMPANY_LOGO_MAX_HEIGHT: z.coerce.number().int().min(128).max(2048).default(512),
+  COMPANY_LOGO_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(0.82),
+  COMPANY_LOGO_ALLOWED_MIME_TYPES: z.string().default("image/jpeg,image/png,image/webp"),
+  COMPANY_LOGO_CLOUDINARY_TRANSFORMATION: z.string().default("c_fit,w_512,h_512,q_auto:eco,f_auto"),
+  PROFILE_PHOTO_MAX_BYTES: z.coerce.number().int().min(50 * 1024).default(2 * 1024 * 1024),
+  PROFILE_PHOTO_MAX_WIDTH: z.coerce.number().int().min(128).max(2048).default(512),
+  PROFILE_PHOTO_MAX_HEIGHT: z.coerce.number().int().min(128).max(2048).default(512),
+  PROFILE_PHOTO_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(0.82),
+  PROFILE_PHOTO_ALLOWED_MIME_TYPES: z.string().default("image/jpeg,image/png,image/webp"),
+  PROFILE_PHOTO_CLOUDINARY_TRANSFORMATION: z.string().default("c_fill,g_face,w_512,h_512,q_auto:eco,f_auto"),
+  PDF_COMPRESSION_ENABLED: booleanEnv.default(false),
+  PDF_COMPRESSION_BINARY: z.string().default("gs"),
+  PDF_COMPRESSION_QUALITY: z.enum(["screen", "ebook", "printer", "prepress", "default"]).default("ebook"),
+  PDF_COMPRESSION_MIN_BYTES: z.coerce.number().int().min(0).default(128 * 1024),
+  PDF_COMPRESSION_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30_000),
+  PDF_COMPRESSION_FAIL_OPEN: booleanEnv.default(true),
+  API_BASE_URL: z.string().default("http://localhost:3001"),
+  APP_URL: optionalUrl,
+  FRONTEND_URL: z.string().url().default("http://localhost:5173"),
+  EMAIL_DELIVERY_PROVIDER: z.literal("resend").default("resend"),
+  EMAIL_DELIVERY_MODE: z.enum(["send", "log", "disabled"]).default("log"),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().default("Hawkaii HRMS <verify@example.test>"),
+  RESEND_FROM_NAME: z.string().optional(),
+  RESEND_REPLY_TO_EMAIL: z.string().optional(),
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
+  RESEND_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS: z.coerce.number().int().positive().default(300),
+  EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: z.coerce.number().int().min(300).default(24 * 60 * 60),
+  EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(1).default(60),
+  EMAIL_VERIFICATION_RESEND_HOURLY_LIMIT: z.coerce.number().int().min(1).default(5),
+  EMAIL_VERIFICATION_RESEND_DAILY_LIMIT: z.coerce.number().int().min(1).default(10),
+  CORS_ALLOWED_ORIGINS: z.string().default(""),
+  RATE_LIMIT_ENABLED: booleanEnv.default(true),
+  RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(60),
+  RATE_LIMIT_READ_MAX: z.coerce.number().int().min(1).default(120),
+  RATE_LIMIT_WRITE_MAX: z.coerce.number().int().min(1).default(60),
+  RATE_LIMIT_AUTH_MAX: z.coerce.number().int().min(1).default(10),
+  RATE_LIMIT_PUBLIC_MAX: z.coerce.number().int().min(1).default(60)
+}).superRefine((config, context) => {
+  const requireField = (field: "RESEND_API_KEY" | "RESEND_FROM_EMAIL" | "RESEND_WEBHOOK_SECRET" | "FRONTEND_URL") => {
+    if (!config[field]) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `${field} is required when transactional email delivery is enabled.`
+      });
+    }
+  };
+
+  if (config.NODE_ENV === "production" && config.EMAIL_DELIVERY_MODE !== "send") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["EMAIL_DELIVERY_MODE"],
+      message: "EMAIL_DELIVERY_MODE must be 'send' in production."
+    });
+  }
+  if (config.EMAIL_DELIVERY_MODE === "send") {
+    requireField("RESEND_API_KEY");
+    requireField("RESEND_FROM_EMAIL");
+    requireField("FRONTEND_URL");
+  }
+  if (config.NODE_ENV === "production") {
+    requireField("RESEND_WEBHOOK_SECRET");
+    if (config.CLOUDINARY_MOCK_UPLOADS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CLOUDINARY_MOCK_UPLOADS"],
+        message: "CLOUDINARY_MOCK_UPLOADS cannot be true in production."
+      });
+    }
+    for (const field of ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const) {
+      if (!config[field] || /^replace-|^local-|mock/iu.test(config[field])) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} must be a real Cloudinary value in production.`
+        });
+      }
+    }
+  }
+}).transform((config) => ({
+  ...config,
+  JWT_SECRET: config.JWT_SECRET ?? config.JWT_ACCESS_SECRET,
+  APP_URL: config.APP_URL ?? config.API_BASE_URL
+}));
+
+export const configPlugin = fp(async (fastify) => {
+  const config = configSchema.parse(process.env);
+  fastify.decorate("config", config);
+});

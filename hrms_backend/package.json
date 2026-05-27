@@ -1,0 +1,121 @@
+{
+  "name": "hawkaii-hrms-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone Fastify backend for Hawkaii HRMS",
+  "type": "module",
+  "packageManager": "pnpm@10.25.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "imports": {
+    "#shared": {
+      "types": "./src/shared/index.ts",
+      "production": "./dist/src/shared/index.js",
+      "default": "./src/shared/index.ts"
+    },
+    "#shared/*": {
+      "types": "./src/shared/*",
+      "production": "./dist/src/shared/*",
+      "default": "./src/shared/*"
+    },
+    "#auth": {
+      "types": "./src/auth/index.ts",
+      "production": "./dist/src/auth/index.js",
+      "default": "./src/auth/index.ts"
+    },
+    "#db": {
+      "types": "./src/db/index.ts",
+      "production": "./dist/src/db/index.js",
+      "default": "./src/db/index.ts"
+    },
+    "#testing": {
+      "types": "./src/testing/index.ts",
+      "production": "./dist/src/testing/index.js",
+      "default": "./src/testing/index.ts"
+    }
+  },
+  "scripts": {
+    "dev": "tsx scripts/run-with-env.ts .env.local -- tsx src/server.ts",
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json && mkdir -p dist/src/db/migrations && cp src/db/migrations/*.sql dist/src/db/migrations/",
+    "start": "NODE_OPTIONS=--conditions=production node dist/src/server.js",
+    "worker:outbox": "tsx scripts/run-with-env.ts .env.local -- tsx src/workers/run-outbox-worker.ts",
+    "worker:start": "NODE_OPTIONS=--conditions=production node dist/src/workers/run-outbox-worker.js",
+    "lint": "tsx scripts/lint.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm test:unit && pnpm test:contracts && pnpm test:integration && pnpm test:e2e",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:contracts": "vitest run --project contracts",
+    "test:e2e": "vitest run --project e2e --passWithNoTests",
+    "api:docs:generate": "tsx scripts/api-docs-generate.ts && pnpm api:frontend-contract:generate",
+    "api:docs:verify": "tsx scripts/api-docs-verify.ts",
+    "api:consumer:verify": "tsx scripts/api-consumer-verify.ts",
+    "db:generate": "tsx scripts/db-generate.ts",
+    "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:migrate:prod": "NODE_OPTIONS=--conditions=production node dist/scripts/db-migrate.js",
+    "db:verify:no-cross-schema-fks": "tsx scripts/verify-no-cross-schema-fks.ts",
+    "backup:db": "tsx scripts/backup-db.ts",
+    "restore:db": "tsx scripts/restore-db.ts",
+    "seed:dev": "tsx src/platform/seed-dev.ts",
+    "release:seed": "tsx scripts/seed-release-data.ts",
+    "release:verify:db": "tsx scripts/verify-release-db.ts",
+    "release:verify:services": "tsx scripts/verify-release-services.ts",
+    "release:verify:adapters": "tsx scripts/verify-release-adapters.ts",
+    "release:uat": "tsx scripts/run-release-uat.ts",
+    "qa:seed:extras": "tsx scripts/seed-qa-data.ts",
+    "qa:seed": "HRMS_ENV_FILE=.env.qa pnpm release:seed && HRMS_ENV_FILE=.env.qa pnpm qa:seed:extras",
+    "qa:uat": "HRMS_ENV_FILE=.env.qa HRMS_REPORT_DIR=docs/qa/runs/qa-readiness pnpm release:uat && HRMS_ENV_FILE=.env.qa HRMS_REPORT_DIR=docs/qa/runs/qa-readiness tsx scripts/run-qa-api-uat.ts && HRMS_ENV_FILE=.env.qa HRMS_REPORT_DIR=docs/qa/runs/qa-readiness tsx scripts/run-qa-security-rbac.ts",
+    "verify:business": "tsx scripts/verify-business.ts",
+    "verify:quality": "tsx scripts/verify-quality.ts",
+    "verify:implementation": "tsx scripts/verify-implementation.ts",
+    "verify:scalability": "tsx scripts/verify-scalability.ts",
+    "verify:regression": "tsx scripts/verify-regression.ts",
+    "dev:infra:up": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev up -d --wait postgres valkey",
+    "dev:infra:down": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev down",
+    "docker:dev:build": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev build",
+    "docker:dev:up": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev up -d --build",
+    "docker:dev:down": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev down",
+    "docker:dev:logs": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev logs --tail=120",
+    "docker:dev:ps": "docker compose --env-file .env.local -f infra/docker/docker-compose.dev.yml -p hawkaii_hrms_backend_dev ps",
+    "docker:dev:verify": "HRMS_ENV_FILE=.env.local HRMS_REPORT_DIR=docs/qa/runs/dev-standalone HRMS_COMPOSE_PROJECT=hawkaii_hrms_backend_dev HRMS_COMPOSE_FILES=infra/docker/docker-compose.dev.yml tsx scripts/verify-dev-deployment.ts",
+    "docker:qa:build": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_qa build",
+    "docker:qa:up": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_qa up -d --build",
+    "docker:qa:down": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_qa down",
+    "docker:qa:logs": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_qa logs --tail=120",
+    "docker:qa:ps": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_qa ps",
+    "docker:qa:verify": "HRMS_ENV_FILE=.env.qa HRMS_REPORT_DIR=docs/qa/runs/qa-standalone HRMS_COMPOSE_PROJECT=hawkaii_hrms_backend_qa HRMS_COMPOSE_FILES=infra/docker/docker-compose.qa.yml tsx scripts/verify-dev-deployment.ts",
+    "docker:prod:build": "docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml -p hawkaii_hrms_backend_prod build",
+    "docker:prod:up": "docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml -p hawkaii_hrms_backend_prod up -d --build",
+    "docker:prod:down": "docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml -p hawkaii_hrms_backend_prod down",
+    "docker:prod:config": "docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml -p hawkaii_hrms_backend_prod config",
+    "test:infra:up": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_test up -d --wait postgres valkey",
+    "test:infra:down": "docker compose --env-file .env.qa -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_test down",
+    "qa:human": "HRMS_REPORT_DIR=docs/qa/runs/standalone-full-human-qa tsx scripts/run-standalone-full-human-qa.ts",
+    "api:frontend-contract:generate": "tsx scripts/api-frontend-contract-generate.ts"
+  },
+  "dependencies": {
+    "@fastify/compress": "^8.1.0",
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.1.0",
+    "@fastify/multipart": "^9.3.0",
+    "@fastify/swagger": "^9.6.1",
+    "@fastify/swagger-ui": "^5.2.3",
+    "drizzle-orm": "^0.44.7",
+    "fastify": "^5.6.2",
+    "fastify-plugin": "^5.1.0",
+    "iovalkey": "^0.3.3",
+    "pg": "^8.16.3",
+    "pino": "^10.1.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.15.6",
+    "tsc-alias": "^1.8.16",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}

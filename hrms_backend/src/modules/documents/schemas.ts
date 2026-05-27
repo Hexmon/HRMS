@@ -1,0 +1,1 @@
+export { documentUploadSchema } from "#shared";
