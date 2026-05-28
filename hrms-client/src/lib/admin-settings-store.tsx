@@ -132,6 +132,12 @@ export interface PolicyAttendance {
   halfDayAfterMinutes: number;
   autoMarkAbsentMinutes: number;
   allowRegularization: boolean;
+  fullDayPunchWindow: boolean;
+  punchInStart: string;
+  punchInEnd: string;
+  punchOutStart: string;
+  punchOutEnd: string;
+  allowOffDayPunches: boolean;
 }
 export interface PolicyLeave {
   casualPerYear: number;
@@ -523,6 +529,12 @@ const DEFAULT_POLICIES: Policies = {
     halfDayAfterMinutes: 240,
     autoMarkAbsentMinutes: 480,
     allowRegularization: true,
+    fullDayPunchWindow: true,
+    punchInStart: "09:00",
+    punchInEnd: "11:00",
+    punchOutStart: "17:00",
+    punchOutEnd: "23:59",
+    allowOffDayPunches: false,
   },
   leave: {
     casualPerYear: 12,

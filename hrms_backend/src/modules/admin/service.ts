@@ -1244,6 +1244,10 @@ function targetForAdminEvent(event: OutboxEvent): string {
   return typeof value === "string" ? value : `${event.aggregate_type}:${event.aggregate_id}`;
 }
 
+const attendanceTimePolicyFields = new Set(["punchInStart", "punchInEnd", "punchOutStart", "punchOutEnd"]);
+const attendanceBooleanPolicyFields = new Set(["allowRegularization", "fullDayPunchWindow", "allowOffDayPunches"]);
+const attendanceTimePolicyPattern = /^([01]\d|2[0-3]):[0-5]\d$/u;
+
 function normalizeAdminPolicyConfig(
   policyKey: AdminPolicyKey,
   current: Record<string, unknown>,
@@ -1257,6 +1261,14 @@ function normalizeAdminPolicyConfig(
     }
     if (typeof value === "number" && (!Number.isFinite(value) || value < 0)) {
       throw badRequest("Policy number values must be finite and non-negative.", { policy_key: policyKey, field: key });
+    }
+    if (policyKey === "attendance" && attendanceBooleanPolicyFields.has(key) && typeof value !== "boolean") {
+      throw badRequest("Attendance policy toggle values must be true or false.", { policy_key: policyKey, field: key });
+    }
+    if (policyKey === "attendance" && attendanceTimePolicyFields.has(key)) {
+      if (typeof value !== "string" || !attendanceTimePolicyPattern.test(value.trim())) {
+        throw badRequest("Attendance punch windows must use HH:mm time.", { policy_key: policyKey, field: key });
+      }
     }
     if (typeof value === "string") {
       const trimmed = value.trim();
@@ -1273,7 +1285,18 @@ function normalizeAdminPolicyConfig(
 
 function adminPolicyConfigKeys(policyKey: AdminPolicyKey): Set<string> {
   const fields: Record<AdminPolicyKey, string[]> = {
-    attendance: ["graceMinutes", "halfDayAfterMinutes", "autoMarkAbsentMinutes", "allowRegularization"],
+    attendance: [
+      "graceMinutes",
+      "halfDayAfterMinutes",
+      "autoMarkAbsentMinutes",
+      "allowRegularization",
+      "fullDayPunchWindow",
+      "punchInStart",
+      "punchInEnd",
+      "punchOutStart",
+      "punchOutEnd",
+      "allowOffDayPunches"
+    ],
     leave: ["casualPerYear", "sickPerYear", "earnedPerYear", "carryForwardCap", "encashmentAllowed"],
     timesheet: ["weeklyHours", "minDailyHours", "submitBy", "lockAfterApproval"],
     expense: ["perDayLimit", "receiptMandatoryAbove", "selfApprovalAllowed", "autoEscalateDays"],

@@ -804,7 +804,13 @@ export function buildDefaultAdminPolicies(created: string): AdminPolicyConfigRec
         graceMinutes: 10,
         halfDayAfterMinutes: 240,
         autoMarkAbsentMinutes: 480,
-        allowRegularization: true
+        allowRegularization: true,
+        fullDayPunchWindow: true,
+        punchInStart: "09:00",
+        punchInEnd: "11:00",
+        punchOutStart: "17:00",
+        punchOutEnd: "23:59",
+        allowOffDayPunches: false
       }
     },
     {

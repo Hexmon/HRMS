@@ -31,6 +31,42 @@ function previousWorkday(): string {
   return localDate(-1);
 }
 
+function ensureActiveCompany(app: FastifyInstance) {
+  const existing = app.store.companyProfiles.find((candidate) => candidate.status === "active") ?? app.store.companyProfiles[0];
+  if (existing) {
+    existing.status = "active";
+    return existing;
+  }
+  const now = new Date().toISOString();
+  const company = {
+    id: randomUUID(),
+    company_name: "Test Company",
+    company_slug: "test-company",
+    website: null,
+    industry: null,
+    address: null,
+    timezone: "Asia/Kolkata",
+    locale: "en-IN",
+    currency: "INR",
+    fiscal_year_start_month: 4,
+    working_week: "Mon-Fri",
+    work_hours_per_day: 8,
+    logo_label: "TC",
+    logo_document_id: null,
+    logo_url: null,
+    logo_file_name: null,
+    logo_mime_type: null,
+    logo_size_bytes: null,
+    status: "active" as const,
+    bootstrap_completed_at: now,
+    created_at: now,
+    updated_at: now,
+    version: 1
+  };
+  app.store.companyProfiles.push(company);
+  return company;
+}
+
 describe("attendance", () => {
   let app: FastifyInstance;
 
@@ -60,8 +96,8 @@ describe("attendance", () => {
     expect(checkIn.statusCode).toBe(200);
     expect(checkIn.json().day_status).toMatchObject({
       work_date: "2026-05-20",
-      status: "late",
-      late_minutes: 10
+      status: "present",
+      late_minutes: 0
     });
     expect(checkIn.json().day_status.in_time).toBe("09:40");
     expect(checkIn.json().next_allowed_actions).toEqual(["break_start", "check_out"]);
@@ -78,7 +114,7 @@ describe("attendance", () => {
     });
     expect(checkOut.statusCode).toBe(200);
     expect(checkOut.json().day_status.work_minutes).toBeGreaterThan(500);
-    expect(checkOut.json().day_status.detail).toBe("Late by 10 min");
+    expect(checkOut.json().day_status.detail).toBe("8h 35m");
 
     const duplicate = await app.inject({
       method: "POST",
@@ -156,13 +192,194 @@ describe("attendance", () => {
       page_size: 10
     });
     expect(dailyCalendar.json().items.some((item: { employee_user_id: string }) => item.employee_user_id === employee.user.id)).toBe(true);
-    expect(dailyCalendar.json().summary.late).toBeGreaterThanOrEqual(1);
+    expect(dailyCalendar.json().summary.present).toBeGreaterThanOrEqual(1);
     expect(dailyCalendar.json().totals.total).toBeGreaterThanOrEqual(2);
+  });
+
+  it("applies admin company schedule, holidays, and attendance policy to day status", async () => {
+    const employee = await loginAs(app, "E1");
+    const company = ensureActiveCompany(app);
+    company.working_week = "Mon-Sat";
+    company.work_hours_per_day = 7.5;
+    const policy = app.store.adminPolicies.find((candidate) => candidate.policy_key === "attendance");
+    if (policy) {
+      policy.config = { ...policy.config, graceMinutes: 60, autoMarkAbsentMinutes: 450 };
+    }
+
+    const withinGrace = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: "2026-05-25T04:45:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(withinGrace.statusCode).toBe(200);
+    expect(withinGrace.json().day_status).toMatchObject({
+      work_date: "2026-05-25",
+      status: "present",
+      late_minutes: 0
+    });
+
+    const calendar = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/calendar/monthly?month=2026-05",
+      headers: authHeader(employee.token)
+    });
+    expect(calendar.statusCode).toBe(200);
+    const saturday = calendar.json().calendar_days.find((item: { work_date: string }) => item.work_date === "2026-05-23");
+    expect(saturday).toMatchObject({ status: "absent", detail: "No punch-in recorded" });
+    expect(calendar.json().calendar_days[0]).toHaveProperty("hours");
+
+    app.store.holidays.push({
+      id: randomUUID(),
+      name: "Company Offsite",
+      holiday_date: "2026-05-26",
+      region: "Company",
+      optional: false,
+      version: 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted_at: null
+    });
+    const refreshed = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/calendar/monthly?month=2026-05",
+      headers: authHeader(employee.token)
+    });
+    expect(refreshed.statusCode).toBe(200);
+    const holiday = refreshed.json().calendar_days.find((item: { work_date: string }) => item.work_date === "2026-05-26");
+    expect(holiday).toMatchObject({ status: "holiday", detail: "Holiday: Company Offsite" });
+    expect(refreshed.json().summary.holiday).toBeGreaterThanOrEqual(1);
+
+    const summary = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/summary/my?month=2026-05&page=1&page_size=50",
+      headers: authHeader(employee.token)
+    });
+    expect(summary.statusCode).toBe(200);
+    expect(summary.json().summary.target_hours).toBe("7h 30m");
+  });
+
+
+  it("enforces admin-configured punch windows and off-day access", async () => {
+    const employee = await loginAs(app, "E1");
+    const company = ensureActiveCompany(app);
+    company.working_week = "Mon-Fri";
+    app.store.holidays = app.store.holidays.filter((holiday) => !["2026-05-23", "2026-05-24", "2026-05-27"].includes(holiday.holiday_date));
+    const policy = app.store.adminPolicies.find((candidate) => candidate.policy_key === "attendance");
+    if (!policy) {
+      throw new Error("Expected attendance policy");
+    }
+    policy.config = {
+      ...policy.config,
+      fullDayPunchWindow: false,
+      punchInStart: "09:00",
+      punchInEnd: "11:00",
+      punchOutStart: "17:00",
+      punchOutEnd: "23:00",
+      allowOffDayPunches: false
+    };
+
+    const earlyCheckIn = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: "2026-05-20T03:00:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(earlyCheckIn.statusCode).toBe(400);
+    expect(earlyCheckIn.json().message).toContain("Punch-in is allowed between 09:00 and 11:00");
+
+    const checkIn = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: "2026-05-20T04:00:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(checkIn.statusCode).toBe(200);
+    expect(checkIn.json().next_allowed_actions).toEqual(["break_start"]);
+    expect(checkIn.json().punch_policy).toMatchObject({ punch_window_mode: "restricted", can_punch_now: true });
+
+    const earlyCheckOut = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_out",
+        occurred_at: "2026-05-20T10:30:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(earlyCheckOut.statusCode).toBe(400);
+    expect(earlyCheckOut.json().message).toContain("Punch-out is allowed between 17:00 and 23:00");
+
+    const checkOut = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_out",
+        occurred_at: "2026-05-20T12:00:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(checkOut.statusCode).toBe(200);
+
+    const offDayBlocked = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: "2026-05-23T04:00:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(offDayBlocked.statusCode).toBe(400);
+    expect(offDayBlocked.json().message).toContain("off days");
+
+    policy.config = { ...policy.config, allowOffDayPunches: true };
+    const offDayAllowed = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: "2026-05-24T04:00:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(offDayAllowed.statusCode).toBe(200);
+
+    policy.config = { ...policy.config, fullDayPunchWindow: true, allowOffDayPunches: false };
+    const fullDayCheckIn = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: "2026-05-27T20:30:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(fullDayCheckIn.statusCode).toBe(200);
+    expect(fullDayCheckIn.json().punch_policy.punch_window_mode).toBe("full_day");
   });
 
 
   it("refreshes stale day statuses and returns live work minutes for open punches", async () => {
     const employee = await loginAs(app, "E1");
+    ensureActiveCompany(app).working_week = "Mon-Sun";
     const staleDate = previousWorkday();
     const staleExisting = app.store.attendanceDayRecords.find(
       (record) => record.employee_user_id === employee.user.id && record.work_date === staleDate && !record.deleted_at

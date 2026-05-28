@@ -42,7 +42,11 @@ describe("admin policy settings", () => {
           version: 1,
           config: expect.objectContaining({
             graceMinutes: 10,
-            allowRegularization: true
+            allowRegularization: true,
+            fullDayPunchWindow: true,
+            punchInStart: "09:00",
+            punchOutEnd: "23:59",
+            allowOffDayPunches: false
           })
         })
       ])
@@ -71,7 +75,13 @@ describe("admin policy settings", () => {
         expected_version: 1,
         config: {
           graceMinutes: 15,
-          allowRegularization: false
+          allowRegularization: false,
+          fullDayPunchWindow: false,
+          punchInStart: "08:30",
+          punchInEnd: "11:00",
+          punchOutStart: "17:00",
+          punchOutEnd: "22:30",
+          allowOffDayPunches: true
         }
       }
     });
@@ -84,7 +94,11 @@ describe("admin policy settings", () => {
       config: expect.objectContaining({
         graceMinutes: 15,
         halfDayAfterMinutes: 240,
-        allowRegularization: false
+        allowRegularization: false,
+        fullDayPunchWindow: false,
+        punchInStart: "08:30",
+        punchOutEnd: "22:30",
+        allowOffDayPunches: true
       })
     });
 
@@ -109,6 +123,17 @@ describe("admin policy settings", () => {
       }
     });
     expect(invalid.statusCode).toBe(400);
+
+    const invalidTime = await app.inject({
+      method: "PUT",
+      url: "/api/v1/admin/policies/attendance",
+      headers: authHeader(admin.token),
+      payload: {
+        expected_version: 2,
+        config: { punchInStart: "25:00" }
+      }
+    });
+    expect(invalidTime.statusCode).toBe(400);
 
     expect(app.store.outbox.at(-1)?.event_type).toBe("admin.policy.updated");
   });

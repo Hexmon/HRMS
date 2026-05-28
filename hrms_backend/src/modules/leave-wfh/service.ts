@@ -26,6 +26,7 @@ import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
 import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
+import { isWorkingDate, workingDatesInclusive, workdaysInclusive } from "../../platform/work-schedule.js";
 import { AttendanceRepository } from "../attendance/repository.js";
 import { CoreService } from "../core/service.js";
 import { appendLeaveWfhOutboxEvent, leaveWfhEvents } from "./events.js";
@@ -88,17 +89,6 @@ function dateRangeForYear(year: number): { from: string; to: string } {
   return { from: `${year}-01-01`, to: `${year}-12-31` };
 }
 
-function datesInclusive(from: string, to: string): string[] {
-  const dates: string[] = [];
-  const cursor = new Date(`${from}T00:00:00.000Z`);
-  const end = new Date(`${to}T00:00:00.000Z`);
-  while (cursor <= end) {
-    dates.push(cursor.toISOString().slice(0, 10));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return dates;
-}
-
 function durationDays(dateFrom: string, dateTo: string, halfDay: boolean): number {
   if (dateTo < dateFrom) {
     throw badRequest("End date cannot be before start date.");
@@ -125,6 +115,12 @@ function userLabel(user: CoreUser | undefined) {
     full_name: user?.full_name ?? "Unknown employee",
     department_id: user?.department_id ?? null
   };
+}
+
+function numberConfig(config: Record<string, unknown>, key: string, fallback: number): number {
+  const value = config[key];
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 export class LeaveWfhService {
@@ -157,10 +153,11 @@ export class LeaveWfhService {
       dateFrom: range.from,
       dateTo: range.to
     });
+    const entitlements = this.leaveEntitlements();
     const balances = Object.values(LeaveTypes)
       .filter((leaveType) => !query.leave_type || query.leave_type === leaveType)
       .map((leaveType) => {
-        const total = ENTITLEMENTS[leaveType];
+        const total = entitlements[leaveType];
         const used = sumDuration(leaveRequests.filter((request) => request.leave_type === leaveType && request.status === LeaveRequestStatuses.Approved));
         const pending = sumDuration(leaveRequests.filter((request) => request.leave_type === leaveType && request.status === LeaveRequestStatuses.PendingManager));
         return {
@@ -187,7 +184,7 @@ export class LeaveWfhService {
 
   createLeaveRequest(actor: AuthUser, input: LeaveRequestCreateInput) {
     this.requireActiveEmployee(actor.id);
-    const duration = durationDays(input.date_from, input.date_to, input.half_day);
+    const duration = this.requestDurationDays(input.date_from, input.date_to, input.half_day);
     this.assertNoOverlap(actor.id, input.date_from, input.date_to);
     this.assertLeaveBalanceAvailable(actor, input.leave_type, duration, input.date_from);
     const approver = this.core.resolveImmediateManager(actor.id) ?? this.adminFallback();
@@ -310,7 +307,7 @@ export class LeaveWfhService {
 
   createWfhRequest(actor: AuthUser, input: WfhRequestCreateInput) {
     this.requireActiveEmployee(actor.id);
-    const duration = durationDays(input.date_from, input.date_to, input.half_day);
+    const duration = this.requestDurationDays(input.date_from, input.date_to, input.half_day);
     this.assertNoOverlap(actor.id, input.date_from, input.date_to);
     const approver = this.core.resolveImmediateManager(actor.id) ?? this.adminFallback();
     const request = this.repository.addWfhRequest({
@@ -542,6 +539,56 @@ export class LeaveWfhService {
     });
   }
 
+  private leaveEntitlements(): Record<LeaveType, number> {
+    const policy = this.store.adminPolicies.find(
+      (candidate) => candidate.policy_key === "leave" && candidate.status === "active" && !candidate.deleted_at
+    );
+    const config = policy?.config ?? {};
+    return {
+      [LeaveTypes.Casual]: numberConfig(config, "casualPerYear", ENTITLEMENTS[LeaveTypes.Casual]),
+      [LeaveTypes.Sick]: numberConfig(config, "sickPerYear", ENTITLEMENTS[LeaveTypes.Sick]),
+      [LeaveTypes.Earned]: numberConfig(config, "earnedPerYear", ENTITLEMENTS[LeaveTypes.Earned]),
+      [LeaveTypes.Unpaid]: ENTITLEMENTS[LeaveTypes.Unpaid],
+      [LeaveTypes.CompOff]: ENTITLEMENTS[LeaveTypes.CompOff]
+    };
+  }
+
+  private activeCompany() {
+    return this.store.companyProfiles.find((candidate) => candidate.status === "active") ?? this.store.companyProfiles[0];
+  }
+
+  private workingWeek(): string {
+    return this.activeCompany()?.working_week ?? "Mon-Fri";
+  }
+
+  private holidayDates(): Set<string> {
+    return new Set(
+      this.store.holidays
+        .filter((holiday) => !holiday.optional && !holiday.deleted_at)
+        .map((holiday) => holiday.holiday_date)
+    );
+  }
+
+  private requestDurationDays(dateFrom: string, dateTo: string, halfDay: boolean): number {
+    durationDays(dateFrom, dateTo, halfDay);
+    if (halfDay) {
+      if (!isWorkingDate(dateFrom, this.workingWeek(), this.holidayDates())) {
+        throw badRequest("Leave/WFH cannot be requested for a company non-working day.", {
+          date: dateFrom
+        });
+      }
+      return 0.5;
+    }
+    const days = workdaysInclusive(dateFrom, dateTo, this.workingWeek(), this.holidayDates());
+    if (days <= 0) {
+      throw badRequest("Leave/WFH date range must include at least one company working day.", {
+        date_from: dateFrom,
+        date_to: dateTo
+      });
+    }
+    return days;
+  }
+
   private assertNoOverlap(userId: UUID, dateFrom: string, dateTo: string): void {
     const duplicate = this.repository.activeRequestsForUser(userId, dateFrom, dateTo)[0];
     if (duplicate) {
@@ -615,7 +662,7 @@ export class LeaveWfhService {
     note: string,
     workMode: "wfh" | null = null
   ): void {
-    for (const workDate of datesInclusive(dateFrom, dateTo)) {
+    for (const workDate of workingDatesInclusive(dateFrom, dateTo, this.workingWeek(), this.holidayDates())) {
       this.attendance.upsertDayRecord({
         employee_user_id: employeeUserId,
         work_date: workDate,

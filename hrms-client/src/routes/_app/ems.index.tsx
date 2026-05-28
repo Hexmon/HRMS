@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,19 @@ import {
   useEmsPolicies,
   useEmsProfile,
 } from "@/domains/ems";
-import { pageItems, useApiRouteEnabled } from "@/shared/api";
+import { useMyAttendanceSummary } from "@/domains/attendance";
+import { currentLocalMonth, liveAttendanceToday, localIsoDate } from "@/domains/attendance/live";
+import { useHolidays, useMyLeaveBalances, useMyWfhRequests } from "@/domains/leave-wfh";
+import {
+  asArray,
+  asRecord,
+  numberValue,
+  pageItems,
+  text,
+  useApiRouteEnabled,
+  userFacingErrorMessage,
+  type ApiRecord,
+} from "@/shared/api";
 import {
   Briefcase,
   Mail,
@@ -62,12 +75,97 @@ const HOLIDAYS = [
   { name: "Eid ul-Adha", date: "Jun 06, 2026", region: "AE / IN" },
 ];
 
+const DAY_MS = 86_400_000;
+
+function addDaysIso(date: string, days: number): string {
+  return new Date(Date.parse(date + "T00:00:00.000Z") + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+function weekRangeFor(date: string): { from: string; to: string } {
+  const start = new Date(date + "T00:00:00.000Z");
+  const day = start.getUTCDay();
+  start.setUTCDate(start.getUTCDate() - (day === 0 ? 6 : day - 1));
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+}
+
+function shortDate(date: string): string {
+  if (!date) return "";
+  return new Date(date + "T00:00:00.000Z").toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "short",
+  });
+}
+
+function formatDays(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function attendanceStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    present: "Present",
+    late: "Late",
+    absent: "Absent",
+    wfh: "WFH",
+    leave: "On leave",
+    weekend: "Off",
+    holiday: "Holiday",
+    future: "Pending",
+  };
+  return labels[status] ?? "No record";
+}
+
+function attendanceTone(
+  status: string,
+): "primary" | "success" | "warning" | "info" | "destructive" {
+  if (status === "late") return "warning";
+  if (status === "absent") return "destructive";
+  if (["wfh", "leave", "holiday", "weekend"].includes(status)) return "info";
+  return "success";
+}
+
+function queryHint(error: unknown, fallback: string): string {
+  return userFacingErrorMessage(error, fallback).replace(/\s*Request id:.*/i, "");
+}
+
+function recordDate(record: ApiRecord): string {
+  return text(record.date) || text(record.holiday_date) || text(record.work_date);
+}
+
+function durationOf(record: ApiRecord): number {
+  return numberValue(record.duration, numberValue(record.days, 1));
+}
+
 function EmsDashboard() {
   const { user, activeRole } = useAuth();
   const apiEnabled = useApiRouteEnabled(["/ems"]);
   const profileQuery = useEmsProfile(apiEnabled);
   const policiesQuery = useEmsPolicies({ page: 1, page_size: 10 }, apiEnabled);
   const lettersQuery = useEmsLetters({ page: 1, page_size: 10 }, apiEnabled);
+  const [now, setNow] = useState(new Date());
+  const todayIso = localIsoDate();
+  const weekRange = useMemo(() => weekRangeFor(todayIso), [todayIso]);
+  const attendanceQuery = useMyAttendanceSummary(
+    { date_from: todayIso, date_to: todayIso, month: currentLocalMonth() },
+    apiEnabled,
+  );
+  const leaveBalancesQuery = useMyLeaveBalances(
+    { year: Number(todayIso.slice(0, 4)), page: 1, page_size: 25 },
+    apiEnabled,
+  );
+  const wfhQuery = useMyWfhRequests(
+    { date_from: weekRange.from, date_to: weekRange.to, page: 1, page_size: 25 },
+    apiEnabled,
+  );
+  const holidaysQuery = useHolidays(
+    { year: Number(todayIso.slice(0, 4)), page: 1, page_size: 50 },
+    apiEnabled,
+  );
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const showDemoData = !apiEnabled;
   if (!user) return null;
   const apiProfile = profileQuery.data ? mapProfile(profileQuery.data) : null;
@@ -77,6 +175,58 @@ function EmsDashboard() {
     (policy) => policy.acknowledgementStatus === "pending",
   ).length;
   const availableLetters = letterRows.filter((letter) => letter.status === "available").length;
+  const attendancePayload = asRecord(attendanceQuery.data);
+  const todayRecord = asRecord(attendancePayload.today);
+  const liveToday = liveAttendanceToday(todayRecord, attendancePayload.generated_at, now);
+  const todayStatus = text(todayRecord.status);
+  const todayValue = attendanceQuery.isLoading
+    ? "..."
+    : attendanceQuery.isError
+      ? "Issue"
+      : attendanceStatusLabel(todayStatus);
+  const todayHint = attendanceQuery.isLoading
+    ? "Loading live attendance"
+    : attendanceQuery.isError
+      ? queryHint(attendanceQuery.error, "Attendance unavailable")
+      : text(todayRecord.in_time)
+        ? `In ${text(todayRecord.in_time)} · ${liveToday.hours}`
+        : text(todayRecord.detail, "No punch-in recorded");
+  const leaveBalances = asArray(asRecord(leaveBalancesQuery.data).balances).map(asRecord);
+  const leaveAvailable = leaveBalances.reduce((total, balance) => {
+    const leaveType = text(balance.leave_type);
+    return leaveType === "unpaid" ? total : total + numberValue(balance.available);
+  }, 0);
+  const leavePending = leaveBalances.reduce(
+    (total, balance) => total + numberValue(balance.pending),
+    0,
+  );
+  const leaveValue = leaveBalancesQuery.isLoading
+    ? "..."
+    : leaveBalancesQuery.isError
+      ? "Issue"
+      : formatDays(leaveAvailable);
+  const leaveHint = leaveBalancesQuery.isLoading
+    ? "Loading leave balance"
+    : leaveBalancesQuery.isError
+      ? queryHint(leaveBalancesQuery.error, "Leave balance unavailable")
+      : leavePending > 0
+        ? `${formatDays(leavePending)} pending approval`
+        : "available days";
+  const wfhRows = pageItems<ApiRecord>(wfhQuery.data).map(asRecord);
+  const approvedWfhDays = wfhRows
+    .filter((request) => text(request.status) === "approved")
+    .reduce((total, request) => total + durationOf(request), 0);
+  const pendingWfhDays = wfhRows
+    .filter((request) => text(request.status) === "pending_manager")
+    .reduce((total, request) => total + durationOf(request), 0);
+  const holidayRows = asArray(asRecord(holidaysQuery.data).holidays)
+    .map(asRecord)
+    .filter((holiday) => {
+      const date = recordDate(holiday);
+      return date >= todayIso && date <= addDaysIso(todayIso, 30);
+    })
+    .sort((left, right) => recordDate(left).localeCompare(recordDate(right)))
+    .slice(0, 4);
   const initials = user.name
     .split(" ")
     .map((n) => n[0])
@@ -139,15 +289,21 @@ function EmsDashboard() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard
               label="Today"
-              value={showDemoData ? "Present" : "—"}
-              hint={showDemoData ? "In at 09:08" : "Use Attendance for live status"}
+              value={showDemoData ? "Present" : todayValue}
+              hint={showDemoData ? "In at 09:08" : todayHint}
               icon={Clock}
-              tone="success"
+              tone={
+                showDemoData
+                  ? "success"
+                  : attendanceQuery.isError
+                    ? "destructive"
+                    : attendanceTone(todayStatus)
+              }
             />
             <StatCard
               label="Leave balance"
-              value={showDemoData ? "12" : "—"}
-              hint={showDemoData ? "days remaining" : "Use Leave & WFH for live balance"}
+              value={showDemoData ? "12" : leaveValue}
+              hint={showDemoData ? "days remaining" : leaveHint}
               tone="info"
             />
             <StatCard
@@ -167,7 +323,12 @@ function EmsDashboard() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <DataCard title="My WFH this week" description="Hybrid policy: 2 days/week">
+            <DataCard
+              title="My WFH this week"
+              description={
+                showDemoData ? "Hybrid policy: 2 days/week" : "Approved and pending requests"
+              }
+            >
               {showDemoData ? (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
@@ -181,11 +342,45 @@ function EmsDashboard() {
                     ))}
                   </div>
                 </div>
+              ) : wfhQuery.isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading WFH requests...</p>
+              ) : wfhQuery.isError ? (
+                <EmptyState
+                  icon={CalendarDays}
+                  title="Could not load WFH"
+                  description={queryHint(wfhQuery.error, "WFH requests unavailable")}
+                />
+              ) : approvedWfhDays > 0 || pendingWfhDays > 0 ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">This week</span>
+                    <span className="font-semibold">
+                      {formatDays(approvedWfhDays)} approved · {formatDays(pendingWfhDays)} pending
+                    </span>
+                  </div>
+                  <Progress value={Math.min(100, approvedWfhDays * 50)} className="h-2" />
+                  <div className="space-y-2">
+                    {wfhRows.slice(0, 3).map((request) => (
+                      <div
+                        key={text(request.id) || text(request.request_code)}
+                        className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2 text-sm"
+                      >
+                        <span className="font-medium">
+                          {shortDate(text(request.date_from))} - {shortDate(text(request.date_to))}
+                        </span>
+                        <StatusBadge
+                          status={text(request.status) === "approved" ? "approved" : "pending"}
+                          label={text(request.status) === "approved" ? "Approved" : "Pending"}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ) : (
                 <EmptyState
                   icon={CalendarDays}
-                  title="Live WFH data lives in Leave & WFH"
-                  description="Open the Leave & WFH module for real requests, balances and approvals."
+                  title="No WFH this week"
+                  description="Approved or pending WFH requests for this week will appear here."
                   action={
                     <Button asChild variant="outline" className="rounded-full">
                       <Link to="/leave-wfh">Open Leave & WFH</Link>
@@ -279,11 +474,39 @@ function EmsDashboard() {
                 </li>
               ))}
             </ul>
+          ) : holidaysQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading holidays...</p>
+          ) : holidaysQuery.isError ? (
+            <EmptyState
+              icon={CalendarDays}
+              title="Could not load holidays"
+              description={queryHint(holidaysQuery.error, "Holiday calendar unavailable")}
+            />
+          ) : holidayRows.length > 0 ? (
+            <ul className="space-y-3">
+              {holidayRows.map((holiday) => {
+                const date = recordDate(holiday);
+                return (
+                  <li
+                    key={text(holiday.id) || date}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <div>
+                      <p className="font-medium">{text(holiday.name, "Holiday")}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {text(holiday.region, "Company")}
+                      </p>
+                    </div>
+                    <span className="text-xs font-semibold text-primary">{shortDate(date)}</span>
+                  </li>
+                );
+              })}
+            </ul>
           ) : (
             <EmptyState
               icon={CalendarDays}
-              title="Use the holiday calendar"
-              description="Live holiday data is available from the Leave & WFH holiday calendar."
+              title="No holidays in the next 30 days"
+              description="Company holidays configured by Admin will appear here."
               action={
                 <Button asChild variant="outline" className="rounded-full">
                   <Link to="/leave-wfh/holidays">Open holidays</Link>

@@ -27,6 +27,7 @@ import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { useTimesheetSelectors } from "@/domains/timesheets";
 import { asArray, asRecord, isApiEnabled, text, toastApiError } from "@/shared/api";
+import { isWorkingDate } from "@/lib/work-schedule";
 import {
   TIMESHEET_STATUS_LABEL,
   startOfWeek,
@@ -131,6 +132,18 @@ function MyTimesheetPage() {
   }, [selectorsQuery.data]);
 
   const timesheetProjects = selectorProjects.length ? selectorProjects : myProjects;
+  const selectorRules = asRecord(asRecord(selectorsQuery.data).rules);
+  const targetWeeklyHours = Number(selectorRules.target_weekly_hours ?? 40) || 40;
+  const workingWeek = text(selectorRules.working_week, "Mon-Fri");
+  const holidayDates = useMemo(
+    () =>
+      new Set(
+        asArray(selectorRules.holiday_dates)
+          .map((date) => text(date))
+          .filter(Boolean),
+      ),
+    [selectorRules.holiday_dates],
+  );
 
   const week = useMemo(
     () => ensureWeek(me.id, me.name, me.department, weekStart),
@@ -398,10 +411,10 @@ function MyTimesheetPage() {
         />
         <StatCard
           label="Capacity gap"
-          value={`${Math.max(0, 40 - totals.total).toFixed(1)}h`}
+          value={`${Math.max(0, targetWeeklyHours - totals.total).toFixed(1)}h`}
           icon={AlertTriangle}
-          tone={totals.total < 40 ? "destructive" : "info"}
-          hint={`Target 40h`}
+          tone={totals.total < targetWeeklyHours ? "destructive" : "info"}
+          hint={`Target ${targetWeeklyHours.toFixed(1)}h`}
         />
       </div>
 
@@ -424,7 +437,7 @@ function MyTimesheetPage() {
                   <th className="min-w-[260px] px-4 py-3 font-medium">Project / task</th>
                   <th className="px-3 py-3 text-center font-medium">Billable</th>
                   {weekDays.map((d, i) => {
-                    const isWeekend = i >= 5;
+                    const isWeekend = !isWorkingDate(d, workingWeek, holidayDates);
                     return (
                       <th
                         key={d}
@@ -504,7 +517,7 @@ function MyTimesheetPage() {
                           />
                         </td>
                         {weekDays.map((d, i) => {
-                          const isWeekend = i >= 5;
+                          const isWeekend = !isWorkingDate(d, workingWeek, holidayDates);
                           return (
                             <td
                               key={d}
@@ -560,8 +573,14 @@ function MyTimesheetPage() {
                   <td colSpan={2} className="px-4 py-3 text-right text-muted-foreground">
                     Daily totals
                   </td>
-                  {weekDays.map((d, i) => (
-                    <td key={d} className={cn("px-2 py-3 text-center", i >= 5 && "bg-muted/40")}>
+                  {weekDays.map((d) => (
+                    <td
+                      key={d}
+                      className={cn(
+                        "px-2 py-3 text-center",
+                        !isWorkingDate(d, workingWeek, holidayDates) && "bg-muted/40",
+                      )}
+                    >
                       {totals.dayTotals[d].toFixed(1)}
                     </td>
                   ))}
@@ -584,10 +603,12 @@ function MyTimesheetPage() {
         <DayView
           weekDays={weekDays}
           activeDay={activeDay}
+          workingWeek={workingWeek}
+          holidayDates={holidayDates}
           onDayChange={setActiveDay}
           rows={rows}
           dayTotals={totals.dayTotals}
-          myProjects={myProjects}
+          myProjects={timesheetProjects}
           readOnly={readOnly}
           onAddRow={addRow}
           onUpdateRow={updateRow}
@@ -636,10 +657,12 @@ function MyTimesheetPage() {
 interface DayProps {
   weekDays: string[];
   activeDay: string;
+  workingWeek: string;
+  holidayDates: ReadonlySet<string>;
   onDayChange: (d: string) => void;
   rows: RowDraft[];
   dayTotals: Record<string, number>;
-  myProjects: ReturnType<typeof useProjects>["projects"];
+  myProjects: Array<{ id: string; code: string; name: string }>;
   readOnly: boolean;
   onAddRow: () => void;
   onUpdateRow: (id: string, patch: Partial<RowDraft>) => void;
@@ -650,6 +673,8 @@ interface DayProps {
 function DayView({
   weekDays,
   activeDay,
+  workingWeek,
+  holidayDates,
   onDayChange,
   rows,
   dayTotals,
@@ -673,7 +698,7 @@ function DayView({
               activeDay === d
                 ? "border-primary bg-primary-soft text-primary"
                 : "border-border hover:bg-accent",
-              i >= 5 && activeDay !== d && "bg-muted/40",
+              !isWorkingDate(d, workingWeek, holidayDates) && activeDay !== d && "bg-muted/40",
             )}
           >
             <span className="font-medium">

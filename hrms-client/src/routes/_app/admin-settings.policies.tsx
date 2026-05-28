@@ -100,11 +100,48 @@ function PoliciesScreen() {
       <TabsContent value="attendance" className="mt-4">
         <PolicyCard
           title="Attendance policy"
-          description="Govern grace periods and auto-absent thresholds."
+          description="Govern punch availability, off-day access, grace periods and auto-absent thresholds."
           apiEnabled={apiEnabled}
           saving={updatePolicy.isPending}
           onSave={() => savePolicy("attendance")}
         >
+          <SwitchField
+            label="Allow punching any time (24-hour window)"
+            value={policies.attendance.fullDayPunchWindow}
+            onChange={(v) => setPolicy("attendance", { fullDayPunchWindow: v })}
+          />
+          <SwitchField
+            label="Allow punches on company off days"
+            value={policies.attendance.allowOffDayPunches}
+            onChange={(v) => setPolicy("attendance", { allowOffDayPunches: v })}
+          />
+          {!policies.attendance.fullDayPunchWindow && (
+            <div className="md:col-span-2 grid grid-cols-1 gap-3 rounded-xl border bg-card/50 p-3 md:grid-cols-2">
+              <p className="md:col-span-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Punch windows
+              </p>
+              <TimeField
+                label="Punch-in starts"
+                value={policies.attendance.punchInStart}
+                onChange={(v) => setPolicy("attendance", { punchInStart: v })}
+              />
+              <TimeField
+                label="Punch-in ends"
+                value={policies.attendance.punchInEnd}
+                onChange={(v) => setPolicy("attendance", { punchInEnd: v })}
+              />
+              <TimeField
+                label="Punch-out starts"
+                value={policies.attendance.punchOutStart}
+                onChange={(v) => setPolicy("attendance", { punchOutStart: v })}
+              />
+              <TimeField
+                label="Punch-out ends"
+                value={policies.attendance.punchOutEnd}
+                onChange={(v) => setPolicy("attendance", { punchOutEnd: v })}
+              />
+            </div>
+          )}
           <NumField
             label="Grace minutes (no late mark)"
             value={policies.attendance.graceMinutes}
@@ -381,6 +418,23 @@ function TextField({
   );
 }
 
+function TimeField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">{label}</Label>
+      <Input type="time" value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
+}
+
 function SwitchField({
   label,
   value,
@@ -429,6 +483,24 @@ function policiesFromApi(items: AdminPolicyRecord[], fallback: Policies) {
             item.config,
             "allowRegularization",
             policies.attendance.allowRegularization,
+          ),
+          fullDayPunchWindow: booleanValue(
+            item.config,
+            "fullDayPunchWindow",
+            policies.attendance.fullDayPunchWindow,
+          ),
+          punchInStart: stringValue(item.config, "punchInStart", policies.attendance.punchInStart),
+          punchInEnd: stringValue(item.config, "punchInEnd", policies.attendance.punchInEnd),
+          punchOutStart: stringValue(
+            item.config,
+            "punchOutStart",
+            policies.attendance.punchOutStart,
+          ),
+          punchOutEnd: stringValue(item.config, "punchOutEnd", policies.attendance.punchOutEnd),
+          allowOffDayPunches: booleanValue(
+            item.config,
+            "allowOffDayPunches",
+            policies.attendance.allowOffDayPunches,
           ),
         };
         break;

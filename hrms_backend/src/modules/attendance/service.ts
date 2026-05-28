@@ -19,6 +19,7 @@ import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
 import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
+import { isWorkingDate } from "../../platform/work-schedule.js";
 import { CoreService } from "../core/service.js";
 import { appendAttendanceOutboxEvent, attendanceEvents } from "./events.js";
 import {
@@ -99,11 +100,6 @@ function dateRange(query: AttendancePageQuery, timeZone = "UTC"): { from: string
   };
 }
 
-function isWeekend(date: string): boolean {
-  const day = new Date(`${date}T00:00:00.000Z`).getUTCDay();
-  return day === 0 || day === 6;
-}
-
 function minutesBetween(start: string, end: string): number {
   return Math.max(0, Math.round((Date.parse(end) - Date.parse(start)) / 60_000));
 }
@@ -151,6 +147,41 @@ function zonedClockIso(workDate: string, hour: number, minute: number, timeZone:
   }
 }
 
+function addMinutes(iso: string, minutes: number): string {
+  return new Date(Date.parse(iso) + minutes * 60_000).toISOString();
+}
+
+function numberConfig(config: Record<string, unknown>, key: string, fallback: number): number {
+  const value = config[key];
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function booleanConfig(config: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = config[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function timeConfig(config: Record<string, unknown>, key: string, fallback: string): string {
+  const value = config[key];
+  return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/u.test(value.trim()) ? value.trim() : fallback;
+}
+
+function minutesOfDay(clock: string): number {
+  const [hourText, minuteText] = clock.split(":");
+  return Number(hourText) * 60 + Number(minuteText);
+}
+
+function withinClockWindow(clock: string, start: string, end: string): boolean {
+  const current = minutesOfDay(clock);
+  const startMinute = minutesOfDay(start);
+  const endMinute = minutesOfDay(end);
+  if (startMinute <= endMinute) {
+    return current >= startMinute && current <= endMinute;
+  }
+  return current >= startMinute || current <= endMinute;
+}
+
 function minutesToHours(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
@@ -193,6 +224,27 @@ function visibleUserPredicate(actor: AuthUser, user: CoreUser): boolean {
   return !user.deleted_at && canSeeAttendanceUser(actor, user);
 }
 
+interface AttendancePunchPolicy {
+  graceMinutes: number;
+  autoMarkAbsentMinutes: number;
+  fullDayPunchWindow: boolean;
+  punchInStart: string;
+  punchInEnd: string;
+  punchOutStart: string;
+  punchOutEnd: string;
+  allowOffDayPunches: boolean;
+}
+
+interface PunchAvailability {
+  policy: AttendancePunchPolicy;
+  sequence_allowed_actions: AttendancePunchEventType[];
+  next_allowed_actions: AttendancePunchEventType[];
+  blocked_action_reasons: Partial<Record<AttendancePunchEventType, string>>;
+  blocked_reason: string | null;
+  local_time: string;
+  is_company_working_day: boolean;
+}
+
 export class AttendanceService {
   private readonly repository: AttendanceRepository;
   private readonly core: CoreService;
@@ -215,11 +267,18 @@ export class AttendanceService {
     const occurredAt = input.occurred_at ?? nowIso();
     const timeZone = this.timezoneForUser(actor.id);
     const workDate = dateInTimeZone(occurredAt, timeZone);
-    const dayPunches = this.repository.listPunches(actor.id, workDate, workDate, timeZone);
-    const allowed = this.nextAllowedActions(dayPunches);
-    if (!allowed.includes(input.event_type)) {
+    const availability = this.punchAvailability(actor.id, workDate, timeZone, occurredAt);
+    if (!availability.next_allowed_actions.includes(input.event_type)) {
+      const policyReason = availability.blocked_action_reasons[input.event_type];
+      if (availability.sequence_allowed_actions.includes(input.event_type) && policyReason) {
+        throw badRequest(policyReason, {
+          next_allowed_actions: availability.next_allowed_actions,
+          requested_action: input.event_type,
+          punch_policy: this.presentPunchPolicy(availability)
+        });
+      }
       throw conflict("Attendance punch is duplicate or out of sequence.", {
-        next_allowed_actions: allowed,
+        next_allowed_actions: availability.next_allowed_actions,
         requested_action: input.event_type
       });
     }
@@ -245,15 +304,14 @@ export class AttendanceService {
       },
       idempotencyKey: `attendance.punched:${punch.id}`
     });
-    const nextAllowedActions = this.nextAllowedActions(
-      this.repository.listPunches(actor.id, workDate, workDate, timeZone)
-    );
+    const nextAvailability = this.punchAvailability(actor.id, workDate, timeZone, occurredAt);
     return {
       punch_id: punch.id,
       punch,
       day_status: this.presentDay(day, timeZone),
-      next_allowed_actions: nextAllowedActions,
-      next_allowed_action: nextAllowedActions[0] ?? null
+      next_allowed_actions: nextAvailability.next_allowed_actions,
+      next_allowed_action: nextAvailability.next_allowed_actions[0] ?? null,
+      punch_policy: this.presentPunchPolicy(nextAvailability)
     };
   }
 
@@ -268,6 +326,7 @@ export class AttendanceService {
     const timeZone = this.timezoneForUser(actor.id);
     const range = dateRange(query, timeZone);
     const today = this.resolveDay(actor.id, todayDate(timeZone), timeZone);
+    const todayPunchAvailability = this.punchAvailability(actor.id, today.work_date, timeZone);
     const records = this.recordsForUsers(new Set([actor.id]), range.from, range.to).map((record) =>
       record.employee_user_id === actor.id && record.work_date === today.work_date ? today : record
     );
@@ -289,8 +348,9 @@ export class AttendanceService {
         ...this.presentDay(today, timeZone),
         target_work_minutes: targetWorkMinutes,
         target_hours: minutesToHours(targetWorkMinutes),
-        next_allowed_actions: this.nextAllowedActions(this.repository.listPunches(actor.id, today.work_date, today.work_date, timeZone)),
-        next_allowed_action: this.nextAllowedActions(this.repository.listPunches(actor.id, today.work_date, today.work_date, timeZone))[0] ?? null
+        next_allowed_actions: todayPunchAvailability.next_allowed_actions,
+        next_allowed_action: todayPunchAvailability.next_allowed_actions[0] ?? null,
+        punch_policy: this.presentPunchPolicy(todayPunchAvailability)
       },
       summary: {
         ...this.daySummary(records),
@@ -670,6 +730,82 @@ export class AttendanceService {
     return [];
   }
 
+  private punchAvailability(
+    employeeUserId: UUID,
+    workDate: string,
+    timeZone = this.timezoneForUser(employeeUserId),
+    occurredAt = nowIso()
+  ): PunchAvailability {
+    const punches = this.repository.listPunches(employeeUserId, workDate, workDate, timeZone);
+    const sequenceAllowedActions = this.nextAllowedActions(punches);
+    const policy = this.attendancePolicy();
+    const activePunches = punches.filter((punch) => !punch.deleted_at);
+    const localTime = timeText(occurredAt, timeZone) ?? occurredAt.slice(11, 16);
+    const isCompanyWorkingDay = this.isWorkingDay(workDate);
+    const blockedActionReasons: Partial<Record<AttendancePunchEventType, string>> = {};
+    const nextAllowedActions: AttendancePunchEventType[] = [];
+
+    for (const action of sequenceAllowedActions) {
+      const blockedReason = this.punchActionBlockedReason(action, policy, {
+        activePunches: activePunches.length,
+        isCompanyWorkingDay,
+        localTime
+      });
+      if (blockedReason) {
+        blockedActionReasons[action] = blockedReason;
+      } else {
+        nextAllowedActions.push(action);
+      }
+    }
+
+    return {
+      policy,
+      sequence_allowed_actions: sequenceAllowedActions,
+      next_allowed_actions: nextAllowedActions,
+      blocked_action_reasons: blockedActionReasons,
+      blocked_reason: nextAllowedActions.length === 0 ? Object.values(blockedActionReasons)[0] ?? null : null,
+      local_time: localTime,
+      is_company_working_day: isCompanyWorkingDay
+    };
+  }
+
+  private punchActionBlockedReason(
+    action: AttendancePunchEventType,
+    policy: AttendancePunchPolicy,
+    context: { activePunches: number; isCompanyWorkingDay: boolean; localTime: string }
+  ): string | null {
+    if (action === AttendancePunchEventTypes.CheckIn && !policy.allowOffDayPunches && !context.isCompanyWorkingDay && context.activePunches === 0) {
+      return "Punch-in is not allowed on company off days.";
+    }
+    if (policy.fullDayPunchWindow) {
+      return null;
+    }
+    if (action === AttendancePunchEventTypes.CheckIn && !withinClockWindow(context.localTime, policy.punchInStart, policy.punchInEnd)) {
+      return "Punch-in is allowed between " + policy.punchInStart + " and " + policy.punchInEnd + ".";
+    }
+    if (action === AttendancePunchEventTypes.CheckOut && !withinClockWindow(context.localTime, policy.punchOutStart, policy.punchOutEnd)) {
+      return "Punch-out is allowed between " + policy.punchOutStart + " and " + policy.punchOutEnd + ".";
+    }
+    return null;
+  }
+
+  private presentPunchPolicy(availability: PunchAvailability): Record<string, unknown> {
+    return {
+      punch_window_mode: availability.policy.fullDayPunchWindow ? "full_day" : "restricted",
+      full_day_punch_window: availability.policy.fullDayPunchWindow,
+      punch_in_start: availability.policy.punchInStart,
+      punch_in_end: availability.policy.punchInEnd,
+      punch_out_start: availability.policy.punchOutStart,
+      punch_out_end: availability.policy.punchOutEnd,
+      allow_off_day_punches: availability.policy.allowOffDayPunches,
+      is_company_working_day: availability.is_company_working_day,
+      local_time: availability.local_time,
+      can_punch_now: availability.next_allowed_actions.length > 0,
+      blocked_reason: availability.blocked_reason,
+      blocked_action_reasons: availability.blocked_action_reasons
+    };
+  }
+
   private recomputeDay(employeeUserId: UUID, workDate: string, timeZone = this.timezoneForUser(employeeUserId)): AttendanceDayRecord {
     const punches = this.repository.listPunches(employeeUserId, workDate, workDate, timeZone);
     const checkIns = punches.filter((punch) => punch.event_type === AttendancePunchEventTypes.CheckIn);
@@ -680,21 +816,35 @@ export class AttendanceService {
     const localToday = todayDate(timeZone);
     const isPast = workDate < localToday;
     const isFuture = workDate > localToday;
-    const lateMinutes = firstCheckIn ? Math.max(0, minutesBetween(zonedClockIso(workDate, 9, 30, timeZone), firstCheckIn)) : 0;
-    const earlyOutMinutes = lastCheckOut && isPast ? Math.max(0, minutesBetween(lastCheckOut, zonedClockIso(workDate, 17, 30, timeZone))) : 0;
+    const policy = this.attendancePolicy();
+    const holiday = this.holidayForDate(workDate);
+    const workingDay = this.isWorkingDay(workDate);
+    const shiftStart = zonedClockIso(workDate, 9, 30, timeZone);
+    const shiftEnd = addMinutes(shiftStart, this.targetWorkMinutes());
+    const rawLateMinutes = firstCheckIn ? Math.max(0, minutesBetween(shiftStart, firstCheckIn)) : 0;
+    const lateMinutes = rawLateMinutes > policy.graceMinutes ? rawLateMinutes : 0;
+    const earlyOutMinutes = lastCheckOut && isPast ? Math.max(0, minutesBetween(lastCheckOut, shiftEnd)) : 0;
     const workEnd = lastCheckOut ?? (workDate === localToday ? nowIso() : firstCheckIn);
     const breakMinutes = this.breakMinutesUntil(punches, workDate === localToday ? workEnd : null);
     const totalMinutes = firstCheckIn && workEnd ? Math.max(0, minutesBetween(firstCheckIn, workEnd) - breakMinutes) : 0;
+    const autoAbsentAt = addMinutes(shiftStart, policy.autoMarkAbsentMinutes);
+    const canMarkAbsentToday = workDate === localToday && Date.parse(nowIso()) >= Date.parse(autoAbsentAt);
     const missingPunch = Boolean(firstCheckIn && !lastCheckOut && isPast);
-    const absent = !firstCheckIn && isPast && !isWeekend(workDate);
+    const absent = !firstCheckIn && workingDay && !holiday && (isPast || canMarkAbsentToday);
     const exceptionType = absent ? "absent" : missingPunch ? "missing_punch" : lateMinutes > 0 ? "late" : earlyOutMinutes > 0 ? "early_out" : null;
     const status =
-      isFuture ? AttendanceDayStatuses.Future
-        : isWeekend(workDate) && punches.length === 0 ? AttendanceDayStatuses.Weekend
-          : absent ? AttendanceDayStatuses.Absent
-            : workMode === "wfh" ? AttendanceDayStatuses.Wfh
-              : lateMinutes > 0 ? AttendanceDayStatuses.Late
-                : AttendanceDayStatuses.Present;
+      holiday && punches.length === 0 ? AttendanceDayStatuses.Holiday
+        : !workingDay && punches.length === 0 ? AttendanceDayStatuses.Weekend
+          : isFuture ? AttendanceDayStatuses.Future
+            : absent ? AttendanceDayStatuses.Absent
+              : workMode === "wfh" ? AttendanceDayStatuses.Wfh
+                : lateMinutes > 0 ? AttendanceDayStatuses.Late
+                  : AttendanceDayStatuses.Present;
+    const passiveNote = holiday && punches.length === 0
+      ? `Holiday: ${holiday.name}`
+      : !workingDay && punches.length === 0
+        ? "Company non-working day"
+        : null;
     return this.repository.upsertDayRecord({
       employee_user_id: employeeUserId,
       work_date: workDate,
@@ -706,7 +856,7 @@ export class AttendanceService {
       late_minutes: lateMinutes,
       early_out_minutes: earlyOutMinutes,
       work_mode: workMode,
-      note: exceptionType ? this.exceptionDetail({ exception_type: exceptionType, late_minutes: lateMinutes, early_out_minutes: earlyOutMinutes, work_minutes: totalMinutes } as AttendanceDayRecord) : null,
+      note: exceptionType ? this.exceptionDetail({ exception_type: exceptionType, late_minutes: lateMinutes, early_out_minutes: earlyOutMinutes, work_minutes: totalMinutes } as AttendanceDayRecord) : passiveNote,
       exception_type: exceptionType,
       regularization_status: this.repository.dayRecord(employeeUserId, workDate)?.regularization_status ?? null
     });
@@ -746,7 +896,7 @@ export class AttendanceService {
     return (
       record.status === AttendanceDayStatuses.Leave ||
       record.status === AttendanceDayStatuses.Wfh ||
-      record.status === AttendanceDayStatuses.Holiday ||
+      (record.status === AttendanceDayStatuses.Holiday && Boolean(this.holidayForDate(record.work_date))) ||
       record.regularization_status === AttendanceRegularizationStatuses.Approved
     );
   }
@@ -756,12 +906,16 @@ export class AttendanceService {
     if (existing) {
       return existing;
     }
+    const holiday = this.holidayForDate(workDate);
+    const workingDay = this.isWorkingDay(workDate);
     const status =
-      workDate > todayDate(timeZone)
-        ? AttendanceDayStatuses.Future
-        : isWeekend(workDate)
+      holiday
+        ? AttendanceDayStatuses.Holiday
+        : !workingDay
           ? AttendanceDayStatuses.Weekend
-          : AttendanceDayStatuses.Absent;
+          : workDate > todayDate(timeZone)
+            ? AttendanceDayStatuses.Future
+            : AttendanceDayStatuses.Absent;
     return this.repository.upsertDayRecord({
       employee_user_id: employeeUserId,
       work_date: workDate,
@@ -773,7 +927,13 @@ export class AttendanceService {
       late_minutes: 0,
       early_out_minutes: 0,
       work_mode: null,
-      note: status === AttendanceDayStatuses.Absent ? "No punch-in recorded" : null,
+      note: status === AttendanceDayStatuses.Absent
+        ? "No punch-in recorded"
+        : status === AttendanceDayStatuses.Holiday
+          ? `Holiday: ${holiday?.name ?? "Company holiday"}`
+          : status === AttendanceDayStatuses.Weekend
+            ? "Company non-working day"
+            : null,
       exception_type: status === AttendanceDayStatuses.Absent ? "absent" : null,
       regularization_status: null
     });
@@ -793,18 +953,50 @@ export class AttendanceService {
     });
   }
 
+  private activeCompany() {
+    return this.store.companyProfiles.find((candidate) => candidate.status === "active") ?? this.store.companyProfiles[0];
+  }
+
+  private attendancePolicy(): AttendancePunchPolicy {
+    const policy = this.store.adminPolicies.find(
+      (candidate) => candidate.policy_key === "attendance" && candidate.status === "active" && !candidate.deleted_at
+    );
+    const config = policy?.config ?? {};
+    return {
+      graceMinutes: numberConfig(config, "graceMinutes", 10),
+      autoMarkAbsentMinutes: numberConfig(config, "autoMarkAbsentMinutes", 480),
+      fullDayPunchWindow: booleanConfig(config, "fullDayPunchWindow", true),
+      punchInStart: timeConfig(config, "punchInStart", "09:00"),
+      punchInEnd: timeConfig(config, "punchInEnd", "11:00"),
+      punchOutStart: timeConfig(config, "punchOutStart", "17:00"),
+      punchOutEnd: timeConfig(config, "punchOutEnd", "23:59"),
+      allowOffDayPunches: booleanConfig(config, "allowOffDayPunches", false)
+    };
+  }
+
+  private isWorkingDay(workDate: string): boolean {
+    return isWorkingDate(workDate, this.activeCompany()?.working_week, this.holidayDates());
+  }
+
+  private holidayForDate(workDate: string) {
+    return this.store.holidays.find((holiday) => holiday.holiday_date === workDate && !holiday.optional && !holiday.deleted_at) ?? null;
+  }
+
+  private holidayDates(): Set<string> {
+    return new Set(
+      this.store.holidays
+        .filter((holiday) => !holiday.optional && !holiday.deleted_at)
+        .map((holiday) => holiday.holiday_date)
+    );
+  }
+
   private targetWorkMinutes(): number {
-    const company =
-      this.store.companyProfiles.find((candidate) => candidate.status === "active") ??
-      this.store.companyProfiles[0];
-    return Math.max(0, Math.round((company?.work_hours_per_day ?? 8) * 60));
+    return Math.max(0, Math.round((this.activeCompany()?.work_hours_per_day ?? 8) * 60));
   }
 
   private timezoneForUser(userId: UUID): string {
     const user = this.store.users.find((candidate) => candidate.id === userId && !candidate.deleted_at);
-    const company =
-      this.store.companyProfiles.find((candidate) => candidate.status === "active") ??
-      this.store.companyProfiles[0];
+    const company = this.activeCompany();
     return user?.timezone ?? company?.timezone ?? "Asia/Kolkata";
   }
 
@@ -827,6 +1019,7 @@ export class AttendanceService {
       wfh: records.filter((record) => record.status === AttendanceDayStatuses.Wfh).length,
       leave: records.filter((record) => record.status === AttendanceDayStatuses.Leave).length,
       weekend: records.filter((record) => record.status === AttendanceDayStatuses.Weekend).length,
+      holiday: records.filter((record) => record.status === AttendanceDayStatuses.Holiday).length,
       future: records.filter((record) => record.status === AttendanceDayStatuses.Future).length,
       missing_punch: records.filter((record) => record.exception_type === "missing_punch").length,
       regularized: records.filter((record) => "regularization_status" in record && record.regularization_status === AttendanceRegularizationStatuses.Approved).length,

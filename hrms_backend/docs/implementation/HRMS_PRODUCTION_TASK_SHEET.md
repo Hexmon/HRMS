@@ -724,6 +724,23 @@ Frontend:
 - The Phase 6 browser e2e smoke waits for client hydration before UI login and uses client-side navigation after login because the current frontend stores the bearer token in memory; full-page route reload auth persistence remains a separate hardening consideration.
 - Employee/core import jobs remain queued metadata only; actual import row parsing and user-creation previews still need an import processor.
 
+## 2026-05-27 Dynamic Admin Policy Propagation Follow-Up
+
+- Attendance now applies Admin Company working week, work hours, non-optional holidays, and Attendance Policy grace/auto-absent settings when computing punch day status, monthly calendar records, weekly records, target hours, holiday/weekend summaries, and stale day refreshes.
+- Leave/WFH now uses the active Leave Policy entitlements for balances and counts request duration using company working days only, excluding non-optional holidays; requests that cover only non-working days are rejected with a business error.
+- Timesheets now derive expected hours, selector rules, and frontend non-working-day shading from Admin Company working week/work hours, Timesheet Policy weekly/min-daily rules, and configured non-optional holidays.
+- EMS My Space now loads live backend attendance, leave balance, WFH, and holiday data for the employee cards instead of showing placeholder dashes in API mode.
+- Attendance Calendar now renders holiday and company non-working-day statuses with clear labels and detail text from backend records.
+- Validation run: backend `pnpm typecheck`, backend `pnpm lint`, backend `pnpm build`, frontend `pnpm exec tsc -p tsconfig.json --noEmit`, frontend `pnpm lint`, frontend `pnpm build`, backend unit schedule helper test, and targeted Attendance, Leave/WFH, and Timesheets integration tests passed. Integration tests used `.env.local` with the separate configured `TEST_DATABASE_URL`; the real-infra harness resets only that test database. Frontend lint still reports the existing 39 Fast Refresh warnings.
+
+## 2026-05-28 Admin-Configurable Punch Windows
+
+- Admin Attendance Policy now includes punch availability controls: 24-hour punch mode, punch-in start/end, punch-out start/end, and off-day punch allowance. The settings are stored in the existing Admin Policy JSON source of truth, so no database migration was required.
+- Backend attendance punch processing now enforces the active Attendance Policy before writing a punch. Invalid check-in/check-out attempts outside the configured window return a business error; company off-day punch-in is blocked unless the admin enables off-day punches.
+- /api/v1/attendance/summary/my and punch responses now expose punch_policy with window mode, configured windows, off-day state, current local time, and blocked reason so the employee dashboard can show only currently valid actions.
+- /admin-settings/policies Attendance tab now lets admins configure the 24-hour mode, restricted punch windows, off-day punching, grace minutes, half-day threshold, auto-absent threshold, and regularization toggle. The Employee Dashboard uses backend next_allowed_actions plus punch_policy.blocked_reason to avoid showing unavailable punch buttons.
+- Validation run: backend pnpm typecheck, backend pnpm lint, backend pnpm build, frontend pnpm exec tsc -p tsconfig.json --noEmit, frontend pnpm lint, frontend pnpm build, and targeted backend integration tests for Admin Policies and Attendance passed. Integration tests used .env.local with TEST_DATABASE_URL. Frontend lint still reports the existing 39 Fast Refresh warnings; frontend build still reports existing chunk-size warnings.
+
 ## Commit Messages
 
 | Feature | Message | Status |

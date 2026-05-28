@@ -4,6 +4,7 @@ import { addMoney, EmploymentStatuses, ProjectMemberStatuses, ProjectStatuses, R
 import type { MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks } from "../../platform/errors.js";
+import { workdaysInclusive } from "../../platform/work-schedule.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { CoreService } from "../core/service.js";
 import { timesheetEvents } from "./events.js";
@@ -74,18 +75,10 @@ function daysInclusive(start: string, end: string): number {
   return Math.floor((to.getTime() - from.getTime()) / 86_400_000) + 1;
 }
 
-function workdaysInclusive(start: string, end: string): number {
-  let days = 0;
-  const cursor = dateUtc(start);
-  const to = dateUtc(end);
-  while (cursor <= to) {
-    const day = cursor.getUTCDay();
-    if (day !== 0 && day !== 6) {
-      days += 1;
-    }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return days;
+function numberConfig(config: Record<string, unknown>, key: string, fallback: number): number {
+  const value = config[key];
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function weekStartForDate(value: string): string {
@@ -438,7 +431,7 @@ export class TimesheetService {
     const cycles = unique([
       ...this.store.timesheetSubmissions.map((submission) => submission.cycle_start),
       weekStartForDate(query.date ?? nowIso().slice(0, 10))
-    ]).map((start) => ({ cycle_start: start, cycle_end: weekEndForStart(start), expected_hours: toFixedHours(workdaysInclusive(start, weekEndForStart(start)) * 8) }));
+    ]).map((start) => ({ cycle_start: start, cycle_end: weekEndForStart(start), expected_hours: toFixedHours(workdaysInclusive(start, weekEndForStart(start), this.workingWeek(), this.holidayDates()) * this.dailyTimesheetHours()) }));
     const me = this.userFor(actor.id);
     const manager = me?.manager_user_id ? this.userFor(me.manager_user_id) : null;
     const admins = this.store.users.filter((user) => user.roles.includes(Roles.Admin) && !user.deleted_at);
@@ -451,7 +444,13 @@ export class TimesheetService {
       rules: {
         default_billable: true,
         max_daily_hours: 24,
-        target_weekly_hours: 40,
+        min_daily_hours: this.minDailyTimesheetHours(),
+        target_weekly_hours: this.weeklyTimesheetHours(),
+        submit_by: this.submitBy(),
+        lock_after_approval: this.lockAfterApproval(),
+        working_week: this.workingWeek(),
+        holiday_dates: [...this.holidayDates()].sort(),
+        daily_hours: this.dailyTimesheetHours(),
         active_workflow_id: this.repository.activeWorkflow().id
       },
       include: query.include ? query.include.split(",").map((item) => item.trim()).filter(Boolean) : []
@@ -618,7 +617,7 @@ export class TimesheetService {
         start: submission.cycle_start,
         end: submission.cycle_end,
         total_days: daysInclusive(submission.cycle_start, submission.cycle_end),
-        expected_work_days: workdaysInclusive(submission.cycle_start, submission.cycle_end)
+        expected_work_days: workdaysInclusive(submission.cycle_start, submission.cycle_end, this.workingWeek(), this.holidayDates())
       },
       project_summary: this.submissionProjectSummary(segments),
       hours_summary: {
@@ -797,6 +796,55 @@ export class TimesheetService {
     return actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.HRManager) || actor.roles.includes(Roles.Auditor);
   }
 
+  private activeCompany() {
+    return this.store.companyProfiles.find((candidate) => candidate.status === "active") ?? this.store.companyProfiles[0];
+  }
+
+  private timesheetPolicy(): Record<string, unknown> {
+    return this.store.adminPolicies.find(
+      (candidate) => candidate.policy_key === "timesheet" && candidate.status === "active" && !candidate.deleted_at
+    )?.config ?? {};
+  }
+
+  private workingWeek(): string {
+    return this.activeCompany()?.working_week ?? "Mon-Fri";
+  }
+
+  private dailyTimesheetHours(): number {
+    return Math.max(0, this.activeCompany()?.work_hours_per_day ?? 8);
+  }
+
+  private minDailyTimesheetHours(): number {
+    return numberConfig(this.timesheetPolicy(), "minDailyHours", 6);
+  }
+
+  private submitBy(): string {
+    const value = this.timesheetPolicy().submitBy;
+    return typeof value === "string" && value.trim() ? value.trim() : "Monday 11:00 AM";
+  }
+
+  private lockAfterApproval(): boolean {
+    const value = this.timesheetPolicy().lockAfterApproval;
+    return typeof value === "boolean" ? value : true;
+  }
+
+  private holidayDates(): Set<string> {
+    return new Set(
+      this.store.holidays
+        .filter((holiday) => !holiday.optional && !holiday.deleted_at)
+        .map((holiday) => holiday.holiday_date)
+    );
+  }
+
+  private weeklyTimesheetHours(): number {
+    const start = weekStartForDate(nowIso().slice(0, 10));
+    return numberConfig(
+      this.timesheetPolicy(),
+      "weeklyHours",
+      workdaysInclusive(start, weekEndForStart(start), this.workingWeek(), this.holidayDates()) * this.dailyTimesheetHours()
+    );
+  }
+
   private dateFrom(query: Partial<TimesheetAnalyticsQuery>): string {
     return query.date_from ?? query.cycle_start ?? weekStartForDate(nowIso().slice(0, 10));
   }
@@ -814,7 +862,7 @@ export class TimesheetService {
   }
 
   private expectedHoursForCycle(query: Partial<TimesheetAnalyticsQuery>): string {
-    return toFixedHours(workdaysInclusive(this.cycleStart(query), this.cycleEnd(query)) * 8);
+    return toFixedHours(workdaysInclusive(this.cycleStart(query), this.cycleEnd(query), this.workingWeek(), this.holidayDates()) * this.dailyTimesheetHours());
   }
 
   private resolveProjectCode(projectId?: UUID, projectCode?: string): string | undefined {
@@ -936,7 +984,7 @@ export class TimesheetService {
   }
 
   private expectedHours(submission: TimesheetSubmission): string {
-    return toFixedHours(workdaysInclusive(submission.cycle_start, submission.cycle_end) * 8);
+    return toFixedHours(workdaysInclusive(submission.cycle_start, submission.cycle_end, this.workingWeek(), this.holidayDates()) * this.dailyTimesheetHours());
   }
 
   private canActorDecide(actor: AuthUser, submission: TimesheetSubmission): boolean {

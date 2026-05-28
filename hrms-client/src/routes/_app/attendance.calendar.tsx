@@ -19,7 +19,7 @@ export const Route = createFileRoute("/_app/attendance/calendar")({
   component: AttendanceCalendar,
 });
 
-type DayStatus = "present" | "wfh" | "late" | "absent" | "leave" | "weekend" | "future";
+type DayStatus = "present" | "wfh" | "late" | "absent" | "leave" | "weekend" | "holiday" | "future";
 
 const STATUS_CLS: Record<DayStatus, string> = {
   present: "bg-success/15 text-success border-success/30",
@@ -28,6 +28,7 @@ const STATUS_CLS: Record<DayStatus, string> = {
   absent: "bg-destructive/15 text-destructive border-destructive/30",
   leave: "bg-primary-soft text-primary border-primary/30",
   weekend: "bg-muted text-muted-foreground/60 border-border",
+  holiday: "bg-info/15 text-info border-info/30",
   future: "bg-background text-muted-foreground/40 border-dashed border-border",
 };
 
@@ -50,8 +51,29 @@ function dayStatus(record: ApiRecord | undefined): DayStatus {
   return status in STATUS_CLS ? (status as DayStatus) : "future";
 }
 
+const STATUS_LABELS: Record<DayStatus, string> = {
+  present: "Present",
+  wfh: "WFH",
+  late: "Late",
+  absent: "Absent",
+  leave: "Leave",
+  weekend: "Non-working",
+  holiday: "Holiday",
+  future: "Upcoming",
+};
+
 function errorMessage(error: unknown): string {
   return userFacingErrorMessage(error, "Attendance calendar request failed.");
+}
+
+function selectedDayDetail(record: ApiRecord | undefined, status: DayStatus): string {
+  if (!record) return "No attendance for this day.";
+  const detail = text(record.detail);
+  if (detail && detail !== "No attendance for this day") return detail;
+  if (status === "holiday") return text(record.note, "Company holiday");
+  if (status === "weekend") return "Company non-working day";
+  if (status === "future") return "Upcoming day";
+  return detail || "No attendance for this day.";
 }
 
 function AttendanceCalendar() {
@@ -133,7 +155,9 @@ function AttendanceCalendar() {
               })}
             </div>
             <div className="mt-4 flex flex-wrap gap-3 text-xs">
-              {(["present", "wfh", "late", "absent", "leave"] as DayStatus[]).map((status) => (
+              {(
+                ["present", "wfh", "late", "absent", "leave", "holiday", "weekend"] as DayStatus[]
+              ).map((status) => (
                 <div key={status} className="flex items-center gap-1.5">
                   <span
                     className={cn(
@@ -141,7 +165,7 @@ function AttendanceCalendar() {
                       STATUS_CLS[status],
                     )}
                   />
-                  <span className="capitalize text-muted-foreground">{status}</span>
+                  <span className="text-muted-foreground">{STATUS_LABELS[status]}</span>
                 </div>
               ))}
             </div>
@@ -156,14 +180,21 @@ function AttendanceCalendar() {
         >
           {query.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading day attendance...</p>
-          ) : selectedRecord && selectedStatus !== "future" && selectedStatus !== "weekend" ? (
+          ) : selectedRecord ? (
             <div className="space-y-3 text-sm">
-              <StatusBadge status={selectedStatus === "leave" ? "approved" : selectedStatus} />
-              {text(selectedRecord.in_time) && (
+              <StatusBadge
+                status={selectedStatus === "leave" ? "approved" : selectedStatus}
+                label={STATUS_LABELS[selectedStatus]}
+              />
+              {(text(selectedRecord.in_time) ||
+                text(selectedRecord.out_time) ||
+                numberValue(selectedRecord.work_minutes) > 0) && (
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="rounded-xl bg-muted/40 p-2">
                     <p className="text-[11px] text-muted-foreground">In</p>
-                    <p className="font-semibold tabular-nums">{text(selectedRecord.in_time)}</p>
+                    <p className="font-semibold tabular-nums">
+                      {text(selectedRecord.in_time, "-")}
+                    </p>
                   </div>
                   <div className="rounded-xl bg-muted/40 p-2">
                     <p className="text-[11px] text-muted-foreground">Out</p>
@@ -179,11 +210,9 @@ function AttendanceCalendar() {
                   </div>
                 </div>
               )}
-              {text(selectedRecord.detail) && (
-                <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
-                  {text(selectedRecord.detail)}
-                </p>
-              )}
+              <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
+                {selectedDayDetail(selectedRecord, selectedStatus)}
+              </p>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No attendance for this day.</p>
@@ -199,6 +228,7 @@ function AttendanceCalendar() {
                 ["late", "Late"],
                 ["absent", "Absent"],
                 ["leave", "On leave"],
+                ["holiday", "Holiday"],
               ] as [DayStatus, string][]
             ).map(([key, label]) => (
               <li key={key} className="flex items-center justify-between">

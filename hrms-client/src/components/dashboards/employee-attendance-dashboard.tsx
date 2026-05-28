@@ -39,6 +39,8 @@ export function EmployeeAttendanceDashboard() {
   const liveToday = liveAttendanceToday(today, data.generated_at, now);
   const nextAllowedActions = liveToday.nextAllowedActions;
   const targetHours = text(today.target_hours, text(summary.target_hours));
+  const punchPolicy = asRecord(today.punch_policy);
+  const punchBlockedReason = text(punchPolicy.blocked_reason);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -123,51 +125,58 @@ export function EmployeeAttendanceDashboard() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {canPunch("check_in") && (
-                <Button
-                  className="rounded-full px-5 text-primary-foreground"
-                  disabled={disableActions}
-                  onClick={() => punch("check_in", "Punched in")}
-                  style={{ background: "var(--gradient-primary)" }}
-                >
-                  <Play className="mr-1.5 h-4 w-4" /> Punch in
-                </Button>
-              )}
-              {canPunch("break_start") && (
-                <Button
-                  variant="outline"
-                  className="rounded-full px-5"
-                  disabled={disableActions}
-                  onClick={() => punch("break_start", "Break started")}
-                >
-                  <Coffee className="mr-1.5 h-4 w-4" /> Start break
-                </Button>
-              )}
-              {canPunch("break_end") && (
-                <Button
-                  className="rounded-full px-5 text-primary-foreground"
-                  disabled={disableActions}
-                  onClick={() => punch("break_end", "Resumed work")}
-                  style={{ background: "var(--gradient-primary)" }}
-                >
-                  <Play className="mr-1.5 h-4 w-4" /> Resume
-                </Button>
-              )}
-              {canPunch("check_out") && (
-                <Button
-                  variant="outline"
-                  className="rounded-full border-destructive/30 px-5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  disabled={disableActions}
-                  onClick={() => punch("check_out", "Punched out")}
-                >
-                  <Square className="mr-1.5 h-4 w-4" /> Punch out
-                </Button>
-              )}
-              {!query.isLoading && nextAllowedActions.length === 0 && (
-                <Button asChild variant="outline" className="rounded-full px-5">
-                  <Link to="/attendance">View attendance</Link>
-                </Button>
+            <div className="flex flex-col items-start gap-2 sm:items-end">
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                {canPunch("check_in") && (
+                  <Button
+                    className="rounded-full px-5 text-primary-foreground"
+                    disabled={disableActions}
+                    onClick={() => punch("check_in", "Punched in")}
+                    style={{ background: "var(--gradient-primary)" }}
+                  >
+                    <Play className="mr-1.5 h-4 w-4" /> Punch in
+                  </Button>
+                )}
+                {canPunch("break_start") && (
+                  <Button
+                    variant="outline"
+                    className="rounded-full px-5"
+                    disabled={disableActions}
+                    onClick={() => punch("break_start", "Break started")}
+                  >
+                    <Coffee className="mr-1.5 h-4 w-4" /> Start break
+                  </Button>
+                )}
+                {canPunch("break_end") && (
+                  <Button
+                    className="rounded-full px-5 text-primary-foreground"
+                    disabled={disableActions}
+                    onClick={() => punch("break_end", "Resumed work")}
+                    style={{ background: "var(--gradient-primary)" }}
+                  >
+                    <Play className="mr-1.5 h-4 w-4" /> Resume
+                  </Button>
+                )}
+                {canPunch("check_out") && (
+                  <Button
+                    variant="outline"
+                    className="rounded-full border-destructive/30 px-5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    disabled={disableActions}
+                    onClick={() => punch("check_out", "Punched out")}
+                  >
+                    <Square className="mr-1.5 h-4 w-4" /> Punch out
+                  </Button>
+                )}
+                {!query.isLoading && nextAllowedActions.length === 0 && (
+                  <Button asChild variant="outline" className="rounded-full px-5">
+                    <Link to="/attendance">View attendance</Link>
+                  </Button>
+                )}
+              </div>
+              {!query.isLoading && nextAllowedActions.length === 0 && punchBlockedReason && (
+                <p className="max-w-sm text-left text-xs text-muted-foreground sm:text-right">
+                  {punchBlockedReason}
+                </p>
               )}
             </div>
           </div>
