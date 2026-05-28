@@ -1,0 +1,152 @@
+# Render blueprint for the hosted Hawkaii HRMS QA/UAT environment.
+#
+# This stack is intentionally isolated from production and uses
+# https://qa.hawkaii.in with https://qa-api.hawkaii.in.
+
+services:
+  - type: keyvalue
+    name: hawkaii-hrms-qa-valkey
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
+  - type: web
+    runtime: docker
+    name: hawkaii-hrms-qa-api
+    dockerfilePath: ./hrms_backend/infra/docker/Dockerfile
+    dockerContext: ./hrms_backend
+    plan: starter
+    healthCheckPath: /api/v1/health/ready
+    preDeployCommand: pnpm db:migrate:prod
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: NODE_ENV
+        value: "production"
+      - key: APP_ENV
+        value: "qa"
+      - key: APP_VERSION
+        value: "0.1.0"
+      - key: BUILD_SHA
+        sync: false
+      - key: PORT
+        value: "3001"
+      - key: LOG_LEVEL
+        value: "info"
+      - key: HRMS_DATA_STORE
+        value: "postgres"
+      - key: TRUST_PROXY
+        value: "true"
+      - key: OPENAPI_PUBLIC
+        value: "true"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: SESSION_COOKIE_NAME
+        value: "hrms_qa_session"
+      - key: DATABASE_URL
+        sync: false
+      - key: VALKEY_URL
+        fromService:
+          type: keyvalue
+          name: hawkaii-hrms-qa-valkey
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: APP_URL
+        value: "https://qa-api.hawkaii.in"
+      - key: API_BASE_URL
+        value: "https://qa-api.hawkaii.in"
+      - key: FRONTEND_URL
+        value: "https://qa.hawkaii.in"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://qa.hawkaii.in"
+      - key: CLOUDINARY_MOCK_UPLOADS
+        value: "false"
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLOUDINARY_FOLDER
+        value: "hawkaii-hrms/qa"
+      - key: CLOUDINARY_RESOURCE_TYPE
+        value: "auto"
+      - key: EMAIL_DELIVERY_PROVIDER
+        value: "resend"
+      - key: EMAIL_DELIVERY_MODE
+        value: "send"
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        value: "Hawkaii HRMS QA <verify@hawkaii.in>"
+      - key: RESEND_FROM_NAME
+        value: "Hawkaii HRMS QA"
+      - key: RESEND_REPLY_TO_EMAIL
+        value: "support@hawkaii.in"
+      - key: RESEND_WEBHOOK_SECRET
+        sync: false
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      - key: RATE_LIMIT_READ_MAX
+        value: "120"
+      - key: RATE_LIMIT_WRITE_MAX
+        value: "60"
+      - key: RATE_LIMIT_AUTH_MAX
+        value: "10"
+      - key: RATE_LIMIT_PUBLIC_MAX
+        value: "60"
+      - key: PDF_COMPRESSION_ENABLED
+        value: "true"
+      - key: PDF_COMPRESSION_BINARY
+        value: "gs"
+      - key: PDF_COMPRESSION_QUALITY
+        value: "ebook"
+      - key: PDF_COMPRESSION_TIMEOUT_MS
+        value: "30000"
+      - key: PDF_COMPRESSION_FAIL_OPEN
+        value: "true"
+
+  - type: worker
+    runtime: docker
+    name: hawkaii-hrms-qa-outbox-worker
+    dockerfilePath: ./hrms_backend/infra/docker/Dockerfile
+    dockerContext: ./hrms_backend
+    dockerCommand: pnpm worker:start
+    plan: starter
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: NODE_ENV
+        value: "production"
+      - key: APP_ENV
+        value: "qa"
+      - key: APP_VERSION
+        value: "0.1.0"
+      - key: BUILD_SHA
+        sync: false
+      - key: HRMS_DATA_STORE
+        value: "postgres"
+      - key: DATABASE_URL
+        sync: false
+      - key: VALKEY_URL
+        fromService:
+          type: keyvalue
+          name: hawkaii-hrms-qa-valkey
+          property: connectionString
+      - key: CLOUDINARY_MOCK_UPLOADS
+        value: "false"
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLOUDINARY_FOLDER
+        value: "hawkaii-hrms/qa"
+      - key: CLOUDINARY_RESOURCE_TYPE
+        value: "auto"
+      - key: OUTBOX_WORKER_INTERVAL_MS
+        value: "2000"

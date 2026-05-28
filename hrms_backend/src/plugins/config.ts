@@ -13,6 +13,9 @@ const booleanEnv = z.preprocess((value) => {
 
 const configSchema = z.object({
   NODE_ENV: z.string().default("development"),
+  APP_ENV: z.enum(["local", "development", "qa", "production"]).optional(),
+  APP_VERSION: z.string().default("0.1.0"),
+  BUILD_SHA: z.string().optional(),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   JWT_ACCESS_SECRET: z.string().min(16).default("local-dev-access-secret-change-me"),
   JWT_REFRESH_SECRET: z.string().min(16).default("local-dev-refresh-secret-change-me"),
@@ -74,9 +77,12 @@ const configSchema = z.object({
   RATE_LIMIT_READ_MAX: z.coerce.number().int().min(1).default(120),
   RATE_LIMIT_WRITE_MAX: z.coerce.number().int().min(1).default(60),
   RATE_LIMIT_AUTH_MAX: z.coerce.number().int().min(1).default(10),
-  RATE_LIMIT_PUBLIC_MAX: z.coerce.number().int().min(1).default(60)
+  RATE_LIMIT_PUBLIC_MAX: z.coerce.number().int().min(1).default(60),
+  TRUST_PROXY: booleanEnv.default(false),
+  OPENAPI_PUBLIC: booleanEnv.optional()
 }).superRefine((config, context) => {
-  const localLikeEnvironments = new Set(["development", "dev", "local", "test"]);
+  const appEnv = config.APP_ENV ?? (config.NODE_ENV === "production" ? "production" : "local");
+  const localLikeEnvironments = new Set(["development", "local"]);
   const requireField = (field: "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET" | "RESEND_API_KEY" | "RESEND_FROM_EMAIL" | "RESEND_WEBHOOK_SECRET" | "FRONTEND_URL") => {
     if (!config[field]) {
       context.addIssue({
@@ -87,7 +93,21 @@ const configSchema = z.object({
     }
   };
 
-  if (config.NODE_ENV === "production" && config.EMAIL_DELIVERY_MODE !== "send") {
+  if (appEnv === "production" && config.NODE_ENV !== "production") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["NODE_ENV"],
+      message: "NODE_ENV must be 'production' when APP_ENV is production."
+    });
+  }
+  if (["qa", "production"].includes(appEnv) && config.NODE_ENV !== "production") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["NODE_ENV"],
+      message: "Hosted QA and production must run with NODE_ENV=production."
+    });
+  }
+  if (appEnv === "production" && config.EMAIL_DELIVERY_MODE !== "send") {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["EMAIL_DELIVERY_MODE"],
@@ -99,14 +119,14 @@ const configSchema = z.object({
     requireField("RESEND_FROM_EMAIL");
     requireField("FRONTEND_URL");
   }
-  if (config.CLOUDINARY_MOCK_UPLOADS && !localLikeEnvironments.has(config.NODE_ENV.toLowerCase())) {
+  if (config.CLOUDINARY_MOCK_UPLOADS && !localLikeEnvironments.has(appEnv)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["CLOUDINARY_MOCK_UPLOADS"],
-      message: "CLOUDINARY_MOCK_UPLOADS can only be true in local development or test environments."
+      message: "CLOUDINARY_MOCK_UPLOADS can only be true in local or development APP_ENV environments."
     });
   }
-  if (config.NODE_ENV === "production") {
+  if (appEnv === "production") {
     for (const field of ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const) {
       requireField(field);
       if (/local-|change-me|replace-/iu.test(config[field])) {
@@ -137,8 +157,10 @@ const configSchema = z.object({
   }
 }).transform((config) => ({
   ...config,
+  APP_ENV: config.APP_ENV ?? (config.NODE_ENV === "production" ? "production" : "local"),
   JWT_SECRET: config.JWT_SECRET ?? config.JWT_ACCESS_SECRET,
-  APP_URL: config.APP_URL ?? config.API_BASE_URL
+  APP_URL: config.APP_URL ?? config.API_BASE_URL,
+  OPENAPI_PUBLIC: config.OPENAPI_PUBLIC ?? (config.APP_ENV ?? (config.NODE_ENV === "production" ? "production" : "local")) !== "production"
 }));
 
 export const configPlugin = fp(async (fastify) => {

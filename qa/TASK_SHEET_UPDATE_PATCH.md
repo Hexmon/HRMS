@@ -1,28 +1,15 @@
-# External Task Sheet Patch - QA Artifact Upgrade
+# External HRMS Task Sheet Patch
 
-Add a section named:
+Apply these rows to `/Users/anuragkumar/Desktop/Tasks/HRMS.xlsx`.
 
-`Codex Sprint Update - Full Product QA Artifact Upgrade`
-
-## Summary Row
-
-| Task ID | Feature/Area | Business Rule / Scope | Implementation Status | Files Changed | Verification Status | Tester Priority | Tester Scope | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| HRMS-QA-UPGRADE-001 | QA Workbook | First full-product QA workbook with P0/P1/P2 split, sprint plan, story points, coverage matrix, role matrix, BLQ traceability, defect/signoff sheets | Completed | `qa/TESTING_TEST_CASES.xlsx`, `qa/TESTER_RUN_BOOK.md`, QA checklist docs, validation scripts | Validation script passed | P0 | Full QA Cycle | 7-day sprints, 48 points per sprint |
-| HRMS-QA-UPGRADE-002 | Tester Manual | OS-aware tester run book for macOS, Ubuntu/Linux, Windows; defect logging; signoff rules | Completed | `qa/TESTER_RUN_BOOK.md`, `qa/TESTING_CHECKLIST_CLIENT.docx` | Validation script passed | P0 | QA Execution | Client doc remains non-technical |
-| HRMS-QA-UPGRADE-003 | Traceability | Expanded role permission matrix and BLQ-001 through BLQ-025 traceability | Completed | Workbook tabs `Role Permission Matrix`, `Business Rule Traceability` | Validation script passed | P0/P1/P2 | Regression Planning | Backend is source of truth |
-
-## Sprint Plan Rows
-
-| Sprint | Scope | Story Points | Related IDs |
-| --- | --- | --- | --- |
-| 1 | Auth, onboarding, RBAC, attendance, expenses, documents, Cloudinary, empty workspace, mobile smoke | 40.5 | AUTH-P0-001, AUTH-P0-002, AUTH-P0-003, ONB-P0-001, RBAC-P0-001, DASH-P0-001, ATT-P0-001, ATT-P0-002, EXP-P0-001, EXP-P0-002, DOC-P0-001, STOR-P0-001, ADM-P0-001, REP-P0-001, MOB-P0-001 |
-| 2 | Employees, EMS, leave/WFH, holidays, attendance regression, timesheets, notifications, dashboard, admin master/RBAC | 39.5 | EMP-P1-001, EMP-P1-002, EMP-P1-003, EMS-P1-001, EMS-P1-002, EMS-P1-003, LEAVE-P1-001, WFH-P1-001, HOL-P1-001, ATT-P1-001, ATT-P1-002, TS-P1-001, TS-P1-002, NOTIF-P1-001, DASH-P1-001, ADM-P1-001 |
-| 3 | Projects, assets, helpdesk, reports, admin settings, API negatives, deep mobile/security/edge tests | 44.5 | PROJ-P1-001, PROJ-P1-002, PROJ-P1-003, ASSET-P1-001, ASSET-P1-002, HELP-P1-001, HELP-P1-002, EXP-P1-001, REP-P1-002, ADMIN-P1-001, API-P1-001, API-P2-001, DOC-P2-001, ATT-P2-001, EXP-P2-001, REP-P2-001, SEC-P2-001, MOB-P2-001 |
-
-## Story Point Capacity Rule
-
-- Sprint length: 7 days.
-- Capacity: 48 story points per sprint.
-- Story point scale: 0.5, 1, 2, 3, 5.
-- All generated sprints are under capacity.
+| Task ID | Sprint | Story Points | Priority | Owner | Status | Description | Acceptance Criteria | Verification | QA/Test Cases | Notes |
+| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- | --- |
+| HRMS-DEPLOY-001 | Sprint 1 | 5 | P0 | DevOps | Implemented | Branch-based GitHub CI/CD for `dev`, `qa`, `main` | PRs run checks without deployment; pushes to deploy branches trigger matching Render API/worker hooks after checks pass | GitHub workflow YAML parsed | CI-CD Validation | Production branch is `main` based on repo evidence |
+| HRMS-DEPLOY-002 | Sprint 1 | 5 | P0 | DevOps | Implemented | Render environment isolation | Production, QA, and hosted dev each have API, worker, and Valkey definitions | Render YAML parse passed | Deployment Smoke / Data Isolation | Secrets remain dashboard-managed |
+| HRMS-DEPLOY-003 | Sprint 1 | 3 | P0 | Backend | Implemented | `APP_ENV` deployment model | Hosted QA/prod use optimized `NODE_ENV=production`; product env uses `APP_ENV` | Backend typecheck/build | Secrets Config Checklist | `APP_ENV=local/development/qa/production` |
+| HRMS-DEPLOY-004 | Sprint 1 | 2 | P1 | Backend | Implemented | Health/release metadata | Health responses expose app env, version, build SHA, uptime without secrets | Backend typecheck/build | Deployment Smoke | `BUILD_SHA` must be supplied by deployment |
+| HRMS-DEPLOY-005 | Sprint 1 | 3 | P0 | DevOps | Implemented | Hosted env docs | Environment matrix, CI/CD, rollback, DNS, secrets docs created | Markdown reviewed | Deployment Smoke / Rollback Checklist | Cloudflare frontend remains documented deployment target |
+| HRMS-QA-DEPLOY-001 | Sprint 1 | 5 | P0 | QA | Implemented | Deployment-aware QA workbook | Workbook includes required deployment/agile sheets and validates successfully | `python3 qa/scripts/validate_testing_workbook.py` passed | `qa/TESTING_TEST_CASES.xlsx` | 51 cases, sprint totals <= 48 |
+| HRMS-PROCESS-001 | Sprint 1 | 3 | P1 | Delivery Lead | Implemented | Agile process docs | Branching, DoR, DoD, QA handoff, sprint ceremonies, release governance documented | Docs created under `docs/process` | Agile Sprint Plan | 7-day sprint, 48 SP cap |
+| HRMS-MANUAL-001 | Sprint 1 | 2 | P0 | Release Owner | Manual Required | Configure GitHub environments and secrets | `development`, `qa`, `production` environments exist; production requires approval; deploy hook secrets added | GitHub settings review | CI-CD Validation | Cannot be done from source code alone |
+| HRMS-MANUAL-002 | Sprint 1 | 3 | P0 | Release Owner | Manual Required | Configure hosted resources | Neon branches, Render services, Cloudinary env/folders, Resend, DNS configured | Hosted smoke commands | Deployment Smoke / DNS SSL CORS | Requires external dashboards |

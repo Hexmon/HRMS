@@ -13,6 +13,12 @@ function AppLayout() {
   const { user, isInitializing } = useAuth();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const appEnv = String(import.meta.env.VITE_APP_ENV ?? "").toLowerCase();
+  const appVersion = String(import.meta.env.VITE_APP_VERSION ?? "");
+  const buildSha = String(import.meta.env.VITE_BUILD_SHA ?? "");
+  const showEnvironmentBanner = appEnv === "qa" || appEnv === "development";
+  const environmentLabel = appEnv === "qa" ? "QA" : appEnv === "development" ? "Hosted dev" : "";
+  const buildLabel = [appVersion, buildSha ? buildSha.slice(0, 7) : ""].filter(Boolean).join(" / ");
 
   useEffect(() => {
     if (isInitializing) return;
@@ -42,6 +48,11 @@ function AppLayout() {
         <AppSidebar />
         <div className="flex min-h-screen flex-1 flex-col">
           <Topbar />
+          {showEnvironmentBanner ? (
+            <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs font-medium text-amber-900">
+              {environmentLabel} environment{buildLabel ? ` - ${buildLabel}` : ""}. Do not enter production data.
+            </div>
+          ) : null}
           <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
             <div key={path} className="page-fade-in mx-auto w-full max-w-7xl space-y-6">
               <Outlet />

@@ -173,6 +173,11 @@ For product behavior and user journeys, start here:
 | API errors | `hrms-client/docs/api/API_ERROR_RESPONSE_GUIDE.md` |
 | Resend email verification | `docs/resend-email-verification-architecture-report.md` |
 | Resend deployment runbook | `docs/runbooks/resend-email-verification-deployment.md` |
+| Hosted deployment guide | `docs/deployment/hosted-deployment.md` |
+| Environment matrix | `docs/deployment/environment-matrix.md` |
+| CI/CD runbook | `docs/deployment/ci-cd-runbook.md` |
+| Rollback runbook | `docs/deployment/rollback-runbook.md` |
+| Agile delivery plan | `docs/process/agile-delivery-plan.md` |
 
 ## Production Readiness Principles
 

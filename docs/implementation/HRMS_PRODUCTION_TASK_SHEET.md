@@ -845,3 +845,14 @@ Frontend:
 3. Phase 6 verification guardrails are hardened for full-module implementation coverage, zero planned API backlog, frontend contract sync, critical migration index coverage, and frontend production API/mock fallback config.
 4. Employee/core CSV/XLSX, report CSV/XLSX, and Attendance/Leave-WFH CSV/JSON/XLSX exports now generate backend documents and return `download_document_id`; employee import parsing, scheduled exports, and retention cleanup remain production hardening.
 5. Next roadmap scope: continue Phase 6 with approval/upload browser coverage, provider-backed warranty notification automation if specified, project-specific report depth, import/scheduled-export/retention hardening, dynamic RBAC assignment/enforcement, and release-readiness reporting.
+
+## Codex Sprint Update - Deployment Hardening, Agile Delivery, QA Upgrade
+
+| Task ID | Sprint | Story Points | Priority | Status | Description | Acceptance Criteria | Verification | QA/Test Cases | Notes |
+| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |
+| HRMS-DEPLOY-001 | Sprint 1 | 5 | P0 | Implemented | Branch-based CI/CD for `dev`, `qa`, and `main` | PRs run checks without deploy; pushes deploy the matching hosted backend after checks pass | GitHub workflow YAML parsed | CI-CD Validation sheet | Production branch is `main` based on current repo evidence |
+| HRMS-DEPLOY-002 | Sprint 1 | 5 | P0 | Implemented | Environment isolation for Render API/worker/Valkey and hosted env examples | Dev, QA, and production have separate Render blueprints, DB URLs, Valkey services, Cloudinary folders, and frontend/API domains | Render YAML parse passed | Data Isolation / Deployment Smoke | Real secrets remain dashboard-managed |
+| HRMS-DEPLOY-003 | Sprint 1 | 3 | P0 | Implemented | Backend deployment env model | `APP_ENV` separates app environment from `NODE_ENV`; hosted QA/prod require optimized `NODE_ENV=production` | Backend typecheck/build | Secrets Config Checklist | `APP_ENV=local/development/qa/production` |
+| HRMS-DEPLOY-004 | Sprint 1 | 2 | P1 | Implemented | Release metadata | Health endpoints expose app env, version, build SHA, and uptime without secrets | Backend typecheck/build | Deployment Smoke | Build SHA must be supplied by deployment env |
+| HRMS-QA-DEPLOY-001 | Sprint 1 | 5 | P0 | Implemented | Deployment-aware QA workbook and tester manual | Workbook includes deployment smoke, CI/CD, DNS/CORS, data isolation, secrets, rollback, role matrix, traceability, and signoff | QA workbook validation script | `qa/TESTING_TEST_CASES.xlsx` | Sprint cap remains <= 48 SP |
+| HRMS-PROCESS-001 | Sprint 1 | 3 | P1 | Implemented | Agile delivery docs | Branching, DoR, DoD, QA handoff, release governance, sprint ceremonies documented | Docs created under `docs/process` | Agile Sprint Plan | 7-day sprint, 48 SP capacity |

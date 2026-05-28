@@ -130,7 +130,7 @@ Rollback caution: do not roll back user verification fields blindly after users 
 4. Use a sender such as:
 
 ```text
-Product Name <verify@yourdomain.com>
+Product Name <verify@hawkaii.in>
 ```
 
 Keep auth and verification email on a trustworthy domain or subdomain. Confirm the domain status is verified in Resend before switching staging or production to `EMAIL_DELIVERY_MODE=send`. DNS propagation can take time; test with staging first.

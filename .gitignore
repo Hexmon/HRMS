@@ -25,6 +25,8 @@ coverage/
 .vitest/
 playwright-report/
 test-results/
+__pycache__/
+*.py[cod]
 hrms_backend/coverage/
 hrms_backend/.vitest/
 hrms-client/coverage/

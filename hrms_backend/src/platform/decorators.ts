@@ -8,6 +8,9 @@ declare module "fastify" {
     emailDelivery: EmailDeliveryService;
     config: {
       NODE_ENV: string;
+      APP_ENV: "local" | "development" | "qa" | "production";
+      APP_VERSION: string;
+      BUILD_SHA?: string;
       PORT: number;
       JWT_SECRET: string;
       JWT_ACCESS_SECRET: string;
@@ -70,6 +73,8 @@ declare module "fastify" {
       RATE_LIMIT_WRITE_MAX: number;
       RATE_LIMIT_AUTH_MAX: number;
       RATE_LIMIT_PUBLIC_MAX: number;
+      TRUST_PROXY: boolean;
+      OPENAPI_PUBLIC: boolean;
     };
   }
 

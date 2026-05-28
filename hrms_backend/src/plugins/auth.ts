@@ -21,14 +21,16 @@ export const authPlugin = fp(async (fastify) => {
       "/api/v1/auth/logout",
       "/api/v1/onboarding/company-logo",
       "/api/v1/onboarding/company-bootstrap",
-      "/api/v1/webhooks/resend",
-      "/api/v1/openapi.json"
+      "/api/v1/webhooks/resend"
     ]);
+    if (fastify.config.OPENAPI_PUBLIC) {
+      publicPaths.add("/api/v1/openapi.json");
+    }
     const path = request.url.split("?")[0] ?? request.url;
     if (publicPaths.has(path)) {
       return;
     }
-    if (path === "/docs" || path.startsWith("/docs/")) {
+    if (fastify.config.OPENAPI_PUBLIC && (path === "/docs" || path.startsWith("/docs/"))) {
       return;
     }
     if (request.url.startsWith("/api/v1/assets/scan/")) {

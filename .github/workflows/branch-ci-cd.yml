@@ -1,0 +1,155 @@
+name: Branch CI/CD
+
+on:
+  push:
+    branches:
+      - dev
+      - qa
+      - main
+  pull_request:
+    branches:
+      - dev
+      - qa
+      - main
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Environment to deploy
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hrms-${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  backend-checks:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hrms_backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: hrms_backend/pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.25.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+  frontend-checks:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hrms-client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: hrms-client/pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.25.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Production API mode guard
+        run: pnpm api:production-config-guard
+
+      - name: Build
+        run: pnpm build
+
+  deploy-backend:
+    name: Deploy backend
+    runs-on: ubuntu-latest
+    needs:
+      - backend-checks
+      - frontend-checks
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    environment: ${{ github.event_name == 'workflow_dispatch' && (inputs.target_environment == 'dev' && 'development' || inputs.target_environment) || (github.ref_name == 'qa' && 'qa' || github.ref_name == 'dev' && 'development' || 'production') }}
+    steps:
+      - name: Resolve deployment target
+        id: target
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            target="${{ inputs.target_environment }}"
+          else
+            case "${{ github.ref_name }}" in
+              dev) target="dev" ;;
+              qa) target="qa" ;;
+              main) target="production" ;;
+              *) echo "Unsupported branch ${{ github.ref_name }}" >&2; exit 1 ;;
+            esac
+          fi
+
+          case "$target" in
+            dev)
+              echo "api_hook_secret=DEV_RENDER_API_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
+              echo "worker_hook_secret=DEV_RENDER_WORKER_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
+              ;;
+            qa)
+              echo "api_hook_secret=QA_RENDER_API_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
+              echo "worker_hook_secret=QA_RENDER_WORKER_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
+              ;;
+            production)
+              echo "api_hook_secret=PROD_RENDER_API_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
+              echo "worker_hook_secret=PROD_RENDER_WORKER_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
+              ;;
+            *) echo "Unsupported target $target" >&2; exit 1 ;;
+          esac
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Render deploy hooks
+        shell: bash
+        env:
+          DEV_RENDER_API_DEPLOY_HOOK_URL: ${{ secrets.DEV_RENDER_API_DEPLOY_HOOK_URL }}
+          DEV_RENDER_WORKER_DEPLOY_HOOK_URL: ${{ secrets.DEV_RENDER_WORKER_DEPLOY_HOOK_URL }}
+          QA_RENDER_API_DEPLOY_HOOK_URL: ${{ secrets.QA_RENDER_API_DEPLOY_HOOK_URL }}
+          QA_RENDER_WORKER_DEPLOY_HOOK_URL: ${{ secrets.QA_RENDER_WORKER_DEPLOY_HOOK_URL }}
+          PROD_RENDER_API_DEPLOY_HOOK_URL: ${{ secrets.PROD_RENDER_API_DEPLOY_HOOK_URL }}
+          PROD_RENDER_WORKER_DEPLOY_HOOK_URL: ${{ secrets.PROD_RENDER_WORKER_DEPLOY_HOOK_URL }}
+        run: |
+          api_var="${{ steps.target.outputs.api_hook_secret }}"
+          worker_var="${{ steps.target.outputs.worker_hook_secret }}"
+          api_hook="${!api_var:-}"
+          worker_hook="${!worker_var:-}"
+
+          if [[ -z "$api_hook" || -z "$worker_hook" ]]; then
+            echo "Missing Render deploy hook secret(s) for ${{ steps.target.outputs.target }}." >&2
+            echo "Required secrets: $api_var and $worker_var" >&2
+            exit 1
+          fi
+
+          curl -fsS -X POST "$api_hook"
+          curl -fsS -X POST "$worker_hook"
+          echo "Triggered Render API and worker deploys for ${{ steps.target.outputs.target }}."

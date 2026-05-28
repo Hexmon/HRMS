@@ -1,45 +1,69 @@
 # Tester Run Book
 
-## 1. Purpose Of This QA Cycle
+## Purpose
 
-This is the first full software QA cycle for Hawkaii HRMS after dev testing. It is not only a smoke test. The goal is to prove release-critical flows first, then cover the whole product at practical startup speed.
+This manual explains how to use `qa/TESTING_TEST_CASES.xlsx` for hosted deployment validation and first full-product QA.
 
-- P0 UAT Gate: release blockers and client go/no-go flows.
-- P1 Core Regression: important product coverage across modules.
-- P2 Deep Regression: edge, compatibility, negative, and lower-risk checks.
+## Environment URLs
 
-## 2. How To Use `qa/TESTING_TEST_CASES.xlsx`
+- Production: `https://hawkaii.in` and `https://api.hawkaii.in`
+- QA: `https://qa.hawkaii.in` and `https://qa-api.hawkaii.in`
+- Hosted dev: `https://dev.hawkaii.in` and `https://dev-api.hawkaii.in`
+- Local development remains local and is not the same as hosted dev.
 
-Open the `README` tab first. Then use `Execution Summary` and `Sprint Plan` to understand scope. Run the tabs in this order: `P0 UAT Gate`, `P1 Core Regression`, `P2 Deep Regression`.
+## Execution Lanes
 
-For each row:
+1. Release Gate P0: must pass before signoff.
+2. Deployment Smoke: run after every hosted deployment.
+3. Sprint Regression: changed modules.
+4. Full Regression: first full product QA and major releases.
+5. Deep/Future: lower-risk or hardening checks.
 
-- Fill `Status`: `Not Run`, `Pass`, `Fail`, `Blocked`, or `Not Applicable`.
-- Fill `Actual Result` with what actually happened.
-- Fill `Defect ID` if the test failed.
-- Fill `Evidence Link / Screenshot` with screenshot, video, API response, downloaded file, or backend `request_id`.
-- Use `Notes` for environment, role, or data observations.
+## Filling The Workbook
 
-When a test fails, do not continue repeating the same failed flow in other tabs. Log one clean defect, link duplicate test cases to that defect, and continue with unaffected areas if P0 rules allow it.
+- Actual Result: write what happened, not what should have happened.
+- Status: use Not Run, Pass, Fail, Blocked, or Not Applicable.
+- Defect ID: add ticket ID for every failure.
+- Evidence: add screenshot, video, downloaded file, API response, request ID, or CI run URL.
+- Notes: mention role, environment, test data, or blockers.
 
-When blocked, write the missing condition clearly, such as missing Cloudinary credentials, missing role seed, unavailable backend, or unclear expected result.
+## Defect Rules
 
-## 3. Execution Order
+Fail means the feature was testable and behaved incorrectly. Blocked means the test could not be executed because setup, credentials, role, data, or environment was missing.
 
-1. Read the workbook `README`.
-2. Prepare environment and users.
-3. Run P0 UAT Gate.
-4. Stop and escalate if any P0 blocker exists without approved waiver.
-5. Run P1 Core Regression.
-6. Run P2 Deep Regression if time permits or before major release.
-7. Run mobile/responsive smoke.
-8. Complete `Defect Log` and `Signoff`.
+Capture backend `request_id` from API error responses whenever possible.
 
-## 4. Local QA Setup From Repo Docs
+## Role Safety
 
-### macOS
+Use dedicated QA users. Backend permissions are source of truth. If UI hides an action but direct API allows it, log a security/business defect. If UI shows an action but backend forbids it, backend is correct but UI may need a defect.
 
-Required tools proven by repo docs: Node.js 22+, pnpm 10+, Docker Desktop or Docker Engine with Compose. Ghostscript is needed for local PDF compression if testing that path outside Docker.
+## Avoid Wrong Environment
+
+Before testing, confirm the browser URL and API base URL match:
+
+- Production frontend must call `api.hawkaii.in`.
+- QA frontend must call `qa-api.hawkaii.in`.
+- Hosted dev frontend must call `dev-api.hawkaii.in`.
+
+## Cloudinary Storage Check
+
+QA/prod must use real Cloudinary. Upload a document, open it, restart/redeploy backend if needed, then confirm it still opens. Local mock is not enough for UAT persistence.
+
+## Email Verification Check
+
+In QA/prod, opening the verification link should show a confirmation step and should not auto-submit. Verification completes only after user action.
+
+## Empty Workspace Check
+
+Create/bootstrap a new company. Dashboards and module pages should show empty real org-scoped states, not unrelated demo data.
+
+## CI/CD Manual Check
+
+Review the GitHub Actions run. PRs should run checks only. Pushes to `dev`, `qa`, and `main` should deploy only after checks pass. Production should require GitHub Environment approval if configured.
+
+## Local QA Setup - macOS
+
+Prerequisites proven by repo scripts: Node 22+, pnpm 10+, Docker with Compose.
 
 Backend:
 
@@ -60,102 +84,19 @@ pnpm install
 pnpm dev
 ```
 
-Health check: open/call backend health routes such as `/health/ready` or `/api/v1/health/ready` after backend starts.
+Health check: `http://localhost:3001/api/v1/health/ready`.
 
-Tests:
+## Local QA Setup - Ubuntu/Linux
 
-```bash
-cd hrms_backend
-pnpm typecheck
-pnpm lint
-pnpm test:unit
-pnpm test:integration
-pnpm test:contracts
+Use Node 22+, pnpm 10+, Docker Engine with Compose. Use the same backend/frontend commands as macOS. Install Docker permissions according to local policy.
 
-cd ../hrms-client
-pnpm exec tsc -p tsconfig.json --noEmit
-pnpm lint
-pnpm build
-```
+## Local QA Setup - Windows
 
-Reset local data: use documented Docker down/up and migration/seed commands only. Do not manually delete production-like databases.
+Use WSL2 or Git Bash for POSIX-style commands. Install Node 22+, pnpm 10+, and Docker Desktop with WSL2 integration. Run the same backend/frontend commands from WSL2.
 
-### Ubuntu/Linux
+## Common Errors
 
-Required tools are the same as macOS: Node.js 22+, pnpm 10+, Docker Engine with Compose. Use the same backend/frontend commands above. If Docker permissions block commands, add the user to the docker group or run according to your local policy. Ghostscript package name is commonly `ghostscript`, but install command depends on distro.
-
-### Windows
-
-Use Windows Terminal with PowerShell, Git Bash, or WSL2. Repo commands are POSIX-style and Docker-based, so WSL2 is the safest path. Required tools: Node.js 22+, pnpm 10+, Docker Desktop with WSL2 integration. Use the same `pnpm` commands from the backend and frontend folders. If shell syntax with inline env vars fails in PowerShell, run through WSL2 or Git Bash.
-
-## 5. QA/UAT Environment Rules
-
-- QA/UAT/prod must use real Cloudinary when validating document persistence.
-- Local/dev may use mock Cloudinary for developer regression.
-- Frontend must run in API mode for release validation.
-- Production mock fallback must be disabled.
-- Do not use seed/demo data as proof for a newly bootstrapped production workspace.
-
-## 6. Role Login Guide
-
-- Employee: self-service, attendance, leave/WFH, expenses, documents, timesheets, helpdesk.
-- Manager: user-facing name for backend `Reviewer`; approval queues and team visibility.
-- Finance Manager: finance verification, payment, settlement, finance reports.
-- Admin/Main Admin: workspace/admin settings, employees, RBAC, reports, configuration.
-- Auditor: read-only audit/report visibility.
-- HR Manager: EMS, employee lifecycle, leave/HR operations; not full Admin unless backend allows.
-- Asset Manager: asset inventory, assignment, return, recovery.
-- Helpdesk Agent: needs backend alignment if no backend role/permission exists.
-- Director: backend role exists; not a mandatory expense v1 approval stage.
-
-## 7. Defect Logging Guide
-
-Title format: `[Module][Role][Priority] short issue`.
-
-Include:
-
-- Test Case ID
-- Role used
-- Environment
-- Preconditions and data
-- Steps to reproduce
-- Expected result
-- Actual result
-- Screenshot/video
-- Backend `request_id` or API response when available
-- Severity and priority
-
-Severity guide:
-
-- Critical: auth broken, data leak, self-approval, data loss, P0 flow impossible.
-- High: major module broken for key role.
-- Medium: important regression with workaround.
-- Low: copy/layout/minor usability issue.
-
-## 8. Common Doubts / FAQ
-
-- Missing Cloudinary credentials: mark storage P0 as Blocked, not Pass. Local mock can validate developer flow but not UAT persistence.
-- UI shows action but backend blocks it: log defect if the action should not be visible; backend block is still correct security behavior.
-- Backend allows something UI hides: log as UX/business alignment defect if user should access it.
-- P1 fails after P0 passes: continue testing but mark release risk for Product decision.
-- Mobile broken but desktop works: P0 only for employee-critical mobile smoke; admin table mobile overflow is P2 unless it blocks required mobile use.
-- Data is empty: pass only if empty state is expected for that role/workspace.
-- Expected result unclear: mark Blocked and add to `Blocked Questions`.
-- Not applicable: use only when role/module truly does not exist in target environment.
-- Role does not exist in seed data: mark blocked and request seed/user setup.
-
-## 9. Signoff Process
-
-QA signoff requires all P0 tests Pass or approved waiver, all P1 failures triaged, and all blockers documented.
-
-Product signoff requires no release-blocking defects, accepted known issues, and environment readiness for Cloudinary/email/API mode.
-
-Release blocker rules: any P0 fail/blocker, permission bypass, cross-org data leak, broken auth/session, broken expense payment flow, document storage loss, or production mock fallback enabled.
-
-## Sprint Plan Summary
-
-| Sprint | Scope | Story Points | Priority Mix |
-| --- | --- | --- | --- |
-| 1 | Auth, onboarding, RBAC, attendance, expenses, documents, Cloudinary, empty workspace, mobile smoke | 40.5 | P0:15 |
-| 2 | Employees, EMS, leave/WFH, holidays, attendance regression, timesheets, notifications, dashboard, admin master/RBAC | 39.5 | P1:16 |
-| 3 | Projects, assets, helpdesk, reports, admin settings, API negatives, deep mobile/security/edge tests | 44.5 | P1:11, P2:7 |
+- Missing Cloudinary credentials: mark storage tests Blocked for QA/UAT.
+- Wrong API domain: stop testing and fix frontend env.
+- 401 while still viewing dashboard: log auth/session defect with request ID.
+- Empty data: pass only if workspace is expected to be empty.

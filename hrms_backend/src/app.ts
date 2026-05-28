@@ -55,7 +55,8 @@ export interface BuildAppOptions {
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: loggerOptions(options.logger ?? false),
-    genReqId: () => crypto.randomUUID()
+    genReqId: () => crypto.randomUUID(),
+    trustProxy: booleanFromEnv(process.env.TRUST_PROXY, false)
   });
 
   await app.register(configPlugin);
@@ -124,7 +125,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     transform: swaggerTransform,
     transformObject: swaggerTransformObject
   });
-  await app.register(swaggerUi, { routePrefix: "/docs" });
+  if (app.config.OPENAPI_PUBLIC) {
+    await app.register(swaggerUi, { routePrefix: "/docs" });
+  }
   await app.register(authPlugin);
   if (options.rateLimit !== false) {
     await app.register(rateLimitPlugin);
@@ -148,9 +151,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(notificationsModule);
   await app.register(adminModule);
 
-  app.get("/api/v1/openapi.json", async () => app.swagger());
+  if (app.config.OPENAPI_PUBLIC) {
+    app.get("/api/v1/openapi.json", async () => app.swagger());
+  }
 
   return app;
+}
+
+function booleanFromEnv(value: string | undefined, fallback: boolean): boolean {
+  if (value == null || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
 async function createRuntimeStore(config: FastifyInstance["config"], options: BuildAppOptions): Promise<DataStore> {

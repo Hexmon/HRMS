@@ -1,15 +1,28 @@
 # Release Signoff Summary
 
-## Build Readiness
-- Backend typecheck/build/lint/docs/DB/unit/contracts/integration: Passed with local/test-appropriate settings.
-- Frontend typecheck/lint/route guards/config guard/build: Passed.
+## Current Scope
 
-## Signoff Conditions
-- P0 UAT Gate must pass with real QA/UAT Cloudinary.
-- No self-approval/self-settlement expense path may pass.
-- No new workspace may show unrelated seeded/demo data in API mode.
-- Email verification must require explicit confirmation outside local/dev.
+Deployment hardening, branch CI/CD, environment isolation, agile delivery process, and QA workbook upgrade.
 
-## Known Notes
-- Immutable document access logs are preserved during hard delete by database policy.
-- Full external HRMS.xlsx update is provided as a patch because safe spreadsheet modification tooling is unavailable.
+## Release Gate
+
+- All P0 tests in `qa/TESTING_TEST_CASES.xlsx` must pass or have approved waiver.
+- Hosted QA/prod must use real DB, Valkey, Cloudinary, and API mode.
+- Production frontend is `https://hawkaii.in`.
+
+## Sprint Plan
+
+- Sprint 1: 41 story points
+- Sprint 2: 20 story points
+- Sprint 3: 8 story points
+- Sprint 4: 10 story points
+- Sprint 5: 9 story points
+
+## Known Manual Inputs
+
+- DNS records.
+- Render deploy hooks and secrets.
+- Neon branch connection strings.
+- Cloudinary credentials/product environments.
+- Resend secrets and verified sender.
+- GitHub Environment protection settings.

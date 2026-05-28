@@ -655,7 +655,7 @@ Recommended middleware change:
 | Env var | Required in production | Purpose |
 |---|---:|---|
 | `RESEND_API_KEY` | Yes | Server-side API key for Resend |
-| `RESEND_FROM_EMAIL` | Yes | Verified sender, e.g. `Hawkaii HRMS <verify@yourdomain.com>` |
+| `RESEND_FROM_EMAIL` | Yes | Verified sender, e.g. `Hawkaii HRMS <verify@hawkaii.in>` |
 | `RESEND_FROM_NAME` | Optional | Friendly display name if not embedded in `RESEND_FROM_EMAIL` |
 | `RESEND_REPLY_TO_EMAIL` | Optional | Reply-to for transactional auth emails |
 | `RESEND_WEBHOOK_SECRET` | Yes if webhook enabled | Signature verification |
@@ -673,7 +673,7 @@ Recommended middleware change:
 - Verify a sending domain in Resend.
 - Add SPF and DKIM DNS entries. Resend docs state these DNS entries grant Resend permission to send for the domain.
 - Add DMARC after SPF/DKIM are passing.
-- Use a product-specific sender such as `Hawkaii HRMS <verify@yourdomain.com>`.
+- Use a product-specific sender such as `Hawkaii HRMS <verify@hawkaii.in>`.
 - Send both HTML and plain text. Resend `send email` supports `html` and `text` fields.
 - Use Resend idempotency keys for signup/resend/password reset sends.
 - Store Resend email id returned by the send call.
