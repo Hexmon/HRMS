@@ -685,6 +685,7 @@ export interface DepartmentResponse {
   name: string;
   parent_department_id: string | null;
   parent_id: string | null;
+  cost_center: string | null;
   director_user_id: string | null;
   status: Department["status"];
   active: boolean;
@@ -797,6 +798,7 @@ export interface AdminPolicyResponse {
   status: "active" | "inactive";
   active: boolean;
   config: Record<string, unknown>;
+  derived_preview?: Record<string, unknown>;
   updated_at: string;
   version: number;
 }
@@ -1012,6 +1014,7 @@ function presentDepartment(department: Department): DepartmentResponse {
     department_code: department.department_code,
     code: department.department_code,
     name: department.name,
+    cost_center: department.cost_center,
     parent_department_id: department.parent_department_id,
     parent_id: department.parent_department_id,
     director_user_id: department.director_user_id,
@@ -1094,8 +1097,40 @@ function presentAdminPolicy(policy: AdminPolicyConfigRecord): AdminPolicyRespons
     status: policy.status,
     active: policy.status === "active",
     config: policy.config,
+    derived_preview: policy.policy_key === "leave" ? leavePolicyPreview(policy.config) : undefined,
     updated_at: policy.updated_at,
     version: policy.version
+  };
+}
+
+function numericPolicyValue(config: Record<string, unknown>, key: string, fallback: number): number {
+  const value = config[key];
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function booleanPolicyValue(config: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = config[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function leavePolicyPreview(config: Record<string, unknown>): Record<string, unknown> {
+  const casualPerYear = numericPolicyValue(config, "casualPerYear", 12);
+  const sickPerYear = numericPolicyValue(config, "sickPerYear", 10);
+  const earnedPerYear = numericPolicyValue(config, "earnedPerYear", 18);
+  const carryForwardCap = numericPolicyValue(config, "carryForwardCap", 0);
+  const annualEntitlement = casualPerYear + sickPerYear + earnedPerYear;
+  return {
+    read_only: true,
+    annual_entitlement_days: annualEntitlement,
+    monthly_accrual_days: Math.round((annualEntitlement / 12) * 100) / 100,
+    casual_monthly_accrual_days: Math.round((casualPerYear / 12) * 100) / 100,
+    sick_monthly_accrual_days: Math.round((sickPerYear / 12) * 100) / 100,
+    earned_monthly_accrual_days: Math.round((earnedPerYear / 12) * 100) / 100,
+    carry_forward_cap_days: carryForwardCap > 0 ? carryForwardCap : "Not configured",
+    negative_balance_allowed: false,
+    probation_eligibility: "Not configured",
+    encashment: booleanPolicyValue(config, "encashmentAllowed", false) ? "Configured as allowed" : "Not configured / future scope"
   };
 }
 

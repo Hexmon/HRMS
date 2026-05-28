@@ -14,6 +14,8 @@ export interface ProjectMember {
   name: string;
   role: string;
   allocation: number; // percent
+  overAllocationAcknowledged?: boolean;
+  overAllocationReason?: string;
   billable: boolean;
   startDate: string;
   endDate?: string;

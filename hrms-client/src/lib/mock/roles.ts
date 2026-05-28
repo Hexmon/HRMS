@@ -3,6 +3,8 @@ export type Role =
   | "hr_admin"
   | "employee"
   | "manager"
+  | "director"
+  | "auditor"
   | "project_manager"
   | "finance_manager"
   | "asset_admin"
@@ -94,6 +96,34 @@ export const ROLES: RoleDefinition[] = [
       "/helpdesk",
       "/reports",
     ],
+  },
+  {
+    key: "director",
+    label: "Director",
+    short: "DR",
+    description: "Leadership view for team, reports and approval oversight.",
+    color: "info",
+    modules: [
+      "/dashboard",
+      "/employees",
+      "/ems",
+      "/attendance",
+      "/leave-wfh",
+      "/projects",
+      "/team-utilization",
+      "/timesheet",
+      "/expenses",
+      "/helpdesk",
+      "/reports",
+    ],
+  },
+  {
+    key: "auditor",
+    label: "Auditor",
+    short: "AU",
+    description: "Read-only governance and audit reporting.",
+    color: "warning",
+    modules: ["/dashboard", "/expenses", "/assets", "/helpdesk", "/reports"],
   },
   {
     key: "project_manager",

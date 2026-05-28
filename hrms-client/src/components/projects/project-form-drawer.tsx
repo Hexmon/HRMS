@@ -143,6 +143,8 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
         name: employees[0]?.name ?? "",
         role: "Engineer",
         allocation: 50,
+        overAllocationAcknowledged: false,
+        overAllocationReason: "",
         billable: true,
         startDate: form.startDate,
         endDate: undefined,
@@ -168,6 +170,14 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
     }
     if (!form.manager) {
       toast.error("Project manager is required");
+      return;
+    }
+    if (
+      form.members.some((member) => member.allocation > 100 && !member.overAllocationAcknowledged)
+    ) {
+      toast.error("Over-allocation must be acknowledged", {
+        description: "Confirm the warning for every member above 100% allocation before saving.",
+      });
       return;
     }
     const id = initial?.id ?? nextProjectId(projects);
@@ -403,6 +413,9 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
                 );
                 update("departmentId", department?.apiId ?? v);
                 update("department", department?.name ?? v);
+                if (department?.costCenter && !form.costCenter.trim()) {
+                  update("costCenter", department.costCenter);
+                }
               }}
             >
               <SelectTrigger>
@@ -484,11 +497,37 @@ export function ProjectFormDrawer({ open, onOpenChange, initial, actor = "System
                       className="h-9"
                       type="number"
                       min={0}
-                      max={100}
+                      max={200}
                       value={m.allocation}
                       onChange={(e) => updateMember(i, { allocation: Number(e.target.value) })}
                     />
                   </div>
+                  {m.allocation > 100 && (
+                    <div className="sm:col-span-2 rounded-xl border border-warning/30 bg-warning/10 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-warning-foreground">
+                            Allocation is above 100%
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Save only if the authorized project owner accepts this capacity risk.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={Boolean(m.overAllocationAcknowledged)}
+                          onCheckedChange={(checked) =>
+                            updateMember(i, { overAllocationAcknowledged: checked })
+                          }
+                        />
+                      </div>
+                      <Input
+                        className="mt-3 h-9"
+                        value={m.overAllocationReason ?? ""}
+                        onChange={(e) => updateMember(i, { overAllocationReason: e.target.value })}
+                        placeholder="Reason for temporary over-allocation"
+                      />
+                    </div>
+                  )}
                   <div className="flex items-center justify-between gap-3 pt-5">
                     <Label className="text-xs">Billable</Label>
                     <Switch

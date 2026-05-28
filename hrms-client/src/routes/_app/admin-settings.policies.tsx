@@ -40,6 +40,12 @@ function PoliciesScreen() {
   const policies = apiEnabled ? drafts : localSettings.policies;
   const loading = apiEnabled && policiesQuery.isLoading;
   const error = apiEnabled && policiesQuery.error instanceof Error ? policiesQuery.error : null;
+  const leavePreview = useMemo(
+    () =>
+      policiesQuery.data?.items.find((item) => item.policy_key === "leave")?.derived_preview ??
+      null,
+    [policiesQuery.data?.items],
+  );
 
   function setPolicy<K extends PolicyKey>(key: K, patch: Partial<Policies[K]>) {
     if (!apiEnabled) {
@@ -198,6 +204,21 @@ function PoliciesScreen() {
             value={policies.leave.encashmentAllowed}
             onChange={(v) => setPolicy("leave", { encashmentAllowed: v })}
           />
+          {leavePreview && (
+            <div className="sm:col-span-2 rounded-xl border bg-muted/30 p-4">
+              <p className="text-sm font-semibold">Read-only calculation preview</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {Object.entries(leavePreview).map(([key, value]) => (
+                  <div key={key} className="rounded-lg border bg-background px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      {key.replaceAll("_", " ")}
+                    </p>
+                    <p className="mt-1 text-sm font-medium">{String(value)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </PolicyCard>
       </TabsContent>
 

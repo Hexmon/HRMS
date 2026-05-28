@@ -61,6 +61,7 @@ export interface DepartmentMasterRecord extends ApiRecord {
   department_code: string;
   code: string;
   name: string;
+  cost_center: string | null;
   parent_department_id: string | null;
   parent_id: string | null;
   director_user_id: string | null;
@@ -113,6 +114,7 @@ export interface DepartmentMasterInput extends ApiRecord {
   name?: string;
   code?: string;
   department_code?: string;
+  cost_center?: string | null;
   parent_id?: string | null;
   parent_department_id?: string | null;
   status?: "active" | "inactive";
@@ -251,6 +253,7 @@ export interface AdminPolicyRecord extends ApiRecord {
   status: "active" | "inactive";
   active: boolean;
   config: Record<string, AdminPolicyValue>;
+  derived_preview?: Record<string, AdminPolicyValue>;
   updated_at: string;
   version: number;
 }

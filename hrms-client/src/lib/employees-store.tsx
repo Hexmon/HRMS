@@ -168,6 +168,7 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
         id,
         apiId: id,
         name,
+        costCenter: text(row.cost_center) || null,
         head: head ?? "—",
         headcount: employees.filter((employee) => employee.department === name).length,
       };

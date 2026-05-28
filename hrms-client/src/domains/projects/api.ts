@@ -61,6 +61,8 @@ export interface ProjectMemberCreateBody extends ExpectedVersionBody {
   user_id: string;
   project_role: string;
   allocation_percent: number;
+  over_allocation_acknowledged?: boolean;
+  over_allocation_reason?: string;
   billable: boolean;
   start_date: string;
   end_date?: string | null;
@@ -70,6 +72,8 @@ export interface ProjectMemberCreateBody extends ExpectedVersionBody {
 export interface ProjectMemberUpdateBody extends ExpectedVersionBody {
   project_role?: string;
   allocation_percent?: number;
+  over_allocation_acknowledged?: boolean;
+  over_allocation_reason?: string;
   billable?: boolean;
   start_date?: string;
   end_date?: string | null;
@@ -82,6 +86,8 @@ export interface ProjectAllocationCreateBody extends ExpectedVersionBody {
   date_from: string;
   date_to?: string | null;
   allocation_percent: number;
+  over_allocation_acknowledged?: boolean;
+  over_allocation_reason?: string;
   billable?: boolean;
   notes?: string | null;
 }

@@ -158,12 +158,12 @@ const API_ROLE_BY_NORMALIZED = new Map<string, Role>([
   ["employee", "employee"],
   ["reviewer", "manager"],
   ["manager", "manager"],
-  ["director", "manager"],
+  ["director", "director"],
+  ["auditor", "auditor"],
   ["projectmanager", "project_manager"],
   ["financemanager", "finance_manager"],
   ["assetmanager", "asset_admin"],
   ["assetitadmin", "asset_admin"],
-  ["helpdeskagent", "helpdesk_agent"],
 ]);
 
 const BACKEND_ROLE_BY_LOCAL_ROLE: Partial<Record<Role, string>> = {
@@ -171,6 +171,8 @@ const BACKEND_ROLE_BY_LOCAL_ROLE: Partial<Record<Role, string>> = {
   hr_admin: "HR Manager",
   employee: "Employee",
   manager: "Reviewer",
+  director: "Director",
+  auditor: "Auditor",
   project_manager: "Reviewer",
   finance_manager: "Finance Manager",
   asset_admin: "Asset Manager",

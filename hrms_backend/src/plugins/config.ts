@@ -76,6 +76,7 @@ const configSchema = z.object({
   RATE_LIMIT_AUTH_MAX: z.coerce.number().int().min(1).default(10),
   RATE_LIMIT_PUBLIC_MAX: z.coerce.number().int().min(1).default(60)
 }).superRefine((config, context) => {
+  const localLikeEnvironments = new Set(["development", "dev", "local", "test"]);
   const requireField = (field: "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET" | "RESEND_API_KEY" | "RESEND_FROM_EMAIL" | "RESEND_WEBHOOK_SECRET" | "FRONTEND_URL") => {
     if (!config[field]) {
       context.addIssue({
@@ -97,6 +98,13 @@ const configSchema = z.object({
     requireField("RESEND_API_KEY");
     requireField("RESEND_FROM_EMAIL");
     requireField("FRONTEND_URL");
+  }
+  if (config.CLOUDINARY_MOCK_UPLOADS && !localLikeEnvironments.has(config.NODE_ENV.toLowerCase())) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["CLOUDINARY_MOCK_UPLOADS"],
+      message: "CLOUDINARY_MOCK_UPLOADS can only be true in local development or test environments."
+    });
   }
   if (config.NODE_ENV === "production") {
     for (const field of ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const) {

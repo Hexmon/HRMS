@@ -50,8 +50,8 @@ export class PlatformService {
     }
     if (input.manager_backup_user_id) {
       const managerBackup = this.core.getUser(input.manager_backup_user_id);
-      if (!this.isActiveUser(managerBackup.id)) {
-        throw badRequest("Manager backup must be an active user");
+      if (!this.isActiveUser(managerBackup.id) || !managerBackup.roles.includes(Roles.Reviewer)) {
+        throw badRequest("Manager backup must be an active Manager");
       }
     }
     if (input.finance_approval_backup_user_id === primary.id) {
@@ -61,9 +61,9 @@ export class PlatformService {
       const financeBackup = this.core.getUser(input.finance_approval_backup_user_id);
       if (
         !this.isActiveUser(financeBackup.id) ||
-        (!financeBackup.roles.includes(Roles.FinanceManager) && !financeBackup.roles.includes(Roles.Admin))
+        !financeBackup.roles.includes(Roles.FinanceManager)
       ) {
-        throw badRequest("Finance approval backup must be an active Finance Manager or Admin");
+        throw badRequest("Finance approval backup must be an active Finance Manager");
       }
     }
     const config = this.repository.saveFinanceGovernanceConfig({
@@ -97,14 +97,14 @@ export class PlatformService {
       if (!primary || !this.isActiveUser(primary.id) || !primary.roles.includes(Roles.FinanceManager)) {
         blockingIssues.push("primary_finance_manager_invalid");
       }
-      if (config.manager_backup_user_id && (!managerBackup || !this.isActiveUser(managerBackup.id))) {
+      if (config.manager_backup_user_id && (!managerBackup || !this.isActiveUser(managerBackup.id) || !managerBackup.roles.includes(Roles.Reviewer))) {
         blockingIssues.push("manager_backup_invalid");
       }
       if (config.finance_approval_backup_user_id) {
         if (
           !financeBackup ||
           !this.isActiveUser(financeBackup.id) ||
-          (!financeBackup.roles.includes(Roles.FinanceManager) && !financeBackup.roles.includes(Roles.Admin))
+          !financeBackup.roles.includes(Roles.FinanceManager)
         ) {
           blockingIssues.push("finance_approval_backup_invalid");
         }
@@ -127,10 +127,10 @@ export class PlatformService {
         .filter((user) => this.isActiveUser(user.id) && user.roles.includes(Roles.FinanceManager))
         .map((user) => this.presentUser(user.id)),
       eligible_manager_backups: this.store.users
-        .filter((user) => this.isActiveUser(user.id))
+        .filter((user) => this.isActiveUser(user.id) && user.roles.includes(Roles.Reviewer))
         .map((user) => this.presentUser(user.id)),
       eligible_finance_backups: this.store.users
-        .filter((user) => this.isActiveUser(user.id) && (user.roles.includes(Roles.FinanceManager) || user.roles.includes(Roles.Admin)))
+        .filter((user) => this.isActiveUser(user.id) && user.roles.includes(Roles.FinanceManager))
         .map((user) => this.presentUser(user.id))
     };
   }

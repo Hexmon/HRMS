@@ -182,6 +182,9 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
     throw new Error("VALKEY_URL is required for Valkey-backed sessions and outbox publishing.");
   }
 
+  const localLikeEnvironments = new Set(["development", "dev", "local", "test"]);
+  const seedIfEmpty = options.seedIfEmpty ?? localLikeEnvironments.has(config.NODE_ENV.toLowerCase());
+
   return createPostgresDataStore({
     databaseUrl: config.DATABASE_URL,
     valkeyUrl: config.VALKEY_URL,
@@ -198,7 +201,7 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
       mediaUploads: mediaUploadPolicyFromConfig(config),
       companyLogoUploads: companyLogoUploadPolicyFromConfig(config)
     },
-    seedIfEmpty: options.seedIfEmpty ?? true
+    seedIfEmpty
   });
 }
 

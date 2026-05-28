@@ -32,8 +32,11 @@ export function mapBackendRoleToUiRole(value: unknown): string {
     case "asset_manager":
       return "asset_admin";
     case "reviewer":
-    case "director":
       return "manager";
+    case "director":
+      return "director";
+    case "auditor":
+      return "auditor";
     default:
       return normalized || "employee";
   }

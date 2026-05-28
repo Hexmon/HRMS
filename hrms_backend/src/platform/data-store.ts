@@ -1086,6 +1086,7 @@ export function createMemoryDataStore(): MemoryDataStore {
       id: seedIds.departmentSales,
       department_code: "SALES",
       name: "Sales",
+      cost_center: "CC-SALES",
       parent_department_id: null,
       director_user_id: seedIds.executive,
       status: "active",
@@ -1096,6 +1097,7 @@ export function createMemoryDataStore(): MemoryDataStore {
       id: seedIds.departmentFinance,
       department_code: "FIN",
       name: "Finance",
+      cost_center: "CC-FIN",
       parent_department_id: null,
       director_user_id: seedIds.financeManager,
       status: "active",
@@ -1153,7 +1155,7 @@ export function createMemoryDataStore(): MemoryDataStore {
       designationId: seedIds.designationExecutive,
       managerId: null,
       path: "CEO.SALES.S1",
-      roles: [Roles.Employee]
+      roles: [Roles.Employee, Roles.Reviewer]
     }),
     makeUser({
       id: seedIds.manager,
@@ -1164,7 +1166,7 @@ export function createMemoryDataStore(): MemoryDataStore {
       designationId: seedIds.designationManager,
       managerId: seedIds.executive,
       path: "CEO.SALES.S1.D1",
-      roles: [Roles.Employee]
+      roles: [Roles.Employee, Roles.Reviewer]
     }),
     makeUser({
       id: seedIds.employee1,
@@ -1288,7 +1290,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     scope_key: "global",
     primary_finance_manager_user_id: seedIds.financeManager,
     manager_backup_user_id: seedIds.executive,
-    finance_approval_backup_user_id: seedIds.admin,
+    finance_approval_backup_user_id: seedIds.alternateFinance,
     status: "active",
     effective_from: "2026-01-01",
     effective_to: null,

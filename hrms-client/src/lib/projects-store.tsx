@@ -186,6 +186,9 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
       user_id: userId,
       project_role: member.role,
       allocation_percent: member.allocation,
+      over_allocation_acknowledged:
+        member.allocation > 100 ? Boolean(member.overAllocationAcknowledged) : false,
+      over_allocation_reason: member.overAllocationReason?.trim() || undefined,
       billable: member.billable,
       start_date: member.startDate,
       end_date: member.endDate ?? null,
@@ -201,6 +204,9 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
   ): ProjectMemberUpdateBody => ({
     project_role: member.role,
     allocation_percent: member.allocation,
+    over_allocation_acknowledged:
+      member.allocation > 100 ? Boolean(member.overAllocationAcknowledged) : undefined,
+    over_allocation_reason: member.overAllocationReason?.trim() || undefined,
     billable: member.billable,
     start_date: member.startDate,
     end_date: member.endDate ?? null,

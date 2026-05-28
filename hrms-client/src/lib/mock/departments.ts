@@ -2,6 +2,7 @@ export interface Department {
   id: string;
   apiId?: string;
   name: string;
+  costCenter?: string | null;
   head: string;
   headcount: number;
 }

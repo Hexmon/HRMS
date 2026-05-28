@@ -71,6 +71,10 @@ interface FinanceRoutingResolution {
   notes: string[];
 }
 
+function isManagerRole(user: { roles?: readonly string[] } | null): boolean {
+  return Boolean(user?.roles?.includes(Roles.Reviewer));
+}
+
 export interface FinanceQueueFilters {
   page: number;
   page_size: number;
@@ -266,28 +270,19 @@ export class ExpenseService {
     const managerResolution = this.resolveManagerActor(requesterUserId);
     const financeResolution = this.resolveFinanceActor(requesterUserId);
     const notes = [...managerResolution.notes, ...financeResolution.notes];
-    if (!managerResolution.assignedManagerId || !financeResolution.assignedFinanceActorId) {
-      return {
-        nextStatus: ExpenseStatuses.FinanceRoutingException,
-        managerVerifierId: managerResolution.assignedManagerId,
-        managerBackupUserId: managerResolution.backupManagerId,
-        financeApproverId: financeResolution.assignedFinanceActorId,
-        routeSnapshot: {
-          requester_user_id: requesterUserId,
-          expense_type: expenseType,
-          expense_sub_type: expenseSubType,
-          payment_type: paymentType,
-          manager_verifier_id: managerResolution.assignedManagerId,
-          manager_backup_user_id: managerResolution.backupManagerId,
-          manager_backup_applied: managerResolution.backupApplied,
-          finance_approver_id: financeResolution.assignedFinanceActorId,
-          primary_finance_manager_user_id: financeResolution.primaryFinanceManagerId,
-          finance_approval_backup_user_id: financeResolution.backupFinanceActorId,
-          finance_backup_applied: financeResolution.backupApplied,
-          notes,
-          routed_at: nowIso()
-        }
-      };
+    if (!managerResolution.assignedManagerId) {
+      throw badRequest("Expense cannot be submitted until an independent Manager approver is configured.", {
+        requester_user_id: requesterUserId,
+        notes,
+        required_setup: "Assign an active non-requester Manager or Manager backup before submission."
+      });
+    }
+    if (!financeResolution.assignedFinanceActorId) {
+      throw badRequest("Expense cannot be submitted until an independent Finance Manager approver is configured.", {
+        requester_user_id: requesterUserId,
+        notes,
+        required_setup: "Configure an active non-requester Finance Manager or Finance Manager backup before submission."
+      });
     }
     return {
       nextStatus: ExpenseStatuses.PendingManagerVerification,
@@ -319,7 +314,12 @@ export class ExpenseService {
     const directManager = requester.manager_user_id
       ? this.store.users.find((user) => user.id === requester.manager_user_id && !user.deleted_at) ?? null
       : null;
-    if (directManager && directManager.employment_status === EmploymentStatuses.Active && directManager.id !== requesterUserId) {
+    if (
+      directManager &&
+      directManager.employment_status === EmploymentStatuses.Active &&
+      directManager.id !== requesterUserId &&
+      isManagerRole(directManager)
+    ) {
       notes.push("direct_manager_assigned");
       return {
         assignedManagerId: directManager.id,
@@ -332,6 +332,8 @@ export class ExpenseService {
       notes.push("direct_manager_missing");
     } else if (directManager.id === requesterUserId) {
       notes.push("direct_manager_self_reference");
+    } else if (!isManagerRole(directManager)) {
+      notes.push("direct_manager_missing_manager_role");
     } else {
       notes.push("direct_manager_inactive_or_deleted");
     }
@@ -345,7 +347,7 @@ export class ExpenseService {
       return { assignedManagerId: null, backupManagerId: backupId, backupApplied: false, notes: [...notes, "manager_backup_self_reference"] };
     }
     const backup = this.store.users.find((user) => user.id === backupId && !user.deleted_at) ?? null;
-    if (!backup || backup.employment_status !== EmploymentStatuses.Active) {
+    if (!backup || backup.employment_status !== EmploymentStatuses.Active || !isManagerRole(backup)) {
       return { assignedManagerId: null, backupManagerId: backupId, backupApplied: false, notes: [...notes, "manager_backup_invalid"] };
     }
     return { assignedManagerId: backup.id, backupManagerId: backup.id, backupApplied: true, notes: [...notes, "manager_backup_applied"] };
@@ -414,7 +416,7 @@ export class ExpenseService {
     if (
       !backup ||
       backup.employment_status !== EmploymentStatuses.Active ||
-      (!backup.roles.includes(Roles.FinanceManager) && !backup.roles.includes(Roles.Admin))
+      !backup.roles.includes(Roles.FinanceManager)
     ) {
       return {
         assignedFinanceActorId: null,

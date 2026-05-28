@@ -424,6 +424,7 @@ describe("expense manager-finance workflow integration", () => {
     const admin = await loginAs(app, "ADM");
     const executive = await loginAs(app, "S1");
     const financePrimary = await loginAs(app, "N1");
+    const financeBackup = await loginAs(app, "N2");
 
     const governance = await app.inject({
       method: "GET",
@@ -432,7 +433,7 @@ describe("expense manager-finance workflow integration", () => {
     });
     expect(governance.statusCode).toBe(200);
     expect(governance.json().primary_finance_manager.employee_code).toBe("N1");
-    expect(governance.json().finance_backup_actor.employee_code).toBe("ADM");
+    expect(governance.json().finance_backup_actor.employee_code).toBe("N2");
 
     const selfRequestResponse = await app.inject({
       method: "POST",
@@ -448,7 +449,7 @@ describe("expense manager-finance workflow integration", () => {
     const selfRequest = selfRequestResponse.json();
     expect(selfRequest.status).toBe("Pending Manager Verification");
     expect(selfRequest.manager_verifier_id).toBe(executive.user.id);
-    expect(selfRequest.finance_approver_id).toBe(admin.user.id);
+    expect(selfRequest.finance_approver_id).toBe(financeBackup.user.id);
     expect(selfRequest.route_snapshot.finance_backup_applied).toBe(true);
 
     const primaryFinanceDenied = await app.inject({
@@ -470,14 +471,14 @@ describe("expense manager-finance workflow integration", () => {
     const backupFinanceApprove = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${selfRequest.id}/finance/approve`,
-      headers: authHeader(admin.token),
+      headers: authHeader(financeBackup.token),
       payload: { decision: "verify", expected_version: 2 }
     });
     expect(backupFinanceApprove.statusCode).toBe(200);
     expect(backupFinanceApprove.json().status).toBe("Finance Approved");
   });
 
-  it("routes finance-manager self-request to finance routing exception when backup is missing", async () => {
+  it("blocks finance-manager self-request when independent finance backup is missing", async () => {
     const admin = await loginAs(app, "ADM");
     const financePrimary = await loginAs(app, "N1");
 
@@ -515,10 +516,9 @@ describe("expense manager-finance workflow integration", () => {
         line_items: [{ line_category: "travel", description: "Finance self request", line_total: "1000.00" }]
       }
     });
-    expect(selfRequestResponse.statusCode).toBe(200);
-    const selfRequest = selfRequestResponse.json();
-    expect(selfRequest.status).toBe("Finance Routing Exception");
-    expect(selfRequest.finance_approver_id).toBeNull();
-    expect(selfRequest.route_snapshot.notes).toContain("finance_approval_backup_missing");
+    expect(selfRequestResponse.statusCode).toBe(400);
+    expect(selfRequestResponse.json().message).toBe(
+      "Expense cannot be submitted until an independent Finance Manager approver is configured."
+    );
   });
 });

@@ -266,7 +266,7 @@ export class AttendanceService {
   ) {
     const occurredAt = input.occurred_at ?? nowIso();
     const timeZone = this.timezoneForUser(actor.id);
-    const workDate = dateInTimeZone(occurredAt, timeZone);
+    const workDate = this.workDateForPunch(actor.id, input.event_type, occurredAt, timeZone);
     const availability = this.punchAvailability(actor.id, workDate, timeZone, occurredAt);
     if (!availability.next_allowed_actions.includes(input.event_type)) {
       const policyReason = availability.blocked_action_reasons[input.event_type];
@@ -326,11 +326,13 @@ export class AttendanceService {
     const timeZone = this.timezoneForUser(actor.id);
     const range = dateRange(query, timeZone);
     const today = this.resolveDay(actor.id, todayDate(timeZone), timeZone);
-    const todayPunchAvailability = this.punchAvailability(actor.id, today.work_date, timeZone);
+    const availabilityWorkDate = this.openSessionWorkDate(actor.id, nowIso(), timeZone) ?? today.work_date;
+    const todayPunchAvailability = this.punchAvailability(actor.id, availabilityWorkDate, timeZone);
     const records = this.recordsForUsers(new Set([actor.id]), range.from, range.to).map((record) =>
       record.employee_user_id === actor.id && record.work_date === today.work_date ? today : record
     );
     const weekRecords = this.weekRecords(actor.id, timeZone);
+    const weeklyBalance = this.weeklyBalance(weekRecords);
     const targetWorkMinutes = this.targetWorkMinutes();
     const exceptionHistory = records
       .filter((record) => record.exception_type || record.regularization_status)
@@ -355,9 +357,11 @@ export class AttendanceService {
       summary: {
         ...this.daySummary(records),
         target_work_minutes: targetWorkMinutes,
-        target_hours: minutesToHours(targetWorkMinutes)
+        target_hours: minutesToHours(targetWorkMinutes),
+        weekly_balance: weeklyBalance
       },
       week_records: weekRecords.map((record) => this.presentDay(record, timeZone)),
+      weekly_balance: weeklyBalance,
       exception_history: exceptionHistory
     };
   }
@@ -736,7 +740,7 @@ export class AttendanceService {
     timeZone = this.timezoneForUser(employeeUserId),
     occurredAt = nowIso()
   ): PunchAvailability {
-    const punches = this.repository.listPunches(employeeUserId, workDate, workDate, timeZone);
+    const punches = this.punchesForWorkDate(employeeUserId, workDate, timeZone);
     const sequenceAllowedActions = this.nextAllowedActions(punches);
     const policy = this.attendancePolicy();
     const activePunches = punches.filter((punch) => !punch.deleted_at);
@@ -807,7 +811,7 @@ export class AttendanceService {
   }
 
   private recomputeDay(employeeUserId: UUID, workDate: string, timeZone = this.timezoneForUser(employeeUserId)): AttendanceDayRecord {
-    const punches = this.repository.listPunches(employeeUserId, workDate, workDate, timeZone);
+    const punches = this.punchesForWorkDate(employeeUserId, workDate, timeZone);
     const checkIns = punches.filter((punch) => punch.event_type === AttendancePunchEventTypes.CheckIn);
     const checkOuts = punches.filter((punch) => punch.event_type === AttendancePunchEventTypes.CheckOut);
     const firstCheckIn = checkIns[0]?.occurred_at ?? null;
@@ -882,7 +886,7 @@ export class AttendanceService {
 
   private resolveDay(employeeUserId: UUID, workDate: string, timeZone = this.timezoneForUser(employeeUserId)): AttendanceDayRecord {
     const existing = this.repository.dayRecord(employeeUserId, workDate);
-    const punches = this.repository.listPunches(employeeUserId, workDate, workDate, timeZone);
+    const punches = this.punchesForWorkDate(employeeUserId, workDate, timeZone);
     if (existing && punches.length === 0 && this.shouldPreserveManualDay(existing)) {
       return existing;
     }
@@ -951,6 +955,79 @@ export class AttendanceService {
       const workDate = date.toISOString().slice(0, 10);
       return this.resolveDay(employeeUserId, workDate, timeZone);
     });
+  }
+
+  private punchesForWorkDate(employeeUserId: UUID, workDate: string, timeZone: string): AttendancePunch[] {
+    let openWorkDate: string | null = null;
+    return this.store.attendancePunches
+      .filter((punch) => punch.employee_user_id === employeeUserId && !punch.deleted_at)
+      .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at))
+      .filter((punch) => {
+        if (punch.event_type === AttendancePunchEventTypes.CheckIn) {
+          openWorkDate = dateInTimeZone(punch.occurred_at, timeZone);
+        }
+        const assignedWorkDate = openWorkDate ?? dateInTimeZone(punch.occurred_at, timeZone);
+        const include = assignedWorkDate === workDate;
+        if (punch.event_type === AttendancePunchEventTypes.CheckOut) {
+          openWorkDate = null;
+        }
+        return include;
+      });
+  }
+
+  private workDateForPunch(
+    employeeUserId: UUID,
+    eventType: AttendancePunchEventType,
+    occurredAt: string,
+    timeZone: string
+  ): string {
+    if (eventType === AttendancePunchEventTypes.CheckIn) {
+      return dateInTimeZone(occurredAt, timeZone);
+    }
+    return this.openSessionWorkDate(employeeUserId, occurredAt, timeZone) ?? dateInTimeZone(occurredAt, timeZone);
+  }
+
+  private openSessionWorkDate(employeeUserId: UUID, occurredAt: string, timeZone: string): string | null {
+    let openWorkDate: string | null = null;
+    const punches = this.store.attendancePunches
+      .filter((punch) => punch.employee_user_id === employeeUserId && !punch.deleted_at && punch.occurred_at <= occurredAt)
+      .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
+    for (const punch of punches) {
+      if (punch.event_type === AttendancePunchEventTypes.CheckIn) {
+        openWorkDate = dateInTimeZone(punch.occurred_at, timeZone);
+      }
+      if (punch.event_type === AttendancePunchEventTypes.CheckOut) {
+        openWorkDate = null;
+      }
+    }
+    return openWorkDate;
+  }
+
+  private weeklyBalance(records: AttendanceDayRecord[]): Record<string, unknown> {
+    const elapsedRecords = records.filter((record) => record.work_date <= todayDate(this.timezoneForUser(record.employee_user_id)));
+    const target = this.targetWorkMinutes();
+    const weekdayRecords = elapsedRecords.filter((record) => this.isWorkingDay(record.work_date) && !this.holidayForDate(record.work_date));
+    const offDayRecords = elapsedRecords.filter((record) => !this.isWorkingDay(record.work_date) || Boolean(this.holidayForDate(record.work_date)));
+    const requiredWeekdayMinutes = weekdayRecords.length * target;
+    const weekdayWorkedMinutes = weekdayRecords.reduce((total, record) => total + record.work_minutes, 0);
+    const offDayWorkedMinutes = offDayRecords.reduce((total, record) => total + record.work_minutes, 0);
+    const weekdayShortageMinutes = Math.max(0, requiredWeekdayMinutes - weekdayWorkedMinutes);
+    const compensatedMinutes = Math.min(weekdayShortageMinutes, offDayWorkedMinutes);
+    const overtimeMinutes = Math.max(0, offDayWorkedMinutes - compensatedMinutes);
+    return {
+      required_weekly_minutes: requiredWeekdayMinutes,
+      required_weekly_hours: minutesToHours(requiredWeekdayMinutes),
+      weekday_worked_minutes: weekdayWorkedMinutes,
+      weekday_worked_hours: minutesToHours(weekdayWorkedMinutes),
+      weekday_shortage_minutes: weekdayShortageMinutes,
+      weekday_shortage_hours: minutesToHours(weekdayShortageMinutes),
+      off_day_worked_minutes: offDayWorkedMinutes,
+      off_day_worked_hours: minutesToHours(offDayWorkedMinutes),
+      compensated_minutes: compensatedMinutes,
+      compensated_hours: minutesToHours(compensatedMinutes),
+      overtime_minutes: overtimeMinutes,
+      overtime_hours: minutesToHours(overtimeMinutes)
+    };
   }
 
   private activeCompany() {
@@ -1111,7 +1188,7 @@ export class AttendanceService {
     const timeZone = this.timezoneForUser(request.employee_user_id);
     for (const requested of request.requested_punches) {
       const date = dateInTimeZone(requested.occurred_at, timeZone);
-      if (date !== request.work_date) {
+      if (requested.event_type === AttendancePunchEventTypes.CheckIn && date !== request.work_date) {
         throw badRequest("Requested punch timestamps must fall on the regularization work_date.");
       }
       this.repository.addPunch({

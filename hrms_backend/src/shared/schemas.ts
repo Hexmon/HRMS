@@ -452,6 +452,8 @@ export const projectMemberCreateSchema = z.object({
   user_id: uuidSchema,
   project_role: z.string().trim().min(1).max(120),
   allocation_percent: z.number().int().min(0).max(200).default(100),
+  over_allocation_acknowledged: z.boolean().default(false),
+  over_allocation_reason: z.string().trim().max(500).optional(),
   billable: z.boolean().default(true),
   start_date: isoDateSchema,
   end_date: isoDateSchema.optional(),
@@ -464,6 +466,8 @@ export type ProjectMemberCreateInput = z.infer<typeof projectMemberCreateSchema>
 export const projectMemberUpdateSchema = z.object({
   project_role: z.string().trim().min(1).max(120).optional(),
   allocation_percent: z.number().int().min(0).max(200).optional(),
+  over_allocation_acknowledged: z.boolean().optional(),
+  over_allocation_reason: z.string().trim().max(500).optional(),
   billable: z.boolean().optional(),
   start_date: isoDateSchema.optional(),
   end_date: isoDateSchema.nullish(),
@@ -479,6 +483,8 @@ export const projectAllocationCreateSchema = z.object({
   date_from: isoDateSchema,
   date_to: isoDateSchema.optional(),
   allocation_percent: z.number().int().min(0).max(200),
+  over_allocation_acknowledged: z.boolean().default(false),
+  over_allocation_reason: z.string().trim().max(500).optional(),
   billable: z.boolean().default(true),
   notes: z.string().trim().max(1000).optional(),
   expected_version: z.number().int().min(1)

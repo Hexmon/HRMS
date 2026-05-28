@@ -65,8 +65,9 @@ export class CloudinaryObjectStorage implements ObjectStoragePort {
 
   constructor(private readonly options: CloudinaryObjectStorageOptions) {
     this.bucket = options.folder;
-    if (options.mockUploads && process.env.NODE_ENV === "production") {
-      throw new Error("CLOUDINARY_MOCK_UPLOADS cannot be enabled in production.");
+    const localLikeEnvironments = new Set(["development", "dev", "local", "test"]);
+    if (options.mockUploads && !localLikeEnvironments.has((process.env.NODE_ENV ?? "development").toLowerCase())) {
+      throw new Error("CLOUDINARY_MOCK_UPLOADS can only be enabled in local development or test environments.");
     }
     if (!options.mockUploads) {
       for (const [name, value] of Object.entries({

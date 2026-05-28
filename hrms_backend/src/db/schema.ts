@@ -37,6 +37,7 @@ export const departments = core.table(
     id: uuidPk.defaultRandom(),
     departmentCode: text("department_code").notNull(),
     name: text("name").notNull(),
+    costCenter: text("cost_center"),
     parentDepartmentId: uuid("parent_department_id"),
     directorUserId: uuid("director_user_id"),
     status: text("status").notNull().default("active"),

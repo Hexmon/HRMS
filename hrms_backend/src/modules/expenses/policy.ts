@@ -19,9 +19,9 @@ export function assertNoSelfProcessing(input: {
 }
 
 export function assertManagerActor(actor: AuthUser, ticket: ExpenseTicket): void {
-  const managerOk = ticket.manager_verifier_id === actor.id || actor.roles.includes(Roles.Admin);
+  const managerOk = ticket.manager_verifier_id === actor.id;
   if (!managerOk) {
-    throw forbidden("Only the assigned manager or configured backup can act on this ticket");
+    throw forbidden("Only the assigned Manager or configured Manager backup can act on this ticket");
   }
   assertNoSelfProcessing({
     requesterUserId: ticket.requester_user_id,
@@ -31,7 +31,7 @@ export function assertManagerActor(actor: AuthUser, ticket: ExpenseTicket): void
 }
 
 export function assertFinanceActor(actor: AuthUser, ticket: ExpenseTicket, actionType: WorkflowAction): void {
-  const financeOk = ticket.finance_approver_id === actor.id || actor.roles.includes(Roles.Admin);
+  const financeOk = ticket.finance_approver_id === actor.id;
   if (!financeOk) {
     throw forbidden("Only the assigned Finance Manager or configured finance backup can act on this ticket");
   }

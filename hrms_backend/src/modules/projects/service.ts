@@ -86,6 +86,22 @@ function rangesOverlap(leftFrom: string, leftTo: string | null, rightFrom?: stri
   return true;
 }
 
+function assertOverAllocationAcknowledged(input: {
+  allocationPercent: number;
+  acknowledged?: boolean;
+  reason?: string;
+}): void {
+  if (input.allocationPercent <= 100) {
+    return;
+  }
+  if (!input.acknowledged) {
+    throw badRequest("Allocation above 100% requires explicit acknowledgement before it can be saved.", {
+      allocation_percent: input.allocationPercent,
+      required_action: "Confirm the over-allocation warning and provide a short reason if required by your process."
+    });
+  }
+}
+
 export class ProjectsService {
   private readonly repository: ProjectsRepository;
 
@@ -234,6 +250,11 @@ export class ProjectsService {
     assertCanMutateProject(actor, project);
     this.assertProjectVersion(project, input.expected_version);
     this.requireActiveUser(input.user_id);
+    assertOverAllocationAcknowledged({
+      allocationPercent: input.allocation_percent,
+      acknowledged: input.over_allocation_acknowledged,
+      reason: input.over_allocation_reason
+    });
     if (input.reporting_lead_user_id) this.requireActiveUser(input.reporting_lead_user_id);
     const member = this.repository.addMember({
       project_id: id,
@@ -253,14 +274,23 @@ export class ProjectsService {
       date_to: input.end_date ?? null,
       allocation_percent: input.allocation_percent,
       billable: input.billable,
-      notes: "Initial project member allocation"
+      notes: input.allocation_percent > 100
+        ? `Initial project member allocation. Over-allocation acknowledged: ${input.over_allocation_reason?.trim() || "No reason provided"}`
+        : "Initial project member allocation"
     });
     this.bumpProject(project);
     appendProjectOutboxEvent(this.store, {
       aggregateType: "project_member",
       aggregateId: member.id,
       eventType: projectEvents.MemberChanged,
-      payload: { project_id: id, member_id: member.id, actor_user_id: actor.id, action: "added" },
+      payload: {
+        project_id: id,
+        member_id: member.id,
+        actor_user_id: actor.id,
+        action: "added",
+        over_allocation_acknowledged: input.allocation_percent > 100,
+        over_allocation_reason: input.over_allocation_reason?.trim() || null
+      },
       idempotencyKey: `project.member.added:${member.id}`
     });
     return { member: this.presentMember(member), project_version: project.version, capacity_warnings: this.capacityWarnings(input.user_id) };
@@ -269,6 +299,13 @@ export class ProjectsService {
   updateMember(actor: AuthUser, projectId: UUID, memberId: UUID, input: ProjectMemberUpdateInput) {
     const project = this.repository.findProject(projectId);
     assertCanMutateProject(actor, project);
+    if (input.allocation_percent !== undefined) {
+      assertOverAllocationAcknowledged({
+        allocationPercent: input.allocation_percent,
+        acknowledged: input.over_allocation_acknowledged,
+        reason: input.over_allocation_reason
+      });
+    }
     const member = this.repository.updateMemberVersioned(projectId, memberId, input.expected_version, (target) => {
       if (input.project_role !== undefined) target.project_role = input.project_role.trim();
       if (input.allocation_percent !== undefined) target.allocation_percent = input.allocation_percent;
@@ -284,7 +321,14 @@ export class ProjectsService {
       aggregateType: "project_member",
       aggregateId: member.id,
       eventType: projectEvents.MemberChanged,
-      payload: { project_id: projectId, member_id: member.id, actor_user_id: actor.id, action: "updated" },
+      payload: {
+        project_id: projectId,
+        member_id: member.id,
+        actor_user_id: actor.id,
+        action: "updated",
+        over_allocation_acknowledged: (input.allocation_percent ?? member.allocation_percent) > 100,
+        over_allocation_reason: input.over_allocation_reason?.trim() || null
+      },
       idempotencyKey: `project.member.updated:${member.id}:${member.version}`
     });
     return { member: this.presentMember(member), project_version: project.version, capacity_warnings: this.capacityWarnings(member.employee_user_id) };
@@ -309,6 +353,11 @@ export class ProjectsService {
     assertCanMutateProject(actor, project);
     this.assertProjectVersion(project, input.expected_version);
     this.requireActiveUser(input.user_id);
+    assertOverAllocationAcknowledged({
+      allocationPercent: input.allocation_percent,
+      acknowledged: input.over_allocation_acknowledged,
+      reason: input.over_allocation_reason
+    });
     if (input.date_to && input.date_to < input.date_from) {
       throw badRequest("Allocation end date cannot be before start date.");
     }
@@ -325,7 +374,9 @@ export class ProjectsService {
       date_to: input.date_to ?? null,
       allocation_percent: input.allocation_percent,
       billable: input.billable,
-      notes: input.notes?.trim() || null
+      notes: input.allocation_percent > 100
+        ? `${input.notes?.trim() || "Allocation update"}. Over-allocation acknowledged: ${input.over_allocation_reason?.trim() || "No reason provided"}`
+        : input.notes?.trim() || null
     });
     member.allocation_percent = input.allocation_percent;
     member.billable = input.billable;
@@ -336,7 +387,13 @@ export class ProjectsService {
       aggregateType: "project_allocation",
       aggregateId: allocation.id,
       eventType: projectEvents.AllocationChanged,
-      payload: { project_id: id, allocation_id: allocation.id, actor_user_id: actor.id },
+      payload: {
+        project_id: id,
+        allocation_id: allocation.id,
+        actor_user_id: actor.id,
+        over_allocation_acknowledged: input.allocation_percent > 100,
+        over_allocation_reason: input.over_allocation_reason?.trim() || null
+      },
       idempotencyKey: `project.allocation.created:${allocation.id}`
     });
     return { allocation: this.presentAllocation(allocation), capacity_warnings: this.capacityWarnings(input.user_id), version: project.version };

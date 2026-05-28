@@ -316,6 +316,7 @@ export class AdminRepository {
       id: randomUUID(),
       department_code: code,
       name: input.name.trim(),
+      cost_center: input.cost_center?.trim() || null,
       parent_department_id: input.parent_department_id ?? input.parent_id ?? null,
       director_user_id: null,
       status: input.status ?? "active",
@@ -344,6 +345,7 @@ export class AdminRepository {
       department.department_code = normalized;
     }
     if (input.name) department.name = input.name.trim();
+    if (input.cost_center !== undefined) department.cost_center = input.cost_center?.trim() || null;
     if (input.parent_department_id !== undefined || input.parent_id !== undefined) {
       department.parent_department_id = input.parent_department_id ?? input.parent_id ?? null;
     }

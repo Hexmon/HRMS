@@ -317,6 +317,7 @@ const ROLE_TEMPLATE_DESCRIPTIONS: Record<string, string> = {
   admin: "Operational administrator with broad config rights.",
   employee: "Self-service hub for personal data and day-to-day workflows.",
   manager: "Manage your reporting team's approvals and utilization.",
+  director: "Leadership view for team, reports and approval oversight.",
   team_lead: "Lead a small squad — approve timesheets and leave.",
   module_lead: "Owns a delivery module within a project.",
   project_manager: "Run projects, allocations, timesheets and delivery.",
@@ -326,7 +327,7 @@ const ROLE_TEMPLATE_DESCRIPTIONS: Record<string, string> = {
   auditor: "Read-only access for compliance and audit.",
 };
 
-const EXTRA_ROLE_KEYS = ["admin", "team_lead", "module_lead", "auditor"] as const;
+const EXTRA_ROLE_KEYS = ["admin", "team_lead", "module_lead", "auditor", "director"] as const;
 
 function emptyMatrix(): Record<PermissionGroup, Partial<Record<PermissionAction, boolean>>> {
   const m = {} as Record<PermissionGroup, Partial<Record<PermissionAction, boolean>>>;
@@ -384,6 +385,7 @@ function defaultMatrixFor(roleKey: string): RoleConfig["matrix"] {
       set("Helpdesk", ["view", "create"]);
       break;
     case "manager":
+    case "director":
       set("Employees", ["view"]);
       set("Attendance", ["view", "approve", "export"]);
       set("Leave/WFH", ["view", "approve"]);
@@ -426,6 +428,7 @@ const ASSIGNED_COUNT_OVERRIDES: Record<string, number> = {
   admin: 3,
   employee: 168,
   manager: 14,
+  director: 2,
   team_lead: 12,
   module_lead: 9,
   project_manager: 7,

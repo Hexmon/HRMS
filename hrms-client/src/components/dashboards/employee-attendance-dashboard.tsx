@@ -36,6 +36,7 @@ export function EmployeeAttendanceDashboard() {
   const data = asRecord(query.data);
   const today = asRecord(data.today);
   const summary = asRecord(data.summary);
+  const weeklyBalance = asRecord(data.weekly_balance ?? summary.weekly_balance);
   const liveToday = liveAttendanceToday(today, data.generated_at, now);
   const nextAllowedActions = liveToday.nextAllowedActions;
   const targetHours = text(today.target_hours, text(summary.target_hours));
@@ -234,6 +235,39 @@ export function EmployeeAttendanceDashboard() {
           tone="success"
         />
       </div>
+
+      <DataCard title="Weekly balance" description="Off-day work offsets weekday shortage first">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatCard
+            label="Required"
+            value={query.isLoading ? "..." : text(weeklyBalance.required_weekly_hours, "0h 00m")}
+            hint="elapsed working days"
+            icon={TimerReset}
+            tone="primary"
+          />
+          <StatCard
+            label="Shortage"
+            value={query.isLoading ? "..." : text(weeklyBalance.weekday_shortage_hours, "0h 00m")}
+            hint="before off-day cover"
+            icon={AlarmClock}
+            tone="warning"
+          />
+          <StatCard
+            label="Off-day cover"
+            value={query.isLoading ? "..." : text(weeklyBalance.compensated_hours, "0h 00m")}
+            hint="covered by off-day work"
+            icon={CalendarDays}
+            tone="success"
+          />
+          <StatCard
+            label="Overtime"
+            value={query.isLoading ? "..." : text(weeklyBalance.overtime_hours, "0h 00m")}
+            hint="after target is met"
+            icon={Clock}
+            tone="info"
+          />
+        </div>
+      </DataCard>
 
       <DataCard title="Quick actions" description="Common employee workflows">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

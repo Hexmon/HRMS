@@ -54,6 +54,7 @@ export interface DepartmentReference {
   id: UUID;
   department_code: string;
   name: string;
+  cost_center: string | null;
 }
 
 export interface DesignationReference {
@@ -1389,7 +1390,8 @@ function toDepartmentReference(department: Department): DepartmentReference {
   return {
     id: department.id,
     department_code: department.department_code,
-    name: department.name
+    name: department.name,
+    cost_center: department.cost_center
   };
 }
 

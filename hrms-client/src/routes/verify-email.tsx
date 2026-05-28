@@ -48,10 +48,30 @@ function VerifyEmailPage() {
     readDemoEmailVerificationToken(email),
   );
   const [demoError, setDemoError] = useState("");
+  const autoVerifyTokenLinks =
+    import.meta.env.DEV ||
+    ["development", "dev", "local"].includes(String(import.meta.env.MODE ?? "").toLowerCase());
+
+  const submitVerificationToken = useCallback(
+    async (verificationToken: string) => {
+      setVerifying(true);
+      try {
+        const result = await verifyToken(verificationToken);
+        setVerification(result);
+      } finally {
+        setVerifying(false);
+      }
+    },
+    [verifyToken],
+  );
 
   useEffect(() => {
     let active = true;
     if (!token) {
+      setVerification(null);
+      return;
+    }
+    if (!autoVerifyTokenLinks) {
       setVerification(null);
       return;
     }
@@ -66,7 +86,7 @@ function VerifyEmailPage() {
     return () => {
       active = false;
     };
-  }, [token, verifyToken]);
+  }, [autoVerifyTokenLinks, token, verifyToken]);
 
   useEffect(() => {
     setDemoToken(readDemoEmailVerificationToken(email));
@@ -112,6 +132,11 @@ function VerifyEmailPage() {
       setResentAt(Date.now());
       navigate({ to: "/verify-email", search: { email, state: "sent" } });
     }
+  };
+
+  const handleConfirmVerification = async () => {
+    if (!token) return;
+    await submitVerificationToken(token);
   };
 
   const handleDemoVerify = async () => {
@@ -187,6 +212,17 @@ function VerifyEmailPage() {
 
         {(state === "sent" || state === "expired") && (
           <div className="space-y-3">
+            {token && !autoVerifyTokenLinks && (
+              <Button
+                onClick={handleConfirmVerification}
+                className="h-11 w-full rounded-xl text-primary-foreground"
+                style={{ background: "var(--gradient-primary)" }}
+                disabled={verifying}
+              >
+                <ShieldCheck className="mr-1.5 h-4 w-4" />
+                {verifying ? "Verifying..." : "Confirm verification"}
+              </Button>
+            )}
             {demoToken && (
               <Button
                 onClick={handleDemoVerify}

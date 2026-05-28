@@ -428,7 +428,7 @@ describe("core hierarchy API", () => {
       profile_photo_url: null,
       version: 3
     });
-    expect(document?.deleted_at).toEqual(expect.any(String));
+    expect(app.store.documents.find((candidate) => candidate.id === document?.id)).toBeUndefined();
 
     const oversized = await multipartUpload(app, {
       url: `/api/v1/core/users/${employee.user.id}/profile-photo`,

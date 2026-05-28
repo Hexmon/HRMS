@@ -300,17 +300,11 @@ export class DocumentService {
     if (!this.store.objectStorage) {
       throw forbidden("Document object storage adapter is not configured for release acceptance");
     }
+    this.assertCanHardDelete(id);
     await this.store.objectStorage.removeObject(document.storage_key);
     const deletedAt = nowIso();
-    document.deleted_at = deletedAt;
-    document.updated_at = deletedAt;
-    document.metadata = {
-      ...document.metadata,
-      deleted_by_user_id: actor.id,
-      deleted_at: deletedAt,
-      storage_object_removed: true
-    };
-    this.log(actor, id, "delete", "allowed", null);
+    await this.hardDeletePersistedDocument(id);
+    this.hardDeleteInMemoryDocument(id);
     appendOutboxEvent(this.store, {
       aggregateType: "document",
       aggregateId: document.id,
@@ -323,6 +317,93 @@ export class DocumentService {
       idempotencyKey: `${RetryableMutationScopes.DocumentUpload}:delete:${document.id}:${deletedAt}`
     });
     return { document_id: id, status: "deleted" };
+  }
+
+  private assertCanHardDelete(id: UUID): void {
+    const letter = this.store.emsLetters.find((candidate) => candidate.document_id === id && !candidate.deleted_at);
+    if (letter) {
+      throw badRequest("This generated employee letter cannot be deleted because it is still referenced by EMS records.", {
+        document_id: id,
+        reference_type: "ems_letter",
+        reference_id: letter.id
+      });
+    }
+    const policy = this.store.emsPolicies.find((candidate) => candidate.document_id === id && !candidate.deleted_at);
+    if (policy) {
+      throw badRequest("This policy document cannot be deleted because it is still referenced by EMS policy records.", {
+        document_id: id,
+        reference_type: "ems_policy",
+        reference_id: policy.id
+      });
+    }
+  }
+
+  private hardDeleteInMemoryDocument(id: UUID): void {
+    this.store.expenseDocuments = this.store.expenseDocuments.filter((document) => document.document_id !== id);
+    this.store.helpdeskAttachments = this.store.helpdeskAttachments.filter((attachment) => attachment.document_id !== id);
+    for (const comment of this.store.helpdeskComments) {
+      comment.document_ids = comment.document_ids.filter((documentId) => documentId !== id);
+    }
+    for (const request of this.store.leaveRequests) {
+      request.document_ids = request.document_ids.filter((documentId) => documentId !== id);
+    }
+    for (const request of this.store.emsProfileChangeRequests) {
+      request.supporting_document_ids = request.supporting_document_ids.filter((documentId) => documentId !== id);
+    }
+    for (const request of this.store.emsServiceRequests) {
+      request.document_ids = request.document_ids.filter((documentId) => documentId !== id);
+    }
+    for (const user of this.store.users) {
+      if (user.profile_photo_document_id === id) {
+        user.profile_photo_document_id = null;
+        user.profile_photo_url = null;
+      }
+    }
+    for (const company of this.store.companyProfiles) {
+      if (company.logo_document_id === id) {
+        company.logo_document_id = null;
+        company.logo_url = null;
+        company.logo_file_name = null;
+        company.logo_mime_type = null;
+        company.logo_size_bytes = null;
+        company.updated_at = nowIso();
+      }
+    }
+    this.store.documentVersions = this.store.documentVersions.filter((version) => version.document_id !== id);
+    this.store.documents = this.store.documents.filter((document) => document.id !== id);
+  }
+
+  private async hardDeletePersistedDocument(id: UUID): Promise<void> {
+    if (!this.store.pgPool) {
+      return;
+    }
+    const client = await this.store.pgPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "UPDATE core.users SET profile_photo_document_id = NULL, profile_photo_url = NULL, updated_at = now() WHERE profile_photo_document_id = $1",
+        [id]
+      );
+      await client.query(
+        "UPDATE platform.company_profiles SET logo_document_id = NULL, logo_url = NULL, logo_file_name = NULL, logo_mime_type = NULL, logo_size_bytes = NULL, updated_at = now() WHERE logo_document_id = $1",
+        [id]
+      );
+      await client.query("DELETE FROM expenses.expense_documents WHERE document_id = $1", [id]);
+      await client.query("DELETE FROM helpdesk.ticket_attachments WHERE document_id = $1", [id]);
+      await client.query("UPDATE helpdesk.ticket_comments SET document_ids = document_ids - $1 WHERE document_ids ? $1", [id]);
+      await client.query("UPDATE leave_wfh.leave_requests SET document_ids = document_ids - $1 WHERE document_ids ? $1", [id]);
+      await client.query("UPDATE ems.profile_change_requests SET supporting_document_ids = supporting_document_ids - $1 WHERE supporting_document_ids ? $1", [id]);
+      await client.query("UPDATE ems.service_requests SET document_ids = document_ids - $1 WHERE document_ids ? $1", [id]);
+      await client.query("DELETE FROM documents.doc_permissions WHERE document_id = $1", [id]);
+      await client.query("DELETE FROM documents.doc_versions WHERE document_id = $1", [id]);
+      await client.query("DELETE FROM documents.doc_metadata WHERE id = $1", [id]);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   verify(actor: AuthUser, id: UUID): DocumentMetadata {

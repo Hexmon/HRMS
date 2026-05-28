@@ -61,6 +61,7 @@ export interface Department {
   id: UUID;
   department_code: string;
   name: string;
+  cost_center: string | null;
   parent_department_id: UUID | null;
   director_user_id: UUID | null;
   status: "active" | "inactive";

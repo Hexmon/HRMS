@@ -469,7 +469,7 @@ class PostgresPersistence {
 
   private async loadDepartments(client: PoolClient): Promise<Department[]> {
     const { rows } = await client.query(
-      "SELECT id, department_code, name, parent_department_id, director_user_id, status, deleted_at, version FROM core.departments ORDER BY department_code"
+      "SELECT id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version FROM core.departments ORDER BY department_code"
     );
     return rows.map((row) => ({ ...row, deleted_at: asIsoOrNull(row.deleted_at) }));
   }
@@ -1805,10 +1805,11 @@ class PostgresPersistence {
     }
     for (const department of this.store.departments) {
       await client.query(
-        `INSERT INTO core.departments (id, department_code, name, parent_department_id, director_user_id, status, deleted_at, version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO core.departments (id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (id) DO UPDATE
          SET department_code = EXCLUDED.department_code, name = EXCLUDED.name,
+             cost_center = EXCLUDED.cost_center,
              parent_department_id = EXCLUDED.parent_department_id,
              director_user_id = EXCLUDED.director_user_id, status = EXCLUDED.status,
              deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
@@ -1817,6 +1818,7 @@ class PostgresPersistence {
           department.id,
           department.department_code,
           department.name,
+          department.cost_center,
           department.parent_department_id,
           department.director_user_id,
           department.status,

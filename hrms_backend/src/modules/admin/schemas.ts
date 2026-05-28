@@ -171,6 +171,7 @@ export const departmentCreateSchema = z.object({
   name: z.string().min(2).max(160),
   code: z.string().min(2).max(40).optional(),
   department_code: z.string().min(2).max(40).optional(),
+  cost_center: z.string().trim().max(80).nullable().optional(),
   parent_id: z.uuid().nullable().optional(),
   parent_department_id: z.uuid().nullable().optional(),
   status: statusSchema.optional()
@@ -180,6 +181,7 @@ export const departmentUpdateSchema = z.object({
   name: z.string().min(2).max(160).optional(),
   code: z.string().min(2).max(40).optional(),
   department_code: z.string().min(2).max(40).optional(),
+  cost_center: z.string().trim().max(80).nullable().optional(),
   parent_id: z.uuid().nullable().optional(),
   parent_department_id: z.uuid().nullable().optional(),
   status: statusSchema.optional(),

@@ -53,6 +53,14 @@ const HERO_ACTIONS: Record<Role, { label: string; to: string; variant?: "primary
       { label: "Expense reviews", to: "/expenses/review" },
       { label: "Leave / WFH", to: "/leave-wfh", variant: "outline" },
     ],
+    director: [
+      { label: "Reports", to: "/reports", variant: "outline" },
+      { label: "Team utilisation", to: "/team-utilization" },
+    ],
+    auditor: [
+      { label: "Audit reports", to: "/reports/audit", variant: "outline" },
+      { label: "Expense register", to: "/reports/expenses" },
+    ],
     project_manager: [
       { label: "View projects", to: "/projects", variant: "outline" },
       { label: "New project", to: "/projects" },
@@ -99,6 +107,8 @@ function DashboardPage() {
       {showDemoRoleDashboard && activeRole === "hr_admin" && <HrAdminDashboard />}
       {showDemoRoleDashboard && activeRole === "employee" && <EmployeeDashboard />}
       {showDemoRoleDashboard && activeRole === "manager" && <ManagerDashboard />}
+      {showDemoRoleDashboard && activeRole === "director" && <ManagerDashboard />}
+      {showDemoRoleDashboard && activeRole === "auditor" && <MainAdminDashboard />}
       {showDemoRoleDashboard && activeRole === "project_manager" && <ProjectManagerDashboard />}
       {showDemoRoleDashboard && activeRole === "finance_manager" && <FinanceManagerDashboard />}
       {showDemoRoleDashboard && activeRole === "asset_admin" && <AssetAdminDashboard />}

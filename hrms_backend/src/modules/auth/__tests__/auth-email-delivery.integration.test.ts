@@ -178,7 +178,13 @@ describe("auth transactional email delivery", () => {
   it("keeps production signup responses free of raw dev-only tokens", async () => {
     await app.close();
     process.env.NODE_ENV = "production";
+    process.env.JWT_ACCESS_SECRET = "prod-test-access-secret-6f8e9b7f3c9a4d2e8f1a0b5c";
+    process.env.JWT_REFRESH_SECRET = "prod-test-refresh-secret-8c3f2a1e7d9b4a6f0e5c2b1a";
     process.env.CORS_ALLOWED_ORIGINS = "https://hrms.example.test";
+    process.env.CLOUDINARY_MOCK_UPLOADS = "false";
+    process.env.CLOUDINARY_CLOUD_NAME = "prodtestcloud";
+    process.env.CLOUDINARY_API_KEY = "prodtestapikey";
+    process.env.CLOUDINARY_API_SECRET = "prodtestapisecret";
     store = createMemoryDataStore();
     provider = new FakeEmailProvider();
     app = await buildApp({ dataStore: store, rateLimit: false, emailProvider: provider });
