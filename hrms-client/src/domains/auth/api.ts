@@ -72,6 +72,9 @@ export interface SignupResponse extends DevOnlyResponse {
   masked_email: string;
   next_step: "verify_email";
   retry_after_seconds: number;
+  email_delivery_mode?: "send" | "log" | "disabled";
+  email_delivery_status?: string | null;
+  email_delivery_notice?: string | null;
 }
 
 export interface VerifyEmailRequest {
@@ -96,6 +99,9 @@ export interface ResendEmailVerificationResponse extends DevOnlyResponse {
   accepted: boolean;
   masked_email: string;
   retry_after_seconds: number;
+  email_delivery_mode?: "send" | "log" | "disabled";
+  email_delivery_status?: string | null;
+  email_delivery_notice?: string | null;
 }
 
 export interface SetPasswordRequest {

@@ -33,6 +33,11 @@ function SignupPage() {
   const [agree, setAgree] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const isDevExperience =
+    import.meta.env.DEV ||
+    ["local", "development", "dev"].includes(
+      String(import.meta.env.VITE_APP_ENV ?? import.meta.env.MODE ?? "").toLowerCase(),
+    );
 
   const update = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -55,8 +60,19 @@ function SignupPage() {
     setSubmitting(true);
     try {
       const rec = await signup(form);
-      rememberDemoEmailVerificationToken(rec.email, rec.token);
-      navigate({ to: "/verify-email", search: { email: rec.email, state: "sent" } });
+      if (isDevExperience && rec.token) {
+        rememberDemoEmailVerificationToken(rec.email, rec.token);
+      }
+      navigate({
+        to: "/verify-email",
+        search: {
+          email: rec.email,
+          state: "sent",
+          delivery_mode: rec.emailDeliveryMode,
+          delivery_status: rec.emailDeliveryStatus ?? undefined,
+          notice: rec.emailDeliveryNotice ?? undefined,
+        },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create workspace.");
     } finally {

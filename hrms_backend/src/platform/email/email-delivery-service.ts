@@ -68,6 +68,10 @@ export class EmailDeliveryService {
     return delivery;
   }
 
+  deliveryMode(): EmailDeliveryConfig["mode"] {
+    return this.config.mode;
+  }
+
   verificationTokenTtlSeconds(): number {
     return this.config.verificationTokenTtlSeconds;
   }

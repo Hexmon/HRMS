@@ -647,7 +647,7 @@ Recommended middleware change:
 - `hrms_backend/src/modules/auth/routes.ts`: pass request IP/user-agent context to service if cooldown/audit needs it.
 - `hrms_backend/src/platform/data-store.ts`: add email delivery/event records.
 - `hrms_backend/src/platform/postgres-data-store.ts`: load/flush email delivery/event records.
-- `.env.example`, `.env.local.example`, `.env.qa.example`, `.env.prod.example`, `.env.prod`: add names only; never commit real values.
+- `.env.dev.example`, `.env.qa.example`, `.env.prod.example`, `.env.prod`: add names only; never commit real values.
 - `hrms-client/src/routes/verify-email.tsx`: copy adjustments only if backend response/error shape changes.
 
 ### Env vars

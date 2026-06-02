@@ -133,9 +133,9 @@ Create one Neon project and long-lived branches:
 
 | Environment | Neon branch | Backend env |
 | --- | --- | --- |
-| Production | `main` or `prod` | `NODE_ENV=production` |
-| QA/UAT | `qa` | `NODE_ENV=qa` |
-| Hosted dev | `dev` | `NODE_ENV=development` |
+| Production | `main` or `prod` | `NODE_ENV=production`, `APP_ENV=production` |
+| QA/UAT | `qa` | `NODE_ENV=production`, `APP_ENV=qa` |
+| Hosted dev | `dev` | `NODE_ENV=production`, `APP_ENV=development` |
 
 Each branch must use its own pooled `DATABASE_URL`. Do not point dev or QA to the production connection string.
 
@@ -187,14 +187,13 @@ Do not share Valkey across environments. It stores session, rate-limit, and outb
 
 ## Backend Env Templates
 
-Tracked hosted examples:
+Tracked backend examples:
 
 | File | Purpose |
 | --- | --- |
-| `hrms_backend/.env.dev.hosted.example` | Hosted internal dev |
-| `hrms_backend/.env.qa.hosted.example` | Hosted QA/UAT |
-| `hrms_backend/.env.prod.hosted.example` | Hosted production with Neon/Render/Cloudinary/Resend |
-| `hrms_backend/.env.prod.example` | Production |
+| `hrms_backend/.env.dev.example` | Hosted dev backend template for `https://dev-api.hawkaii.in` |
+| `hrms_backend/.env.qa.example` | QA/UAT template |
+| `hrms_backend/.env.prod.example` | Production template |
 
 Important production/hosted values:
 
@@ -236,9 +235,9 @@ Tracked frontend hosted examples:
 
 | File | Purpose |
 | --- | --- |
-| `hrms-client/.env.dev.hosted.example` | Hosted dev frontend |
+| `hrms-client/.env.dev.example` | Hosted dev frontend |
 | `hrms-client/.env.qa.example` | Hosted QA frontend |
-| `hrms-client/.env.production.example` | Production frontend |
+| `hrms-client/.env.prod.example` | Production frontend |
 
 Production frontend env:
 
@@ -282,8 +281,8 @@ Do not assume Vercel or Netlify deployment is production-ready from the current 
    - `CLOUDINARY_CLOUD_NAME`
    - `CLOUDINARY_API_KEY`
    - `CLOUDINARY_API_SECRET`
-   - `RESEND_API_KEY`
-   - `RESEND_WEBHOOK_SECRET`
+   - `RESEND_API_KEY` only when `EMAIL_DELIVERY_MODE=send`
+   - `RESEND_WEBHOOK_SECRET` only when `EMAIL_DELIVERY_MODE=send`
 4. Add Render custom domain:
    - `api.hawkaii.in`
    - `qa-api.hawkaii.in`
@@ -301,7 +300,7 @@ curl https://api.hawkaii.in/api/v1/health/ready
 
 8. Run QA smoke:
    - login/logout
-   - signup/email verification
+   - signup/email verification, or disabled-email message when Resend is intentionally off
    - document upload/download/delete
    - profile photo upload
    - attendance punch
@@ -317,8 +316,10 @@ COOKIE_SECURE=true
 TRUST_PROXY=true
 OPENAPI_PUBLIC=false
 CLOUDINARY_MOCK_UPLOADS=false
-EMAIL_DELIVERY_MODE=send
+EMAIL_DELIVERY_MODE=disabled  # switch to send after Resend secrets are configured
 VITE_API_MOCK_FALLBACK=false
 ```
+
+Resend is optional during initial hosted setup. If `EMAIL_DELIVERY_MODE=disabled`, the API still starts and the frontend tells users that verification email delivery is disabled. Enable `send` with real Resend secrets before opening public self-signup.
 
 Do not run seed scripts against production unless you are intentionally creating a new controlled demo workspace.

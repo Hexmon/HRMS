@@ -36,7 +36,17 @@ Do not commit real secret values. Store hosted secrets in GitHub, Render, Cloudf
 
 - Weak/default JWT secrets.
 - `CLOUDINARY_MOCK_UPLOADS=true`.
-- `EMAIL_DELIVERY_MODE` not set to `send`.
+- `EMAIL_DELIVERY_MODE=send` without `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET`.
 - `OPENAPI_PUBLIC=true` unless explicitly approved.
 - Frontend mock fallback enabled.
 - QA/dev/prod sharing the same `DATABASE_URL` or Valkey connection.
+
+## Email Delivery Optional Startup
+
+Resend is optional for initial hosted setup. QA and production may start with:
+
+```env
+EMAIL_DELIVERY_MODE=disabled
+```
+
+In that mode the application remains usable for existing/admin-created users, and signup/verification pages show a clear message that email delivery is disabled. Enable `send` before opening public self-signup.

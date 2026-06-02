@@ -107,17 +107,11 @@ const configSchema = z.object({
       message: "Hosted QA and production must run with NODE_ENV=production."
     });
   }
-  if (appEnv === "production" && config.EMAIL_DELIVERY_MODE !== "send") {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["EMAIL_DELIVERY_MODE"],
-      message: "EMAIL_DELIVERY_MODE must be 'send' in production."
-    });
-  }
   if (config.EMAIL_DELIVERY_MODE === "send") {
     requireField("RESEND_API_KEY");
     requireField("RESEND_FROM_EMAIL");
     requireField("FRONTEND_URL");
+    requireField("RESEND_WEBHOOK_SECRET");
   }
   if (config.CLOUDINARY_MOCK_UPLOADS && !localLikeEnvironments.has(appEnv)) {
     context.addIssue({
@@ -137,7 +131,6 @@ const configSchema = z.object({
         });
       }
     }
-    requireField("RESEND_WEBHOOK_SECRET");
     if (config.CLOUDINARY_MOCK_UPLOADS) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

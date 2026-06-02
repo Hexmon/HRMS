@@ -38,12 +38,10 @@ The example files already use placeholders. Do not put real Resend API keys, web
 
 ## Local Development
 
-Use local or QA env examples as the starting point:
+Use `.env.local` for local development. The tracked `.env.dev.example` is a hosted dev template, so do not copy it directly unless you replace hosted URLs, Neon, Valkey, and Cloudinary values with local ones.
 
 ```bash
 cd hrms_backend
-cp .env.local.example .env.local
-cp .env.test.example .env.test
 pnpm install
 pnpm dev:infra:up
 pnpm db:migrate

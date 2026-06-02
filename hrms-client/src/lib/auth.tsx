@@ -32,6 +32,9 @@ export interface PendingSignup {
   createdAt: number;
   expiresAt: number;
   bootstrapToken?: string | null;
+  emailDeliveryMode?: "send" | "log" | "disabled";
+  emailDeliveryStatus?: string | null;
+  emailDeliveryNotice?: string | null;
 }
 
 type AuthNextStep = "verify_email" | "set_password" | "login" | "company_bootstrap";
@@ -192,6 +195,11 @@ function devOnlyToken(
 ): string | null {
   const value = response.dev_only?.[key];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function isDevelopmentExperience(): boolean {
+  const appEnv = String(import.meta.env.VITE_APP_ENV ?? import.meta.env.MODE ?? "").toLowerCase();
+  return import.meta.env.DEV || ["local", "development", "dev"].includes(appEnv);
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -578,6 +586,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           passwordSet: false,
           createdAt: Date.now(),
           expiresAt: Date.now() + TOKEN_TTL_MS,
+          emailDeliveryMode: response.email_delivery_mode,
+          emailDeliveryStatus: response.email_delivery_status,
+          emailDeliveryNotice: response.email_delivery_notice,
         };
       } catch (error) {
         if (isMockFallbackEnabled() && shouldUseMockFallback(error)) return signupFromLocal(input);
@@ -611,6 +622,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           passwordSet: false,
           createdAt: Date.now(),
           expiresAt: Date.now() + TOKEN_TTL_MS,
+          emailDeliveryMode: response.email_delivery_mode,
+          emailDeliveryStatus: response.email_delivery_status,
+          emailDeliveryNotice: response.email_delivery_notice,
         };
       } catch (error) {
         if (isMockFallbackEnabled() && shouldUseMockFallback(error)) {

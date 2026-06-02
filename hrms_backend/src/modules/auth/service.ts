@@ -5,6 +5,7 @@ import { badRequest, conflict, forbidden, notFound, unauthorized } from "../../p
 import type { AuthTokenRecord, CompanyProfileRecord, MemoryDataStore, UserCredentialRecord, UserSessionPreferenceRecord } from "../../platform/data-store.js";
 import { nowIso, seedIds } from "../../platform/data-store.js";
 import type { EmailDeliveryService } from "../../platform/email/email-delivery-service.js";
+import type { EmailDeliveryMode, EmailDeliveryStatus } from "../../platform/email/types.js";
 import { DocumentService } from "../documents/service.js";
 import { AuthRepository } from "./repository.js";
 import type {
@@ -92,6 +93,8 @@ interface VerificationEmailSendInput {
 interface VerificationEmailSendResult {
   generated: GeneratedToken | null;
   retryAfterSeconds: number;
+  deliveryMode: EmailDeliveryMode;
+  deliveryStatus: EmailDeliveryStatus | "not_configured" | null;
 }
 
 export class AuthService {
@@ -161,7 +164,9 @@ export class AuthService {
       }
       return this.signupVerificationResponse(existingUser, email, {
         generated: null,
-        retryAfterSeconds: this.resendCooldownSeconds()
+        retryAfterSeconds: this.resendCooldownSeconds(),
+        deliveryMode: this.emailDelivery?.deliveryMode() ?? "disabled",
+        deliveryStatus: null
       });
     }
 
@@ -253,6 +258,8 @@ export class AuthService {
     const user = this.repository.findUserByEmail(email);
     let generated: GeneratedToken | null = null;
     let retryAfterSeconds = this.resendCooldownSeconds();
+    let deliveryMode: EmailDeliveryMode = this.emailDelivery?.deliveryMode() ?? "disabled";
+    let deliveryStatus: VerificationEmailSendResult["deliveryStatus"] = null;
     if (user && isPendingEmailVerification(user)) {
       const company = input.company_slug ? this.repository.findCompanyBySlug(input.company_slug) ?? null : this.companyForVerification(user, email);
       const result = await this.sendVerificationEmail({
@@ -265,11 +272,16 @@ export class AuthService {
       });
       generated = result.generated;
       retryAfterSeconds = result.retryAfterSeconds;
+      deliveryMode = result.deliveryMode;
+      deliveryStatus = result.deliveryStatus;
     }
     return {
       accepted: true,
       masked_email: maskEmail(email),
       retry_after_seconds: retryAfterSeconds,
+      email_delivery_mode: deliveryMode,
+      email_delivery_status: deliveryStatus,
+      email_delivery_notice: emailDeliveryNotice(deliveryMode, deliveryStatus),
       ...devOnly({ email_verification_token: generated?.raw ?? null })
     };
   }
@@ -692,7 +704,12 @@ export class AuthService {
     if (input.enforceResendLimits) {
       const rateLimit = this.checkVerificationResendLimit(input.email);
       if (!rateLimit.allowed) {
-        return { generated: null, retryAfterSeconds: rateLimit.retryAfterSeconds };
+        return {
+          generated: null,
+          retryAfterSeconds: rateLimit.retryAfterSeconds,
+          deliveryMode: this.emailDelivery?.deliveryMode() ?? "disabled",
+          deliveryStatus: null
+        };
       }
     }
     const metadata = input.metadata();
@@ -706,13 +723,18 @@ export class AuthService {
       metadata,
       context: input.context
     });
-    await this.emailDelivery?.queueVerificationEmail({
+    const delivery = await this.emailDelivery?.queueVerificationEmail({
       user: input.user,
       token: generated.record,
       rawToken: generated.raw,
       companyName: input.company?.company_name ?? defaultCompany(input.user).company_name
     });
-    return { generated, retryAfterSeconds: this.resendCooldownSeconds() };
+    return {
+      generated,
+      retryAfterSeconds: this.resendCooldownSeconds(),
+      deliveryMode: this.emailDelivery?.deliveryMode() ?? "disabled",
+      deliveryStatus: delivery?.status ?? "not_configured"
+    };
   }
 
   private signupVerificationResponse(user: CoreUser, email: string, verification: VerificationEmailSendResult) {
@@ -722,6 +744,9 @@ export class AuthService {
       masked_email: maskEmail(email),
       next_step: "verify_email",
       retry_after_seconds: verification.retryAfterSeconds,
+      email_delivery_mode: verification.deliveryMode,
+      email_delivery_status: verification.deliveryStatus,
+      email_delivery_notice: emailDeliveryNotice(verification.deliveryMode, verification.deliveryStatus),
       ...devOnly({ email_verification_token: verification.generated?.raw ?? null })
     };
   }
@@ -901,7 +926,21 @@ function nextSignupEmployeeCode(store: MemoryDataStore): string {
 }
 
 function devOnly(value: Record<string, unknown>): Record<string, unknown> {
-  return process.env.NODE_ENV === "production" ? {} : { dev_only: value };
+  const appEnv = process.env.APP_ENV ?? (process.env.NODE_ENV === "production" ? "production" : "local");
+  return ["local", "development"].includes(appEnv) ? { dev_only: value } : {};
+}
+
+function emailDeliveryNotice(mode: EmailDeliveryMode, status: VerificationEmailSendResult["deliveryStatus"]): string | null {
+  if (mode === "disabled" || status === "disabled" || status === "not_configured") {
+    return "Email delivery is disabled for this environment. Ask an administrator to complete verification, or use the development setup shortcut in dev.";
+  }
+  if (mode === "log") {
+    return "Email delivery is in log mode for this environment. Use the development setup shortcut, or ask an administrator to inspect the generated verification link.";
+  }
+  if (status === "failed") {
+    return "The verification email could not be sent. Ask an administrator to check the email delivery configuration.";
+  }
+  return null;
 }
 
 function presentCompany(company: CompanyProfileRecord) {
