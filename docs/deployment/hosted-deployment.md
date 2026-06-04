@@ -2,7 +2,7 @@
 
 This guide describes the recommended hosted deployment shape for Hawkaii HRMS using:
 
-- Frontend: Cloudflare Pages currently fits the checked-in TanStack Start/Cloudflare setup best.
+- Frontend: Vercel for the TanStack Start frontend, using Nitro build output.
 - Backend: Render Docker web service.
 - Worker: Render Docker background worker.
 - Database: Neon Postgres.
@@ -84,12 +84,15 @@ Render setup requirement:
 
 Frontend setup requirement:
 
-- Preferred: create three Cloudflare frontend projects or branch deployments:
-  - production project: branch `main`, custom domain `hawkaii.in`
-  - QA project: branch `qa`, custom domain `qa.hawkaii.in`
-  - dev project: branch `dev`, custom domain `dev.hawkaii.in`
+- Create three Vercel frontend projects, or equivalent isolated Vercel deployments:
+  - production project: branch main, custom domain https://hawkaii.in
+  - QA project: branch qa, custom domain https://qa.hawkaii.in
+  - hosted dev project: branch dev, custom domain https://dev.hawkaii.in
+- Set Vercel project root directory to hrms-client.
+- Set install command to pnpm install --frozen-lockfile.
+- Set build command to pnpm build:vercel.
 - Set each frontend project env from the matching tracked example file.
-- The current GitHub workflow validates frontend builds. It does not directly deploy Cloudflare because the checked-in frontend is Cloudflare-specific and should be connected to the Cloudflare project/branch configuration.
+- The current GitHub workflow validates frontend builds. Vercel Git integration should perform frontend deployment, while GitHub Actions deploys the Render backend only.
 
 ### Production Domain Values
 
@@ -229,43 +232,52 @@ Set `APP_VERSION` and `BUILD_SHA` in hosted environments so testers can identify
 
 ## Frontend Hosting
 
-The current frontend is TanStack Start with the Cloudflare Vite plugin and `wrangler.jsonc`, so Cloudflare Pages/Workers is the lowest-risk first deployment target.
+The frontend is TanStack Start configured for Vercel through Nitro. The Vite config uses nitro/vite for production builds, and hrms-client/vercel.json pins the Vercel install and build commands.
+
+Create one Vercel project per hosted environment for the clearest free-tier isolation:
+
+| Environment | Git branch | Vercel project root | Domain | API env |
+| --- | --- | --- | --- | --- |
+| Hosted dev | dev | hrms-client | https://dev.hawkaii.in | https://dev-api.hawkaii.in |
+| QA/UAT | qa | hrms-client | https://qa.hawkaii.in | https://qa-api.hawkaii.in |
+| Production | main | hrms-client | https://hawkaii.in | https://api.hawkaii.in |
+
+Use these Vercel settings for every frontend project:
+
+| Setting | Value |
+| --- | --- |
+| Root directory | hrms-client |
+| Install command | pnpm install --frozen-lockfile |
+| Build command | pnpm build:vercel |
+| Output directory | leave empty / framework default |
 
 Tracked frontend hosted examples:
 
 | File | Purpose |
 | --- | --- |
-| `hrms-client/.env.dev.example` | Hosted dev frontend |
-| `hrms-client/.env.qa.example` | Hosted QA frontend |
-| `hrms-client/.env.prod.example` | Production frontend |
+| hrms-client/.env.dev.example | Hosted dev frontend |
+| hrms-client/.env.qa.example | Hosted QA frontend |
+| hrms-client/.env.prod.example | Production frontend |
 
 Production frontend env:
 
-```env
-VITE_API_BASE_URL=https://api.hawkaii.in
-VITE_API_ENABLED=true
-VITE_API_MOCK_FALLBACK=false
-```
+    VITE_API_BASE_URL=https://api.hawkaii.in
+    VITE_API_ENABLED=true
+    VITE_API_MOCK_FALLBACK=false
 
 QA frontend env:
 
-```env
-VITE_API_BASE_URL=https://qa-api.hawkaii.in
-VITE_API_ENABLED=true
-VITE_API_MOCK_FALLBACK=false
-```
+    VITE_API_BASE_URL=https://qa-api.hawkaii.in
+    VITE_API_ENABLED=true
+    VITE_API_MOCK_FALLBACK=false
 
 Dev frontend env:
 
-```env
-VITE_API_BASE_URL=https://dev-api.hawkaii.in
-VITE_API_ENABLED=true
-VITE_API_MOCK_FALLBACK=false
-```
+    VITE_API_BASE_URL=https://dev-api.hawkaii.in
+    VITE_API_ENABLED=true
+    VITE_API_MOCK_FALLBACK=false
 
-### Vercel Or Netlify Note
-
-Do not assume Vercel or Netlify deployment is production-ready from the current code alone. The app currently has Cloudflare-specific frontend build wiring. If Vercel or Netlify is required, first verify the TanStack Start hosting adapter/output and add a platform-specific config after a successful production build test.
+Do not enable a separate GitHub Actions frontend deploy unless Vercel Git deploys are disabled.
 
 ## Deployment Checklist
 

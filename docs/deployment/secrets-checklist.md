@@ -1,6 +1,6 @@
 # Secrets Checklist
 
-Do not commit real secret values. Store hosted secrets in GitHub, Render, Cloudflare, Neon, Cloudinary, and Resend dashboards as appropriate.
+Do not commit real secret values. Store hosted secrets in GitHub, Render, Vercel, Neon, Cloudinary, and Resend dashboards as appropriate.
 
 ## GitHub Actions Secrets
 
@@ -23,7 +23,7 @@ Do not commit real secret values. Store hosted secrets in GitHub, Render, Cloudf
 - `RESEND_WEBHOOK_SECRET` where Resend webhooks are enabled
 - `BUILD_SHA` if not set automatically by the platform
 
-## Frontend Hosting Env Per Environment
+## Vercel Frontend Env Per Environment
 
 - `VITE_APP_ENV`
 - `VITE_APP_VERSION`
