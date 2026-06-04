@@ -30,6 +30,7 @@ import {
   numberValue,
   pageItems,
   text,
+  userFacingErrorMessage,
 } from "@/shared/api";
 import { Briefcase, Clock, DollarSign, AlertTriangle, Activity } from "lucide-react";
 
@@ -264,14 +265,18 @@ function ProjectViewPage() {
 
       {error && (
         <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
-          <p className="text-sm font-semibold text-destructive">Timesheet API unavailable</p>
-          <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
+          <p className="text-sm font-semibold text-destructive">Timesheets could not be loaded</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {userFacingErrorMessage(error, "Timesheets could not be loaded.")}
+          </p>
         </Card>
       )}
       {summaryQuery.error instanceof Error && (
         <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
-          <p className="text-sm font-semibold text-destructive">Project summary API unavailable</p>
-          <p className="mt-1 text-xs text-muted-foreground">{summaryQuery.error.message}</p>
+          <p className="text-sm font-semibold text-destructive">Project summary could not be loaded</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {userFacingErrorMessage(summaryQuery.error, "Project summary could not be loaded.")}
+          </p>
         </Card>
       )}
 

@@ -412,7 +412,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isMockFallbackEnabled()) return loginFromMock(email, password);
     return {
       ok: false,
-      error: "Backend API is disabled and mock sign-in fallback is not enabled.",
+      error: "Sign in is not available in this environment. Please contact your administrator.",
     };
   };
 
@@ -599,7 +599,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     throw new ApiError({
       status: 503,
       code: "api_disabled",
-      message: "Backend API is disabled and mock signup fallback is not enabled.",
+      message: "Account setup is not available in this environment. Please contact your administrator.",
     });
   };
 
@@ -692,7 +692,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     if (isMockFallbackEnabled()) return setPasswordForTokenFromLocal(token, password);
-    return { ok: false, error: "Backend API is disabled and mock fallback is not enabled." };
+    return { ok: false, error: "This action is not available in this environment. Please contact your administrator." };
   };
 
   // -------- Password reset --------
@@ -728,7 +728,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     if (isMockFallbackEnabled()) return resetPasswordWithTokenFromLocal(token, password);
-    return { ok: false, error: "Backend API is disabled and mock fallback is not enabled." };
+    return { ok: false, error: "This action is not available in this environment. Please contact your administrator." };
   };
 
   const completeCompanySetup: AuthState["completeCompanySetup"] = async (input) => {

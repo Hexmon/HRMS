@@ -82,12 +82,12 @@ export function Topbar() {
         : "unavailable";
   const platformLabel =
     platformStatus === "ready"
-      ? "Platform API ready"
+      ? "Connected"
       : platformStatus === "checking"
-        ? "Checking platform API"
+        ? "Checking connection"
         : platformStatus === "disabled"
-          ? "Platform API disabled"
-          : "Platform API unavailable";
+          ? "Connection not configured"
+          : "Connection unavailable";
 
   if (!user || !activeRole) return null;
   const switchableRoles = Array.from(new Set(user.roles));

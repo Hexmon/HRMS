@@ -26,7 +26,7 @@ import { useEmployees } from "@/lib/employees-store";
 import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { useTimesheetSelectors } from "@/domains/timesheets";
-import { asArray, asRecord, isApiEnabled, text, toastApiError } from "@/shared/api";
+import { asArray, asRecord, isApiEnabled, text, toastApiError, userFacingErrorMessage } from "@/shared/api";
 import { isWorkingDate } from "@/lib/work-schedule";
 import {
   TIMESHEET_STATUS_LABEL,
@@ -373,16 +373,20 @@ function MyTimesheetPage() {
 
       {error && (
         <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
-          <p className="text-sm font-semibold text-destructive">Timesheet API unavailable</p>
-          <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
+          <p className="text-sm font-semibold text-destructive">Timesheets could not be loaded</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {userFacingErrorMessage(error, "Timesheets could not be loaded.")}
+          </p>
         </Card>
       )}
       {selectorsQuery.error instanceof Error && (
         <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
           <p className="text-sm font-semibold text-destructive">
-            Timesheet selectors API unavailable
+            Timesheet options could not be loaded
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">{selectorsQuery.error.message}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {userFacingErrorMessage(selectorsQuery.error, "Timesheet options could not be loaded.")}
+          </p>
         </Card>
       )}
 
