@@ -15,6 +15,40 @@ export interface ReadinessChecks {
   object_storage: HealthCheckResult;
 }
 
+export interface ReadinessResult {
+  isReady: boolean;
+  checks: ReadinessChecks;
+}
+
+export function createReadinessChecker(fastify: FastifyInstance, ttlMs = 30_000): () => Promise<ReadinessResult> {
+  let cached: { expiresAt: number; result: ReadinessResult } | undefined;
+  let pending: Promise<ReadinessResult> | undefined;
+
+  return async () => {
+    const now = Date.now();
+    if (cached && cached.expiresAt > now) {
+      return cached.result;
+    }
+    if (pending) {
+      return pending;
+    }
+
+    pending = checkReadiness(fastify)
+      .then((result) => {
+        cached = {
+          expiresAt: Date.now() + ttlMs,
+          result
+        };
+        return result;
+      })
+      .finally(() => {
+        pending = undefined;
+      });
+
+    return pending;
+  };
+}
+
 export async function checkReadiness(fastify: FastifyInstance): Promise<{
   isReady: boolean;
   checks: ReadinessChecks;

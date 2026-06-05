@@ -1,7 +1,9 @@
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
-import { checkReadiness } from "./service.js";
+import { createReadinessChecker } from "./service.js";
 
 export const healthRoutes: FastifyPluginAsync = async (fastify) => {
+  const checkReadiness = createReadinessChecker(fastify);
+
   const live = async () => ({
     status: "ok",
     service: "hawkaii-hrms-api",
@@ -12,7 +14,7 @@ export const healthRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   const ready = async (_request: unknown, reply: FastifyReply) => {
-    const readiness = await checkReadiness(fastify);
+    const readiness = await checkReadiness();
     const checks = readiness.checks;
     return reply.status(readiness.isReady ? 200 : 503).send({
       status: readiness.isReady ? "ok" : "degraded",

@@ -51,7 +51,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     const result = await service.login(body);
     reply.setCookie(fastify.config.SESSION_COOKIE_NAME, result.token, {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: sessionCookieSameSite(fastify.config.COOKIE_SECURE),
       secure: fastify.config.COOKIE_SECURE,
       path: "/",
       expires: new Date(result.expires_at)
@@ -76,7 +76,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     }
     reply.clearCookie(fastify.config.SESSION_COOKIE_NAME, {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: sessionCookieSameSite(fastify.config.COOKIE_SECURE),
       secure: fastify.config.COOKIE_SECURE,
       path: "/"
     });
@@ -142,6 +142,10 @@ async function parseCompanyLogoUpload(request: FastifyRequest) {
     mime_type: mimeType,
     size_bytes: fileBuffer.length
   };
+}
+
+function sessionCookieSameSite(cookieSecure: boolean): "lax" | "none" {
+  return cookieSecure ? "none" : "lax";
 }
 
 function requestContext(request: FastifyRequest): { ip: string; userAgent?: string } {

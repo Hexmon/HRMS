@@ -81,6 +81,7 @@ Render setup requirement:
 - Configure each Render service to build from its matching Git branch.
 - If you want CI-gated deployments, turn off Render auto-deploy and let GitHub Actions trigger deploy hooks.
 - If Render auto-deploy stays enabled, Render can deploy before checks finish, which defeats the purpose of gated CI.
+- Render service health checks should use `/api/v1/health/live`. Use `/api/v1/health/ready` for manual deployment smoke because it checks PostgreSQL, Valkey, and object storage and is intentionally heavier.
 
 Frontend setup requirement:
 
@@ -207,6 +208,8 @@ CLOUDINARY_MOCK_UPLOADS=false
 OPENAPI_PUBLIC=false
 ```
 
+With `COOKIE_SECURE=true`, backend login/logout cookies are emitted as `SameSite=None; Secure`. Keep this enabled for hosted dev, QA, and production so a browser refresh can restore the session through `/api/v1/auth/me` when the frontend and API are deployed on separate origins.
+
 Environment keys are intentionally explicit:
 
 ```env
@@ -331,6 +334,8 @@ CLOUDINARY_MOCK_UPLOADS=false
 EMAIL_DELIVERY_MODE=disabled  # switch to send after Resend secrets are configured
 VITE_API_MOCK_FALLBACK=false
 ```
+
+Do not set `COOKIE_SECURE=false` on hosted HTTPS services. It will cause the browser session cookie to be unsuitable for cross-origin refresh/session bootstrap.
 
 Resend is optional during initial hosted setup. If `EMAIL_DELIVERY_MODE=disabled`, the API still starts and the frontend tells users that verification email delivery is disabled. Enable `send` with real Resend secrets before opening public self-signup.
 
