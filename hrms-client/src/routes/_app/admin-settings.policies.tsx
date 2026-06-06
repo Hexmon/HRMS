@@ -158,11 +158,18 @@ function PoliciesScreen() {
                 punch out.
               </p>
             </div>
-            <TimeField
-              label="Auto punch-out time"
-              value={policies.attendance.autoPunchOutTime}
-              onChange={(v) => setPolicy("attendance", { autoPunchOutTime: v })}
+            <SwitchField
+              label="Auto punch-out"
+              value={policies.attendance.autoPunchOutEnabled}
+              onChange={(v) => setPolicy("attendance", { autoPunchOutEnabled: v })}
             />
+            {policies.attendance.autoPunchOutEnabled && (
+              <TimeField
+                label="Auto punch-out time"
+                value={policies.attendance.autoPunchOutTime}
+                onChange={(v) => setPolicy("attendance", { autoPunchOutTime: v })}
+              />
+            )}
           </div>
           <NumField
             label="Grace minutes (no late mark)"
@@ -534,6 +541,11 @@ function policiesFromApi(items: AdminPolicyRecord[], fallback: Policies) {
             policies.attendance.punchOutStart,
           ),
           punchOutEnd: stringValue(item.config, "punchOutEnd", policies.attendance.punchOutEnd),
+          autoPunchOutEnabled: booleanValue(
+            item.config,
+            "autoPunchOutEnabled",
+            policies.attendance.autoPunchOutEnabled,
+          ),
           autoPunchOutTime: stringValue(
             item.config,
             "autoPunchOutTime",

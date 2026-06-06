@@ -137,6 +137,7 @@ export interface PolicyAttendance {
   punchInEnd: string;
   punchOutStart: string;
   punchOutEnd: string;
+  autoPunchOutEnabled: boolean;
   autoPunchOutTime: string;
   allowOffDayPunches: boolean;
 }
@@ -538,6 +539,7 @@ const DEFAULT_POLICIES: Policies = {
     punchInEnd: "11:00",
     punchOutStart: "17:00",
     punchOutEnd: "23:59",
+    autoPunchOutEnabled: true,
     autoPunchOutTime: "23:59",
     allowOffDayPunches: false,
   },

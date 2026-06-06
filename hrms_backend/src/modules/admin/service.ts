@@ -1286,7 +1286,7 @@ const attendanceTimePolicyFields = new Set([
   "punchOutEnd",
   "autoPunchOutTime"
 ]);
-const attendanceBooleanPolicyFields = new Set(["allowRegularization", "fullDayPunchWindow", "allowOffDayPunches"]);
+const attendanceBooleanPolicyFields = new Set(["allowRegularization", "fullDayPunchWindow", "autoPunchOutEnabled", "allowOffDayPunches"]);
 const attendanceTimePolicyPattern = /^([01]\d|2[0-3]):[0-5]\d$/u;
 
 function normalizeAdminPolicyConfig(
@@ -1336,6 +1336,7 @@ function adminPolicyConfigKeys(policyKey: AdminPolicyKey): Set<string> {
       "punchInEnd",
       "punchOutStart",
       "punchOutEnd",
+      "autoPunchOutEnabled",
       "autoPunchOutTime",
       "allowOffDayPunches"
     ],

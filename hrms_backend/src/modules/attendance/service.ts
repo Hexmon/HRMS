@@ -238,6 +238,7 @@ interface AttendancePunchPolicy {
   punchInEnd: string;
   punchOutStart: string;
   punchOutEnd: string;
+  autoPunchOutEnabled: boolean;
   autoPunchOutTime: string;
   allowOffDayPunches: boolean;
 }
@@ -250,6 +251,26 @@ interface PunchAvailability {
   blocked_reason: string | null;
   local_time: string;
   is_company_working_day: boolean;
+}
+
+export interface AttendanceAutoPunchOutClosure {
+  employee_user_id: UUID;
+  work_date: string;
+  first_check_in_id: UUID;
+  first_check_in_at: string;
+  last_open_punch_id: UUID;
+  closed_at: string;
+  created_punches: AttendancePunch[];
+  day_record: AttendanceDayRecord | null;
+}
+
+export interface AttendanceAutoPunchOutRunResult {
+  reference_iso: string;
+  scanned_users: number;
+  closed_sessions: number;
+  punches_created: number;
+  day_records_recomputed: number;
+  closures: AttendanceAutoPunchOutClosure[];
 }
 
 export class AttendanceService {
@@ -810,6 +831,7 @@ export class AttendanceService {
       punch_in_end: availability.policy.punchInEnd,
       punch_out_start: availability.policy.punchOutStart,
       punch_out_end: availability.policy.punchOutEnd,
+      auto_punch_out_enabled: availability.policy.autoPunchOutEnabled,
       auto_punch_out_time: availability.policy.autoPunchOutTime,
       allow_off_day_punches: availability.policy.allowOffDayPunches,
       is_company_working_day: availability.is_company_working_day,
@@ -844,7 +866,8 @@ export class AttendanceService {
     timeZone: string;
     referenceIso: string;
     policy: AttendancePunchPolicy;
-  }): void {
+    trigger: "api" | "worker";
+  }): AttendanceAutoPunchOutClosure | null {
     const cutoffIso = this.autoPunchOutCutoffIso(
       input.workDate,
       input.firstCheckIn.occurred_at,
@@ -852,7 +875,7 @@ export class AttendanceService {
       input.timeZone
     );
     if (Date.parse(cutoffIso) > Date.parse(input.referenceIso)) {
-      return;
+      return null;
     }
     const closeAt = Date.parse(input.lastOpenPunch.occurred_at) > Date.parse(cutoffIso)
       ? input.lastOpenPunch.occurred_at
@@ -860,31 +883,48 @@ export class AttendanceService {
     const metadata = {
       auto_punch_out: true,
       auto_punch_out_time: input.policy.autoPunchOutTime,
-      auto_punch_out_reason: "Configured attendance day-end cutoff"
+      auto_punch_out_reason: "Configured attendance day-end cutoff",
+      auto_punch_out_trigger: input.trigger
     };
+    const createdPunches: AttendancePunch[] = [];
 
     if (input.lastOpenPunch.event_type === AttendancePunchEventTypes.BreakStart) {
-      this.repository.addPunch({
+      createdPunches.push(this.repository.addPunch({
         employee_user_id: input.employeeUserId,
         event_type: AttendancePunchEventTypes.BreakEnd,
         occurred_at: closeAt,
         work_mode: input.lastOpenPunch.work_mode,
         source: "admin",
         metadata
-      });
+      }));
     }
 
-    this.repository.addPunch({
+    createdPunches.push(this.repository.addPunch({
       employee_user_id: input.employeeUserId,
       event_type: AttendancePunchEventTypes.CheckOut,
       occurred_at: closeAt,
       work_mode: input.lastOpenPunch.work_mode,
       source: "admin",
       metadata
-    });
+    }));
+    return {
+      employee_user_id: input.employeeUserId,
+      work_date: input.workDate,
+      first_check_in_id: input.firstCheckIn.id,
+      first_check_in_at: input.firstCheckIn.occurred_at,
+      last_open_punch_id: input.lastOpenPunch.id,
+      closed_at: closeAt,
+      created_punches: createdPunches,
+      day_record: null
+    };
   }
 
-  private autoPunchOutExpiredSessions(employeeUserId: UUID, timeZone: string, referenceIso = nowIso()): void {
+  private autoPunchOutExpiredSessions(
+    employeeUserId: UUID,
+    timeZone: string,
+    referenceIso = nowIso(),
+    trigger: "api" | "worker" = "api"
+  ): AttendanceAutoPunchOutClosure[] {
     const punches = this.store.attendancePunches
       .filter((punch) => punch.employee_user_id === employeeUserId && !punch.deleted_at && punch.occurred_at <= referenceIso)
       .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
@@ -892,19 +932,27 @@ export class AttendanceService {
     let firstCheckIn: AttendancePunch | null = null;
     let lastOpenPunch: AttendancePunch | null = null;
     const policy = this.attendancePolicy();
+    const closures: AttendanceAutoPunchOutClosure[] = [];
+    if (!policy.autoPunchOutEnabled) {
+      return closures;
+    }
 
     for (const punch of punches) {
       if (punch.event_type === AttendancePunchEventTypes.CheckIn) {
         if (openWorkDate && firstCheckIn && lastOpenPunch) {
-          this.addAutoPunchOutIfExpired({
+          const closure = this.addAutoPunchOutIfExpired({
             employeeUserId,
             workDate: openWorkDate,
             firstCheckIn,
             lastOpenPunch,
             timeZone,
             referenceIso,
-            policy
+            policy,
+            trigger
           });
+          if (closure) {
+            closures.push(closure);
+          }
         }
         openWorkDate = dateInTimeZone(punch.occurred_at, timeZone);
         firstCheckIn = punch;
@@ -923,16 +971,68 @@ export class AttendanceService {
     }
 
     if (openWorkDate && firstCheckIn && lastOpenPunch) {
-      this.addAutoPunchOutIfExpired({
+      const closure = this.addAutoPunchOutIfExpired({
         employeeUserId,
         workDate: openWorkDate,
         firstCheckIn,
         lastOpenPunch,
         timeZone,
         referenceIso,
-        policy
+        policy,
+        trigger
       });
+      if (closure) {
+        closures.push(closure);
+      }
     }
+    return closures;
+  }
+
+  autoPunchOutExpiredSessionsForAll(input: { referenceIso?: string; batchSize?: number } = {}): AttendanceAutoPunchOutRunResult {
+    const referenceIso = input.referenceIso ?? nowIso();
+    const batchSize = Math.max(1, Math.floor(input.batchSize ?? Number.MAX_SAFE_INTEGER));
+    const candidateUserIds = Array.from(new Set(
+      this.store.attendancePunches
+        .filter((punch) => !punch.deleted_at && punch.occurred_at <= referenceIso)
+        .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at))
+        .map((punch) => punch.employee_user_id)
+    ));
+    const closures: AttendanceAutoPunchOutClosure[] = [];
+    let scannedUsers = 0;
+    let dayRecordsRecomputed = 0;
+
+    for (const employeeUserId of candidateUserIds) {
+      if (scannedUsers >= batchSize) {
+        break;
+      }
+      const user = this.store.users.find((candidate) => candidate.id === employeeUserId && !candidate.deleted_at);
+      if (!user || user.employment_status !== EmploymentStatuses.Active) {
+        continue;
+      }
+      scannedUsers += 1;
+      const timeZone = this.timezoneForUser(employeeUserId);
+      const userClosures = this.autoPunchOutExpiredSessions(employeeUserId, timeZone, referenceIso, "worker");
+      const affectedWorkDates = new Set(userClosures.map((closure) => closure.work_date));
+      for (const workDate of affectedWorkDates) {
+        const dayRecord = this.recomputeDay(employeeUserId, workDate, timeZone, referenceIso);
+        dayRecordsRecomputed += 1;
+        for (const closure of userClosures) {
+          if (closure.work_date === workDate) {
+            closure.day_record = dayRecord;
+          }
+        }
+      }
+      closures.push(...userClosures);
+    }
+
+    return {
+      reference_iso: referenceIso,
+      scanned_users: scannedUsers,
+      closed_sessions: closures.length,
+      punches_created: closures.reduce((total, closure) => total + closure.created_punches.length, 0),
+      day_records_recomputed: dayRecordsRecomputed,
+      closures
+    };
   }
 
   private recomputeDay(
@@ -1178,6 +1278,7 @@ export class AttendanceService {
       punchInEnd: timeConfig(config, "punchInEnd", "11:00"),
       punchOutStart: timeConfig(config, "punchOutStart", "17:00"),
       punchOutEnd: timeConfig(config, "punchOutEnd", "23:59"),
+      autoPunchOutEnabled: booleanConfig(config, "autoPunchOutEnabled", true),
       autoPunchOutTime: timeConfig(config, "autoPunchOutTime", "23:59"),
       allowOffDayPunches: booleanConfig(config, "allowOffDayPunches", false)
     };
