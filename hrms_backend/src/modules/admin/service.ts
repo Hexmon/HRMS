@@ -1279,7 +1279,13 @@ function targetForAdminEvent(event: OutboxEvent): string {
   return typeof value === "string" ? value : `${event.aggregate_type}:${event.aggregate_id}`;
 }
 
-const attendanceTimePolicyFields = new Set(["punchInStart", "punchInEnd", "punchOutStart", "punchOutEnd"]);
+const attendanceTimePolicyFields = new Set([
+  "punchInStart",
+  "punchInEnd",
+  "punchOutStart",
+  "punchOutEnd",
+  "autoPunchOutTime"
+]);
 const attendanceBooleanPolicyFields = new Set(["allowRegularization", "fullDayPunchWindow", "allowOffDayPunches"]);
 const attendanceTimePolicyPattern = /^([01]\d|2[0-3]):[0-5]\d$/u;
 
@@ -1330,6 +1336,7 @@ function adminPolicyConfigKeys(policyKey: AdminPolicyKey): Set<string> {
       "punchInEnd",
       "punchOutStart",
       "punchOutEnd",
+      "autoPunchOutTime",
       "allowOffDayPunches"
     ],
     leave: ["casualPerYear", "sickPerYear", "earnedPerYear", "carryForwardCap", "encashmentAllowed"],

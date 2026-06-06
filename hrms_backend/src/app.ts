@@ -33,6 +33,7 @@ import leaveWfhModule from "./modules/leave-wfh/index.js";
 import emsModule from "./modules/ems/index.js";
 import projectsModule from "./modules/projects/index.js";
 import helpdeskModule from "./modules/helpdesk/index.js";
+import locationsModule from "./modules/locations/index.js";
 import notificationsModule from "./modules/notifications/index.js";
 import adminModule from "./modules/admin/index.js";
 import webhooksModule from "./modules/webhooks/index.js";
@@ -148,6 +149,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(emsModule);
   await app.register(projectsModule);
   await app.register(helpdeskModule);
+  await app.register(locationsModule);
   await app.register(notificationsModule);
   await app.register(adminModule);
 

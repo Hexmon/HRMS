@@ -151,6 +151,12 @@ function addMinutes(iso: string, minutes: number): string {
   return new Date(Date.parse(iso) + minutes * 60_000).toISOString();
 }
 
+function addDays(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 function numberConfig(config: Record<string, unknown>, key: string, fallback: number): number {
   const value = config[key];
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
@@ -232,6 +238,7 @@ interface AttendancePunchPolicy {
   punchInEnd: string;
   punchOutStart: string;
   punchOutEnd: string;
+  autoPunchOutTime: string;
   allowOffDayPunches: boolean;
 }
 
@@ -266,6 +273,7 @@ export class AttendanceService {
   ) {
     const occurredAt = input.occurred_at ?? nowIso();
     const timeZone = this.timezoneForUser(actor.id);
+    this.autoPunchOutExpiredSessions(actor.id, timeZone, occurredAt);
     const workDate = this.workDateForPunch(actor.id, input.event_type, occurredAt, timeZone);
     const availability = this.punchAvailability(actor.id, workDate, timeZone, occurredAt);
     if (!availability.next_allowed_actions.includes(input.event_type)) {
@@ -290,7 +298,7 @@ export class AttendanceService {
       source: input.source,
       metadata: input.metadata
     });
-    const day = this.recomputeDay(actor.id, workDate, timeZone);
+    const day = this.recomputeDay(actor.id, workDate, timeZone, occurredAt);
     appendAttendanceOutboxEvent(this.store, {
       aggregateId: punch.id,
       eventType: attendanceEvents.Punched,
@@ -317,6 +325,7 @@ export class AttendanceService {
 
   listMyPunches(actor: AuthUser, query: AttendancePageQuery) {
     const timeZone = this.timezoneForUser(actor.id);
+    this.autoPunchOutExpiredSessions(actor.id, timeZone);
     const range = dateRange(query, timeZone);
     const punches = this.repository.listPunches(actor.id, range.from, range.to, timeZone).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
     return page(punches.map((punch) => this.presentPunch(punch, timeZone)), query.page, query.page_size);
@@ -801,6 +810,7 @@ export class AttendanceService {
       punch_in_end: availability.policy.punchInEnd,
       punch_out_start: availability.policy.punchOutStart,
       punch_out_end: availability.policy.punchOutEnd,
+      auto_punch_out_time: availability.policy.autoPunchOutTime,
       allow_off_day_punches: availability.policy.allowOffDayPunches,
       is_company_working_day: availability.is_company_working_day,
       local_time: availability.local_time,
@@ -810,7 +820,128 @@ export class AttendanceService {
     };
   }
 
-  private recomputeDay(employeeUserId: UUID, workDate: string, timeZone = this.timezoneForUser(employeeUserId)): AttendanceDayRecord {
+  private autoPunchOutCutoffIso(
+    workDate: string,
+    firstCheckInAt: string,
+    policy: AttendancePunchPolicy,
+    timeZone: string
+  ): string {
+    const [hourText, minuteText] = policy.autoPunchOutTime.split(":");
+    const hour = Number(hourText);
+    const minute = Number(minuteText);
+    const sameDayCutoff = zonedClockIso(workDate, hour, minute, timeZone);
+    if (Date.parse(sameDayCutoff) > Date.parse(firstCheckInAt)) {
+      return sameDayCutoff;
+    }
+    return zonedClockIso(addDays(workDate, 1), hour, minute, timeZone);
+  }
+
+  private addAutoPunchOutIfExpired(input: {
+    employeeUserId: UUID;
+    workDate: string;
+    firstCheckIn: AttendancePunch;
+    lastOpenPunch: AttendancePunch;
+    timeZone: string;
+    referenceIso: string;
+    policy: AttendancePunchPolicy;
+  }): void {
+    const cutoffIso = this.autoPunchOutCutoffIso(
+      input.workDate,
+      input.firstCheckIn.occurred_at,
+      input.policy,
+      input.timeZone
+    );
+    if (Date.parse(cutoffIso) > Date.parse(input.referenceIso)) {
+      return;
+    }
+    const closeAt = Date.parse(input.lastOpenPunch.occurred_at) > Date.parse(cutoffIso)
+      ? input.lastOpenPunch.occurred_at
+      : cutoffIso;
+    const metadata = {
+      auto_punch_out: true,
+      auto_punch_out_time: input.policy.autoPunchOutTime,
+      auto_punch_out_reason: "Configured attendance day-end cutoff"
+    };
+
+    if (input.lastOpenPunch.event_type === AttendancePunchEventTypes.BreakStart) {
+      this.repository.addPunch({
+        employee_user_id: input.employeeUserId,
+        event_type: AttendancePunchEventTypes.BreakEnd,
+        occurred_at: closeAt,
+        work_mode: input.lastOpenPunch.work_mode,
+        source: "admin",
+        metadata
+      });
+    }
+
+    this.repository.addPunch({
+      employee_user_id: input.employeeUserId,
+      event_type: AttendancePunchEventTypes.CheckOut,
+      occurred_at: closeAt,
+      work_mode: input.lastOpenPunch.work_mode,
+      source: "admin",
+      metadata
+    });
+  }
+
+  private autoPunchOutExpiredSessions(employeeUserId: UUID, timeZone: string, referenceIso = nowIso()): void {
+    const punches = this.store.attendancePunches
+      .filter((punch) => punch.employee_user_id === employeeUserId && !punch.deleted_at && punch.occurred_at <= referenceIso)
+      .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
+    let openWorkDate: string | null = null;
+    let firstCheckIn: AttendancePunch | null = null;
+    let lastOpenPunch: AttendancePunch | null = null;
+    const policy = this.attendancePolicy();
+
+    for (const punch of punches) {
+      if (punch.event_type === AttendancePunchEventTypes.CheckIn) {
+        if (openWorkDate && firstCheckIn && lastOpenPunch) {
+          this.addAutoPunchOutIfExpired({
+            employeeUserId,
+            workDate: openWorkDate,
+            firstCheckIn,
+            lastOpenPunch,
+            timeZone,
+            referenceIso,
+            policy
+          });
+        }
+        openWorkDate = dateInTimeZone(punch.occurred_at, timeZone);
+        firstCheckIn = punch;
+        lastOpenPunch = punch;
+        continue;
+      }
+      if (punch.event_type === AttendancePunchEventTypes.CheckOut) {
+        openWorkDate = null;
+        firstCheckIn = null;
+        lastOpenPunch = null;
+        continue;
+      }
+      if (openWorkDate) {
+        lastOpenPunch = punch;
+      }
+    }
+
+    if (openWorkDate && firstCheckIn && lastOpenPunch) {
+      this.addAutoPunchOutIfExpired({
+        employeeUserId,
+        workDate: openWorkDate,
+        firstCheckIn,
+        lastOpenPunch,
+        timeZone,
+        referenceIso,
+        policy
+      });
+    }
+  }
+
+  private recomputeDay(
+    employeeUserId: UUID,
+    workDate: string,
+    timeZone = this.timezoneForUser(employeeUserId),
+    referenceIso = nowIso()
+  ): AttendanceDayRecord {
+    this.autoPunchOutExpiredSessions(employeeUserId, timeZone, referenceIso);
     const punches = this.punchesForWorkDate(employeeUserId, workDate, timeZone);
     const checkIns = punches.filter((punch) => punch.event_type === AttendancePunchEventTypes.CheckIn);
     const checkOuts = punches.filter((punch) => punch.event_type === AttendancePunchEventTypes.CheckOut);
@@ -1047,6 +1178,7 @@ export class AttendanceService {
       punchInEnd: timeConfig(config, "punchInEnd", "11:00"),
       punchOutStart: timeConfig(config, "punchOutStart", "17:00"),
       punchOutEnd: timeConfig(config, "punchOutEnd", "23:59"),
+      autoPunchOutTime: timeConfig(config, "autoPunchOutTime", "23:59"),
       allowOffDayPunches: booleanConfig(config, "allowOffDayPunches", false)
     };
   }

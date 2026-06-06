@@ -376,6 +376,66 @@ describe("attendance", () => {
     expect(fullDayCheckIn.json().punch_policy.punch_window_mode).toBe("full_day");
   });
 
+  it("auto punch-outs forgotten open sessions at the configured day-end time", async () => {
+    const employee = await loginAs(app, "E1");
+    ensureActiveCompany(app).working_week = "Mon-Sun";
+    const policy = app.store.adminPolicies.find((candidate) => candidate.policy_key === "attendance");
+    if (!policy) {
+      throw new Error("Expected attendance policy");
+    }
+    policy.config = {
+      ...policy.config,
+      fullDayPunchWindow: true,
+      autoPunchOutTime: "18:30"
+    };
+
+    const checkIn = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: "2026-05-20T04:00:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(checkIn.statusCode).toBe(200);
+
+    const calendar = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/calendar/monthly?month=2026-05&page=1&page_size=50",
+      headers: authHeader(employee.token)
+    });
+    expect(calendar.statusCode).toBe(200);
+    const day = calendar.json().calendar_days.find((record: { work_date: string }) => record.work_date === "2026-05-20");
+    expect(day).toMatchObject({
+      out_time: "18:30",
+      work_minutes: 540,
+      hours: "9h 00m"
+    });
+    expect(day.exception_type).not.toBe("missing_punch");
+
+    const punches = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/punches/my?date_from=2026-05-20&date_to=2026-05-20&page=1&page_size=10",
+      headers: authHeader(employee.token)
+    });
+    expect(punches.statusCode).toBe(200);
+    expect(punches.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event_type: "check_out",
+          time: "18:30",
+          source: "admin",
+          metadata: expect.objectContaining({
+            auto_punch_out: true,
+            auto_punch_out_time: "18:30"
+          })
+        })
+      ])
+    );
+  });
+
 
   it("refreshes stale day statuses and returns live work minutes for open punches", async () => {
     const employee = await loginAs(app, "E1");

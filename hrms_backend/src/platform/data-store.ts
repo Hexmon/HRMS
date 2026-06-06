@@ -810,6 +810,7 @@ export function buildDefaultAdminPolicies(created: string): AdminPolicyConfigRec
         punchInEnd: "11:00",
         punchOutStart: "17:00",
         punchOutEnd: "23:59",
+        autoPunchOutTime: "23:59",
         allowOffDayPunches: false
       }
     },
