@@ -599,7 +599,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     throw new ApiError({
       status: 503,
       code: "api_disabled",
-      message: "Account setup is not available in this environment. Please contact your administrator.",
+      message:
+        "Account setup is not available in this environment. Please contact your administrator.",
     });
   };
 
@@ -692,7 +693,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     if (isMockFallbackEnabled()) return setPasswordForTokenFromLocal(token, password);
-    return { ok: false, error: "This action is not available in this environment. Please contact your administrator." };
+    return {
+      ok: false,
+      error: "This action is not available in this environment. Please contact your administrator.",
+    };
   };
 
   // -------- Password reset --------
@@ -728,7 +732,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     if (isMockFallbackEnabled()) return resetPasswordWithTokenFromLocal(token, password);
-    return { ok: false, error: "This action is not available in this environment. Please contact your administrator." };
+    return {
+      ok: false,
+      error: "This action is not available in this environment. Please contact your administrator.",
+    };
   };
 
   const completeCompanySetup: AuthState["completeCompanySetup"] = async (input) => {

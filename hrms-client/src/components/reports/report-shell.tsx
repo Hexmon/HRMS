@@ -57,7 +57,7 @@ interface Props<T extends { id: string }> {
 const TONE: Record<string, string> = {
   default: "border-border/60",
   success: "border-success/30 bg-success/5",
-  warning: "border-warning/40 bg-warning/5",
+  warning: "border-warning/40 bg-warning/5 dark:border-warning/30 dark:bg-warning/10",
   destructive: "border-destructive/30 bg-destructive/5",
   info: "border-info/30 bg-info/5",
 };

@@ -36,7 +36,9 @@ export async function apiRequest<T = ApiRecord>(
   options: ApiRequestOptions = {},
 ): Promise<T> {
   if (!isApiEnabled()) {
-    throw new ApiUnavailableError("This feature is not connected to the HRMS server in this environment.");
+    throw new ApiUnavailableError(
+      "This feature is not connected to the HRMS server in this environment.",
+    );
   }
 
   await waitForClientRateLimit();
@@ -92,7 +94,9 @@ export async function apiRequest<T = ApiRecord>(
 export async function withApiFallback<T>(apiCall: () => Promise<T>, fallback: () => T): Promise<T> {
   if (!isApiEnabled()) {
     if (isMockFallbackEnabled()) return fallback();
-    throw new ApiUnavailableError("This page is not connected to the HRMS server in this environment.");
+    throw new ApiUnavailableError(
+      "This page is not connected to the HRMS server in this environment.",
+    );
   }
 
   try {

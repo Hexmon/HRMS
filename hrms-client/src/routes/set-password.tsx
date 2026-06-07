@@ -196,7 +196,7 @@ function tone(t: "destructive" | "warning" | "info" | "success") {
     case "destructive":
       return "font-medium text-destructive";
     case "warning":
-      return "font-medium text-warning-foreground";
+      return "font-medium text-warning-foreground dark:text-warning";
     case "info":
       return "font-medium text-info";
     case "success":

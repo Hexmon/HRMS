@@ -19,7 +19,7 @@ interface Props {
 const TONE: Record<StatTone, string> = {
   primary: "bg-primary-soft text-primary",
   success: "bg-success/15 text-success",
-  warning: "bg-warning/20 text-warning-foreground",
+  warning: "bg-warning/20 text-warning-foreground dark:bg-warning/15 dark:text-warning",
   info: "bg-info/15 text-info",
   destructive: "bg-destructive/15 text-destructive",
 };

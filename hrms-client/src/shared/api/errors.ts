@@ -56,7 +56,11 @@ function friendlyApiMessage(status: number, message: string | undefined): string
   if (/not-null constraint|null value.*violates|expected .* received null/.test(normalized)) {
     return "Some required information is missing. Please review the form and try again.";
   }
-  if (/internal server error|stack trace|econnrefused|enotfound|failed before a response/.test(normalized)) {
+  if (
+    /internal server error|stack trace|econnrefused|enotfound|failed before a response/.test(
+      normalized,
+    )
+  ) {
     return status >= 500
       ? "Something went wrong on the server. Please try again."
       : "We could not complete the request. Please try again.";

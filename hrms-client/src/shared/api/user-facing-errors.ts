@@ -60,7 +60,9 @@ function fallbackTitle(error: ApiError, fallback: string): string {
 }
 
 function isNetworkFailureMessage(message: string): boolean {
-  return /failed before a response|failed to fetch|networkerror|econnrefused|enotfound/i.test(message);
+  return /failed before a response|failed to fetch|networkerror|econnrefused|enotfound/i.test(
+    message,
+  );
 }
 
 export function formatUserFacingError(

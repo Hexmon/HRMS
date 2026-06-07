@@ -24,7 +24,7 @@ type DayStatus = "present" | "wfh" | "late" | "absent" | "leave" | "weekend" | "
 const STATUS_CLS: Record<DayStatus, string> = {
   present: "bg-success/15 text-success border-success/30",
   wfh: "bg-info/15 text-info border-info/30",
-  late: "bg-warning/20 text-warning-foreground border-warning/40",
+  late: "bg-warning/20 text-warning-foreground border-warning/40 dark:bg-warning/15 dark:text-warning dark:border-warning/30",
   absent: "bg-destructive/15 text-destructive border-destructive/30",
   leave: "bg-primary-soft text-primary border-primary/30",
   weekend: "bg-muted text-muted-foreground/60 border-border",

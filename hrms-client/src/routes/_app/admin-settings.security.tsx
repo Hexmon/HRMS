@@ -160,8 +160,8 @@ function SecurityScreen() {
               onChange={(v) => update("ipDeviceAuditEnabled", v)}
             />
           </div>
-          <div className="mt-4 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/5 p-3 text-xs text-muted-foreground">
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
+          <div className="mt-4 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/5 p-3 text-xs text-muted-foreground dark:border-warning/30 dark:bg-warning/10">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground dark:text-warning" />
             Disabling these audits weakens compliance reporting. Coordinate with your security team
             before turning them off.
           </div>

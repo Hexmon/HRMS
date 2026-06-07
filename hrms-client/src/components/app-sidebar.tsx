@@ -28,6 +28,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuth, ROLE_MAP } from "@/lib/auth";
+import { AppearanceSidebarControl } from "@/components/theme/appearance-menu";
 import type { ComponentType } from "react";
 
 interface Item {
@@ -65,7 +66,7 @@ const ALL_GROUPS: { label: string; items: Item[] }[] = [
 ];
 
 export function AppSidebar() {
-  const { state } = useSidebar();
+  const { state, isMobile } = useSidebar();
   const collapsed = state === "collapsed";
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { activeRole } = useAuth();
@@ -132,7 +133,8 @@ export function AppSidebar() {
       </SidebarContent>
 
       {!collapsed && activeRole && (
-        <SidebarFooter className="border-t p-3">
+        <SidebarFooter className="space-y-3 border-t p-3">
+          {isMobile && <AppearanceSidebarControl />}
           <div className="rounded-xl border border-primary/15 bg-primary-soft/60 p-3">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary/80">
               Active role

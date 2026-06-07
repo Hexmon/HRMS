@@ -185,7 +185,7 @@ function WarrantyScreen() {
                     </p>
                   </Link>
                   <span
-                    className={`text-xs font-medium ${alert.daysLeft < 0 ? "text-destructive" : alert.daysLeft <= 14 ? "text-warning-foreground" : "text-muted-foreground"}`}
+                    className={`text-xs font-medium ${alert.daysLeft < 0 ? "text-destructive" : alert.daysLeft <= 14 ? "text-warning-foreground dark:text-warning" : "text-muted-foreground"}`}
                   >
                     {alert.daysLeft < 0
                       ? `${Math.abs(alert.daysLeft)}d expired`

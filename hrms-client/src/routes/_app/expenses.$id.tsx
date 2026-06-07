@@ -202,7 +202,7 @@ function ExpenseDetail() {
         </Button>
         <div className="flex items-center gap-2">
           {highValue && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/15 px-2.5 py-1 text-xs font-medium text-warning-foreground">
+            <span className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/15 px-2.5 py-1 text-xs font-medium text-warning-foreground dark:border-warning/30 dark:bg-warning/15 dark:text-warning">
               <AlertTriangle className="h-3.5 w-3.5" /> High-value · {fmtCurrency(total)}
             </span>
           )}

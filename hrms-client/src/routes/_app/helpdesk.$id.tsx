@@ -282,7 +282,7 @@ function TicketDetailScreen() {
                       className={cn(
                         "max-w-[80%] rounded-2xl border px-3.5 py-2.5",
                         mine ? "bg-primary/10 border-primary/20" : "bg-card",
-                        c.internal && "border-warning/40 bg-warning/10",
+                        c.internal && "border-warning/40 bg-warning/10 dark:border-warning/30",
                       )}
                     >
                       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -290,7 +290,7 @@ function TicketDetailScreen() {
                         {c.authorRole && <span>· {c.authorRole}</span>}
                         <span>· {fmtRelative(c.at)}</span>
                         {c.internal && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-warning/30 px-1.5 py-0.5 text-warning-foreground">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-warning/30 px-1.5 py-0.5 text-warning-foreground dark:bg-warning/15 dark:text-warning">
                             <Lock className="h-3 w-3" /> Internal
                           </span>
                         )}
@@ -447,7 +447,8 @@ function TicketDetailScreen() {
                   className={cn(
                     "mt-1 text-[11px] font-medium",
                     sla!.responseState === "breached" && "text-destructive",
-                    sla!.responseState === "near_breach" && "text-warning-foreground",
+                    sla!.responseState === "near_breach" &&
+                      "text-warning-foreground dark:text-warning",
                   )}
                 >
                   {t.firstResponseAt ? "Sent " + fmtDateTime(t.firstResponseAt) : "Pending"}

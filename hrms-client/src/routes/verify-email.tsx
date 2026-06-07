@@ -44,7 +44,14 @@ export const Route = createFileRoute("/verify-email")({
 });
 
 function VerifyEmailPage() {
-  const { email, token, state: stateParam, delivery_mode: deliveryMode, delivery_status: deliveryStatus, notice } = Route.useSearch();
+  const {
+    email,
+    token,
+    state: stateParam,
+    delivery_mode: deliveryMode,
+    delivery_status: deliveryStatus,
+    notice,
+  } = Route.useSearch();
   const { verifyToken, resendVerification } = useAuth();
   const navigate = useNavigate();
   const [resentAt, setResentAt] = useState<number | null>(null);

@@ -688,7 +688,7 @@ function DocumentsTab({ documents }: { documents: EmployeeDocument[] }) {
                           "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
                           d.verified
                             ? "border-success/30 bg-success/10 text-success"
-                            : "border-warning/40 bg-warning/15 text-warning-foreground",
+                            : "border-warning/40 bg-warning/15 text-warning-foreground dark:border-warning/30 dark:bg-warning/15 dark:text-warning",
                         )}
                       >
                         {d.verified ? (

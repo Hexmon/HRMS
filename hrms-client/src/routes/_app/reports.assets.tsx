@@ -200,7 +200,7 @@ function AssetReports() {
                 const d = warrantyDaysLeft(a.warrantyExpiry);
                 return (
                   <span
-                    className={`font-mono ${d < 0 ? "text-destructive" : d <= 14 ? "text-warning-foreground" : "text-foreground"}`}
+                    className={`font-mono ${d < 0 ? "text-destructive" : d <= 14 ? "text-warning-foreground dark:text-warning" : "text-foreground"}`}
                   >
                     {d < 0 ? `${Math.abs(d)} expired` : d}
                   </span>

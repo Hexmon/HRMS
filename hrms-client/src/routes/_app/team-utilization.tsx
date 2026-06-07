@@ -535,7 +535,7 @@ function UtilizationPage() {
               <div>
                 <div className="mb-1 flex items-center justify-between text-xs">
                   <span>Non-billable</span>
-                  <span className="font-semibold text-warning-foreground">
+                  <span className="font-semibold text-warning-foreground dark:text-warning">
                     {stats.nonBillable.toFixed(0)}h
                   </span>
                 </div>

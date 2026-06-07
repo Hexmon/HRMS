@@ -49,8 +49,9 @@ function AppLayout() {
         <div className="flex min-h-screen flex-1 flex-col">
           <Topbar />
           {showEnvironmentBanner ? (
-            <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs font-medium text-amber-900">
-              {environmentLabel} environment{buildLabel ? ` - ${buildLabel}` : ""}. Do not enter production data.
+            <div className="border-b border-warning/30 bg-warning/10 px-4 py-2 text-center text-xs font-medium text-warning-foreground dark:text-warning">
+              {environmentLabel} environment{buildLabel ? ` - ${buildLabel}` : ""}. Do not enter
+              production data.
             </div>
           ) : null}
           <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">

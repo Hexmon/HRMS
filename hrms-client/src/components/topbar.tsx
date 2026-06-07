@@ -30,6 +30,8 @@ import { useAuth, ROLE_MAP } from "@/lib/auth";
 import { UserAvatar } from "@/components/ui-kit/user-avatar";
 import { NotificationPanel } from "@/components/ui-kit/notification-panel";
 import { isApiEnabled } from "@/shared/api";
+import { AppearanceMenuItems } from "@/components/theme/appearance-menu";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -158,6 +160,8 @@ export function Topbar() {
           <TooltipContent>{platformLabel}</TooltipContent>
         </Tooltip>
 
+        <ThemeToggle className="hidden sm:inline-flex" />
+
         {/* Profile dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -193,6 +197,7 @@ export function Topbar() {
                 </Link>
               </DropdownMenuItem>
             )}
+            <AppearanceMenuItems />
             {switchableRoles.length > 1 && (
               <>
                 <DropdownMenuSeparator />

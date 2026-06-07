@@ -273,7 +273,9 @@ function ProjectViewPage() {
       )}
       {summaryQuery.error instanceof Error && (
         <Card className="rounded-2xl border-destructive/30 bg-destructive/5 p-4">
-          <p className="text-sm font-semibold text-destructive">Project summary could not be loaded</p>
+          <p className="text-sm font-semibold text-destructive">
+            Project summary could not be loaded
+          </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {userFacingErrorMessage(summaryQuery.error, "Project summary could not be loaded.")}
           </p>
