@@ -1,5 +1,4 @@
 import * as React from "react";
-import { flushSync } from "react-dom";
 import { ThemeContext } from "@/lib/theme";
 import {
   applyTheme,
@@ -34,10 +33,12 @@ function supportsViewTransition(): boolean {
 
 async function runThemeTransition({
   sourceElement,
-  commit,
+  applyPreference,
+  syncState,
 }: {
   sourceElement?: HTMLElement | null;
-  commit: () => void;
+  applyPreference: () => ResolvedTheme;
+  syncState: (resolvedTheme: ResolvedTheme) => void;
 }) {
   if (
     typeof window === "undefined" ||
@@ -45,7 +46,7 @@ async function runThemeTransition({
     shouldReduceMotion() ||
     !supportsViewTransition()
   ) {
-    commit();
+    syncState(applyPreference());
     return;
   }
 
@@ -57,25 +58,20 @@ async function runThemeTransition({
     Math.max(y, window.innerHeight - y),
   );
   const root = document.documentElement;
-
-  root.style.setProperty("--theme-vt-x", `${x}px`);
-  root.style.setProperty("--theme-vt-y", `${y}px`);
-  root.style.setProperty("--theme-vt-r", `${endRadius}px`);
-  root.classList.add("theme-transitioning");
+  let committedTheme: ResolvedTheme | null = null;
 
   const transition = (document as ViewTransitionDocument).startViewTransition?.(() => {
-    flushSync(commit);
+    committedTheme = applyPreference();
   });
 
   if (!transition) {
-    root.classList.remove("theme-transitioning");
-    commit();
+    syncState(applyPreference());
     return;
   }
 
   try {
     await transition.ready;
-    root.animate(
+    const revealAnimation = root.animate(
       {
         clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`],
       },
@@ -85,12 +81,13 @@ async function runThemeTransition({
         pseudoElement: "::view-transition-new(root)",
       },
     );
-    await transition.finished;
-  } finally {
-    root.classList.remove("theme-transitioning");
-    root.style.removeProperty("--theme-vt-x");
-    root.style.removeProperty("--theme-vt-y");
-    root.style.removeProperty("--theme-vt-r");
+    await Promise.allSettled([revealAnimation.finished, transition.finished]);
+    if (committedTheme) {
+      syncState(committedTheme);
+    }
+  } catch {
+    const resolved = committedTheme ?? applyPreference();
+    syncState(resolved);
   }
 }
 
@@ -100,16 +97,26 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     resolveTheme(readStoredPreference()),
   );
 
-  const commitPreference = React.useCallback((nextPreference: ThemePreference) => {
-    const nextResolved = applyTheme(nextPreference);
-    setPreferenceState(nextPreference);
-    setResolvedTheme(nextResolved);
+  const transitionInFlightRef = React.useRef(false);
+
+  const syncPreferenceState = React.useCallback(
+    (nextPreference: ThemePreference, nextResolved: ResolvedTheme) => {
+      setPreferenceState(nextPreference);
+      setResolvedTheme(nextResolved);
+    },
+    [],
+  );
+
+  const applyPreference = React.useCallback((nextPreference: ThemePreference) => {
+    return applyTheme(nextPreference);
   }, []);
 
   React.useEffect(() => {
-    const nextResolved = applyTheme(preference);
+    const currentPreference = readStoredPreference();
+    const nextResolved = applyTheme(currentPreference);
+    setPreferenceState(currentPreference);
     setResolvedTheme(nextResolved);
-  }, [preference]);
+  }, []);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -134,12 +141,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setPreference = React.useCallback(
     (nextPreference: ThemePreference, options?: { sourceElement?: HTMLElement | null }) => {
+      if (transitionInFlightRef.current) return;
+
+      transitionInFlightRef.current = true;
       void runThemeTransition({
         sourceElement: options?.sourceElement,
-        commit: () => commitPreference(nextPreference),
+        applyPreference: () => applyPreference(nextPreference),
+        syncState: (nextResolved) => syncPreferenceState(nextPreference, nextResolved),
+      }).finally(() => {
+        transitionInFlightRef.current = false;
       });
     },
-    [commitPreference],
+    [applyPreference, syncPreferenceState],
   );
 
   const toggleTheme = React.useCallback(

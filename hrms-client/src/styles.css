@@ -271,11 +271,6 @@
   z-index: 2;
 }
 
-html.theme-transitioning,
-html.theme-transitioning * {
-  cursor: progress;
-}
-
 @layer components {
   .theme-toggle {
     position: relative;

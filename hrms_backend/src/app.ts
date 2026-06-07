@@ -88,9 +88,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.addHook("onSend", async (request, reply, payload) => {
     if (
       app.store.persistence &&
-      !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
-      reply.statusCode >= 200 &&
-      reply.statusCode < 400
+      shouldFlushPersistence(request.method, request.url, reply.statusCode)
     ) {
       await app.store.persistence.flush();
     }
@@ -163,6 +161,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 function booleanFromEnv(value: string | undefined, fallback: boolean): boolean {
   if (value == null || value === "") return fallback;
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+const sessionOnlyMutationRoutes = new Set([
+  "POST /api/v1/auth/login",
+  "POST /api/v1/auth/logout"
+]);
+
+function shouldFlushPersistence(method: string, url: string, statusCode: number): boolean {
+  if (["GET", "HEAD", "OPTIONS"].includes(method)) {
+    return false;
+  }
+  if (statusCode < 200 || statusCode >= 400) {
+    return false;
+  }
+  const path = url.split("?")[0] ?? url;
+  return !sessionOnlyMutationRoutes.has(`${method.toUpperCase()} ${path}`);
 }
 
 async function createRuntimeStore(config: FastifyInstance["config"], options: BuildAppOptions): Promise<DataStore> {

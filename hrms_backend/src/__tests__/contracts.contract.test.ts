@@ -696,6 +696,48 @@ describe("Auth guard", () => {
     }
   });
 
+  it("does not flush persistence for successful login and logout", async () => {
+    const store = createMemoryDataStore();
+    let flushCalls = 0;
+    store.persistence = {
+      async flush() {
+        flushCalls += 1;
+        throw new Error("flush should not run for session-only auth mutations");
+      },
+      async reload() {
+        // no-op test persistence
+      },
+      async close() {
+        // no-op test persistence
+      }
+    };
+    const localApp = await buildApp({ dataStore: store, rateLimit: false });
+    try {
+      await localApp.ready();
+      const login = await localApp.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: {
+          email: "admin@example.test",
+          password: localDemoPassword
+        }
+      });
+      expect(login.statusCode).toBe(200);
+
+      const logout = await localApp.inject({
+        method: "POST",
+        url: "/api/v1/auth/logout",
+        headers: {
+          cookie: cookieHeader(login.headers["set-cookie"])
+        }
+      });
+      expect(logout.statusCode).toBe(200);
+      expect(flushCalls).toBe(0);
+    } finally {
+      await localApp.close();
+    }
+  });
+
   it("returns 401 for stale or malformed bearer tokens instead of leaking a 500", async () => {
     const localApp = await buildApp({ dataStore: createMemoryDataStore(), rateLimit: false });
     try {
