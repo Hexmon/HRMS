@@ -35,9 +35,12 @@ interface Props<T extends { id: string }> {
   searchKeys?: (keyof T)[];
   emptyTitle?: string;
   emptyDescription?: string;
-  rowActions?: (
-    row: T,
-  ) => { label: string; onClick?: () => void; tone?: "default" | "destructive" }[];
+  rowActions?: (row: T) => {
+    label: string;
+    onClick?: () => void;
+    tone?: "default" | "destructive";
+    disabled?: boolean;
+  }[];
   toolbarRight?: ReactNode;
   /** Show a skeleton loading state instead of rows. */
   loading?: boolean;
@@ -185,8 +188,10 @@ export function DataTable<T extends { id: string }>({
                         {rowActions(row).map((a, i) => (
                           <DropdownMenuItem
                             key={i}
+                            disabled={a.disabled}
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (a.disabled) return;
                               a.onClick?.();
                             }}
                             className={
@@ -275,7 +280,11 @@ export function DataTable<T extends { id: string }>({
                             {rowActions(row).map((a, i) => (
                               <DropdownMenuItem
                                 key={i}
-                                onClick={a.onClick}
+                                disabled={a.disabled}
+                                onClick={() => {
+                                  if (a.disabled) return;
+                                  a.onClick?.();
+                                }}
                                 className={
                                   a.tone === "destructive"
                                     ? "text-destructive focus:text-destructive"

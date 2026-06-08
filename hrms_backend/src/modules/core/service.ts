@@ -511,6 +511,7 @@ export class CoreService {
   deactivateUser(actor: AuthUser, id: UUID, input: UserStatusInput): CoreUserMutationResult {
     requirePeopleManager(actor);
     const user = this.requireUserForWrite(id);
+    requireNotSelfLifecycleMutation(actor, user);
     requireExpectedVersion(user, input.expected_version);
     const nextStatus = input.status ?? EmploymentStatuses.Inactive;
     if (user.employment_status === nextStatus) {
@@ -544,6 +545,7 @@ export class CoreService {
   async disableLogin(actor: AuthUser, id: UUID, input: UserLoginInput): Promise<CoreUserMutationResult> {
     requirePeopleManager(actor);
     const user = this.requireUserForWrite(id);
+    requireNotSelfLifecycleMutation(actor, user);
     requireExpectedVersion(user, input.expected_version);
     const activeCredentials = this.store.userCredentials.filter((credential) => credential.user_id === user.id && credential.status === "active" && !credential.deleted_at);
     if (activeCredentials.length === 0 && this.loginState(user.id) !== "setup_pending") {
@@ -570,6 +572,7 @@ export class CoreService {
   enableLogin(actor: AuthUser, id: UUID, input: UserLoginInput): CoreUserMutationResult {
     requirePeopleManager(actor);
     const user = this.requireUserForWrite(id);
+    requireNotSelfLifecycleMutation(actor, user);
     requireExpectedVersion(user, input.expected_version);
     if (this.loginState(user.id) === "enabled") {
       throw conflict("Login is already enabled.", { id });
@@ -1301,6 +1304,12 @@ function hasPrivilegedProfileRead(actor: AuthUser): boolean {
 function requirePeopleManager(actor: AuthUser): void {
   if (!actor.roles.some((role) => role === Roles.Admin || role === Roles.HRManager)) {
     throw forbidden("Only Admin and HR Manager users can manage employee profiles.");
+  }
+}
+
+function requireNotSelfLifecycleMutation(actor: AuthUser, user: CoreUser): void {
+  if (actor.id === user.id) {
+    throw forbidden("Use another Admin or HR Manager account to change your own employment or login access.");
   }
 }
 
