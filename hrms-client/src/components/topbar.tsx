@@ -95,7 +95,7 @@ export function Topbar() {
   const switchableRoles = Array.from(new Set(user.roles));
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/65 sm:px-6">
+    <header className="glass-topbar sticky top-0 z-30 flex h-16 items-center gap-2 border-b px-3 sm:px-6">
       <SidebarTrigger className="text-muted-foreground" />
 
       {/* Page title */}
@@ -146,7 +146,7 @@ export function Topbar() {
           <TooltipTrigger asChild>
             <span
               aria-label={platformLabel}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border bg-card text-muted-foreground"
+              className="glass-control inline-flex h-9 w-9 items-center justify-center rounded-full border text-muted-foreground"
             >
               {platformStatus === "ready" ? (
                 <Server className="h-4 w-4 text-success" />
@@ -166,7 +166,7 @@ export function Topbar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="flex items-center gap-2 rounded-full border bg-card px-1.5 py-1 text-left transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2"
+              className="glass-control flex items-center gap-2 rounded-full border px-1.5 py-1 text-left transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2"
               aria-label="Account menu"
             >
               <UserAvatar name={user.name} size="sm" />

@@ -73,9 +73,7 @@ export function AppearanceSidebarControl({ className }: { className?: string }) 
   const { preference, resolvedTheme, setPreference } = useTheme();
 
   return (
-    <div
-      className={cn("rounded-xl border border-sidebar-border bg-sidebar-accent/35 p-3", className)}
-    >
+    <div className={cn("glass-control rounded-xl border border-sidebar-border p-3", className)}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/65">
