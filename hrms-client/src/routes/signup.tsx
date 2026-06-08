@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { PhoneInput } from "@/components/ui-kit";
 import { ArrowRight, Building2 } from "lucide-react";
 import { rememberDemoEmailVerificationToken } from "@/lib/demo-email-verification";
 
@@ -149,14 +150,18 @@ function SignupPage() {
             required
             icon={<Building2 className="h-4 w-4 text-muted-foreground" />}
           />
-          <Field
-            label="Contact number"
-            id="contact"
-            value={form.contact}
-            onChange={update("contact")}
-            required
-            placeholder="+1 555 0100"
-          />
+          <div className="space-y-1.5">
+            <Label htmlFor="contact">
+              Contact number<span className="ml-0.5 text-destructive">*</span>
+            </Label>
+            <PhoneInput
+              id="contact"
+              value={form.contact}
+              onChange={(value) => setForm((current) => ({ ...current, contact: value }))}
+              required
+              placeholder="555 0100"
+            />
+          </div>
         </div>
 
         <label className="flex items-start gap-2 rounded-xl border bg-secondary/40 p-3">

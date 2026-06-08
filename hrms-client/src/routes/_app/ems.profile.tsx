@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
-import { DataCard, EmptyState, StatusBadge, UserAvatar } from "@/components/ui-kit";
+import { DataCard, EmptyState, PhoneInput, StatusBadge, UserAvatar } from "@/components/ui-kit";
 import { Modal } from "@/components/ui-kit";
 import { coreApi } from "@/domains/core/api";
 import {
@@ -457,13 +457,17 @@ function MyProfile() {
           </div>
           <div>
             <Label htmlFor="val">New value</Label>
-            <Input
-              id="val"
-              value={val}
-              onChange={(e) => setVal(e.target.value)}
-              placeholder="Enter the new value"
-              className="mt-1"
-            />
+            {field === "phone" || field === "alternate_phone" ? (
+              <PhoneInput id="val" value={val} onChange={setVal} className="mt-1" />
+            ) : (
+              <Input
+                id="val"
+                value={val}
+                onChange={(e) => setVal(e.target.value)}
+                placeholder="Enter the new value"
+                className="mt-1"
+              />
+            )}
           </div>
           <div>
             <Label htmlFor="reason">Reason</Label>
