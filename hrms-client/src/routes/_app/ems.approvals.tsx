@@ -209,7 +209,7 @@ function MyApprovals() {
     <div className="space-y-4 pt-4">
       <p className="text-sm text-muted-foreground">Pending items waiting on your action.</p>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
         {[
           { l: "Leave", v: LEAVE.length },
           { l: "WFH", v: WFH.length },
@@ -226,7 +226,7 @@ function MyApprovals() {
       </div>
 
       <Tabs defaultValue="leave" className="w-full">
-        <TabsList className="flex w-full flex-wrap justify-start">
+        <TabsList className="w-full justify-start">
           <TabsTrigger value="leave">Leave</TabsTrigger>
           <TabsTrigger value="wfh">WFH</TabsTrigger>
           <TabsTrigger value="ts">Timesheet</TabsTrigger>

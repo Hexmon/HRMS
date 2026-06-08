@@ -77,7 +77,7 @@ function SecurityScreen() {
           <p className="mb-4 text-xs text-muted-foreground">
             Enforce at signup, password reset and admin-set passwords.
           </p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <NumField
               label="Minimum length"
               value={draft.passwordMinLength}
@@ -112,7 +112,7 @@ function SecurityScreen() {
           <p className="mb-4 text-xs text-muted-foreground">
             Idle timeout, brute-force protection and future MFA readiness.
           </p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <NumField
               label="Session timeout (mins)"
               value={draft.sessionTimeoutMinutes}

@@ -986,7 +986,7 @@ function EmsAdmin() {
     <div className="space-y-4 pt-4">
       <p className="text-sm text-muted-foreground">Operational queues for the people-ops team.</p>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
         <StatCard label="Docs to verify" value={docsToVerify} icon={FileCheck2} tone="warning" />
         <StatCard label="Profile updates" value={profileUpdates} icon={UserCog} tone="info" />
         <StatCard label="Probation due" value={probationDue} icon={BadgeCheck} tone="primary" />
@@ -999,7 +999,7 @@ function EmsAdmin() {
       </div>
 
       <Tabs defaultValue="docs">
-        <TabsList className="flex w-full flex-wrap justify-start">
+        <TabsList className="w-full justify-start">
           <TabsTrigger value="docs">
             <FileCheck2 className="mr-1.5 h-4 w-4" />
             Documents

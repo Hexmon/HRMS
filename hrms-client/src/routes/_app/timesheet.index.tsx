@@ -26,6 +26,7 @@ import { useEmployees } from "@/lib/employees-store";
 import { useProjects } from "@/lib/projects-store";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { useTimesheetSelectors } from "@/domains/timesheets";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   asArray,
   asRecord,
@@ -186,12 +187,17 @@ function MyTimesheetPage() {
   const [rows, setRows] = useState<RowDraft[]>([]);
   const [view, setView] = useState<"week" | "day">("week");
   const [activeDay, setActiveDay] = useState(weekDays[0]);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     setRows(buildRowsFromEntries());
     setActiveDay(weekDays[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekStart, weekEntries.length]);
+
+  useEffect(() => {
+    if (isMobile) setView("day");
+  }, [isMobile]);
 
   const readOnly = week.status === "approved" || week.status === "pending";
 
@@ -324,15 +330,18 @@ function MyTimesheetPage() {
     <div className="space-y-4">
       {/* Top bar */}
       <Card className="rounded-2xl border-border/60 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setWeekOffset((o) => o - 1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <div className="px-2">
+            <div className="min-w-0 flex-1 px-1 sm:flex-none sm:px-2">
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <CalendarDays className="h-4 w-4 text-primary" />
-                Week of {dateLabel(weekDays[0], { month: "long", day: "numeric", year: "numeric" })}
+                <span className="truncate">
+                  Week of{" "}
+                  {dateLabel(weekDays[0], { month: "long", day: "numeric", year: "numeric" })}
+                </span>
               </div>
               <p className="text-[11px] text-muted-foreground">
                 {dateLabel(weekDays[0])} — {dateLabel(weekDays[6])}
@@ -346,7 +355,7 @@ function MyTimesheetPage() {
             </Button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <StatusBadge status={week.status} label={TIMESHEET_STATUS_LABEL[week.status]} />
             <Tabs value={view} onValueChange={(v) => setView(v as "week" | "day")}>
               <TabsList>
@@ -398,7 +407,7 @@ function MyTimesheetPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total hours"
           value={totals.total.toFixed(1)}
@@ -699,13 +708,13 @@ function DayView({
   const dayRows = rows.filter((r) => (r.hours[activeDay] ?? 0) > 0 || !r.hours[activeDay]);
   return (
     <Card className="rounded-2xl border-border/60 p-4">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="-mx-1 mb-4 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
         {weekDays.map((d, i) => (
           <button
             key={d}
             onClick={() => onDayChange(d)}
             className={cn(
-              "flex flex-col items-center rounded-xl border px-3 py-2 text-xs transition",
+              "min-w-[4.5rem] flex-none rounded-xl border px-3 py-2 text-center text-xs transition sm:min-w-0",
               activeDay === d
                 ? "border-primary bg-primary-soft text-primary"
                 : "border-border hover:bg-accent",
@@ -734,9 +743,9 @@ function DayView({
         {dayRows.map((r) => (
           <div
             key={r.id}
-            className="grid items-center gap-2 rounded-xl border bg-card p-3 sm:grid-cols-12"
+            className="grid min-w-0 items-center gap-2 rounded-xl border bg-card p-3 sm:grid-cols-12"
           >
-            <div className="sm:col-span-4">
+            <div className="min-w-0 sm:col-span-4">
               <Label className="text-[11px]">Project</Label>
               <Select
                 value={r.projectId}
@@ -755,7 +764,7 @@ function DayView({
                 </SelectContent>
               </Select>
             </div>
-            <div className="sm:col-span-3">
+            <div className="min-w-0 sm:col-span-3">
               <Label className="text-[11px]">Task</Label>
               <Input
                 className="h-8 text-xs"

@@ -207,7 +207,7 @@ function WorkflowsScreen() {
               approvers, escalation window and rejection rule.
             </p>
           </div>
-          <div className="grid min-w-[280px] grid-cols-2 gap-2">
+          <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:min-w-[280px]">
             <MetricTile label="Workflows" value={workflowStats.total} icon={RouteIcon} />
             <MetricTile label="Active" value={workflowStats.active} icon={CheckCircle2} />
             <MetricTile label="Stages" value={workflowStats.stages} icon={UserRoundCheck} />

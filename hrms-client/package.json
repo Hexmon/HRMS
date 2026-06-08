@@ -14,6 +14,7 @@
     "format": "prettier --write .",
     "test:e2e": "playwright test",
     "test:e2e:frontend-theme": "playwright test -c playwright.frontend-theme.config.ts",
+    "test:e2e:mobile-responsive": "playwright test -c playwright.mobile-responsive.config.ts",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:install": "playwright install chromium",
     "api:frontend-contract:route-coverage": "node scripts/frontend-contract-route-coverage.mjs",

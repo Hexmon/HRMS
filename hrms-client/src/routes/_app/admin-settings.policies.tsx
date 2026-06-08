@@ -94,7 +94,7 @@ function PoliciesScreen() {
 
   return (
     <Tabs defaultValue="attendance">
-      <TabsList className="flex-wrap">
+      <TabsList className="w-full justify-start">
         <TabsTrigger value="attendance">Attendance</TabsTrigger>
         <TabsTrigger value="leave">Leave</TabsTrigger>
         <TabsTrigger value="timesheet">Timesheet</TabsTrigger>

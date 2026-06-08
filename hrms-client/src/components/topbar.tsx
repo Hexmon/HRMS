@@ -112,7 +112,7 @@ export function Topbar() {
           <DropdownMenuTrigger asChild>
             <Button
               size="sm"
-              className="hidden rounded-full text-primary-foreground shadow-sm sm:inline-flex"
+              className="hidden rounded-full text-primary-foreground shadow-sm lg:inline-flex"
               style={{ background: "var(--gradient-primary)" }}
             >
               <Plus className="mr-1 h-4 w-4" /> Quick action
@@ -160,7 +160,7 @@ export function Topbar() {
           <TooltipContent>{platformLabel}</TooltipContent>
         </Tooltip>
 
-        <ThemeToggle className="hidden sm:inline-flex" />
+        <ThemeToggle className="hidden lg:inline-flex" />
 
         {/* Profile dropdown */}
         <DropdownMenu>
@@ -170,11 +170,11 @@ export function Topbar() {
               aria-label="Account menu"
             >
               <UserAvatar name={user.name} size="sm" />
-              <div className="hidden pr-1 text-xs leading-tight md:block">
+              <div className="hidden pr-1 text-xs leading-tight lg:block">
                 <p className="font-semibold">{user.name.split(" ")[0]}</p>
                 <p className="text-muted-foreground">{ROLE_MAP[activeRole].label}</p>
               </div>
-              <ChevronDown className="hidden h-3.5 w-3.5 text-muted-foreground md:block" />
+              <ChevronDown className="hidden h-3.5 w-3.5 text-muted-foreground lg:block" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">

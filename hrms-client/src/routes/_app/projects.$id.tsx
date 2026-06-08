@@ -382,7 +382,7 @@ function ProjectDetailPage() {
       />
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="flex w-full flex-wrap gap-1 rounded-full bg-secondary/50 p-1">
+        <TabsList className="w-full justify-start rounded-full bg-secondary/50 p-1">
           <TabsTrigger value="overview" className="rounded-full">
             Overview
           </TabsTrigger>

@@ -257,7 +257,7 @@ function EmployeeProfilePage() {
         </div>
 
         {/* Quick stats strip */}
-        <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-px bg-border sm:grid-cols-2 lg:grid-cols-4">
           <QuickStat label="Tenure" value={tenure(employee.joinedAt)} />
           <QuickStat label="Work mode" value={WORK_MODE_LABEL[employee.workMode]} />
           <QuickStat label="Type" value={EMPLOYMENT_TYPE_LABEL[employee.employmentType]} />

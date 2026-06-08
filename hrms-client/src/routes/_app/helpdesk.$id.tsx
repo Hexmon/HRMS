@@ -434,7 +434,7 @@ function TicketDetailScreen() {
               <Clock className="h-4 w-4 text-muted-foreground" />
               <p className="text-sm font-semibold">SLA tracker</p>
             </div>
-            <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
               <div className="rounded-lg border bg-muted/40 p-3">
                 <p className="text-muted-foreground">Response target</p>
                 <p className="mt-1 text-base font-semibold">

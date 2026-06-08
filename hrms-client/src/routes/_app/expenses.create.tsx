@@ -804,8 +804,74 @@ function CreateExpense() {
             description: "Categories & vendors",
             content: (
               <div className="space-y-3">
-                <div className="overflow-x-auto rounded-xl border">
-                  <table className="w-full text-sm">
+                <div className="space-y-3 md:hidden">
+                  {f.lineItems.map((li, index) => (
+                    <Card key={li.id} className="space-y-3 rounded-xl border-border/70 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold">Line item {index + 1}</p>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => delLi(li.id)}
+                          className="h-8 w-8 text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <Field label="Category">
+                        <Input
+                          value={li.category}
+                          onChange={(e) => updateLi(li.id, { category: e.target.value })}
+                          className="h-9"
+                        />
+                      </Field>
+                      <Field label="Description">
+                        <Input
+                          value={li.description}
+                          onChange={(e) => updateLi(li.id, { description: e.target.value })}
+                          className="h-9"
+                        />
+                      </Field>
+                      <Field label="Vendor">
+                        <Input
+                          value={li.vendor}
+                          onChange={(e) => updateLi(li.id, { vendor: e.target.value })}
+                          className="h-9"
+                        />
+                      </Field>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <Field label="Qty">
+                          <Input
+                            type="number"
+                            value={li.quantity}
+                            onChange={(e) => updateLi(li.id, { quantity: Number(e.target.value) })}
+                            className="h-9 text-right"
+                          />
+                        </Field>
+                        <Field label="Unit Cost">
+                          <Input
+                            type="number"
+                            value={li.unitCost || ""}
+                            onChange={(e) => updateLi(li.id, { unitCost: Number(e.target.value) })}
+                            className="h-9 text-right"
+                          />
+                        </Field>
+                      </div>
+                      <div className="rounded-lg bg-secondary/40 p-3 text-right text-sm">
+                        <span className="text-muted-foreground">Total </span>
+                        <span className="font-semibold">
+                          {fmtCurrency(li.quantity * li.unitCost)}
+                        </span>
+                      </div>
+                    </Card>
+                  ))}
+                  <div className="rounded-xl border bg-secondary/30 p-3 text-right text-sm">
+                    <span className="text-muted-foreground">Total </span>
+                    <span className="font-semibold">{fmtCurrency(total)}</span>
+                  </div>
+                </div>
+                <div className="hidden overflow-x-auto rounded-xl border md:block">
+                  <table className="w-full min-w-[760px] text-sm">
                     <thead className="bg-secondary/40 text-xs">
                       <tr>
                         <th className="p-2 text-left">Category</th>
@@ -898,7 +964,7 @@ function CreateExpense() {
             title: "Documents",
             description: "Attach proofs",
             content: (
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
                 <input
                   ref={documentInputRef}
                   type="file"
@@ -968,7 +1034,7 @@ function CreateExpense() {
             content: (
               <div className="space-y-3">
                 <DataCard title="Summary" padded>
-                  <dl className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
+                  <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 md:grid-cols-3">
                     <Info
                       k="Type"
                       v={f.expenseType === "project" ? "Project" : "Sales / Pre-Sales"}

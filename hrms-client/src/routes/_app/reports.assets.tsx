@@ -98,7 +98,7 @@ function AssetReports() {
 
   return (
     <Tabs defaultValue="inventory">
-      <TabsList className="flex-wrap">
+      <TabsList className="w-full justify-start">
         <TabsTrigger value="inventory">Inventory</TabsTrigger>
         <TabsTrigger value="assigned">Assigned</TabsTrigger>
         <TabsTrigger value="recovery">Recovery Pending</TabsTrigger>
