@@ -512,6 +512,13 @@ export interface SeedIds {
   designationReviewer: UUID;
   designationFinance: UUID;
   designationEmployee: UUID;
+  designationAdmin: UUID;
+  designationHrManager: UUID;
+  designationProjectManager: UUID;
+  designationAssetManager: UUID;
+  designationAuditor: UUID;
+  designationHelpdeskAgent: UUID;
+  designationHelpdeskManager: UUID;
   executive: UUID;
   director: UUID;
   financeManager: UUID;
@@ -550,6 +557,13 @@ export const seedIds: SeedIds = {
   designationReviewer: uuidFromName("designation-manager"),
   designationFinance: uuidFromName("designation-finance"),
   designationEmployee: uuidFromName("designation-employee"),
+  designationAdmin: uuidFromName("designation-admin"),
+  designationHrManager: uuidFromName("designation-hr-manager"),
+  designationProjectManager: uuidFromName("designation-project-manager"),
+  designationAssetManager: uuidFromName("designation-asset-manager"),
+  designationAuditor: uuidFromName("designation-auditor"),
+  designationHelpdeskAgent: uuidFromName("designation-helpdesk-agent"),
+  designationHelpdeskManager: uuidFromName("designation-helpdesk-manager"),
   executive: uuidFromName("user-executive"),
   director: uuidFromName("user-executive"),
   financeManager: uuidFromName("user-finance-manager"),
@@ -1128,6 +1142,24 @@ export function createMemoryDataStore(): MemoryDataStore {
       version: 1
     },
     {
+      id: uuidFromName("designation-director"),
+      designation_code: "DIRECTOR",
+      title: "Director",
+      level: 10,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    },
+    {
+      id: uuidFromName("designation-reviewer"),
+      designation_code: "REVIEWER",
+      title: "Reviewer",
+      level: 6,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    },
+    {
       id: seedIds.designationFinance,
       designation_code: "FINANCE_MANAGER",
       title: "Finance Manager",
@@ -1141,6 +1173,69 @@ export function createMemoryDataStore(): MemoryDataStore {
       designation_code: "EMPLOYEE",
       title: "Employee",
       level: 1,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    },
+    {
+      id: seedIds.designationAdmin,
+      designation_code: "ADMIN",
+      title: "Admin",
+      level: 9,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    },
+    {
+      id: seedIds.designationHrManager,
+      designation_code: "HR_MANAGER",
+      title: "HR Manager",
+      level: 7,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    },
+    {
+      id: seedIds.designationProjectManager,
+      designation_code: "PROJECT_MANAGER",
+      title: "Project Manager",
+      level: 6,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    },
+    {
+      id: seedIds.designationAssetManager,
+      designation_code: "ASSET_MANAGER",
+      title: "Asset Manager",
+      level: 6,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    },
+    {
+      id: seedIds.designationAuditor,
+      designation_code: "AUDITOR",
+      title: "Auditor",
+      level: 5,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    },
+    {
+      id: seedIds.designationHelpdeskAgent,
+      designation_code: "HELPDESK_AGENT",
+      title: "Helpdesk Agent",
+      level: 3,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    },
+    {
+      id: seedIds.designationHelpdeskManager,
+      designation_code: "HELPDESK_MANAGER",
+      title: "Helpdesk Manager",
+      level: 6,
       status: "active",
       deleted_at: null,
       version: 1
