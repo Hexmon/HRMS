@@ -1,9 +1,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createJwt, hashPasswordSync, verifyPasswordSync } from "#auth";
-import { EmploymentStatuses, Permissions, Roles, type AdminSecuritySettingsRecord, type AuthUser, type CoreUser, type Department, type Designation, type RoleKey, type UUID } from "#shared";
+import { EmploymentStatuses, Permissions, Roles, type AdminPolicyConfigRecord, type AdminSecuritySettingsRecord, type AuthUser, type CoreUser, type Department, type Designation, type RoleKey, type UUID } from "#shared";
 import { badRequest, conflict, forbidden, notFound, unauthorized } from "../../platform/errors.js";
 import type { AuthTokenRecord, CompanyProfileRecord, MemoryDataStore, UserCredentialRecord, UserSessionPreferenceRecord } from "../../platform/data-store.js";
-import { nowIso, seedIds } from "../../platform/data-store.js";
+import { buildDefaultAdminPolicies, nowIso, seedIds } from "../../platform/data-store.js";
 import type { EmailDeliveryService } from "../../platform/email/email-delivery-service.js";
 import type { EmailDeliveryMode, EmailDeliveryStatus } from "../../platform/email/types.js";
 import { DocumentService } from "../documents/service.js";
@@ -401,7 +401,8 @@ export class AuthService {
     company.bootstrap_completed_at = now;
     company.updated_at = now;
     company.version += 1;
-    this.applyOnboardingMasterData(input);
+    this.applyOnboardingMasterData(input, company.id, now);
+    this.assignFirstAdminMasterData(user, company.id);
 
     if (!user.roles.includes(Roles.Admin)) {
       user.roles = uniqueRoles([...user.roles, Roles.Admin]);
@@ -643,9 +644,25 @@ export class AuthService {
     return company;
   }
 
-  private applyOnboardingMasterData(input: CompanyBootstrapInput): void {
-    upsertDepartments(this.store.departments, input.departments ?? []);
-    upsertDesignations(this.store.designations, input.designations ?? []);
+  private applyOnboardingMasterData(input: CompanyBootstrapInput, companyId: UUID, now: string): void {
+    upsertDepartments(this.store.departments, companyId, input.departments ?? []);
+    upsertDesignations(this.store.designations, companyId, input.designations ?? []);
+    upsertAdminPolicies(this.store.adminPolicies, companyId, now);
+  }
+
+  private assignFirstAdminMasterData(user: CoreUser, companyId: UUID): void {
+    const department = this.store.departments.find(
+      (candidate) => candidate.company_id === companyId && candidate.status === "active" && !candidate.deleted_at
+    );
+    const designation = this.store.designations.find(
+      (candidate) => candidate.company_id === companyId && candidate.status === "active" && !candidate.deleted_at
+    );
+    if (department) {
+      user.department_id = department.id;
+    }
+    if (designation) {
+      user.designation_id = designation.id;
+    }
   }
 
   private createToken(input: {
@@ -1046,9 +1063,9 @@ function emailDeliveryNotice(mode: EmailDeliveryMode, status: VerificationEmailS
   return null;
 }
 
-function upsertDepartments(departments: Department[], names: readonly string[]): void {
+function upsertDepartments(departments: Department[], companyId: UUID, names: readonly string[]): void {
   for (const name of uniqueMasterNames(names)) {
-    const existing = departments.find((department) => sameMasterName(department.name, name));
+    const existing = departments.find((department) => department.company_id === companyId && sameMasterName(department.name, name));
     if (existing) {
       if (existing.name !== name || existing.status !== "active" || existing.deleted_at !== null) {
         existing.name = name;
@@ -1060,7 +1077,14 @@ function upsertDepartments(departments: Department[], names: readonly string[]):
     }
     departments.push({
       id: randomUUID(),
-      department_code: uniqueMasterCode(name, departments.map((department) => department.department_code), "DEPT"),
+      company_id: companyId,
+      department_code: uniqueMasterCode(
+        name,
+        departments
+          .filter((department) => department.company_id === companyId)
+          .map((department) => department.department_code),
+        "DEPT"
+      ),
       name,
       cost_center: null,
       parent_department_id: null,
@@ -1072,9 +1096,9 @@ function upsertDepartments(departments: Department[], names: readonly string[]):
   }
 }
 
-function upsertDesignations(designations: Designation[], names: readonly string[]): void {
+function upsertDesignations(designations: Designation[], companyId: UUID, names: readonly string[]): void {
   for (const [index, name] of uniqueMasterNames(names).entries()) {
-    const existing = designations.find((designation) => sameMasterName(designation.title, name));
+    const existing = designations.find((designation) => designation.company_id === companyId && sameMasterName(designation.title, name));
     if (existing) {
       if (existing.title !== name || existing.status !== "active" || existing.deleted_at !== null) {
         existing.title = name;
@@ -1086,13 +1110,33 @@ function upsertDesignations(designations: Designation[], names: readonly string[
     }
     designations.push({
       id: randomUUID(),
-      designation_code: uniqueMasterCode(name, designations.map((designation) => designation.designation_code), "DESG"),
+      company_id: companyId,
+      designation_code: uniqueMasterCode(
+        name,
+        designations
+          .filter((designation) => designation.company_id === companyId)
+          .map((designation) => designation.designation_code),
+        "DESG"
+      ),
       title: name,
       level: index + 1,
       status: "active",
       deleted_at: null,
       version: 1
     });
+  }
+}
+
+function upsertAdminPolicies(policies: AdminPolicyConfigRecord[], companyId: UUID, now: string): void {
+  const existingKeys = new Set(
+    policies
+      .filter((policy) => policy.company_id === companyId && !policy.deleted_at)
+      .map((policy) => policy.policy_key)
+  );
+  for (const policy of buildDefaultAdminPolicies(now, companyId)) {
+    if (!existingKeys.has(policy.policy_key)) {
+      policies.push(policy);
+    }
   }
 }
 

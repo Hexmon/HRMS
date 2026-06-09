@@ -78,6 +78,7 @@ describe("core hierarchy", () => {
     const store = createMemoryDataStore();
     const service = new CoreService(store);
     const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    const masterData = addCompanyMasterData(store, "company-a");
     store.userSessionPreferences.push({
       id: "pref-admin-company-a",
       user_id: admin.id,
@@ -95,8 +96,8 @@ describe("core hierarchy", () => {
       employee_code: "NEW1",
       email: "new1@example.test",
       full_name: "New Employee",
-      department_id: seedIds.departmentSales,
-      designation_id: seedIds.designationEmployee,
+      department_id: masterData.department.id,
+      designation_id: masterData.designation.id,
       roles: [Roles.Employee],
       employment_status: "active"
     });
@@ -112,6 +113,50 @@ describe("core hierarchy", () => {
       sort: "employee_code"
     });
     expect(result.items.map((user) => user.employee_code)).toEqual(["ADM", "NEW1"]);
+  });
+
+  it("rejects cross-company department and designation assignments", () => {
+    const store = createMemoryDataStore();
+    const service = new CoreService(store);
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    const companyAData = addCompanyMasterData(store, "company-a");
+    const companyBData = addCompanyMasterData(store, "company-b");
+    store.userSessionPreferences.push({
+      id: "pref-admin-company-a",
+      user_id: admin.id,
+      active_role: Roles.Admin,
+      company_id: "company-a",
+      landing_page: "/dashboard",
+      locale: "en-IN",
+      timezone: "Asia/Kolkata",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+      version: 1
+    });
+
+    expect(() =>
+      service.createUser(admin, {
+        employee_code: "NEW2",
+        email: "new2@example.test",
+        full_name: "Cross Company Department",
+        department_id: companyBData.department.id,
+        designation_id: companyAData.designation.id,
+        roles: [Roles.Employee],
+        employment_status: "active"
+      })
+    ).toThrowError("Active department not found");
+
+    expect(() =>
+      service.createUser(admin, {
+        employee_code: "NEW3",
+        email: "new3@example.test",
+        full_name: "Cross Company Designation",
+        department_id: companyAData.department.id,
+        designation_id: companyBData.designation.id,
+        roles: [Roles.Employee],
+        employment_status: "active"
+      })
+    ).toThrowError("Active designation not found");
   });
 
   it("returns employee detail summaries without loading unavailable modules", () => {
@@ -224,4 +269,33 @@ function addCompanyAdmin(store: MemoryDataStore, suffix: string, companyId: stri
     version: 1
   });
   return user;
+}
+
+function addCompanyMasterData(store: MemoryDataStore, companyId: string) {
+  const safeSuffix = companyId.replace(/[^a-z0-9]/giu, "").slice(0, 8).toUpperCase();
+  const department = {
+    id: `66666666-6666-4666-8666-${safeSuffix.padStart(12, "0").slice(0, 12)}`,
+    company_id: companyId,
+    department_code: `D-${safeSuffix}`,
+    name: `Department ${companyId}`,
+    cost_center: null,
+    parent_department_id: null,
+    director_user_id: null,
+    status: "active" as const,
+    deleted_at: null,
+    version: 1
+  };
+  const designation = {
+    id: `77777777-7777-4777-8777-${safeSuffix.padStart(12, "0").slice(0, 12)}`,
+    company_id: companyId,
+    designation_code: `G-${safeSuffix}`,
+    title: `Designation ${companyId}`,
+    level: 1,
+    status: "active" as const,
+    deleted_at: null,
+    version: 1
+  };
+  store.departments.push(department);
+  store.designations.push(designation);
+  return { department, designation };
 }

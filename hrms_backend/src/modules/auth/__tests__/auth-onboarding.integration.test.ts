@@ -151,13 +151,22 @@ describe("auth onboarding and password APIs", () => {
       status: "active",
       logo_document_id: logoUpload.json().company.logo_document_id
     });
-    expect(app.store.departments.map((department) => department.name)).toEqual(
-      expect.arrayContaining(["Engineering", "Customer Success", "People Ops"])
-    );
-    expect(app.store.designations.map((designation) => designation.title)).toEqual(
-      expect.arrayContaining(["Principal Engineer", "Customer Success Lead", "People Ops Manager"])
-    );
+    const bootstrappedCompanyId = bootstrap.json().company.id as string;
+    const bootstrappedDepartments = app.store.departments.filter((department) => department.company_id === bootstrappedCompanyId);
+    const bootstrappedDesignations = app.store.designations.filter((designation) => designation.company_id === bootstrappedCompanyId);
+    expect(bootstrappedDepartments.map((department) => department.name)).toEqual(["Engineering", "Customer Success", "People Ops"]);
+    expect(bootstrappedDesignations.map((designation) => designation.title)).toEqual(["Principal Engineer", "Customer Success Lead", "People Ops Manager"]);
+    expect(app.store.adminPolicies.filter((policy) => policy.company_id === bootstrappedCompanyId).map((policy) => policy.policy_key).sort()).toEqual([
+      "asset",
+      "attendance",
+      "expense",
+      "leave",
+      "sla",
+      "timesheet"
+    ]);
     expect(bootstrap.json().admin_user.roles).toContain("Admin");
+    expect(bootstrap.json().admin_user.department_id).toBe(bootstrappedDepartments[0]?.id);
+    expect(bootstrap.json().admin_user.designation_id).toBe(bootstrappedDesignations[0]?.id);
     expect(bootstrap.json().setup_progress).toMatchObject({ company_profile: "completed", first_admin: "completed" });
 
     const duplicateBootstrap = await app.inject({

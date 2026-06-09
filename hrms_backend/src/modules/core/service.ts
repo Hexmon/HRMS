@@ -265,15 +265,16 @@ export class CoreService {
   }
 
   orgSelectors(actor: AuthUser): OrgSelectorsResult {
+    const actorCompanyId = this.companyIdForUser(actor.id);
     const managerCandidates = this.visibleUsersFor(actor)
       .filter((user) => user.employment_status === EmploymentStatuses.Active)
       .map((user) => toUserReference(user));
     return {
       departments: this.repository.departments()
-        .filter((department) => department.status === "active")
+        .filter((department) => department.status === "active" && this.isMasterDataInCompany(department.company_id, actorCompanyId))
         .map(toDepartmentReference),
       designations: this.repository.designations()
-        .filter((designation) => designation.status === "active")
+        .filter((designation) => designation.status === "active" && this.isMasterDataInCompany(designation.company_id, actorCompanyId))
         .map(toDesignationReference),
       managers: managerCandidates,
       roles: allowedRoleKeys.map((role) => ({ key: role, label: role }))
@@ -290,8 +291,9 @@ export class CoreService {
     if (this.store.users.some((user) => normalizeEmail(user.email) === email && !user.deleted_at)) {
       throw conflict("Email already exists.", { email });
     }
-    this.requireDepartment(input.department_id);
-    this.requireDesignation(input.designation_id);
+    const actorCompanyId = this.companyIdForUser(actor.id);
+    this.requireDepartment(actorCompanyId, input.department_id);
+    this.requireDesignation(actorCompanyId, input.designation_id);
     const manager = input.manager_user_id ? this.requireActiveManager(actor, input.manager_user_id) : null;
     const roles = this.normalizeRoles(input.roles ?? [Roles.Employee]);
     requireCanAssignRoles(actor, roles);
@@ -349,11 +351,11 @@ export class CoreService {
       user.full_name = normalizeText(input.full_name, "Full name");
     }
     if (input.department_id !== undefined) {
-      this.requireDepartment(input.department_id);
+      this.requireDepartment(this.companyIdForUser(actor.id), input.department_id);
       user.department_id = input.department_id;
     }
     if (input.designation_id !== undefined) {
-      this.requireDesignation(input.designation_id);
+      this.requireDesignation(this.companyIdForUser(actor.id), input.designation_id);
       user.designation_id = input.designation_id;
     }
     if (input.manager_user_id !== undefined) {
@@ -869,6 +871,10 @@ export class CoreService {
     return user.id === actor.id || this.companyIdForUser(user.id) === actorCompanyId;
   }
 
+  private isMasterDataInCompany(recordCompanyId: UUID | null, actorCompanyId: UUID | null): boolean {
+    return actorCompanyId ? recordCompanyId === actorCompanyId : recordCompanyId === null;
+  }
+
   private assignUserToActorCompany(actor: AuthUser, user: CoreUser, now: string): void {
     const actorPreference = this.store.userSessionPreferences.find((preference) => preference.user_id === actor.id);
     if (!actorPreference?.company_id) {
@@ -1141,16 +1147,26 @@ export class CoreService {
     return user;
   }
 
-  private requireDepartment(id: UUID): Department {
-    const department = this.repository.departments().find((candidate) => candidate.id === id && candidate.status === "active");
+  private requireDepartment(companyId: UUID | null, id: UUID): Department {
+    const department = this.repository.departments().find(
+      (candidate) =>
+        candidate.id === id &&
+        candidate.status === "active" &&
+        this.isMasterDataInCompany(candidate.company_id, companyId)
+    );
     if (!department) {
       throw notFound("Active department not found", { id });
     }
     return department;
   }
 
-  private requireDesignation(id: UUID): Designation {
-    const designation = this.repository.designations().find((candidate) => candidate.id === id && candidate.status === "active");
+  private requireDesignation(companyId: UUID | null, id: UUID): Designation {
+    const designation = this.repository.designations().find(
+      (candidate) =>
+        candidate.id === id &&
+        candidate.status === "active" &&
+        this.isMasterDataInCompany(candidate.company_id, companyId)
+    );
     if (!designation) {
       throw notFound("Active designation not found", { id });
     }

@@ -783,13 +783,13 @@ class PostgresPersistence {
 
   private async loadDepartments(client: PoolClient): Promise<Department[]> {
     const { rows } = await client.query(
-      "SELECT id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version FROM core.departments ORDER BY department_code"
+      "SELECT id, company_id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version FROM core.departments ORDER BY department_code"
     );
     return rows.map((row) => ({ ...row, deleted_at: asIsoOrNull(row.deleted_at) }));
   }
 
   private async loadDesignations(client: PoolClient): Promise<Designation[]> {
-    const { rows } = await client.query("SELECT id, designation_code, title, level, status, deleted_at, version FROM core.designations ORDER BY level NULLS LAST, designation_code");
+    const { rows } = await client.query("SELECT id, company_id, designation_code, title, level, status, deleted_at, version FROM core.designations ORDER BY level NULLS LAST, designation_code");
     return rows.map((row) => ({ ...row, deleted_at: asIsoOrNull(row.deleted_at) }));
   }
 
@@ -844,12 +844,13 @@ class PostgresPersistence {
 
   private async loadAdminPolicies(client: PoolClient): Promise<AdminPolicyConfigRecord[]> {
     const { rows } = await client.query(`
-      SELECT id, policy_key, module, label, status, config, created_at, updated_at, deleted_at, version
+      SELECT id, company_id, policy_key, module, label, status, config, created_at, updated_at, deleted_at, version
       FROM platform.admin_policies
       ORDER BY policy_key
     `);
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id,
       policy_key: row.policy_key,
       module: row.module,
       label: row.label,
@@ -2133,21 +2134,23 @@ class PostgresPersistence {
   private async flushCoreMasterData(client: PoolClient): Promise<void> {
     for (const designation of this.store.designations) {
       await client.query(
-        `INSERT INTO core.designations (id, designation_code, title, level, status, deleted_at, version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO core.designations (id, company_id, designation_code, title, level, status, deleted_at, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (id) DO UPDATE
-         SET designation_code = EXCLUDED.designation_code, title = EXCLUDED.title, level = EXCLUDED.level,
+         SET company_id = EXCLUDED.company_id,
+             designation_code = EXCLUDED.designation_code, title = EXCLUDED.title, level = EXCLUDED.level,
              status = EXCLUDED.status, deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
              updated_at = now()`,
-        [designation.id, designation.designation_code, designation.title, designation.level, designation.status, designation.deleted_at, designation.version]
+        [designation.id, designation.company_id, designation.designation_code, designation.title, designation.level, designation.status, designation.deleted_at, designation.version]
       );
     }
     for (const department of this.store.departments) {
       await client.query(
-        `INSERT INTO core.departments (id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO core.departments (id, company_id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (id) DO UPDATE
-         SET department_code = EXCLUDED.department_code, name = EXCLUDED.name,
+         SET company_id = EXCLUDED.company_id,
+             department_code = EXCLUDED.department_code, name = EXCLUDED.name,
              cost_center = EXCLUDED.cost_center,
              parent_department_id = EXCLUDED.parent_department_id,
              director_user_id = EXCLUDED.director_user_id, status = EXCLUDED.status,
@@ -2155,6 +2158,7 @@ class PostgresPersistence {
              updated_at = now()`,
         [
           department.id,
+          department.company_id,
           department.department_code,
           department.name,
           department.cost_center,
@@ -2327,15 +2331,18 @@ class PostgresPersistence {
     for (const policy of this.store.adminPolicies) {
       await client.query(
         `INSERT INTO platform.admin_policies (
-          id, policy_key, module, label, status, config, created_at, updated_at, deleted_at, version
+          id, company_id, policy_key, module, label, status, config, created_at, updated_at, deleted_at, version
         )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
-        ON CONFLICT (policy_key) DO UPDATE
-        SET module = EXCLUDED.module, label = EXCLUDED.label, status = EXCLUDED.status,
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)
+        ON CONFLICT (id) DO UPDATE
+        SET company_id = EXCLUDED.company_id,
+            policy_key = EXCLUDED.policy_key,
+            module = EXCLUDED.module, label = EXCLUDED.label, status = EXCLUDED.status,
             config = EXCLUDED.config, updated_at = EXCLUDED.updated_at,
             deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version`,
         [
           policy.id,
+          policy.company_id,
           policy.policy_key,
           policy.module,
           policy.label,

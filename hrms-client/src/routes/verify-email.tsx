@@ -116,10 +116,10 @@ function VerifyEmailPage() {
       if (result.status !== "ok" || !result.pending) return false;
       if (result.nextStep === "set_password") {
         if (!result.pending.token) return false;
-        navigate({ to: "/set-password", search: { token: result.pending.token } });
+        navigate({ to: "/set-password", search: { token: result.pending.token }, replace: true });
         return true;
       }
-      navigate({ to: "/login" });
+      navigate({ to: "/login", replace: true });
       return true;
     },
     [navigate],

@@ -843,7 +843,7 @@ export function buildDefaultAdminWorkflows(created: string): AdminWorkflowConfig
   }));
 }
 
-export function buildDefaultAdminPolicies(created: string): AdminPolicyConfigRecord[] {
+export function buildDefaultAdminPolicies(created: string, companyId: UUID | null = null): AdminPolicyConfigRecord[] {
   const defaults: Array<{
     key: AdminPolicyKey;
     module: string;
@@ -935,7 +935,8 @@ export function buildDefaultAdminPolicies(created: string): AdminPolicyConfigRec
   return defaults
     .filter((policy) => allowedKeys.has(policy.key))
     .map((policy) => ({
-      id: uuidFromName(`admin-policy-${policy.key}`),
+      id: companyId ? uuidFromName(`admin-policy-${companyId}-${policy.key}`) : uuidFromName(`admin-policy-${policy.key}`),
+      company_id: companyId,
       policy_key: policy.key,
       module: policy.module,
       label: policy.label,
@@ -1140,6 +1141,7 @@ export function createMemoryDataStore(): MemoryDataStore {
   const departments: Department[] = [
     {
       id: seedIds.departmentSales,
+      company_id: null,
       department_code: "SALES",
       name: "Sales",
       cost_center: "CC-SALES",
@@ -1151,6 +1153,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.departmentFinance,
+      company_id: null,
       department_code: "FIN",
       name: "Finance",
       cost_center: "CC-FIN",
@@ -1165,6 +1168,7 @@ export function createMemoryDataStore(): MemoryDataStore {
   const designations: Designation[] = [
     {
       id: seedIds.designationExecutive,
+      company_id: null,
       designation_code: "EXECUTIVE",
       title: "Executive",
       level: 10,
@@ -1174,6 +1178,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.designationManager,
+      company_id: null,
       designation_code: "MANAGER",
       title: "Manager",
       level: 6,
@@ -1183,6 +1188,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: uuidFromName("designation-director"),
+      company_id: null,
       designation_code: "DIRECTOR",
       title: "Director",
       level: 10,
@@ -1192,6 +1198,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: uuidFromName("designation-reviewer"),
+      company_id: null,
       designation_code: "REVIEWER",
       title: "Reviewer",
       level: 6,
@@ -1201,6 +1208,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.designationFinance,
+      company_id: null,
       designation_code: "FINANCE_MANAGER",
       title: "Finance Manager",
       level: 8,
@@ -1210,6 +1218,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.designationEmployee,
+      company_id: null,
       designation_code: "EMPLOYEE",
       title: "Employee",
       level: 1,
@@ -1219,6 +1228,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.designationAdmin,
+      company_id: null,
       designation_code: "ADMIN",
       title: "Admin",
       level: 9,
@@ -1228,6 +1238,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.designationHrManager,
+      company_id: null,
       designation_code: "HR_MANAGER",
       title: "HR Manager",
       level: 7,
@@ -1237,6 +1248,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.designationProjectManager,
+      company_id: null,
       designation_code: "PROJECT_MANAGER",
       title: "Project Manager",
       level: 6,
@@ -1246,6 +1258,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.designationAssetManager,
+      company_id: null,
       designation_code: "ASSET_MANAGER",
       title: "Asset Manager",
       level: 6,
@@ -1255,6 +1268,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.designationAuditor,
+      company_id: null,
       designation_code: "AUDITOR",
       title: "Auditor",
       level: 5,
@@ -1264,6 +1278,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.designationHelpdeskAgent,
+      company_id: null,
       designation_code: "HELPDESK_AGENT",
       title: "Helpdesk Agent",
       level: 3,
@@ -1273,6 +1288,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: seedIds.designationHelpdeskManager,
+      company_id: null,
       designation_code: "HELPDESK_MANAGER",
       title: "Helpdesk Manager",
       level: 6,
