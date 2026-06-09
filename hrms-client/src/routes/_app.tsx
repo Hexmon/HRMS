@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_app")({
 });
 
 function AppLayout() {
-  const { user, isInitializing } = useAuth();
+  const { user, isInitializing, isCompanySetupComplete } = useAuth();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const appEnv = String(import.meta.env.VITE_APP_ENV ?? "").toLowerCase();
@@ -28,9 +28,12 @@ function AppLayout() {
       }, 0);
       return () => clearTimeout(t);
     }
-  }, [user, navigate, isInitializing]);
+    if (!isCompanySetupComplete) {
+      navigate({ to: "/onboarding" });
+    }
+  }, [user, navigate, isInitializing, isCompanySetupComplete]);
 
-  if (!user || isInitializing) {
+  if (!user || isInitializing || !isCompanySetupComplete) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div

@@ -11,6 +11,9 @@ export interface LoginResponse {
   user: ApiRecord;
   access_token: string;
   expires_at: string;
+  company_id?: string | null;
+  next_step?: "company_bootstrap";
+  dev_only?: DevOnlyTokens;
   [key: string]: unknown;
 }
 
@@ -28,6 +31,10 @@ export interface SessionContextResponse {
   available_roles?: SessionRole[];
   permissions?: string[];
   company?: ApiRecord;
+  company_id?: string | null;
+  setup_required?: boolean;
+  next_step?: "company_bootstrap";
+  dev_only?: DevOnlyTokens;
   preferences?: ApiRecord;
   session_metadata?: ApiRecord;
   [key: string]: unknown;
@@ -144,6 +151,8 @@ export interface CompanyBootstrapRequest {
     locale?: string;
     fiscal_year_start_month?: number;
   };
+  departments?: string[];
+  designations?: string[];
   first_admin_profile?: {
     full_name?: string;
     landing_page?: string;

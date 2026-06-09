@@ -52,6 +52,8 @@ interface CompanySetupInput {
   locale?: string;
   fullName?: string;
   landingPage?: string;
+  departments?: string[];
+  designations?: string[];
   companyLogoFile?: File | null;
 }
 
@@ -109,6 +111,13 @@ const SETUP_KEY = "hawkaii_company_setup";
 const BOOTSTRAP_TOKEN_KEY = "hawkaii_company_bootstrap_token";
 
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24; // 24h
+
+interface BootstrapTokenRecord {
+  token: string;
+  userId?: string | null;
+  companyId?: string | null;
+  expiresAt: number;
+}
 
 // helpers (browser-safe)
 const ls = {
@@ -185,8 +194,33 @@ function shouldUseLocalAuthState(): boolean {
   return !isApiEnabled() || isMockFallbackEnabled();
 }
 
-function currentBootstrapToken(): string | null {
-  return ss.get(BOOTSTRAP_TOKEN_KEY);
+function clearBootstrapToken() {
+  ss.del(BOOTSTRAP_TOKEN_KEY);
+  ls.del(BOOTSTRAP_TOKEN_KEY);
+}
+
+function storeBootstrapToken(token: string, userId?: string | null, companyId?: string | null) {
+  ss.set(BOOTSTRAP_TOKEN_KEY, token);
+  ls.set(BOOTSTRAP_TOKEN_KEY, {
+    token,
+    userId,
+    companyId,
+    expiresAt: Date.now() + TOKEN_TTL_MS,
+  } satisfies BootstrapTokenRecord);
+}
+
+function currentBootstrapToken(userId?: string | null): string | null {
+  const sessionToken = ss.get(BOOTSTRAP_TOKEN_KEY);
+  if (sessionToken) return sessionToken;
+
+  const record = ls.get<BootstrapTokenRecord | null>(BOOTSTRAP_TOKEN_KEY, null);
+  if (!record?.token) return null;
+  if (Date.now() > record.expiresAt) {
+    clearBootstrapToken();
+    return null;
+  }
+  if (userId && record.userId && record.userId !== userId) return null;
+  return record.token;
 }
 
 function devOnlyToken(
@@ -195,6 +229,28 @@ function devOnlyToken(
 ): string | null {
   const value = response.dev_only?.[key];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function captureCompanyBootstrapState(
+  response: {
+    setup_required?: boolean;
+    next_step?: unknown;
+    company_id?: unknown;
+    dev_only?: Record<string, unknown>;
+  },
+  userId?: string | null,
+): boolean {
+  const setupRequired =
+    response.setup_required === true || response.next_step === "company_bootstrap";
+  const bootstrapToken = devOnlyToken(response, "company_bootstrap_token");
+  if (setupRequired && bootstrapToken) {
+    storeBootstrapToken(
+      bootstrapToken,
+      userId,
+      typeof response.company_id === "string" ? response.company_id : null,
+    );
+  }
+  return setupRequired;
 }
 
 function isDevelopmentExperience(): boolean {
@@ -347,6 +403,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (!apiSessionQuery.data || sessionBlocked) return;
+    const sessionUserId = String(
+      apiSessionQuery.data.user.id ?? apiSessionQuery.data.user.user_id ?? "",
+    );
+    const setupRequired = captureCompanyBootstrapState(apiSessionQuery.data, sessionUserId);
+    setSetupDone(!setupRequired && !currentBootstrapToken(sessionUserId));
     applyApiSession(apiSessionQuery.data);
   }, [apiSessionQuery.data, applyApiSession, sessionBlocked]);
 
@@ -393,10 +454,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         queryClient.clear();
         const response = await authApi.login({ email, password: password ?? "" });
         setApiAccessToken(response.access_token);
+        const loginSetupRequired = captureCompanyBootstrapState(
+          response,
+          typeof response.user.id === "string" ? response.user.id : null,
+        );
+        if (loginSetupRequired) setSetupDone(false);
         try {
           const session = await authApi.getSession();
+          const sessionUserId = String(session.user.id ?? session.user.user_id ?? "");
+          const sessionSetupRequired = captureCompanyBootstrapState(session, sessionUserId);
+          setSetupDone(
+            !loginSetupRequired && !sessionSetupRequired && !currentBootstrapToken(sessionUserId),
+          );
           applyApiSession(session);
         } catch {
+          const responseUserId = typeof response.user.id === "string" ? response.user.id : null;
+          setSetupDone(!loginSetupRequired && !currentBootstrapToken(responseUserId));
           applyApiUser(response.user);
         }
         return { ok: true };
@@ -645,7 +718,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const bootstrapToken = devOnlyToken(response, "company_bootstrap_token");
         const passwordSetupToken = devOnlyToken(response, "password_setup_token");
         if (bootstrapToken) {
-          ss.set(BOOTSTRAP_TOKEN_KEY, bootstrapToken);
+          storeBootstrapToken(bootstrapToken, response.user_id, response.company_id ?? null);
           setSetupDone(false);
         }
         return {
@@ -740,7 +813,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const completeCompanySetup: AuthState["completeCompanySetup"] = async (input) => {
     if (isApiEnabled()) {
-      const bootstrapToken = currentBootstrapToken();
+      const bootstrapToken = currentBootstrapToken(user?.id);
       if (!bootstrapToken) {
         return {
           ok: false,
@@ -761,16 +834,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             timezone: input?.timezone,
             locale: input?.locale ?? "en-IN",
           },
+          departments: input?.departments,
+          designations: input?.designations,
           first_admin_profile: {
             full_name: input?.fullName,
             landing_page: input?.landingPage ?? "/dashboard",
           },
         });
-        ss.del(BOOTSTRAP_TOKEN_KEY);
+        clearBootstrapToken();
         queryClient.clear();
         const session = await authApi.getSession();
-        applyApiSession(session);
-        setSetupDone(true);
+        const applied = applyApiSession(session);
+        const setupRequired = captureCompanyBootstrapState(session, applied.user.id);
+        setSetupDone(!setupRequired);
         return { ok: true };
       } catch (error) {
         if (isMockFallbackEnabled() && shouldUseMockFallback(error)) {
