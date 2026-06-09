@@ -126,7 +126,7 @@ function attendanceTone(
 }
 
 function queryHint(error: unknown, fallback: string): string {
-  return userFacingErrorMessage(error, fallback).replace(/\s*Request id:.*/i, "");
+  return userFacingErrorMessage(error, fallback);
 }
 
 function recordDate(record: ApiRecord): string {

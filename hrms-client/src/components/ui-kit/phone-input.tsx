@@ -1,6 +1,5 @@
 import * as React from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Check } from "lucide-react";
 import {
   Command,
   CommandEmpty,
@@ -123,19 +122,14 @@ export function PhoneInput({
     <div className={cn("phone-input", disabled && "phone-input--disabled", className)}>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button
+          <button
             type="button"
-            variant="ghost"
             disabled={disabled}
             className="phone-input__country"
             aria-label={`Select country calling code. Current selection: ${selectedCountry.name} ${selectedCountry.dialCode}`}
           >
-            <span className="phone-input__selected">
-              <span className="phone-input__dial">{selectedCountry.dialCode}</span>
-              <span className="phone-input__iso">{selectedCountry.iso}</span>
-            </span>
-            <ChevronsUpDown className="phone-input__chevron" aria-hidden="true" />
-          </Button>
+            <span className="phone-input__dial">{selectedCountry.dialCode}</span>
+          </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="glass-panel w-[min(24rem,calc(100vw-2rem))] p-0">
           <Command>

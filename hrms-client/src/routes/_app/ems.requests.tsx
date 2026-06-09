@@ -129,7 +129,7 @@ function MyRequests() {
   const columns: Column<ReqRow>[] = [
     {
       key: "id",
-      header: "Request ID",
+      header: "Reference",
       render: (r) => <span className="font-mono text-xs">{r.id}</span>,
     },
     {

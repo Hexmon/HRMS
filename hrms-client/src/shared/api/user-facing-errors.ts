@@ -76,7 +76,6 @@ export function formatUserFacingError(
       error.retryAfterSeconds != null
         ? `Try again in ${error.retryAfterSeconds} seconds.`
         : undefined,
-      error.requestId ? `Request ID: ${error.requestId}` : undefined,
     ]
       .filter(Boolean)
       .join(" ");
