@@ -397,8 +397,35 @@ export interface DataStorePersistence {
   flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyLogo?(options?: CompanyLogoPersistenceFlushOptions): Promise<void>;
+  flushDomain?(domain: PersistenceDomain, options?: DomainPersistenceFlushOptions): Promise<void>;
   reload(): Promise<void>;
   close(): Promise<void>;
+}
+
+export type PersistenceDomain =
+  | "core"
+  | "platform"
+  | "expenses"
+  | "documents"
+  | "assets"
+  | "timesheets"
+  | "projects"
+  | "helpdesk"
+  | "attendance"
+  | "leave-wfh"
+  | "ems";
+
+export interface DomainPersistenceFlushOptions {
+  userIds?: readonly UUID[];
+  companyIds?: readonly UUID[];
+  documentIds?: readonly UUID[];
+  aggregateIds?: readonly UUID[];
+  emsProfileChangeRequestIds?: readonly UUID[];
+  emsServiceRequestIds?: readonly UUID[];
+  emsLetterIds?: readonly UUID[];
+  emsPolicyIds?: readonly UUID[];
+  emsAdminChecklistIds?: readonly UUID[];
+  emsProbationReviewIds?: readonly UUID[];
 }
 
 export interface AuthPersistenceFlushOptions {

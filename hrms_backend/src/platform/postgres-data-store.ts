@@ -55,6 +55,7 @@ import {
   type CompanyLogoPersistenceFlushOptions,
   type CompanyProfileRecord,
   type DataStore,
+  type DomainPersistenceFlushOptions,
   type DocumentProcessingConfig,
   type DocumentAccessLogRecord,
   type DocumentVersionRecord,
@@ -62,6 +63,7 @@ import {
   type LicenseActivation,
   type LicenseEntitlement,
   type NotificationRecord,
+  type PersistenceDomain,
   type UserSessionPreferenceRecord,
   type WorkSegment,
   type WorkflowDefinitionRecord,
@@ -74,6 +76,25 @@ import { CloudinaryObjectStorage } from "./object-storage.js";
 
 function optionalSet(values: readonly string[] | undefined): ReadonlySet<string> | undefined {
   return values?.length ? new Set(values) : undefined;
+}
+
+function hasAnyDomainFlushOption(options: DomainPersistenceFlushOptions): boolean {
+  return Boolean(
+    options.userIds?.length ||
+    options.companyIds?.length ||
+    options.documentIds?.length ||
+    options.aggregateIds?.length ||
+    options.emsProfileChangeRequestIds?.length ||
+    options.emsServiceRequestIds?.length ||
+    options.emsLetterIds?.length ||
+    options.emsPolicyIds?.length ||
+    options.emsAdminChecklistIds?.length ||
+    options.emsProbationReviewIds?.length
+  );
+}
+
+function shouldFlushId(id: string, filter: ReadonlySet<string> | undefined, filtered: boolean): boolean {
+  return filtered ? Boolean(filter?.has(id)) : true;
 }
 
 export interface PostgresObjectStorageOptions {
@@ -497,6 +518,75 @@ class PostgresPersistence {
       const documentIds = optionalSet(options.documentIds);
       await this.flushDocuments(client, documentIds);
       await this.flushOutbox(client, documentIds);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async flushDomain(domain: PersistenceDomain, options: DomainPersistenceFlushOptions = {}): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const aggregateIds = optionalSet(options.aggregateIds);
+      switch (domain) {
+        case "core":
+          await this.flushAuthCore(client, { userIds: options.userIds });
+          await this.flushAuthPlatform(client, {
+            userIds: options.userIds,
+            companyIds: options.companyIds
+          });
+          if (options.documentIds?.length) {
+            await this.flushDocuments(client, optionalSet(options.documentIds));
+          }
+          await this.flushOutbox(client, aggregateIds ?? optionalSet(options.userIds));
+          break;
+        case "platform":
+          await this.flushPlatform(client);
+          break;
+        case "expenses":
+          await this.flushExpenses(client);
+          await this.flushOutbox(client, aggregateIds);
+          break;
+        case "documents":
+          await this.flushDocuments(client, optionalSet(options.documentIds));
+          await this.flushOutbox(client, aggregateIds ?? optionalSet(options.documentIds));
+          break;
+        case "assets":
+          await this.flushAssets(client);
+          await this.flushOutbox(client, aggregateIds);
+          break;
+        case "timesheets":
+          await this.flushTimesheets(client);
+          await this.flushOutbox(client, aggregateIds);
+          break;
+        case "projects":
+          await this.flushProjects(client);
+          await this.flushOutbox(client, aggregateIds);
+          break;
+        case "helpdesk":
+          await this.flushHelpdesk(client);
+          await this.flushOutbox(client, aggregateIds);
+          break;
+        case "attendance":
+          await this.flushAttendance(client);
+          await this.flushOutbox(client, aggregateIds);
+          break;
+        case "leave-wfh":
+          await this.flushLeaveWfh(client);
+          await this.flushOutbox(client, aggregateIds);
+          break;
+        case "ems":
+          await this.flushEms(client, options);
+          await this.flushOutbox(client, aggregateIds);
+          if (options.documentIds?.length) {
+            await this.flushDocuments(client, optionalSet(options.documentIds));
+          }
+          break;
+      }
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -3856,8 +3946,17 @@ class PostgresPersistence {
     }
   }
 
-  private async flushEms(client: PoolClient): Promise<void> {
+  private async flushEms(client: PoolClient, options: DomainPersistenceFlushOptions = {}): Promise<void> {
+    const filtered = hasAnyDomainFlushOption(options);
+    const userIds = optionalSet(options.userIds);
+    const profileChangeRequestIds = optionalSet(options.emsProfileChangeRequestIds);
+    const serviceRequestIds = optionalSet(options.emsServiceRequestIds);
+    const letterIds = optionalSet(options.emsLetterIds);
+    const policyIds = optionalSet(options.emsPolicyIds);
+    const adminChecklistIds = optionalSet(options.emsAdminChecklistIds);
+    const probationReviewIds = optionalSet(options.emsProbationReviewIds);
     for (const profile of this.store.emsEmployeeProfiles) {
+      if (!shouldFlushId(profile.employee_user_id, userIds, filtered)) continue;
       await client.query(
         `INSERT INTO ems.employee_profiles (
           id, employee_user_id, personal_email, phone, alternate_phone, current_address,
@@ -3900,6 +3999,7 @@ class PostgresPersistence {
       );
     }
     for (const request of this.store.emsProfileChangeRequests) {
+      if (!shouldFlushId(request.id, profileChangeRequestIds, filtered)) continue;
       await client.query(
         `INSERT INTO ems.profile_change_requests (
           id, request_code, employee_user_id, field_key, field_label, old_value,
@@ -3944,6 +4044,7 @@ class PostgresPersistence {
       );
     }
     for (const request of this.store.emsServiceRequests) {
+      if (!shouldFlushId(request.id, serviceRequestIds, filtered)) continue;
       await client.query(
         `INSERT INTO ems.service_requests (
           id, request_code, requester_user_id, request_type, subject, description,
@@ -3984,6 +4085,7 @@ class PostgresPersistence {
       );
     }
     for (const letter of this.store.emsLetters) {
+      if (!shouldFlushId(letter.id, letterIds, filtered)) continue;
       await client.query(
         `INSERT INTO ems.letters (
           id, employee_user_id, letter_type, title, description, status,
@@ -4018,6 +4120,7 @@ class PostgresPersistence {
       );
     }
     for (const policy of this.store.emsPolicies) {
+      if (!shouldFlushId(policy.id, policyIds, filtered)) continue;
       await client.query(
         `INSERT INTO ems.policies (
           id, policy_code, title, category, version_label, effective_from,
@@ -4051,6 +4154,13 @@ class PostgresPersistence {
       );
     }
     for (const acknowledgement of this.store.emsPolicyAcknowledgements) {
+      if (
+        filtered &&
+        !policyIds?.has(acknowledgement.policy_id) &&
+        !userIds?.has(acknowledgement.employee_user_id)
+      ) {
+        continue;
+      }
       await client.query(
         `INSERT INTO ems.policy_acknowledgements (
           id, policy_id, employee_user_id, status, acknowledged_at, version, created_at, updated_at
@@ -4074,6 +4184,7 @@ class PostgresPersistence {
       );
     }
     for (const checklist of this.store.emsAdminChecklists) {
+      if (!shouldFlushId(checklist.id, adminChecklistIds, filtered)) continue;
       await client.query(
         `INSERT INTO ems.admin_checklists (
           id, checklist_type, employee_user_id, status, due_date, checklist, remarks,
@@ -4106,6 +4217,7 @@ class PostgresPersistence {
       );
     }
     for (const review of this.store.emsProbationReviews) {
+      if (!shouldFlushId(review.id, probationReviewIds, filtered)) continue;
       await client.query(
         `INSERT INTO ems.probation_reviews (
           id, employee_user_id, joining_on, due_on, status, extended_until, remarks,
