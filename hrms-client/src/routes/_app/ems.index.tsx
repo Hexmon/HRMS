@@ -48,6 +48,8 @@ export const Route = createFileRoute("/_app/ems/")({
   component: EmsDashboard,
 });
 
+const SELF_ATTENDANCE_EXCLUDED_ROLES = new Set(["hr_admin", "main_admin", "manager"]);
+
 const ANNOUNCEMENTS = [
   {
     id: 1,
@@ -146,9 +148,10 @@ function EmsDashboard() {
   const [now, setNow] = useState(new Date());
   const todayIso = localIsoDate();
   const weekRange = useMemo(() => weekRangeFor(todayIso), [todayIso]);
+  const hasSelfAttendance = !activeRole || !SELF_ATTENDANCE_EXCLUDED_ROLES.has(activeRole);
   const attendanceQuery = useMyAttendanceSummary(
     { date_from: todayIso, date_to: todayIso, month: currentLocalMonth() },
-    apiEnabled,
+    apiEnabled && hasSelfAttendance,
   );
   const leaveBalancesQuery = useMyLeaveBalances(
     { year: Number(todayIso.slice(0, 4)), page: 1, page_size: 25 },
@@ -179,18 +182,22 @@ function EmsDashboard() {
   const todayRecord = asRecord(attendancePayload.today);
   const liveToday = liveAttendanceToday(todayRecord, attendancePayload.generated_at, now);
   const todayStatus = text(todayRecord.status);
-  const todayValue = attendanceQuery.isLoading
-    ? "..."
-    : attendanceQuery.isError
-      ? "Issue"
-      : attendanceStatusLabel(todayStatus);
-  const todayHint = attendanceQuery.isLoading
-    ? "Loading live attendance"
-    : attendanceQuery.isError
-      ? queryHint(attendanceQuery.error, "Attendance unavailable")
-      : text(todayRecord.in_time)
-        ? `In ${text(todayRecord.in_time)} · ${liveToday.hours}`
-        : text(todayRecord.detail, "No punch-in recorded");
+  const todayValue = !hasSelfAttendance
+    ? "N/A"
+    : attendanceQuery.isLoading
+      ? "..."
+      : attendanceQuery.isError
+        ? "Issue"
+        : attendanceStatusLabel(todayStatus);
+  const todayHint = !hasSelfAttendance
+    ? "Not required for this role"
+    : attendanceQuery.isLoading
+      ? "Loading live attendance"
+      : attendanceQuery.isError
+        ? queryHint(attendanceQuery.error, "Attendance unavailable")
+        : text(todayRecord.in_time)
+          ? `In ${text(todayRecord.in_time)} · ${liveToday.hours}`
+          : text(todayRecord.detail, "No punch-in recorded");
   const leaveBalances = asArray(asRecord(leaveBalancesQuery.data).balances).map(asRecord);
   const leaveAvailable = leaveBalances.reduce((total, balance) => {
     const leaveType = text(balance.leave_type);
@@ -288,16 +295,18 @@ function EmsDashboard() {
         <div className="space-y-4 lg:col-span-2">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard
-              label="Today"
-              value={showDemoData ? "Present" : todayValue}
-              hint={showDemoData ? "In at 09:08" : todayHint}
+              label={hasSelfAttendance ? "Today" : "Attendance"}
+              value={showDemoData && hasSelfAttendance ? "Present" : todayValue}
+              hint={showDemoData && hasSelfAttendance ? "In at 09:08" : todayHint}
               icon={Clock}
               tone={
-                showDemoData
-                  ? "success"
-                  : attendanceQuery.isError
-                    ? "destructive"
-                    : attendanceTone(todayStatus)
+                !hasSelfAttendance
+                  ? "info"
+                  : showDemoData
+                    ? "success"
+                    : attendanceQuery.isError
+                      ? "destructive"
+                      : attendanceTone(todayStatus)
               }
             />
             <StatCard
