@@ -136,7 +136,7 @@ export class DashboardService {
         active_employees: activeEmployees,
         inactive_employees: visibleUsers.filter((user) => user.employment_status !== EmploymentStatuses.Active).length,
         new_joiners_30d: visibleUsers.filter((user) => user.joined_on && user.joined_on >= daysAgoDate(30)).length,
-        departments: this.departmentHeadcount(visibleUsers)
+        departments: this.departmentHeadcount(actor, visibleUsers)
       },
       approvals: {
         expense_manager_pending: pendingManagerExpenses,
@@ -378,17 +378,18 @@ export class DashboardService {
     return user.id === actor.id || this.companyIdForUser(user.id) === actorCompanyId;
   }
 
-  private departmentHeadcount(users: CoreUser[]): DashboardSummary["workforce"]["departments"] {
+  private departmentHeadcount(actor: AuthUser, users: CoreUser[]): DashboardSummary["workforce"]["departments"] {
+    const actorCompanyId = this.companyIdForUser(actor.id);
     const activeUsers = users.filter((user) => user.employment_status === EmploymentStatuses.Active);
     return this.store.departments
-      .filter((department) => !department.deleted_at)
+      .filter((department) => !department.deleted_at && department.status === "active")
+      .filter((department) => actorCompanyId ? department.company_id === actorCompanyId : department.company_id === null)
       .map((department) => ({
         department_id: department.id,
         department_code: department.department_code,
         name: department.name,
         active_employees: activeUsers.filter((user) => user.department_id === department.id).length
       }))
-      .filter((department) => department.active_employees > 0)
       .sort((left, right) => left.department_code.localeCompare(right.department_code));
   }
 }
