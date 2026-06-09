@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,7 @@ import {
   currentWeekStartIso,
   type TimesheetEntry,
 } from "@/lib/mock/timesheets";
+import type { Role } from "@/lib/mock/roles";
 import {
   Plus,
   Save,
@@ -74,7 +75,29 @@ interface RowDraft {
   hours: Record<string, number>; // date -> hours
 }
 
+const SELF_TIMESHEET_ROLES: Role[] = [
+  "employee",
+  "manager",
+  "director",
+  "project_manager",
+  "finance_manager",
+];
+
 function MyTimesheetPage() {
+  const { activeRole } = useAuth();
+
+  if (!activeRole || !SELF_TIMESHEET_ROLES.includes(activeRole)) {
+    if (activeRole === "main_admin" || activeRole === "hr_admin") {
+      return <Navigate to="/timesheet/approvals" />;
+    }
+
+    return <Navigate to="/dashboard" />;
+  }
+
+  return <MyTimesheetSelfServicePage />;
+}
+
+function MyTimesheetSelfServicePage() {
   const { user } = useAuth();
   const { employees } = useEmployees();
   const { projects } = useProjects();

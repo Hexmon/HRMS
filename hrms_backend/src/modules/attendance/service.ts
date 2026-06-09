@@ -25,6 +25,7 @@ import { appendAttendanceOutboxEvent, attendanceEvents } from "./events.js";
 import {
   assertCanDecideRegularization,
   assertCanSeeAttendanceUser,
+  assertCanUseSelfAttendance,
   canSeeAllAttendance,
   canSeeAttendanceUser
 } from "./policy.js";
@@ -292,6 +293,7 @@ export class AttendanceService {
       metadata: Record<string, unknown>;
     }
   ) {
+    assertCanUseSelfAttendance(actor);
     const occurredAt = input.occurred_at ?? nowIso();
     const timeZone = this.timezoneForUser(actor.id);
     this.autoPunchOutExpiredSessions(actor.id, timeZone, occurredAt);
@@ -345,6 +347,7 @@ export class AttendanceService {
   }
 
   listMyPunches(actor: AuthUser, query: AttendancePageQuery) {
+    assertCanUseSelfAttendance(actor);
     const timeZone = this.timezoneForUser(actor.id);
     this.autoPunchOutExpiredSessions(actor.id, timeZone);
     const range = dateRange(query, timeZone);
@@ -353,6 +356,7 @@ export class AttendanceService {
   }
 
   mySummary(actor: AuthUser, query: AttendancePageQuery) {
+    assertCanUseSelfAttendance(actor);
     const timeZone = this.timezoneForUser(actor.id);
     const range = dateRange(query, timeZone);
     const today = this.resolveDay(actor.id, todayDate(timeZone), timeZone);
@@ -413,6 +417,9 @@ export class AttendanceService {
 
   monthlyCalendar(actor: AuthUser, query: AttendancePageQuery) {
     const user = query.user_id ? this.requireUser(query.user_id) : this.requireUser(actor.id);
+    if (user.id === actor.id) {
+      assertCanUseSelfAttendance(actor);
+    }
     assertCanSeeAttendanceUser(actor, user);
     const timeZone = this.timezoneForUser(user.id);
     const range = monthRange(query.month, timeZone);

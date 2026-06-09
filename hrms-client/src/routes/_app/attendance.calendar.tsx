@@ -1,10 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataCard, StatusBadge, EmptyState } from "@/components/ui-kit";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
+import type { Role } from "@/lib/mock/roles";
 import { useAttendanceMonthlyCalendar } from "@/domains/attendance";
 import {
   asArray,
@@ -18,6 +20,8 @@ import {
 export const Route = createFileRoute("/_app/attendance/calendar")({
   component: AttendanceCalendar,
 });
+
+const ATTENDANCE_OVERSIGHT_ROLES: Role[] = ["hr_admin", "main_admin", "manager"];
 
 type DayStatus = "present" | "wfh" | "late" | "absent" | "leave" | "weekend" | "holiday" | "future";
 
@@ -77,6 +81,15 @@ function selectedDayDetail(record: ApiRecord | undefined, status: DayStatus): st
 }
 
 function AttendanceCalendar() {
+  const { activeRole } = useAuth();
+  if (activeRole && ATTENDANCE_OVERSIGHT_ROLES.includes(activeRole)) {
+    return <Navigate to="/attendance" />;
+  }
+
+  return <EmployeeAttendanceCalendar />;
+}
+
+function EmployeeAttendanceCalendar() {
   const today = new Date();
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [selected, setSelected] = useState<number>(today.getDate());

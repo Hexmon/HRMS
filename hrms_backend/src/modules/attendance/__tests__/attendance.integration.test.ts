@@ -79,6 +79,51 @@ describe("attendance", () => {
     await app?.close();
   });
 
+  it("blocks admin self-service punches and self calendar while preserving attendance oversight", async () => {
+    const admin = await loginAs(app, "ADM");
+    const employee = await loginAs(app, "E1");
+
+    const adminPunch = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(admin.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: "2026-05-20T04:10:00.000Z",
+        work_mode: "office"
+      }
+    });
+    expect(adminPunch.statusCode).toBe(403);
+
+    const adminSummary = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/summary/my?month=2026-05&page=1&page_size=10",
+      headers: authHeader(admin.token)
+    });
+    expect(adminSummary.statusCode).toBe(403);
+
+    const adminSelfCalendar = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/calendar/monthly?month=2026-05",
+      headers: authHeader(admin.token)
+    });
+    expect(adminSelfCalendar.statusCode).toBe(403);
+
+    const employeeCalendar = await app.inject({
+      method: "GET",
+      url: `/api/v1/attendance/calendar/monthly?month=2026-05&user_id=${employee.user.id}`,
+      headers: authHeader(admin.token)
+    });
+    expect(employeeCalendar.statusCode).toBe(200);
+
+    const teamSummary = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/summary/team?date_from=2026-05-20&page=1&page_size=10",
+      headers: authHeader(admin.token)
+    });
+    expect(teamSummary.statusCode).toBe(200);
+  });
+
   it("records punch sequence, returns summaries, and blocks duplicate/out-of-order actions", async () => {
     const employee = await loginAs(app, "E1");
     const manager = await loginAs(app, "D1");
