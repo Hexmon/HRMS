@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createJwt, hashPasswordSync, verifyPasswordSync } from "#auth";
-import { EmploymentStatuses, Permissions, Roles, type AdminSecuritySettingsRecord, type AuthUser, type CoreUser, type RoleKey, type UUID } from "#shared";
+import { EmploymentStatuses, Permissions, Roles, type AdminSecuritySettingsRecord, type AuthUser, type CoreUser, type Department, type Designation, type RoleKey, type UUID } from "#shared";
 import { badRequest, conflict, forbidden, notFound, unauthorized } from "../../platform/errors.js";
 import type { AuthTokenRecord, CompanyProfileRecord, MemoryDataStore, UserCredentialRecord, UserSessionPreferenceRecord } from "../../platform/data-store.js";
 import { nowIso, seedIds } from "../../platform/data-store.js";
@@ -61,6 +61,10 @@ export interface SessionContext {
       use_include_for_nested_data: boolean;
     };
   };
+  setup_required?: boolean;
+  next_step?: "company_bootstrap";
+  company_id?: UUID | null;
+  dev_only?: Record<string, unknown>;
 }
 
 export interface CompanyLogoUploadInput {
@@ -108,18 +112,39 @@ export class AuthService {
     this.repository = new AuthRepository(store);
   }
 
-  async login(input: LoginInput): Promise<{ user: AuthUser; token: string; expires_at: string; jti: string }> {
+  async login(input: LoginInput): Promise<{
+    user: AuthUser;
+    token: string;
+    expires_at: string;
+    jti: string;
+    next_step?: "company_bootstrap";
+    company_id?: UUID | null;
+    dev_only?: Record<string, unknown>;
+  }> {
     const user = input.email && input.password
       ? this.authenticatePassword(input.email, input.password)
       : this.authenticateEmployeeCode(input.employee_code ?? "");
     const jwt = createJwt(user, this.jwtSecret, this.sessionTtlSeconds());
+    const bootstrap = this.createResumeBootstrapToken(user);
     await this.store.sessionStore.create({
       jti: jwt.jti,
       user_id: user.id,
       expires_at: jwt.expiresAt,
       revoked_at: null
     });
-    return { user, token: jwt.token, expires_at: jwt.expiresAt, jti: jwt.jti };
+    return {
+      user,
+      token: jwt.token,
+      expires_at: jwt.expiresAt,
+      jti: jwt.jti,
+      ...(bootstrap
+        ? {
+            next_step: "company_bootstrap" as const,
+            company_id: bootstrap.record.company_id,
+            ...devOnly({ company_bootstrap_token: bootstrap.raw })
+          }
+        : {})
+    };
   }
 
   async signup(input: SignupInput, context: AuthRequestContext = {}) {
@@ -376,6 +401,7 @@ export class AuthService {
     company.bootstrap_completed_at = now;
     company.updated_at = now;
     company.version += 1;
+    this.applyOnboardingMasterData(input);
 
     if (!user.roles.includes(Roles.Admin)) {
       user.roles = uniqueRoles([...user.roles, Roles.Admin]);
@@ -466,6 +492,7 @@ export class AuthService {
   }
 
   sessionContext(user: AuthUser): SessionContext {
+    const bootstrap = this.createResumeBootstrapToken(user);
     const availableRoles = user.roles.map((role) => ({
       key: role,
       label: role,
@@ -513,7 +540,15 @@ export class AuthService {
           max_page_size: 100,
           use_include_for_nested_data: true
         }
-      }
+      },
+      ...(bootstrap
+        ? {
+            setup_required: true,
+            next_step: "company_bootstrap" as const,
+            company_id: bootstrap.record.company_id,
+            ...devOnly({ company_bootstrap_token: bootstrap.raw })
+          }
+        : {})
     };
   }
 
@@ -603,6 +638,11 @@ export class AuthService {
     return company;
   }
 
+  private applyOnboardingMasterData(input: CompanyBootstrapInput): void {
+    upsertDepartments(this.store.departments, input.departments ?? []);
+    upsertDesignations(this.store.designations, input.designations ?? []);
+  }
+
   private createToken(input: {
     type: AuthTokenRecord["token_type"];
     userId: UUID | null;
@@ -634,6 +674,34 @@ export class AuthService {
     };
     this.store.authTokens.push(record);
     return { raw, record };
+  }
+
+  private createResumeBootstrapToken(user: AuthUser): GeneratedToken | null {
+    const company = this.pendingBootstrapCompanyForUser(user);
+    if (!company) {
+      return null;
+    }
+    return this.createToken({
+      type: "company_bootstrap",
+      userId: user.id,
+      email: user.email,
+      companyId: company.id,
+      ttlSeconds: 24 * 60 * 60,
+      metadata: { reason: "resume_company_bootstrap" }
+    });
+  }
+
+  private pendingBootstrapCompanyForUser(user: AuthUser): CompanyProfileRecord | null {
+    const companyIds = this.store.authTokens
+      .filter((token) => token.user_id === user.id && token.company_id)
+      .map((token) => token.company_id as UUID);
+    for (const companyId of [...new Set(companyIds)].reverse()) {
+      const company = this.repository.findCompanyById(companyId);
+      if (company && !company.bootstrap_completed_at && company.status !== "active") {
+        return company;
+      }
+    }
+    return null;
   }
 
   private requireActiveToken(rawToken: string, type: AuthTokenRecord["token_type"]): AuthTokenRecord {
@@ -941,6 +1009,90 @@ function emailDeliveryNotice(mode: EmailDeliveryMode, status: VerificationEmailS
     return "The verification email could not be sent. Ask an administrator to check the email delivery configuration.";
   }
   return null;
+}
+
+function upsertDepartments(departments: Department[], names: readonly string[]): void {
+  for (const name of uniqueMasterNames(names)) {
+    const existing = departments.find((department) => sameMasterName(department.name, name));
+    if (existing) {
+      if (existing.name !== name || existing.status !== "active" || existing.deleted_at !== null) {
+        existing.name = name;
+        existing.status = "active";
+        existing.deleted_at = null;
+        existing.version += 1;
+      }
+      continue;
+    }
+    departments.push({
+      id: randomUUID(),
+      department_code: uniqueMasterCode(name, departments.map((department) => department.department_code), "DEPT"),
+      name,
+      cost_center: null,
+      parent_department_id: null,
+      director_user_id: null,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    });
+  }
+}
+
+function upsertDesignations(designations: Designation[], names: readonly string[]): void {
+  for (const [index, name] of uniqueMasterNames(names).entries()) {
+    const existing = designations.find((designation) => sameMasterName(designation.title, name));
+    if (existing) {
+      if (existing.title !== name || existing.status !== "active" || existing.deleted_at !== null) {
+        existing.title = name;
+        existing.status = "active";
+        existing.deleted_at = null;
+        existing.version += 1;
+      }
+      continue;
+    }
+    designations.push({
+      id: randomUUID(),
+      designation_code: uniqueMasterCode(name, designations.map((designation) => designation.designation_code), "DESG"),
+      title: name,
+      level: index + 1,
+      status: "active",
+      deleted_at: null,
+      version: 1
+    });
+  }
+}
+
+function uniqueMasterNames(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const value of values) {
+    const name = value.trim().replace(/\s+/gu, " ");
+    const key = normalizedMasterName(name);
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+  return names;
+}
+
+function sameMasterName(left: string, right: string): boolean {
+  return normalizedMasterName(left) === normalizedMasterName(right);
+}
+
+function normalizedMasterName(value: string): string {
+  return value.trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+function uniqueMasterCode(name: string, existingCodes: readonly string[], fallback: string): string {
+  const existing = new Set(existingCodes.map((code) => code.toUpperCase()));
+  const base = (name.trim().toUpperCase().replace(/[^A-Z0-9]+/gu, "_").replace(/^_+|_+$/gu, "") || fallback).slice(0, 36);
+  let candidate = base;
+  let index = 2;
+  while (existing.has(candidate)) {
+    const suffix = `_${index}`;
+    candidate = `${base.slice(0, Math.max(1, 40 - suffix.length))}${suffix}`;
+    index += 1;
+  }
+  return candidate;
 }
 
 function presentCompany(company: CompanyProfileRecord) {

@@ -394,8 +394,21 @@ export interface ObjectStoragePort {
 
 export interface DataStorePersistence {
   flush(): Promise<void>;
+  flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
+  flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
+  flushCompanyLogo?(options?: CompanyLogoPersistenceFlushOptions): Promise<void>;
   reload(): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface AuthPersistenceFlushOptions {
+  userIds?: readonly UUID[];
+  companyIds?: readonly UUID[];
+}
+
+export interface CompanyLogoPersistenceFlushOptions {
+  companyIds?: readonly UUID[];
+  documentIds?: readonly UUID[];
 }
 
 export interface DocumentProcessingConfig {

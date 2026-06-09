@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { verifyJwt } from "#auth";
 import { badRequest, unauthorized } from "../../platform/errors.js";
 import { AuthService } from "./service.js";
@@ -59,7 +59,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     return {
       user: result.user,
       access_token: result.token,
-      expires_at: result.expires_at
+      expires_at: result.expires_at,
+      ...(result.next_step ? { next_step: result.next_step } : {}),
+      ...(result.company_id ? { company_id: result.company_id } : {}),
+      ...(result.dev_only ? { dev_only: result.dev_only } : {})
     };
   });
 
@@ -100,9 +103,15 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export const onboardingRoutes: FastifyPluginAsync = async (fastify) => {
-  fastify.post("/company-logo", async (request) => {
+  fastify.post("/company-logo", async (request, reply) => {
+    const startedAt = process.hrtime.bigint();
     const upload = await parseCompanyLogoUpload(request);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).uploadCompanyLogo(upload);
+    appendServerTiming(reply, "multipart", startedAt);
+    const uploadStartedAt = process.hrtime.bigint();
+    const result = await new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).uploadCompanyLogo(upload);
+    appendServerTiming(reply, "logo_upload", uploadStartedAt);
+    appendServerTiming(reply, "handler", startedAt);
+    return result;
   });
 
   fastify.post("/company-bootstrap", async (request) => {
@@ -146,6 +155,21 @@ async function parseCompanyLogoUpload(request: FastifyRequest) {
 
 function sessionCookieSameSite(cookieSecure: boolean): "lax" | "none" {
   return cookieSecure ? "none" : "lax";
+}
+
+function appendServerTiming(reply: FastifyReply, name: string, startedAt: bigint): void {
+  const value = `${name};dur=${durationMs(startedAt).toFixed(1)}`;
+  const existing = reply.getHeader("Server-Timing");
+  const prefix = typeof existing === "string"
+    ? existing
+    : Array.isArray(existing)
+      ? existing.join(", ")
+      : "";
+  reply.header("Server-Timing", prefix ? `${prefix}, ${value}` : value);
+}
+
+function durationMs(startedAt: bigint): number {
+  return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
 }
 
 function requestContext(request: FastifyRequest): { ip: string; userAgent?: string } {

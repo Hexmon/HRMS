@@ -1,10 +1,10 @@
 import "./platform/decorators.js";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
-import type { DataStore } from "./platform/data-store.js";
+import type { AuthPersistenceFlushOptions, CompanyLogoPersistenceFlushOptions, DataStore } from "./platform/data-store.js";
 import { createMemoryDataStore } from "./platform/data-store.js";
 import { createPostgresDataStore, type PostgresObjectStorageOptions } from "./platform/postgres-data-store.js";
 import { createEmailDeliveryService } from "./platform/email/email-delivery-service.js";
@@ -78,6 +78,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     resendFromName: app.config.RESEND_FROM_NAME,
     resendReplyToEmail: app.config.RESEND_REPLY_TO_EMAIL,
     resendWebhookSecret: app.config.RESEND_WEBHOOK_SECRET,
+    resendRequestTimeoutMs: app.config.RESEND_REQUEST_TIMEOUT_MS,
     frontendUrl: app.config.FRONTEND_URL,
     appUrl: app.config.APP_URL,
     verificationTokenTtlSeconds: app.config.EMAIL_VERIFICATION_TOKEN_TTL_SECONDS,
@@ -86,11 +87,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     verificationResendDailyLimit: app.config.EMAIL_VERIFICATION_RESEND_DAILY_LIMIT
   }, options.emailProvider));
   app.addHook("onSend", async (request, reply, payload) => {
-    if (
-      app.store.persistence &&
-      shouldFlushPersistence(request.method, request.url, reply.statusCode)
-    ) {
-      await app.store.persistence.flush();
+    if (app.store.persistence) {
+      const flushMode = persistenceFlushMode(request.method, request.url, reply.statusCode);
+      const startedAt = process.hrtime.bigint();
+      if (flushMode === "auth" && app.store.persistence.flushAuth) {
+        await app.store.persistence.flushAuth(authPersistenceFlushOptions(payload));
+        appendServerTiming(reply, "persistence", startedAt);
+      } else if (flushMode === "company-bootstrap" && app.store.persistence.flushCompanyBootstrap) {
+        await app.store.persistence.flushCompanyBootstrap(authPersistenceFlushOptions(payload));
+        appendServerTiming(reply, "persistence", startedAt);
+      } else if (flushMode === "company-logo" && app.store.persistence.flushCompanyLogo) {
+        await app.store.persistence.flushCompanyLogo(companyLogoPersistenceFlushOptions(payload));
+        appendServerTiming(reply, "persistence", startedAt);
+      } else if (flushMode !== "none") {
+        await app.store.persistence.flush();
+        appendServerTiming(reply, "persistence", startedAt);
+      }
     }
     return payload;
   });
@@ -168,15 +180,120 @@ const sessionOnlyMutationRoutes = new Set([
   "POST /api/v1/auth/logout"
 ]);
 
-function shouldFlushPersistence(method: string, url: string, statusCode: number): boolean {
+const authOnlyMutationRoutes = new Set([
+  "POST /api/v1/auth/signup",
+  "POST /api/v1/auth/verify-email",
+  "POST /api/v1/auth/email-verifications/resend",
+  "POST /api/v1/auth/set-password",
+  "POST /api/v1/auth/password-reset/request",
+  "POST /api/v1/auth/password-reset/confirm",
+  "PATCH /api/v1/auth/session/preference"
+]);
+
+const companyBootstrapMutationRoutes = new Set([
+  "POST /api/v1/onboarding/company-bootstrap"
+]);
+
+const companyLogoMutationRoutes = new Set([
+  "POST /api/v1/onboarding/company-logo"
+]);
+
+function persistenceFlushMode(method: string, url: string, statusCode: number): "none" | "auth" | "company-bootstrap" | "company-logo" | "full" {
   if (["GET", "HEAD", "OPTIONS"].includes(method)) {
-    return false;
+    return "none";
   }
   if (statusCode < 200 || statusCode >= 400) {
-    return false;
+    return "none";
   }
   const path = url.split("?")[0] ?? url;
-  return !sessionOnlyMutationRoutes.has(`${method.toUpperCase()} ${path}`);
+  const routeKey = `${method.toUpperCase()} ${path}`;
+  if (sessionOnlyMutationRoutes.has(routeKey)) {
+    return "none";
+  }
+  if (authOnlyMutationRoutes.has(routeKey)) {
+    return "auth";
+  }
+  if (companyBootstrapMutationRoutes.has(routeKey)) {
+    return "company-bootstrap";
+  }
+  if (companyLogoMutationRoutes.has(routeKey)) {
+    return "company-logo";
+  }
+  return "full";
+}
+
+function authPersistenceFlushOptions(payload: unknown): AuthPersistenceFlushOptions | undefined {
+  const record = responsePayloadRecord(payload);
+  if (!record) return undefined;
+
+  const company = nestedPayloadRecord(record.company);
+  const adminUser = nestedPayloadRecord(record.admin_user);
+  const user = nestedPayloadRecord(record.user);
+  const userIds = uniqueStrings([record.user_id, record.signup_id, adminUser?.id, user?.id]);
+  const companyIds = uniqueStrings([record.company_id, company?.id, company?.company_id]);
+  if (!userIds.length && !companyIds.length) return undefined;
+  return {
+    ...(userIds.length ? { userIds } : {}),
+    ...(companyIds.length ? { companyIds } : {})
+  };
+}
+
+function companyLogoPersistenceFlushOptions(payload: unknown): CompanyLogoPersistenceFlushOptions | undefined {
+  const record = responsePayloadRecord(payload);
+  if (!record) return undefined;
+
+  const company = nestedPayloadRecord(record.company);
+  const document = nestedPayloadRecord(record.document);
+  const companyIds = uniqueStrings([record.company_id, company?.id, company?.company_id]);
+  const documentIds = uniqueStrings([record.document_id, document?.id]);
+  if (!companyIds.length && !documentIds.length) return undefined;
+  return {
+    ...(companyIds.length ? { companyIds } : {}),
+    ...(documentIds.length ? { documentIds } : {})
+  };
+}
+
+function responsePayloadRecord(payload: unknown): Record<string, unknown> | null {
+  if (payload == null) return null;
+  const raw = Buffer.isBuffer(payload)
+    ? payload.toString("utf8")
+    : typeof payload === "string"
+      ? payload
+      : null;
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function nestedPayloadRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function uniqueStrings(values: readonly unknown[]): string[] {
+  return [...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0))];
+}
+
+function appendServerTiming(reply: FastifyReply, name: string, startedAt: bigint): void {
+  const value = `${name};dur=${durationMs(startedAt).toFixed(1)}`;
+  const existing = reply.getHeader("Server-Timing");
+  const prefix = typeof existing === "string"
+    ? existing
+    : Array.isArray(existing)
+      ? existing.join(", ")
+      : "";
+  reply.header("Server-Timing", prefix ? `${prefix}, ${value}` : value);
+}
+
+function durationMs(startedAt: bigint): number {
+  return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
 }
 
 async function createRuntimeStore(config: FastifyInstance["config"], options: BuildAppOptions): Promise<DataStore> {
@@ -208,8 +325,7 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
     throw new Error("VALKEY_URL is required for Valkey-backed sessions and outbox publishing.");
   }
 
-  const localLikeEnvironments = new Set(["development", "dev", "local", "test"]);
-  const seedIfEmpty = options.seedIfEmpty ?? localLikeEnvironments.has(config.NODE_ENV.toLowerCase());
+  const seedIfEmpty = options.seedIfEmpty ?? config.HRMS_SEED_IF_EMPTY;
 
   return createPostgresDataStore({
     databaseUrl: config.DATABASE_URL,

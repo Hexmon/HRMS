@@ -50,7 +50,9 @@ import {
   type AssetAssignmentRecord,
   type AssetStateEventRecord,
   type AdminMasterDataItemRecord,
+  type AuthPersistenceFlushOptions,
   type AuthTokenRecord,
+  type CompanyLogoPersistenceFlushOptions,
   type CompanyProfileRecord,
   type DataStore,
   type DocumentProcessingConfig,
@@ -69,6 +71,10 @@ import {
 } from "./data-store.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
+
+function optionalSet(values: readonly string[] | undefined): ReadonlySet<string> | undefined {
+  return values?.length ? new Set(values) : undefined;
+}
 
 export interface PostgresObjectStorageOptions {
   cloudName: string;
@@ -452,6 +458,54 @@ class PostgresPersistence {
     }
   }
 
+  async flushAuth(options: AuthPersistenceFlushOptions = {}): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.flushAuthCore(client, options);
+      await this.flushAuthPlatform(client, options);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async flushCompanyBootstrap(options: AuthPersistenceFlushOptions = {}): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.flushCoreMasterData(client);
+      await this.flushAuthCore(client, options);
+      await this.flushAuthPlatform(client, options);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async flushCompanyLogo(options: CompanyLogoPersistenceFlushOptions = {}): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.flushCompanyProfiles(client, optionalSet(options.companyIds));
+      const documentIds = optionalSet(options.documentIds);
+      await this.flushDocuments(client, documentIds);
+      await this.flushOutbox(client, documentIds);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async close(): Promise<void> {
     if ("close" in this.store.sessionStore && typeof this.store.sessionStore.close === "function") {
       await this.store.sessionStore.close();
@@ -465,6 +519,176 @@ class PostgresPersistence {
       return Math.max(current, match ? Number(match[1]) : 0);
     }, 0);
     return max + 1;
+  }
+
+  private async flushAuthPlatform(client: PoolClient, options: AuthPersistenceFlushOptions): Promise<void> {
+    const companyIds = optionalSet(options.companyIds);
+    const userIds = optionalSet(options.userIds);
+
+    await this.flushCompanyProfiles(client, companyIds);
+    for (const preference of this.store.userSessionPreferences) {
+      if (userIds && !userIds.has(preference.user_id)) continue;
+      await client.query(
+        `INSERT INTO platform.user_session_preferences (
+          id, user_id, active_role, company_id, landing_page, locale, timezone, created_at, updated_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ON CONFLICT (user_id) DO UPDATE
+        SET active_role = EXCLUDED.active_role, company_id = EXCLUDED.company_id,
+            landing_page = EXCLUDED.landing_page, locale = EXCLUDED.locale,
+            timezone = EXCLUDED.timezone, updated_at = EXCLUDED.updated_at, version = EXCLUDED.version`,
+        [
+          preference.id,
+          preference.user_id,
+          preference.active_role,
+          preference.company_id,
+          preference.landing_page,
+          preference.locale,
+          preference.timezone,
+          preference.created_at,
+          preference.updated_at,
+          preference.version
+        ]
+      );
+    }
+    for (const token of this.store.authTokens) {
+      if (userIds && (!token.user_id || !userIds.has(token.user_id))) continue;
+      if (!userIds && companyIds && (!token.company_id || !companyIds.has(token.company_id))) continue;
+      await client.query(
+        `INSERT INTO platform.auth_tokens (
+          id, token_hash, token_type, user_id, email, company_id, status, expires_at, used_at,
+          revoked_at, created_ip_hash, user_agent_hash, last_sent_at, send_count, created_at, metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb)
+        ON CONFLICT (id) DO UPDATE
+        SET status = EXCLUDED.status,
+            used_at = EXCLUDED.used_at,
+            revoked_at = EXCLUDED.revoked_at,
+            last_sent_at = EXCLUDED.last_sent_at,
+            send_count = EXCLUDED.send_count,
+            metadata = EXCLUDED.metadata`,
+        [
+          token.id,
+          token.token_hash,
+          token.token_type,
+          token.user_id,
+          token.email,
+          token.company_id,
+          token.status,
+          token.expires_at,
+          token.used_at,
+          token.revoked_at,
+          token.created_ip_hash,
+          token.user_agent_hash,
+          token.last_sent_at,
+          token.send_count,
+          token.created_at,
+          JSON.stringify(token.metadata)
+        ]
+      );
+    }
+    for (const delivery of this.store.emailDeliveries) {
+      if (userIds && (!delivery.user_id || !userIds.has(delivery.user_id))) continue;
+      await client.query(
+        `INSERT INTO platform.email_deliveries (
+          id, provider, template_key, purpose, user_id, email, subject, status, provider_email_id,
+          idempotency_key, error_code, error_message, queued_at, sent_at, delivered_at,
+          failed_at, bounced_at, complained_at, metadata, created_at, updated_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22)
+        ON CONFLICT (id) DO UPDATE
+        SET status = EXCLUDED.status,
+            provider_email_id = EXCLUDED.provider_email_id,
+            error_code = EXCLUDED.error_code,
+            error_message = EXCLUDED.error_message,
+            sent_at = EXCLUDED.sent_at,
+            delivered_at = EXCLUDED.delivered_at,
+            failed_at = EXCLUDED.failed_at,
+            bounced_at = EXCLUDED.bounced_at,
+            complained_at = EXCLUDED.complained_at,
+            metadata = EXCLUDED.metadata,
+            updated_at = EXCLUDED.updated_at,
+            version = EXCLUDED.version`,
+        [
+          delivery.id,
+          delivery.provider,
+          delivery.template_key,
+          delivery.purpose,
+          delivery.user_id,
+          delivery.email,
+          delivery.subject,
+          delivery.status,
+          delivery.provider_email_id,
+          delivery.idempotency_key,
+          delivery.error_code,
+          delivery.error_message,
+          delivery.queued_at,
+          delivery.sent_at,
+          delivery.delivered_at,
+          delivery.failed_at,
+          delivery.bounced_at,
+          delivery.complained_at,
+          JSON.stringify(delivery.metadata),
+          delivery.created_at,
+          delivery.updated_at,
+          delivery.version
+        ]
+      );
+    }
+  }
+
+  private async flushCompanyProfiles(client: PoolClient, companyIds?: ReadonlySet<string>): Promise<void> {
+    for (const company of this.store.companyProfiles) {
+      if (companyIds && !companyIds.has(company.id)) continue;
+      await client.query(
+        `INSERT INTO platform.company_profiles (
+          id, company_name, company_slug, website, industry, address, timezone, locale, currency,
+          fiscal_year_start_month, working_week, work_hours_per_day, logo_label,
+          logo_document_id, logo_url, logo_file_name, logo_mime_type, logo_size_bytes,
+          status, bootstrap_completed_at, created_at, updated_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        ON CONFLICT (id) DO UPDATE
+        SET company_name = EXCLUDED.company_name, website = EXCLUDED.website,
+            industry = EXCLUDED.industry, address = EXCLUDED.address, timezone = EXCLUDED.timezone,
+            locale = EXCLUDED.locale, currency = EXCLUDED.currency,
+            fiscal_year_start_month = EXCLUDED.fiscal_year_start_month,
+            working_week = EXCLUDED.working_week, work_hours_per_day = EXCLUDED.work_hours_per_day,
+            logo_label = EXCLUDED.logo_label,
+            logo_document_id = EXCLUDED.logo_document_id,
+            logo_url = EXCLUDED.logo_url,
+            logo_file_name = EXCLUDED.logo_file_name,
+            logo_mime_type = EXCLUDED.logo_mime_type,
+            logo_size_bytes = EXCLUDED.logo_size_bytes,
+            status = EXCLUDED.status, bootstrap_completed_at = EXCLUDED.bootstrap_completed_at,
+            updated_at = EXCLUDED.updated_at, version = EXCLUDED.version`,
+        [
+          company.id,
+          company.company_name,
+          company.company_slug,
+          company.website,
+          company.industry,
+          company.address,
+          company.timezone,
+          company.locale,
+          company.currency,
+          company.fiscal_year_start_month,
+          company.working_week,
+          company.work_hours_per_day,
+          company.logo_label,
+          company.logo_document_id,
+          company.logo_url,
+          company.logo_file_name,
+          company.logo_mime_type,
+          company.logo_size_bytes,
+          company.status,
+          company.bootstrap_completed_at,
+          company.created_at,
+          company.updated_at,
+          company.version
+        ]
+      );
+    }
   }
 
   private async loadDepartments(client: PoolClient): Promise<Department[]> {
@@ -1792,6 +2016,31 @@ class PostgresPersistence {
   }
 
   private async flushCore(client: PoolClient): Promise<void> {
+    await this.flushCoreMasterData(client);
+    for (const role of this.store.rbacRoles) {
+      await client.query(
+        `INSERT INTO core.roles (id, role_key, name, description, status, builtin, deleted_at, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (role_key) DO UPDATE
+         SET name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
+             builtin = EXCLUDED.builtin, deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
+             updated_at = now()`,
+        [role.id, role.role_key, role.name, role.description, role.status, role.builtin, role.deleted_at, role.version]
+      );
+    }
+    for (const permission of this.store.rbacRolePermissions) {
+      await client.query(
+        `INSERT INTO core.role_permissions (id, role_key, permission_id, status, deleted_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (role_key, permission_id) DO UPDATE
+         SET status = EXCLUDED.status, deleted_at = EXCLUDED.deleted_at, updated_at = now()`,
+        [permission.id, permission.role_key, permission.permission_id, permission.status, permission.deleted_at]
+      );
+    }
+    await this.flushCoreUsersAndCredentials(client);
+  }
+
+  private async flushCoreMasterData(client: PoolClient): Promise<void> {
     for (const designation of this.store.designations) {
       await client.query(
         `INSERT INTO core.designations (id, designation_code, title, level, status, deleted_at, version)
@@ -1827,27 +2076,15 @@ class PostgresPersistence {
         ]
       );
     }
-    for (const role of this.store.rbacRoles) {
-      await client.query(
-        `INSERT INTO core.roles (id, role_key, name, description, status, builtin, deleted_at, version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (role_key) DO UPDATE
-         SET name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
-             builtin = EXCLUDED.builtin, deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
-             updated_at = now()`,
-        [role.id, role.role_key, role.name, role.description, role.status, role.builtin, role.deleted_at, role.version]
-      );
-    }
-    for (const permission of this.store.rbacRolePermissions) {
-      await client.query(
-        `INSERT INTO core.role_permissions (id, role_key, permission_id, status, deleted_at)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (role_key, permission_id) DO UPDATE
-         SET status = EXCLUDED.status, deleted_at = EXCLUDED.deleted_at, updated_at = now()`,
-        [permission.id, permission.role_key, permission.permission_id, permission.status, permission.deleted_at]
-      );
-    }
+  }
+
+  private async flushAuthCore(client: PoolClient, options: AuthPersistenceFlushOptions): Promise<void> {
+    await this.flushCoreUsersAndCredentials(client, optionalSet(options.userIds));
+  }
+
+  private async flushCoreUsersAndCredentials(client: PoolClient, userIds?: ReadonlySet<string>): Promise<void> {
     for (const user of this.store.users) {
+      if (userIds && !userIds.has(user.id)) continue;
       await client.query(
         `INSERT INTO core.users (
           id, employee_code, email, full_name, department_id, designation_id, manager_user_id,
@@ -1898,6 +2135,7 @@ class PostgresPersistence {
       }
     }
     for (const credential of this.store.userCredentials) {
+      if (userIds && !userIds.has(credential.user_id)) continue;
       await client.query(
         `INSERT INTO platform.user_credentials (
           id, user_id, password_hash, status, created_at, updated_at, deleted_at
@@ -2355,7 +2593,12 @@ class PostgresPersistence {
         ]
       );
     }
+    await this.flushOutbox(client);
+  }
+
+  private async flushOutbox(client: PoolClient, aggregateIds?: ReadonlySet<string>): Promise<void> {
     for (const event of this.store.outbox) {
+      if (aggregateIds && !aggregateIds.has(event.aggregate_id)) continue;
       await client.query(
         `INSERT INTO platform.outbox_events (
           id, event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key,
@@ -2599,8 +2842,9 @@ class PostgresPersistence {
     }
   }
 
-  private async flushDocuments(client: PoolClient): Promise<void> {
+  private async flushDocuments(client: PoolClient, documentIds?: ReadonlySet<string>): Promise<void> {
     for (const document of this.store.documents) {
+      if (documentIds && !documentIds.has(document.id)) continue;
       await client.query(
         `INSERT INTO documents.doc_metadata (
           id, business_object_type, business_object_id, owner_user_id, classification, document_type,
@@ -2635,6 +2879,7 @@ class PostgresPersistence {
       );
     }
     for (const version of this.store.documentVersions) {
+      if (documentIds && !documentIds.has(version.document_id)) continue;
       await client.query(
         `INSERT INTO documents.doc_versions (
           id, document_id, version, storage_key, file_name, size_bytes, checksum_sha256,
@@ -2656,6 +2901,7 @@ class PostgresPersistence {
       );
     }
     for (const log of this.store.documentAccessLogs) {
+      if (documentIds && !documentIds.has(log.document_id)) continue;
       await client.query(
         `INSERT INTO documents.doc_access_logs (id, document_id, actor_user_id, action, decision, reason, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
