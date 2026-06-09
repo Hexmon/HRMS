@@ -292,7 +292,7 @@ export class CoreService {
     }
     this.requireDepartment(input.department_id);
     this.requireDesignation(input.designation_id);
-    const manager = input.manager_user_id ? this.requireActiveManager(input.manager_user_id) : null;
+    const manager = input.manager_user_id ? this.requireActiveManager(actor, input.manager_user_id) : null;
     const roles = this.normalizeRoles(input.roles ?? [Roles.Employee]);
     requireCanAssignRoles(actor, roles);
 
@@ -315,6 +315,7 @@ export class CoreService {
       version: 1
     };
     this.store.users.push(user);
+    this.assignUserToActorCompany(actor, user, now);
     appendCoreOutboxEvent(this.store, {
       aggregateType: "core.user",
       aggregateId: user.id,
@@ -328,7 +329,7 @@ export class CoreService {
 
   updateUser(actor: AuthUser, id: UUID, input: UserUpdateInput): CoreUserMutationResult {
     requirePeopleManager(actor);
-    const user = this.requireUserForWrite(id);
+    const user = this.requireUserForWrite(actor, id);
     requireExpectedVersion(user, input.expected_version);
 
     if (input.email !== undefined) {
@@ -351,7 +352,7 @@ export class CoreService {
       user.designation_id = input.designation_id;
     }
     if (input.manager_user_id !== undefined) {
-      this.updateManager(user, input.manager_user_id);
+      this.updateManager(actor, user, input.manager_user_id);
     }
     if (input.employment_status !== undefined) {
       user.employment_status = input.employment_status;
@@ -490,7 +491,7 @@ export class CoreService {
 
   activateUser(actor: AuthUser, id: UUID, input: UserStatusInput): CoreUserMutationResult {
     requirePeopleManager(actor);
-    const user = this.requireUserForWrite(id);
+    const user = this.requireUserForWrite(actor, id);
     requireExpectedVersion(user, input.expected_version);
     if (user.employment_status === EmploymentStatuses.Active) {
       throw conflict("Employee is already active.", { id });
@@ -510,7 +511,7 @@ export class CoreService {
 
   deactivateUser(actor: AuthUser, id: UUID, input: UserStatusInput): CoreUserMutationResult {
     requirePeopleManager(actor);
-    const user = this.requireUserForWrite(id);
+    const user = this.requireUserForWrite(actor, id);
     requireNotSelfLifecycleMutation(actor, user);
     requireExpectedVersion(user, input.expected_version);
     const nextStatus = input.status ?? EmploymentStatuses.Inactive;
@@ -544,7 +545,7 @@ export class CoreService {
 
   async disableLogin(actor: AuthUser, id: UUID, input: UserLoginInput): Promise<CoreUserMutationResult> {
     requirePeopleManager(actor);
-    const user = this.requireUserForWrite(id);
+    const user = this.requireUserForWrite(actor, id);
     requireNotSelfLifecycleMutation(actor, user);
     requireExpectedVersion(user, input.expected_version);
     const activeCredentials = this.store.userCredentials.filter((credential) => credential.user_id === user.id && credential.status === "active" && !credential.deleted_at);
@@ -571,7 +572,7 @@ export class CoreService {
 
   enableLogin(actor: AuthUser, id: UUID, input: UserLoginInput): CoreUserMutationResult {
     requirePeopleManager(actor);
-    const user = this.requireUserForWrite(id);
+    const user = this.requireUserForWrite(actor, id);
     requireNotSelfLifecycleMutation(actor, user);
     requireExpectedVersion(user, input.expected_version);
     if (this.loginState(user.id) === "enabled") {
@@ -590,7 +591,7 @@ export class CoreService {
   }
 
   replaceRoles(actor: AuthUser, id: UUID, input: UserRolesInput): CoreUserMutationResult {
-    const user = this.requireUserForWrite(id);
+    const user = this.requireUserForWrite(actor, id);
     requireExpectedVersion(user, input.expected_version);
     const roles = this.normalizeRoles(input.roles);
     requireCanAssignRoles(actor, roles, user);
@@ -830,7 +831,7 @@ export class CoreService {
   }
 
   private visibleUsersFor(actor: AuthUser): CoreUser[] {
-    const users = this.repository.listUsers();
+    const users = this.repository.listUsers().filter((user) => this.isInActorCompany(actor, user));
     if (hasPrivilegedProfileRead(actor)) {
       return users;
     }
@@ -839,6 +840,48 @@ export class CoreService {
         user.id === actor.id ||
         (user.employment_status === "active" && user.hierarchy_path.startsWith(`${actor.hierarchy_path}.`))
     );
+  }
+
+  private companyIdForUser(userId: UUID): UUID | null {
+    return this.store.userSessionPreferences.find((preference) => preference.user_id === userId)?.company_id ?? null;
+  }
+
+  private isInActorCompany(actor: AuthUser, user: CoreUser): boolean {
+    const actorCompanyId = this.companyIdForUser(actor.id);
+    if (!actorCompanyId) {
+      return true;
+    }
+    return user.id === actor.id || this.companyIdForUser(user.id) === actorCompanyId;
+  }
+
+  private assignUserToActorCompany(actor: AuthUser, user: CoreUser, now: string): void {
+    const actorPreference = this.store.userSessionPreferences.find((preference) => preference.user_id === actor.id);
+    if (!actorPreference?.company_id) {
+      return;
+    }
+    const existing = this.store.userSessionPreferences.find((preference) => preference.user_id === user.id);
+    const activeRole = user.roles[0] ?? Roles.Employee;
+    if (existing) {
+      existing.company_id = actorPreference.company_id;
+      existing.active_role = activeRole;
+      existing.locale = actorPreference.locale;
+      existing.timezone = user.timezone ?? actorPreference.timezone;
+      existing.updated_at = now;
+      existing.version += 1;
+      return;
+    }
+    this.store.userSessionPreferences.push({
+      id: randomUUID(),
+      user_id: user.id,
+      active_role: activeRole,
+      company_id: actorPreference.company_id,
+      landing_page: "/dashboard",
+      locale: actorPreference.locale,
+      timezone: user.timezone ?? actorPreference.timezone,
+      created_at: now,
+      updated_at: now,
+      version: 1
+    });
   }
 
   private matchesDirectoryFilters(user: CoreUser, params: UserDirectoryQuery): boolean {
@@ -991,6 +1034,9 @@ export class CoreService {
   }
 
   private canReadSubtree(actor: AuthUser, root: CoreUser): boolean {
+    if (!this.isInActorCompany(actor, root)) {
+      return false;
+    }
     if (hasPrivilegedProfileRead(actor)) {
       return true;
     }
@@ -998,6 +1044,9 @@ export class CoreService {
   }
 
   private canReadUser(actor: AuthUser, user: CoreUser): boolean {
+    if (!this.isInActorCompany(actor, user)) {
+      return false;
+    }
     if (hasPrivilegedProfileRead(actor)) {
       return true;
     }
@@ -1015,10 +1064,13 @@ export class CoreService {
     return user;
   }
 
-  private requireUserForWrite(id: UUID): CoreUser {
+  private requireUserForWrite(actor: AuthUser, id: UUID): CoreUser {
     const user = this.repository.findUser(id);
     if (!user) {
       throw notFound("User not found", { id });
+    }
+    if (!this.isInActorCompany(actor, user)) {
+      throw forbidden("You do not have access to this employee profile");
     }
     return user;
   }
@@ -1039,17 +1091,20 @@ export class CoreService {
     return designation;
   }
 
-  private requireActiveManager(id: UUID): CoreUser {
+  private requireActiveManager(actor: AuthUser, id: UUID): CoreUser {
     const manager = this.repository.findActiveUser(id);
     if (!manager) {
       throw notFound("Active manager not found", { id });
     }
+    if (!this.isInActorCompany(actor, manager)) {
+      throw forbidden("Manager must belong to the active company.");
+    }
     return manager;
   }
 
-  private updateManager(user: CoreUser, managerUserId: UUID | null): void {
+  private updateManager(actor: AuthUser, user: CoreUser, managerUserId: UUID | null): void {
     const oldPrefix = `${user.hierarchy_path}.`;
-    const manager = managerUserId ? this.requireActiveManager(managerUserId) : null;
+    const manager = managerUserId ? this.requireActiveManager(actor, managerUserId) : null;
     if (manager?.id === user.id || (manager && manager.hierarchy_path.startsWith(oldPrefix))) {
       throw badRequest("Manager cannot be the employee or one of their descendants.");
     }

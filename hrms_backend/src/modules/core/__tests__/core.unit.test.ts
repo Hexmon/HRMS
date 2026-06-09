@@ -44,6 +44,73 @@ describe("core hierarchy", () => {
     });
   });
 
+  it("limits privileged employee directory reads to the active company when a company preference exists", () => {
+    const store = createMemoryDataStore();
+    const service = new CoreService(store);
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    store.userSessionPreferences.push({
+      id: "pref-admin-company-a",
+      user_id: admin.id,
+      active_role: Roles.Admin,
+      company_id: "company-a",
+      landing_page: "/dashboard",
+      locale: "en-IN",
+      timezone: "Asia/Kolkata",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+      version: 1
+    });
+
+    const result = service.listUsers(admin, {
+      page: 1,
+      page_size: 25,
+      sort: "employee_code"
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.items.map((user) => user.employee_code)).toEqual(["ADM"]);
+  });
+
+  it("assigns newly created employees to the actor active company", () => {
+    const store = createMemoryDataStore();
+    const service = new CoreService(store);
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    store.userSessionPreferences.push({
+      id: "pref-admin-company-a",
+      user_id: admin.id,
+      active_role: Roles.Admin,
+      company_id: "company-a",
+      landing_page: "/dashboard",
+      locale: "en-IN",
+      timezone: "Asia/Kolkata",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+      version: 1
+    });
+
+    const created = service.createUser(admin, {
+      employee_code: "NEW1",
+      email: "new1@example.test",
+      full_name: "New Employee",
+      department_id: seedIds.departmentSales,
+      designation_id: seedIds.designationEmployee,
+      roles: [Roles.Employee],
+      employment_status: "active"
+    });
+
+    expect(created.employee_code).toBe("NEW1");
+    expect(store.userSessionPreferences.find((preference) => preference.user_id === created.id)).toMatchObject({
+      company_id: "company-a",
+      active_role: Roles.Employee
+    });
+    const result = service.listUsers(admin, {
+      page: 1,
+      page_size: 25,
+      sort: "employee_code"
+    });
+    expect(result.items.map((user) => user.employee_code)).toEqual(["ADM", "NEW1"]);
+  });
+
   it("returns employee detail summaries without loading unavailable modules", () => {
     const store = createMemoryDataStore();
     const service = new CoreService(store);
