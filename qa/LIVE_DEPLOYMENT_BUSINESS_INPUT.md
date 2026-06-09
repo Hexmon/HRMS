@@ -127,24 +127,27 @@ Audit/logging expectations:can be configurable by admin in admin policy
 ## 6. Risk and release priorities
 
 Top 5 flows that cannot fail:
-1.
-2.
-3.
-4.
-5.
+1. Login / logout / session /
+2. Organization onboarding + employee onboarding 
+3. Attendance + leave/WFH 
+4. Expense request -> manager review -> finance approval -> payment/settlement
+5. Documents upload/preview/delete + Cloudinary + reports/export
 
 Top 5 client demo/UAT flows:
-1.
-2.
-3.
-4.
-5.
-
-Known bugs or historically fragile areas:
+1. Admin login and organization setup
+2. Add employee, assign role/designation, verify permissions
+3. Employee attendance punch, leave request, WFH request, timesheet
+4. Expense submission, manager approval, finance approval/payment/settlement
+5. Document upload/preview/delete, reports/export, notification checks
 
 Browsers/devices to cover:
+Chrome desktop, Edge desktop, Safari/iPhone, Chrome Android, responsive mobile, tablet and desktop.
 
 Timezone/date assumptions:
+Asia/Kolkata unless organization policy config says otherwise.
+
+Max steps per test case row:
+6 main steps. Put longer details in workflow/manual tabs.
 
 ## 7. Output preference
 
