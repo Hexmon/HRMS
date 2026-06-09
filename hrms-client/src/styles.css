@@ -301,6 +301,176 @@
     backdrop-filter: blur(10px) saturate(1.12);
   }
 
+  .dashboard-metric-card {
+    isolation: isolate;
+    border-color: color-mix(in oklab, var(--color-border) 78%, transparent);
+    background:
+      radial-gradient(circle at 86% 20%, color-mix(in oklab, var(--color-primary) 8%, transparent), transparent 34%),
+      color-mix(in oklab, var(--color-card) 88%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(1.12);
+    backdrop-filter: blur(10px) saturate(1.12);
+    transition:
+      transform 340ms var(--ease-out-soft),
+      border-color 340ms var(--ease-out-soft),
+      background-color 340ms var(--ease-out-soft),
+      box-shadow 340ms var(--ease-out-soft);
+  }
+
+  .dashboard-metric-card::before,
+  .dashboard-metric-card::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .dashboard-metric-card::before {
+    inset: -45% -22% auto auto;
+    width: 70%;
+    aspect-ratio: 1;
+    border-radius: 999px;
+    background:
+      radial-gradient(circle, color-mix(in oklab, var(--color-primary) 18%, transparent), transparent 64%),
+      radial-gradient(circle at 38% 34%, color-mix(in oklab, var(--color-foreground) 10%, transparent), transparent 52%);
+    opacity: 0;
+    transform: translate3d(18%, -14%, 0) scale(0.76);
+    transition:
+      opacity 300ms var(--ease-out-soft),
+      transform 520ms var(--ease-out-soft);
+  }
+
+  .dashboard-metric-card::after {
+    inset: 0;
+    background: linear-gradient(
+      118deg,
+      transparent 0%,
+      transparent 36%,
+      color-mix(in oklab, var(--color-foreground) 9%, transparent) 48%,
+      transparent 62%,
+      transparent 100%
+    );
+    opacity: 0;
+    transform: translate3d(-130%, 0, 0);
+    transition:
+      opacity 260ms var(--ease-out-soft),
+      transform 720ms var(--ease-out-soft);
+  }
+
+  .dashboard-metric-card > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .dashboard-metric-card [data-stat-icon] {
+    transition:
+      transform 340ms var(--ease-out-soft),
+      box-shadow 340ms var(--ease-out-soft),
+      background-color 340ms var(--ease-out-soft),
+      color 340ms var(--ease-out-soft);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .dashboard-metric-card:hover {
+      transform: translate3d(0, -3px, 0);
+      border-color: color-mix(in oklab, var(--color-primary) 46%, var(--color-border));
+      background:
+        radial-gradient(circle at 82% 18%, color-mix(in oklab, var(--color-primary) 14%, transparent), transparent 38%),
+        color-mix(in oklab, var(--color-card) 94%, transparent);
+      box-shadow:
+        inset 0 1px 0 color-mix(in oklab, var(--color-foreground) 7%, transparent),
+        0 22px 48px -34px color-mix(in oklab, var(--color-primary) 52%, transparent),
+        0 12px 28px -26px color-mix(in oklab, var(--color-foreground) 34%, transparent);
+    }
+
+    .dashboard-metric-card:hover::before {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    .dashboard-metric-card:hover::after {
+      opacity: 1;
+      transform: translate3d(130%, 0, 0);
+    }
+
+    .dashboard-metric-card:hover [data-stat-icon] {
+      transform: translate3d(0, -1px, 0) scale(1.05);
+      box-shadow:
+        0 0 0 1px color-mix(in oklab, var(--color-primary) 18%, transparent),
+        0 14px 28px -18px color-mix(in oklab, var(--color-primary) 54%, transparent);
+    }
+  }
+
+  .dashboard-glass-card {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .dashboard-glass-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 18% 0%, color-mix(in oklab, var(--color-primary) 14%, transparent), transparent 34%),
+      linear-gradient(145deg, color-mix(in oklab, var(--color-foreground) 5%, transparent), transparent 36%);
+    opacity: 0.72;
+  }
+
+  .dashboard-glass-card > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .dashboard-liquid-row {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid transparent;
+    background: color-mix(in oklab, var(--color-card) 46%, transparent);
+    transition:
+      transform 260ms var(--ease-out-soft),
+      border-color 260ms var(--ease-out-soft),
+      background-color 260ms var(--ease-out-soft),
+      box-shadow 260ms var(--ease-out-soft);
+  }
+
+  .dashboard-liquid-row::before {
+    content: "";
+    position: absolute;
+    inset: -42% auto auto -24%;
+    width: 58%;
+    aspect-ratio: 1;
+    border-radius: 999px;
+    pointer-events: none;
+    background: radial-gradient(circle, color-mix(in oklab, var(--color-primary) 18%, transparent), transparent 64%);
+    opacity: 0;
+    transform: translate3d(-16%, 12%, 0) scale(0.82);
+    transition:
+      opacity 280ms var(--ease-out-soft),
+      transform 360ms var(--ease-out-soft);
+  }
+
+  .dashboard-liquid-row:hover {
+    transform: translate3d(0, -1px, 0);
+    border-color: color-mix(in oklab, var(--color-primary) 26%, var(--color-border));
+    background: color-mix(in oklab, var(--color-card) 72%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--color-foreground) 5%, transparent),
+      0 16px 34px -28px color-mix(in oklab, var(--color-primary) 38%, transparent);
+  }
+
+  .dashboard-liquid-row:hover::before {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  .dashboard-liquid-hero {
+    border: 1px solid color-mix(in oklab, var(--color-primary) 22%, var(--color-border));
+    background:
+      radial-gradient(circle at 88% 18%, color-mix(in oklab, var(--color-primary) 18%, transparent), transparent 32%),
+      color-mix(in oklab, var(--color-card) 58%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--color-foreground) 5%, transparent);
+  }
+
   .phone-input {
     display: flex;
     min-height: 2.25rem;
@@ -610,6 +780,18 @@
       background: var(--color-primary-soft);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dashboard-metric-card,
+    .dashboard-metric-card::before,
+    .dashboard-metric-card::after,
+    .dashboard-metric-card [data-stat-icon],
+    .dashboard-liquid-row,
+    .dashboard-liquid-row::before {
+      transition-duration: 1ms !important;
+      transform: none !important;
     }
   }
 
