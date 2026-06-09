@@ -471,6 +471,230 @@
     box-shadow: inset 0 1px 0 color-mix(in oklab, var(--color-foreground) 5%, transparent);
   }
 
+  .ems-profile-hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1.5rem;
+    border: 1px solid color-mix(in oklab, var(--color-primary) 22%, var(--color-border));
+    padding: 1.25rem;
+    background:
+      radial-gradient(circle at 8% 0%, color-mix(in oklab, var(--color-primary) 18%, transparent), transparent 32%),
+      radial-gradient(circle at 92% 16%, color-mix(in oklab, var(--color-info) 12%, transparent), transparent 34%),
+      color-mix(in oklab, var(--color-card) 84%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--color-foreground) 7%, transparent),
+      0 26px 58px -42px color-mix(in oklab, var(--color-primary) 44%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(1.16);
+    backdrop-filter: blur(14px) saturate(1.16);
+  }
+
+  .ems-profile-hero::before {
+    content: "";
+    position: absolute;
+    inset: -42% auto auto 16%;
+    width: 46%;
+    aspect-ratio: 1;
+    border-radius: 999px;
+    pointer-events: none;
+    background: radial-gradient(circle, color-mix(in oklab, var(--color-primary) 12%, transparent), transparent 66%);
+    opacity: 0.8;
+    transform: rotate(-8deg);
+  }
+
+  .ems-profile-card {
+    position: relative;
+    overflow: hidden;
+    border-color: color-mix(in oklab, var(--color-border) 78%, transparent);
+    background:
+      radial-gradient(circle at 96% 0%, color-mix(in oklab, var(--color-primary) 8%, transparent), transparent 34%),
+      color-mix(in oklab, var(--color-card) 88%, transparent);
+  }
+
+  .ems-profile-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(145deg, color-mix(in oklab, var(--color-foreground) 5%, transparent), transparent 38%);
+    opacity: 0.52;
+  }
+
+  .ems-profile-card > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .ems-profile-field {
+    min-width: 0;
+    padding: 1rem 1.25rem;
+    border-top: 1px solid color-mix(in oklab, var(--color-border) 70%, transparent);
+  }
+
+  @media (min-width: 640px) {
+    .ems-profile-field:nth-child(2n) {
+      border-left: 1px solid color-mix(in oklab, var(--color-border) 70%, transparent);
+    }
+  }
+
+  .ems-profile-request-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--color-border) 76%, transparent);
+    background: color-mix(in oklab, var(--color-card) 58%, transparent);
+    transition:
+      transform 280ms var(--ease-out-soft),
+      border-color 280ms var(--ease-out-soft),
+      box-shadow 280ms var(--ease-out-soft);
+  }
+
+  .ems-profile-request-card::before {
+    content: "";
+    position: absolute;
+    inset: -52% -20% auto auto;
+    width: 50%;
+    aspect-ratio: 1;
+    border-radius: 999px;
+    pointer-events: none;
+    background: radial-gradient(circle, color-mix(in oklab, var(--color-primary) 16%, transparent), transparent 66%);
+    opacity: 0;
+    transform: scale(0.82);
+    transition:
+      opacity 280ms var(--ease-out-soft),
+      transform 360ms var(--ease-out-soft);
+  }
+
+  .ems-profile-request-card > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ems-profile-request-card:hover {
+      transform: translate3d(0, -1px, 0);
+      border-color: color-mix(in oklab, var(--color-primary) 32%, var(--color-border));
+      box-shadow: 0 18px 42px -34px color-mix(in oklab, var(--color-primary) 42%, transparent);
+    }
+
+    .ems-profile-request-card:hover::before {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .ems-tab-intro {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1.25rem;
+    border: 1px solid color-mix(in oklab, var(--color-primary) 18%, var(--color-border));
+    background:
+      radial-gradient(circle at 0% 0%, color-mix(in oklab, var(--color-primary) 13%, transparent), transparent 34%),
+      color-mix(in oklab, var(--color-card) 80%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--color-foreground) 5%, transparent);
+    -webkit-backdrop-filter: blur(12px) saturate(1.12);
+    backdrop-filter: blur(12px) saturate(1.12);
+  }
+
+  .ems-kpi-card {
+    border-color: color-mix(in oklab, var(--color-primary) 18%, var(--color-border));
+    background:
+      radial-gradient(circle at 84% 16%, color-mix(in oklab, var(--color-primary) 10%, transparent), transparent 34%),
+      color-mix(in oklab, var(--color-card) 88%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(1.12);
+    backdrop-filter: blur(10px) saturate(1.12);
+  }
+
+  .ems-record-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--color-border) 76%, transparent);
+    background:
+      radial-gradient(circle at 88% 8%, color-mix(in oklab, var(--color-primary) 10%, transparent), transparent 36%),
+      color-mix(in oklab, var(--color-card) 86%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--color-foreground) 5%, transparent),
+      0 14px 34px -30px color-mix(in oklab, var(--color-foreground) 28%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(1.12);
+    backdrop-filter: blur(10px) saturate(1.12);
+    transition:
+      transform 300ms var(--ease-out-soft),
+      border-color 300ms var(--ease-out-soft),
+      box-shadow 300ms var(--ease-out-soft);
+  }
+
+  .ems-record-card::before {
+    content: "";
+    position: absolute;
+    inset: -44% -18% auto auto;
+    width: 58%;
+    aspect-ratio: 1;
+    border-radius: 999px;
+    pointer-events: none;
+    background: radial-gradient(circle, color-mix(in oklab, var(--color-primary) 15%, transparent), transparent 66%);
+    opacity: 0;
+    transform: translate3d(14%, -10%, 0) scale(0.82);
+    transition:
+      opacity 280ms var(--ease-out-soft),
+      transform 420ms var(--ease-out-soft);
+  }
+
+  .ems-record-card > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .ems-record-icon {
+    display: grid;
+    height: 2.5rem;
+    width: 2.5rem;
+    place-items: center;
+    border-radius: 0.875rem;
+    color: var(--color-primary);
+    background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--color-foreground) 6%, transparent);
+    transition:
+      transform 300ms var(--ease-out-soft),
+      box-shadow 300ms var(--ease-out-soft);
+  }
+
+  .ems-inline-row,
+  .ems-check-item {
+    border: 1px solid color-mix(in oklab, var(--color-border) 68%, transparent);
+    background: color-mix(in oklab, var(--color-card) 48%, transparent);
+  }
+
+  .ems-check-item {
+    transition:
+      border-color 220ms var(--ease-out-soft),
+      background-color 220ms var(--ease-out-soft);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ems-record-card:hover {
+      transform: translate3d(0, -2px, 0);
+      border-color: color-mix(in oklab, var(--color-primary) 34%, var(--color-border));
+      box-shadow:
+        inset 0 1px 0 color-mix(in oklab, var(--color-foreground) 7%, transparent),
+        0 22px 46px -36px color-mix(in oklab, var(--color-primary) 45%, transparent);
+    }
+
+    .ems-record-card:hover::before {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    .ems-record-card:hover .ems-record-icon {
+      transform: translate3d(0, -1px, 0) scale(1.04);
+      box-shadow:
+        0 0 0 1px color-mix(in oklab, var(--color-primary) 18%, transparent),
+        0 14px 30px -20px color-mix(in oklab, var(--color-primary) 50%, transparent);
+    }
+
+    .ems-check-item:hover {
+      border-color: color-mix(in oklab, var(--color-primary) 28%, var(--color-border));
+      background: color-mix(in oklab, var(--color-card) 68%, transparent);
+    }
+  }
+
   .phone-input {
     display: flex;
     min-height: 2.25rem;
@@ -789,7 +1013,13 @@
     .dashboard-metric-card::after,
     .dashboard-metric-card [data-stat-icon],
     .dashboard-liquid-row,
-    .dashboard-liquid-row::before {
+    .dashboard-liquid-row::before,
+    .ems-profile-request-card,
+    .ems-profile-request-card::before,
+    .ems-record-card,
+    .ems-record-card::before,
+    .ems-record-icon,
+    .ems-check-item {
       transition-duration: 1ms !important;
       transform: none !important;
     }

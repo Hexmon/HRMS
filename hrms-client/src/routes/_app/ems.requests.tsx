@@ -149,8 +149,13 @@ function MyRequests() {
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">All your submitted requests in one place.</p>
+      <div className="ems-tab-intro flex flex-wrap items-center justify-between gap-3 p-4">
+        <div>
+          <p className="text-sm font-medium">Submitted requests</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            All your submitted requests in one place.
+          </p>
+        </div>
         <Button size="sm" className="rounded-full" onClick={() => setOpen(true)}>
           <Plus className="mr-1.5 h-4 w-4" /> New request
         </Button>
