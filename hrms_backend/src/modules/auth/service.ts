@@ -487,6 +487,11 @@ export class AuthService {
     if (!user) {
       throw unauthorized("User no longer exists");
     }
+    const currentPreference = this.repository.sessionPreferenceFor(user.id);
+    const nextCompanyId = input.company_id === undefined ? currentPreference?.company_id ?? null : input.company_id;
+    if (nextCompanyId !== (currentPreference?.company_id ?? null)) {
+      this.requireOrgAdminRecoveryPathAfterCompanyChange(user, currentPreference?.company_id ?? null, nextCompanyId);
+    }
     this.savePreference(user, input);
     return this.sessionContext(user);
   }
@@ -877,6 +882,36 @@ export class AuthService {
       version: (current?.version ?? 0) + 1
     };
     return this.repository.upsertSessionPreference(preference);
+  }
+
+  private requireOrgAdminRecoveryPathAfterCompanyChange(user: CoreUser, currentCompanyId: UUID | null, nextCompanyId: UUID | null): void {
+    if (!user.roles.includes(Roles.Admin)) {
+      return;
+    }
+    if (this.companyRecoveryAdminCountAfterPreferenceChange(user.id, currentCompanyId, nextCompanyId) > 0) {
+      return;
+    }
+    throw conflict("At least one active Admin with login access must remain in this organization.");
+  }
+
+  private companyRecoveryAdminCountAfterPreferenceChange(userId: UUID, currentCompanyId: UUID | null, nextCompanyId: UUID | null): number {
+    return this.store.users.filter((candidate) => {
+      if (candidate.deleted_at || !candidate.roles.includes(Roles.Admin) || candidate.employment_status !== EmploymentStatuses.Active) {
+        return false;
+      }
+      const candidateCompanyId = candidate.id === userId ? nextCompanyId : this.repository.sessionPreferenceFor(candidate.id)?.company_id ?? null;
+      if (candidateCompanyId !== currentCompanyId) {
+        return false;
+      }
+      return this.hasLoginRecoveryAccess(candidate.id);
+    }).length;
+  }
+
+  private hasLoginRecoveryAccess(userId: UUID): boolean {
+    if (this.repository.findActiveCredential(userId)) {
+      return true;
+    }
+    return this.store.authTokens.some((token) => token.user_id === userId && token.token_type === "password_setup" && token.status === "active" && Date.parse(token.expires_at) > Date.now());
   }
 }
 

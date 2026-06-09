@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createMemoryDataStore, seedIds } from "../../../platform/data-store.js";
+import { createMemoryDataStore, seedIds, type MemoryDataStore } from "../../../platform/data-store.js";
 import { Roles } from "#shared";
 import { CoreService } from "../service.js";
+
+const companyA = "11111111-1111-4111-8111-111111111111";
+const companyB = "22222222-2222-4222-8222-222222222222";
 
 describe("core hierarchy", () => {
   it("resolves ltree-style subtree without recursive traversal", () => {
@@ -129,4 +132,96 @@ describe("core hierarchy", () => {
     });
   });
 
+  it("blocks every Core path that would remove the last recoverable Admin in an organization", async () => {
+    const actorStore = createMemoryDataStore();
+    const actor = actorStore.users.find((user) => user.id === seedIds.admin)!;
+
+    for (const action of ["patch-status", "deactivate", "disable-login", "remove-admin-role"] as const) {
+      const store = createMemoryDataStore();
+      const service = new CoreService(store);
+      const targetAdmin = addCompanyAdmin(store, "last", companyA);
+
+      const run = () => {
+        switch (action) {
+          case "patch-status":
+            return service.updateUser(actor, targetAdmin.id, {
+              expected_version: 1,
+              employment_status: "inactive"
+            });
+          case "deactivate":
+            return service.deactivateUser(actor, targetAdmin.id, {
+              expected_version: 1,
+              status: "inactive"
+            });
+          case "disable-login":
+            return service.disableLogin(actor, targetAdmin.id, {
+              expected_version: 1
+            });
+          case "remove-admin-role":
+            return service.replaceRoles(actor, targetAdmin.id, {
+              expected_version: 1,
+              roles: [Roles.Employee]
+            });
+        }
+      };
+
+      await expect(Promise.resolve().then(run)).rejects.toMatchObject({
+        statusCode: 409,
+        message: "At least one active Admin with login access must remain in this organization."
+      });
+    }
+  });
+
+  it("allows Admin lifecycle changes when another recoverable Admin remains in the same organization", async () => {
+    const store = createMemoryDataStore();
+    const service = new CoreService(store);
+    const actor = store.users.find((user) => user.id === seedIds.admin)!;
+    const targetAdmin = addCompanyAdmin(store, "target", companyA);
+    addCompanyAdmin(store, "backup", companyA);
+    addCompanyAdmin(store, "other-company", companyB);
+
+    const result = service.deactivateUser(actor, targetAdmin.id, {
+      expected_version: 1,
+      status: "inactive"
+    });
+
+    expect(result.employment_status).toBe("inactive");
+    expect(store.userCredentials.find((credential) => credential.user_id === targetAdmin.id)?.status).toBe("revoked");
+  });
+
 });
+
+function addCompanyAdmin(store: MemoryDataStore, suffix: string, companyId: string) {
+  const base = store.users.find((user) => user.id === seedIds.admin)!;
+  const user = {
+    ...base,
+    id: `33333333-3333-4333-8333-${suffix.padStart(12, "0").slice(0, 12)}`,
+    employee_code: `ADM-${suffix.toUpperCase().slice(0, 12)}`,
+    email: `admin-${suffix}@example.test`,
+    full_name: `Admin ${suffix}`,
+    version: 1
+  };
+  store.users.push(user);
+  store.userCredentials.push({
+    id: `44444444-4444-4444-8444-${suffix.padStart(12, "0").slice(0, 12)}`,
+    user_id: user.id,
+    password_hash: `hash-${suffix}`,
+    status: "active",
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    deleted_at: null
+  });
+  store.userSessionPreferences.push({
+    id: `55555555-5555-4555-8555-${suffix.padStart(12, "0").slice(0, 12)}`,
+    user_id: user.id,
+    active_role: Roles.Admin,
+    company_id: companyId,
+    landing_page: "/dashboard",
+    locale: "en-IN",
+    timezone: "Asia/Kolkata",
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    version: 1
+  });
+  return user;
+}

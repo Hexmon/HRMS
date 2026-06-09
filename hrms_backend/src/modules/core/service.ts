@@ -331,6 +331,11 @@ export class CoreService {
     requirePeopleManager(actor);
     const user = this.requireUserForWrite(actor, id);
     requireExpectedVersion(user, input.expected_version);
+    if (input.employment_status !== undefined && input.employment_status !== EmploymentStatuses.Active) {
+      this.requireOrgAdminRecoveryPath(user, {
+        employmentStatus: input.employment_status
+      });
+    }
 
     if (input.email !== undefined) {
       const email = normalizeEmail(input.email);
@@ -518,6 +523,10 @@ export class CoreService {
     if (user.employment_status === nextStatus) {
       throw conflict("Employee already has the requested inactive status.", { id, status: nextStatus });
     }
+    this.requireOrgAdminRecoveryPath(user, {
+      employmentStatus: nextStatus,
+      loginUsable: false
+    });
     user.employment_status = nextStatus;
     user.terminated_on = nextStatus === EmploymentStatuses.Terminated ? input.effective_date ?? nowIso().slice(0, 10) : null;
     const now = nowIso();
@@ -552,6 +561,9 @@ export class CoreService {
     if (activeCredentials.length === 0 && this.loginState(user.id) !== "setup_pending") {
       throw conflict("Login is already disabled.", { id });
     }
+    this.requireOrgAdminRecoveryPath(user, {
+      loginUsable: false
+    });
     const now = nowIso();
     for (const credential of activeCredentials) {
       credential.status = "revoked";
@@ -598,6 +610,9 @@ export class CoreService {
     if (actor.id === user.id && user.roles.includes(Roles.Admin) && !roles.includes(Roles.Admin)) {
       throw forbidden("Admin users cannot remove their own admin role.");
     }
+    this.requireOrgAdminRecoveryPath(user, {
+      roles
+    });
     const previousRoles = [...user.roles];
     user.roles = roles;
     user.version += 1;
@@ -1031,6 +1046,57 @@ export class CoreService {
       return "setup_pending";
     }
     return "disabled";
+  }
+
+  private requireOrgAdminRecoveryPath(
+    targetUser: CoreUser,
+    next: {
+      roles?: readonly RoleKey[];
+      employmentStatus?: CoreUser["employment_status"];
+      loginUsable?: boolean;
+    }
+  ): void {
+    if (!targetUser.roles.includes(Roles.Admin)) {
+      return;
+    }
+    if (this.orgRecoveryAdminCountAfter(targetUser, next) > 0) {
+      return;
+    }
+    throw conflict("At least one active Admin with login access must remain in this organization.");
+  }
+
+  private orgRecoveryAdminCountAfter(
+    targetUser: CoreUser,
+    next: {
+      roles?: readonly RoleKey[];
+      employmentStatus?: CoreUser["employment_status"];
+      loginUsable?: boolean;
+    }
+  ): number {
+    const targetCompanyId = this.companyIdForUser(targetUser.id);
+    return this.store.users.filter((candidate) => {
+      if (candidate.deleted_at) {
+        return false;
+      }
+      if (this.companyIdForUser(candidate.id) !== targetCompanyId) {
+        return false;
+      }
+      const roles = candidate.id === targetUser.id ? next.roles ?? candidate.roles : candidate.roles;
+      if (!roles.includes(Roles.Admin)) {
+        return false;
+      }
+      const employmentStatus = candidate.id === targetUser.id ? next.employmentStatus ?? candidate.employment_status : candidate.employment_status;
+      if (employmentStatus !== EmploymentStatuses.Active) {
+        return false;
+      }
+      const loginUsable = candidate.id === targetUser.id ? next.loginUsable ?? this.hasLoginRecoveryAccess(candidate.id) : this.hasLoginRecoveryAccess(candidate.id);
+      return loginUsable;
+    }).length;
+  }
+
+  private hasLoginRecoveryAccess(userId: UUID): boolean {
+    const state = this.loginState(userId);
+    return state === "enabled" || state === "setup_pending";
   }
 
   private canReadSubtree(actor: AuthUser, root: CoreUser): boolean {
