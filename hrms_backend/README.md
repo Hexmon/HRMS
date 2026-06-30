@@ -61,7 +61,7 @@ Local development should usually keep email delivery in log mode:
 ```env
 EMAIL_DELIVERY_PROVIDER=resend
 EMAIL_DELIVERY_MODE=log
-FRONTEND_URL=http://localhost:5173
+FRONTEND_URL=http://localhost:8080
 ```
 
 For staging or production real delivery, set `EMAIL_DELIVERY_MODE=send`, provide `RESEND_API_KEY`, use a verified `RESEND_FROM_EMAIL`, set the public `FRONTEND_URL`, and configure `RESEND_WEBHOOK_SECRET`. The Resend webhook endpoint is:

@@ -31,6 +31,17 @@ This pack is for onboarding developers to the whole Hawkaii HRMS project. It exp
 
 There is no root package manager workspace. The frontend and backend each have their own `package.json`, lockfile, install, and verification commands.
 
+## Cross-Reference To Full Docs
+
+| Need | Use |
+| --- | --- |
+| Whole-system architecture | `../architecture/README.md` |
+| Hosted deployment setup | `../deployment/README.md` |
+| Current implementation status | `../implementation/implementation-status-index.md` |
+| Documentation completeness audit | `../implementation/documentation-coverage-audit.md` |
+| Delivery and QA process | `../process/README.md` |
+| Operational procedures | `../runbooks/README.md` |
+
 ## First Commands To Know
 
 Backend:
@@ -69,4 +80,3 @@ When changing product behavior, follow the flow from UI route to frontend domain
 ## Important Caution
 
 Do not copy values from `.env.local` into documentation, commits, screenshots, or tickets. Use only tracked `.env.*.example` files and environment docs when documenting configuration.
-
