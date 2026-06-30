@@ -43,6 +43,10 @@ Do not treat future production, QA, or hosted-dev domains as isolated/live until
 
 ## Filling The Workbook
 
+- Start with the `Execution Summary` tab to confirm timeline, active URLs, total cases, and release recommendation rules.
+- Open `How To Use` for the short workflow and `Tester Guide` for column-by-column instructions.
+- Use `Main Test Cases` when filtering all 51 cases by day, owner, lane, priority, or status.
+- Use detailed tabs when working in one focused area, for example `P0 Smoke UAT Gate`, `Sprint Regression`, `Full Regression`, or `Deployment Smoke`.
 - Execute rows by `Execution Day`.
 - Keep `Actual Result` factual.
 - Add evidence for every executed row: screenshot, export file, API response/request ID, email/notification, or document URL.
@@ -50,6 +54,38 @@ Do not treat future production, QA, or hosted-dev domains as isolated/live until
 - Add `Defect ID` for every failure.
 - Add `Blocked Reason`, owner, and next action for every blocked/setup-required row.
 - Submit each day by the cutoff in `Daily Submission Due`.
+
+## Workbook Column Guide
+
+- `Test Case ID`: unique row ID. Use it in screenshots, defect tickets, and evidence names.
+- `Execution Day`: day to run the row. Do not move it unless QA Lead approves.
+- `Planned Start Date` / `Planned End Date`: planned execution date for the row.
+- `Daily Submission Due`: deadline for that row's evidence and status.
+- `Final Submission Due`: final QA package deadline.
+- `Completion Owner`: person/team responsible for executing the case.
+- `Reviewer / Signoff Owner`: person/team responsible for reviewing evidence and status.
+- `Execution Lane`: workstream such as P0 gate, Core HR, Expense, Documents, Reports, Mobile, or CI/CD readiness.
+- `Priority`: P0 blocks release/signoff, P1 is important regression, P2 is lower-risk or future readiness.
+- `Story Points`: testing effort estimate. Do not change it during execution unless QA Lead approves.
+- `Preconditions`: setup that must exist before testing.
+- `Steps`: concise actions to perform.
+- `Expected Result`: what must happen for the row to pass.
+- `Status`: current test state.
+- `Actual Result`: what actually happened.
+- `Evidence Link / Screenshot Ref`: link, file name, request ID, export file, document URL, notification/email evidence, or CI run URL.
+- `Defect ID`: required when status is `Fail`.
+- `Blocked Reason`: required when status is `Blocked` or `Setup Required`.
+- `Retest Due Date`: deadline for retesting a fixed defect.
+- `Submission Status`: whether the evidence has been submitted or reviewed.
+
+## Status Meanings
+
+- `Not Run`: testing has not started.
+- `Pass`: expected result matched and evidence is attached.
+- `Fail`: feature was testable but behaved incorrectly; add defect ID and evidence.
+- `Blocked`: tester cannot execute because data, credential, role, setup, or environment is missing.
+- `Setup Required`: row depends on future domain/service/environment setup that is not live.
+- `Not Applicable`: reviewer-approved reason why this row does not apply to this cycle.
 
 ## Defect SLA
 

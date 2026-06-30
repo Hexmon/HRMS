@@ -22,6 +22,7 @@ FINAL_SUBMISSION = "2026-06-16 18:00 IST"
 
 FILES_CHANGED = [
     "qa/TESTING_TEST_CASES.xlsx",
+    "qa/TESTING_TEST_CASES.xlsx: How To Use and Tester Guide sheets",
     "qa/TESTING_CHECKLIST_INTERNAL.md",
     "qa/TESTING_CHECKLIST_CLIENT.md",
     "qa/TESTING_CHECKLIST_CLIENT.docx",
