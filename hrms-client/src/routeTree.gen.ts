@@ -93,6 +93,7 @@ import { Route as AppAdminSettingsRolesRouteImport } from './routes/_app/admin-s
 import { Route as AppAdminSettingsPoliciesRouteImport } from './routes/_app/admin-settings.policies'
 import { Route as AppAdminSettingsNotificationsRouteImport } from './routes/_app/admin-settings.notifications'
 import { Route as AppAdminSettingsMasterDataRouteImport } from './routes/_app/admin-settings.master-data'
+import { Route as AppAdminSettingsGeoRouteImport } from './routes/_app/admin-settings.geo'
 import { Route as AppAdminSettingsEmailTemplatesRouteImport } from './routes/_app/admin-settings.email-templates'
 import { Route as AppAdminSettingsCompanyRouteImport } from './routes/_app/admin-settings.company'
 import { Route as AppAdminSettingsAuditRouteImport } from './routes/_app/admin-settings.audit'
@@ -521,6 +522,11 @@ const AppAdminSettingsMasterDataRoute =
     path: '/master-data',
     getParentRoute: () => AppAdminSettingsRoute,
   } as any)
+const AppAdminSettingsGeoRoute = AppAdminSettingsGeoRouteImport.update({
+  id: '/geo',
+  path: '/geo',
+  getParentRoute: () => AppAdminSettingsRoute,
+} as any)
 const AppAdminSettingsEmailTemplatesRoute =
   AppAdminSettingsEmailTemplatesRouteImport.update({
     id: '/email-templates',
@@ -563,6 +569,7 @@ export interface FileRoutesByFullPath {
   '/admin-settings/audit': typeof AppAdminSettingsAuditRoute
   '/admin-settings/company': typeof AppAdminSettingsCompanyRoute
   '/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
+  '/admin-settings/geo': typeof AppAdminSettingsGeoRoute
   '/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
   '/admin-settings/notifications': typeof AppAdminSettingsNotificationsRoute
   '/admin-settings/policies': typeof AppAdminSettingsPoliciesRoute
@@ -642,6 +649,7 @@ export interface FileRoutesByTo {
   '/admin-settings/audit': typeof AppAdminSettingsAuditRoute
   '/admin-settings/company': typeof AppAdminSettingsCompanyRoute
   '/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
+  '/admin-settings/geo': typeof AppAdminSettingsGeoRoute
   '/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
   '/admin-settings/notifications': typeof AppAdminSettingsNotificationsRoute
   '/admin-settings/policies': typeof AppAdminSettingsPoliciesRoute
@@ -732,6 +740,7 @@ export interface FileRoutesById {
   '/_app/admin-settings/audit': typeof AppAdminSettingsAuditRoute
   '/_app/admin-settings/company': typeof AppAdminSettingsCompanyRoute
   '/_app/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
+  '/_app/admin-settings/geo': typeof AppAdminSettingsGeoRoute
   '/_app/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
   '/_app/admin-settings/notifications': typeof AppAdminSettingsNotificationsRoute
   '/_app/admin-settings/policies': typeof AppAdminSettingsPoliciesRoute
@@ -822,6 +831,7 @@ export interface FileRouteTypes {
     | '/admin-settings/audit'
     | '/admin-settings/company'
     | '/admin-settings/email-templates'
+    | '/admin-settings/geo'
     | '/admin-settings/master-data'
     | '/admin-settings/notifications'
     | '/admin-settings/policies'
@@ -901,6 +911,7 @@ export interface FileRouteTypes {
     | '/admin-settings/audit'
     | '/admin-settings/company'
     | '/admin-settings/email-templates'
+    | '/admin-settings/geo'
     | '/admin-settings/master-data'
     | '/admin-settings/notifications'
     | '/admin-settings/policies'
@@ -990,6 +1001,7 @@ export interface FileRouteTypes {
     | '/_app/admin-settings/audit'
     | '/_app/admin-settings/company'
     | '/_app/admin-settings/email-templates'
+    | '/_app/admin-settings/geo'
     | '/_app/admin-settings/master-data'
     | '/_app/admin-settings/notifications'
     | '/_app/admin-settings/policies'
@@ -1656,6 +1668,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminSettingsMasterDataRouteImport
       parentRoute: typeof AppAdminSettingsRoute
     }
+    '/_app/admin-settings/geo': {
+      id: '/_app/admin-settings/geo'
+      path: '/geo'
+      fullPath: '/admin-settings/geo'
+      preLoaderRoute: typeof AppAdminSettingsGeoRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
     '/_app/admin-settings/email-templates': {
       id: '/_app/admin-settings/email-templates'
       path: '/email-templates'
@@ -1684,6 +1703,7 @@ interface AppAdminSettingsRouteChildren {
   AppAdminSettingsAuditRoute: typeof AppAdminSettingsAuditRoute
   AppAdminSettingsCompanyRoute: typeof AppAdminSettingsCompanyRoute
   AppAdminSettingsEmailTemplatesRoute: typeof AppAdminSettingsEmailTemplatesRoute
+  AppAdminSettingsGeoRoute: typeof AppAdminSettingsGeoRoute
   AppAdminSettingsMasterDataRoute: typeof AppAdminSettingsMasterDataRoute
   AppAdminSettingsNotificationsRoute: typeof AppAdminSettingsNotificationsRoute
   AppAdminSettingsPoliciesRoute: typeof AppAdminSettingsPoliciesRoute
@@ -1697,6 +1717,7 @@ const AppAdminSettingsRouteChildren: AppAdminSettingsRouteChildren = {
   AppAdminSettingsAuditRoute: AppAdminSettingsAuditRoute,
   AppAdminSettingsCompanyRoute: AppAdminSettingsCompanyRoute,
   AppAdminSettingsEmailTemplatesRoute: AppAdminSettingsEmailTemplatesRoute,
+  AppAdminSettingsGeoRoute: AppAdminSettingsGeoRoute,
   AppAdminSettingsMasterDataRoute: AppAdminSettingsMasterDataRoute,
   AppAdminSettingsNotificationsRoute: AppAdminSettingsNotificationsRoute,
   AppAdminSettingsPoliciesRoute: AppAdminSettingsPoliciesRoute,
