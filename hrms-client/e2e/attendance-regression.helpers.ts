@@ -64,7 +64,10 @@ export async function openAttendance(page: Page, path = "/attendance"): Promise<
   await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`, "u"));
 }
 
-export function attendanceSummary(state: ManualSessionState): Record<string, unknown> {
+export function attendanceSummary(
+  state: ManualSessionState,
+  punchPolicy: Record<string, unknown> = {},
+): Record<string, unknown> {
   const now = new Date();
   const generatedAt = now.toISOString();
   const workDate = localIsoDate(now);
@@ -95,8 +98,10 @@ export function attendanceSummary(state: ManualSessionState): Record<string, unk
       next_allowed_actions: allowedActions,
       work_mode: "office",
       punch_policy: {
+        attendance_mode: "manual_only",
         blocked_reason: null,
         blocked_action_reasons: {},
+        ...punchPolicy,
       },
     },
     summary: {

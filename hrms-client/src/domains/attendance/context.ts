@@ -3,6 +3,30 @@ import type { AttendancePunchEventType } from "./api";
 
 export type AttendanceSessionState = "not_started" | "open" | "on_break" | "completed";
 export type AttendanceContextSource = "v1_summary_compat" | "context_api";
+export type AttendanceGeoPolicyMode =
+  | "manual_only"
+  | "geo_optional"
+  | "geo_required"
+  | "geo_preferred";
+export type AttendanceGeoPolicyAction = "allow" | "deny" | "manual_fallback";
+export type AttendanceApprovalMode = "disabled" | "approval_required";
+
+export interface EmployeeAttendanceGeoPolicy {
+  attendanceMode: AttendanceGeoPolicyMode;
+  fallbackApprovalMode: AttendanceApprovalMode | null;
+  regularizationMode: AttendanceApprovalMode | null;
+  locationUnavailableAction: AttendanceGeoPolicyAction | null;
+  permissionDeniedAction: AttendanceGeoPolicyAction | null;
+  outsideFenceAction: AttendanceGeoPolicyAction | null;
+  boundaryUncertainAction: AttendanceGeoPolicyAction | null;
+  staleEvidenceAction: AttendanceGeoPolicyAction | null;
+  accuracyExceededAction: AttendanceGeoPolicyAction | null;
+  effectiveGeofenceId: string | null;
+  effectiveGeofenceIds: string[];
+  geofenceGraceMeters: number | null;
+  maxLocationAgeMs: number | null;
+  maxAccuracyMeters: number | null;
+}
 
 export interface EmployeeAttendanceContext {
   source: AttendanceContextSource;
@@ -22,6 +46,7 @@ export interface EmployeeAttendanceContext {
   blockedReason: string | null;
   blockedActionReasons: Partial<Record<AttendancePunchEventType, string>>;
   workMode: string | null;
+  geoPolicy: EmployeeAttendanceGeoPolicy;
   isReady: boolean;
 }
 
@@ -74,6 +99,65 @@ function blockedActionReasons(value: unknown): Partial<Record<AttendancePunchEve
   }
 
   return result;
+}
+
+function geoPolicyMode(value: unknown): AttendanceGeoPolicyMode {
+  const parsed = text(value);
+  if (
+    parsed === "geo_optional" ||
+    parsed === "geo_required" ||
+    parsed === "geo_preferred" ||
+    parsed === "manual_only"
+  ) {
+    return parsed;
+  }
+  return "manual_only";
+}
+
+function approvalMode(value: unknown): AttendanceApprovalMode | null {
+  const parsed = text(value);
+  return parsed === "disabled" || parsed === "approval_required" ? parsed : null;
+}
+
+function geoPolicyAction(value: unknown): AttendanceGeoPolicyAction | null {
+  const parsed = text(value);
+  return parsed === "allow" || parsed === "deny" || parsed === "manual_fallback" ? parsed : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function optionalTextArray(value: unknown): string[] {
+  return Array.from(
+    new Set(
+      asArray(value)
+        .map((item) => text(item))
+        .filter(Boolean),
+    ),
+  );
+}
+
+function attendanceGeoPolicy(value: unknown): EmployeeAttendanceGeoPolicy {
+  const policy = asRecord(value);
+  return {
+    attendanceMode: geoPolicyMode(policy.attendance_mode),
+    fallbackApprovalMode: approvalMode(policy.fallback_approval_mode),
+    regularizationMode: approvalMode(policy.regularization_mode),
+    locationUnavailableAction: geoPolicyAction(policy.location_unavailable_action),
+    permissionDeniedAction: geoPolicyAction(policy.permission_denied_action),
+    outsideFenceAction: geoPolicyAction(policy.outside_fence_action),
+    boundaryUncertainAction: geoPolicyAction(policy.boundary_uncertain_action),
+    staleEvidenceAction: geoPolicyAction(policy.stale_evidence_action),
+    accuracyExceededAction: geoPolicyAction(policy.accuracy_exceeded_action),
+    effectiveGeofenceId: optionalText(policy.effective_geofence_id),
+    effectiveGeofenceIds: optionalTextArray(policy.effective_geofence_ids),
+    geofenceGraceMeters: optionalNumber(policy.geofence_grace_meters),
+    maxLocationAgeMs: optionalNumber(policy.max_location_age_ms),
+    maxAccuracyMeters: optionalNumber(policy.max_accuracy_meters),
+  };
 }
 
 function sessionState(
@@ -144,6 +228,7 @@ export function employeeAttendanceContextFromSummary(input: unknown): EmployeeAt
     blockedReason: optionalText(policy.blocked_reason),
     blockedActionReasons: blockedActionReasons(policy.blocked_action_reasons),
     workMode: optionalText(today.work_mode),
+    geoPolicy: attendanceGeoPolicy(policy),
     isReady: isIsoDateTime(serverTime) && isIsoDate(workDate),
   };
 }

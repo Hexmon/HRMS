@@ -22,6 +22,7 @@ export interface ManualAttendanceMutationInput {
   action: AttendancePunchEventType;
   idempotencyKey: string;
   sourceView: "attendance_page" | "dashboard";
+  body?: AttendancePunchBody;
 }
 
 export function useMyAttendanceSummary(query: AttendanceQuery = {}, enabled = true) {
@@ -130,9 +131,9 @@ export function useAttendancePunchMutation() {
 export function useManualAttendanceMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ action, idempotencyKey, sourceView }: ManualAttendanceMutationInput) =>
+    mutationFn: ({ action, idempotencyKey, sourceView, body }: ManualAttendanceMutationInput) =>
       attendanceApi.punch(
-        {
+        body ?? {
           event_type: action,
           source: "web",
           metadata: { source_view: sourceView },

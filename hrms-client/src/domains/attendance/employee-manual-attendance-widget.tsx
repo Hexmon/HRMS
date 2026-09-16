@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock3,
   Coffee,
+  MapPin,
   Pause,
   Play,
   RefreshCw,
@@ -74,6 +75,7 @@ export function EmployeeManualAttendanceWidget({
   }, [contextQuery]);
   const action = useManualAttendanceAction({
     sourceView,
+    geoPolicy: context?.geoPolicy,
     onDeterministicFailure: refetchAfterFailure,
   });
   const reconcileAction = action.reconcile;
@@ -148,7 +150,7 @@ export function EmployeeManualAttendanceWidget({
     );
   }
 
-  const disabled = action.isPending || contextQuery.isFetching;
+  const disabled = action.isPending || action.geoStatus === "requesting" || contextQuery.isFetching;
 
   return (
     <Card className={cn("overflow-hidden rounded-lg", className)}>
@@ -221,7 +223,20 @@ export function EmployeeManualAttendanceWidget({
         )}
 
         <div className="min-h-10">
-          {action.result ? (
+          {action.geoStatus === "requesting" ? (
+            <div
+              role="status"
+              className="flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 p-3 text-sm text-info"
+            >
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-semibold">Getting browser location</p>
+                <p className="mt-0.5">
+                  Share location to let HRMS attach one-time evidence to this attendance action.
+                </p>
+              </div>
+            </div>
+          ) : action.result ? (
             <div
               ref={resultRef}
               tabIndex={-1}
