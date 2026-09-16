@@ -4093,6 +4093,242 @@ const attendanceGeofencePublishedVersionSchema = {
   },
 };
 
+const attendanceWorkSiteParamSchema = {
+  type: "object",
+  required: ["workSiteId"],
+  properties: { workSiteId: uuid("Work-site UUID") },
+  additionalProperties: false,
+};
+
+const attendanceGeofenceParamSchema = {
+  type: "object",
+  required: ["geofenceId"],
+  properties: { geofenceId: uuid("Geofence UUID") },
+  additionalProperties: false,
+};
+
+const attendanceGeofenceVersionParamSchema = {
+  type: "object",
+  required: ["geofenceId", "versionId"],
+  properties: {
+    geofenceId: uuid("Geofence UUID"),
+    versionId: uuid("Geofence version UUID"),
+  },
+  additionalProperties: false,
+};
+
+const metadataObjectSchema = {
+  type: "object",
+  additionalProperties: true,
+};
+
+const expectedVersionBody = {
+  type: "object",
+  required: ["expectedVersion"],
+  properties: {
+    expectedVersion: { type: "integer", minimum: 1, example: 1 },
+  },
+  additionalProperties: false,
+};
+
+const attendanceWorkSiteSchema = {
+  type: "object",
+  required: [
+    "id",
+    "siteCode",
+    "name",
+    "siteType",
+    "timezone",
+    "isActive",
+    "metadata",
+    "createdAt",
+    "updatedAt",
+    "deletedAt",
+    "version",
+  ],
+  properties: {
+    id: uuid("Work-site UUID"),
+    siteCode: { type: "string", example: "BLR-HQ" },
+    name: { type: "string", example: "Bengaluru HQ" },
+    siteType: { type: "string", example: "office" },
+    timezone: { type: "string", example: "Asia/Kolkata" },
+    isActive: { type: "boolean", example: true },
+    metadata: metadataObjectSchema,
+    createdAt: dateTime("Creation timestamp"),
+    updatedAt: dateTime("Update timestamp"),
+    deletedAt: { ...dateTime("Logical deletion timestamp"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 },
+  },
+  additionalProperties: false,
+};
+
+const attendanceWorkSiteCreateBody = {
+  type: "object",
+  required: ["siteCode", "name", "siteType", "timezone"],
+  properties: {
+    siteCode: { type: "string", minLength: 1, maxLength: 80, example: "BLR-HQ" },
+    name: { type: "string", minLength: 1, maxLength: 200, example: "Bengaluru HQ" },
+    siteType: {
+      type: "string",
+      minLength: 1,
+      maxLength: 80,
+      example: "office",
+      description: "Nonblank site type. Existing data is free-form; UI supports office, client, and temporary.",
+    },
+    timezone: { type: "string", minLength: 1, maxLength: 120, example: "Asia/Kolkata" },
+    isActive: { type: "boolean", example: true },
+    metadata: metadataObjectSchema,
+  },
+  additionalProperties: false,
+};
+
+const attendanceWorkSiteUpdateBody = {
+  ...attendanceWorkSiteCreateBody,
+  required: ["expectedVersion"],
+  properties: {
+    ...attendanceWorkSiteCreateBody.properties,
+    expectedVersion: { type: "integer", minimum: 1, example: 1 },
+  },
+};
+
+const attendanceGeofenceSchema = {
+  type: "object",
+  required: [
+    "id",
+    "workSiteId",
+    "geofenceCode",
+    "name",
+    "isActive",
+    "currentPublishedVersionId",
+    "metadata",
+    "createdAt",
+    "updatedAt",
+    "deletedAt",
+    "version",
+  ],
+  properties: {
+    id: uuid("Geofence UUID"),
+    workSiteId: uuid("Work-site UUID"),
+    geofenceCode: { type: "string", example: "MAIN-GATE" },
+    name: { type: "string", example: "Main Gate" },
+    isActive: { type: "boolean", example: true },
+    currentPublishedVersionId: { ...uuid("Current published version UUID"), nullable: true },
+    metadata: metadataObjectSchema,
+    createdAt: dateTime("Creation timestamp"),
+    updatedAt: dateTime("Update timestamp"),
+    deletedAt: { ...dateTime("Logical deletion timestamp"), nullable: true },
+    version: { type: "integer", minimum: 1, example: 1 },
+  },
+  additionalProperties: false,
+};
+
+const attendanceGeofenceCreateBody = {
+  type: "object",
+  required: ["geofenceCode", "name"],
+  properties: {
+    geofenceCode: { type: "string", minLength: 1, maxLength: 80, example: "MAIN-GATE" },
+    name: { type: "string", minLength: 1, maxLength: 200, example: "Main Gate" },
+    isActive: { type: "boolean", example: true },
+    metadata: metadataObjectSchema,
+  },
+  additionalProperties: false,
+};
+
+const attendanceGeofenceUpdateBody = {
+  ...attendanceGeofenceCreateBody,
+  required: ["expectedVersion"],
+  properties: {
+    ...attendanceGeofenceCreateBody.properties,
+    expectedVersion: { type: "integer", minimum: 1, example: 1 },
+  },
+};
+
+const lngLatArraySchema = {
+  type: "array",
+  minItems: 2,
+  maxItems: 2,
+  items: { type: "number" },
+  description: "[longitude, latitude]",
+};
+
+const attendanceGeofenceVersionShapeBody = {
+  oneOf: [
+    {
+      type: "object",
+      required: ["shapeType", "center", "radiusMeters"],
+      properties: {
+        shapeType: { type: "string", enum: ["circle"] },
+        center: {
+          type: "object",
+          required: ["longitude", "latitude"],
+          properties: {
+            longitude: { type: "number", minimum: -180, maximum: 180 },
+            latitude: { type: "number", minimum: -90, maximum: 90 },
+          },
+          additionalProperties: false,
+        },
+        radiusMeters: { type: "number", exclusiveMinimum: 0, example: 150 },
+        shapeMetadata: metadataObjectSchema,
+      },
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      required: ["shapeType", "vertices"],
+      properties: {
+        shapeType: { type: "string", enum: ["polygon"] },
+        vertices: {
+          type: "array",
+          minItems: 3,
+          items: lngLatArraySchema,
+        },
+        shapeMetadata: metadataObjectSchema,
+      },
+      additionalProperties: false,
+    },
+  ],
+};
+
+const attendanceGeofenceVersionSchema = {
+  type: "object",
+  required: [
+    "id",
+    "geofenceId",
+    "versionNumber",
+    "versionStatus",
+    "shapeType",
+    "shape",
+    "shapeMetadata",
+    "effectiveFrom",
+    "effectiveUntil",
+    "canonicalHash",
+    "publishedAt",
+    "publishedByUserId",
+    "createdAt",
+  ],
+  properties: {
+    id: uuid("Geofence version UUID"),
+    geofenceId: uuid("Geofence UUID"),
+    versionNumber: { type: "integer", minimum: 1, example: 1 },
+    versionStatus: { type: "string", enum: ["draft", "published"], example: "draft" },
+    shapeType: { type: "string", enum: ["circle", "polygon"], example: "circle" },
+    shape: {
+      type: "object",
+      additionalProperties: true,
+      description: "Circle shape exposes center/radiusMeters; polygon shape exposes open-ring [lng, lat] vertices.",
+    },
+    shapeMetadata: metadataObjectSchema,
+    effectiveFrom: { ...dateTime("Inclusive effective start timestamp"), nullable: true },
+    effectiveUntil: { ...dateTime("Exclusive effective end timestamp"), nullable: true },
+    canonicalHash: { type: "string", nullable: true, example: lowerHex64Example },
+    publishedAt: { ...dateTime("Publication timestamp"), nullable: true },
+    publishedByUserId: { ...uuid("Publishing actor UUID"), nullable: true },
+    createdAt: dateTime("Creation timestamp"),
+    createdByUserId: { ...uuid("Creating actor UUID"), nullable: true },
+  },
+  additionalProperties: false,
+};
+
 const attendancePunchSchema = {
   type: "object",
   required: ["id", "employee_user_id", "event_type", "occurred_at"],
@@ -9188,6 +9424,225 @@ const routeDocs: Record<string, RouteSchema> = {
     {
       params: idParamSchema,
       response200: attendancePayrollPeriodSummarySchema,
+    },
+  ),
+  "GET /api/v1/attendance/work-sites": operation(
+    "Attendance",
+    "List attendance work sites",
+    "Lists non-deleted work sites for the active company for Admin Geo configuration.",
+    {
+      response200: {
+        type: "object",
+        required: ["items"],
+        properties: { items: { type: "array", items: attendanceWorkSiteSchema } },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "GET /api/v1/attendance/work-sites/{workSiteId}": operation(
+    "Attendance",
+    "Get attendance work site",
+    "Returns one tenant-scoped non-deleted work site for Admin Geo configuration.",
+    {
+      params: attendanceWorkSiteParamSchema,
+      response200: {
+        type: "object",
+        required: ["workSite"],
+        properties: { workSite: attendanceWorkSiteSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "POST /api/v1/attendance/work-sites": operation(
+    "Attendance",
+    "Create attendance work site",
+    "Creates a tenant-scoped attendance work site. Company is resolved from the authenticated session.",
+    {
+      body: attendanceWorkSiteCreateBody,
+      response200: {
+        type: "object",
+        required: ["workSite"],
+        properties: { workSite: attendanceWorkSiteSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "PATCH /api/v1/attendance/work-sites/{workSiteId}": operation(
+    "Attendance",
+    "Update attendance work site",
+    "Updates mutable work-site fields using expectedVersion optimistic concurrency.",
+    {
+      params: attendanceWorkSiteParamSchema,
+      body: attendanceWorkSiteUpdateBody,
+      response200: {
+        type: "object",
+        required: ["workSite"],
+        properties: { workSite: attendanceWorkSiteSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "DELETE /api/v1/attendance/work-sites/{workSiteId}": operation(
+    "Attendance",
+    "Delete attendance work site",
+    "Logically deletes a work site by setting deletedAt and inactive while preserving historical references.",
+    {
+      params: attendanceWorkSiteParamSchema,
+      body: expectedVersionBody,
+      response200: {
+        type: "object",
+        required: ["workSite"],
+        properties: { workSite: attendanceWorkSiteSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "GET /api/v1/attendance/work-sites/{workSiteId}/geofences": operation(
+    "Attendance",
+    "List attendance geofences",
+    "Lists non-deleted geofences for a tenant-scoped work site.",
+    {
+      params: attendanceWorkSiteParamSchema,
+      response200: {
+        type: "object",
+        required: ["items"],
+        properties: { items: { type: "array", items: attendanceGeofenceSchema } },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "POST /api/v1/attendance/work-sites/{workSiteId}/geofences": operation(
+    "Attendance",
+    "Create attendance geofence",
+    "Creates a geofence under a tenant-scoped work site.",
+    {
+      params: attendanceWorkSiteParamSchema,
+      body: attendanceGeofenceCreateBody,
+      response200: {
+        type: "object",
+        required: ["geofence"],
+        properties: { geofence: attendanceGeofenceSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "GET /api/v1/attendance/geofences/{geofenceId}": operation(
+    "Attendance",
+    "Get attendance geofence",
+    "Returns one tenant-scoped non-deleted attendance geofence.",
+    {
+      params: attendanceGeofenceParamSchema,
+      response200: {
+        type: "object",
+        required: ["geofence"],
+        properties: { geofence: attendanceGeofenceSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "PATCH /api/v1/attendance/geofences/{geofenceId}": operation(
+    "Attendance",
+    "Update attendance geofence",
+    "Updates mutable geofence fields using expectedVersion optimistic concurrency.",
+    {
+      params: attendanceGeofenceParamSchema,
+      body: attendanceGeofenceUpdateBody,
+      response200: {
+        type: "object",
+        required: ["geofence"],
+        properties: { geofence: attendanceGeofenceSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "DELETE /api/v1/attendance/geofences/{geofenceId}": operation(
+    "Attendance",
+    "Delete attendance geofence",
+    "Logically deletes a geofence while preserving version history.",
+    {
+      params: attendanceGeofenceParamSchema,
+      body: expectedVersionBody,
+      response200: {
+        type: "object",
+        required: ["geofence"],
+        properties: { geofence: attendanceGeofenceSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "GET /api/v1/attendance/geofences/{geofenceId}/versions": operation(
+    "Attendance",
+    "List geofence versions",
+    "Lists draft and published versions for a tenant-scoped geofence.",
+    {
+      params: attendanceGeofenceParamSchema,
+      response200: {
+        type: "object",
+        required: ["items"],
+        properties: { items: { type: "array", items: attendanceGeofenceVersionSchema } },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "GET /api/v1/attendance/geofences/{geofenceId}/versions/{versionId}": operation(
+    "Attendance",
+    "Get geofence version",
+    "Returns one geofence version with frontend-friendly shape serialization.",
+    {
+      params: attendanceGeofenceVersionParamSchema,
+      response200: {
+        type: "object",
+        required: ["version"],
+        properties: { version: attendanceGeofenceVersionSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "POST /api/v1/attendance/geofences/{geofenceId}/versions": operation(
+    "Attendance",
+    "Create geofence draft version",
+    "Creates a new draft geofence version and assigns versionNumber server-side.",
+    {
+      params: attendanceGeofenceParamSchema,
+      body: attendanceGeofenceVersionShapeBody,
+      response200: {
+        type: "object",
+        required: ["version"],
+        properties: { version: attendanceGeofenceVersionSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "PATCH /api/v1/attendance/geofences/{geofenceId}/versions/{versionId}": operation(
+    "Attendance",
+    "Update geofence draft version",
+    "Updates geometry and metadata for a draft geofence version. Published versions are immutable.",
+    {
+      params: attendanceGeofenceVersionParamSchema,
+      body: attendanceGeofenceVersionShapeBody,
+      response200: {
+        type: "object",
+        required: ["version"],
+        properties: { version: attendanceGeofenceVersionSchema },
+        additionalProperties: false,
+      },
+    },
+  ),
+  "DELETE /api/v1/attendance/geofences/{geofenceId}/versions/{versionId}": operation(
+    "Attendance",
+    "Delete geofence draft version",
+    "Deletes a draft geofence version. Published versions cannot be deleted.",
+    {
+      params: attendanceGeofenceVersionParamSchema,
+      response200: {
+        type: "object",
+        required: ["deleted", "versionId"],
+        properties: {
+          deleted: { type: "boolean", enum: [true] },
+          versionId: uuid("Deleted geofence version UUID"),
+        },
+        additionalProperties: false,
+      },
     },
   ),
   "POST /api/v1/attendance/geofences/{geofenceId}/versions/{versionId}/publish":

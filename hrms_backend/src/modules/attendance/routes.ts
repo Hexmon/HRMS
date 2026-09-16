@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import type { AuthUser } from "#shared";
 import {
   attendancePunchCommandEnvelopeSchema,
   attendancePunchSchema,
@@ -10,7 +11,8 @@ import {
   isoDateTimeSchema,
   paginationQuerySchema,
 } from "#shared";
-import { badRequest, unauthorized } from "../../platform/errors.js";
+import { badRequest, conflict, forbidden, unauthorized } from "../../platform/errors.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { AttendanceService } from "./service.js";
 import { AttendancePayrollPeriodService } from "./payroll-period-service.js";
 import { AttendanceOfflineSyncService } from "./offline-sync-service.js";
@@ -19,8 +21,16 @@ import {
   isAttendanceReplayResponse,
 } from "./command-service.js";
 import { attendanceOfflineBatchRequestSchema } from "./offline-sync-contract.js";
+import { canManageAllAttendance } from "./policy.js";
+import { PostgresAdminGeoRepository } from "./admin-geo-repository.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
+const workSiteParamSchema = z.object({ workSiteId: z.uuid() });
+const geofenceParamSchema = z.object({ geofenceId: z.uuid() });
+const geofenceVersionParamSchema = z.object({
+  geofenceId: z.uuid(),
+  versionId: z.uuid(),
+});
 const geofencePublishParamSchema = z.object({
   geofenceId: z.uuid(),
   versionId: z.uuid(),
@@ -81,6 +91,104 @@ const geofenceVersionPublishSchema = z
     effectiveUntil: isoDateTimeSchema.nullish(),
   })
   .strict();
+const jsonObjectSchema = z.record(z.string(), z.unknown());
+const expectedVersionSchema = z
+  .object({ expectedVersion: z.number().int().positive() })
+  .strict();
+const longitudeSchema = z
+  .number()
+  .refine((value) => Number.isFinite(value) && value >= -180 && value <= 180, {
+    message: "Longitude must be between -180 and 180.",
+  });
+const latitudeSchema = z
+  .number()
+  .refine((value) => Number.isFinite(value) && value >= -90 && value <= 90, {
+    message: "Latitude must be between -90 and 90.",
+  });
+const lngLatSchema = z.tuple([longitudeSchema, latitudeSchema]);
+const workSiteCreateSchema = z
+  .object({
+    siteCode: z.string().trim().min(1).max(80),
+    name: z.string().trim().min(1).max(200),
+    siteType: z.string().trim().min(1).max(80),
+    timezone: z.string().trim().min(1).max(120),
+    isActive: z.boolean().optional(),
+    metadata: jsonObjectSchema.optional(),
+  })
+  .strict();
+const workSiteUpdateSchema = workSiteCreateSchema
+  .partial()
+  .extend({ expectedVersion: z.number().int().positive() })
+  .strict();
+const geofenceCreateSchema = z
+  .object({
+    geofenceCode: z.string().trim().min(1).max(80),
+    name: z.string().trim().min(1).max(200),
+    isActive: z.boolean().optional(),
+    metadata: jsonObjectSchema.optional(),
+  })
+  .strict();
+const geofenceUpdateSchema = geofenceCreateSchema
+  .partial()
+  .extend({ expectedVersion: z.number().int().positive() })
+  .strict();
+const circleVersionSchema = z
+  .object({
+    shapeType: z.literal("circle"),
+    center: z.object({
+      longitude: longitudeSchema,
+      latitude: latitudeSchema,
+    }),
+    radiusMeters: z.number().positive().finite(),
+    shapeMetadata: jsonObjectSchema.optional(),
+  })
+  .strict();
+const polygonVersionSchema = z
+  .object({
+    shapeType: z.literal("polygon"),
+    vertices: z.array(lngLatSchema).min(3).max(500),
+    shapeMetadata: jsonObjectSchema.optional(),
+  })
+  .strict()
+  .refine((value) => distinctCoordinateCount(value.vertices) >= 3, {
+    message: "Polygon requires at least three distinct vertices.",
+    path: ["vertices"],
+  });
+const geofenceVersionShapeSchema = z.discriminatedUnion("shapeType", [
+  circleVersionSchema,
+  polygonVersionSchema,
+]);
+
+function distinctCoordinateCount(vertices: Array<readonly [number, number]>): number {
+  return new Set(
+    vertices.map(
+      ([longitude, latitude]) => `${longitude.toFixed(7)},${latitude.toFixed(7)}`,
+    ),
+  ).size;
+}
+
+function adminGeoRepository(
+  fastify: Parameters<FastifyPluginAsync>[0],
+): PostgresAdminGeoRepository {
+  if (!fastify.store.pgPool) {
+    throw conflict("Admin geo service is unavailable.");
+  }
+  return new PostgresAdminGeoRepository(fastify.store.pgPool);
+}
+
+function requireAdminGeoContext(
+  store: Parameters<FastifyPluginAsync>[0]["store"],
+  actor: AuthUser,
+) {
+  if (!canManageAllAttendance(actor)) {
+    throw forbidden("Only HR or Admin can manage attendance geo configuration.");
+  }
+  return resolveActiveCompanyMembershipContext(store, {
+    userId: actor.id,
+    operation: "attendance.geo_admin",
+    requireActiveEmployment: true,
+  });
+}
 
 export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
   const withReplayHeader = (
@@ -368,6 +476,204 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
       params.id,
       attendancePayrollPeriodSummaryQuerySchema.parse(request.query),
     );
+  });
+
+  fastify.get("/work-sites", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    return {
+      items: await adminGeoRepository(fastify).listWorkSites(context.companyId),
+    };
+  });
+
+  fastify.get("/work-sites/:workSiteId", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = workSiteParamSchema.parse(request.params);
+    return {
+      workSite: await adminGeoRepository(fastify).getWorkSite(
+        context.companyId,
+        params.workSiteId,
+      ),
+    };
+  });
+
+  fastify.post("/work-sites", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const input = workSiteCreateSchema.parse(request.body);
+    return {
+      workSite: await adminGeoRepository(fastify).createWorkSite({
+        companyId: context.companyId,
+        actorUserId: request.actor.id,
+        values: input,
+      }),
+    };
+  });
+
+  fastify.patch("/work-sites/:workSiteId", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = workSiteParamSchema.parse(request.params);
+    const input = workSiteUpdateSchema.parse(request.body);
+    return {
+      workSite: await adminGeoRepository(fastify).updateWorkSite({
+        companyId: context.companyId,
+        actorUserId: request.actor.id,
+        workSiteId: params.workSiteId,
+        values: input,
+      }),
+    };
+  });
+
+  fastify.delete("/work-sites/:workSiteId", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = workSiteParamSchema.parse(request.params);
+    const input = expectedVersionSchema.parse(request.body);
+    return {
+      workSite: await adminGeoRepository(fastify).deleteWorkSite({
+        companyId: context.companyId,
+        actorUserId: request.actor.id,
+        workSiteId: params.workSiteId,
+        expectedVersion: input.expectedVersion,
+      }),
+    };
+  });
+
+  fastify.get("/work-sites/:workSiteId/geofences", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = workSiteParamSchema.parse(request.params);
+    return {
+      items: await adminGeoRepository(fastify).listGeofences(
+        context.companyId,
+        params.workSiteId,
+      ),
+    };
+  });
+
+  fastify.post("/work-sites/:workSiteId/geofences", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = workSiteParamSchema.parse(request.params);
+    const input = geofenceCreateSchema.parse(request.body);
+    return {
+      geofence: await adminGeoRepository(fastify).createGeofence({
+        companyId: context.companyId,
+        actorUserId: request.actor.id,
+        workSiteId: params.workSiteId,
+        values: input,
+      }),
+    };
+  });
+
+  fastify.get("/geofences/:geofenceId", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = geofenceParamSchema.parse(request.params);
+    return {
+      geofence: await adminGeoRepository(fastify).getGeofence(
+        context.companyId,
+        params.geofenceId,
+      ),
+    };
+  });
+
+  fastify.patch("/geofences/:geofenceId", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = geofenceParamSchema.parse(request.params);
+    const input = geofenceUpdateSchema.parse(request.body);
+    return {
+      geofence: await adminGeoRepository(fastify).updateGeofence({
+        companyId: context.companyId,
+        actorUserId: request.actor.id,
+        geofenceId: params.geofenceId,
+        values: input,
+      }),
+    };
+  });
+
+  fastify.delete("/geofences/:geofenceId", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = geofenceParamSchema.parse(request.params);
+    const input = expectedVersionSchema.parse(request.body);
+    return {
+      geofence: await adminGeoRepository(fastify).deleteGeofence({
+        companyId: context.companyId,
+        actorUserId: request.actor.id,
+        geofenceId: params.geofenceId,
+        expectedVersion: input.expectedVersion,
+      }),
+    };
+  });
+
+  fastify.get("/geofences/:geofenceId/versions", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = geofenceParamSchema.parse(request.params);
+    return {
+      items: await adminGeoRepository(fastify).listVersions(
+        context.companyId,
+        params.geofenceId,
+      ),
+    };
+  });
+
+  fastify.get("/geofences/:geofenceId/versions/:versionId", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = geofenceVersionParamSchema.parse(request.params);
+    return {
+      version: await adminGeoRepository(fastify).getVersion(
+        context.companyId,
+        params.geofenceId,
+        params.versionId,
+      ),
+    };
+  });
+
+  fastify.post("/geofences/:geofenceId/versions", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = geofenceParamSchema.parse(request.params);
+    const input = geofenceVersionShapeSchema.parse(request.body);
+    return {
+      version: await adminGeoRepository(fastify).createVersion({
+        companyId: context.companyId,
+        actorUserId: request.actor.id,
+        geofenceId: params.geofenceId,
+        values: input,
+      }),
+    };
+  });
+
+  fastify.patch("/geofences/:geofenceId/versions/:versionId", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = geofenceVersionParamSchema.parse(request.params);
+    const input = geofenceVersionShapeSchema.parse(request.body);
+    return {
+      version: await adminGeoRepository(fastify).updateVersion({
+        companyId: context.companyId,
+        geofenceId: params.geofenceId,
+        versionId: params.versionId,
+        values: input,
+      }),
+    };
+  });
+
+  fastify.delete("/geofences/:geofenceId/versions/:versionId", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const context = requireAdminGeoContext(fastify.store, request.actor);
+    const params = geofenceVersionParamSchema.parse(request.params);
+    return adminGeoRepository(fastify).deleteVersion({
+      companyId: context.companyId,
+      geofenceId: params.geofenceId,
+      versionId: params.versionId,
+    });
   });
 
   fastify.post(

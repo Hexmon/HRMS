@@ -1,25 +1,24 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import type { GeoJSONSource, LngLatLike, Map as MapLibreMap, Marker } from "maplibre-gl";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { GeoJSONSource, LngLatLike, Map as MapLibreMap } from "maplibre-gl";
 import type { MapProviderConfig } from "@/domains/admin-geo/map-config";
 import {
+  circlePreviewRing,
   closedPreviewRing,
   draftBounds,
+  type CircleDraft,
   isPolygonReady,
   isValidLngLat,
   type LngLat,
   type PolygonDraft,
-  type WorkSiteDraft,
-  workSiteDraftToLngLat,
 } from "@/domains/admin-geo/geometry";
 import { cn } from "@/lib/utils";
 
-type MapClickMode = "work-site" | "polygon";
-type MarkerConstructor = new (options?: { color?: string }) => Marker;
+type MapClickMode = "circle-center" | "polygon";
 type DraftGeoJson = Exclude<Parameters<GeoJSONSource["setData"]>[0], string>;
 
 interface AdminGeoMapProps {
   config: MapProviderConfig | null;
-  workSiteDraft: WorkSiteDraft;
+  circleDraft: CircleDraft;
   polygonDraft: PolygonDraft;
   clickMode: MapClickMode;
   fitRequestKey: number;
@@ -30,11 +29,12 @@ type MapStatus = "missing-config" | "loading" | "ready" | "error";
 
 const DRAFT_POLYGON_SOURCE_ID = "admin-geo-draft-polygon";
 const DRAFT_VERTEX_SOURCE_ID = "admin-geo-draft-vertices";
+const DRAFT_CIRCLE_SOURCE_ID = "admin-geo-draft-circle";
 const DEFAULT_CENTER: LngLat = [78.9629, 20.5937];
 
 export function AdminGeoMap({
   config,
-  workSiteDraft,
+  circleDraft,
   polygonDraft,
   clickMode,
   fitRequestKey,
@@ -42,22 +42,20 @@ export function AdminGeoMap({
 }: AdminGeoMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const markerRef = useRef<Marker | null>(null);
-  const markerConstructorRef = useRef<MarkerConstructor | null>(null);
   const onMapClickRef = useRef(onMapClick);
   const polygonDraftRef = useRef(polygonDraft);
-  const workSiteDraftRef = useRef(workSiteDraft);
+  const circleDraftRef = useRef(circleDraft);
   const [status, setStatus] = useState<MapStatus>(config ? "loading" : "missing-config");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   onMapClickRef.current = onMapClick;
   polygonDraftRef.current = polygonDraft;
-  workSiteDraftRef.current = workSiteDraft;
+  circleDraftRef.current = circleDraft;
 
   const hint = useMemo(
     () =>
-      clickMode === "work-site"
-        ? "Map clicks update the work-site marker."
+      clickMode === "circle-center"
+        ? "Map clicks set the circle center."
         : "Map clicks append polygon vertices.",
     [clickMode],
   );
@@ -85,8 +83,16 @@ export function AdminGeoMap({
         if (disposed || !containerRef.current) return;
 
         maplibre.setWorkerUrl((workerModule as { default: string }).default);
-        markerConstructorRef.current = maplibre.Marker;
-        const initialCenter = workSiteDraftToLngLat(workSiteDraftRef.current) ?? DEFAULT_CENTER;
+        const initialBounds = draftBounds({
+          circle: circleDraftRef.current,
+          polygon: polygonDraftRef.current,
+        });
+        const initialCenter = initialBounds
+          ? ([
+              (initialBounds.west + initialBounds.east) / 2,
+              (initialBounds.south + initialBounds.north) / 2,
+            ] as LngLat)
+          : DEFAULT_CENTER;
         map = new maplibre.Map({
           attributionControl: { compact: true },
           center: initialCenter,
@@ -94,7 +100,7 @@ export function AdminGeoMap({
           maxZoom: mapConfig.maxZoom ?? undefined,
           minZoom: mapConfig.minZoom ?? undefined,
           style: mapConfig.styleUrl,
-          zoom: workSiteDraftToLngLat(workSiteDraftRef.current) ? 14 : 4,
+          zoom: initialBounds ? 14 : 4,
         });
         mapRef.current = map;
         map.addControl(new maplibre.NavigationControl({ showCompass: false }), "top-right");
@@ -102,8 +108,7 @@ export function AdminGeoMap({
         map.on("load", () => {
           if (!map || disposed) return;
           ensureDraftLayers(map);
-          updateDraftSources(map, polygonDraftRef.current);
-          updateWorkSiteMarker(maplibre.Marker, map, markerRef, workSiteDraftRef.current);
+          updateDraftSources(map, polygonDraftRef.current, circleDraftRef.current);
           setStatus("ready");
         });
         map.on("click", (event) => {
@@ -128,9 +133,6 @@ export function AdminGeoMap({
 
     return () => {
       disposed = true;
-      markerRef.current?.remove();
-      markerRef.current = null;
-      markerConstructorRef.current = null;
       map?.remove();
       if (mapRef.current === map) mapRef.current = null;
     };
@@ -140,17 +142,14 @@ export function AdminGeoMap({
     const map = mapRef.current;
     if (!map || status === "missing-config") return;
     if (!map.isStyleLoaded()) return;
-    updateDraftSources(map, polygonDraft);
-    if (markerConstructorRef.current) {
-      updateWorkSiteMarker(markerConstructorRef.current, map, markerRef, workSiteDraft);
-    }
-  }, [polygonDraft, status, workSiteDraft]);
+    updateDraftSources(map, polygonDraft, circleDraft);
+  }, [circleDraft, polygonDraft, status]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || fitRequestKey === 0) return;
-    fitToDraft(map, workSiteDraft, polygonDraft);
-  }, [fitRequestKey, polygonDraft, workSiteDraft]);
+    fitToDraft(map, circleDraft, polygonDraft);
+  }, [circleDraft, fitRequestKey, polygonDraft]);
 
   if (!config) {
     return (
@@ -193,6 +192,38 @@ export function AdminGeoMap({
 }
 
 function ensureDraftLayers(map: MapLibreMap): void {
+  if (!map.getSource(DRAFT_CIRCLE_SOURCE_ID)) {
+    map.addSource(DRAFT_CIRCLE_SOURCE_ID, {
+      data: emptyFeatureCollection(),
+      type: "geojson",
+    });
+  }
+  if (!map.getLayer("admin-geo-draft-circle-fill")) {
+    map.addLayer({
+      id: "admin-geo-draft-circle-fill",
+      paint: {
+        "fill-color": "#2563eb",
+        "fill-opacity": 0.14,
+      },
+      source: DRAFT_CIRCLE_SOURCE_ID,
+      type: "fill",
+    });
+  }
+  if (!map.getLayer("admin-geo-draft-circle-line")) {
+    map.addLayer({
+      id: "admin-geo-draft-circle-line",
+      layout: {
+        "line-cap": "round",
+        "line-join": "round",
+      },
+      paint: {
+        "line-color": "#2563eb",
+        "line-width": 2,
+      },
+      source: DRAFT_CIRCLE_SOURCE_ID,
+      type: "line",
+    });
+  }
   if (!map.getSource(DRAFT_POLYGON_SOURCE_ID)) {
     map.addSource(DRAFT_POLYGON_SOURCE_ID, {
       data: emptyFeatureCollection(),
@@ -246,38 +277,21 @@ function ensureDraftLayers(map: MapLibreMap): void {
   }
 }
 
-function updateDraftSources(map: MapLibreMap, polygonDraft: PolygonDraft): void {
+function updateDraftSources(
+  map: MapLibreMap,
+  polygonDraft: PolygonDraft,
+  circleDraft: CircleDraft,
+): void {
+  const circleSource = map.getSource(DRAFT_CIRCLE_SOURCE_ID) as GeoJSONSource | undefined;
   const polygonSource = map.getSource(DRAFT_POLYGON_SOURCE_ID) as GeoJSONSource | undefined;
   const vertexSource = map.getSource(DRAFT_VERTEX_SOURCE_ID) as GeoJSONSource | undefined;
+  circleSource?.setData(circleFeatureCollection(circleDraft));
   polygonSource?.setData(polygonFeatureCollection(polygonDraft));
   vertexSource?.setData(vertexFeatureCollection(polygonDraft.vertices));
 }
 
-function updateWorkSiteMarker(
-  MarkerClass: MarkerConstructor,
-  map: MapLibreMap,
-  markerRef: MutableRefObject<Marker | null>,
-  draft: WorkSiteDraft,
-): void {
-  const coordinate = workSiteDraftToLngLat(draft);
-  if (!coordinate) {
-    markerRef.current?.remove();
-    markerRef.current = null;
-    return;
-  }
-  if (!markerRef.current) {
-    markerRef.current = new MarkerClass({ color: "#2563eb" }).setLngLat(coordinate).addTo(map);
-    return;
-  }
-  markerRef.current.setLngLat(coordinate);
-}
-
-function fitToDraft(
-  map: MapLibreMap,
-  workSiteDraft: WorkSiteDraft,
-  polygonDraft: PolygonDraft,
-): void {
-  const bounds = draftBounds({ workSite: workSiteDraft, polygon: polygonDraft });
+function fitToDraft(map: MapLibreMap, circleDraft: CircleDraft, polygonDraft: PolygonDraft): void {
+  const bounds = draftBounds({ circle: circleDraft, polygon: polygonDraft });
   if (!bounds) return;
   if (bounds.west === bounds.east && bounds.south === bounds.north) {
     map.flyTo({ center: [bounds.west, bounds.south] as LngLatLike, zoom: 15 });
@@ -290,6 +304,24 @@ function fitToDraft(
     ],
     { duration: 450, padding: 48 },
   );
+}
+
+function circleFeatureCollection(circleDraft: CircleDraft): DraftGeoJson {
+  const ring = circlePreviewRing(circleDraft);
+  if (ring.length === 0) return emptyFeatureCollection();
+  return {
+    features: [
+      {
+        geometry: {
+          coordinates: [ring],
+          type: "Polygon",
+        },
+        properties: {},
+        type: "Feature",
+      },
+    ],
+    type: "FeatureCollection",
+  };
 }
 
 function polygonFeatureCollection(polygonDraft: PolygonDraft): DraftGeoJson {

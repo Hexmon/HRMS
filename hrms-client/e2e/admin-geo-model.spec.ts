@@ -1,14 +1,19 @@
 import { expect, test } from "@playwright/test";
 import {
+  circlePreviewRing,
   closedPreviewRing,
   distinctVertexCount,
   draftBounds,
+  EMPTY_CIRCLE_DRAFT,
   EMPTY_POLYGON_DRAFT,
   EMPTY_WORK_SITE_DRAFT,
+  isCircleReady,
   isPolygonReady,
   isValidLatitude,
   isValidLngLat,
   isValidLongitude,
+  isValidRadiusMeters,
+  resetCircleDraft,
   removeLastVertex,
   resetPolygonDraft,
   resetWorkSiteDraft,
@@ -59,6 +64,20 @@ test.describe("admin geo draft geometry", () => {
     expect(isPolygonReady(readyVertices)).toBe(true);
   });
 
+  test("validates circle drafts and builds a closed preview ring", () => {
+    expect(isValidRadiusMeters(1)).toBe(true);
+    expect(isValidRadiusMeters(0)).toBe(false);
+    expect(isValidRadiusMeters(Number.NaN)).toBe(false);
+    expect(isCircleReady({ center: [77.5946, 12.9716], radiusMeters: 150 })).toBe(true);
+    expect(isCircleReady({ center: null, radiusMeters: 150 })).toBe(false);
+
+    const ring = circlePreviewRing({ center: [77.5946, 12.9716], radiusMeters: 150 }, 8);
+
+    expect(ring).toHaveLength(9);
+    expect(ring[0]).toEqual(ring.at(-1));
+    expect(resetCircleDraft()).toEqual(EMPTY_CIRCLE_DRAFT);
+  });
+
   test("closes preview rings without mutating the underlying vertices", () => {
     const vertices: LngLat[] = [
       [77, 12],
@@ -97,23 +116,22 @@ test.describe("admin geo draft geometry", () => {
   });
 
   test("calculates bounds from valid draft geometry", () => {
-    expect(
-      draftBounds({
-        workSite: { longitude: 77.5, latitude: 12.5 },
-        polygon: {
-          vertices: [
-            [77, 12],
-            [78, 13],
-            [77.2, 12.7],
-          ],
-        },
-      }),
-    ).toEqual({
-      west: 77,
-      south: 12,
-      east: 78,
-      north: 13,
+    const bounds = draftBounds({
+      circle: { center: [79, 14], radiusMeters: 100 },
+      workSite: { longitude: 77.5, latitude: 12.5 },
+      polygon: {
+        vertices: [
+          [77, 12],
+          [78, 13],
+          [77.2, 12.7],
+        ],
+      },
     });
+
+    expect(bounds?.west).toBe(77);
+    expect(bounds?.south).toBe(12);
+    expect(bounds?.east).toBeCloseTo(79.0009, 4);
+    expect(bounds?.north).toBeCloseTo(14.0009, 4);
     expect(draftBounds({ polygon: { vertices: [] } })).toBeNull();
   });
 });

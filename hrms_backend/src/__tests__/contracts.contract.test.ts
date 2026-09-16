@@ -62,6 +62,9 @@ const localDemoPassword = getLocalDemoPassword();
 
 const expectedOperations = [
   "DELETE /api/v1/manager-backups/{id}",
+  "DELETE /api/v1/attendance/work-sites/{workSiteId}",
+  "DELETE /api/v1/attendance/geofences/{geofenceId}",
+  "DELETE /api/v1/attendance/geofences/{geofenceId}/versions/{versionId}",
   "GET /api/v1/admin/audit-log",
   "GET /api/v1/admin/company-profile",
   "GET /api/v1/admin/email-templates",
@@ -95,6 +98,12 @@ const expectedOperations = [
   "GET /api/v1/attendance/regularizations/queue/manager",
   "GET /api/v1/attendance/summary/my",
   "GET /api/v1/attendance/summary/team",
+  "GET /api/v1/attendance/work-sites",
+  "GET /api/v1/attendance/work-sites/{workSiteId}",
+  "GET /api/v1/attendance/work-sites/{workSiteId}/geofences",
+  "GET /api/v1/attendance/geofences/{geofenceId}",
+  "GET /api/v1/attendance/geofences/{geofenceId}/versions",
+  "GET /api/v1/attendance/geofences/{geofenceId}/versions/{versionId}",
   "GET /api/v1/auth/me",
   "POST /api/v1/webhooks/resend",
   "POST /api/v1/onboarding/company-logo",
@@ -202,6 +211,9 @@ const expectedOperations = [
   "PATCH /api/v1/admin/master-data/designations/{id}",
   "PATCH /api/v1/admin/master-data/{master_key}/{id}",
   "PATCH /api/v1/admin/rbac/roles/{id}",
+  "PATCH /api/v1/attendance/work-sites/{workSiteId}",
+  "PATCH /api/v1/attendance/geofences/{geofenceId}",
+  "PATCH /api/v1/attendance/geofences/{geofenceId}/versions/{versionId}",
   "PATCH /api/v1/core/users/{id}",
   "PATCH /api/v1/ems/admin/exits/{id}",
   "PATCH /api/v1/ems/admin/onboarding/{id}",
@@ -223,6 +235,9 @@ const expectedOperations = [
   "POST /api/v1/attendance/employees/{employeeUserId}/assisted-current-punches",
   "POST /api/v1/attendance/employees/{employeeUserId}/historical-corrections",
   "POST /api/v1/attendance/exports",
+  "POST /api/v1/attendance/work-sites",
+  "POST /api/v1/attendance/work-sites/{workSiteId}/geofences",
+  "POST /api/v1/attendance/geofences/{geofenceId}/versions",
   "POST /api/v1/attendance/geofences/{geofenceId}/versions/{versionId}/publish",
   "POST /api/v1/attendance/payroll-periods",
   "POST /api/v1/attendance/payroll-periods/{id}/lock",
@@ -1520,7 +1535,7 @@ describe("API contracts", () => {
     expect(rows.map((row) => row.key).sort()).toEqual(
       [...expectedOperations].sort(),
     );
-    expect(rows.length).toBe(259);
+    expect(rows.length).toBe(274);
 
     const attendancePunch = spec.paths?.["/api/v1/attendance/punches"]?.post as
       | Record<string, any>
