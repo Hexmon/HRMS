@@ -183,6 +183,32 @@ export interface AttendanceCommandDecisionRecord {
   created_at: string;
 }
 
+export interface AttendanceGeoFallbackReviewRecord {
+  id: UUID;
+  company_id: UUID;
+  employee_user_id: UUID;
+  submitted_by_user_id: UUID;
+  current_approver_user_id: UUID | null;
+  original_command_id: UUID;
+  original_decision_id: UUID;
+  fallback_command_id: UUID | null;
+  punch_event_id: UUID | null;
+  event_type: string;
+  work_date: string;
+  occurred_at: string;
+  reason_code: string;
+  reason_detail: string | null;
+  geo_policy: Record<string, unknown>;
+  status: "pending" | "approved" | "rejected";
+  decision_remarks: string | null;
+  decided_by_user_id: UUID | null;
+  decided_at: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export interface AttendanceEvidenceEventRecord {
   id: UUID;
 }
@@ -782,6 +808,155 @@ export class AttendanceCommandTransactionRepository {
       [commandExecutionId, companyId],
     );
     return result.rows[0] ?? null;
+  }
+
+  async findDecisionByIdForUpdate(input: {
+    decisionId: UUID;
+    companyId: UUID;
+  }): Promise<AttendanceCommandDecisionRecord | null> {
+    const result = await this.client.query<AttendanceCommandDecisionRecord>(
+      `SELECT id, command_execution_id, company_id, employee_user_id, outcome,
+          reason_code, reason_detail, previous_state, next_state,
+          policy_snapshot, evidence_snapshot, created_at
+       FROM attendance.command_decisions
+       WHERE id = $1 AND company_id = $2
+       FOR UPDATE`,
+      [input.decisionId, input.companyId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async findGeoFallbackReviewByOriginalDecisionForUpdate(input: {
+    companyId: UUID;
+    originalDecisionId: UUID;
+  }): Promise<AttendanceGeoFallbackReviewRecord | null> {
+    const result = await this.client.query<AttendanceGeoFallbackReviewRecord>(
+      `SELECT id, company_id, employee_user_id, submitted_by_user_id,
+          current_approver_user_id, original_command_id, original_decision_id,
+          fallback_command_id, punch_event_id, event_type, work_date, occurred_at,
+          reason_code, reason_detail, geo_policy, status, decision_remarks,
+          decided_by_user_id, decided_at, version, created_at, updated_at, deleted_at
+       FROM attendance.geo_fallback_reviews
+       WHERE company_id = $1 AND original_decision_id = $2 AND deleted_at IS NULL
+       FOR UPDATE`,
+      [input.companyId, input.originalDecisionId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async findGeoFallbackReviewByIdForUpdate(input: {
+    companyId: UUID;
+    reviewId: UUID;
+  }): Promise<AttendanceGeoFallbackReviewRecord | null> {
+    const result = await this.client.query<AttendanceGeoFallbackReviewRecord>(
+      `SELECT id, company_id, employee_user_id, submitted_by_user_id,
+          current_approver_user_id, original_command_id, original_decision_id,
+          fallback_command_id, punch_event_id, event_type, work_date, occurred_at,
+          reason_code, reason_detail, geo_policy, status, decision_remarks,
+          decided_by_user_id, decided_at, version, created_at, updated_at, deleted_at
+       FROM attendance.geo_fallback_reviews
+       WHERE company_id = $1 AND id = $2 AND deleted_at IS NULL
+       FOR UPDATE`,
+      [input.companyId, input.reviewId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async createGeoFallbackReview(input: {
+    companyId: UUID;
+    employeeUserId: UUID;
+    submittedByUserId: UUID;
+    currentApproverUserId: UUID | null;
+    originalCommandId: UUID;
+    originalDecisionId: UUID;
+    fallbackCommandId: UUID;
+    punchEventId: UUID;
+    eventType: string;
+    workDate: string;
+    occurredAt: string;
+    reasonCode: string;
+    reasonDetail: string | null;
+    geoPolicy: Record<string, unknown>;
+    status: "pending" | "approved";
+  }): Promise<AttendanceGeoFallbackReviewRecord> {
+    const result = await this.client.query<AttendanceGeoFallbackReviewRecord>(
+      `INSERT INTO attendance.geo_fallback_reviews (
+          company_id, employee_user_id, submitted_by_user_id,
+          current_approver_user_id, original_command_id, original_decision_id,
+          fallback_command_id, punch_event_id, event_type, work_date, occurred_at,
+          reason_code, reason_detail, geo_policy, status, decision_remarks,
+          decided_by_user_id, decided_at, version, created_at, updated_at, deleted_at
+       ) VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,
+          NULL,NULL,NULL,1,now(),now(),NULL
+       )
+       RETURNING id, company_id, employee_user_id, submitted_by_user_id,
+          current_approver_user_id, original_command_id, original_decision_id,
+          fallback_command_id, punch_event_id, event_type, work_date, occurred_at,
+          reason_code, reason_detail, geo_policy, status, decision_remarks,
+          decided_by_user_id, decided_at, version, created_at, updated_at, deleted_at`,
+      [
+        input.companyId,
+        input.employeeUserId,
+        input.submittedByUserId,
+        input.currentApproverUserId,
+        input.originalCommandId,
+        input.originalDecisionId,
+        input.fallbackCommandId,
+        input.punchEventId,
+        input.eventType,
+        input.workDate,
+        input.occurredAt,
+        input.reasonCode,
+        input.reasonDetail,
+        JSON.stringify(input.geoPolicy),
+        input.status,
+      ],
+    );
+    const review = result.rows[0];
+    if (!review) throw new Error("Attendance geo fallback review was not created.");
+    return review;
+  }
+
+  async decideGeoFallbackReview(input: {
+    companyId: UUID;
+    reviewId: UUID;
+    actorUserId: UUID;
+    decision: "approve" | "reject";
+    remarks: string | null;
+    expectedVersion: number;
+  }): Promise<AttendanceGeoFallbackReviewRecord> {
+    const nextStatus = input.decision === "approve" ? "approved" : "rejected";
+    const result = await this.client.query<AttendanceGeoFallbackReviewRecord>(
+      `UPDATE attendance.geo_fallback_reviews
+       SET status = $4,
+           decision_remarks = $5,
+           decided_by_user_id = $6,
+           decided_at = now(),
+           version = version + 1,
+           updated_at = now()
+       WHERE company_id = $1
+         AND id = $2
+         AND version = $3
+         AND status = 'pending'
+         AND deleted_at IS NULL
+       RETURNING id, company_id, employee_user_id, submitted_by_user_id,
+          current_approver_user_id, original_command_id, original_decision_id,
+          fallback_command_id, punch_event_id, event_type, work_date, occurred_at,
+          reason_code, reason_detail, geo_policy, status, decision_remarks,
+          decided_by_user_id, decided_at, version, created_at, updated_at, deleted_at`,
+      [
+        input.companyId,
+        input.reviewId,
+        input.expectedVersion,
+        nextStatus,
+        input.remarks,
+        input.actorUserId,
+      ],
+    );
+    const review = result.rows[0];
+    if (!review) throw new AttendanceCommandIdempotencyConflict();
+    return review;
   }
 
   async ensureAndLockEmployeeState(

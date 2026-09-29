@@ -1292,6 +1292,43 @@ export const attendanceRegularizationCorrectionApplications = attendance.table(
   ]
 );
 
+export const attendanceGeoFallbackReviews = attendance.table(
+  "geo_fallback_reviews",
+  {
+    id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    submittedByUserId: uuid("submitted_by_user_id").notNull(),
+    currentApproverUserId: uuid("current_approver_user_id"),
+    originalCommandId: uuid("original_command_id").notNull(),
+    originalDecisionId: uuid("original_decision_id").notNull(),
+    fallbackCommandId: uuid("fallback_command_id"),
+    punchEventId: uuid("punch_event_id"),
+    eventType: text("event_type").notNull(),
+    workDate: date("work_date").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    reasonCode: text("reason_code").notNull(),
+    reasonDetail: text("reason_detail"),
+    geoPolicy: jsonb("geo_policy").notNull().default({}),
+    status: text("status").notNull(),
+    decisionRemarks: text("decision_remarks"),
+    decidedByUserId: uuid("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
+    createdAt,
+    updatedAt,
+    deletedAt
+  },
+  (table) => [
+    unique("attendance_geo_fallback_original_decision_uq").on(table.companyId, table.originalDecisionId),
+    index("attendance_geo_fallback_queue_idx").on(table.companyId, table.status, table.currentApproverUserId, table.createdAt.desc()).where(sql`${table.deletedAt} IS NULL`),
+    index("attendance_geo_fallback_employee_date_idx").on(table.companyId, table.employeeUserId, table.workDate.desc()).where(sql`${table.deletedAt} IS NULL`),
+    check("attendance_geo_fallback_status_check", sql`${table.status} IN ('pending', 'approved', 'rejected')`),
+    check("attendance_geo_fallback_event_type_check", sql`${table.eventType} IN ('check_in', 'break_start', 'break_end', 'check_out')`),
+    check("attendance_geo_fallback_version_check", sql`${table.version} > 0`)
+  ]
+);
+
 export const attendanceProjectionRebuildRuns = attendance.table(
   "projection_rebuild_runs",
   {
@@ -2765,6 +2802,7 @@ export const schema = {
   attendanceRegularizationRequestItems,
   attendanceRegularizationActions,
   attendanceRegularizationCorrectionApplications,
+  attendanceGeoFallbackReviews,
   attendanceProjectionRebuildRuns,
   attendancePayrollPeriods,
   attendancePayrollPeriodActions,

@@ -99,6 +99,11 @@ export interface AttendanceRegularizationDecisionBody extends ExpectedVersionBod
   remarks?: string;
 }
 
+export interface AttendanceGeoFallbackDecisionBody extends ExpectedVersionBody {
+  decision: "approve" | "reject";
+  remarks?: string;
+}
+
 export interface AttendanceExportBody extends ApiRecord {
   filters?: ApiRecord;
   columns?: string[];
@@ -114,6 +119,13 @@ export const attendanceApi = {
     return apiRequest<ApiRecord>("/api/v1/attendance/punches", {
       method: "POST",
       body: input,
+      headers: options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : undefined,
+    });
+  },
+  submitGeoFallback(reference: string, options: AttendanceCommandOptions = {}) {
+    return apiRequest<ApiRecord>(`/api/v1/attendance/geo-fallbacks/${reference}/submit`, {
+      method: "POST",
+      body: {},
       headers: options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : undefined,
     });
   },
@@ -155,9 +167,23 @@ export const attendanceApi = {
       PaginatedResponse<AttendanceRegularizationRecord> & { queue_counts?: ApiRecord }
     >("/api/v1/attendance/regularizations/queue/manager", { query });
   },
+  managerGeoFallbackQueue(query: AttendanceQuery = {}) {
+    return apiRequest<
+      PaginatedResponse<AttendanceRegularizationRecord> & { queue_counts?: ApiRecord }
+    >("/api/v1/attendance/geo-fallbacks/queue/manager", { query });
+  },
   decideRegularization(id: string, input: AttendanceRegularizationDecisionBody) {
     return apiRequest<AttendanceRegularizationRecord>(
       `/api/v1/attendance/regularizations/${id}/decision`,
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+  },
+  decideGeoFallback(id: string, input: AttendanceGeoFallbackDecisionBody) {
+    return apiRequest<AttendanceRegularizationRecord>(
+      `/api/v1/attendance/geo-fallbacks/${id}/decision`,
       {
         method: "POST",
         body: input,

@@ -25,6 +25,8 @@ import {
   type AttendanceCommandExecutionRecord,
 } from "./command-repository.js";
 import {
+  buildGeoFallbackDecisionEvent,
+  buildGeoFallbackSubmittedEvent,
   buildGeoRejectedEvent,
   buildMissingCheckoutDetectedEvent,
   buildPunchRecordedEvent,
@@ -269,6 +271,32 @@ function geoDecisionSnapshot(
     geofence_canonical_hash: decision.geofence?.canonicalHash ?? null,
     evaluation: decision.evaluation,
   };
+}
+
+function isExplicitGeoFallbackRequired(input: {
+  geoDecision: AttendanceGeoDecision;
+  stateAllowed: boolean;
+  policyBlocked: boolean;
+  invalidChronology: boolean;
+}): boolean {
+  return (
+    input.stateAllowed &&
+    !input.policyBlocked &&
+    !input.invalidChronology &&
+    input.geoDecision.allowed &&
+    input.geoDecision.selectedAction === "manual_fallback" &&
+    input.geoDecision.fallbackUsed
+  );
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
 }
 
 const geoRejectedReasonCodes = new Set<AttendanceGeoDecisionReasonCode>([
@@ -974,24 +1002,32 @@ export class AttendanceCommandService {
             input.isWorkingDayFor(workDate),
             state.state,
           );
+          const invalidChronology = Boolean(
+            open?.last_transition_at &&
+              Date.parse(occurredAt) < Date.parse(open.last_transition_at),
+          );
+          const explicitGeoFallbackRequired = isExplicitGeoFallbackRequired({
+            geoDecision,
+            stateAllowed: stateDecision.allowed,
+            policyBlocked: Boolean(policyReason),
+            invalidChronology,
+          });
           const denied =
             !stateDecision.allowed ||
             !geoDecision.allowed ||
             Boolean(policyReason) ||
-            Boolean(
-              open?.last_transition_at &&
-              Date.parse(occurredAt) < Date.parse(open.last_transition_at),
-            );
+            invalidChronology ||
+            explicitGeoFallbackRequired;
           const reason = !stateDecision.allowed
             ? (stateDecision.reason_detail ?? "Attendance command was denied.")
-            : !geoDecision.allowed
+            : !geoDecision.allowed || explicitGeoFallbackRequired
               ? geoDecision.reasonDetail
               : (policyReason ??
                 "Attendance timestamp precedes the previous session transition.");
           const code: AttendanceCommandDecisionReasonCode =
             !stateDecision.allowed
               ? (stateDecision.reason_code ?? "invalid_state_transition")
-              : !geoDecision.allowed
+              : !geoDecision.allowed || explicitGeoFallbackRequired
                 ? geoDecision.reasonCode
                 : policyReason
                   ? "policy_window_rejected"
@@ -1065,6 +1101,13 @@ export class AttendanceCommandService {
                 evidence_payload_hash: evidencePayloadHash,
                 location_evidence: locationEvidence,
                 geo_policy: geoDecisionSnapshot(geoDecision),
+                manual_fallback: explicitGeoFallbackRequired
+                  ? {
+                      eligible: true,
+                      review_required: true,
+                      consumed: false,
+                    }
+                  : null,
                 open_session_id: open?.id ?? null,
                 occurred_at: occurredAt,
               },
@@ -1078,6 +1121,15 @@ export class AttendanceCommandService {
               next_allowed_actions: allowedActions(previous),
               punch_policy: policy,
               geo_policy: geoDecisionSnapshot(geoDecision),
+              manual_fallback: explicitGeoFallbackRequired
+                ? {
+                    available: true,
+                    review_required: true,
+                    reference: decision.id,
+                    original_command_id: command.id,
+                    reason_code: geoDecision.reasonCode,
+                  }
+                : undefined,
             };
             if (isRecognizedGeoRejectedDecision(geoDecision)) {
               await tx.insertOutboxEvent(
@@ -1319,6 +1371,417 @@ export class AttendanceCommandService {
       }
       throw error;
     }
+  }
+
+  async submitGeoFallback(input: {
+    actor: AuthUser;
+    companyId: UUID;
+    decisionId: UUID;
+    idempotencyKey: string;
+    timeZone: string;
+    currentApproverUserId: UUID | null;
+    isWorkingDayFor: (workDate: string) => boolean;
+  }): Promise<Record<string, unknown>> {
+    const pool = this.store.pgPool;
+    if (!pool)
+      throw new Error(
+        "PostgreSQL attendance commands require a configured pgPool.",
+      );
+    const commandKind: AttendanceCommandKind = "employee_manual_now";
+    const requestHash = canonicalAttendanceRequestHash({
+      company_id: input.companyId,
+      actor_user_id: input.actor.id,
+      original_decision_id: input.decisionId,
+      command_kind: commandKind,
+      manual_fallback_confirmation: true,
+    });
+    const scope = `${ATTENDANCE_IDEMPOTENCY_SCOPE_PREFIX}:${commandKind}:${input.companyId}`;
+    const result = await new PostgresAttendanceCommandRepository(pool).transaction<AttendanceCommandOutcome>(
+      async (tx) => {
+        const platformKey = await this.acquirePlatformIdempotencyKey(tx, {
+          scope,
+          actorUserId: input.actor.id,
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+        });
+        if (platformKey.status === "completed") {
+          return this.replayCompletedCommand(
+            tx,
+            platformKey,
+            requestHash,
+            input.companyId,
+          );
+        }
+        const existingReview =
+          await tx.findGeoFallbackReviewByOriginalDecisionForUpdate({
+            companyId: input.companyId,
+            originalDecisionId: input.decisionId,
+          });
+        if (existingReview) {
+          throw conflict("This geo fallback has already been submitted.", {
+            fallback_review_id: existingReview.id,
+            status: existingReview.status,
+          });
+        }
+        const originalDecision = await tx.findDecisionByIdForUpdate({
+          companyId: input.companyId,
+          decisionId: input.decisionId,
+        });
+        if (!originalDecision) {
+          throw conflict("Geo fallback reference is invalid or expired.");
+        }
+        if (originalDecision.employee_user_id !== input.actor.id) {
+          throw conflict("Geo fallback reference does not belong to this employee.");
+        }
+        const originalCommand = await tx.findCommandExecutionById(
+          originalDecision.command_execution_id,
+          input.companyId,
+        );
+        if (!originalCommand || originalCommand.actor_user_id !== input.actor.id) {
+          throw conflict("Geo fallback command reference is invalid.");
+        }
+        const originalEvidence = recordValue(originalDecision.evidence_snapshot);
+        const originalGeoPolicy = recordValue(originalEvidence.geo_policy);
+        const manualFallback = recordValue(originalEvidence.manual_fallback);
+        if (
+          manualFallback.eligible !== true ||
+          originalGeoPolicy.selected_action !== "manual_fallback"
+        ) {
+          throw conflict("Manual fallback is not available for this geo decision.");
+        }
+        const receivedAt = await tx.getTransactionTimestamp();
+        const originalSnapshot = recordValue(originalCommand.request_snapshot);
+        const source =
+          stringValue(originalSnapshot.source) as AttendancePunchSourceChannel | null;
+        const workMode = stringValue(originalSnapshot.work_mode) as
+          | "office"
+          | "remote"
+          | "wfh"
+          | "field"
+          | null;
+        const originalMetadata = recordValue(originalSnapshot.metadata);
+        const commandInput: AttendanceCommandInput = {
+          event_type: originalCommand.command_type as AttendancePunchEventType,
+          work_mode: workMode ?? "office",
+          source: source ?? "web",
+          metadata: {
+            ...originalMetadata,
+            geo_manual_fallback: true,
+            original_geo_command_id: originalCommand.id,
+            original_geo_decision_id: originalDecision.id,
+            geo_reason_code: originalDecision.reason_code,
+          },
+        };
+        const policy = await resolveEffectiveAttendancePolicy(tx, {
+          companyId: input.companyId,
+          subjectEmployeeUserId: input.actor.id,
+          asOf: receivedAt,
+        });
+        const workDate = dateInTimeZone(receivedAt, input.timeZone);
+        const state = await tx.ensureAndLockEmployeeState(
+          input.companyId,
+          input.actor.id,
+        );
+        const open = await tx.findOpenSessionForUpdate(
+          input.companyId,
+          input.actor.id,
+        );
+        const stateDecision = decideAttendanceTransition(
+          state.state,
+          commandInput.event_type,
+        );
+        const policyReason = policyBlocked(
+          commandInput.event_type,
+          receivedAt,
+          input.timeZone,
+          policy,
+          input.isWorkingDayFor(workDate),
+          state.state,
+        );
+        if (!stateDecision.allowed || policyReason) {
+          throw conflict(policyReason ?? "Attendance action is no longer available.", {
+            next_allowed_actions: allowedActions(state.state),
+            requested_action: commandInput.event_type,
+          });
+        }
+        const command = await tx.createCommandExecution({
+          companyId: input.companyId,
+          actorUserId: input.actor.id,
+          employeeUserId: input.actor.id,
+          platformIdempotencyKeyId: platformKey.id,
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+          commandType: commandInput.event_type,
+          commandOrigin: commandKind,
+          occurredAt: receivedAt,
+          requestSnapshot: {
+            work_date: workDate,
+            work_mode: commandInput.work_mode,
+            source: commandInput.source,
+            metadata: commandInput.metadata,
+            manual_fallback: {
+              original_command_id: originalCommand.id,
+              original_decision_id: originalDecision.id,
+              reason_code: originalDecision.reason_code,
+            },
+          },
+        });
+        const evidencePayload = {
+          schema_version: 1,
+          command_type: commandInput.event_type,
+          work_mode: commandInput.work_mode,
+          source_channel: commandInput.source,
+          manual_fallback: {
+            original_decision_id: originalDecision.id,
+            reason_code: originalDecision.reason_code,
+          },
+        };
+        const evidencePayloadHash = canonicalJsonHash(evidencePayload);
+        const evidence = await tx.createAttendanceEvidenceEvent({
+          companyId: input.companyId,
+          employeeUserId: input.actor.id,
+          actorUserId: input.actor.id,
+          commandExecutionId: command.id,
+          eventType: commandInput.event_type,
+          source: commandInput.source,
+          occurredAt: receivedAt,
+          receivedAt,
+          payload: evidencePayload,
+          payloadHash: evidencePayloadHash,
+        });
+        const auditDecision = await tx.createAttendanceAuditDecision({
+          companyId: input.companyId,
+          employeeUserId: input.actor.id,
+          attendanceEventId: evidence.id,
+          commandExecutionId: command.id,
+          decisionType: "manual_geo_fallback",
+          outcome: "passed",
+          policyKey: "attendance",
+          policyVersion: policy.policyVersion,
+          evaluatorVersion: ATTENDANCE_GEO_EVALUATOR_VERSION,
+          evaluatedAt: receivedAt,
+          evidenceDigest: evidencePayloadHash,
+          policySnapshot: policy,
+          evaluationContext: {
+            company_id: input.companyId,
+            actor_user_id: input.actor.id,
+            subject_employee_user_id: input.actor.id,
+            command_origin: commandKind,
+            command_type: commandInput.event_type,
+            source_channel: commandInput.source,
+            previous_state: state.state,
+            occurred_at: receivedAt,
+            work_date: workDate,
+            manual_fallback: {
+              original_command_id: originalCommand.id,
+              original_decision_id: originalDecision.id,
+              reason_code: originalDecision.reason_code,
+            },
+          },
+        });
+        const decision = await tx.createDecision({
+          commandExecutionId: command.id,
+          companyId: input.companyId,
+          employeeUserId: input.actor.id,
+          outcome: "allowed",
+          reasonCode: null,
+          reasonDetail: null,
+          previousState: stateDecision.previous_state,
+          nextState: stateDecision.next_state,
+          policySnapshot: policy,
+          evidenceSnapshot: {
+            state,
+            attendance_event_id: evidence.id,
+            audit_decision_id: auditDecision.id,
+            original_command_id: originalCommand.id,
+            original_decision_id: originalDecision.id,
+            geo_policy: originalGeoPolicy,
+            manual_fallback: {
+              confirmed: true,
+              review_required: true,
+            },
+          },
+        });
+        let session: AttendanceSessionRecord;
+        try {
+          session = await this.transition(
+            tx,
+            input.companyId,
+            input.actor.id,
+            workDate,
+            receivedAt,
+            commandInput,
+            open,
+            stateDecision.action,
+          );
+        } catch (error) {
+          const mapped = attendanceTransitionConflict(error);
+          if (mapped) throw mapped;
+          throw error;
+        }
+        await tx.updateEmployeeState({
+          companyId: input.companyId,
+          employeeUserId: input.actor.id,
+          state: stateDecision.next_state,
+          currentSessionId:
+            stateDecision.next_state === "not_checked_in" ? null : session.id,
+        });
+        const punch = (
+          await tx.insertPunchEvent({
+            companyId: input.companyId,
+            employeeUserId: input.actor.id,
+            actorUserId: input.actor.id,
+            eventType: commandInput.event_type,
+            occurredAt: receivedAt,
+            workMode: commandInput.work_mode,
+            source: commandInput.source,
+            origin: commandKind,
+            metadata: commandInput.metadata,
+            commandExecutionId: command.id,
+            sessionId: session.id,
+            decisionId: decision.id,
+          })
+        ).rows[0]!;
+        const day = await projectDay(
+          tx,
+          input.companyId,
+          input.actor.id,
+          workDate,
+          commandInput.work_mode,
+          policy.graceMinutes,
+          input.timeZone,
+          receivedAt,
+        );
+        const review = await tx.createGeoFallbackReview({
+          companyId: input.companyId,
+          employeeUserId: input.actor.id,
+          submittedByUserId: input.actor.id,
+          currentApproverUserId: input.currentApproverUserId,
+          originalCommandId: originalCommand.id,
+          originalDecisionId: originalDecision.id,
+          fallbackCommandId: command.id,
+          punchEventId: punch.id,
+          eventType: commandInput.event_type,
+          workDate,
+          occurredAt: receivedAt,
+          reasonCode: originalDecision.reason_code ?? "geo_manual_fallback_allowed",
+          reasonDetail: originalDecision.reason_detail,
+          geoPolicy: originalGeoPolicy,
+          status: "pending",
+        });
+        await tx.insertOutboxEvent(
+          buildPunchRecordedEvent({
+            companyId: input.companyId,
+            actorUserId: input.actor.id,
+            subjectEmployeeUserId: input.actor.id,
+            commandId: command.id,
+            decisionId: decision.id,
+            sessionId: session.id,
+            punchEventId: punch.id,
+            punchType: commandInput.event_type,
+            occurredAt: receivedAt,
+            workDate,
+            workMode: commandInput.work_mode,
+            sourceChannel: commandInput.source,
+            origin: commandKind,
+            dayStatus:
+              typeof (day as { status?: unknown }).status === "string"
+                ? (day as { status: string }).status
+                : null,
+          }),
+        );
+        await tx.insertOutboxEvent(
+          buildGeoFallbackSubmittedEvent({
+            companyId: input.companyId,
+            actorUserId: input.actor.id,
+            subjectEmployeeUserId: input.actor.id,
+            fallbackReviewId: review.id,
+            originalCommandId: originalCommand.id,
+            originalDecisionId: originalDecision.id,
+            fallbackCommandId: command.id,
+            punchEventId: punch.id,
+            punchType: commandInput.event_type,
+            workDate,
+            reasonCode: review.reason_code,
+            status: "pending",
+            assignedApproverUserId: review.current_approver_user_id,
+            version: review.version,
+          }),
+        );
+        const response = {
+          allowed: true,
+          command_id: command.id,
+          decision_id: decision.id,
+          session_id: session.id,
+          punch_id: punch.id,
+          punch: {
+            id: punch.id,
+            company_id: input.companyId,
+            employee_user_id: input.actor.id,
+            actor_user_id: input.actor.id,
+            origin: commandKind,
+            event_type: commandInput.event_type,
+            work_mode: commandInput.work_mode,
+            source: commandInput.source,
+            metadata: commandInput.metadata,
+            occurred_at: receivedAt,
+            created_at: punch.created_at,
+            deleted_at: null,
+          },
+          day_status: day,
+          next_allowed_actions: allowedActions(stateDecision.next_state),
+          next_allowed_action:
+            allowedActions(stateDecision.next_state)[0] ?? null,
+          geo_policy: {
+            ...originalGeoPolicy,
+            fallback_used: true,
+            selected_action: "manual_fallback",
+            allowed: true,
+          },
+          manual_fallback: {
+            submitted: true,
+            review_required: true,
+            review_id: review.id,
+            status: review.status,
+            version: review.version,
+          },
+        };
+        const responseHash = canonicalAttendanceResponseHash(response);
+        await tx.completeCommand({
+          commandExecutionId: command.id,
+          companyId: input.companyId,
+          status: "completed",
+          sessionId: session.id,
+          punchEventId: punch.id,
+          responseSnapshot: response,
+          responseHash,
+          responseStatus: 200,
+        });
+        await tx.completePlatformIdempotencyKey({
+          id: platformKey.id,
+          resourceType: ATTENDANCE_COMMAND_RESOURCE_TYPE,
+          resourceId: command.id,
+          responseHash,
+          responseStatus: 200,
+        });
+        return {
+          response,
+          responseStatus: 200,
+          decisionObservation: {
+            sourceChannel: commandInput.source,
+            outcome: "allowed" as const,
+            decisionType: "manual_geo_fallback",
+            commandOrigin: commandKind,
+            eventType: commandInput.event_type,
+            reasonCode: null,
+          },
+        };
+      },
+    );
+    emitAttendanceCommandObservability(result);
+    return result.replayed
+      ? markAttendanceReplayResponse(result.response)
+      : result.response;
   }
 
   async executeHistoricalCorrection(
@@ -2986,7 +3449,7 @@ async function autoCheckoutClosurePunchFacts(
   };
 }
 
-async function projectDay(
+export async function projectDay(
   tx: AttendanceCommandTransactionRepository,
   companyId: UUID,
   employeeId: UUID,

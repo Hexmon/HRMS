@@ -68,6 +68,7 @@ type AttendanceResultTone = ManualAttendanceResult["kind"] | "provisional" | "re
 
 function attendanceResultTone(result: ManualAttendanceResult): AttendanceResultTone {
   if (result.kind === "uncertain") return "uncertain";
+  if (result.manualFallback) return "review";
   return result.geoDecisionDisplay?.decision ?? result.kind;
 }
 
@@ -300,6 +301,17 @@ export function EmployeeManualAttendanceWidget({
                         Retry same action
                       </Button>
                     )}
+                  </div>
+                )}
+                {action.canSubmitManualFallback && action.result.manualFallback && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => void action.submitManualFallback()}
+                      disabled={disabled}
+                    >
+                      Continue manually
+                    </Button>
                   </div>
                 )}
               </div>

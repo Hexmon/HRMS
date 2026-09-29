@@ -6,6 +6,8 @@ import {
   attendancePunchSchema,
   attendanceAssistedCurrentPunchSchema,
   attendanceHistoricalCorrectionSchema,
+  attendanceGeoFallbackDecisionSchema,
+  attendanceGeoFallbackSubmitSchema,
   attendanceRegularizationCreateSchema,
   attendanceRegularizationDecisionSchema,
   isoDateTimeSchema,
@@ -430,6 +432,46 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
       );
     }
     return service.decideRegularization(request.actor, params.id, input);
+  });
+
+  fastify.post("/geo-fallbacks/:id/submit", async (request, reply) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const idempotencyKey = idempotencyKeySchema.parse(
+      request.headers["idempotency-key"],
+    );
+    const params = idParamSchema.parse(request.params);
+    attendanceGeoFallbackSubmitSchema.parse(request.body ?? {});
+    const response = await new AttendanceService(fastify.store).submitGeoFallback(
+      request.actor,
+      params.id,
+      idempotencyKey,
+    );
+    return withReplayHeader(reply, response);
+  });
+
+  fastify.get("/geo-fallbacks/queue/manager", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new AttendanceService(fastify.store).managerGeoFallbackQueue(
+      request.actor,
+      attendanceQuerySchema.parse(request.query),
+    );
+  });
+
+  fastify.post("/geo-fallbacks/:id/decision", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = idParamSchema.parse(request.params);
+    const input = attendanceGeoFallbackDecisionSchema.parse(request.body);
+    return new AttendanceService(fastify.store).decideGeoFallback(
+      request.actor,
+      params.id,
+      input,
+    );
   });
 
   fastify.post("/payroll-periods", async (request) => {

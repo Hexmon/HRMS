@@ -15,6 +15,9 @@ export const attendanceEvents = {
   PunchRecorded: "attendance.punch.recorded",
   ProvisionalRecorded: "attendance.provisional.recorded",
   GeoRejected: "attendance.geo.rejected",
+  GeoFallbackSubmitted: "attendance.geo_fallback.submitted",
+  GeoFallbackApproved: "attendance.geo_fallback.approved",
+  GeoFallbackRejected: "attendance.geo_fallback.rejected",
   MissingCheckoutDetected: "attendance.missing_checkout.detected",
   RegularizationSubmitted: "attendance.regularization.submitted",
   RegularizationApproved: "attendance.regularization.approved",
@@ -70,6 +73,33 @@ export type AttendanceGeoRejectedPayload = AttendanceEventBase & {
   decided_at: string;
 };
 
+export type AttendanceGeoFallbackSubmittedPayload = AttendanceEventBase & {
+  subject_employee_user_id: UUID;
+  fallback_review_id: UUID;
+  original_command_id: UUID;
+  original_decision_id: UUID;
+  fallback_command_id: UUID;
+  punch_event_id: UUID;
+  punch_type: AttendancePunchEventType;
+  work_date: string;
+  reason_code: string;
+  status: "pending" | "approved";
+  assigned_approver_user_id: UUID | null;
+  version: number;
+};
+
+export type AttendanceGeoFallbackDecisionPayload = AttendanceEventBase & {
+  subject_employee_user_id: UUID;
+  fallback_review_id: UUID;
+  original_decision_id: UUID;
+  punch_event_id: UUID;
+  work_date: string;
+  previous_status: string;
+  next_status: string;
+  version: number;
+  decided_at: string;
+};
+
 export type AttendanceMissingCheckoutDetectedPayload = AttendanceEventBase & {
   subject_employee_user_id: UUID;
   attendance_session_id: UUID | null;
@@ -108,6 +138,8 @@ export type AttendanceOutboxPayload =
   | AttendancePunchRecordedPayload
   | AttendanceProvisionalRecordedPayload
   | AttendanceGeoRejectedPayload
+  | AttendanceGeoFallbackSubmittedPayload
+  | AttendanceGeoFallbackDecisionPayload
   | AttendanceMissingCheckoutDetectedPayload
   | AttendanceRegularizationSubmittedPayload
   | AttendanceRegularizationDecisionPayload
@@ -191,6 +223,86 @@ export function buildProvisionalRecordedEvent(input: {
     eventType: attendanceEvents.ProvisionalRecorded,
     payload,
     idempotencyKey: `attendance.provisional.recorded:${input.attendanceEventId}`,
+  };
+}
+
+export function buildGeoFallbackSubmittedEvent(input: {
+  companyId: UUID;
+  actorUserId: UUID;
+  subjectEmployeeUserId: UUID;
+  fallbackReviewId: UUID;
+  originalCommandId: UUID;
+  originalDecisionId: UUID;
+  fallbackCommandId: UUID;
+  punchEventId: UUID;
+  punchType: AttendancePunchEventType;
+  workDate: string;
+  reasonCode: string;
+  status: "pending" | "approved";
+  assignedApproverUserId: UUID | null;
+  version: number;
+}): AttendanceOutboxEventContract {
+  const payload: AttendanceGeoFallbackSubmittedPayload = {
+    schema_version: 1,
+    company_id: input.companyId,
+    actor_user_id: input.actorUserId,
+    subject_employee_user_id: input.subjectEmployeeUserId,
+    fallback_review_id: input.fallbackReviewId,
+    original_command_id: input.originalCommandId,
+    original_decision_id: input.originalDecisionId,
+    fallback_command_id: input.fallbackCommandId,
+    punch_event_id: input.punchEventId,
+    punch_type: input.punchType,
+    work_date: input.workDate,
+    reason_code: input.reasonCode,
+    status: input.status,
+    assigned_approver_user_id: input.assignedApproverUserId,
+    version: input.version,
+  };
+  return {
+    aggregateId: input.fallbackReviewId,
+    eventType: attendanceEvents.GeoFallbackSubmitted,
+    payload,
+    idempotencyKey: `attendance.geo_fallback.submitted:${input.fallbackReviewId}:${input.version}`,
+  };
+}
+
+export function buildGeoFallbackDecisionEvent(input: {
+  companyId: UUID;
+  actorUserId: UUID;
+  subjectEmployeeUserId: UUID;
+  fallbackReviewId: UUID;
+  originalDecisionId: UUID;
+  punchEventId: UUID;
+  workDate: string;
+  decision: "approve" | "reject";
+  previousStatus: string;
+  nextStatus: string;
+  version: number;
+  decidedAt: string;
+}): AttendanceOutboxEventContract {
+  const payload: AttendanceGeoFallbackDecisionPayload = {
+    schema_version: 1,
+    company_id: input.companyId,
+    actor_user_id: input.actorUserId,
+    subject_employee_user_id: input.subjectEmployeeUserId,
+    fallback_review_id: input.fallbackReviewId,
+    original_decision_id: input.originalDecisionId,
+    punch_event_id: input.punchEventId,
+    work_date: input.workDate,
+    previous_status: input.previousStatus,
+    next_status: input.nextStatus,
+    version: input.version,
+    decided_at: input.decidedAt,
+  };
+  return {
+    aggregateId: input.fallbackReviewId,
+    eventType:
+      input.decision === "approve"
+        ? attendanceEvents.GeoFallbackApproved
+        : attendanceEvents.GeoFallbackRejected,
+    payload,
+    idempotencyKey: `attendance.geo_fallback.${input.decision}:${input.fallbackReviewId}:${input.version}`,
   };
 }
 

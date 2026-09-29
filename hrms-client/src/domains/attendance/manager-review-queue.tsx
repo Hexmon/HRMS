@@ -40,6 +40,7 @@ import { DataTable, StatusBadge, UserAvatar, type Column } from "@/components/ui
 import { ApiError, userFacingErrorMessage } from "@/shared/api";
 import {
   useAttendanceRegularizationDecisionMutation,
+  useAttendanceGeoFallbackDecisionMutation,
   useManagerAttendanceRegularizationQueue,
 } from "./queries";
 import {
@@ -143,6 +144,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
     enabled,
   );
   const decisionMutation = useAttendanceRegularizationDecisionMutation();
+  const geoFallbackDecisionMutation = useAttendanceGeoFallbackDecisionMutation();
   const queue = useMemo(() => parseAttendanceReviewQueue(queueQuery.data), [queueQuery.data]);
   const visibleItems = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -226,11 +228,12 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
     setRemarks("");
     setRemarksError(null);
     decisionMutation.reset();
+    geoFallbackDecisionMutation.reset();
     setDecision(nextDecision);
   };
 
   const closeDecision = () => {
-    if (decisionMutation.isPending) return;
+    if (decisionMutation.isPending || geoFallbackDecisionMutation.isPending) return;
     setDecision(null);
     setRemarks("");
     setRemarksError(null);
@@ -245,14 +248,26 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
     }
 
     try {
-      await decisionMutation.mutateAsync({
-        id: selected.id,
-        input: {
-          decision,
-          expected_version: selected.version,
-          remarks: remarks.trim() || undefined,
-        },
-      });
+      const input = {
+        decision,
+        expected_version: selected.version,
+        remarks: remarks.trim() || undefined,
+      };
+      if (selected.kind === "geo_fallback") {
+        if (decision === "return") {
+          setRemarksError("Geo fallback reviews can be approved or rejected.");
+          return;
+        }
+        await geoFallbackDecisionMutation.mutateAsync({
+          id: selected.id,
+          input: { ...input, decision },
+        });
+      } else {
+        await decisionMutation.mutateAsync({
+          id: selected.id,
+          input,
+        });
+      }
       toast.success(`${DECISION_COPY[decision].submit} completed`, {
         description: `${selected.employeeName}'s request has been updated.`,
       });
@@ -471,17 +486,17 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                 <div className="sticky bottom-0 mt-6 flex flex-wrap justify-end gap-2 border-t bg-background py-4">
                   <DecisionButton
                     decision="return"
-                    disabled={decisionMutation.isPending}
+                    disabled={decisionMutation.isPending || selected.kind === "geo_fallback"}
                     onClick={() => openDecision("return")}
                   />
                   <DecisionButton
                     decision="reject"
-                    disabled={decisionMutation.isPending}
+                    disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                     onClick={() => openDecision("reject")}
                   />
                   <DecisionButton
                     decision="approve"
-                    disabled={decisionMutation.isPending}
+                    disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                     onClick={() => openDecision("approve")}
                   />
                 </div>

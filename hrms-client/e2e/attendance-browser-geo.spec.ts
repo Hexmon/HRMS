@@ -415,7 +415,7 @@ test("backend boundary uncertainty denial renders rejected reason", async ({ pag
   await expect(page.getByText(/near the work-area boundary/u)).toBeVisible();
 });
 
-test("backend manual fallback outcome renders the review state", async ({ page }) => {
+test("manual fallback availability shows continue manually and submits reference", async ({ page }) => {
   await mockBrowserGeolocation(page, "success");
   await prepareAttendancePage(page);
 
@@ -425,6 +425,34 @@ test("backend manual fallback outcome renders the review state", async ({ page }
     fallback_approval_mode: "approval_required",
   });
   await page.route("**/api/v1/attendance/punches", async (route) => {
+    await route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: "CONFLICT",
+        message: "Location verification requires manual fallback confirmation.",
+        details: {
+          reason_code: "geo_outside_fence",
+          geo_policy: {
+            factual_outcome: "outside_confident",
+            selected_action: "manual_fallback",
+            fallback_used: true,
+            allowed: true,
+            reason_code: "geo_outside_fence",
+          },
+          manual_fallback: {
+            available: true,
+            review_required: true,
+            reference: "geo-decision-1",
+            reason_code: "geo_outside_fence",
+          },
+        },
+      }),
+    });
+  });
+  let fallbackSubmitted = false;
+  await page.route("**/api/v1/attendance/geo-fallbacks/geo-decision-1/submit", async (route) => {
+    fallbackSubmitted = true;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -436,6 +464,13 @@ test("backend manual fallback outcome renders the review state", async ({ page }
           allowed: true,
           reason_code: "geo_outside_fence",
         },
+        manual_fallback: {
+          submitted: true,
+          review_required: true,
+          review_id: "geo-review-1",
+          status: "pending",
+          version: 1,
+        },
       }),
     });
   });
@@ -444,9 +479,11 @@ test("backend manual fallback outcome renders the review state", async ({ page }
   await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
   await expect(page.getByText("Review", { exact: true })).toBeVisible();
-  await expect(page.getByText("Manual fallback recorded", { exact: true })).toBeVisible();
-  await expect(page.getByText(/needs review/u)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue manually" })).toBeVisible();
   await expect(page.getByText(/outside the allowed work area/u)).toBeVisible();
+  await page.getByRole("button", { name: "Continue manually" }).click();
+  await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+  expect(fallbackSubmitted).toBe(true);
 });
 
 test("check-out uses the same browser geo evidence path and accepted decision", async ({

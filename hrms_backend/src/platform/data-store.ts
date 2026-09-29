@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import type {
   AssetRecord,
   AttendanceDayRecord,
+  AttendanceGeoFallbackReview,
   AttendancePunch,
   AttendanceRegularizationAction,
   AttendanceRegularizationCorrectionApplication,
@@ -566,6 +567,7 @@ export interface DataStore {
   helpdeskEvents: HelpdeskTicketEvent[];
   attendancePunches: AttendancePunch[];
   attendanceDayRecords: AttendanceDayRecord[];
+  attendanceGeoFallbackReviews: AttendanceGeoFallbackReview[];
   attendanceRegularizations: AttendanceRegularizationRequest[];
   attendanceRegularizationActions: AttendanceRegularizationAction[];
   attendanceRegularizationCorrectionApplications: AttendanceRegularizationCorrectionApplication[];
@@ -2418,6 +2420,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     helpdeskEvents,
     attendancePunches: [],
     attendanceDayRecords: [],
+    attendanceGeoFallbackReviews: [],
     attendanceRegularizations: [],
     attendanceRegularizationActions: [],
     attendanceRegularizationCorrectionApplications: [],

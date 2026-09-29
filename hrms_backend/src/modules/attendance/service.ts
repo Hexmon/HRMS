@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import type {
   AttendanceDayRecord,
   AttendanceDayStatus,
+  AttendanceGeoFallbackReview,
   AttendanceLocationEvidenceInput,
   AttendancePunch,
   AttendancePunchEventType,
@@ -49,6 +51,7 @@ import { isWorkingDate } from "../../platform/work-schedule.js";
 import { CoreService } from "../core/service.js";
 import {
   appendAttendanceOutboxEvent,
+  buildGeoFallbackDecisionEvent,
   buildMissingCheckoutDetectedEvent,
   buildExportRequestedEvent,
   buildPunchRecordedEvent,
@@ -70,14 +73,19 @@ import { PostgresGeofenceRepository } from "./geofence-repository.js";
 import {
   AttendanceCommandService,
   canonicalAttendanceRequestHash,
+  projectDay as projectCommandDay,
   type AttendanceCommandEnvelopeInput,
 } from "./command-service.js";
+import {
+  AttendanceCommandTransactionRepository,
+} from "./command-repository.js";
 import { recordAttendanceReviewQueueAge } from "./observability.js";
 import {
   normalizeAttendancePolicyConfig,
   type AttendanceMode,
   type NormalizedAttendanceGeoPolicyAction,
 } from "./policy-config.js";
+import { resolveEffectiveAttendancePolicy } from "./policy-resolver.js";
 import { resolveEmployeeShift } from "./shift-resolver.js";
 import {
   deriveLegacyAttendanceStatus,
@@ -87,6 +95,7 @@ import {
   secondsBetween,
   type AttendanceApprovalFact,
 } from "./daily-projection.js";
+import { acquirePayrollAttendancePeriodLock } from "./payroll-period-service.js";
 
 export interface AttendancePageQuery {
   page: number;
@@ -120,6 +129,21 @@ interface RegularizationCreateInput {
     | { operation: "replace"; target_punch_event_id: UUID; event_type: AttendancePunchEventType; occurred_at: string }
     | { operation: "void"; target_punch_event_id: UUID }
   >;
+}
+
+interface GeoFallbackPunchRow {
+  id: UUID;
+  session_id: UUID | null;
+  event_type: AttendancePunchEventType;
+  occurred_at: Date;
+  work_mode: AttendanceDayRecord["work_mode"];
+}
+
+interface GeoFallbackSessionStateRow {
+  id: UUID;
+  status: "working" | "on_break" | "closed";
+  checked_in_at: Date;
+  closed_at: Date | null;
 }
 
 export interface AttendanceExportInput {
@@ -1028,6 +1052,584 @@ export class AttendanceService {
       ),
       queue_counts: this.regularizationQueueCounts(scoped),
     };
+  }
+
+  async submitGeoFallback(
+    actor: AuthUser,
+    decisionId: UUID,
+    idempotencyKey: string,
+  ): Promise<Record<string, unknown>> {
+    const companyId = this.resolveAttendanceCompanyContext(
+      actor,
+      "attendance.submit_geo_fallback",
+    ).companyId;
+    assertCanUseSelfAttendance(actor);
+    const manager = this.core.resolveImmediateManager(actor.id);
+    const approver =
+      manager && this.isUserInCompany(manager.id, companyId)
+        ? manager
+        : this.adminFallback(companyId);
+    if (this.store.kind !== "postgres") {
+      throw conflict("Geo fallback submission requires command persistence.");
+    }
+    return new AttendanceCommandService(this.store).submitGeoFallback({
+      actor,
+      companyId,
+      decisionId,
+      idempotencyKey,
+      timeZone: this.timezoneForUser(actor.id, companyId),
+      currentApproverUserId: approver?.id ?? null,
+      isWorkingDayFor: (workDate) => this.isWorkingDay(companyId, workDate),
+    });
+  }
+
+  async managerGeoFallbackQueue(actor: AuthUser, query: AttendancePageQuery) {
+    const companyId = this.resolveAttendanceCompanyContext(
+      actor,
+      "attendance.manager_geo_fallback_queue",
+      query.company_id,
+    ).companyId;
+    if (
+      !canSeeAllAttendance(actor) &&
+      !actor.roles.includes(Roles.Reviewer)
+    ) {
+      throw forbidden(
+        "Only managers, HR, Admin, or Auditor users can read attendance geo fallback queues.",
+      );
+    }
+    const range = dateRange(query, this.timezoneForUser(actor.id, companyId));
+    const visibleUsers = this.visibleUsers(
+      actor,
+      companyId,
+      query.department_id,
+    );
+    const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
+    const requestedStatus = query.status ?? "pending";
+    let reviews: AttendanceGeoFallbackReview[];
+    if (this.store.kind === "postgres" && this.store.pgPool) {
+      const result = await this.store.pgPool.query<AttendanceGeoFallbackReview>(
+        `SELECT id, company_id, employee_user_id, submitted_by_user_id,
+            current_approver_user_id, original_command_id, original_decision_id,
+            fallback_command_id, punch_event_id, event_type, work_date::text,
+            occurred_at::text, reason_code, reason_detail, geo_policy, status,
+            decision_remarks, decided_by_user_id, decided_at::text, version,
+            created_at::text, updated_at::text, deleted_at::text
+         FROM attendance.geo_fallback_reviews
+         WHERE company_id = $1
+           AND employee_user_id = ANY($2::uuid[])
+           AND work_date BETWEEN $3::date AND $4::date
+           AND deleted_at IS NULL
+         ORDER BY created_at DESC, id`,
+        [companyId, Array.from(visibleUserIds), range.from, range.to],
+      );
+      reviews = result.rows;
+    } else {
+      reviews = this.store.attendanceGeoFallbackReviews.filter(
+        (review) =>
+          review.company_id === companyId &&
+          visibleUserIds.has(review.employee_user_id) &&
+          review.work_date >= range.from &&
+          review.work_date <= range.to &&
+          !review.deleted_at,
+      );
+    }
+    const scoped = reviews.filter(
+      (review) =>
+        canSeeAllAttendance(actor) ||
+        review.current_approver_user_id === actor.id,
+    );
+    const filtered = scoped.filter((review) => review.status === requestedStatus);
+    return {
+      ...page(
+        filtered.map((review) => this.presentGeoFallbackReview(review)),
+        query.page,
+        query.page_size,
+      ),
+      queue_counts: this.geoFallbackQueueCounts(scoped),
+    };
+  }
+
+  async decideGeoFallback(
+    actor: AuthUser,
+    id: UUID,
+    input: {
+      decision: "approve" | "reject";
+      remarks?: string;
+      expected_version: number;
+    },
+  ) {
+    const companyId = this.resolveAttendanceCompanyContext(
+      actor,
+      "attendance.decide_geo_fallback",
+    ).companyId;
+    if (this.store.kind === "postgres" && this.store.pgPool) {
+      const client = await this.store.pgPool.connect();
+      try {
+        await client.query("BEGIN");
+        const locked = (
+          await client.query<AttendanceGeoFallbackReview>(
+            `SELECT id, company_id, employee_user_id, submitted_by_user_id,
+                current_approver_user_id, original_command_id, original_decision_id,
+                fallback_command_id, punch_event_id, event_type, work_date::text,
+                occurred_at::text, reason_code, reason_detail, geo_policy, status,
+                decision_remarks, decided_by_user_id, decided_at::text, version,
+                created_at::text, updated_at::text, deleted_at::text
+             FROM attendance.geo_fallback_reviews
+             WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL
+             FOR UPDATE`,
+            [id, companyId],
+          )
+        ).rows[0];
+        if (!locked) throw notFound("Geo fallback review was not found.");
+        if (locked.version !== input.expected_version || locked.status !== "pending") {
+          throw conflict("Only the expected pending geo fallback review can be decided.");
+        }
+        assertCanDecideRegularization(actor, locked);
+        if (input.decision === "reject" && !input.remarks?.trim()) {
+          throw missingRemarks("reject");
+        }
+        const previousStatus = locked.status;
+        const nextStatus = input.decision === "approve" ? "approved" : "rejected";
+        const updated = (
+          await client.query<AttendanceGeoFallbackReview>(
+            `UPDATE attendance.geo_fallback_reviews
+             SET status = $3,
+                 decision_remarks = $4,
+                 decided_by_user_id = $5,
+                 decided_at = now(),
+                 version = version + 1,
+                 updated_at = now()
+             WHERE id = $1 AND company_id = $2
+             RETURNING id, company_id, employee_user_id, submitted_by_user_id,
+                current_approver_user_id, original_command_id, original_decision_id,
+                fallback_command_id, punch_event_id, event_type, work_date::text,
+                occurred_at::text, reason_code, reason_detail, geo_policy, status,
+                decision_remarks, decided_by_user_id, decided_at::text, version,
+                created_at::text, updated_at::text, deleted_at::text`,
+            [id, companyId, nextStatus, input.remarks?.trim() || null, actor.id],
+          )
+        ).rows[0]!;
+        if (input.decision === "reject") {
+          await this.applyRejectedGeoFallbackCorrectionPostgres(
+            client,
+            updated,
+            actor.id,
+          );
+        }
+        const event = buildGeoFallbackDecisionEvent({
+          companyId,
+          actorUserId: actor.id,
+          subjectEmployeeUserId: updated.employee_user_id,
+          fallbackReviewId: updated.id,
+          originalDecisionId: updated.original_decision_id,
+          punchEventId: updated.punch_event_id!,
+          workDate: updated.work_date,
+          decision: input.decision,
+          previousStatus,
+          nextStatus,
+          version: updated.version,
+          decidedAt: updated.decided_at!,
+        });
+        await client.query(
+          `INSERT INTO platform.outbox_events (aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+           VALUES ('attendance',$1,$2,$3::jsonb,$4)`,
+          [
+            event.aggregateId,
+            event.eventType,
+            JSON.stringify(event.payload),
+            event.idempotencyKey,
+          ],
+        );
+        await client.query("COMMIT");
+        return this.presentGeoFallbackReview(updated);
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+    const review = this.store.attendanceGeoFallbackReviews.find(
+      (candidate) =>
+        candidate.id === id &&
+        candidate.company_id === companyId &&
+        !candidate.deleted_at,
+    );
+    if (!review) throw notFound("Geo fallback review was not found.");
+    if (review.version !== input.expected_version || review.status !== "pending") {
+      throw conflict("Only the expected pending geo fallback review can be decided.");
+    }
+    assertCanDecideRegularization(actor, review);
+    if (input.decision === "reject" && !input.remarks?.trim()) {
+      throw missingRemarks("reject");
+    }
+    review.status = input.decision === "approve" ? "approved" : "rejected";
+    review.decision_remarks = input.remarks?.trim() || null;
+    review.decided_by_user_id = actor.id;
+    review.decided_at = nowIso();
+    review.version += 1;
+    review.updated_at = nowIso();
+    if (input.decision === "reject") {
+      this.applyRejectedGeoFallbackCorrectionInMemory(review, actor.id);
+    }
+    return this.presentGeoFallbackReview(review);
+  }
+
+  private async applyRejectedGeoFallbackCorrectionPostgres(
+    client: PoolClient,
+    review: AttendanceGeoFallbackReview,
+    actorUserId: UUID,
+  ): Promise<void> {
+    if (!review.punch_event_id || !review.decided_at) return;
+    await acquirePayrollAttendancePeriodLock(client, review.company_id);
+    const punch = (
+      await client.query<GeoFallbackPunchRow>(
+        `SELECT id, session_id, event_type, occurred_at, work_mode
+           FROM attendance.punch_events
+          WHERE id = $1
+            AND company_id = $2
+            AND employee_user_id = $3
+            AND deleted_at IS NULL
+          FOR UPDATE`,
+        [review.punch_event_id, review.company_id, review.employee_user_id],
+      )
+    ).rows[0];
+    if (!punch) {
+      throw conflict("Geo fallback punch is unavailable for rejection correction.");
+    }
+    if (
+      punch.event_type !== AttendancePunchEventTypes.CheckIn &&
+      punch.event_type !== AttendancePunchEventTypes.CheckOut
+    ) {
+      throw conflict("Geo fallback punch type cannot be corrected by review rejection.");
+    }
+    const existingCorrection = (
+      await client.query<{ id: UUID }>(
+        `SELECT id
+           FROM attendance.regularization_correction_applications
+          WHERE company_id = $1 AND target_punch_event_id = $2
+          FOR UPDATE`,
+        [review.company_id, punch.id],
+      )
+    ).rows[0];
+    if (!existingCorrection) {
+      await this.createGeoFallbackVoidCorrectionPostgres(
+        client,
+        review,
+        punch.id,
+        actorUserId,
+      );
+    }
+    if (punch.event_type === AttendancePunchEventTypes.CheckIn) {
+      if (punch.session_id) {
+        await client.query(
+          `UPDATE attendance.sessions
+              SET deleted_at = COALESCE(deleted_at, transaction_timestamp()),
+                  updated_at = transaction_timestamp(),
+                  version = version + 1
+            WHERE id = $1
+              AND company_id = $2
+              AND employee_user_id = $3
+              AND deleted_at IS NULL`,
+          [punch.session_id, review.company_id, review.employee_user_id],
+        );
+      }
+    } else if (punch.session_id) {
+      const reopened = await client.query(
+        `UPDATE attendance.sessions session
+            SET status = 'working',
+                closed_at = NULL,
+                last_transition_at = COALESCE((
+                  SELECT max(segment.ended_at)
+                    FROM attendance.break_segments segment
+                   WHERE segment.company_id = session.company_id
+                     AND segment.session_id = session.id
+                     AND segment.ended_at IS NOT NULL
+                ), session.checked_in_at),
+                updated_at = transaction_timestamp(),
+                version = version + 1
+          WHERE session.id = $1
+            AND session.company_id = $2
+            AND session.employee_user_id = $3
+            AND session.deleted_at IS NULL`,
+        [punch.session_id, review.company_id, review.employee_user_id],
+      );
+      if ((reopened.rowCount ?? 0) === 0) {
+        throw conflict("Geo fallback checkout session could not be restored.");
+      }
+    }
+    await this.rebuildEmployeeCommandStatePostgres(
+      client,
+      review.company_id,
+      review.employee_user_id,
+    );
+    const tx = new AttendanceCommandTransactionRepository(client);
+    const projectionPolicy = await resolveEffectiveAttendancePolicy(tx, {
+      companyId: review.company_id,
+      subjectEmployeeUserId: review.employee_user_id,
+      asOf: review.decided_at,
+    });
+    await projectCommandDay(
+      tx,
+      review.company_id,
+      review.employee_user_id,
+      review.work_date,
+      punch.work_mode,
+      projectionPolicy.graceMinutes,
+      this.timezoneForUser(
+        review.employee_user_id,
+        review.company_id,
+      ),
+      review.decided_at,
+    );
+  }
+
+  private async createGeoFallbackVoidCorrectionPostgres(
+    client: PoolClient,
+    review: AttendanceGeoFallbackReview,
+    punchEventId: UUID,
+    actorUserId: UUID,
+  ): Promise<void> {
+    const reason = `Geo fallback rejected (${review.id})`;
+    const request = (
+      await client.query<{ id: UUID }>(
+        `INSERT INTO attendance.regularization_requests (
+            company_id, employee_user_id, submitted_by_user_id, work_date,
+            reason, requested_punches, status, current_approver_user_id,
+            decision_remarks, decided_by_user_id, decided_at, version,
+            created_at, updated_at, deleted_at
+          )
+          VALUES ($1,$2,$3,$4::date,$5,'[]'::jsonb,'approved',NULL,$6,$7,$8,2,transaction_timestamp(),transaction_timestamp(),NULL)
+          RETURNING id`,
+        [
+          review.company_id,
+          review.employee_user_id,
+          review.submitted_by_user_id,
+          review.work_date,
+          reason,
+          review.decision_remarks,
+          actorUserId,
+          review.decided_at,
+        ],
+      )
+    ).rows[0];
+    if (!request) throw new Error("Geo fallback correction request was not created.");
+    const item = (
+      await client.query<{ id: UUID }>(
+        `INSERT INTO attendance.regularization_request_items (
+            company_id, regularization_request_id, ordinal, operation,
+            target_punch_event_id, event_type, occurred_at
+          )
+          VALUES ($1,$2,0,'void',$3,NULL,NULL)
+          RETURNING id`,
+        [review.company_id, request.id, punchEventId],
+      )
+    ).rows[0];
+    if (!item) throw new Error("Geo fallback correction item was not created.");
+    await client.query(
+      `INSERT INTO attendance.regularization_actions (
+          company_id, regularization_request_id, actor_user_id,
+          subject_employee_user_id, action_kind, previous_state,
+          resulting_state, remarks, resulting_version, occurred_at,
+          migration_reconstructed
+        )
+        VALUES ($1,$2,$3,$4,'submitted',NULL,'pending',$5,1,$6,false)`,
+      [
+        review.company_id,
+        request.id,
+        review.submitted_by_user_id,
+        review.employee_user_id,
+        reason,
+        review.created_at,
+      ],
+    );
+    const action = (
+      await client.query<{ id: UUID }>(
+        `INSERT INTO attendance.regularization_actions (
+            company_id, regularization_request_id, actor_user_id,
+            subject_employee_user_id, action_kind, previous_state,
+            resulting_state, remarks, resulting_version, occurred_at,
+            migration_reconstructed
+          )
+          VALUES ($1,$2,$3,$4,'approved','pending','approved',$5,2,$6,false)
+          RETURNING id`,
+        [
+          review.company_id,
+          request.id,
+          actorUserId,
+          review.employee_user_id,
+          review.decision_remarks,
+          review.decided_at,
+        ],
+      )
+    ).rows[0];
+    if (!action) throw new Error("Geo fallback correction action was not created.");
+    await client.query(
+      `INSERT INTO attendance.regularization_correction_applications (
+          company_id, regularization_request_id, regularization_request_item_id,
+          regularization_action_id, operation, target_punch_event_id,
+          replacement_punch_event_id, attendance_event_id, applied_by_user_id,
+          applied_at
+        )
+        VALUES ($1,$2,$3,$4,'void',$5,NULL,NULL,$6,$7)`,
+      [
+        review.company_id,
+        request.id,
+        item.id,
+        action.id,
+        punchEventId,
+        actorUserId,
+        review.decided_at,
+      ],
+    );
+  }
+
+  private async rebuildEmployeeCommandStatePostgres(
+    client: PoolClient,
+    companyId: UUID,
+    employeeUserId: UUID,
+  ): Promise<void> {
+    const open = (
+      await client.query<GeoFallbackSessionStateRow>(
+        `SELECT id, status, checked_in_at, closed_at
+           FROM attendance.sessions
+          WHERE company_id = $1
+            AND employee_user_id = $2
+            AND closed_at IS NULL
+            AND deleted_at IS NULL
+          ORDER BY checked_in_at DESC, id DESC
+          LIMIT 1
+          FOR UPDATE`,
+        [companyId, employeeUserId],
+      )
+    ).rows[0];
+    const completed = open
+      ? null
+      : (
+          await client.query<GeoFallbackSessionStateRow>(
+            `SELECT id, status, checked_in_at, closed_at
+               FROM attendance.sessions
+              WHERE company_id = $1
+                AND employee_user_id = $2
+                AND closed_at IS NOT NULL
+                AND deleted_at IS NULL
+              ORDER BY closed_at DESC, id DESC
+              LIMIT 1
+              FOR UPDATE`,
+            [companyId, employeeUserId],
+          )
+        ).rows[0];
+    const nextState = open
+      ? open.status === "on_break"
+        ? "on_break"
+        : "working"
+      : completed
+        ? "completed"
+        : "not_checked_in";
+    const currentSessionId = open?.id ?? completed?.id ?? null;
+    await client.query(
+      `UPDATE attendance.employee_command_states
+          SET state = $3,
+              current_session_id = $4,
+              version = version + 1,
+              updated_at = transaction_timestamp()
+        WHERE company_id = $1 AND employee_user_id = $2`,
+      [companyId, employeeUserId, nextState, currentSessionId],
+    );
+  }
+
+  private applyRejectedGeoFallbackCorrectionInMemory(
+    review: AttendanceGeoFallbackReview,
+    actorUserId: UUID,
+  ): void {
+    if (!review.punch_event_id || !review.decided_at) return;
+    if (this.store.attendanceRegularizationCorrectionApplications.some(
+      (application) =>
+        application.company_id === review.company_id &&
+        application.target_punch_event_id === review.punch_event_id,
+    )) {
+      return;
+    }
+    const request: AttendanceRegularizationRequest = {
+      id: randomUUID(),
+      company_id: review.company_id,
+      employee_user_id: review.employee_user_id,
+      submitted_by_user_id: review.submitted_by_user_id,
+      work_date: review.work_date,
+      reason: `Geo fallback rejected (${review.id})`,
+      requested_punches: [],
+      items: [],
+      status: AttendanceRegularizationStatuses.Approved,
+      current_approver_user_id: null,
+      decision_remarks: review.decision_remarks,
+      decided_by_user_id: actorUserId,
+      decided_at: review.decided_at,
+      version: 2,
+      created_at: nowIso(),
+      updated_at: nowIso(),
+      deleted_at: null,
+    };
+    const item: AttendanceRegularizationRequestItem = {
+      id: randomUUID(),
+      company_id: review.company_id,
+      regularization_request_id: request.id,
+      ordinal: 0,
+      operation: "void",
+      target_punch_event_id: review.punch_event_id,
+      event_type: null,
+      occurred_at: null,
+      created_at: review.decided_at,
+    };
+    request.items = [item];
+    this.store.attendanceRegularizations.push(request);
+    const submittedActionId = randomUUID();
+    this.store.attendanceRegularizationActions.push({
+      id: submittedActionId,
+      company_id: review.company_id,
+      regularization_request_id: request.id,
+      actor_user_id: review.submitted_by_user_id,
+      subject_employee_user_id: review.employee_user_id,
+      action_kind: "submitted",
+      previous_state: null,
+      resulting_state: AttendanceRegularizationStatuses.Pending,
+      remarks: request.reason,
+      resulting_version: 1,
+      occurred_at: request.created_at,
+      migration_reconstructed: false,
+    });
+    const approvedActionId = randomUUID();
+    this.store.attendanceRegularizationActions.push({
+      id: approvedActionId,
+      company_id: review.company_id,
+      regularization_request_id: request.id,
+      actor_user_id: actorUserId,
+      subject_employee_user_id: review.employee_user_id,
+      action_kind: "approved",
+      previous_state: AttendanceRegularizationStatuses.Pending,
+      resulting_state: AttendanceRegularizationStatuses.Approved,
+      remarks: review.decision_remarks,
+      resulting_version: 2,
+      occurred_at: review.decided_at,
+      migration_reconstructed: false,
+    });
+    this.repository.addRegularizationCorrectionApplication({
+      company_id: review.company_id,
+      regularization_request_id: request.id,
+      regularization_request_item_id: item.id,
+      regularization_action_id: approvedActionId,
+      operation: "void",
+      target_punch_event_id: review.punch_event_id,
+      replacement_punch_event_id: null,
+      attendance_event_id: null,
+      applied_by_user_id: actorUserId,
+      applied_at: review.decided_at,
+    });
+    this.recomputeDay(
+      review.company_id,
+      review.employee_user_id,
+      review.work_date,
+      this.timezoneForUser(review.employee_user_id, review.company_id),
+    );
   }
 
   exceptions(actor: AuthUser, query: AttendancePageQuery) {
@@ -3077,6 +3679,16 @@ export class AttendanceService {
     };
   }
 
+  private geoFallbackQueueCounts(requests: AttendanceGeoFallbackReview[]) {
+    return {
+      total: requests.length,
+      pending: requests.filter((request) => request.status === "pending").length,
+      approved: requests.filter((request) => request.status === "approved").length,
+      returned: 0,
+      rejected: requests.filter((request) => request.status === "rejected").length,
+    };
+  }
+
   private requireUser(userId: UUID): CoreUser {
     const user = this.store.users.find(
       (candidate) => candidate.id === userId && !candidate.deleted_at,
@@ -3281,6 +3893,64 @@ export class AttendanceService {
       ),
       employee: userLabel(user),
       approver: approver ? userLabel(approver) : null,
+    };
+  }
+
+  private presentGeoFallbackReview(request: AttendanceGeoFallbackReview) {
+    const user = this.store.users.find(
+      (candidate) => candidate.id === request.employee_user_id,
+    );
+    const approver = request.current_approver_user_id
+      ? this.store.users.find(
+          (candidate) => candidate.id === request.current_approver_user_id,
+        )
+      : undefined;
+    const geoPolicy = request.geo_policy ?? {};
+    return {
+      id: request.id,
+      kind: "geo_fallback",
+      employee_user_id: request.employee_user_id,
+      employee: userLabel(user),
+      employee_name: userLabel(user).full_name,
+      employee_code: userLabel(user).employee_code,
+      work_date: request.work_date,
+      reason:
+        request.reason_detail ??
+        "Manual attendance fallback after location verification failed.",
+      status: request.status,
+      version: request.version,
+      current_approver_user_id: request.current_approver_user_id,
+      approver: approver ? userLabel(approver) : null,
+      decision_remarks: request.decision_remarks,
+      decided_by_user_id: request.decided_by_user_id,
+      decided_at: request.decided_at,
+      created_at: request.created_at,
+      updated_at: request.updated_at,
+      items: [
+        {
+          id: `${request.id}:fallback`,
+          ordinal: 0,
+          operation: "add",
+          target_punch_event_id: null,
+          event_type: request.event_type,
+          occurred_at: request.occurred_at,
+        },
+      ],
+      geo_evidence_summary: {
+        source: "geo",
+        outcome:
+          typeof geoPolicy.factual_outcome === "string"
+            ? geoPolicy.factual_outcome
+            : null,
+        reason_code: request.reason_code,
+        captured_at: request.occurred_at,
+      },
+      manual_fallback: {
+        original_command_id: request.original_command_id,
+        original_decision_id: request.original_decision_id,
+        fallback_command_id: request.fallback_command_id,
+        punch_event_id: request.punch_event_id,
+      },
     };
   }
 

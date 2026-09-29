@@ -18,7 +18,10 @@ import {
   hasEmployeeGeoPolicySnapshot,
   type EmployeeGeoDecisionDisplay,
 } from "./geo-decision-display";
-import { useManualAttendanceMutation } from "./queries";
+import {
+  useAttendanceGeoFallbackSubmitMutation,
+  useManualAttendanceMutation,
+} from "./queries";
 
 export type ManualAttendanceResultKind = "accepted" | "rejected" | "uncertain";
 export type ManualAttendanceGeoStatus = "idle" | "requesting";
@@ -31,6 +34,11 @@ export interface ManualAttendanceResult {
   browserLocationKind?: BrowserGeolocationResult["kind"];
   backendReasonCode?: string;
   geoDecisionDisplay?: EmployeeGeoDecisionDisplay;
+  manualFallback?: {
+    reference: string;
+    reviewRequired: boolean;
+    reasonCode?: string;
+  };
 }
 
 interface PendingAttendanceAction {
@@ -205,6 +213,8 @@ function rejectedResultFor(
   const details = error instanceof ApiError ? asRecord(error.details) : {};
   const reasonCode = text(details.reason_code);
   const geoPolicy = asRecord(details.geo_policy);
+  const fallback = asRecord(details.manual_fallback);
+  const fallbackReference = text(fallback.reference);
   const geoDecisionDisplay =
     hasEmployeeGeoPolicySnapshot(geoPolicy) || reasonCode.startsWith("geo_")
       ? employeeGeoDecisionDisplay(
@@ -232,6 +242,14 @@ function rejectedResultFor(
     browserLocationKind,
     backendReasonCode: reasonCode,
     geoDecisionDisplay,
+    manualFallback:
+      fallback.available === true && fallbackReference
+        ? {
+            reference: fallbackReference,
+            reviewRequired: fallback.review_required === true,
+            reasonCode: text(fallback.reason_code) || reasonCode,
+          }
+        : undefined,
   };
 }
 
@@ -274,6 +292,7 @@ export function useManualAttendanceAction({
   onDeterministicFailure,
 }: UseManualAttendanceActionOptions) {
   const mutation = useManualAttendanceMutation();
+  const fallbackMutation = useAttendanceGeoFallbackSubmitMutation();
   const pendingAction = useRef<PendingAttendanceAction | null>(null);
   const requestBody = useRef<AttendancePunchBody | null>(null);
   const inFlight = useRef(false);
@@ -353,6 +372,37 @@ export function useManualAttendanceAction({
     await execute(pendingAction.current.action, true);
   }, [execute]);
 
+  const submitManualFallback = useCallback(async () => {
+    const current = result;
+    if (!current?.manualFallback || inFlight.current || fallbackMutation.isPending) return;
+    inFlight.current = true;
+
+    try {
+      const response = await fallbackMutation.mutateAsync({
+        reference: current.manualFallback.reference,
+        idempotencyKey: createIdempotencyKey(),
+      });
+      pendingAction.current = null;
+      setResult({
+        ...acceptedResultFor(current.action, response, current.browserLocationKind),
+        title: current.manualFallback.reviewRequired
+          ? "Submitted for review"
+          : "Manual fallback recorded",
+        message: current.manualFallback.reviewRequired
+          ? "Your punch was recorded and sent to your manager for review."
+          : "Your punch was recorded manually.",
+      });
+    } catch (error) {
+      setResult({
+        ...rejectedResultFor(current.action, error, current.browserLocationKind),
+        title: "Manual fallback failed",
+      });
+      onDeterministicFailure?.();
+    } finally {
+      inFlight.current = false;
+    }
+  }, [fallbackMutation, onDeterministicFailure, result]);
+
   const clearResult = useCallback(() => {
     if (result?.kind !== "uncertain") pendingAction.current = null;
     setResult(null);
@@ -380,11 +430,13 @@ export function useManualAttendanceAction({
   return {
     execute,
     retry,
+    submitManualFallback,
     clearResult,
     reconcile,
     result,
     geoStatus,
-    isPending: mutation.isPending,
+    isPending: mutation.isPending || fallbackMutation.isPending,
     canRetry: result?.kind === "uncertain" && pendingAction.current !== null,
+    canSubmitManualFallback: Boolean(result?.manualFallback),
   };
 }

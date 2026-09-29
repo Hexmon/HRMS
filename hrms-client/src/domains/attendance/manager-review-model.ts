@@ -12,6 +12,7 @@ export interface AttendanceReviewEvidence {
 
 export interface AttendanceReviewRequest {
   id: string;
+  kind: "regularization" | "geo_fallback";
   employeeName: string;
   employeeCode: string;
   workDate: string;
@@ -215,6 +216,7 @@ function reviewRequest(value: unknown): AttendanceReviewRequest | null {
 
   return {
     id,
+    kind: stringValue(row.kind) === "geo_fallback" ? "geo_fallback" : "regularization",
     employeeName:
       stringValue(employee.full_name ?? row.employee_name ?? row.employee, "Unknown employee") ||
       "Unknown employee",

@@ -529,6 +529,34 @@ export interface AttendanceRegularizationCorrectionApplication {
   applied_at: ISODateTime;
 }
 
+export type AttendanceGeoFallbackReviewStatus = "pending" | "approved" | "rejected";
+
+export interface AttendanceGeoFallbackReview {
+  id: UUID;
+  company_id: UUID;
+  employee_user_id: UUID;
+  submitted_by_user_id: UUID;
+  current_approver_user_id: UUID | null;
+  original_command_id: UUID;
+  original_decision_id: UUID;
+  fallback_command_id: UUID | null;
+  punch_event_id: UUID | null;
+  event_type: AttendancePunchEventType;
+  work_date: ISODate;
+  occurred_at: ISODateTime;
+  reason_code: string;
+  reason_detail: string | null;
+  geo_policy: Record<string, unknown>;
+  status: AttendanceGeoFallbackReviewStatus;
+  decision_remarks: string | null;
+  decided_by_user_id: UUID | null;
+  decided_at: ISODateTime | null;
+  version: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
 export interface LeaveRequest {
   id: UUID;
   request_code: string;

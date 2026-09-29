@@ -59,6 +59,7 @@ async function clearGeoPolicyFixtures(app: TestApp): Promise<void> {
   if (!pool) throw new Error("PostgreSQL pool is unavailable.");
   await pool.query(`
     TRUNCATE TABLE
+      attendance.geo_fallback_reviews,
       attendance.regularization_correction_applications,
       attendance.regularization_actions,
       attendance.regularization_request_items,
@@ -382,8 +383,102 @@ async function decisionReasonCodesForCommand(
   return result.rows.map((row) => row.reason_code);
 }
 
+async function fallbackRuntimeState(app: TestApp, employeeUserId: string): Promise<{
+  active_sessions: number;
+  deleted_sessions: number;
+  punches: number;
+  correction_applications: number;
+  command_state: string | null;
+  current_session_id: string | null;
+  first_check_in: string | null;
+  last_check_out: string | null;
+  presence_state: string | null;
+  work_seconds: number | null;
+}> {
+  const result = await app.store.pgPool!.query<{
+    active_sessions: number;
+    deleted_sessions: number;
+    punches: number;
+    correction_applications: number;
+    command_state: string | null;
+    current_session_id: string | null;
+    first_check_in: string | null;
+    last_check_out: string | null;
+    presence_state: string | null;
+    work_seconds: number | null;
+  }>(
+    `SELECT
+       (SELECT count(*)::int FROM attendance.sessions WHERE employee_user_id = $1 AND deleted_at IS NULL) AS active_sessions,
+       (SELECT count(*)::int FROM attendance.sessions WHERE employee_user_id = $1 AND deleted_at IS NOT NULL) AS deleted_sessions,
+       (SELECT count(*)::int FROM attendance.punch_events WHERE employee_user_id = $1 AND deleted_at IS NULL) AS punches,
+       (SELECT count(*)::int
+          FROM attendance.regularization_correction_applications application
+          JOIN attendance.punch_events punch
+            ON punch.id = application.target_punch_event_id
+           AND punch.company_id = application.company_id
+         WHERE punch.employee_user_id = $1) AS correction_applications,
+       (SELECT state FROM attendance.employee_command_states WHERE employee_user_id = $1 LIMIT 1) AS command_state,
+       (SELECT current_session_id::text FROM attendance.employee_command_states WHERE employee_user_id = $1 LIMIT 1) AS current_session_id,
+       (SELECT first_check_in::text FROM attendance.daily_records WHERE employee_user_id = $1 ORDER BY work_date DESC LIMIT 1) AS first_check_in,
+       (SELECT last_check_out::text FROM attendance.daily_records WHERE employee_user_id = $1 ORDER BY work_date DESC LIMIT 1) AS last_check_out,
+       (SELECT presence_state FROM attendance.daily_records WHERE employee_user_id = $1 ORDER BY work_date DESC LIMIT 1) AS presence_state,
+       (SELECT work_seconds::int FROM attendance.daily_records WHERE employee_user_id = $1 ORDER BY work_date DESC LIMIT 1) AS work_seconds`,
+    [employeeUserId],
+  );
+  return result.rows[0]!;
+}
+
+async function geoFallbackDecisionOutboxCount(app: TestApp, reviewId: string): Promise<number> {
+  const result = await app.store.pgPool!.query<{ count: number }>(
+    `SELECT count(*)::int AS count
+       FROM platform.outbox_events
+      WHERE aggregate_type = 'attendance'
+        AND aggregate_id = $1
+        AND event_type IN ('attendance.geo_fallback.approved', 'attendance.geo_fallback.rejected')`,
+    [reviewId],
+  );
+  return result.rows[0]?.count ?? 0;
+}
+
 function expectUniqueReasonCodes(reasonCodes: string[]): void {
   expect(reasonCodes).toEqual([...new Set(reasonCodes)]);
+}
+
+async function submitOutsideFenceFallback(
+  app: TestApp,
+  token: string,
+  eventType: "check_in" | "check_out",
+): Promise<Record<string, unknown>> {
+  const outside = coordinateLocation(12.974, 77.597);
+  const fallback = await app.inject({
+    method: "POST",
+    url: "/api/v1/attendance/punches",
+    ...employeePunchRequest(token, {
+      event_type: eventType,
+      work_mode: "office",
+      source: "web",
+      metadata: {},
+      location: outside,
+    }),
+  });
+  expect(fallback.statusCode, fallback.body).toBe(409);
+  const reference = fallback.json().details?.manual_fallback?.reference;
+  expect(reference).toEqual(expect.any(String));
+  const submit = await app.inject({
+    method: "POST",
+    url: `/api/v1/attendance/geo-fallbacks/${reference}/submit`,
+    headers: {
+      authorization: `Bearer ${token}`,
+      "idempotency-key": randomUUID(),
+    },
+    payload: {},
+  });
+  expect(submit.statusCode, submit.body).toBe(200);
+  expect(submit.json().manual_fallback).toMatchObject({
+    submitted: true,
+    status: "pending",
+  });
+  return submit.json();
 }
 
 describe("PostgreSQL attendance geo policy enforcement", () => {
@@ -1066,12 +1161,17 @@ describe("PostgreSQL attendance geo policy enforcement", () => {
         fallbackIdempotencyKey,
       ),
     });
-    expect(fallback.statusCode).toBe(200);
-    expect(fallback.json().geo_policy).toMatchObject({
+    expect(fallback.statusCode).toBe(409);
+    expect(fallback.json().details.geo_policy).toMatchObject({
       factual_outcome: "outside_confident",
       selected_action: "manual_fallback",
       fallback_used: true,
       allowed: true,
+    });
+    expect(fallback.json().details.manual_fallback).toMatchObject({
+      available: true,
+      review_required: true,
+      reason_code: "geo_outside_fence",
     });
     const fallbackCommandId = await commandIdForIdempotencyKey(app, fallbackIdempotencyKey);
     const fallbackReasonCodes = await decisionReasonCodesForCommand(app, fallbackCommandId);
@@ -1080,6 +1180,208 @@ describe("PostgreSQL attendance geo policy enforcement", () => {
       "geo_manual_fallback_allowed",
     ]);
     expectUniqueReasonCodes(fallbackReasonCodes);
+
+    const submitIdempotencyKey = randomUUID();
+    const submit = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${fallback.json().details.manual_fallback.reference}/submit`,
+      headers: {
+        authorization: `Bearer ${employee.token}`,
+        "idempotency-key": submitIdempotencyKey,
+      },
+      payload: {},
+    });
+    expect(submit.statusCode).toBe(200);
+    expect(submit.json().manual_fallback).toMatchObject({
+      submitted: true,
+      review_required: true,
+      status: "pending",
+    });
+    const replay = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${fallback.json().details.manual_fallback.reference}/submit`,
+      headers: {
+        authorization: `Bearer ${employee.token}`,
+        "idempotency-key": submitIdempotencyKey,
+      },
+      payload: {},
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.headers["idempotency-replayed"]).toBe("true");
+  });
+
+  it("rejects a provisional fallback check-in without counting it as valid attendance", async () => {
+    const manager = await loginAs(app, "D1");
+    const employee = await loginAs(app, "E1");
+    const companyId = employeeCompanyId(app, employee.user.id);
+    const geofenceId = await createPublishedPolygonGeofence(app, companyId);
+    await assignAttendancePolicy(app, {
+      companyId,
+      employeeUserId: employee.user.id,
+      config: {
+        effectiveGeofenceId: geofenceId,
+        outsideFenceAction: "manual_fallback",
+        fallbackApprovalMode: "approval_required",
+      },
+    });
+
+    const submit = await submitOutsideFenceFallback(app, employee.token, "check_in");
+    const review = submit.manual_fallback as { review_id: string; version: number };
+    expect(await fallbackRuntimeState(app, employee.user.id)).toMatchObject({
+      active_sessions: 1,
+      punches: 1,
+      command_state: "working",
+      correction_applications: 0,
+    });
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/decision`,
+      headers: authHeader(manager.token),
+      payload: {
+        decision: "reject",
+        remarks: "Location evidence did not support attendance.",
+        expected_version: review.version,
+      },
+    });
+
+    expect(rejected.statusCode, rejected.body).toBe(200);
+    expect(rejected.json()).toMatchObject({ status: "rejected", version: 2 });
+    expect(await fallbackRuntimeState(app, employee.user.id)).toMatchObject({
+      active_sessions: 0,
+      deleted_sessions: 1,
+      punches: 1,
+      correction_applications: 1,
+      command_state: "not_checked_in",
+      current_session_id: null,
+      first_check_in: null,
+      last_check_out: null,
+      presence_state: "absent",
+      work_seconds: 0,
+    });
+    expect(await geoFallbackDecisionOutboxCount(app, review.review_id)).toBe(1);
+
+    const duplicate = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/decision`,
+      headers: authHeader(manager.token),
+      payload: {
+        decision: "reject",
+        remarks: "Duplicate decision",
+        expected_version: 2,
+      },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(await fallbackRuntimeState(app, employee.user.id)).toMatchObject({
+      correction_applications: 1,
+      punches: 1,
+    });
+    expect(await geoFallbackDecisionOutboxCount(app, review.review_id)).toBe(1);
+  });
+
+  it("rejects a provisional fallback check-out and restores the prior open session state", async () => {
+    const manager = await loginAs(app, "D1");
+    const employee = await loginAs(app, "E1");
+    const companyId = employeeCompanyId(app, employee.user.id);
+    const geofenceId = await createPublishedPolygonGeofence(app, companyId);
+    await assignAttendancePolicy(app, {
+      companyId,
+      employeeUserId: employee.user.id,
+      config: {
+        effectiveGeofenceId: geofenceId,
+        outsideFenceAction: "manual_fallback",
+        fallbackApprovalMode: "approval_required",
+      },
+    });
+
+    const checkIn = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      ...employeePunchRequest(employee.token, {
+        event_type: "check_in",
+        work_mode: "office",
+        source: "web",
+        metadata: {},
+        location: coordinateLocation(12.972, 77.595),
+      }),
+    });
+    expect(checkIn.statusCode, checkIn.body).toBe(200);
+    const submit = await submitOutsideFenceFallback(app, employee.token, "check_out");
+    const review = submit.manual_fallback as { review_id: string; version: number };
+    expect(await fallbackRuntimeState(app, employee.user.id)).toMatchObject({
+      active_sessions: 1,
+      punches: 2,
+      command_state: "completed",
+      correction_applications: 0,
+    });
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/decision`,
+      headers: authHeader(manager.token),
+      payload: {
+        decision: "reject",
+        remarks: "Checkout location was outside policy.",
+        expected_version: review.version,
+      },
+    });
+
+    expect(rejected.statusCode, rejected.body).toBe(200);
+    const state = await fallbackRuntimeState(app, employee.user.id);
+    expect(state).toMatchObject({
+      active_sessions: 1,
+      deleted_sessions: 0,
+      punches: 2,
+      correction_applications: 1,
+      command_state: "working",
+      last_check_out: null,
+      presence_state: "incomplete",
+    });
+    expect(state.current_session_id).toEqual(expect.any(String));
+    expect(state.first_check_in).toEqual(expect.any(String));
+  });
+
+  it("keeps an approved provisional fallback effective", async () => {
+    const manager = await loginAs(app, "D1");
+    const employee = await loginAs(app, "E1");
+    const companyId = employeeCompanyId(app, employee.user.id);
+    const geofenceId = await createPublishedPolygonGeofence(app, companyId);
+    await assignAttendancePolicy(app, {
+      companyId,
+      employeeUserId: employee.user.id,
+      config: {
+        effectiveGeofenceId: geofenceId,
+        outsideFenceAction: "manual_fallback",
+        fallbackApprovalMode: "approval_required",
+      },
+    });
+
+    const submit = await submitOutsideFenceFallback(app, employee.token, "check_in");
+    const review = submit.manual_fallback as { review_id: string; version: number };
+    const approved = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/decision`,
+      headers: authHeader(manager.token),
+      payload: {
+        decision: "approve",
+        expected_version: review.version,
+      },
+    });
+
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect(approved.json()).toMatchObject({ status: "approved", version: 2 });
+    const state = await fallbackRuntimeState(app, employee.user.id);
+    expect(state).toMatchObject({
+      active_sessions: 1,
+      deleted_sessions: 0,
+      punches: 1,
+      correction_applications: 0,
+      command_state: "working",
+      last_check_out: null,
+      presence_state: "incomplete",
+    });
+    expect(state.first_check_in).toEqual(expect.any(String));
+    expect(await geoFallbackDecisionOutboxCount(app, review.review_id)).toBe(1);
   });
 
   it("fails closed without an effective fence and does not infer fallback when disabled", async () => {
