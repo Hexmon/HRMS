@@ -22,7 +22,10 @@ import type { AttendancePunchEventType } from "./api";
 import { liveAttendanceContext } from "./context";
 import { formatAttendanceMinutes } from "./live";
 import { useEmployeeAttendanceContext } from "./queries";
-import { useManualAttendanceAction } from "./use-manual-attendance-action";
+import {
+  useManualAttendanceAction,
+  type ManualAttendanceResult,
+} from "./use-manual-attendance-action";
 import { useServerClock } from "./use-server-clock";
 
 interface EmployeeManualAttendanceWidgetProps {
@@ -59,6 +62,19 @@ function stateBadgeStatus(state: string, fallback: string): string {
   if (state === "on_break") return "pending";
   if (state === "completed") return "completed";
   return fallback || "inactive";
+}
+
+type AttendanceResultTone = ManualAttendanceResult["kind"] | "provisional" | "review";
+
+function attendanceResultTone(result: ManualAttendanceResult): AttendanceResultTone {
+  if (result.kind === "uncertain") return "uncertain";
+  return result.geoDecisionDisplay?.decision ?? result.kind;
+}
+
+function attendanceResultClassName(tone: AttendanceResultTone): string {
+  if (tone === "accepted") return "border-success/30 bg-success/10 text-success";
+  if (tone === "rejected") return "border-destructive/30 bg-destructive/10 text-destructive";
+  return "border-warning/40 bg-warning/10 text-warning-foreground";
 }
 
 export function EmployeeManualAttendanceWidget({
@@ -151,6 +167,7 @@ export function EmployeeManualAttendanceWidget({
   }
 
   const disabled = action.isPending || action.geoStatus === "requesting" || contextQuery.isFetching;
+  const resultTone = action.result ? attendanceResultTone(action.result) : null;
 
   return (
     <Card className={cn("overflow-hidden rounded-lg", className)}>
@@ -240,24 +257,32 @@ export function EmployeeManualAttendanceWidget({
             <div
               ref={resultRef}
               tabIndex={-1}
-              role={action.result.kind === "accepted" ? "status" : "alert"}
+              role={resultTone === "rejected" || resultTone === "uncertain" ? "alert" : "status"}
               className={cn(
                 "flex items-start gap-3 rounded-lg border p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                action.result.kind === "accepted" && "border-success/30 bg-success/10 text-success",
-                action.result.kind === "rejected" &&
-                  "border-destructive/30 bg-destructive/10 text-destructive",
-                action.result.kind === "uncertain" &&
-                  "border-warning/40 bg-warning/10 text-warning-foreground",
+                resultTone && attendanceResultClassName(resultTone),
               )}
             >
-              {action.result.kind === "accepted" ? (
+              {resultTone === "accepted" ? (
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               ) : (
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               )}
               <div className="min-w-0 flex-1">
-                <p className="font-semibold">{action.result.title}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {action.result.geoDecisionDisplay && (
+                    <StatusBadge
+                      status={action.result.geoDecisionDisplay.decision}
+                      label={action.result.geoDecisionDisplay.title}
+                    />
+                  )}
+                  <p className="font-semibold">{action.result.title}</p>
+                </div>
                 <p className="mt-0.5">{action.result.message}</p>
+                {action.result.geoDecisionDisplay?.reasonDescription &&
+                  action.result.geoDecisionDisplay.reasonDescription !== action.result.message && (
+                    <p className="mt-1">{action.result.geoDecisionDisplay.reasonDescription}</p>
+                  )}
                 {action.result.kind === "uncertain" && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button

@@ -13,6 +13,11 @@ import {
   type BrowserGeolocationResult,
 } from "./browser-geolocation";
 import type { EmployeeAttendanceGeoPolicy } from "./context";
+import {
+  employeeGeoDecisionDisplay,
+  hasEmployeeGeoPolicySnapshot,
+  type EmployeeGeoDecisionDisplay,
+} from "./geo-decision-display";
 import { useManualAttendanceMutation } from "./queries";
 
 export type ManualAttendanceResultKind = "accepted" | "rejected" | "uncertain";
@@ -25,6 +30,7 @@ export interface ManualAttendanceResult {
   message: string;
   browserLocationKind?: BrowserGeolocationResult["kind"];
   backendReasonCode?: string;
+  geoDecisionDisplay?: EmployeeGeoDecisionDisplay;
 }
 
 interface PendingAttendanceAction {
@@ -139,26 +145,44 @@ function acceptedResultFor(
   response: Record<string, unknown>,
   browserLocationKind?: BrowserGeolocationResult["kind"],
 ): ManualAttendanceResult {
-  const geoPolicy = asRecord(response.geo_policy);
-  if (geoPolicy.fallback_used === true) {
+  const geoDecisionDisplay = hasEmployeeGeoPolicySnapshot(response.geo_policy)
+    ? employeeGeoDecisionDisplay(response.geo_policy, "accepted")
+    : undefined;
+  const backendReasonCode =
+    geoDecisionDisplay?.reasonCode ?? text(asRecord(response.geo_policy).reason_code);
+
+  if (geoDecisionDisplay?.decision === "review") {
     return {
       kind: "accepted",
       action,
       title: "Manual fallback recorded",
-      message: "Attendance was accepted through the configured manual fallback policy.",
+      message: geoDecisionDisplay.description,
       browserLocationKind,
-      backendReasonCode: text(geoPolicy.reason_code),
+      backendReasonCode,
+      geoDecisionDisplay,
     };
   }
 
-  if (browserLocationKind && browserLocationKind !== "success") {
+  if (geoDecisionDisplay?.decision === "provisional") {
+    return {
+      kind: "accepted",
+      action,
+      title: `${ACTION_COPY[action].acceptedTitle} provisionally`,
+      message: geoDecisionDisplay.description,
+      browserLocationKind,
+      backendReasonCode,
+      geoDecisionDisplay,
+    };
+  }
+
+  if (browserLocationKind && browserLocationKind !== "success" && !geoDecisionDisplay) {
     return {
       kind: "accepted",
       action,
       title: `${ACTION_COPY[action].acceptedTitle} without location`,
       message: browserLocationMessage(browserLocationKind),
       browserLocationKind,
-      backendReasonCode: text(geoPolicy.reason_code),
+      backendReasonCode,
     };
   }
 
@@ -168,68 +192,9 @@ function acceptedResultFor(
     title: ACTION_COPY[action].acceptedTitle,
     message: ACTION_COPY[action].acceptedMessage,
     browserLocationKind,
-    backendReasonCode: text(geoPolicy.reason_code),
+    backendReasonCode,
+    geoDecisionDisplay,
   };
-}
-
-function geoErrorCopy(reasonCode: string): { title: string; message: string } | null {
-  switch (reasonCode) {
-    case "geo_permission_denied":
-      return {
-        title: "Location permission denied",
-        message:
-          "Attendance was not recorded because the resolved policy requires location permission.",
-      };
-    case "geo_location_unavailable":
-      return {
-        title: "Location unavailable",
-        message: "Attendance was not recorded because usable location evidence was unavailable.",
-      };
-    case "geo_stale_evidence":
-      return {
-        title: "Location was too old",
-        message:
-          "Attendance was not recorded because the browser returned stale location evidence.",
-      };
-    case "geo_accuracy_exceeded":
-      return {
-        title: "Location accuracy too low",
-        message:
-          "Attendance was not recorded because the location accuracy exceeded policy limits.",
-      };
-    case "geo_fence_not_configured":
-      return {
-        title: "Attendance location is not configured",
-        message:
-          "Attendance was not recorded because no effective geofence is configured for this policy.",
-      };
-    case "geo_outside_fence":
-      return {
-        title: "Location outside work area",
-        message:
-          "Attendance was not recorded because the location was outside the configured work area.",
-      };
-    case "geo_boundary_uncertain":
-      return {
-        title: "Location could not be verified",
-        message:
-          "Attendance was not recorded because the location was too close to the work-area boundary.",
-      };
-    case "geo_evidence_missing":
-      return {
-        title: "Location evidence missing",
-        message:
-          "Attendance was not recorded because the resolved policy requires location evidence.",
-      };
-    case "geo_manual_fallback_disallowed":
-      return {
-        title: "Manual fallback unavailable",
-        message:
-          "Attendance was not recorded because manual fallback is disabled by the resolved policy.",
-      };
-    default:
-      return null;
-  }
 }
 
 function rejectedResultFor(
@@ -237,23 +202,36 @@ function rejectedResultFor(
   error: unknown,
   browserLocationKind?: BrowserGeolocationResult["kind"],
 ): ManualAttendanceResult {
-  const reasonCode = error instanceof ApiError ? text(asRecord(error.details).reason_code) : "";
+  const details = error instanceof ApiError ? asRecord(error.details) : {};
+  const reasonCode = text(details.reason_code);
+  const geoPolicy = asRecord(details.geo_policy);
+  const geoDecisionDisplay =
+    hasEmployeeGeoPolicySnapshot(geoPolicy) || reasonCode.startsWith("geo_")
+      ? employeeGeoDecisionDisplay(
+          hasEmployeeGeoPolicySnapshot(geoPolicy)
+            ? { ...geoPolicy, reason_code: text(geoPolicy.reason_code) || reasonCode }
+            : { allowed: false, reason_code: reasonCode },
+          "rejected",
+          reasonCode,
+        )
+      : undefined;
   const unavailableCopy =
     reasonCode === "geo_location_unavailable" &&
     browserLocationKind &&
     browserLocationKind !== "success"
       ? unavailableRejectedCopy(browserLocationKind)
       : null;
-  const geoCopy = unavailableCopy ?? (reasonCode ? geoErrorCopy(reasonCode) : null);
   return {
     kind: "rejected",
     action,
-    title: geoCopy?.title ?? ACTION_COPY[action].rejectedTitle,
+    title: unavailableCopy?.title ?? ACTION_COPY[action].rejectedTitle,
     message:
-      geoCopy?.message ??
+      unavailableCopy?.message ??
+      geoDecisionDisplay?.description ??
       userFacingErrorMessage(error, "The attendance request could not be completed."),
     browserLocationKind,
     backendReasonCode: reasonCode,
+    geoDecisionDisplay,
   };
 }
 
@@ -297,6 +275,7 @@ export function useManualAttendanceAction({
 }: UseManualAttendanceActionOptions) {
   const mutation = useManualAttendanceMutation();
   const pendingAction = useRef<PendingAttendanceAction | null>(null);
+  const requestBody = useRef<AttendancePunchBody | null>(null);
   const inFlight = useRef(false);
   const [result, setResult] = useState<ManualAttendanceResult | null>(null);
   const [geoStatus, setGeoStatus] = useState<ManualAttendanceGeoStatus>("idle");
@@ -335,11 +314,12 @@ export function useManualAttendanceAction({
           identity.browserLocationKind = prepared.browserLocationKind;
         }
 
+        requestBody.current = identity.body;
         const response = await mutation.mutateAsync({
           action,
           idempotencyKey: identity.idempotencyKey,
           sourceView,
-          body: identity.body,
+          requestBody,
         });
         pendingAction.current = null;
         setResult(acceptedResultFor(action, response, identity.browserLocationKind));
@@ -360,6 +340,7 @@ export function useManualAttendanceAction({
         setResult(rejectedResultFor(action, error, identity.browserLocationKind));
         onDeterministicFailure?.();
       } finally {
+        requestBody.current = null;
         setGeoStatus("idle");
         inFlight.current = false;
       }
