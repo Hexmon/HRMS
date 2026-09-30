@@ -529,7 +529,7 @@ export interface AttendanceRegularizationCorrectionApplication {
   applied_at: ISODateTime;
 }
 
-export type AttendanceGeoFallbackReviewStatus = "pending" | "approved" | "rejected";
+export type AttendanceGeoFallbackReviewStatus = "pending" | "approved" | "returned" | "rejected";
 
 export interface AttendanceGeoFallbackReview {
   id: UUID;

@@ -434,8 +434,28 @@ async function geoFallbackDecisionOutboxCount(app: TestApp, reviewId: string): P
        FROM platform.outbox_events
       WHERE aggregate_type = 'attendance'
         AND aggregate_id = $1
-        AND event_type IN ('attendance.geo_fallback.approved', 'attendance.geo_fallback.rejected')`,
+        AND event_type IN (
+          'attendance.geo_fallback.approved',
+          'attendance.geo_fallback.returned',
+          'attendance.geo_fallback.rejected'
+        )`,
     [reviewId],
+  );
+  return result.rows[0]?.count ?? 0;
+}
+
+async function geoFallbackOutboxCount(
+  app: TestApp,
+  reviewId: string,
+  eventType: string,
+): Promise<number> {
+  const result = await app.store.pgPool!.query<{ count: number }>(
+    `SELECT count(*)::int AS count
+       FROM platform.outbox_events
+      WHERE aggregate_type = 'attendance'
+        AND aggregate_id = $1
+        AND event_type = $2`,
+    [reviewId, eventType],
   );
   return result.rows[0]?.count ?? 0;
 }
@@ -444,12 +464,12 @@ function expectUniqueReasonCodes(reasonCodes: string[]): void {
   expect(reasonCodes).toEqual([...new Set(reasonCodes)]);
 }
 
-async function submitOutsideFenceFallback(
+async function submitGeoFallbackAttempt(
   app: TestApp,
   token: string,
   eventType: "check_in" | "check_out",
+  location: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const outside = coordinateLocation(12.974, 77.597);
   const fallback = await app.inject({
     method: "POST",
     url: "/api/v1/attendance/punches",
@@ -458,12 +478,12 @@ async function submitOutsideFenceFallback(
       work_mode: "office",
       source: "web",
       metadata: {},
-      location: outside,
+        location,
     }),
   });
   expect(fallback.statusCode, fallback.body).toBe(409);
   const reference = fallback.json().details?.manual_fallback?.reference;
-  expect(reference).toEqual(expect.any(String));
+  expect(reference, fallback.body).toEqual(expect.any(String));
   const submit = await app.inject({
     method: "POST",
     url: `/api/v1/attendance/geo-fallbacks/${reference}/submit`,
@@ -479,6 +499,19 @@ async function submitOutsideFenceFallback(
     status: "pending",
   });
   return submit.json();
+}
+
+async function submitOutsideFenceFallback(
+  app: TestApp,
+  token: string,
+  eventType: "check_in" | "check_out",
+): Promise<Record<string, unknown>> {
+  return submitGeoFallbackAttempt(
+    app,
+    token,
+    eventType,
+    coordinateLocation(12.974, 77.597),
+  );
 }
 
 describe("PostgreSQL attendance geo policy enforcement", () => {
@@ -1382,6 +1415,240 @@ describe("PostgreSQL attendance geo policy enforcement", () => {
     });
     expect(state.first_check_in).toEqual(expect.any(String));
     expect(await geoFallbackDecisionOutboxCount(app, review.review_id)).toBe(1);
+  });
+
+  it("returns a provisional fallback without voiding attendance and keeps it filterable", async () => {
+    const manager = await loginAs(app, "D1");
+    const employee = await loginAs(app, "E1");
+    const companyId = employeeCompanyId(app, employee.user.id);
+    const geofenceId = await createPublishedPolygonGeofence(app, companyId);
+    await assignAttendancePolicy(app, {
+      companyId,
+      employeeUserId: employee.user.id,
+      config: {
+        effectiveGeofenceId: geofenceId,
+        outsideFenceAction: "manual_fallback",
+        fallbackApprovalMode: "approval_required",
+      },
+    });
+
+    const submit = await submitOutsideFenceFallback(app, employee.token, "check_in");
+    const review = submit.manual_fallback as { review_id: string; version: number };
+
+    const selfReturn = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/decision`,
+      headers: authHeader(employee.token),
+      payload: {
+        decision: "return",
+        remarks: "I need to add more context.",
+        expected_version: review.version,
+      },
+    });
+    expect(selfReturn.statusCode).toBe(403);
+
+    const returned = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/decision`,
+      headers: authHeader(manager.token),
+      payload: {
+        decision: "return",
+        remarks: "Please attach site visit context.",
+        expected_version: review.version,
+      },
+    });
+
+    expect(returned.statusCode, returned.body).toBe(200);
+    expect(returned.json()).toMatchObject({
+      status: "returned",
+      decision_remarks: "Please attach site visit context.",
+      version: 2,
+      geo_evidence_summary: {
+        review_type: "manual_fallback",
+        outcome: "outside_confident",
+        reason_code: "geo_outside_fence",
+      },
+    });
+    expect(await fallbackRuntimeState(app, employee.user.id)).toMatchObject({
+      active_sessions: 1,
+      deleted_sessions: 0,
+      punches: 1,
+      correction_applications: 0,
+      command_state: "working",
+    });
+    expect(await geoFallbackOutboxCount(
+      app,
+      review.review_id,
+      "attendance.geo_fallback.returned",
+    )).toBe(1);
+
+    const pendingQueue = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/geo-fallbacks/queue/manager?status=pending",
+      headers: authHeader(manager.token),
+    });
+    expect(pendingQueue.statusCode, pendingQueue.body).toBe(200);
+    expect(pendingQueue.json().items).toHaveLength(0);
+
+    const returnedQueue = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/geo-fallbacks/queue/manager?status=returned",
+      headers: authHeader(manager.token),
+    });
+    expect(returnedQueue.statusCode, returnedQueue.body).toBe(200);
+    expect(returnedQueue.json().items).toHaveLength(1);
+    expect(returnedQueue.json().items[0]).toMatchObject({
+      id: review.review_id,
+      status: "returned",
+    });
+
+    const staleReturn = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/decision`,
+      headers: authHeader(manager.token),
+      payload: {
+        decision: "return",
+        remarks: "Duplicate return",
+        expected_version: review.version,
+      },
+    });
+    expect(staleReturn.statusCode).toBe(409);
+    expect(await geoFallbackOutboxCount(
+      app,
+      review.review_id,
+      "attendance.geo_fallback.returned",
+    )).toBe(1);
+  });
+
+  it("requires remarks when returning a geo fallback review", async () => {
+    const manager = await loginAs(app, "D1");
+    const employee = await loginAs(app, "E1");
+    const companyId = employeeCompanyId(app, employee.user.id);
+    const geofenceId = await createPublishedPolygonGeofence(app, companyId);
+    await assignAttendancePolicy(app, {
+      companyId,
+      employeeUserId: employee.user.id,
+      config: {
+        effectiveGeofenceId: geofenceId,
+        outsideFenceAction: "manual_fallback",
+        fallbackApprovalMode: "approval_required",
+      },
+    });
+
+    const submit = await submitOutsideFenceFallback(app, employee.token, "check_in");
+    const review = submit.manual_fallback as { review_id: string; version: number };
+
+    for (const remarks of [undefined, "   "]) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/decision`,
+        headers: authHeader(manager.token),
+        payload: {
+          decision: "return",
+          remarks,
+          expected_version: review.version,
+        },
+      });
+      expect(response.statusCode).toBe(400);
+    }
+  });
+
+  it("presents and filters safe geo review evidence for outside, boundary, stale, and manual fallback", async () => {
+    const manager = await loginAs(app, "D1");
+    const employee = await loginAs(app, "E1");
+    const companyId = employeeCompanyId(app, employee.user.id);
+
+    const cases: Array<{
+      outcome: string;
+      reasonCode: string;
+      config: Record<string, unknown>;
+      location: Record<string, unknown>;
+    }> = [
+      {
+        outcome: "outside_confident",
+        reasonCode: "geo_outside_fence",
+        config: { outsideFenceAction: "manual_fallback" },
+        location: coordinateLocation(12.974, 77.597),
+      },
+      {
+        outcome: "boundary_uncertain",
+        reasonCode: "geo_boundary_uncertain",
+        config: { boundaryUncertainAction: "manual_fallback" },
+        location: coordinateLocation(12.971, 77.595),
+      },
+      {
+        outcome: "stale_evidence",
+        reasonCode: "geo_stale_evidence",
+        config: { staleEvidenceAction: "manual_fallback", maxLocationAgeMs: 60_000 },
+        location: {
+          ...coordinateLocation(12.972, 77.595),
+          captured_at: new Date(Date.now() - 120_000).toISOString(),
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      await clearGeoPolicyFixtures(app);
+      const geofenceId = await createPublishedPolygonGeofence(app, companyId);
+      await assignAttendancePolicy(app, {
+        companyId,
+        employeeUserId: employee.user.id,
+        config: {
+          effectiveGeofenceId: geofenceId,
+          fallbackApprovalMode: "approval_required",
+          ...testCase.config,
+        },
+      });
+      const submit = await submitGeoFallbackAttempt(
+        app,
+        employee.token,
+        "check_in",
+        testCase.location,
+      );
+      const review = submit.manual_fallback as { review_id: string };
+
+      const queue = await app.inject({
+        method: "GET",
+        url: `/api/v1/attendance/geo-fallbacks/queue/manager?status=pending&geo_outcome=${testCase.outcome}&review_type=manual_fallback&user_id=${employee.user.id}&page=1&page_size=5`,
+        headers: authHeader(manager.token),
+      });
+      expect(queue.statusCode, queue.body).toBe(200);
+      expect(queue.json().items).toHaveLength(1);
+      expect(queue.json().items[0]).toMatchObject({
+        id: review.review_id,
+        review_type: "manual_fallback",
+        geo_outcome: testCase.outcome,
+        geo_evidence_summary: {
+          review_type: "manual_fallback",
+          outcome: testCase.outcome,
+          reason_code: testCase.reasonCode,
+          attendance_action: "check_in",
+          accuracy_meters: 8,
+        },
+      });
+      if (testCase.outcome === "stale_evidence") {
+        expect(queue.json().items[0].geo_evidence_summary.work_site_name).toBeNull();
+      } else {
+        expect(queue.json().items[0].geo_evidence_summary.work_site_name).toBe("Bengaluru Office");
+      }
+      const serialized = JSON.stringify(queue.json());
+      expect(serialized).not.toContain("latitude");
+      expect(serialized).not.toContain("longitude");
+      expect(serialized).not.toContain("coordinates");
+      expect(serialized).not.toContain("geometry");
+      expect(serialized).not.toContain("canonical_hash");
+      expect(serialized).not.toContain("77.595");
+      expect(serialized).not.toContain("12.972");
+
+      const wrongOutcome = await app.inject({
+        method: "GET",
+        url: "/api/v1/attendance/geo-fallbacks/queue/manager?status=pending&geo_outcome=stale_evidence&page=1&page_size=5",
+        headers: authHeader(manager.token),
+      });
+      if (testCase.outcome !== "stale_evidence") {
+        expect(wrongOutcome.json().items).toHaveLength(0);
+      }
+    }
   });
 
   it("fails closed without an effective fence and does not infer fallback when disabled", async () => {

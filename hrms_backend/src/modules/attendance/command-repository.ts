@@ -199,7 +199,7 @@ export interface AttendanceGeoFallbackReviewRecord {
   reason_code: string;
   reason_detail: string | null;
   geo_policy: Record<string, unknown>;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "returned" | "rejected";
   decision_remarks: string | null;
   decided_by_user_id: UUID | null;
   decided_at: string | null;
@@ -922,11 +922,16 @@ export class AttendanceCommandTransactionRepository {
     companyId: UUID;
     reviewId: UUID;
     actorUserId: UUID;
-    decision: "approve" | "reject";
+    decision: "approve" | "reject" | "return";
     remarks: string | null;
     expectedVersion: number;
   }): Promise<AttendanceGeoFallbackReviewRecord> {
-    const nextStatus = input.decision === "approve" ? "approved" : "rejected";
+    const nextStatus =
+      input.decision === "approve"
+        ? "approved"
+        : input.decision === "return"
+          ? "returned"
+          : "rejected";
     const result = await this.client.query<AttendanceGeoFallbackReviewRecord>(
       `UPDATE attendance.geo_fallback_reviews
        SET status = $4,

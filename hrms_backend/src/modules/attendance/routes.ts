@@ -52,6 +52,10 @@ const attendanceQuerySchema = paginationQuerySchema.extend({
   user_id: z.uuid().optional(),
   department_id: z.uuid().optional(),
   status: z.string().optional(),
+  employee_search: z.string().trim().max(120).optional(),
+  geo_outcome: z.string().trim().max(80).optional(),
+  review_type: z.enum(["manual_fallback", "geo_decision"]).optional(),
+  reason_code: z.string().trim().max(120).optional(),
   exception_type: z
     .enum(["late", "missing_punch", "absent", "early_out", "correction"])
     .optional(),

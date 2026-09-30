@@ -110,6 +110,10 @@ export interface AttendancePageQuery {
   department_id?: UUID;
   status?: string;
   exception_type?: string;
+  employee_search?: string;
+  geo_outcome?: string;
+  review_type?: string;
+  reason_code?: string;
 }
 
 type RegularizationItemInput = Pick<
@@ -146,6 +150,11 @@ interface GeoFallbackSessionStateRow {
   closed_at: Date | null;
 }
 
+interface SafeGeoWorkSiteLabel {
+  name: string;
+  site_type: string | null;
+}
+
 export interface AttendanceExportInput {
   company_id?: UUID | null;
   filters?: {
@@ -167,6 +176,103 @@ function page<T>(items: T[], pageNumber: number, pageSize: number) {
     page: pageNumber,
     page_size: pageSize,
     total: items.length,
+  };
+}
+
+function filterAttendanceUsers(users: CoreUser[], query: AttendancePageQuery): CoreUser[] {
+  let filtered = users;
+  if (query.user_id) {
+    filtered = filtered.filter((user) => user.id === query.user_id);
+  }
+  const term = query.employee_search?.trim().toLowerCase();
+  if (term) {
+    filtered = filtered.filter((user) =>
+      [user.full_name, user.employee_code].some((value) =>
+        String(value ?? "").toLowerCase().includes(term),
+      ),
+    );
+  }
+  return filtered;
+}
+
+function geoReviewType(review: AttendanceGeoFallbackReview): "manual_fallback" | "geo_decision" {
+  return review.fallback_command_id || review.punch_event_id
+    ? "manual_fallback"
+    : "geo_decision";
+}
+
+function geoPolicyRecord(review: AttendanceGeoFallbackReview): Record<string, unknown> {
+  return review.geo_policy && typeof review.geo_policy === "object" && !Array.isArray(review.geo_policy)
+    ? review.geo_policy
+    : {};
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function finiteNumberField(value: unknown): number | null {
+  const parsed =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function geoEvaluationRecord(review: AttendanceGeoFallbackReview): Record<string, unknown> {
+  const evaluation = geoPolicyRecord(review).evaluation;
+  return evaluation && typeof evaluation === "object" && !Array.isArray(evaluation)
+    ? evaluation as Record<string, unknown>
+    : {};
+}
+
+function geoFactualOutcome(review: AttendanceGeoFallbackReview): string | null {
+  return stringField(geoPolicyRecord(review).factual_outcome);
+}
+
+function geoWorkSiteId(review: AttendanceGeoFallbackReview): UUID | null {
+  return stringField(geoPolicyRecord(review).work_site_id) as UUID | null;
+}
+
+function matchesGeoReviewFilter(
+  review: AttendanceGeoFallbackReview,
+  query: AttendancePageQuery,
+): boolean {
+  const requestedType = query.review_type?.trim();
+  if (requestedType && geoReviewType(review) !== requestedType) return false;
+  const requestedOutcome = query.geo_outcome?.trim();
+  if (requestedOutcome && geoFactualOutcome(review) !== requestedOutcome) return false;
+  const requestedReason = query.reason_code?.trim();
+  if (requestedReason && review.reason_code !== requestedReason) return false;
+  return true;
+}
+
+function safeGeoEvidenceSummary(
+  review: AttendanceGeoFallbackReview,
+  workSiteLabels: Map<UUID, SafeGeoWorkSiteLabel>,
+) {
+  const geoPolicy = geoPolicyRecord(review);
+  const evaluation = geoEvaluationRecord(review);
+  const workSiteId = geoWorkSiteId(review);
+  const workSite = workSiteId ? workSiteLabels.get(workSiteId) ?? null : null;
+  return {
+    source: "geo",
+    review_type: geoReviewType(review),
+    outcome: geoFactualOutcome(review),
+    reason_code: review.reason_code,
+    reason: review.reason_detail,
+    captured_at: review.occurred_at,
+    event_time: review.occurred_at,
+    attendance_action: review.event_type,
+    selected_action: stringField(geoPolicy.selected_action),
+    accuracy_meters: finiteNumberField(evaluation.reported_accuracy_meters),
+    evidence_age_ms: finiteNumberField(evaluation.evidence_age_ms),
+    max_location_age_ms: finiteNumberField(evaluation.max_location_age_ms),
+    max_accuracy_meters: finiteNumberField(evaluation.max_accuracy_meters),
+    distance_meters: finiteNumberField(evaluation.distance_meters),
+    boundary_distance_meters: finiteNumberField(evaluation.boundary_distance_meters),
+    signed_margin_meters: finiteNumberField(evaluation.signed_margin_meters),
+    grace_meters: finiteNumberField(evaluation.grace_meters),
+    work_site_name: workSite?.name ?? null,
+    work_site_type: workSite?.site_type ?? null,
   };
 }
 
@@ -1021,24 +1127,31 @@ export class AttendanceService {
       );
     }
     const range = dateRange(query, this.timezoneForUser(actor.id, companyId));
-    const visibleUsers = this.visibleUsers(
+    let visibleUsers = this.visibleUsers(
       actor,
       companyId,
       query.department_id,
     ).filter((user) => user.id !== actor.id);
+    visibleUsers = filterAttendanceUsers(visibleUsers, query);
     const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
-    const scoped = this.repository
-      .listRegularizations({
-        companyIds: new Set([companyId]),
-        userIds: visibleUserIds,
-        dateFrom: range.from,
-        dateTo: range.to,
-      })
-      .filter(
-        (request) =>
-          canSeeAllAttendance(actor) ||
-          request.current_approver_user_id === actor.id,
-      );
+    const geoSpecificFilter =
+      Boolean(query.geo_outcome?.trim()) ||
+      Boolean(query.review_type?.trim()) ||
+      Boolean(query.reason_code?.trim());
+    const scoped = geoSpecificFilter
+      ? []
+      : this.repository
+          .listRegularizations({
+            companyIds: new Set([companyId]),
+            userIds: visibleUserIds,
+            dateFrom: range.from,
+            dateTo: range.to,
+          })
+          .filter(
+            (request) =>
+              canSeeAllAttendance(actor) ||
+              request.current_approver_user_id === actor.id,
+          );
     const status = query.status ?? AttendanceRegularizationStatuses.Pending;
     const filtered = scoped.filter(
       (request) => !status || request.status === status,
@@ -1098,11 +1211,12 @@ export class AttendanceService {
       );
     }
     const range = dateRange(query, this.timezoneForUser(actor.id, companyId));
-    const visibleUsers = this.visibleUsers(
+    let visibleUsers = this.visibleUsers(
       actor,
       companyId,
       query.department_id,
     );
+    visibleUsers = filterAttendanceUsers(visibleUsers, query);
     const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
     const requestedStatus = query.status ?? "pending";
     let reviews: AttendanceGeoFallbackReview[];
@@ -1138,14 +1252,26 @@ export class AttendanceService {
         canSeeAllAttendance(actor) ||
         review.current_approver_user_id === actor.id,
     );
-    const filtered = scoped.filter((review) => review.status === requestedStatus);
+    const workSiteLabels =
+      this.store.kind === "postgres" && this.store.pgPool
+        ? await this.geoFallbackWorkSiteLabels(companyId, scoped)
+        : new Map<UUID, SafeGeoWorkSiteLabel>();
+    const filtered = scoped.filter(
+      (review) =>
+        review.status === requestedStatus &&
+        matchesGeoReviewFilter(review, query),
+    );
     return {
       ...page(
-        filtered.map((review) => this.presentGeoFallbackReview(review)),
+        filtered.map((review) =>
+          this.presentGeoFallbackReview(review, workSiteLabels),
+        ),
         query.page,
         query.page_size,
       ),
-      queue_counts: this.geoFallbackQueueCounts(scoped),
+      queue_counts: this.geoFallbackQueueCounts(
+        scoped.filter((review) => matchesGeoReviewFilter(review, query)),
+      ),
     };
   }
 
@@ -1153,7 +1279,7 @@ export class AttendanceService {
     actor: AuthUser,
     id: UUID,
     input: {
-      decision: "approve" | "reject";
+      decision: "approve" | "reject" | "return";
       remarks?: string;
       expected_version: number;
     },
@@ -1185,11 +1311,16 @@ export class AttendanceService {
           throw conflict("Only the expected pending geo fallback review can be decided.");
         }
         assertCanDecideRegularization(actor, locked);
-        if (input.decision === "reject" && !input.remarks?.trim()) {
-          throw missingRemarks("reject");
+        if ((input.decision === "reject" || input.decision === "return") && !input.remarks?.trim()) {
+          throw missingRemarks(input.decision);
         }
         const previousStatus = locked.status;
-        const nextStatus = input.decision === "approve" ? "approved" : "rejected";
+        const nextStatus =
+          input.decision === "approve"
+            ? "approved"
+            : input.decision === "return"
+              ? "returned"
+              : "rejected";
         const updated = (
           await client.query<AttendanceGeoFallbackReview>(
             `UPDATE attendance.geo_fallback_reviews
@@ -1260,10 +1391,15 @@ export class AttendanceService {
       throw conflict("Only the expected pending geo fallback review can be decided.");
     }
     assertCanDecideRegularization(actor, review);
-    if (input.decision === "reject" && !input.remarks?.trim()) {
-      throw missingRemarks("reject");
+    if ((input.decision === "reject" || input.decision === "return") && !input.remarks?.trim()) {
+      throw missingRemarks(input.decision);
     }
-    review.status = input.decision === "approve" ? "approved" : "rejected";
+    review.status =
+      input.decision === "approve"
+        ? "approved"
+        : input.decision === "return"
+          ? "returned"
+          : "rejected";
     review.decision_remarks = input.remarks?.trim() || null;
     review.decided_by_user_id = actor.id;
     review.decided_at = nowIso();
@@ -3684,9 +3820,42 @@ export class AttendanceService {
       total: requests.length,
       pending: requests.filter((request) => request.status === "pending").length,
       approved: requests.filter((request) => request.status === "approved").length,
-      returned: 0,
+      returned: requests.filter((request) => request.status === "returned").length,
       rejected: requests.filter((request) => request.status === "rejected").length,
     };
+  }
+
+  private async geoFallbackWorkSiteLabels(
+    companyId: UUID,
+    reviews: AttendanceGeoFallbackReview[],
+  ): Promise<Map<UUID, SafeGeoWorkSiteLabel>> {
+    if (!this.store.pgPool) return new Map();
+    const workSiteIds = [
+      ...new Set(
+        reviews
+          .map((review) => geoWorkSiteId(review))
+          .filter((id): id is UUID => Boolean(id)),
+      ),
+    ];
+    if (workSiteIds.length === 0) return new Map();
+    const result = await this.store.pgPool.query<{
+      id: UUID;
+      name: string;
+      site_type: string | null;
+    }>(
+      `SELECT id, name, site_type
+         FROM attendance.work_sites
+        WHERE company_id = $1
+          AND id = ANY($2::uuid[])
+          AND deleted_at IS NULL`,
+      [companyId, workSiteIds],
+    );
+    return new Map(
+      result.rows.map((row) => [
+        row.id,
+        { name: row.name, site_type: row.site_type },
+      ]),
+    );
   }
 
   private requireUser(userId: UUID): CoreUser {
@@ -3896,7 +4065,10 @@ export class AttendanceService {
     };
   }
 
-  private presentGeoFallbackReview(request: AttendanceGeoFallbackReview) {
+  private presentGeoFallbackReview(
+    request: AttendanceGeoFallbackReview,
+    workSiteLabels = new Map<UUID, SafeGeoWorkSiteLabel>(),
+  ) {
     const user = this.store.users.find(
       (candidate) => candidate.id === request.employee_user_id,
     );
@@ -3905,18 +4077,19 @@ export class AttendanceService {
           (candidate) => candidate.id === request.current_approver_user_id,
         )
       : undefined;
-    const geoPolicy = request.geo_policy ?? {};
+    const reviewType = geoReviewType(request);
+    const outcome = geoFactualOutcome(request);
     return {
       id: request.id,
       kind: "geo_fallback",
+      review_type: reviewType,
+      geo_outcome: outcome,
       employee_user_id: request.employee_user_id,
       employee: userLabel(user),
       employee_name: userLabel(user).full_name,
       employee_code: userLabel(user).employee_code,
       work_date: request.work_date,
-      reason:
-        request.reason_detail ??
-        "Manual attendance fallback after location verification failed.",
+      reason: request.reason_detail ?? "Manual attendance fallback after location verification failed.",
       status: request.status,
       version: request.version,
       current_approver_user_id: request.current_approver_user_id,
@@ -3937,13 +4110,7 @@ export class AttendanceService {
         },
       ],
       geo_evidence_summary: {
-        source: "geo",
-        outcome:
-          typeof geoPolicy.factual_outcome === "string"
-            ? geoPolicy.factual_outcome
-            : null,
-        reason_code: request.reason_code,
-        captured_at: request.occurred_at,
+        ...safeGeoEvidenceSummary(request, workSiteLabels),
       },
       manual_fallback: {
         original_command_id: request.original_command_id,

@@ -1,3 +1,9 @@
+import type {
+  AttendanceGeoFactualOutcome,
+  AttendanceGeoReviewType,
+  AttendancePunchEventType,
+} from "./api";
+
 export type AttendanceReviewStatus = "pending" | "approved" | "returned" | "rejected";
 export type AttendanceReviewDecision = "approve" | "return" | "reject";
 export type AttendanceReviewOperation = "add" | "replace" | "void";
@@ -7,6 +13,7 @@ export interface AttendanceReviewEvidence {
   operation: AttendanceReviewOperation | "geo";
   title: string;
   detail: string | null;
+  detailLines: string[];
   occurredAt: string | null;
 }
 
@@ -23,6 +30,8 @@ export interface AttendanceReviewRequest {
   decidedAt: string | null;
   decisionRemarks: string | null;
   evidence: AttendanceReviewEvidence[];
+  geoReviewType: AttendanceGeoReviewType | null;
+  geoOutcome: AttendanceGeoFactualOutcome | null;
   canDecide: boolean;
 }
 
@@ -43,7 +52,7 @@ const REVIEW_STATUSES = new Set<AttendanceReviewStatus>([
 
 const REVIEW_OPERATIONS = new Set<AttendanceReviewOperation>(["add", "replace", "void"]);
 
-const GEO_OUTCOMES = new Set([
+const GEO_OUTCOMES = new Set<AttendanceGeoFactualOutcome>([
   "not_required",
   "inside_confident",
   "outside_confident",
@@ -55,6 +64,8 @@ const GEO_OUTCOMES = new Set([
   "location_unavailable",
   "fence_not_configured",
 ]);
+
+const GEO_REVIEW_TYPES = new Set<AttendanceGeoReviewType>(["manual_fallback", "geo_decision"]);
 
 const GEO_REASON_CODES = new Set([
   "geo_not_required",
@@ -72,6 +83,61 @@ const GEO_REASON_CODES = new Set([
   "geo_manual_fallback_allowed",
   "geo_manual_fallback_disallowed",
 ]);
+
+export const GEO_OUTCOME_FILTER_OPTIONS: Array<{
+  value: AttendanceGeoFactualOutcome;
+  label: string;
+}> = [
+  { value: "outside_confident", label: "Outside work area" },
+  { value: "boundary_uncertain", label: "Boundary uncertain" },
+  { value: "stale_evidence", label: "Stale location" },
+];
+
+export const GEO_REVIEW_TYPE_OPTIONS: Array<{
+  value: AttendanceGeoReviewType;
+  label: string;
+}> = [{ value: "manual_fallback", label: "Manual fallback" }];
+
+export function geoOutcomeLabel(value: AttendanceGeoFactualOutcome | null): string {
+  if (value === "outside_confident") return "Outside work area";
+  if (value === "boundary_uncertain") return "Boundary uncertain";
+  if (value === "stale_evidence") return "Stale location";
+  if (value === "inside_confident") return "Inside work area";
+  if (value === "accuracy_exceeded") return "Low accuracy";
+  if (value === "missing") return "Location missing";
+  if (value === "permission_denied") return "Permission denied";
+  if (value === "location_unavailable") return "Location unavailable";
+  if (value === "fence_not_configured") return "Work area unavailable";
+  if (value === "not_required") return "Location not required";
+  return "Location evidence";
+}
+
+export function geoOutcomeDescription(value: AttendanceGeoFactualOutcome | null): string {
+  if (value === "outside_confident") {
+    return "The reported location was outside the configured attendance boundary.";
+  }
+  if (value === "boundary_uncertain") {
+    return "Location accuracy overlaps the configured work-area boundary.";
+  }
+  if (value === "stale_evidence") {
+    return "The location evidence was older than the allowed policy threshold.";
+  }
+  return "Location verification needs manager review.";
+}
+
+export function geoReviewTypeLabel(value: AttendanceGeoReviewType | null): string {
+  if (value === "manual_fallback") return "Manual fallback";
+  if (value === "geo_decision") return "Geo decision";
+  return "Geo review";
+}
+
+export function attendanceActionLabel(value: AttendancePunchEventType | string | null): string {
+  if (value === "check_in") return "Check-in";
+  if (value === "break_start") return "Break start";
+  if (value === "break_end") return "Break end";
+  if (value === "check_out") return "Check-out";
+  return humanizeToken(value, "Attendance action");
+}
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -93,6 +159,11 @@ function numberValue(value: unknown, fallback = 0): number {
   const parsed =
     typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function nullableNumber(value: unknown): number | null {
+  const parsed = numberValue(value, Number.NaN);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function nullableString(value: unknown): string | null {
@@ -155,6 +226,7 @@ function operationEvidence(itemValue: unknown, index: number): AttendanceReviewE
         : occurredAt
           ? null
           : "Requested time was not supplied.",
+    detailLines: [],
     occurredAt,
   };
 }
@@ -166,8 +238,56 @@ function legacyPunchEvidence(itemValue: unknown, index: number): AttendanceRevie
     operation: "add",
     title: `Add ${eventLabel(item.event_type)}`,
     detail: null,
+    detailLines: [],
     occurredAt: isoDateTime(item.occurred_at),
   };
+}
+
+function meters(value: unknown): string | null {
+  const parsed = nullableNumber(value);
+  if (parsed === null) return null;
+  return `${Math.round(parsed)} m`;
+}
+
+function duration(value: unknown): string | null {
+  const parsed = nullableNumber(value);
+  if (parsed === null) return null;
+  if (parsed < 1000) return `${Math.round(parsed)} ms`;
+  if (parsed < 60_000) return `${Math.round(parsed / 1000)} sec`;
+  return `${Math.round(parsed / 60_000)} min`;
+}
+
+function geoDetailLines(summary: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  const accuracy = meters(summary.accuracy_meters);
+  if (accuracy) lines.push(`Reported accuracy: ${accuracy}`);
+  const maxAccuracy = meters(summary.max_accuracy_meters);
+  if (maxAccuracy) lines.push(`Allowed accuracy: ${maxAccuracy}`);
+  const age = duration(summary.evidence_age_ms);
+  if (age) lines.push(`Evidence age: ${age}`);
+  const maxAge = duration(summary.max_location_age_ms);
+  if (maxAge) lines.push(`Allowed age: ${maxAge}`);
+  const signedMargin = meters(summary.signed_margin_meters);
+  if (signedMargin) lines.push(`Boundary margin: ${signedMargin}`);
+  const boundaryDistance = meters(summary.boundary_distance_meters);
+  if (boundaryDistance) lines.push(`Boundary distance: ${boundaryDistance}`);
+  const distance = meters(summary.distance_meters);
+  if (distance) lines.push(`Distance: ${distance}`);
+  const grace = meters(summary.grace_meters);
+  if (grace) lines.push(`Grace distance: ${grace}`);
+  const workSite = nullableString(summary.work_site_name);
+  if (workSite) lines.push(`Work site: ${workSite}`);
+  return lines;
+}
+
+function geoReviewType(value: unknown): AttendanceGeoReviewType | null {
+  const parsed = stringValue(value).toLowerCase() as AttendanceGeoReviewType;
+  return GEO_REVIEW_TYPES.has(parsed) ? parsed : null;
+}
+
+function geoOutcome(value: unknown): AttendanceGeoFactualOutcome | null {
+  const parsed = stringValue(value).toLowerCase() as AttendanceGeoFactualOutcome;
+  return GEO_OUTCOMES.has(parsed) ? parsed : null;
 }
 
 function safeGeoEvidence(row: Record<string, unknown>): AttendanceReviewEvidence | null {
@@ -175,17 +295,22 @@ function safeGeoEvidence(row: Record<string, unknown>): AttendanceReviewEvidence
   const source = stringValue(summary.source ?? summary.method).toLowerCase();
   const rawOutcome = stringValue(summary.outcome).toLowerCase();
   const rawReasonCode = stringValue(summary.reason_code).toLowerCase();
-  const outcome = GEO_OUTCOMES.has(rawOutcome) ? rawOutcome : null;
+  const outcome = geoOutcome(rawOutcome);
   const reasonCode = GEO_REASON_CODES.has(rawReasonCode) ? rawReasonCode : null;
+  const reviewType = geoReviewType(summary.review_type);
+  const action = attendanceActionLabel(nullableString(summary.attendance_action));
 
   if (!outcome && !reasonCode && source !== "geo" && source !== "location") return null;
 
   return {
     id: "geo-summary",
     operation: "geo",
-    title: `Location evidence: ${humanizeToken(outcome, "Available")}`,
-    detail: reasonCode ? `Reason: ${humanizeToken(reasonCode, "Not specified")}` : null,
-    occurredAt: isoDateTime(summary.captured_at),
+    title: `${geoOutcomeLabel(outcome)}${reviewType ? ` - ${geoReviewTypeLabel(reviewType)}` : ""}`,
+    detail:
+      nullableString(summary.reason) ??
+      (reasonCode ? `Reason: ${humanizeToken(reasonCode, "Not specified")}` : null),
+    detailLines: [`Action: ${action}`, geoOutcomeDescription(outcome), ...geoDetailLines(summary)],
+    occurredAt: isoDateTime(summary.captured_at ?? summary.event_time),
   };
 }
 
@@ -213,6 +338,7 @@ function reviewRequest(value: unknown): AttendanceReviewRequest | null {
   const employee = record(row.employee);
   const status = reviewStatus(row.status);
   const version = Math.max(0, Math.trunc(numberValue(row.version)));
+  const summary = record(row.geo_evidence_summary ?? row.evidence_summary);
 
   return {
     id,
@@ -229,6 +355,8 @@ function reviewRequest(value: unknown): AttendanceReviewRequest | null {
     decidedAt: nullableString(row.decided_at),
     decisionRemarks: nullableString(row.decision_remarks),
     evidence: reviewEvidence(row),
+    geoReviewType: geoReviewType(row.review_type ?? summary.review_type),
+    geoOutcome: geoOutcome(row.geo_outcome ?? summary.outcome),
     canDecide: status === "pending" && version > 0,
   };
 }

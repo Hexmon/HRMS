@@ -2,6 +2,18 @@ import { apiRequest } from "@/shared/api";
 import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } from "@/shared/api";
 
 export type AttendancePunchEventType = "check_in" | "break_start" | "break_end" | "check_out";
+export type AttendanceGeoReviewType = "manual_fallback" | "geo_decision";
+export type AttendanceGeoFactualOutcome =
+  | "not_required"
+  | "inside_confident"
+  | "outside_confident"
+  | "boundary_uncertain"
+  | "stale_evidence"
+  | "accuracy_exceeded"
+  | "missing"
+  | "permission_denied"
+  | "location_unavailable"
+  | "fence_not_configured";
 export type AttendanceRegularizationEventType = Extract<
   AttendancePunchEventType,
   "check_in" | "check_out"
@@ -55,7 +67,33 @@ export interface AttendanceQuery extends PageQuery {
   user_id?: string;
   department_id?: string;
   status?: string;
+  employee_search?: string;
+  geo_outcome?: AttendanceGeoFactualOutcome;
+  review_type?: AttendanceGeoReviewType;
+  reason_code?: string;
   exception_type?: string;
+}
+
+export interface AttendanceGeoEvidenceSummary {
+  source: "geo";
+  review_type: AttendanceGeoReviewType;
+  outcome: AttendanceGeoFactualOutcome | null;
+  reason_code: string;
+  reason: string | null;
+  captured_at: string | null;
+  event_time: string | null;
+  attendance_action: AttendancePunchEventType;
+  selected_action: "allow" | "deny" | "manual_fallback" | string | null;
+  accuracy_meters: number | null;
+  evidence_age_ms: number | null;
+  max_location_age_ms: number | null;
+  max_accuracy_meters: number | null;
+  distance_meters: number | null;
+  boundary_distance_meters: number | null;
+  signed_margin_meters: number | null;
+  grace_meters: number | null;
+  work_site_name: string | null;
+  work_site_type: string | null;
 }
 
 export interface AttendancePunchBody extends ApiRecord {
@@ -100,7 +138,7 @@ export interface AttendanceRegularizationDecisionBody extends ExpectedVersionBod
 }
 
 export interface AttendanceGeoFallbackDecisionBody extends ExpectedVersionBody {
-  decision: "approve" | "reject";
+  decision: "approve" | "reject" | "return";
   remarks?: string;
 }
 

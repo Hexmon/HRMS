@@ -509,14 +509,14 @@ export const attendanceRegularizationDecisionSchema = z.object({
 export const attendanceGeoFallbackSubmitSchema = z.object({}).strict();
 
 export const attendanceGeoFallbackDecisionSchema = z.object({
-  decision: z.enum(["approve", "reject"]),
+  decision: z.enum(["approve", "reject", "return"]),
   remarks: z.string().optional(),
   expected_version: z.number().int().min(1)
 }).strict().superRefine((input, context) => {
-  if (input.decision === "reject" && !input.remarks?.trim()) {
+  if ((input.decision === "reject" || input.decision === "return") && !input.remarks?.trim()) {
     context.addIssue({
       code: "custom",
-      message: "Remarks are required when rejecting a geo fallback review.",
+      message: `Remarks are required when ${input.decision === "reject" ? "rejecting" : "returning"} a geo fallback review.`,
       path: ["remarks"]
     });
   }

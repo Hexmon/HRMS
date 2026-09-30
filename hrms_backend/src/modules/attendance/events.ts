@@ -17,6 +17,7 @@ export const attendanceEvents = {
   GeoRejected: "attendance.geo.rejected",
   GeoFallbackSubmitted: "attendance.geo_fallback.submitted",
   GeoFallbackApproved: "attendance.geo_fallback.approved",
+  GeoFallbackReturned: "attendance.geo_fallback.returned",
   GeoFallbackRejected: "attendance.geo_fallback.rejected",
   MissingCheckoutDetected: "attendance.missing_checkout.detected",
   RegularizationSubmitted: "attendance.regularization.submitted",
@@ -275,7 +276,7 @@ export function buildGeoFallbackDecisionEvent(input: {
   originalDecisionId: UUID;
   punchEventId: UUID;
   workDate: string;
-  decision: "approve" | "reject";
+  decision: "approve" | "reject" | "return";
   previousStatus: string;
   nextStatus: string;
   version: number;
@@ -297,13 +298,18 @@ export function buildGeoFallbackDecisionEvent(input: {
   };
   return {
     aggregateId: input.fallbackReviewId,
-    eventType:
-      input.decision === "approve"
-        ? attendanceEvents.GeoFallbackApproved
-        : attendanceEvents.GeoFallbackRejected,
+    eventType: geoFallbackDecisionEventType(input.decision),
     payload,
     idempotencyKey: `attendance.geo_fallback.${input.decision}:${input.fallbackReviewId}:${input.version}`,
   };
+}
+
+function geoFallbackDecisionEventType(
+  decision: "approve" | "reject" | "return",
+): AttendanceEventName {
+  if (decision === "approve") return attendanceEvents.GeoFallbackApproved;
+  if (decision === "return") return attendanceEvents.GeoFallbackReturned;
+  return attendanceEvents.GeoFallbackRejected;
 }
 
 export function buildGeoRejectedEvent(input: {

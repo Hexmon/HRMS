@@ -1323,7 +1323,7 @@ export const attendanceGeoFallbackReviews = attendance.table(
     unique("attendance_geo_fallback_original_decision_uq").on(table.companyId, table.originalDecisionId),
     index("attendance_geo_fallback_queue_idx").on(table.companyId, table.status, table.currentApproverUserId, table.createdAt.desc()).where(sql`${table.deletedAt} IS NULL`),
     index("attendance_geo_fallback_employee_date_idx").on(table.companyId, table.employeeUserId, table.workDate.desc()).where(sql`${table.deletedAt} IS NULL`),
-    check("attendance_geo_fallback_status_check", sql`${table.status} IN ('pending', 'approved', 'rejected')`),
+    check("attendance_geo_fallback_status_check", sql`${table.status} IN ('pending', 'approved', 'returned', 'rejected')`),
     check("attendance_geo_fallback_event_type_check", sql`${table.eventType} IN ('check_in', 'break_start', 'break_end', 'check_out')`),
     check("attendance_geo_fallback_version_check", sql`${table.version} > 0`)
   ]

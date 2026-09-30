@@ -2954,6 +2954,7 @@ export class AttendanceCommandService {
           next_allowed_actions: response["next_allowed_actions"],
           punch_policy: response["punch_policy"],
           geo_policy: response["geo_policy"],
+          manual_fallback: response["manual_fallback"],
         },
         result.replayed
           ? { [ATTENDANCE_IDEMPOTENCY_REPLAY_HEADER]: "true" }

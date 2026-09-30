@@ -76,6 +76,7 @@ test.describe("attendance manager review model", () => {
         operation: "void",
         title: "Remove recorded punch",
         detail: "The original punch remains in the audit trail.",
+        detailLines: [],
         occurredAt: null,
       },
       {
@@ -83,6 +84,7 @@ test.describe("attendance manager review model", () => {
         operation: "replace",
         title: "Replace Check Out",
         detail: null,
+        detailLines: [],
         occurredAt: "2026-07-18T12:30:00.000Z",
       },
     ]);
@@ -135,8 +137,14 @@ test.describe("attendance manager review model", () => {
           geo_evidence_summary: {
             source: "geo",
             outcome: "outside_confident",
+            review_type: "manual_fallback",
             reason_code: "geo_boundary_uncertain",
+            attendance_action: "check_in",
             captured_at: "2026-07-18T03:35:00.000Z",
+            accuracy_meters: 86,
+            evidence_age_ms: 72_000,
+            signed_margin_meters: -35,
+            work_site_name: "Bhubaneswar Office",
             latitude: 19.076,
             longitude: 72.8777,
             raw_coordinates: "19.076,72.8777",
@@ -148,9 +156,21 @@ test.describe("attendance manager review model", () => {
     expect(queue.items[0].evidence).toContainEqual({
       id: "geo-summary",
       operation: "geo",
-      title: "Location evidence: Outside Confident",
+      title: "Outside work area - Manual fallback",
       detail: "Reason: Geo Boundary Uncertain",
+      detailLines: [
+        "Action: Check-in",
+        "The reported location was outside the configured attendance boundary.",
+        "Reported accuracy: 86 m",
+        "Evidence age: 1 min",
+        "Boundary margin: -35 m",
+        "Work site: Bhubaneswar Office",
+      ],
       occurredAt: "2026-07-18T03:35:00.000Z",
+    });
+    expect(queue.items[0]).toMatchObject({
+      geoReviewType: "manual_fallback",
+      geoOutcome: "outside_confident",
     });
 
     const renderedModel = JSON.stringify(queue);

@@ -28,6 +28,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -47,12 +54,17 @@ import {
   attendanceDecisionRemarksError,
   formatAttendanceReviewDate,
   formatAttendanceReviewDateTime,
+  GEO_OUTCOME_FILTER_OPTIONS,
+  GEO_REVIEW_TYPE_OPTIONS,
+  geoOutcomeLabel,
+  geoReviewTypeLabel,
   parseAttendanceReviewQueue,
   type AttendanceReviewDecision,
   type AttendanceReviewEvidence,
   type AttendanceReviewRequest,
   type AttendanceReviewStatus,
 } from "./manager-review-model";
+import type { AttendanceGeoFactualOutcome, AttendanceGeoReviewType } from "./api";
 
 const PAGE_SIZE = 20;
 
@@ -83,6 +95,32 @@ const DECISION_COPY: Record<
     submit: "Reject request",
   },
 };
+
+function decisionCopy(
+  decision: AttendanceReviewDecision,
+  request: AttendanceReviewRequest | null,
+) {
+  if (request?.kind !== "geo_fallback") return DECISION_COPY[decision];
+  if (decision === "approve") {
+    return {
+      title: "Approve geo review",
+      description: "Keep this attendance record effective with the submitted location evidence.",
+      submit: "Approve review",
+    };
+  }
+  if (decision === "return") {
+    return {
+      title: "Return to employee",
+      description: "Return this geo review for employee follow-up without voiding attendance.",
+      submit: "Return to employee",
+    };
+  }
+  return {
+    title: "Reject geo review",
+    description: "Reject this provisional attendance record and apply the attendance correction.",
+    submit: "Reject review",
+  };
+}
 
 function currentMonth(): string {
   const now = new Date();
@@ -133,6 +171,8 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
   const [status, setStatus] = useState<AttendanceReviewStatus>("pending");
   const [month, setMonth] = useState(currentMonth);
   const [search, setSearch] = useState("");
+  const [geoOutcome, setGeoOutcome] = useState<AttendanceGeoFactualOutcome | "all">("all");
+  const [reviewType, setReviewType] = useState<AttendanceGeoReviewType | "all">("all");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<AttendanceReviewRequest | null>(null);
   const [decision, setDecision] = useState<AttendanceReviewDecision | null>(null);
@@ -140,21 +180,21 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
   const [remarksError, setRemarksError] = useState<string | null>(null);
 
   const queueQuery = useManagerAttendanceRegularizationQueue(
-    { page, page_size: PAGE_SIZE, status, month },
+    {
+      page,
+      page_size: PAGE_SIZE,
+      status,
+      month,
+      employee_search: search.trim() || undefined,
+      geo_outcome: geoOutcome === "all" ? undefined : geoOutcome,
+      review_type: reviewType === "all" ? undefined : reviewType,
+    },
     enabled,
   );
   const decisionMutation = useAttendanceRegularizationDecisionMutation();
   const geoFallbackDecisionMutation = useAttendanceGeoFallbackDecisionMutation();
   const queue = useMemo(() => parseAttendanceReviewQueue(queueQuery.data), [queueQuery.data]);
-  const visibleItems = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return queue.items;
-    return queue.items.filter((item) =>
-      [item.employeeName, item.employeeCode, item.reason, item.workDate].some((value) =>
-        value.toLowerCase().includes(term),
-      ),
-    );
-  }, [queue.items, search]);
+  const visibleItems = queue.items;
   const pageCount = Math.max(1, Math.ceil(queue.total / queue.pageSize));
 
   const columns = useMemo<Column<AttendanceReviewRequest>[]>(
@@ -188,9 +228,15 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
         render: (request) => (
           <div className="max-w-sm">
             <p className="line-clamp-2 text-sm text-foreground">{request.reason}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {request.evidence.length} evidence item{request.evidence.length === 1 ? "" : "s"}
-            </p>
+            <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+              {request.geoReviewType && (
+                <span>{geoReviewTypeLabel(request.geoReviewType)}</span>
+              )}
+              {request.geoOutcome && <span>{geoOutcomeLabel(request.geoOutcome)}</span>}
+              <span>
+                {request.evidence.length} evidence item{request.evidence.length === 1 ? "" : "s"}
+              </span>
+            </div>
           </div>
         ),
       },
@@ -220,6 +266,18 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
 
   const changeMonth = (value: string) => {
     setMonth(value || currentMonth());
+    setPage(1);
+    setSelected(null);
+  };
+
+  const changeGeoOutcome = (value: string) => {
+    setGeoOutcome(value as AttendanceGeoFactualOutcome | "all");
+    setPage(1);
+    setSelected(null);
+  };
+
+  const changeReviewType = (value: string) => {
+    setReviewType(value as AttendanceGeoReviewType | "all");
     setPage(1);
     setSelected(null);
   };
@@ -254,10 +312,6 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
         remarks: remarks.trim() || undefined,
       };
       if (selected.kind === "geo_fallback") {
-        if (decision === "return") {
-          setRemarksError("Geo fallback reviews can be approved or rejected.");
-          return;
-        }
         await geoFallbackDecisionMutation.mutateAsync({
           id: selected.id,
           input: { ...input, decision },
@@ -268,7 +322,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
           input,
         });
       }
-      toast.success(`${DECISION_COPY[decision].submit} completed`, {
+      toast.success(`${decisionCopy(decision, selected).submit} completed`, {
         description: `${selected.employeeName}'s request has been updated.`,
       });
       setDecision(null);
@@ -317,20 +371,24 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
             <h2 className="text-lg font-semibold">Manager review queue</h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Review attendance corrections assigned to your approval scope.
+            Review attendance corrections and geo decisions assigned to your approval scope.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto">
+        <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto lg:flex-wrap lg:justify-end">
           <div className="w-full space-y-1.5 sm:w-64">
-            <Label htmlFor="attendance-review-search">Search requests</Label>
+            <Label htmlFor="attendance-review-search">Employee search</Label>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 id="attendance-review-search"
                 value={search}
                 className="pl-9"
-                placeholder="Employee, code or reason"
-                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Employee or code"
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                  setSelected(null);
+                }}
               />
             </div>
           </div>
@@ -342,6 +400,38 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
               value={month}
               onChange={(event) => changeMonth(event.target.value)}
             />
+          </div>
+          <div className="w-full space-y-1.5 sm:w-48">
+            <Label htmlFor="attendance-review-geo-outcome">Geo outcome</Label>
+            <Select value={geoOutcome} onValueChange={changeGeoOutcome}>
+              <SelectTrigger id="attendance-review-geo-outcome">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All outcomes</SelectItem>
+                {GEO_OUTCOME_FILTER_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full space-y-1.5 sm:w-48">
+            <Label htmlFor="attendance-review-type">Review type</Label>
+            <Select value={reviewType} onValueChange={changeReviewType}>
+              <SelectTrigger id="attendance-review-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                {GEO_REVIEW_TYPE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </div>
@@ -365,7 +455,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
         loading={queueQuery.isLoading || queueQuery.isPlaceholderData}
         hideToolbar
         emptyTitle={`No ${status} requests`}
-        emptyDescription={`There are no ${status} attendance corrections for ${month}.`}
+        emptyDescription={`There are no ${status} attendance reviews for ${month}.`}
         onRowClick={setSelected}
         rowActions={(request) => [
           {
@@ -413,7 +503,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                 </div>
                 <SheetTitle>{selected.employeeName}</SheetTitle>
                 <SheetDescription>
-                  Attendance correction for {formatAttendanceReviewDate(selected.workDate)}
+                  Attendance review for {formatAttendanceReviewDate(selected.workDate)}
                 </SheetDescription>
               </SheetHeader>
 
@@ -451,6 +541,13 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                                 {evidence.detail}
                               </p>
                             )}
+                            {evidence.detailLines.length > 0 && (
+                              <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                                {evidence.detailLines.map((line) => (
+                                  <p key={line}>{line}</p>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -486,7 +583,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                 <div className="sticky bottom-0 mt-6 flex flex-wrap justify-end gap-2 border-t bg-background py-4">
                   <DecisionButton
                     decision="return"
-                    disabled={decisionMutation.isPending || selected.kind === "geo_fallback"}
+                    disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                     onClick={() => openDecision("return")}
                   />
                   <DecisionButton
@@ -511,9 +608,9 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
           {decision && selected && (
             <>
               <DialogHeader>
-                <DialogTitle>{DECISION_COPY[decision].title}</DialogTitle>
+                <DialogTitle>{decisionCopy(decision, selected).title}</DialogTitle>
                 <DialogDescription>
-                  {DECISION_COPY[decision].description} This action applies to{" "}
+                  {decisionCopy(decision, selected).description} This action applies to{" "}
                   {selected.employeeName}'s request for{" "}
                   {formatAttendanceReviewDate(selected.workDate)}.
                 </DialogDescription>
@@ -533,7 +630,9 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                   placeholder={
                     decision === "approve"
                       ? "Add an optional note for the audit trail."
-                      : "Explain what the employee needs to know."
+                      : decision === "return"
+                        ? "Explain what the employee needs to follow up on."
+                        : "Explain what the employee needs to know."
                   }
                   onChange={(event) => {
                     setRemarks(event.target.value);
@@ -558,16 +657,16 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                 <Button
                   variant="outline"
                   onClick={closeDecision}
-                  disabled={decisionMutation.isPending}
+                  disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                 >
                   Cancel
                 </Button>
                 <Button
                   variant={decision === "reject" ? "destructive" : "default"}
                   onClick={submitDecision}
-                  disabled={decisionMutation.isPending}
+                  disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                 >
-                  {decisionMutation.isPending ? (
+                  {decisionMutation.isPending || geoFallbackDecisionMutation.isPending ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />
                   ) : decision === "approve" ? (
                     <Check className="h-4 w-4" />
@@ -576,7 +675,9 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                   ) : (
                     <X className="h-4 w-4" />
                   )}
-                  {decisionMutation.isPending ? "Saving" : DECISION_COPY[decision].submit}
+                  {decisionMutation.isPending || geoFallbackDecisionMutation.isPending
+                    ? "Saving"
+                    : decisionCopy(decision, selected).submit}
                 </Button>
               </DialogFooter>
             </>
