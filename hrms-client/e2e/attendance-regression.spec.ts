@@ -1,10 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   attendanceSummary,
+  expectCanonicalPunchRequest,
   managerQueueResponse,
   openAttendance,
   prepareAttendancePage,
   previousLocalDate,
+  punchCommand,
   transitionFor,
   type CapturedPunch,
   type ManualSessionState,
@@ -30,7 +32,7 @@ test("completes check-in, break, resume, and check-out using server context", as
       body,
       idempotencyKey: route.request().headers()["idempotency-key"],
     });
-    state = transitionFor(String(body.event_type));
+    state = transitionFor(String(punchCommand(body).event_type));
     await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
 
@@ -43,12 +45,13 @@ test("completes check-in, break, resume, and check-out using server context", as
 
   await expect(page.getByText("Clock-out recorded", { exact: true })).toBeVisible();
   await expect(page.getByText("Your work session has ended.", { exact: true })).toBeVisible();
-  expect(punches.map(({ body }) => body)).toEqual([
-    punchBody("check_in"),
-    punchBody("break_start"),
-    punchBody("break_end"),
-    punchBody("check_out"),
+  expect(punches.map(({ body }) => punchCommand(body))).toEqual([
+    punchCommandBody("check_in"),
+    punchCommandBody("break_start"),
+    punchCommandBody("break_end"),
+    punchCommandBody("check_out"),
   ]);
+  punches.forEach((punch) => expectCanonicalPunchRequest(punch));
   expect(punches.every(({ idempotencyKey }) => Boolean(idempotencyKey))).toBe(true);
   expect(new Set(punches.map(({ idempotencyKey }) => idempotencyKey)).size).toBe(4);
 });
@@ -87,6 +90,7 @@ test("retries an uncertain punch with the same request identity", async ({ page 
   await expect(page.getByRole("button", { name: "Start break" })).toBeVisible();
   expect(punches).toHaveLength(2);
   expect(punches[1]).toEqual(punches[0]);
+  expectCanonicalPunchRequest(punches[0], punchCommandBody("check_in"));
 });
 
 test("shows a deterministic punch rejection and keeps the valid action available", async ({
@@ -259,7 +263,7 @@ async function completeAction(
   await expect(page.getByRole("button", { name: nextAction, exact: true })).toBeVisible();
 }
 
-function punchBody(eventType: string): Record<string, unknown> {
+function punchCommandBody(eventType: string): Record<string, unknown> {
   return {
     event_type: eventType,
     source: "web",

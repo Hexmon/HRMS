@@ -8,6 +8,38 @@ export interface CapturedPunch {
   idempotencyKey: string | undefined;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+export function punchCommand(body: Record<string, unknown>): Record<string, unknown> {
+  return body.command as Record<string, unknown>;
+}
+
+export function expectCanonicalPunchBody(
+  body: Record<string, unknown>,
+  command: Record<string, unknown> = {},
+): void {
+  expect(Object.keys(body).sort()).toEqual(["captured_at", "client_event_id", "command", "device"]);
+  expect(body.client_event_id).toEqual(expect.stringMatching(UUID_PATTERN));
+  expect(String(body.client_event_id)).not.toMatch(/^attendance-/u);
+  expect(Number.isNaN(Date.parse(String(body.captured_at)))).toBe(false);
+  expect(body.device).toBeNull();
+  expect(punchCommand(body)).toMatchObject(command);
+  expect(body).not.toHaveProperty("event_type");
+  expect(body).not.toHaveProperty("work_mode");
+  expect(body).not.toHaveProperty("source");
+  expect(body).not.toHaveProperty("metadata");
+  expect(body).not.toHaveProperty("location");
+  expect(body).not.toHaveProperty("occurred_at");
+}
+
+export function expectCanonicalPunchRequest(
+  request: CapturedPunch,
+  command: Record<string, unknown> = {},
+): void {
+  expectCanonicalPunchBody(request.body, command);
+  expect(request.idempotencyKey).toBe(request.body.client_event_id);
+}
+
 export async function prepareAttendancePage(
   page: Page,
   role: AttendanceTestRole = "Employee",

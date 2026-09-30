@@ -1,9 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   attendanceSummary,
+  expectCanonicalPunchBody,
+  expectCanonicalPunchRequest,
   openAttendance,
   prepareAttendancePage,
+  punchCommand,
   transitionFor,
+  type CapturedPunch,
   type ManualSessionState,
 } from "./attendance-regression.helpers";
 import {
@@ -42,11 +46,6 @@ const FIXED_SUCCESS = {
 };
 const OLD_LOCATION_TIMESTAMP = Date.UTC(2025, 11, 1, 3, 0, 0);
 const LOW_ACCURACY_METERS = 250;
-
-interface CapturedRequest {
-  body: Record<string, unknown>;
-  idempotencyKey: string | undefined;
-}
 
 interface FallbackScenario {
   reasonCode: string;
@@ -101,7 +100,7 @@ function expectNoCoordinateEvidence(value: unknown): void {
 }
 
 function locationEvidence(body: Record<string, unknown>): Record<string, unknown> {
-  return body.location as Record<string, unknown>;
+  return punchCommand(body).location as Record<string, unknown>;
 }
 
 function geoPolicyResponse(input: {
@@ -160,11 +159,11 @@ async function setupFallbackScenario(
   page: Page,
   scenario: FallbackScenario,
 ): Promise<{
-  punches: CapturedRequest[];
-  fallbackRequests: CapturedRequest[];
+  punches: CapturedPunch[];
+  fallbackRequests: CapturedPunch[];
 }> {
-  const punches: CapturedRequest[] = [];
-  const fallbackRequests: CapturedRequest[] = [];
+  const punches: CapturedPunch[] = [];
+  const fallbackRequests: CapturedPunch[] = [];
 
   await routeAttendanceSummary(page, () => "not_started", {
     ...GEO_POLICY,
@@ -172,10 +171,12 @@ async function setupFallbackScenario(
     ...scenario.policyPatch,
   });
   await page.route("**/api/v1/attendance/punches", async (route) => {
-    punches.push({
+    const punch = {
       body: route.request().postDataJSON() as Record<string, unknown>,
       idempotencyKey: route.request().headers()["idempotency-key"],
-    });
+    };
+    punches.push(punch);
+    expectCanonicalPunchRequest(punch, { event_type: "check_in", source: "web_geo" });
     await route.fulfill({
       status: 409,
       contentType: "application/json",
@@ -249,7 +250,7 @@ test.describe("manual-only regression", () => {
     await routeAttendanceSummary(page, () => state);
     await page.route("**/api/v1/attendance/punches", async (route) => {
       submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-      state = transitionFor(String(submittedBody.event_type));
+      state = transitionFor(String(punchCommand(submittedBody).event_type));
       await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
     });
 
@@ -259,7 +260,7 @@ test.describe("manual-only regression", () => {
     await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(0);
     expect(await getWatchPositionCallCount(page)).toBe(0);
-    expect(submittedBody).toEqual({
+    expectCanonicalPunchBody(submittedBody ?? {}, {
       event_type: "check_in",
       source: "web",
       metadata: { source_view: "attendance_page" },
@@ -280,7 +281,7 @@ test.describe("browser geolocation capture", () => {
     await routeAttendanceSummary(page, () => state, GEO_POLICY);
     await page.route("**/api/v1/attendance/punches", async (route) => {
       submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-      state = transitionFor(String(submittedBody.event_type));
+      state = transitionFor(String(punchCommand(submittedBody).event_type));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -305,7 +306,7 @@ test.describe("browser geolocation capture", () => {
       maximumAge: 0,
       timeout: 10_000,
     });
-    expect(submittedBody).toMatchObject({
+    expectCanonicalPunchBody(submittedBody ?? {}, {
       event_type: "check_in",
       source: "web_geo",
       metadata: {
@@ -333,7 +334,7 @@ test.describe("browser geolocation capture", () => {
     await routeAttendanceSummary(page, () => state, GEO_POLICY);
     await page.route("**/api/v1/attendance/punches", async (route) => {
       submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-      state = transitionFor(String(submittedBody.event_type));
+      state = transitionFor(String(punchCommand(submittedBody).event_type));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -355,7 +356,7 @@ test.describe("browser geolocation capture", () => {
     await expect(page.getByText("Clock-out recorded", { exact: true })).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(1);
     expect(await getWatchPositionCallCount(page)).toBe(0);
-    expect(submittedBody).toMatchObject({
+    expectCanonicalPunchBody(submittedBody ?? {}, {
       event_type: "check_out",
       source: "web_geo",
       metadata: {
@@ -403,7 +404,8 @@ test.describe("browser geolocation failures", () => {
     await expect(page.getByText("Clock-in recorded provisionally", { exact: true })).toBeVisible();
     await expect(page.getByText(/Location access is blocked/u)).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(1);
-    expect(submittedBody).toMatchObject({
+    expectCanonicalPunchBody(submittedBody ?? {}, {
+      event_type: "check_in",
       source: "web_geo",
       metadata: { browser_location_result: "permission_denied" },
       location: { permission_state: "denied", provider: "browser" },
@@ -443,7 +445,8 @@ test.describe("browser geolocation failures", () => {
     await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
     await expect(page.getByText("Location unavailable", { exact: true })).toBeHidden();
     expect(await getLastGeolocationOptions(page)).toMatchObject({ timeout: 10_000 });
-    expect(submittedBody).toMatchObject({
+    expectCanonicalPunchBody(submittedBody ?? {}, {
+      event_type: "check_in",
       source: "web_geo",
       metadata: {
         browser_location_result: "timeout",
@@ -481,7 +484,8 @@ test.describe("browser geolocation failures", () => {
 
     await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
     await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
-    expect(submittedBody).toMatchObject({
+    expectCanonicalPunchBody(submittedBody ?? {}, {
+      event_type: "check_in",
       source: "web_geo",
       metadata: { browser_location_result: "position_unavailable" },
       location: { permission_state: "unavailable", provider: "browser" },
@@ -517,7 +521,8 @@ test.describe("browser geolocation failures", () => {
 
     await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(0);
-    expect(submittedBody).toMatchObject({
+    expectCanonicalPunchBody(submittedBody ?? {}, {
+      event_type: "check_in",
       source: "web_geo",
       metadata: { browser_location_result: "unsupported" },
       location: { permission_state: "unavailable", provider: "browser" },
@@ -554,7 +559,8 @@ test.describe("browser geolocation failures", () => {
     await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
     await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(0);
-    expect(submittedBody).toMatchObject({
+    expectCanonicalPunchBody(submittedBody ?? {}, {
+      event_type: "check_in",
       source: "web_geo",
       metadata: {
         browser_location_result: "insecure_context",
@@ -592,7 +598,8 @@ test.describe("browser geolocation failures", () => {
     await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
     await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(0);
-    expect(submittedBody).toMatchObject({
+    expectCanonicalPunchBody(submittedBody ?? {}, {
+      event_type: "check_in",
       source: "web_geo",
       metadata: {
         browser_location_result: "permissions_policy_blocked",
@@ -635,6 +642,11 @@ test.describe("evidence quality", () => {
     await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
     await expect(page.getByText("Clock-in was not recorded", { exact: true })).toBeVisible();
     await expect(page.getByText(/captured location was too old/u)).toBeVisible();
+    expectCanonicalPunchBody(submittedBody ?? {}, {
+      event_type: "check_in",
+      source: "web_geo",
+      metadata: { browser_location_result: "success" },
+    });
     expect(locationEvidence(submittedBody ?? {})).toMatchObject({
       latitude: FIXED_SUCCESS.latitude,
       longitude: FIXED_SUCCESS.longitude,
@@ -680,6 +692,11 @@ test.describe("evidence quality", () => {
     await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
     await expect(page.getByText("Clock-in recorded provisionally", { exact: true })).toBeVisible();
     await expect(page.getByText(/Location accuracy was too low/u)).toBeVisible();
+    expectCanonicalPunchBody(submittedBody ?? {}, {
+      event_type: "check_in",
+      source: "web_geo",
+      metadata: { browser_location_result: "success" },
+    });
     expect(locationEvidence(submittedBody ?? {})).toMatchObject({
       latitude: FIXED_SUCCESS.latitude,
       longitude: FIXED_SUCCESS.longitude,
@@ -843,7 +860,7 @@ test.describe("network uncertainty", () => {
     await mockGeolocationSuccess(page, { ...FIXED_SUCCESS });
     await prepareAttendancePage(page);
     let state: ManualSessionState = "not_started";
-    const punches: CapturedRequest[] = [];
+    const punches: CapturedPunch[] = [];
 
     await routeAttendanceSummary(page, () => state, GEO_POLICY);
     await page.route("**/api/v1/attendance/punches", async (route) => {
@@ -880,7 +897,8 @@ test.describe("network uncertainty", () => {
     expect(await getGeolocationCallCount(page)).toBe(1);
     expect(punches).toHaveLength(2);
     expect(punches[1]).toEqual(punches[0]);
-    expect(punches[0].body).toMatchObject({
+    expectCanonicalPunchRequest(punches[0], {
+      event_type: "check_in",
       source: "web_geo",
       metadata: {
         browser_location_result: "success",
@@ -893,6 +911,12 @@ test.describe("network uncertainty", () => {
         permission_state: "granted",
       },
     });
+    expect(punches[1].body.client_event_id).toBe(punches[0].body.client_event_id);
+    expect(punches[1].body.captured_at).toBe(punches[0].body.captured_at);
+    expect(punchCommand(punches[1].body)).toEqual(punchCommand(punches[0].body));
+    expect(locationEvidence(punches[1].body)).toEqual(locationEvidence(punches[0].body));
+    expect(punches[0].idempotencyKey).toBe(punches[0].body.client_event_id);
+    expect(punches[1].idempotencyKey).toBe(punches[1].body.client_event_id);
 
     await page.getByRole("button", { name: "Start break" }).click();
 
@@ -900,7 +924,7 @@ test.describe("network uncertainty", () => {
     expect(await getGeolocationCallCount(page)).toBe(2);
     expect(punches).toHaveLength(3);
     expect(punches[2].idempotencyKey).not.toBe(punches[0].idempotencyKey);
-    expect(punches[2].body).toMatchObject({
+    expectCanonicalPunchRequest(punches[2], {
       event_type: "break_start",
       source: "web_geo",
       metadata: {

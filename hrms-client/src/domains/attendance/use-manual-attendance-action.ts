@@ -6,7 +6,11 @@ import {
   text,
   userFacingErrorMessage,
 } from "@/shared/api";
-import type { AttendancePunchBody, AttendancePunchEventType } from "./api";
+import type {
+  AttendancePunchCommand,
+  AttendancePunchEventType,
+  AttendancePunchRequest,
+} from "./api";
 import {
   requestBrowserGeolocationOnce,
   type BrowserGeolocationErrorKind,
@@ -18,10 +22,7 @@ import {
   hasEmployeeGeoPolicySnapshot,
   type EmployeeGeoDecisionDisplay,
 } from "./geo-decision-display";
-import {
-  useAttendanceGeoFallbackSubmitMutation,
-  useManualAttendanceMutation,
-} from "./queries";
+import { useAttendanceGeoFallbackSubmitMutation, useManualAttendanceMutation } from "./queries";
 
 export type ManualAttendanceResultKind = "accepted" | "rejected" | "uncertain";
 export type ManualAttendanceGeoStatus = "idle" | "requesting";
@@ -43,8 +44,9 @@ export interface ManualAttendanceResult {
 
 interface PendingAttendanceAction {
   action: AttendancePunchEventType;
-  idempotencyKey: string;
-  body?: AttendancePunchBody;
+  clientEventId: string;
+  capturedAt: string;
+  request?: AttendancePunchRequest;
   browserLocationKind?: BrowserGeolocationResult["kind"];
 }
 
@@ -80,11 +82,11 @@ const ACTION_COPY: Record<
   },
 };
 
-function createIdempotencyKey(): string {
+function createRequestUuid(): string {
   if (!globalThis.crypto?.randomUUID) {
     throw new Error("Secure action identity is unavailable in this browser.");
   }
-  return `attendance-${globalThis.crypto.randomUUID()}`;
+  return globalThis.crypto.randomUUID();
 }
 
 function shouldRequestBrowserLocation(
@@ -253,17 +255,30 @@ function rejectedResultFor(
   };
 }
 
-async function attendanceBodyFor(
+function attendanceRequestFor(
+  clientEventId: string,
+  capturedAt: string,
+  command: AttendancePunchCommand,
+): AttendancePunchRequest {
+  return {
+    client_event_id: clientEventId,
+    captured_at: capturedAt,
+    device: null,
+    command,
+  };
+}
+
+async function attendanceCommandFor(
   action: AttendancePunchEventType,
   sourceView: "attendance_page" | "dashboard",
   useBrowserLocation: boolean,
 ): Promise<{
-  body: AttendancePunchBody;
+  command: AttendancePunchCommand;
   browserLocationKind?: BrowserGeolocationResult["kind"];
 }> {
   if (!useBrowserLocation) {
     return {
-      body: {
+      command: {
         event_type: action,
         source: "web",
         metadata: { source_view: sourceView },
@@ -273,7 +288,7 @@ async function attendanceBodyFor(
 
   const location = await requestBrowserGeolocationOnce();
   return {
-    body: {
+    command: {
       event_type: action,
       source: "web_geo",
       metadata: {
@@ -294,7 +309,6 @@ export function useManualAttendanceAction({
   const mutation = useManualAttendanceMutation();
   const fallbackMutation = useAttendanceGeoFallbackSubmitMutation();
   const pendingAction = useRef<PendingAttendanceAction | null>(null);
-  const requestBody = useRef<AttendancePunchBody | null>(null);
   const inFlight = useRef(false);
   const [result, setResult] = useState<ManualAttendanceResult | null>(null);
   const [geoStatus, setGeoStatus] = useState<ManualAttendanceGeoStatus>("idle");
@@ -306,7 +320,11 @@ export function useManualAttendanceAction({
       let identity = retry ? pendingAction.current : null;
       if (!identity || identity.action !== action) {
         try {
-          identity = { action, idempotencyKey: createIdempotencyKey() };
+          identity = {
+            action,
+            clientEventId: createRequestUuid(),
+            capturedAt: new Date().toISOString(),
+          };
         } catch (error) {
           pendingAction.current = null;
           setResult({
@@ -325,20 +343,24 @@ export function useManualAttendanceAction({
       inFlight.current = true;
 
       try {
-        if (!identity.body) {
+        if (!identity.request) {
           const needsBrowserLocation = shouldRequestBrowserLocation(geoPolicy);
           if (needsBrowserLocation) setGeoStatus("requesting");
-          const prepared = await attendanceBodyFor(action, sourceView, needsBrowserLocation);
-          identity.body = prepared.body;
+          const prepared = await attendanceCommandFor(action, sourceView, needsBrowserLocation);
+          identity.request = attendanceRequestFor(
+            identity.clientEventId,
+            identity.capturedAt,
+            prepared.command,
+          );
           identity.browserLocationKind = prepared.browserLocationKind;
         }
 
-        requestBody.current = identity.body;
+        const request = identity.request;
+        if (!request) {
+          throw new Error("Attendance request was not prepared.");
+        }
         const response = await mutation.mutateAsync({
-          action,
-          idempotencyKey: identity.idempotencyKey,
-          sourceView,
-          requestBody,
+          request,
         });
         pendingAction.current = null;
         setResult(acceptedResultFor(action, response, identity.browserLocationKind));
@@ -359,7 +381,6 @@ export function useManualAttendanceAction({
         setResult(rejectedResultFor(action, error, identity.browserLocationKind));
         onDeterministicFailure?.();
       } finally {
-        requestBody.current = null;
         setGeoStatus("idle");
         inFlight.current = false;
       }
@@ -380,7 +401,7 @@ export function useManualAttendanceAction({
     try {
       const response = await fallbackMutation.mutateAsync({
         reference: current.manualFallback.reference,
-        idempotencyKey: createIdempotencyKey(),
+        idempotencyKey: createRequestUuid(),
       });
       pendingAction.current = null;
       setResult({

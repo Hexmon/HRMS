@@ -3,6 +3,9 @@ import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } fro
 
 export type AttendancePunchEventType = "check_in" | "break_start" | "break_end" | "check_out";
 export type AttendanceGeoReviewType = "manual_fallback" | "geo_decision";
+export type AttendancePunchWorkMode = "office" | "remote" | "wfh" | "field";
+export type AttendancePunchSource = "web" | "web_geo" | "mobile" | "kiosk";
+export type AttendanceLocationProvider = "browser" | "device" | "network" | "unknown";
 export type AttendanceGeoFactualOutcome =
   | "not_required"
   | "inside_confident"
@@ -45,7 +48,7 @@ export type AttendanceLocationEvidence =
       accuracy_meters: number;
       captured_at: string;
       age_ms?: number;
-      provider?: "browser" | "gps" | "network" | "manual" | "unknown";
+      provider?: AttendanceLocationProvider;
       permission_state?: "granted" | "unknown";
       altitude_meters?: number;
       is_mocked?: boolean;
@@ -54,7 +57,7 @@ export type AttendanceLocationEvidence =
   | {
       captured_at?: string;
       age_ms?: number;
-      provider?: "browser" | "gps" | "network" | "manual" | "unknown";
+      provider?: AttendanceLocationProvider;
       permission_state: "denied" | "unavailable";
       integrity_status?: string;
     };
@@ -96,13 +99,27 @@ export interface AttendanceGeoEvidenceSummary {
   work_site_type: string | null;
 }
 
-export interface AttendancePunchBody extends ApiRecord {
+export interface AttendanceCommandDevice {
+  registered_device_id?: string;
+  device_id?: string;
+  platform?: "web" | "ios" | "android";
+  app_version?: string;
+  os_version?: string;
+}
+
+export interface AttendancePunchCommand {
   event_type: AttendancePunchEventType;
-  occurred_at?: string;
-  work_mode?: "office" | "remote" | "wfh" | "field";
-  source?: "web" | "web_geo" | "mobile" | "kiosk" | "admin";
+  work_mode?: AttendancePunchWorkMode;
+  source?: AttendancePunchSource;
   metadata?: ApiRecord;
   location?: AttendanceLocationEvidence;
+}
+
+export interface AttendancePunchRequest {
+  client_event_id: string;
+  captured_at: string;
+  device: AttendanceCommandDevice | null;
+  command: AttendancePunchCommand;
 }
 
 export interface AttendanceRegularizationBody extends ApiRecord {
@@ -153,11 +170,11 @@ export interface AttendanceCommandOptions {
 }
 
 export const attendanceApi = {
-  punch(input: AttendancePunchBody, options: AttendanceCommandOptions = {}) {
+  punch(input: AttendancePunchRequest) {
     return apiRequest<ApiRecord>("/api/v1/attendance/punches", {
       method: "POST",
       body: input,
-      headers: options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : undefined,
+      headers: { "Idempotency-Key": input.client_event_id },
     });
   },
   submitGeoFallback(reference: string, options: AttendanceCommandOptions = {}) {

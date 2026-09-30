@@ -6,8 +6,7 @@ import { currentLocalMonth } from "./live";
 import type {
   AttendanceExportBody,
   AttendanceGeoFallbackDecisionBody,
-  AttendancePunchBody,
-  AttendancePunchEventType,
+  AttendancePunchRequest,
   AttendanceQuery,
   AttendanceRegularizationBody,
   AttendanceRegularizationDecisionBody,
@@ -19,10 +18,7 @@ function mergeQueueCounts(
 ) {
   const keys = ["total", "pending", "approved", "returned", "rejected"] as const;
   return Object.fromEntries(
-    keys.map((key) => [
-      key,
-      Number(left?.[key] ?? 0) + Number(right?.[key] ?? 0),
-    ]),
+    keys.map((key) => [key, Number(left?.[key] ?? 0) + Number(right?.[key] ?? 0)]),
   );
 }
 
@@ -33,10 +29,7 @@ const employeeContextQuery = () => ({
 });
 
 export interface ManualAttendanceMutationInput {
-  action: AttendancePunchEventType;
-  idempotencyKey: string;
-  sourceView: "attendance_page" | "dashboard";
-  requestBody?: { current: AttendancePunchBody | null };
+  request: AttendancePunchRequest;
 }
 
 export function useMyAttendanceSummary(query: AttendanceQuery = {}, enabled = true) {
@@ -137,12 +130,10 @@ export function useManagerAttendanceRegularizationQueue(
       return {
         ...regularizations,
         items: [...geoFallbackItems, ...regularizationItems],
-        total: Number(regularizations.total ?? regularizationItems.length) +
+        total:
+          Number(regularizations.total ?? regularizationItems.length) +
           Number(geoFallbacks.total ?? geoFallbackItems.length),
-        queue_counts: mergeQueueCounts(
-          regularizations.queue_counts,
-          geoFallbacks.queue_counts,
-        ),
+        queue_counts: mergeQueueCounts(regularizations.queue_counts, geoFallbacks.queue_counts),
       };
     },
     enabled,
@@ -163,7 +154,7 @@ export function useAttendanceGeoFallbackSubmitMutation() {
 export function useAttendancePunchMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: AttendancePunchBody) => attendanceApi.punch(input),
+    mutationFn: (input: AttendancePunchRequest) => attendanceApi.punch(input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("attendance") }),
   });
 }
@@ -171,19 +162,7 @@ export function useAttendancePunchMutation() {
 export function useManualAttendanceMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      action,
-      idempotencyKey,
-      sourceView,
-      requestBody,
-    }: ManualAttendanceMutationInput) => {
-      const body = requestBody?.current ?? {
-        event_type: action,
-        source: "web",
-        metadata: { source_view: sourceView },
-      };
-      return attendanceApi.punch(body, { idempotencyKey });
-    },
+    mutationFn: ({ request }: ManualAttendanceMutationInput) => attendanceApi.punch(request),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("attendance") }),
   });
 }
