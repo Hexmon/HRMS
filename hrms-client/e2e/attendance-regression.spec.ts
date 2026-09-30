@@ -184,6 +184,149 @@ test("submits a normalized historical regularization request", async ({ page }) 
   expect(String(submittedItem.occurred_at)).toContain(workDate);
 });
 
+test("shows employee day evidence on the attendance calendar without raw coordinates", async ({
+  page,
+}) => {
+  await prepareAttendancePage(page);
+  const today = new Date();
+  const workDate = localIsoDate(today);
+  const month = workDate.slice(0, 7);
+  const dayRecord = {
+    work_date: workDate,
+    status: "present",
+    in_time: "09:10",
+    out_time: "18:00",
+    hours: "8h 50m",
+    work_minutes: 530,
+    detail: "8h 50m",
+  };
+
+  await page.route("**/api/v1/attendance/calendar/monthly**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        month,
+        calendar_days: [dayRecord],
+        summary: { present: 1, wfh: 0, late: 0, absent: 0, leave: 0, holiday: 0 },
+      }),
+    });
+  });
+  await page.route("**/api/v1/attendance/calendar/daily**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [dayRecord],
+        page: 1,
+        page_size: 1,
+        total: 1,
+        self_evidence: {
+          generated_at: new Date().toISOString(),
+          date: workDate,
+          day: {
+            ...dayRecord,
+            day_classification: "working_day",
+            presence_state: "present",
+            punctuality_state: "on_time",
+            evidence_state: "complete",
+            approval_kind: "regularization",
+            approval_state: "approved",
+            payroll_state: "unprocessed",
+            regularization_status: "approved",
+            break_minutes: 30,
+          },
+          summary_sources: [
+            { type: "employee_punch", label: "Employee attendance punch" },
+            { type: "approved_regularization", label: "Approved regularization" },
+          ],
+          events: [
+            {
+              event_type: "check_in",
+              occurred_at: `${workDate}T03:40:00.000Z`,
+              time: "09:10",
+              source: "admin",
+              origin: "approved_regularization",
+              work_mode: "office",
+              decision: { outcome: "passed", reason_codes: ["geo_not_required"], reason: null },
+              geo: {
+                outcome: "not_required",
+                reason_code: "geo_not_required",
+                selected_action: "allow",
+                work_site_name: null,
+                work_site_type: null,
+              },
+              regularization: {
+                status: "approved",
+                operation: "add",
+                relationship: "added",
+                reason: "Missed check-in after client meeting.",
+                decided_at: `${workDate}T08:30:00.000Z`,
+                applied_at: `${workDate}T08:30:00.000Z`,
+              },
+            },
+            {
+              event_type: "check_out",
+              occurred_at: `${workDate}T12:30:00.000Z`,
+              time: "18:00",
+              source: "web_geo",
+              origin: "employee_manual_now",
+              work_mode: "office",
+              decision: { outcome: "allowed", reason_codes: ["geo_inside_fence"], reason: null },
+              geo: {
+                outcome: "inside_confident",
+                reason_code: "geo_inside_fence",
+                selected_action: "allow",
+                work_site_name: "Bhubaneswar Office",
+                work_site_type: "office",
+              },
+              regularization: null,
+            },
+          ],
+          regularizations: [
+            {
+              status: "approved",
+              reason: "Missed check-in after client meeting.",
+              created_at: `${workDate}T04:30:00.000Z`,
+              updated_at: `${workDate}T08:30:00.000Z`,
+              decided_at: `${workDate}T08:30:00.000Z`,
+              operations: ["add"],
+              items: [
+                {
+                  operation: "add",
+                  event_type: "check_in",
+                  occurred_at: `${workDate}T03:40:00.000Z`,
+                  relationship: "applied",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+  });
+
+  await openAttendance(page, "/attendance/calendar");
+
+  const panel = page.getByTestId("employee-day-evidence");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText("Employee attendance punch", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Approved regularization", { exact: true }).first()).toBeVisible();
+  await expect(panel.getByText("Check-in", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Reason code: geo_not_required")).toBeVisible();
+  await expect(panel.getByText("Check-out", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Reason code: geo_inside_fence")).toBeVisible();
+  await expect(
+    panel.getByText("Location check: Inside work area - Bhubaneswar Office"),
+  ).toBeVisible();
+
+  const rendered = await page.locator("body").innerText();
+  expect(rendered).not.toMatch(/latitude|longitude|coordinates/i);
+  expect(rendered).not.toContain("19.076");
+  expect(rendered).not.toContain("72.8777");
+  expect(rendered).not.toContain("command_id");
+});
+
 test("manager reviews and approves an assigned correction", async ({ page }) => {
   await prepareAttendancePage(page, "Reviewer");
   let includeRequest = true;
@@ -269,4 +412,11 @@ function punchCommandBody(eventType: string): Record<string, unknown> {
     source: "web",
     metadata: { source_view: "attendance_page" },
   };
+}
+
+function localIsoDate(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }

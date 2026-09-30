@@ -572,8 +572,9 @@ describe("attendance", () => {
   });
 
   it("records punch sequence, returns summaries, and blocks duplicate/out-of-order actions", async () => {
-    await allowCurrentPunchesOnAnyWeekday(app);
+    const company = await allowCurrentPunchesOnAnyWeekday(app);
     const employee = await loginAs(app, "E1");
+    const otherEmployee = await loginAs(app, "E2");
     const manager = await loginAs(app, "D1");
     const admin = await loginAs(app, "ADM");
     const today = localDate();
@@ -609,6 +610,72 @@ describe("attendance", () => {
     });
     expect(checkOut.statusCode).toBe(200);
     expect(checkOut.json().day_status.work_minutes).toBeGreaterThanOrEqual(0);
+
+    const auditDecision = (
+      await app.store.pgPool!.query<{ id: string }>(
+        `SELECT id
+           FROM attendance.attendance_decisions
+          WHERE company_id = $1
+            AND command_execution_id = $2
+          ORDER BY evaluated_at DESC
+          LIMIT 1`,
+        [company.id, checkIn.json().command_id],
+      )
+    ).rows[0];
+    expect(auditDecision).toBeDefined();
+    const existingReason = await app.store.pgPool!.query<{ id: string }>(
+      `SELECT id
+         FROM attendance.decision_reasons
+        WHERE company_id = $1
+          AND attendance_decision_id = $2
+          AND reason_code = 'geo_not_required'`,
+      [company.id, auditDecision!.id],
+    );
+    if (existingReason.rows.length === 0) {
+      await app.store.pgPool!.query(
+        `INSERT INTO attendance.decision_reasons (
+           attendance_decision_id, company_id, reason_code, category, severity, ordinal, details
+         ) VALUES ($1,$2,'geo_not_required','geo','info',99,'{}'::jsonb)`,
+        [auditDecision!.id, company.id],
+      );
+    }
+
+    const selfEvidence = await app.inject({
+      method: "GET",
+      url: `/api/v1/attendance/calendar/daily?date=${today}&page=1&page_size=10`,
+      headers: authHeader(employee.token),
+    });
+    expect(selfEvidence.statusCode, selfEvidence.body).toBe(200);
+    expect(selfEvidence.json().self_evidence).toMatchObject({
+      date: today,
+      summary_sources: expect.arrayContaining([
+        expect.objectContaining({ type: "employee_punch" }),
+      ]),
+    });
+    expect(selfEvidence.json().self_evidence.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event_type: "check_in",
+          decision: expect.objectContaining({
+            outcome: "allowed",
+            reason_codes: expect.arrayContaining(["geo_not_required"]),
+          }),
+        }),
+      ]),
+    );
+    const serializedSelfEvidence = JSON.stringify(selfEvidence.json().self_evidence);
+    expect(serializedSelfEvidence).not.toContain("latitude");
+    expect(serializedSelfEvidence).not.toContain("longitude");
+    expect(serializedSelfEvidence).not.toContain("coordinates");
+    expect(serializedSelfEvidence).not.toContain("command_id");
+    expect(serializedSelfEvidence).not.toContain("request_snapshot");
+
+    const crossEmployeeEvidence = await app.inject({
+      method: "GET",
+      url: `/api/v1/attendance/calendar/daily?date=${today}&user_id=${employee.user.id}&page=1&page_size=10`,
+      headers: authHeader(otherEmployee.token),
+    });
+    expect(crossEmployeeEvidence.statusCode).toBe(403);
 
     const duplicate = await app.inject({
       method: "POST",
@@ -1217,6 +1284,37 @@ describe("attendance", () => {
       regularization_status: "approved",
       work_seconds: 33_900,
     });
+
+    const dailyEvidence = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/calendar/daily?date=2026-05-21&page=1&page_size=10",
+      headers: authHeader(employee.token),
+    });
+    expect(dailyEvidence.statusCode, dailyEvidence.body).toBe(200);
+    expect(dailyEvidence.json().self_evidence.summary_sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "approved_regularization" }),
+      ]),
+    );
+    expect(dailyEvidence.json().self_evidence.regularizations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "approved",
+          operations: expect.arrayContaining(["add"]),
+        }),
+      ]),
+    );
+    expect(dailyEvidence.json().self_evidence.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          origin: "approved_regularization",
+          regularization: expect.objectContaining({
+            status: "approved",
+            relationship: "added",
+          }),
+        }),
+      ]),
+    );
   });
 
   it("creates document-backed attendance exports for HR/Admin/Auditor roles only", async () => {

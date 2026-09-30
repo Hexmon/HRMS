@@ -1,5 +1,3 @@
-import { asRecord, text } from "@/shared/api";
-
 export type EmployeeGeoDecision = "accepted" | "provisional" | "review" | "rejected";
 
 type AttendanceGeoFactualOutcome =
@@ -100,6 +98,18 @@ const DECISION_COPY: Record<EmployeeGeoDecision, { title: string; description: s
     description: "Your punch was not recorded.",
   },
 };
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function text(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
 
 function booleanValue(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;

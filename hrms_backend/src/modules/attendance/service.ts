@@ -66,6 +66,7 @@ import {
   assertCanUseSelfAttendance,
   canManageAllAttendance,
   canSeeAllAttendance,
+  canUseSelfAttendance,
   canSeeAttendanceUser,
 } from "./policy.js";
 import { AttendanceRepository } from "./repository.js";
@@ -155,6 +156,150 @@ interface SafeGeoWorkSiteLabel {
   site_type: string | null;
 }
 
+type EmployeeAttendanceSummarySourceType =
+  | "employee_punch"
+  | "manager_assisted_punch"
+  | "historical_correction"
+  | "approved_regularization"
+  | "system_daily_summary";
+
+interface EmployeeAttendanceSummarySource {
+  type: EmployeeAttendanceSummarySourceType;
+  label: string;
+}
+
+interface EmployeeAttendanceEvidenceDecision {
+  outcome: string;
+  reason_codes: string[];
+  reason: string | null;
+}
+
+interface EmployeeAttendanceEvidenceGeo {
+  outcome: string | null;
+  reason_code: string | null;
+  selected_action: string | null;
+  work_site_name: string | null;
+  work_site_type: string | null;
+}
+
+interface EmployeeAttendanceEvidenceRegularization {
+  status: string;
+  operation: string | null;
+  relationship: "added" | "replacement" | "corrected_original" | "voided" | "request";
+  reason: string | null;
+  decided_at: string | null;
+  applied_at: string | null;
+}
+
+interface EmployeeAttendanceEvidenceEvent {
+  event_type: string;
+  occurred_at: string;
+  time: string | null;
+  source: string | null;
+  origin: string | null;
+  work_mode: string | null;
+  decision: EmployeeAttendanceEvidenceDecision | null;
+  geo: EmployeeAttendanceEvidenceGeo | null;
+  regularization: EmployeeAttendanceEvidenceRegularization | null;
+}
+
+interface EmployeeAttendanceEvidenceRegularizationItem {
+  operation: string;
+  event_type: string | null;
+  occurred_at: string | null;
+  relationship: "requested" | "applied";
+}
+
+interface EmployeeAttendanceEvidenceRegularizationRequest {
+  status: string;
+  reason: string;
+  created_at: string | null;
+  updated_at: string | null;
+  decided_at: string | null;
+  operations: string[];
+  items: EmployeeAttendanceEvidenceRegularizationItem[];
+}
+
+interface EmployeeAttendanceDayEvidence {
+  generated_at: string;
+  date: string;
+  day: {
+    work_date: string;
+    status: string;
+    day_classification: string;
+    presence_state: string;
+    punctuality_state: string;
+    evidence_state: string;
+    approval_kind: string;
+    approval_state: string;
+    payroll_state: string;
+    regularization_status: string | null;
+    in_time: string | null;
+    out_time: string | null;
+    hours: string;
+    work_minutes: number;
+    break_minutes: number;
+    detail: string;
+  };
+  summary_sources: EmployeeAttendanceSummarySource[];
+  events: EmployeeAttendanceEvidenceEvent[];
+  regularizations: EmployeeAttendanceEvidenceRegularizationRequest[];
+}
+
+interface EmployeeDayEvidenceEventRow {
+  event_type: string;
+  event_source: string | null;
+  event_occurred_at: Date | string;
+  punch_id: UUID | null;
+  punch_event_type: string | null;
+  punch_source: string | null;
+  punch_origin: string | null;
+  punch_work_mode: string | null;
+  punch_regularization_request_id: UUID | null;
+  command_outcome: string | null;
+  command_reason_code: string | null;
+  command_reason_detail: string | null;
+  command_evidence_snapshot: Record<string, unknown> | null;
+  audit_outcome: string | null;
+  audit_decision_type: string | null;
+  audit_evaluation_context: Record<string, unknown> | null;
+  audit_reason_codes: string[] | null;
+}
+
+interface EmployeeDayRegularizationRow {
+  id: UUID;
+  status: string;
+  reason: string;
+  created_at: Date | string | null;
+  updated_at: Date | string | null;
+  decided_at: Date | string | null;
+}
+
+interface EmployeeDayRegularizationItemRow {
+  regularization_request_id: UUID;
+  id: UUID;
+  ordinal: number;
+  operation: string;
+  target_punch_event_id: UUID | null;
+  event_type: string | null;
+  occurred_at: Date | string | null;
+}
+
+interface EmployeeDayRegularizationApplicationRow {
+  regularization_request_id: UUID;
+  regularization_request_item_id: UUID;
+  operation: string;
+  target_punch_event_id: UUID | null;
+  replacement_punch_event_id: UUID | null;
+  applied_at: Date | string | null;
+}
+
+interface EmployeeDayRegularizationBundle {
+  request: EmployeeDayRegularizationRow;
+  items: EmployeeDayRegularizationItemRow[];
+  applications: EmployeeDayRegularizationApplicationRow[];
+}
+
 export interface AttendanceExportInput {
   company_id?: UUID | null;
   filters?: {
@@ -209,6 +354,32 @@ function geoPolicyRecord(review: AttendanceGeoFallbackReview): Record<string, un
 
 function stringField(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function recordField(
+  value: unknown,
+  key: string,
+): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const nested = (value as Record<string, unknown>)[key];
+  return nested && typeof nested === "object" && !Array.isArray(nested)
+    ? (nested as Record<string, unknown>)
+    : {};
+}
+
+function isoDateValue(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean),
+    ),
+  );
 }
 
 function finiteNumberField(value: unknown): number | null {
@@ -1027,6 +1198,15 @@ export class AttendanceService {
       ).items,
       totals: this.teamTotals(records, activeUsers.length),
     };
+  }
+
+  async dailyCalendarWithSelfEvidence(
+    actor: AuthUser,
+    query: AttendancePageQuery,
+  ) {
+    const response = this.dailyCalendar(actor, query);
+    const evidence = await this.employeeSelfDayEvidence(actor, query);
+    return evidence ? { ...response, self_evidence: evidence } : response;
   }
 
   createRegularization(
@@ -4021,6 +4201,566 @@ export class AttendanceService {
         throw badRequest("VOID items cannot include replacement event data.");
       }
     }
+  }
+
+  private async employeeSelfDayEvidence(
+    actor: AuthUser,
+    query: AttendancePageQuery,
+  ): Promise<EmployeeAttendanceDayEvidence | null> {
+    if (!canUseSelfAttendance(actor)) return null;
+    if (query.user_id && query.user_id !== actor.id) return null;
+
+    const context = this.resolveAttendanceCompanyContext(
+      actor,
+      "attendance.daily_calendar.self_evidence",
+      query.company_id,
+    );
+    const companyId = context.companyId;
+    const timeZone = this.timezoneForUser(actor.id, companyId);
+    const date = query.date ?? query.date_from ?? todayDate(timeZone);
+    const day = this.resolveDay(companyId, actor.id, date, timeZone);
+    const regularizations = this.store.pgPool
+      ? await this.employeeDayRegularizationsPostgres(companyId, actor.id, date)
+      : this.employeeDayRegularizationsInMemory(companyId, actor.id, date);
+    const workSiteLabels = this.store.pgPool
+      ? await this.employeeDayWorkSiteLabels(companyId, actor.id, date, timeZone)
+      : new Map<UUID, SafeGeoWorkSiteLabel>();
+    const events = this.store.pgPool
+      ? await this.employeeDayEventsPostgres(
+          companyId,
+          actor.id,
+          date,
+          timeZone,
+          regularizations,
+          workSiteLabels,
+        )
+      : this.employeeDayEventsInMemory(
+          companyId,
+          actor.id,
+          date,
+          timeZone,
+          regularizations,
+        );
+
+    return {
+      generated_at: nowIso(),
+      date,
+      day: this.presentEmployeeEvidenceDay(day, timeZone),
+      summary_sources: this.employeeSummarySources(day, events, regularizations),
+      events,
+      regularizations: regularizations.map((bundle) =>
+        this.presentEmployeeEvidenceRegularization(bundle),
+      ),
+    };
+  }
+
+  private presentEmployeeEvidenceDay(
+    day: AttendanceDayRecord,
+    timeZone: string,
+  ): EmployeeAttendanceDayEvidence["day"] {
+    return {
+      work_date: day.work_date,
+      status: day.status,
+      day_classification: day.day_classification,
+      presence_state: day.presence_state,
+      punctuality_state: day.punctuality_state,
+      evidence_state: day.evidence_state,
+      approval_kind: day.approval_kind,
+      approval_state: day.approval_state,
+      payroll_state: day.payroll_state,
+      regularization_status: day.regularization_status,
+      in_time: timeText(day.first_check_in, timeZone),
+      out_time: timeText(day.last_check_out, timeZone),
+      hours: minutesToHours(day.work_minutes),
+      work_minutes: day.work_minutes,
+      break_minutes: day.break_minutes,
+      detail: this.exceptionDetail(day),
+    };
+  }
+
+  private async employeeDayEventsPostgres(
+    companyId: UUID,
+    employeeUserId: UUID,
+    workDate: string,
+    timeZone: string,
+    regularizations: EmployeeDayRegularizationBundle[],
+    workSiteLabels: Map<UUID, SafeGeoWorkSiteLabel>,
+  ): Promise<EmployeeAttendanceEvidenceEvent[]> {
+    if (!this.store.pgPool) return [];
+    const result = await this.store.pgPool.query<EmployeeDayEvidenceEventRow>(
+      `SELECT
+          event.event_type AS event_type,
+          event.source AS event_source,
+          event.occurred_at AS event_occurred_at,
+          punch.id AS punch_id,
+          punch.event_type AS punch_event_type,
+          punch.source AS punch_source,
+          punch.origin AS punch_origin,
+          punch.work_mode AS punch_work_mode,
+          punch.regularization_request_id AS punch_regularization_request_id,
+          command_decision.outcome AS command_outcome,
+          command_decision.reason_code AS command_reason_code,
+          command_decision.reason_detail AS command_reason_detail,
+          command_decision.evidence_snapshot AS command_evidence_snapshot,
+          audit_decision.outcome AS audit_outcome,
+          audit_decision.decision_type AS audit_decision_type,
+          audit_decision.evaluation_context AS audit_evaluation_context,
+          COALESCE(
+            array_agg(reason.reason_code ORDER BY reason.ordinal)
+              FILTER (WHERE reason.reason_code IS NOT NULL),
+            ARRAY[]::text[]
+          ) AS audit_reason_codes
+         FROM attendance.attendance_events event
+         LEFT JOIN attendance.punch_events punch
+           ON punch.company_id = event.company_id
+          AND punch.command_execution_id = event.command_execution_id
+          AND punch.deleted_at IS NULL
+         LEFT JOIN attendance.command_decisions command_decision
+           ON command_decision.company_id = event.company_id
+          AND command_decision.command_execution_id = event.command_execution_id
+         LEFT JOIN attendance.attendance_decisions audit_decision
+           ON audit_decision.company_id = event.company_id
+          AND audit_decision.attendance_event_id = event.id
+         LEFT JOIN attendance.decision_reasons reason
+           ON reason.company_id = event.company_id
+          AND reason.attendance_decision_id = audit_decision.id
+        WHERE event.company_id = $1
+          AND event.employee_user_id = $2
+          AND to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD') = $4
+        GROUP BY
+          event.event_type,
+          event.source,
+          event.occurred_at,
+          punch.id,
+          punch.event_type,
+          punch.source,
+          punch.origin,
+          punch.work_mode,
+          punch.regularization_request_id,
+          command_decision.outcome,
+          command_decision.reason_code,
+          command_decision.reason_detail,
+          command_decision.evidence_snapshot,
+          audit_decision.outcome,
+          audit_decision.decision_type,
+          audit_decision.evaluation_context
+        ORDER BY event.occurred_at ASC, event.event_type ASC`,
+      [companyId, employeeUserId, timeZone, workDate],
+    );
+    return result.rows.map((row) =>
+      this.presentEmployeeEvidenceEventFromRow(
+        row,
+        timeZone,
+        regularizations,
+        workSiteLabels,
+      ),
+    );
+  }
+
+  private employeeDayEventsInMemory(
+    companyId: UUID,
+    employeeUserId: UUID,
+    workDate: string,
+    timeZone: string,
+    regularizations: EmployeeDayRegularizationBundle[],
+  ): EmployeeAttendanceEvidenceEvent[] {
+    return this.store.attendancePunches
+      .filter(
+        (punch) =>
+          punch.company_id === companyId &&
+          punch.employee_user_id === employeeUserId &&
+          !punch.deleted_at &&
+          dateInTimeZone(punch.occurred_at, timeZone) === workDate,
+      )
+      .sort((left, right) => left.occurred_at.localeCompare(right.occurred_at))
+      .map((punch) => ({
+        event_type: punch.event_type,
+        occurred_at: punch.occurred_at,
+        time: timeText(punch.occurred_at, timeZone),
+        source: punch.source,
+        origin: punch.origin,
+        work_mode: punch.work_mode,
+        decision: null,
+        geo: null,
+        regularization: this.employeeEventRegularization(
+          punch.id,
+          punch.regularization_request_id,
+          regularizations,
+        ),
+      }));
+  }
+
+  private async employeeDayRegularizationsPostgres(
+    companyId: UUID,
+    employeeUserId: UUID,
+    workDate: string,
+  ): Promise<EmployeeDayRegularizationBundle[]> {
+    if (!this.store.pgPool) return [];
+    const requests = (
+      await this.store.pgPool.query<EmployeeDayRegularizationRow>(
+        `SELECT id, status, reason, created_at, updated_at, decided_at
+           FROM attendance.regularization_requests
+          WHERE company_id = $1
+            AND employee_user_id = $2
+            AND work_date = $3::date
+            AND deleted_at IS NULL
+          ORDER BY created_at ASC, id ASC`,
+        [companyId, employeeUserId, workDate],
+      )
+    ).rows;
+    if (requests.length === 0) return [];
+    const requestIds = requests.map((request) => request.id);
+    const items = (
+      await this.store.pgPool.query<EmployeeDayRegularizationItemRow>(
+        `SELECT regularization_request_id, id, ordinal, operation,
+                target_punch_event_id, event_type, occurred_at
+           FROM attendance.regularization_request_items
+          WHERE company_id = $1
+            AND regularization_request_id = ANY($2::uuid[])
+          ORDER BY regularization_request_id ASC, ordinal ASC`,
+        [companyId, requestIds],
+      )
+    ).rows;
+    const applications = (
+      await this.store.pgPool.query<EmployeeDayRegularizationApplicationRow>(
+        `SELECT regularization_request_id, regularization_request_item_id,
+                operation, target_punch_event_id, replacement_punch_event_id,
+                applied_at
+           FROM attendance.regularization_correction_applications
+          WHERE company_id = $1
+            AND regularization_request_id = ANY($2::uuid[])
+          ORDER BY regularization_request_id ASC, applied_at ASC`,
+        [companyId, requestIds],
+      )
+    ).rows;
+    return requests.map((request) => ({
+      request,
+      items: items.filter((item) => item.regularization_request_id === request.id),
+      applications: applications.filter(
+        (application) => application.regularization_request_id === request.id,
+      ),
+    }));
+  }
+
+  private employeeDayRegularizationsInMemory(
+    companyId: UUID,
+    employeeUserId: UUID,
+    workDate: string,
+  ): EmployeeDayRegularizationBundle[] {
+    return this.store.attendanceRegularizations
+      .filter(
+        (request) =>
+          request.company_id === companyId &&
+          request.employee_user_id === employeeUserId &&
+          request.work_date === workDate &&
+          !request.deleted_at,
+      )
+      .sort((left, right) => left.created_at.localeCompare(right.created_at))
+      .map((request) => ({
+        request: {
+          id: request.id,
+          status: request.status,
+          reason: request.reason,
+          created_at: request.created_at,
+          updated_at: request.updated_at,
+          decided_at: request.decided_at,
+        },
+        items: request.items.map((item) => ({
+          regularization_request_id: request.id,
+          id: item.id,
+          ordinal: item.ordinal,
+          operation: item.operation,
+          target_punch_event_id: item.target_punch_event_id,
+          event_type: item.event_type,
+          occurred_at: item.occurred_at,
+        })),
+        applications: this.store.attendanceRegularizationCorrectionApplications
+          .filter(
+            (application) =>
+              application.company_id === companyId &&
+              application.regularization_request_id === request.id,
+          )
+          .map((application) => ({
+            regularization_request_id: application.regularization_request_id,
+            regularization_request_item_id: application.regularization_request_item_id,
+            operation: application.operation,
+            target_punch_event_id: application.target_punch_event_id,
+            replacement_punch_event_id: application.replacement_punch_event_id,
+            applied_at: application.applied_at,
+          })),
+      }));
+  }
+
+  private async employeeDayWorkSiteLabels(
+    companyId: UUID,
+    employeeUserId: UUID,
+    workDate: string,
+    timeZone: string,
+  ): Promise<Map<UUID, SafeGeoWorkSiteLabel>> {
+    if (!this.store.pgPool) return new Map();
+    const result = await this.store.pgPool.query<{ work_site_id: UUID | null }>(
+      `SELECT DISTINCT COALESCE(
+          audit_decision.evaluation_context #>> '{geo_policy,work_site_id}',
+          command_decision.evidence_snapshot #>> '{geo_policy,work_site_id}'
+        )::uuid AS work_site_id
+         FROM attendance.attendance_events event
+         LEFT JOIN attendance.command_decisions command_decision
+           ON command_decision.company_id = event.company_id
+          AND command_decision.command_execution_id = event.command_execution_id
+         LEFT JOIN attendance.attendance_decisions audit_decision
+           ON audit_decision.company_id = event.company_id
+          AND audit_decision.attendance_event_id = event.id
+        WHERE event.company_id = $1
+          AND event.employee_user_id = $2
+          AND to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD') = $4
+          AND COALESCE(
+            audit_decision.evaluation_context #>> '{geo_policy,work_site_id}',
+            command_decision.evidence_snapshot #>> '{geo_policy,work_site_id}'
+          ) IS NOT NULL`,
+      [companyId, employeeUserId, timeZone, workDate],
+    );
+    const workSiteIds = result.rows
+      .map((row) => row.work_site_id)
+      .filter((id): id is UUID => Boolean(id));
+    if (workSiteIds.length === 0) return new Map();
+    const labels = await this.store.pgPool.query<{
+      id: UUID;
+      name: string;
+      site_type: string | null;
+    }>(
+      `SELECT id, name, site_type
+         FROM attendance.work_sites
+        WHERE company_id = $1
+          AND id = ANY($2::uuid[])
+          AND deleted_at IS NULL`,
+      [companyId, workSiteIds],
+    );
+    return new Map(
+      labels.rows.map((row) => [
+        row.id,
+        { name: row.name, site_type: row.site_type },
+      ]),
+    );
+  }
+
+  private presentEmployeeEvidenceEventFromRow(
+    row: EmployeeDayEvidenceEventRow,
+    timeZone: string,
+    regularizations: EmployeeDayRegularizationBundle[],
+    workSiteLabels: Map<UUID, SafeGeoWorkSiteLabel>,
+  ): EmployeeAttendanceEvidenceEvent {
+    const occurredAt = isoDateValue(row.event_occurred_at) ?? "";
+    const geoPolicy = this.employeeGeoPolicyFromRow(row);
+    return {
+      event_type: row.punch_event_type ?? row.event_type,
+      occurred_at: occurredAt,
+      time: timeText(occurredAt, timeZone),
+      source: row.punch_source ?? row.event_source,
+      origin: row.punch_origin,
+      work_mode: row.punch_work_mode,
+      decision: this.employeeDecisionFromRow(row, geoPolicy),
+      geo: this.employeeGeoEvidence(geoPolicy, workSiteLabels),
+      regularization: this.employeeEventRegularization(
+        row.punch_id,
+        row.punch_regularization_request_id,
+        regularizations,
+      ),
+    };
+  }
+
+  private employeeDecisionFromRow(
+    row: EmployeeDayEvidenceEventRow,
+    geoPolicy: Record<string, unknown>,
+  ): EmployeeAttendanceEvidenceDecision | null {
+    const reasonCodes = uniqueStrings([
+      ...(row.audit_reason_codes ?? []),
+      row.command_reason_code,
+      stringField(geoPolicy.reason_code),
+    ]);
+    const outcome = row.command_outcome ?? row.audit_outcome;
+    if (!outcome && reasonCodes.length === 0) return null;
+    return {
+      outcome: outcome ?? "recorded",
+      reason_codes: reasonCodes,
+      reason: row.command_reason_detail,
+    };
+  }
+
+  private employeeGeoPolicyFromRow(
+    row: EmployeeDayEvidenceEventRow,
+  ): Record<string, unknown> {
+    const auditGeo = recordField(row.audit_evaluation_context, "geo_policy");
+    if (Object.keys(auditGeo).length > 0) return auditGeo;
+    return recordField(row.command_evidence_snapshot, "geo_policy");
+  }
+
+  private employeeGeoEvidence(
+    geoPolicy: Record<string, unknown>,
+    workSiteLabels: Map<UUID, SafeGeoWorkSiteLabel>,
+  ): EmployeeAttendanceEvidenceGeo | null {
+    const outcome = stringField(geoPolicy.factual_outcome);
+    const reasonCode = stringField(geoPolicy.reason_code);
+    const selectedAction = stringField(geoPolicy.selected_action);
+    const workSiteId = stringField(geoPolicy.work_site_id) as UUID | null;
+    const workSite = workSiteId ? workSiteLabels.get(workSiteId) ?? null : null;
+    if (!outcome && !reasonCode && !selectedAction && !workSite) return null;
+    return {
+      outcome,
+      reason_code: reasonCode,
+      selected_action: selectedAction,
+      work_site_name: workSite?.name ?? null,
+      work_site_type: workSite?.site_type ?? null,
+    };
+  }
+
+  private employeeEventRegularization(
+    punchEventId: UUID | null,
+    regularizationRequestId: UUID | null,
+    regularizations: EmployeeDayRegularizationBundle[],
+  ): EmployeeAttendanceEvidenceRegularization | null {
+    for (const bundle of regularizations) {
+      const directRequestMatch =
+        regularizationRequestId && bundle.request.id === regularizationRequestId;
+      const application = punchEventId
+        ? bundle.applications.find(
+            (candidate) =>
+              candidate.target_punch_event_id === punchEventId ||
+              candidate.replacement_punch_event_id === punchEventId,
+          )
+        : undefined;
+      if (!directRequestMatch && !application) continue;
+      const item = application
+        ? bundle.items.find(
+            (candidate) => candidate.id === application.regularization_request_item_id,
+          )
+        : bundle.items[0];
+      const operation = application?.operation ?? item?.operation ?? null;
+      const relationship =
+        application?.replacement_punch_event_id === punchEventId
+          ? "replacement"
+          : application?.target_punch_event_id === punchEventId &&
+              operation === "void"
+            ? "voided"
+            : application?.target_punch_event_id === punchEventId
+              ? "corrected_original"
+              : operation === "add"
+                ? "added"
+                : "request";
+      return {
+        status: bundle.request.status,
+        operation,
+        relationship,
+        reason: bundle.request.reason,
+        decided_at: isoDateValue(bundle.request.decided_at),
+        applied_at: isoDateValue(application?.applied_at),
+      };
+    }
+    return null;
+  }
+
+  private presentEmployeeEvidenceRegularization(
+    bundle: EmployeeDayRegularizationBundle,
+  ): EmployeeAttendanceEvidenceRegularizationRequest {
+    return {
+      status: bundle.request.status,
+      reason: bundle.request.reason,
+      created_at: isoDateValue(bundle.request.created_at),
+      updated_at: isoDateValue(bundle.request.updated_at),
+      decided_at: isoDateValue(bundle.request.decided_at),
+      operations: uniqueStrings(bundle.items.map((item) => item.operation)),
+      items: bundle.items.map((item) => {
+        const application = bundle.applications.find(
+          (candidate) => candidate.regularization_request_item_id === item.id,
+        );
+        return {
+          operation: item.operation,
+          event_type: item.event_type,
+          occurred_at: isoDateValue(item.occurred_at),
+          relationship: application ? "applied" : "requested",
+        };
+      }),
+    };
+  }
+
+  private employeeSummarySources(
+    day: AttendanceDayRecord,
+    events: EmployeeAttendanceEvidenceEvent[],
+    regularizations: EmployeeDayRegularizationBundle[],
+  ): EmployeeAttendanceSummarySource[] {
+    const sources = new Map<
+      EmployeeAttendanceSummarySourceType,
+      EmployeeAttendanceSummarySource
+    >();
+    for (const event of events) {
+      const sourceType = this.employeeSummarySourceType(event);
+      if (!sourceType) continue;
+      sources.set(sourceType, {
+        type: sourceType,
+        label: this.employeeSummarySourceLabel(sourceType),
+      });
+    }
+    if (regularizations.some((bundle) => bundle.applications.length > 0)) {
+      sources.set("approved_regularization", {
+        type: "approved_regularization",
+        label: this.employeeSummarySourceLabel("approved_regularization"),
+      });
+    }
+    if (
+      sources.size === 0 &&
+      (day.status !== "future" ||
+        day.presence_state !== AttendancePresenceStates.NotStarted)
+    ) {
+      sources.set("system_daily_summary", {
+        type: "system_daily_summary",
+        label: this.employeeSummarySourceLabel("system_daily_summary"),
+      });
+    }
+    return [...sources.values()];
+  }
+
+  private employeeSummarySourceType(
+    event: EmployeeAttendanceEvidenceEvent,
+  ): EmployeeAttendanceSummarySourceType | null {
+    if (
+      event.decision?.outcome === "denied" ||
+      event.decision?.outcome === "failed"
+    ) {
+      return null;
+    }
+    if (
+      event.regularization?.relationship === "corrected_original" ||
+      event.regularization?.relationship === "voided"
+    ) {
+      return null;
+    }
+    if (
+      event.regularization?.relationship === "replacement" ||
+      event.regularization?.relationship === "added" ||
+      event.origin === "approved_regularization"
+    ) {
+      return "approved_regularization";
+    }
+    if (event.origin === "historical_correction") return "historical_correction";
+    if (event.origin === "manager_assisted_now" || event.source === "admin") {
+      return "manager_assisted_punch";
+    }
+    if (event.origin === "system" || event.source === "auto_geofence") {
+      return "system_daily_summary";
+    }
+    if (event.source || event.origin === "employee_manual_now") {
+      return "employee_punch";
+    }
+    return null;
+  }
+
+  private employeeSummarySourceLabel(
+    type: EmployeeAttendanceSummarySourceType,
+  ): string {
+    if (type === "approved_regularization") return "Approved regularization";
+    if (type === "historical_correction") return "Historical correction";
+    if (type === "manager_assisted_punch") return "Assisted attendance punch";
+    if (type === "system_daily_summary") return "Daily attendance processing";
+    return "Employee attendance punch";
   }
 
   private presentPunch(punch: AttendancePunch, timeZone: string) {

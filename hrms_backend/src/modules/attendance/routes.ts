@@ -486,7 +486,7 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AttendanceService(fastify.store).dailyCalendar(
+    return new AttendanceService(fastify.store).dailyCalendarWithSelfEvidence(
       request.actor,
       attendanceQuerySchema.parse(request.query),
     );

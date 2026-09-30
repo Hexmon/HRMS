@@ -149,6 +149,105 @@ export interface AttendanceRegularizationRecord extends ApiRecord {
   updated_at?: string;
 }
 
+export type EmployeeAttendanceSummarySourceType =
+  | "employee_punch"
+  | "manager_assisted_punch"
+  | "historical_correction"
+  | "approved_regularization"
+  | "system_daily_summary";
+
+export interface EmployeeAttendanceSummarySource {
+  type: EmployeeAttendanceSummarySourceType;
+  label: string;
+}
+
+export interface EmployeeAttendanceEvidenceDecision {
+  outcome: string;
+  reason_codes: string[];
+  reason: string | null;
+}
+
+export interface EmployeeAttendanceEvidenceGeo {
+  outcome: AttendanceGeoFactualOutcome | string | null;
+  reason_code: string | null;
+  selected_action: "allow" | "deny" | "manual_fallback" | string | null;
+  work_site_name: string | null;
+  work_site_type: string | null;
+}
+
+export interface EmployeeAttendanceEvidenceRegularization {
+  status: AttendanceRegularizationStatus | string;
+  operation: AttendanceRegularizationOperation | string | null;
+  relationship: "added" | "replacement" | "corrected_original" | "voided" | "request";
+  reason: string | null;
+  decided_at: string | null;
+  applied_at: string | null;
+}
+
+export interface EmployeeAttendanceEvidenceEvent {
+  event_type: AttendancePunchEventType | string;
+  occurred_at: string;
+  time: string | null;
+  source: string | null;
+  origin: string | null;
+  work_mode: AttendancePunchWorkMode | string | null;
+  decision: EmployeeAttendanceEvidenceDecision | null;
+  geo: EmployeeAttendanceEvidenceGeo | null;
+  regularization: EmployeeAttendanceEvidenceRegularization | null;
+}
+
+export interface EmployeeAttendanceEvidenceDay {
+  work_date: string;
+  status: string;
+  day_classification: string;
+  presence_state: string;
+  punctuality_state: string;
+  evidence_state: string;
+  approval_kind: string;
+  approval_state: string;
+  payroll_state: string;
+  regularization_status: AttendanceRegularizationStatus | string | null;
+  in_time: string | null;
+  out_time: string | null;
+  hours: string;
+  work_minutes: number;
+  break_minutes: number;
+  detail: string;
+}
+
+export interface EmployeeAttendanceEvidenceRegularizationItem {
+  operation: AttendanceRegularizationOperation | string;
+  event_type: AttendanceRegularizationEventType | string | null;
+  occurred_at: string | null;
+  relationship: "requested" | "applied";
+}
+
+export interface EmployeeAttendanceEvidenceRegularizationRequest {
+  status: AttendanceRegularizationStatus | string;
+  reason: string;
+  created_at: string | null;
+  updated_at: string | null;
+  decided_at: string | null;
+  operations: Array<AttendanceRegularizationOperation | string>;
+  items: EmployeeAttendanceEvidenceRegularizationItem[];
+}
+
+export interface EmployeeAttendanceDayEvidence {
+  generated_at: string;
+  date: string;
+  day: EmployeeAttendanceEvidenceDay;
+  summary_sources: EmployeeAttendanceSummarySource[];
+  events: EmployeeAttendanceEvidenceEvent[];
+  regularizations: EmployeeAttendanceEvidenceRegularizationRequest[];
+}
+
+export type AttendanceDailyCalendarResponse = PaginatedResponse<ApiRecord> & {
+  summary?: ApiRecord;
+  exceptions?: ApiRecord[];
+  totals?: ApiRecord;
+  self_evidence?: EmployeeAttendanceDayEvidence;
+};
+
 export interface AttendanceRegularizationDecisionBody extends ExpectedVersionBody {
   decision: "approve" | "reject" | "return";
   remarks?: string;
@@ -197,13 +296,9 @@ export const attendanceApi = {
     return apiRequest<ApiRecord>("/api/v1/attendance/calendar/monthly", { query });
   },
   dailyCalendar(query: AttendanceQuery = {}) {
-    return apiRequest<
-      PaginatedResponse<ApiRecord> & {
-        summary?: ApiRecord;
-        exceptions?: ApiRecord[];
-        totals?: ApiRecord;
-      }
-    >("/api/v1/attendance/calendar/daily", { query });
+    return apiRequest<AttendanceDailyCalendarResponse>("/api/v1/attendance/calendar/daily", {
+      query,
+    });
   },
   createRegularization(input: AttendanceRegularizationBody) {
     return apiRequest<AttendanceRegularizationRecord>("/api/v1/attendance/regularizations", {
