@@ -2,10 +2,18 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PolicySimulatorPanel } from "@/components/admin-geo/policy-simulator-panel";
 import { useAdminSettings, type Policies } from "@/lib/admin-settings-store";
 import { toastApiError, useApiRouteEnabled } from "@/shared/api";
@@ -201,6 +209,7 @@ function PoliciesScreen() {
             onChange={(v) => setPolicy("attendance", { allowRegularization: v })}
           />
         </PolicyCard>
+        <MobileAttendancePolicyPlaceholder />
         {apiEnabled ? (
           <div className="mt-4">
             <PolicySimulatorPanel draftPolicyConfig={attendanceSimulationConfig} />
@@ -391,6 +400,100 @@ function PoliciesScreen() {
         </PolicyCard>
       </TabsContent>
     </Tabs>
+  );
+}
+
+function MobileAttendancePolicyPlaceholder() {
+  return (
+    <Card
+      className="mt-4 rounded-2xl border-border/60 p-5"
+      aria-labelledby="mobile-attendance-policy-title"
+    >
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p id="mobile-attendance-policy-title" className="text-sm font-semibold">
+              Mobile attendance policy
+            </p>
+            <Badge variant="outline">Mobile backend pending</Badge>
+          </div>
+          <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+            These settings define the planned mobile attendance policy. They are currently read-only
+            and are not saved or enforced from this admin page.
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <MobilePolicySwitchRow
+          id="mobile-policy-registered-device"
+          label="Require registered device"
+          checked
+          description="Mobile attendance currently uses registered-device identity. Admin policy configuration will become available with mobile policy support."
+        />
+        <MobilePolicySwitchRow
+          id="mobile-policy-offline-capture"
+          label="Allow offline attendance capture"
+          checked={false}
+          description="Controls whether supported mobile clients may capture attendance while offline and sync it later. Policy configuration is not yet available."
+        />
+        <div className="space-y-2 rounded-xl border bg-card/50 p-3 md:col-span-2">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-start">
+            <div className="space-y-1">
+              <Label id="mobile-policy-attestation-label" className="text-sm">
+                Device attestation
+              </Label>
+              <p
+                id="mobile-policy-attestation-description"
+                className="text-xs text-muted-foreground"
+              >
+                Intended policy choices are Disabled and Preferred. Runtime attestation results
+                remain separate from this future admin policy.
+              </p>
+            </div>
+            <Select value="disabled" disabled>
+              <SelectTrigger
+                aria-labelledby="mobile-policy-attestation-label"
+                aria-describedby="mobile-policy-attestation-description"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="disabled">Disabled</SelectItem>
+                <SelectItem value="preferred">Preferred</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function MobilePolicySwitchRow({
+  id,
+  label,
+  checked,
+  description,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  description: string;
+}) {
+  const descriptionId = `${id}-description`;
+
+  return (
+    <div className="flex min-h-[104px] flex-col justify-between gap-3 rounded-xl border bg-card/50 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor={id} className="text-sm">
+          {label}
+        </Label>
+        <Switch id={id} checked={checked} disabled aria-describedby={descriptionId} />
+      </div>
+      <p id={descriptionId} className="text-xs text-muted-foreground">
+        {description}
+      </p>
+    </div>
   );
 }
 
