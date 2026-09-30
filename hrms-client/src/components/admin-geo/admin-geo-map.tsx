@@ -22,6 +22,9 @@ interface AdminGeoMapProps {
   polygonDraft: PolygonDraft;
   clickMode: MapClickMode;
   fitRequestKey: number;
+  simulationPoint?: LngLat | null;
+  simulationAccuracyMeters?: number | null;
+  simulationVerdict?: string | null;
   onMapClick: (coordinate: LngLat) => void;
 }
 
@@ -30,6 +33,8 @@ type MapStatus = "missing-config" | "loading" | "ready" | "error";
 const DRAFT_POLYGON_SOURCE_ID = "admin-geo-draft-polygon";
 const DRAFT_VERTEX_SOURCE_ID = "admin-geo-draft-vertices";
 const DRAFT_CIRCLE_SOURCE_ID = "admin-geo-draft-circle";
+const SIMULATION_POINT_SOURCE_ID = "admin-geo-simulation-point";
+const SIMULATION_ACCURACY_SOURCE_ID = "admin-geo-simulation-accuracy";
 const DEFAULT_CENTER: LngLat = [78.9629, 20.5937];
 
 export function AdminGeoMap({
@@ -38,6 +43,9 @@ export function AdminGeoMap({
   polygonDraft,
   clickMode,
   fitRequestKey,
+  simulationPoint = null,
+  simulationAccuracyMeters = null,
+  simulationVerdict = null,
   onMapClick,
 }: AdminGeoMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -45,12 +53,16 @@ export function AdminGeoMap({
   const onMapClickRef = useRef(onMapClick);
   const polygonDraftRef = useRef(polygonDraft);
   const circleDraftRef = useRef(circleDraft);
+  const simulationPointRef = useRef(simulationPoint);
+  const simulationAccuracyMetersRef = useRef(simulationAccuracyMeters);
   const [status, setStatus] = useState<MapStatus>(config ? "loading" : "missing-config");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   onMapClickRef.current = onMapClick;
   polygonDraftRef.current = polygonDraft;
   circleDraftRef.current = circleDraft;
+  simulationPointRef.current = simulationPoint;
+  simulationAccuracyMetersRef.current = simulationAccuracyMeters;
 
   const hint = useMemo(
     () =>
@@ -108,7 +120,13 @@ export function AdminGeoMap({
         map.on("load", () => {
           if (!map || disposed) return;
           ensureDraftLayers(map);
+          ensureSimulationLayers(map);
           updateDraftSources(map, polygonDraftRef.current, circleDraftRef.current);
+          updateSimulationSources(
+            map,
+            simulationPointRef.current,
+            simulationAccuracyMetersRef.current,
+          );
           setStatus("ready");
         });
         map.on("click", (event) => {
@@ -147,6 +165,13 @@ export function AdminGeoMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map || status === "missing-config") return;
+    if (!map.isStyleLoaded()) return;
+    updateSimulationSources(map, simulationPoint, simulationAccuracyMeters);
+  }, [simulationAccuracyMeters, simulationPoint, status]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map || fitRequestKey === 0) return;
     fitToDraft(map, circleDraft, polygonDraft);
   }, [circleDraft, fitRequestKey, polygonDraft]);
@@ -180,7 +205,14 @@ export function AdminGeoMap({
       />
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>{status === "loading" ? "Initializing map provider..." : hint}</span>
-        {config.attribution ? <span>{config.attribution}</span> : null}
+        <span className="flex items-center gap-2">
+          {simulationPoint ? (
+            <span data-testid="geo-simulation-map-state">
+              Simulation point active{simulationVerdict ? ` - ${simulationVerdict}` : ""}
+            </span>
+          ) : null}
+          {config.attribution ? <span>{config.attribution}</span> : null}
+        </span>
       </div>
       {status === "error" ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -189,6 +221,57 @@ export function AdminGeoMap({
       ) : null}
     </div>
   );
+}
+
+function ensureSimulationLayers(map: MapLibreMap): void {
+  if (!map.getSource(SIMULATION_ACCURACY_SOURCE_ID)) {
+    map.addSource(SIMULATION_ACCURACY_SOURCE_ID, {
+      data: emptyFeatureCollection(),
+      type: "geojson",
+    });
+  }
+  if (!map.getLayer("admin-geo-simulation-accuracy-fill")) {
+    map.addLayer({
+      id: "admin-geo-simulation-accuracy-fill",
+      paint: {
+        "fill-color": "#f59e0b",
+        "fill-opacity": 0.12,
+      },
+      source: SIMULATION_ACCURACY_SOURCE_ID,
+      type: "fill",
+    });
+  }
+  if (!map.getLayer("admin-geo-simulation-accuracy-line")) {
+    map.addLayer({
+      id: "admin-geo-simulation-accuracy-line",
+      paint: {
+        "line-color": "#d97706",
+        "line-dasharray": [2, 2],
+        "line-width": 2,
+      },
+      source: SIMULATION_ACCURACY_SOURCE_ID,
+      type: "line",
+    });
+  }
+  if (!map.getSource(SIMULATION_POINT_SOURCE_ID)) {
+    map.addSource(SIMULATION_POINT_SOURCE_ID, {
+      data: emptyFeatureCollection(),
+      type: "geojson",
+    });
+  }
+  if (!map.getLayer("admin-geo-simulation-point")) {
+    map.addLayer({
+      id: "admin-geo-simulation-point",
+      paint: {
+        "circle-color": "#f59e0b",
+        "circle-radius": 7,
+        "circle-stroke-color": "#111827",
+        "circle-stroke-width": 2,
+      },
+      source: SIMULATION_POINT_SOURCE_ID,
+      type: "circle",
+    });
+  }
 }
 
 function ensureDraftLayers(map: MapLibreMap): void {
@@ -288,6 +371,48 @@ function updateDraftSources(
   circleSource?.setData(circleFeatureCollection(circleDraft));
   polygonSource?.setData(polygonFeatureCollection(polygonDraft));
   vertexSource?.setData(vertexFeatureCollection(polygonDraft.vertices));
+}
+
+function updateSimulationSources(
+  map: MapLibreMap,
+  point: LngLat | null,
+  accuracyMeters: number | null,
+): void {
+  const pointSource = map.getSource(SIMULATION_POINT_SOURCE_ID) as GeoJSONSource | undefined;
+  const accuracySource = map.getSource(SIMULATION_ACCURACY_SOURCE_ID) as GeoJSONSource | undefined;
+  if (!point) {
+    pointSource?.setData(emptyFeatureCollection());
+    accuracySource?.setData(emptyFeatureCollection());
+    return;
+  }
+  pointSource?.setData({
+    features: [
+      {
+        geometry: { coordinates: point, type: "Point" },
+        properties: {},
+        type: "Feature",
+      },
+    ],
+    type: "FeatureCollection",
+  } as DraftGeoJson);
+  const ring = circlePreviewRing({
+    center: point,
+    radiusMeters: accuracyMeters && accuracyMeters > 0 ? accuracyMeters : null,
+  });
+  accuracySource?.setData(
+    ring.length > 0
+      ? ({
+          features: [
+            {
+              geometry: { coordinates: [ring], type: "Polygon" },
+              properties: {},
+              type: "Feature",
+            },
+          ],
+          type: "FeatureCollection",
+        } as DraftGeoJson)
+      : emptyFeatureCollection(),
+  );
 }
 
 function fitToDraft(map: MapLibreMap, circleDraft: CircleDraft, polygonDraft: PolygonDraft): void {

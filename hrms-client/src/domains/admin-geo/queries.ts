@@ -5,6 +5,7 @@ import {
   type GeofenceInput,
   type GeofenceUpdateInput,
   type GeofenceVersionInput,
+  type GeoPolicySimulationInput,
   type PublishVersionInput,
   type WorkSiteInput,
   type WorkSiteUpdateInput,
@@ -43,13 +44,10 @@ export function useAdminGeoVersions(geofenceId: string | null, enabled = true) {
 export function useWorkSiteMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      input,
-    }: {
-      id?: string;
-      input: WorkSiteInput | WorkSiteUpdateInput;
-    }) => (id ? adminGeoApi.updateWorkSite(id, input as WorkSiteUpdateInput) : adminGeoApi.createWorkSite(input as WorkSiteInput)),
+    mutationFn: ({ id, input }: { id?: string; input: WorkSiteInput | WorkSiteUpdateInput }) =>
+      id
+        ? adminGeoApi.updateWorkSite(id, input as WorkSiteUpdateInput)
+        : adminGeoApi.createWorkSite(input as WorkSiteInput),
     onSuccess: (response) => {
       queryClient.setQueryData(
         queryKeys.detail("admin-geo", "work-site", response.workSite.id),
@@ -77,13 +75,7 @@ export function useDeleteWorkSiteMutation() {
 export function useGeofenceMutation(workSiteId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      input,
-    }: {
-      id?: string;
-      input: GeofenceInput | GeofenceUpdateInput;
-    }) =>
+    mutationFn: ({ id, input }: { id?: string; input: GeofenceInput | GeofenceUpdateInput }) =>
       id
         ? adminGeoApi.updateGeofence(id, input as GeofenceUpdateInput)
         : adminGeoApi.createGeofence(workSiteId as string, input as GeofenceInput),
@@ -122,13 +114,7 @@ export function useDeleteGeofenceMutation() {
 export function useGeofenceVersionMutation(geofenceId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      input,
-    }: {
-      id?: string;
-      input: GeofenceVersionInput;
-    }) =>
+    mutationFn: ({ id, input }: { id?: string; input: GeofenceVersionInput }) =>
       id
         ? adminGeoApi.updateVersion(geofenceId as string, id, input)
         : adminGeoApi.createVersion(geofenceId as string, input),
@@ -181,5 +167,11 @@ export function usePublishGeofenceVersionMutation() {
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.domain("admin-geo") });
     },
+  });
+}
+
+export function useGeoPolicySimulationMutation() {
+  return useMutation({
+    mutationFn: (input: GeoPolicySimulationInput) => adminGeoApi.simulateGeoPolicy(input),
   });
 }

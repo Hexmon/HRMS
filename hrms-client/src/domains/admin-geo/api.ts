@@ -102,6 +102,76 @@ export interface PublishVersionInput extends ApiRecord {
   effectiveUntil?: string | null;
 }
 
+export type GeoSimulationPolicySource =
+  | { mode: "effective_employee" }
+  | { mode: "persisted_policy"; policy_id: string; version_id?: string }
+  | { mode: "draft_policy"; config: ApiRecord };
+
+export type GeoSimulationGeofenceSource =
+  | { mode: "policy_effective" }
+  | { mode: "persisted"; geofence_ids: string[] }
+  | {
+      mode: "draft";
+      geofences: Array<
+        | {
+            id?: string;
+            geofence_id?: string;
+            work_site_id?: string;
+            name?: string;
+            work_site_name?: string;
+            shape_type: "circle";
+            center: { longitude: number; latitude: number };
+            radius_meters: number;
+          }
+        | {
+            id?: string;
+            geofence_id?: string;
+            work_site_id?: string;
+            name?: string;
+            work_site_name?: string;
+            shape_type: "polygon";
+            vertices: LngLat[];
+          }
+      >;
+    };
+
+export type GeoSimulationScenario =
+  | {
+      type: "coordinates";
+      latitude: number;
+      longitude: number;
+      accuracy_meters: number;
+      evidence_age_ms?: number;
+    }
+  | { type: "permission_denied"; evidence_age_ms?: number }
+  | { type: "location_unavailable"; evidence_age_ms?: number }
+  | { type: "missing" };
+
+export interface GeoPolicySimulationInput extends ApiRecord {
+  employee_user_id: string;
+  event_at: string;
+  policy_source: GeoSimulationPolicySource;
+  geofence_source: GeoSimulationGeofenceSource;
+  scenario: GeoSimulationScenario;
+}
+
+export interface GeoPolicySimulationResponse extends ApiRecord {
+  simulation: ApiRecord & {
+    verdict?: string;
+    allowed?: boolean;
+    factual_outcome?: string;
+    selected_action?: string;
+    fallback_used?: boolean;
+    review_required?: boolean;
+    reason_code?: string;
+    reason_detail?: string;
+    evaluation?: ApiRecord | null;
+    policy?: ApiRecord;
+    geofence_source?: string;
+    work_site?: ApiRecord | null;
+  };
+}
+
 export const SITE_TYPE_OPTIONS: Array<{ value: AdminGeoSiteType; label: string }> = [
   { value: "office", label: "Office" },
   { value: "client", label: "Client site" },
@@ -141,9 +211,7 @@ export const adminGeoApi = {
     );
   },
   getGeofence(geofenceId: string) {
-    return apiRequest<{ geofence: AdminGeoGeofence }>(
-      `/api/v1/attendance/geofences/${geofenceId}`,
-    );
+    return apiRequest<{ geofence: AdminGeoGeofence }>(`/api/v1/attendance/geofences/${geofenceId}`);
   },
   createGeofence(workSiteId: string, input: GeofenceInput) {
     return apiRequest<{ geofence: AdminGeoGeofence }>(
@@ -196,5 +264,11 @@ export const adminGeoApi = {
       `/api/v1/attendance/geofences/${geofenceId}/versions/${versionId}/publish`,
       { method: "POST", body: input },
     );
+  },
+  simulateGeoPolicy(input: GeoPolicySimulationInput) {
+    return apiRequest<GeoPolicySimulationResponse>("/api/v1/attendance/geo/simulate", {
+      method: "POST",
+      body: input,
+    });
   },
 };

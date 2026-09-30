@@ -41,9 +41,11 @@ import {
   evaluateAttendanceGeoPolicy,
   type AttendanceGeoDecision,
   type AttendanceGeoDecisionReasonCode,
-  type AttendanceGeoEvidenceWideEvaluation,
-  type AttendanceGeoNoEffectiveEvaluation,
 } from "./geo-policy.js";
+import {
+  buildAttendanceGeoLocationStatus,
+  hasCoordinateEvidence,
+} from "./geo-location-status.js";
 import { resolveEffectiveAttendancePolicy } from "./policy-resolver.js";
 import { decideAttendanceTransition } from "./session-transition.js";
 import {
@@ -235,21 +237,6 @@ function locationEvidenceDecisionContext(
   };
 }
 
-function hasCoordinateEvidence(
-  location: AttendanceLocationEvidenceInput,
-): location is AttendanceLocationEvidenceInput & {
-  latitude: number;
-  longitude: number;
-  accuracy_meters: number;
-  captured_at: string;
-} {
-  return (
-    "latitude" in location &&
-    "longitude" in location &&
-    "accuracy_meters" in location
-  );
-}
-
 function geoDecisionSnapshot(
   decision: AttendanceGeoDecision,
 ): Record<string, unknown> {
@@ -365,35 +352,6 @@ function replaySourceChannel(
 
 function isoDateTime(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
-}
-
-function evidenceWideGeoEvaluation(input: {
-  category: "stale_evidence" | "accuracy_exceeded";
-  evidenceAgeMs: number;
-  reportedAccuracyMeters: number;
-  maxLocationAgeMs: number | null;
-  maxAccuracyMeters: number | null;
-}): AttendanceGeoEvidenceWideEvaluation {
-  return {
-    category: input.category,
-    evaluator_version: ATTENDANCE_GEO_EVALUATOR_VERSION,
-    evidence_age_ms: input.evidenceAgeMs,
-    reported_accuracy_meters: input.reportedAccuracyMeters,
-    max_location_age_ms: input.maxLocationAgeMs,
-    max_accuracy_meters: input.maxAccuracyMeters,
-  };
-}
-
-function noEffectiveGeoEvaluation(input: {
-  candidateCount: number;
-  validCandidateCount: number;
-}): AttendanceGeoNoEffectiveEvaluation {
-  return {
-    category: "no_effective_geofence",
-    evaluator_version: ATTENDANCE_GEO_EVALUATOR_VERSION,
-    candidate_count: input.candidateCount,
-    valid_candidate_count: input.validCandidateCount,
-  };
 }
 
 function buildAttendanceAuditDecisionReasons(input: {
@@ -865,77 +823,15 @@ export class AttendanceCommandService {
                 subjectEmployeeUserId,
                 workDate,
               );
-          const geoLocationStatus = !commandInput.location
-            ? { kind: "missing" as const }
-            : commandInput.location.permission_state === "denied"
-              ? { kind: "permission_denied" as const }
-              : commandInput.location.permission_state === "unavailable"
-                ? { kind: "location_unavailable" as const }
-                : hasCoordinateEvidence(commandInput.location)
-                  ? policy.maxLocationAgeMs !== null &&
-                    locationEvidence &&
-                    locationEvidence.ageMs > policy.maxLocationAgeMs
-                    ? {
-                        kind: "stale_evidence" as const,
-                        evaluation: evidenceWideGeoEvaluation({
-                          category: "stale_evidence",
-                          evidenceAgeMs: locationEvidence.ageMs,
-                          reportedAccuracyMeters:
-                            commandInput.location.accuracy_meters,
-                          maxLocationAgeMs: policy.maxLocationAgeMs,
-                          maxAccuracyMeters: policy.maxAccuracyMeters,
-                        }),
-                      }
-                    : policy.maxAccuracyMeters !== null &&
-                        commandInput.location.accuracy_meters >
-                          policy.maxAccuracyMeters
-                      ? {
-                          kind: "accuracy_exceeded" as const,
-                          evaluation: evidenceWideGeoEvaluation({
-                            category: "accuracy_exceeded",
-                            evidenceAgeMs: locationEvidence?.ageMs ?? 0,
-                            reportedAccuracyMeters:
-                              commandInput.location.accuracy_meters,
-                            maxLocationAgeMs: policy.maxLocationAgeMs,
-                            maxAccuracyMeters: policy.maxAccuracyMeters,
-                          }),
-                        }
-                      : {
-                          kind: "coordinates" as const,
-                          fence:
-                            policy.effectiveGeofenceIds.length > 0
-                              ? await tx.evaluateEffectiveGeofence({
-                                  companyId: input.companyId,
-                                  geofenceIds: policy.effectiveGeofenceIds,
-                                  asOf: occurredAt,
-                                  latitude: commandInput.location.latitude,
-                                  longitude: commandInput.location.longitude,
-                                  reportedAccuracyMeters:
-                                    commandInput.location.accuracy_meters,
-                                  graceMeters: policy.geofenceGraceMeters,
-                                })
-                              : {
-                                  configured: false as const,
-                                  evaluation: noEffectiveGeoEvaluation({
-                                    candidateCount: 0,
-                                    validCandidateCount: 0,
-                                  }),
-                                },
-                        }
-                  : { kind: "location_unavailable" as const };
-          if (
-            geoLocationStatus.kind === "coordinates" &&
-            geoLocationStatus.fence.configured
-          ) {
-            if (locationEvidence) {
-              geoLocationStatus.fence.evaluation.evidence_age_ms =
-                locationEvidence.ageMs;
-            }
-            geoLocationStatus.fence.evaluation.max_location_age_ms =
-              policy.maxLocationAgeMs;
-            geoLocationStatus.fence.evaluation.max_accuracy_meters =
-              policy.maxAccuracyMeters;
-          }
+          const geoLocationStatus = await buildAttendanceGeoLocationStatus({
+            policy,
+            companyId: input.companyId,
+            occurredAt,
+            location: commandInput.location,
+            evidenceAgeMs: locationEvidence?.ageMs ?? null,
+            evaluateGeofence: (geofenceInput) =>
+              tx.evaluateEffectiveGeofence(geofenceInput),
+          });
           const geoDecision = evaluateAttendanceGeoPolicy({
             policy,
             locationStatus: geoLocationStatus,

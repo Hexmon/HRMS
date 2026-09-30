@@ -18,6 +18,7 @@ import { resolveActiveCompanyMembershipContext } from "../../platform/company-me
 import { AttendanceService } from "./service.js";
 import { AttendancePayrollPeriodService } from "./payroll-period-service.js";
 import { AttendanceOfflineSyncService } from "./offline-sync-service.js";
+import { AttendanceGeoPolicySimulationService } from "./geo-policy-simulation-service.js";
 import {
   ATTENDANCE_IDEMPOTENCY_REPLAY_HEADER,
   isAttendanceReplayResponse,
@@ -164,6 +165,106 @@ const geofenceVersionShapeSchema = z.discriminatedUnion("shapeType", [
   circleVersionSchema,
   polygonVersionSchema,
 ]);
+const simulationPolicySourceSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("effective_employee") }).strict(),
+  z
+    .object({
+      mode: z.literal("persisted_policy"),
+      policy_id: z.uuid(),
+      version_id: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal("draft_policy"),
+      config: jsonObjectSchema,
+    })
+    .strict(),
+]);
+const simulationDraftCircleSchema = z
+  .object({
+    id: z.uuid().optional(),
+    geofence_id: z.uuid().optional(),
+    work_site_id: z.uuid().optional(),
+    name: z.string().trim().max(200).optional(),
+    work_site_name: z.string().trim().max(200).optional(),
+    shape_type: z.literal("circle"),
+    center: z.object({
+      longitude: longitudeSchema,
+      latitude: latitudeSchema,
+    }),
+    radius_meters: z.number().positive().finite(),
+  })
+  .strict();
+const simulationDraftPolygonSchema = z
+  .object({
+    id: z.uuid().optional(),
+    geofence_id: z.uuid().optional(),
+    work_site_id: z.uuid().optional(),
+    name: z.string().trim().max(200).optional(),
+    work_site_name: z.string().trim().max(200).optional(),
+    shape_type: z.literal("polygon"),
+    vertices: z.array(lngLatSchema).min(3).max(500),
+  })
+  .strict()
+  .refine((value) => distinctCoordinateCount(value.vertices) >= 3, {
+    message: "Polygon requires at least three distinct vertices.",
+    path: ["vertices"],
+  });
+const simulationGeofenceSourceSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("policy_effective") }).strict(),
+  z
+    .object({
+      mode: z.literal("persisted"),
+      geofence_ids: z.array(z.uuid()).min(1).max(20),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal("draft"),
+      geofences: z
+        .array(z.discriminatedUnion("shape_type", [
+          simulationDraftCircleSchema,
+          simulationDraftPolygonSchema,
+        ]))
+        .min(1)
+        .max(20),
+    })
+    .strict(),
+]);
+const simulationScenarioSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("coordinates"),
+      latitude: latitudeSchema,
+      longitude: longitudeSchema,
+      accuracy_meters: z.number().positive().finite(),
+      evidence_age_ms: z.number().int().min(0).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("permission_denied"),
+      evidence_age_ms: z.number().int().min(0).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("location_unavailable"),
+      evidence_age_ms: z.number().int().min(0).optional(),
+    })
+    .strict(),
+  z.object({ type: z.literal("missing") }).strict(),
+]);
+const geoPolicySimulationSchema = z
+  .object({
+    employee_user_id: z.uuid(),
+    event_at: isoDateTimeSchema,
+    policy_source: simulationPolicySourceSchema,
+    geofence_source: simulationGeofenceSourceSchema,
+    scenario: simulationScenarioSchema,
+  })
+  .strict();
 
 function distinctCoordinateCount(vertices: Array<readonly [number, number]>): number {
   return new Set(
@@ -530,6 +631,15 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     return {
       items: await adminGeoRepository(fastify).listWorkSites(context.companyId),
     };
+  });
+
+  fastify.post("/geo/simulate", async (request) => {
+    if (!request.actor) throw unauthorized();
+    const input = geoPolicySimulationSchema.parse(request.body);
+    return new AttendanceGeoPolicySimulationService(fastify.store).simulate(
+      request.actor,
+      input,
+    );
   });
 
   fastify.get("/work-sites/:workSiteId", async (request) => {

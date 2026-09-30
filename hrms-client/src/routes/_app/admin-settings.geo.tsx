@@ -3,6 +3,7 @@ import { Crosshair } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AdminGeoMap } from "@/components/admin-geo/admin-geo-map";
 import { GeofencePanel } from "@/components/admin-geo/geofence-panel";
+import { PolicySimulatorPanel } from "@/components/admin-geo/policy-simulator-panel";
 import { VersionPublishPanel } from "@/components/admin-geo/version-publish-panel";
 import { WorkSitePanel } from "@/components/admin-geo/work-site-panel";
 import { Badge } from "@/components/ui/badge";
@@ -48,13 +49,19 @@ function AdminGeoScreen() {
   const [circleDraft, setCircleDraft] = useState<CircleDraft>(EMPTY_CIRCLE_DRAFT);
   const [polygonDraft, setPolygonDraft] = useState<PolygonDraft>(EMPTY_POLYGON_DRAFT);
   const [fitRequestKey, setFitRequestKey] = useState(0);
+  const [simulationPoint, setSimulationPoint] = useState<LngLat | null>(null);
+  const [simulationAccuracyMeters, setSimulationAccuracyMeters] = useState(25);
+  const [simulationPickMode, setSimulationPickMode] = useState(false);
+  const [simulationVerdict, setSimulationVerdict] = useState<string | null>(null);
 
   const workSitesQuery = useAdminGeoWorkSites(apiEnabled);
   const geofencesQuery = useAdminGeoGeofences(selectedWorkSiteId, apiEnabled);
   const versionsQuery = useAdminGeoVersions(selectedGeofenceId, apiEnabled);
-  const workSites = workSitesQuery.data?.items ?? [];
-  const geofences = geofencesQuery.data?.items ?? [];
-  const versions = versionsQuery.data?.items ?? [];
+  const workSites = useMemo(() => workSitesQuery.data?.items ?? [], [workSitesQuery.data?.items]);
+  const geofences = useMemo(() => geofencesQuery.data?.items ?? [], [geofencesQuery.data?.items]);
+  const versions = useMemo(() => versionsQuery.data?.items ?? [], [versionsQuery.data?.items]);
+  const selectedWorkSite = workSites.find((site) => site.id === selectedWorkSiteId) ?? null;
+  const selectedGeofence = geofences.find((geofence) => geofence.id === selectedGeofenceId) ?? null;
   const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null;
 
   useEffect(() => {
@@ -89,6 +96,12 @@ function AdminGeoScreen() {
   }, [selectedVersion]);
 
   function handleMapClick(coordinate: LngLat) {
+    if (simulationPickMode) {
+      setSimulationPoint(coordinate);
+      setSimulationPickMode(false);
+      setSimulationVerdict(null);
+      return;
+    }
     if (clickMode === "circle-center") {
       setShapeType("circle");
       setCircleDraft((current) => ({ ...current, center: coordinate }));
@@ -127,7 +140,9 @@ function AdminGeoScreen() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={selectedVersion?.versionStatus === "published" ? "default" : "outline"}>
+              <Badge
+                variant={selectedVersion?.versionStatus === "published" ? "default" : "outline"}
+              >
                 {selectedVersion ? selectedVersion.versionStatus : "new draft"}
               </Badge>
               <Button
@@ -149,9 +164,31 @@ function AdminGeoScreen() {
             fitRequestKey={fitRequestKey}
             onMapClick={handleMapClick}
             polygonDraft={polygonDraft}
+            simulationAccuracyMeters={simulationPoint ? simulationAccuracyMeters : null}
+            simulationPoint={simulationPoint}
+            simulationVerdict={simulationVerdict}
           />
         </CardContent>
       </Card>
+
+      <PolicySimulatorPanel
+        circleDraft={circleDraft}
+        currentGeofence={selectedGeofence}
+        currentWorkSiteId={selectedWorkSiteId}
+        currentWorkSiteName={selectedWorkSite?.name ?? null}
+        draftShapeType={shapeType}
+        onAccuracyChange={setSimulationAccuracyMeters}
+        onPickModeChange={setSimulationPickMode}
+        onResultChange={(result) =>
+          setSimulationVerdict(result?.verdict ? String(result.verdict) : null)
+        }
+        onSimulationPointChange={(point) => {
+          setSimulationPoint(point);
+          setSimulationVerdict(null);
+        }}
+        polygonDraft={polygonDraft}
+        simulationPoint={simulationPoint}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[360px_360px_minmax(0,1fr)]">
         <WorkSitePanel
@@ -223,7 +260,9 @@ function applyVersionShape(
     setters.setPolygonDraft(resetPolygonDraft());
     return;
   }
-  setters.setPolygonDraft({ vertices: isPolygonShape(version.shape) ? version.shape.vertices : [] });
+  setters.setPolygonDraft({
+    vertices: isPolygonShape(version.shape) ? version.shape.vertices : [],
+  });
   setters.setCircleDraft(resetCircleDraft());
 }
 

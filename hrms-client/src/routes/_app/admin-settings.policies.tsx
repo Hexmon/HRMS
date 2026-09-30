@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { PolicySimulatorPanel } from "@/components/admin-geo/policy-simulator-panel";
 import { useAdminSettings, type Policies } from "@/lib/admin-settings-store";
 import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { useAdminPolicies, useUpdateAdminPolicyMutation } from "@/domains/admin/queries";
@@ -46,6 +47,14 @@ function PoliciesScreen() {
       null,
     [policiesQuery.data?.items],
   );
+  const attendanceSimulationConfig = useMemo(() => {
+    const apiConfig =
+      policiesQuery.data?.items.find((item) => item.policy_key === "attendance")?.config ?? {};
+    return {
+      ...apiConfig,
+      ...(policies.attendance as unknown as Record<string, AdminPolicyValue>),
+    };
+  }, [policies.attendance, policiesQuery.data?.items]);
 
   function setPolicy<K extends PolicyKey>(key: K, patch: Partial<Policies[K]>) {
     if (!apiEnabled) {
@@ -192,6 +201,11 @@ function PoliciesScreen() {
             onChange={(v) => setPolicy("attendance", { allowRegularization: v })}
           />
         </PolicyCard>
+        {apiEnabled ? (
+          <div className="mt-4">
+            <PolicySimulatorPanel draftPolicyConfig={attendanceSimulationConfig} />
+          </div>
+        ) : null}
       </TabsContent>
 
       <TabsContent value="leave" className="mt-4">
