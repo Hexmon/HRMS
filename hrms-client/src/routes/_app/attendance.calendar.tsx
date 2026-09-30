@@ -7,7 +7,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
-import { useAttendanceMonthlyCalendar } from "@/domains/attendance";
+import { useAttendanceDailyCalendar, useAttendanceMonthlyCalendar } from "@/domains/attendance";
+import { employeeDayEvidenceView } from "@/domains/attendance/employee-day-evidence-model";
 import {
   asArray,
   asRecord,
@@ -93,14 +94,21 @@ function EmployeeAttendanceCalendar() {
   const today = new Date();
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [selected, setSelected] = useState<number>(today.getDate());
-  const query = useAttendanceMonthlyCalendar({
+  const selectedDate = `${monthValue(cursor.y, cursor.m)}-${String(selected).padStart(2, "0")}`;
+  const monthlyQuery = useAttendanceMonthlyCalendar({
     month: monthValue(cursor.y, cursor.m),
     page: 1,
     page_size: 40,
   });
-  const payload = asRecord(query.data);
+  const dailyQuery = useAttendanceDailyCalendar({
+    date: selectedDate,
+    page: 1,
+    page_size: 1,
+  });
+  const payload = asRecord(monthlyQuery.data);
   const calendarDays = records(payload.calendar_days);
   const summary = asRecord(payload.summary);
+  const evidence = employeeDayEvidenceView(dailyQuery.data?.self_evidence);
   const data = useMemo(() => {
     const map = new Map<number, ApiRecord>();
     for (const record of calendarDays) map.set(dayNumber(record), record);
@@ -133,8 +141,11 @@ function EmployeeAttendanceCalendar() {
             </Button>
           </div>
         </div>
-        {query.isError ? (
-          <EmptyState title="Could not load calendar" description={errorMessage(query.error)} />
+        {monthlyQuery.isError ? (
+          <EmptyState
+            title="Could not load calendar"
+            description={errorMessage(monthlyQuery.error)}
+          />
         ) : (
           <>
             <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -159,7 +170,7 @@ function EmployeeAttendanceCalendar() {
                       "relative aspect-square rounded-xl border p-1.5 text-left text-xs transition hover:-translate-y-0.5 hover:shadow-sm",
                       STATUS_CLS[status],
                       isSelected && "ring-2 ring-primary ring-offset-1",
-                      query.isLoading && "animate-pulse",
+                      monthlyQuery.isLoading && "animate-pulse",
                     )}
                   >
                     <span className="font-semibold">{day}</span>
@@ -191,7 +202,7 @@ function EmployeeAttendanceCalendar() {
           title={`Day ${selected}`}
           description={new Date(cursor.y, cursor.m, selected).toDateString()}
         >
-          {query.isLoading ? (
+          {monthlyQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading day attendance...</p>
           ) : selectedRecord ? (
             <div className="space-y-3 text-sm">
@@ -226,6 +237,15 @@ function EmployeeAttendanceCalendar() {
               <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
                 {selectedDayDetail(selectedRecord, selectedStatus)}
               </p>
+              {dailyQuery.isLoading ? (
+                <p className="text-xs text-muted-foreground">Loading day evidence...</p>
+              ) : dailyQuery.isError ? (
+                <p className="rounded-md bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive">
+                  {errorMessage(dailyQuery.error)}
+                </p>
+              ) : (
+                <EmployeeDayEvidencePanel evidence={evidence} />
+              )}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No attendance for this day.</p>
@@ -247,13 +267,115 @@ function EmployeeAttendanceCalendar() {
               <li key={key} className="flex items-center justify-between">
                 <span className="text-muted-foreground">{label}</span>
                 <span className="font-semibold tabular-nums">
-                  {query.isLoading ? "..." : numberValue(summary[key])}
+                  {monthlyQuery.isLoading ? "..." : numberValue(summary[key])}
                 </span>
               </li>
             ))}
           </ul>
         </DataCard>
       </div>
+    </div>
+  );
+}
+
+function EmployeeDayEvidencePanel({
+  evidence,
+}: {
+  evidence: ReturnType<typeof employeeDayEvidenceView>;
+}) {
+  return (
+    <div className="space-y-4" data-testid="employee-day-evidence">
+      <section aria-labelledby="attendance-summary-sources" className="space-y-2">
+        <h4
+          id="attendance-summary-sources"
+          className="text-xs font-semibold uppercase text-muted-foreground"
+        >
+          Summary based on
+        </h4>
+        {evidence && evidence.summarySources.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {evidence.summarySources.map((source) => (
+              <span
+                key={source.type}
+                className="rounded-full border border-border bg-background px-2 py-0.5 text-xs"
+              >
+                {source.label}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No summary source details available.</p>
+        )}
+      </section>
+
+      <section aria-labelledby="attendance-event-trail" className="space-y-2">
+        <h4
+          id="attendance-event-trail"
+          className="text-xs font-semibold uppercase text-muted-foreground"
+        >
+          Attendance trail
+        </h4>
+        {evidence && evidence.events.length > 0 ? (
+          <ol className="space-y-2">
+            {evidence.events.map((event) => (
+              <li key={event.key} className="rounded-md border border-border/70 p-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">{event.eventLabel}</p>
+                    <p className="text-xs text-muted-foreground">{event.timeLabel}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {event.decisionLabel}
+                  </span>
+                </div>
+                <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  {event.sourceLabel && <p>Source: {event.sourceLabel}</p>}
+                  {event.workModeLabel && <p>Work mode: {event.workModeLabel}</p>}
+                  <p>{event.reasonText || event.decisionDescription}</p>
+                  {event.reasonCode && (
+                    <p className="break-words font-mono text-[11px]">
+                      Reason code: {event.reasonCode}
+                    </p>
+                  )}
+                  {event.geoLabel && <p>Location check: {event.geoLabel}</p>}
+                  {event.regularizationLabel && <p>{event.regularizationLabel}</p>}
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No attendance events recorded for this day.
+          </p>
+        )}
+      </section>
+
+      {evidence && evidence.regularizations.length > 0 && (
+        <section aria-labelledby="attendance-regularization-evidence" className="space-y-2">
+          <h4
+            id="attendance-regularization-evidence"
+            className="text-xs font-semibold uppercase text-muted-foreground"
+          >
+            Regularization
+          </h4>
+          <div className="space-y-2">
+            {evidence.regularizations.map((request) => (
+              <div key={request.key} className="rounded-md bg-muted/50 p-2.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{request.operationsLabel}</span>
+                  <span className="rounded-full bg-background px-2 py-0.5">
+                    {request.statusLabel}
+                  </span>
+                </div>
+                <p className="mt-1 text-muted-foreground">{request.reason}</p>
+                {request.decidedAtLabel && (
+                  <p className="mt-1 text-muted-foreground">Decided: {request.decidedAtLabel}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
