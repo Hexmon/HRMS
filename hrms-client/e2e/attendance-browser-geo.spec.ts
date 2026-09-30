@@ -6,6 +6,18 @@ import {
   transitionFor,
   type ManualSessionState,
 } from "./attendance-regression.helpers";
+import {
+  getGeolocationCallCount,
+  getLastGeolocationOptions,
+  getWatchPositionCallCount,
+  mockGeolocationBlocked,
+  mockGeolocationPermissionDenied,
+  mockGeolocationSuccess,
+  mockGeolocationTimeout,
+  mockGeolocationUnavailable,
+  mockGeolocationUnsupported,
+  SYNTHETIC_GEOLOCATION,
+} from "./helpers/mock-geolocation";
 
 test.setTimeout(120_000);
 
@@ -22,114 +34,26 @@ const GEO_POLICY = {
   max_accuracy_meters: 50,
 };
 
-type BrowserGeoMockKind = "success" | "permission_denied" | "timeout" | "unavailable";
-type GeoWindow = Window & { __geoCalls?: number };
+const FIXED_SUCCESS = {
+  latitude: SYNTHETIC_GEOLOCATION.latitude,
+  longitude: SYNTHETIC_GEOLOCATION.longitude,
+  accuracy: 9,
+  timestamp: Date.UTC(2026, 0, 15, 4, 5, 6),
+};
+const OLD_LOCATION_TIMESTAMP = Date.UTC(2025, 11, 1, 3, 0, 0);
+const LOW_ACCURACY_METERS = 250;
 
-async function mockBrowserGeolocation(
-  page: Page,
-  kind: BrowserGeoMockKind,
-  delayMs = 0,
-): Promise<void> {
-  await page.addInitScript(
-    ({ resultKind, delay }) => {
-      Object.defineProperty(navigator, "geolocation", {
-        configurable: true,
-        value: {
-          getCurrentPosition(success: PositionCallback, error?: PositionErrorCallback | null) {
-            const target = window as GeoWindow;
-            target.__geoCalls = (target.__geoCalls ?? 0) + 1;
-            window.setTimeout(() => {
-              if (resultKind === "success") {
-                success({
-                  coords: {
-                    latitude: 12.972,
-                    longitude: 77.595,
-                    accuracy: 8,
-                    altitude: null,
-                    altitudeAccuracy: null,
-                    heading: null,
-                    speed: null,
-                  },
-                  timestamp: Date.now() - 30_000,
-                });
-                return;
-              }
-
-              const code =
-                resultKind === "permission_denied" ? 1 : resultKind === "timeout" ? 3 : 2;
-              error?.({
-                code,
-                message: resultKind,
-                PERMISSION_DENIED: 1,
-                POSITION_UNAVAILABLE: 2,
-                TIMEOUT: 3,
-              } as GeolocationPositionError);
-            }, delay);
-          },
-        },
-      });
-    },
-    { resultKind: kind, delay: delayMs },
-  );
+interface CapturedRequest {
+  body: Record<string, unknown>;
+  idempotencyKey: string | undefined;
 }
 
-async function mockBlockedBrowserGeolocation(
-  page: Page,
-  kind: "insecure_context" | "permissions_policy_blocked",
-): Promise<void> {
-  await page.addInitScript(
-    ({ resultKind }) => {
-      if (resultKind === "insecure_context") {
-        Object.defineProperty(window, "isSecureContext", {
-          configurable: true,
-          value: false,
-        });
-      }
-      if (resultKind === "permissions_policy_blocked") {
-        Object.defineProperty(document, "permissionsPolicy", {
-          configurable: true,
-          value: {
-            allowsFeature: (feature: string) => feature !== "geolocation",
-          },
-        });
-      }
-
-      Object.defineProperty(navigator, "geolocation", {
-        configurable: true,
-        value: {
-          getCurrentPosition() {
-            const target = window as GeoWindow;
-            target.__geoCalls = (target.__geoCalls ?? 0) + 1;
-          },
-        },
-      });
-    },
-    { resultKind: kind },
-  );
-}
-
-async function geoCalls(page: Page): Promise<number> {
-  return page.evaluate(() => (window as GeoWindow).__geoCalls ?? 0);
-}
-
-async function expectNoBrowserCoordinateRetention(page: Page): Promise<void> {
-  const browserVisibleState = await page.evaluate(() => {
-    const storageEntries = (storage: Storage) =>
-      Array.from({ length: storage.length }, (_, index) => {
-        const key = storage.key(index) ?? "";
-        return `${key}:${storage.getItem(key) ?? ""}`;
-      });
-
-    return [
-      document.body.innerText,
-      window.location.href,
-      ...storageEntries(window.localStorage),
-      ...storageEntries(window.sessionStorage),
-    ].join("\n");
-  });
-
-  expect(browserVisibleState).not.toContain("12.972");
-  expect(browserVisibleState).not.toContain("77.595");
+interface FallbackScenario {
+  reasonCode: string;
+  outcome: string;
+  reference: string;
+  policyPatch?: Record<string, unknown>;
+  responseMessage?: string;
 }
 
 async function routeAttendanceSummary(
@@ -146,555 +70,870 @@ async function routeAttendanceSummary(
   });
 }
 
-test("manual_only keeps web punches and does not request browser geolocation", async ({ page }) => {
-  await mockBrowserGeolocation(page, "success");
-  await prepareAttendancePage(page);
-  let state: ManualSessionState = "not_started";
-  let submittedBody: Record<string, unknown> | undefined;
+async function expectNoBrowserCoordinateRetention(
+  page: Page,
+  coordinates: { latitude: number; longitude: number } = SYNTHETIC_GEOLOCATION,
+): Promise<void> {
+  const browserVisibleState = await page.evaluate(() => {
+    const storageEntries = (storage: Storage) =>
+      Array.from({ length: storage.length }, (_, index) => {
+        const key = storage.key(index) ?? "";
+        return `${key}:${storage.getItem(key) ?? ""}`;
+      });
 
-  await routeAttendanceSummary(page, () => state);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-    state = transitionFor(String(submittedBody.event_type));
-    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    return [
+      document.body.innerText,
+      window.location.href,
+      ...storageEntries(window.localStorage),
+      ...storageEntries(window.sessionStorage),
+    ].join("\n");
   });
 
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
+  expect(browserVisibleState).not.toContain(String(coordinates.latitude));
+  expect(browserVisibleState).not.toContain(String(coordinates.longitude));
+}
 
-  await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
-  expect(await geoCalls(page)).toBe(0);
-  expect(submittedBody).toEqual({
-    event_type: "check_in",
-    source: "web",
-    metadata: { source_view: "attendance_page" },
-  });
-});
+function expectNoCoordinateEvidence(value: unknown): void {
+  const evidence = value as Record<string, unknown>;
+  expect(evidence).not.toHaveProperty("latitude");
+  expect(evidence).not.toHaveProperty("longitude");
+  expect(evidence).not.toHaveProperty("accuracy_meters");
+}
 
-test("geo policy requests one browser position after click and sends web_geo evidence", async ({
-  page,
-}) => {
-  await mockBrowserGeolocation(page, "success", 100);
-  await prepareAttendancePage(page);
-  let state: ManualSessionState = "not_started";
-  let submittedBody: Record<string, unknown> | undefined;
+function locationEvidence(body: Record<string, unknown>): Record<string, unknown> {
+  return body.location as Record<string, unknown>;
+}
 
-  await routeAttendanceSummary(page, () => state, GEO_POLICY);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-    state = transitionFor(String(submittedBody.event_type));
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ geo_policy: { factual_outcome: "inside_confident", allowed: true } }),
-    });
-  });
-
-  await openAttendance(page);
-  expect(await geoCalls(page)).toBe(0);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
-
-  await expect(page.getByText("Getting browser location", { exact: true })).toBeVisible();
-  await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
-  await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
-  await expect(page.getByText(/verified within an allowed work area/u)).toBeVisible();
-  expect(await geoCalls(page)).toBe(1);
-  expect(submittedBody).toMatchObject({
-    event_type: "check_in",
-    source: "web_geo",
-    metadata: {
-      source_view: "attendance_page",
-      browser_location_result: "success",
+function geoPolicyResponse(input: {
+  factualOutcome: string;
+  selectedAction?: string;
+  allowed: boolean;
+  reasonCode?: string;
+  fallbackUsed?: boolean;
+}): Record<string, unknown> {
+  return {
+    geo_policy: {
+      factual_outcome: input.factualOutcome,
+      selected_action: input.selectedAction,
+      fallback_used: input.fallbackUsed ?? false,
+      allowed: input.allowed,
+      reason_code: input.reasonCode,
     },
-    location: {
-      latitude: 12.972,
-      longitude: 77.595,
-      accuracy_meters: 8,
-      provider: "browser",
-      permission_state: "granted",
-    },
-  });
-  expect(typeof (submittedBody?.location as Record<string, unknown>).captured_at).toBe("string");
-  await expectNoBrowserCoordinateRetention(page);
-});
+  };
+}
 
-test("permission denial sends denied evidence and renders a provisional decision", async ({
-  page,
-}) => {
-  await mockBrowserGeolocation(page, "permission_denied");
-  await prepareAttendancePage(page);
-  let submittedBody: Record<string, unknown> | undefined;
-
-  await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ geo_policy: { factual_outcome: "permission_denied", allowed: true } }),
-    });
-  });
-
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
-
-  await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
-  await expect(page.getByText("Clock-in recorded provisionally", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Location access is blocked/u)).toBeVisible();
-  expect(submittedBody).toMatchObject({
-    source: "web_geo",
-    location: { permission_state: "denied", provider: "browser" },
-  });
-});
-
-test("timeout sends unavailable evidence and renders timeout-specific UI", async ({ page }) => {
-  await mockBrowserGeolocation(page, "timeout");
-  await prepareAttendancePage(page);
-  let submittedBody: Record<string, unknown> | undefined;
-
-  await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        geo_policy: { factual_outcome: "location_unavailable", allowed: true },
-      }),
-    });
-  });
-
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
-
-  await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
-  expect(submittedBody).toMatchObject({
-    source: "web_geo",
-    location: { permission_state: "unavailable", provider: "browser" },
-  });
-});
-
-test("policy allow with low accuracy renders a provisional reason", async ({ page }) => {
-  await mockBrowserGeolocation(page, "success");
-  await prepareAttendancePage(page);
-
-  await routeAttendanceSummary(page, () => "not_started", {
-    ...GEO_POLICY,
-    accuracy_exceeded_action: "allow",
-  });
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        geo_policy: {
-          factual_outcome: "accuracy_exceeded",
-          selected_action: "allow",
-          fallback_used: false,
-          allowed: true,
-          reason_code: "geo_accuracy_exceeded",
-        },
-      }),
-    });
-  });
-
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
-
-  await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
-  await expect(page.getByText("Clock-in recorded provisionally", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Location accuracy was too low/u)).toBeVisible();
-});
-
-test("backend denial preserves timeout-specific UI and renders rejected decision", async ({
-  page,
-}) => {
-  await mockBrowserGeolocation(page, "timeout");
-  await prepareAttendancePage(page);
-  let submittedBody: Record<string, unknown> | undefined;
-
-  await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({
-      status: 409,
-      contentType: "application/json",
-      body: JSON.stringify({
-        code: "ATTENDANCE_PUNCH_DENIED",
-        message: "Location unavailable; denied by policy.",
-        details: {
-          reason_code: "geo_location_unavailable",
-          geo_policy: {
-            factual_outcome: "location_unavailable",
-            selected_action: "deny",
-            allowed: false,
-          },
-        },
-      }),
-    });
-  });
-
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
-
-  await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
-  await expect(page.getByText("Location request timed out", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Attendance was not recorded.*timed out/u)).toBeVisible();
-  await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
-  await expect(page.getByText("Location unavailable", { exact: true })).toBeHidden();
-  expect(submittedBody).toMatchObject({
-    source: "web_geo",
-    metadata: {
-      browser_location_result: "timeout",
-    },
-    location: { permission_state: "unavailable", provider: "browser" },
-  });
-});
-
-test("backend stale evidence rejection renders a stale-location state", async ({ page }) => {
-  await mockBrowserGeolocation(page, "success");
-  await prepareAttendancePage(page);
-
-  await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    await route.fulfill({
-      status: 409,
-      contentType: "application/json",
-      body: JSON.stringify({
-        code: "ATTENDANCE_PUNCH_DENIED",
-        message: "Location evidence is stale; denied by policy.",
-        details: {
-          reason_code: "geo_stale_evidence",
-          geo_policy: {
-            factual_outcome: "stale_evidence",
-            selected_action: "deny",
-            allowed: false,
-          },
-        },
-      }),
-    });
-  });
-
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
-
-  await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
-  await expect(page.getByText("Clock-in was not recorded", { exact: true })).toBeVisible();
-  await expect(page.getByText(/captured location was too old/u)).toBeVisible();
-});
-
-test("backend boundary uncertainty denial renders rejected reason", async ({ page }) => {
-  await mockBrowserGeolocation(page, "success");
-  await prepareAttendancePage(page);
-
-  await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    await route.fulfill({
-      status: 409,
-      contentType: "application/json",
-      body: JSON.stringify({
-        code: "ATTENDANCE_PUNCH_DENIED",
-        message: "Boundary is uncertain; denied by policy.",
-        details: {
-          reason_code: "geo_boundary_uncertain",
-          geo_policy: {
-            factual_outcome: "boundary_uncertain",
-            selected_action: "deny",
-            allowed: false,
-          },
-        },
-      }),
-    });
-  });
-
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
-
-  await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
-  await expect(page.getByText(/near the work-area boundary/u)).toBeVisible();
-});
-
-test("manual fallback availability shows continue manually and submits reference", async ({ page }) => {
-  await mockBrowserGeolocation(page, "success");
-  await prepareAttendancePage(page);
-
-  await routeAttendanceSummary(page, () => "not_started", {
-    ...GEO_POLICY,
-    outside_fence_action: "manual_fallback",
-    fallback_approval_mode: "approval_required",
-  });
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    await route.fulfill({
-      status: 409,
-      contentType: "application/json",
-      body: JSON.stringify({
-        code: "CONFLICT",
-        message: "Location verification requires manual fallback confirmation.",
-        details: {
-          reason_code: "geo_outside_fence",
-          geo_policy: {
-            factual_outcome: "outside_confident",
-            selected_action: "manual_fallback",
-            fallback_used: true,
-            allowed: true,
-            reason_code: "geo_outside_fence",
-          },
-          manual_fallback: {
+function geoDenialResponse(input: {
+  reasonCode: string;
+  factualOutcome: string;
+  selectedAction?: string;
+  message: string;
+  manualFallback?: {
+    reference: string;
+    reviewRequired: boolean;
+  };
+}): Record<string, unknown> {
+  return {
+    code: "ATTENDANCE_PUNCH_DENIED",
+    message: input.message,
+    details: {
+      reason_code: input.reasonCode,
+      geo_policy: {
+        factual_outcome: input.factualOutcome,
+        selected_action: input.selectedAction ?? "deny",
+        fallback_used: input.selectedAction === "manual_fallback",
+        allowed: input.selectedAction === "manual_fallback",
+        reason_code: input.reasonCode,
+      },
+      manual_fallback: input.manualFallback
+        ? {
             available: true,
-            review_required: true,
-            reference: "geo-decision-1",
-            reason_code: "geo_outside_fence",
-          },
-        },
-      }),
-    });
-  });
-  let fallbackSubmitted = false;
-  await page.route("**/api/v1/attendance/geo-fallbacks/geo-decision-1/submit", async (route) => {
-    fallbackSubmitted = true;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        geo_policy: {
-          factual_outcome: "outside_confident",
-          selected_action: "manual_fallback",
-          fallback_used: true,
-          allowed: true,
-          reason_code: "geo_outside_fence",
-        },
-        manual_fallback: {
-          submitted: true,
-          review_required: true,
-          review_id: "geo-review-1",
-          status: "pending",
-          version: 1,
-        },
-      }),
-    });
-  });
-
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
-
-  await expect(page.getByText("Review", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue manually" })).toBeVisible();
-  await expect(page.getByText(/outside the allowed work area/u)).toBeVisible();
-  await page.getByRole("button", { name: "Continue manually" }).click();
-  await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
-  expect(fallbackSubmitted).toBe(true);
-});
-
-test("check-out uses the same browser geo evidence path and accepted decision", async ({
-  page,
-}) => {
-  await mockBrowserGeolocation(page, "success");
-  await prepareAttendancePage(page);
-  let state: ManualSessionState = "open";
-  let submittedBody: Record<string, unknown> | undefined;
-
-  await routeAttendanceSummary(page, () => state, GEO_POLICY);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-    state = transitionFor(String(submittedBody.event_type));
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        geo_policy: {
-          factual_outcome: "inside_confident",
-          selected_action: "allow",
-          fallback_used: false,
-          allowed: true,
-          reason_code: "geo_inside_fence",
-        },
-      }),
-    });
-  });
-
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock out", exact: true }).click();
-
-  await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
-  await expect(page.getByText("Clock-out recorded", { exact: true })).toBeVisible();
-  expect(await geoCalls(page)).toBe(1);
-  expect(submittedBody).toMatchObject({
-    event_type: "check_out",
-    source: "web_geo",
-    metadata: {
-      source_view: "attendance_page",
-      browser_location_result: "success",
+            review_required: input.manualFallback.reviewRequired,
+            reference: input.manualFallback.reference,
+            reason_code: input.reasonCode,
+          }
+        : { available: false, reason_code: input.reasonCode },
     },
-    location: {
-      latitude: 12.972,
-      longitude: 77.595,
-      accuracy_meters: 8,
-      provider: "browser",
-      permission_state: "granted",
-    },
+  };
+}
+
+async function setupFallbackScenario(
+  page: Page,
+  scenario: FallbackScenario,
+): Promise<{
+  punches: CapturedRequest[];
+  fallbackRequests: CapturedRequest[];
+}> {
+  const punches: CapturedRequest[] = [];
+  const fallbackRequests: CapturedRequest[] = [];
+
+  await routeAttendanceSummary(page, () => "not_started", {
+    ...GEO_POLICY,
+    fallback_approval_mode: "approval_required",
+    ...scenario.policyPatch,
   });
-});
-
-test("rapid interaction does not duplicate geolocation or punch requests", async ({ page }) => {
-  await mockBrowserGeolocation(page, "success", 250);
-  await prepareAttendancePage(page);
-  let punchRequests = 0;
-
-  await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    punchRequests += 1;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ geo_policy: { factual_outcome: "inside_confident", allowed: true } }),
-    });
-  });
-
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).evaluate((button) => {
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  });
-
-  await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
-  expect(await geoCalls(page)).toBe(1);
-  expect(punchRequests).toBe(1);
-});
-
-test("uncertain geo punch retry reuses the same request identity and evidence", async ({
-  page,
-}) => {
-  await mockBrowserGeolocation(page, "success");
-  await prepareAttendancePage(page);
-  let state: ManualSessionState = "not_started";
-  const punches: Array<{ body: Record<string, unknown>; idempotencyKey: string | undefined }> = [];
-
-  await routeAttendanceSummary(page, () => state, GEO_POLICY);
   await page.route("**/api/v1/attendance/punches", async (route) => {
     punches.push({
       body: route.request().postDataJSON() as Record<string, unknown>,
       idempotencyKey: route.request().headers()["idempotency-key"],
     });
-    if (punches.length === 1) {
-      await route.abort("connectionfailed");
-      return;
-    }
-    state = "open";
     await route.fulfill({
-      status: 200,
+      status: 409,
       contentType: "application/json",
-      body: JSON.stringify({ geo_policy: { factual_outcome: "inside_confident", allowed: true } }),
+      body: JSON.stringify(
+        geoDenialResponse({
+          reasonCode: scenario.reasonCode,
+          factualOutcome: scenario.outcome,
+          selectedAction: "manual_fallback",
+          message:
+            scenario.responseMessage ??
+            "Location verification requires manual fallback confirmation.",
+          manualFallback: {
+            reference: scenario.reference,
+            reviewRequired: true,
+          },
+        }),
+      ),
     });
   });
+  await page.route(
+    `**/api/v1/attendance/geo-fallbacks/${scenario.reference}/submit`,
+    async (route) => {
+      fallbackRequests.push({
+        body: route.request().postDataJSON() as Record<string, unknown>,
+        idempotencyKey: route.request().headers()["idempotency-key"],
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...geoPolicyResponse({
+            factualOutcome: scenario.outcome,
+            selectedAction: "manual_fallback",
+            allowed: true,
+            reasonCode: scenario.reasonCode,
+            fallbackUsed: true,
+          }),
+          manual_fallback: {
+            submitted: true,
+            review_required: true,
+            review_id: `${scenario.reference}-review`,
+            status: "pending",
+            version: 1,
+          },
+        }),
+      });
+    },
+  );
 
+  return { punches, fallbackRequests };
+}
+
+async function expectContinueManuallyFor(page: Page, expectedReason: RegExp): Promise<void> {
   await openAttendance(page);
   await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
-  await expect(page.getByText("Outcome not confirmed", { exact: true })).toBeVisible();
-  expect(await geoCalls(page)).toBe(1);
+  await expect(page.getByText("Review", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue manually" })).toBeVisible();
+  await expect(page.getByText(expectedReason)).toBeVisible();
+}
 
-  await page.getByRole("button", { name: "Retry same action" }).click();
+test.describe("manual-only regression", () => {
+  test("manual_only keeps web punches and does not request browser geolocation", async ({
+    page,
+  }) => {
+    await mockGeolocationSuccess(page);
+    await prepareAttendancePage(page);
+    let state: ManualSessionState = "not_started";
+    let submittedBody: Record<string, unknown> | undefined;
 
-  await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
-  await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start break" })).toBeVisible();
-  expect(await geoCalls(page)).toBe(1);
-  expect(punches).toHaveLength(2);
-  expect(punches[1]).toEqual(punches[0]);
-  expect(punches[0]?.body).toMatchObject({
-    source: "web_geo",
-    metadata: {
-      browser_location_result: "success",
-    },
-    location: {
-      latitude: 12.972,
-      longitude: 77.595,
-      accuracy_meters: 8,
-      provider: "browser",
-      permission_state: "granted",
-    },
-  });
+    await routeAttendanceSummary(page, () => state);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      state = transitionFor(String(submittedBody.event_type));
+      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
 
-  await page.getByRole("button", { name: "Start break" }).click();
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
-  await expect(page.getByText("Break started", { exact: true })).toBeVisible();
-  expect(await geoCalls(page)).toBe(2);
-  expect(punches).toHaveLength(3);
-  expect(punches[2]?.idempotencyKey).not.toBe(punches[0]?.idempotencyKey);
-  expect(punches[2]?.body).toMatchObject({
-    event_type: "break_start",
-    source: "web_geo",
-    metadata: {
-      browser_location_result: "success",
-    },
+    await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(0);
+    expect(await getWatchPositionCallCount(page)).toBe(0);
+    expect(submittedBody).toEqual({
+      event_type: "check_in",
+      source: "web",
+      metadata: { source_view: "attendance_page" },
+    });
+    await expect(page.getByRole("button", { name: "Continue manually" })).toHaveCount(0);
   });
 });
 
-test("insecure context sends unavailable evidence without invoking geolocation", async ({
-  page,
-}) => {
-  await mockBlockedBrowserGeolocation(page, "insecure_context");
-  await prepareAttendancePage(page);
-  let submittedBody: Record<string, unknown> | undefined;
+test.describe("browser geolocation capture", () => {
+  test("geo policy requests one browser position and sends deterministic web_geo evidence", async ({
+    page,
+  }) => {
+    await mockGeolocationSuccess(page, { ...FIXED_SUCCESS, delayMs: 100 });
+    await prepareAttendancePage(page);
+    let state: ManualSessionState = "not_started";
+    let submittedBody: Record<string, unknown> | undefined;
 
-  await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        geo_policy: { factual_outcome: "location_unavailable", allowed: true },
-      }),
+    await routeAttendanceSummary(page, () => state, GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      state = transitionFor(String(submittedBody.event_type));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoPolicyResponse({ factualOutcome: "inside_confident", allowed: true }),
+        ),
+      });
     });
+
+    await openAttendance(page);
+    expect(await getGeolocationCallCount(page)).toBe(0);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Getting browser location", { exact: true })).toBeVisible();
+    await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
+    await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
+    await expect(page.getByText(/verified within an allowed work area/u)).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(1);
+    expect(await getWatchPositionCallCount(page)).toBe(0);
+    expect(await getLastGeolocationOptions(page)).toEqual({
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 10_000,
+    });
+    expect(submittedBody).toMatchObject({
+      event_type: "check_in",
+      source: "web_geo",
+      metadata: {
+        source_view: "attendance_page",
+        browser_location_result: "success",
+      },
+      location: {
+        latitude: FIXED_SUCCESS.latitude,
+        longitude: FIXED_SUCCESS.longitude,
+        accuracy_meters: FIXED_SUCCESS.accuracy,
+        captured_at: new Date(FIXED_SUCCESS.timestamp).toISOString(),
+        provider: "browser",
+        permission_state: "granted",
+      },
+    });
+    await expectNoBrowserCoordinateRetention(page, FIXED_SUCCESS);
   });
 
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
+  test("check-out uses the same one-shot browser geo evidence path", async ({ page }) => {
+    await mockGeolocationSuccess(page, { ...FIXED_SUCCESS });
+    await prepareAttendancePage(page);
+    let state: ManualSessionState = "open";
+    let submittedBody: Record<string, unknown> | undefined;
 
-  await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
-  expect(await geoCalls(page)).toBe(0);
-  expect(submittedBody).toMatchObject({
-    source: "web_geo",
-    metadata: {
-      browser_location_result: "insecure_context",
-    },
-    location: { permission_state: "unavailable", provider: "browser" },
+    await routeAttendanceSummary(page, () => state, GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      state = transitionFor(String(submittedBody.event_type));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoPolicyResponse({
+            factualOutcome: "inside_confident",
+            selectedAction: "allow",
+            allowed: true,
+            reasonCode: "geo_inside_fence",
+          }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock out", exact: true }).click();
+
+    await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
+    await expect(page.getByText("Clock-out recorded", { exact: true })).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(1);
+    expect(await getWatchPositionCallCount(page)).toBe(0);
+    expect(submittedBody).toMatchObject({
+      event_type: "check_out",
+      source: "web_geo",
+      metadata: {
+        source_view: "attendance_page",
+        browser_location_result: "success",
+      },
+      location: {
+        latitude: FIXED_SUCCESS.latitude,
+        longitude: FIXED_SUCCESS.longitude,
+        accuracy_meters: FIXED_SUCCESS.accuracy,
+        captured_at: new Date(FIXED_SUCCESS.timestamp).toISOString(),
+        provider: "browser",
+        permission_state: "granted",
+      },
+    });
   });
 });
 
-test("permissions policy denial sends unavailable evidence without invoking geolocation", async ({
-  page,
-}) => {
-  await mockBlockedBrowserGeolocation(page, "permissions_policy_blocked");
-  await prepareAttendancePage(page);
-  let submittedBody: Record<string, unknown> | undefined;
+test.describe("browser geolocation failures", () => {
+  test("permission denial sends denied evidence without coordinate fields", async ({ page }) => {
+    await mockGeolocationPermissionDenied(page);
+    await prepareAttendancePage(page);
+    let submittedBody: Record<string, unknown> | undefined;
 
-  await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
-  await page.route("**/api/v1/attendance/punches", async (route) => {
-    submittedBody = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        geo_policy: { factual_outcome: "location_unavailable", allowed: true },
-      }),
+    await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoPolicyResponse({
+            factualOutcome: "permission_denied",
+            allowed: true,
+            reasonCode: "geo_permission_denied",
+          }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
+    await expect(page.getByText("Clock-in recorded provisionally", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Location access is blocked/u)).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(1);
+    expect(submittedBody).toMatchObject({
+      source: "web_geo",
+      metadata: { browser_location_result: "permission_denied" },
+      location: { permission_state: "denied", provider: "browser" },
+    });
+    expectNoCoordinateEvidence(locationEvidence(submittedBody ?? {}));
+  });
+
+  test("timeout sends unavailable evidence immediately and preserves timeout-specific UI", async ({
+    page,
+  }) => {
+    await mockGeolocationTimeout(page);
+    await prepareAttendancePage(page);
+    let submittedBody: Record<string, unknown> | undefined;
+
+    await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoDenialResponse({
+            reasonCode: "geo_location_unavailable",
+            factualOutcome: "location_unavailable",
+            message: "Location unavailable; denied by policy.",
+          }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
+    await expect(page.getByText("Location request timed out", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Attendance was not recorded.*timed out/u)).toBeVisible();
+    await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
+    await expect(page.getByText("Location unavailable", { exact: true })).toBeHidden();
+    expect(await getLastGeolocationOptions(page)).toMatchObject({ timeout: 10_000 });
+    expect(submittedBody).toMatchObject({
+      source: "web_geo",
+      metadata: {
+        browser_location_result: "timeout",
+      },
+      location: { permission_state: "unavailable", provider: "browser" },
+    });
+    expectNoCoordinateEvidence(locationEvidence(submittedBody ?? {}));
+  });
+
+  test("position unavailable sends unavailable evidence without coordinate fields", async ({
+    page,
+  }) => {
+    await mockGeolocationUnavailable(page);
+    await prepareAttendancePage(page);
+    let submittedBody: Record<string, unknown> | undefined;
+
+    await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoPolicyResponse({
+            factualOutcome: "location_unavailable",
+            allowed: true,
+            reasonCode: "geo_location_unavailable",
+          }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
+    expect(submittedBody).toMatchObject({
+      source: "web_geo",
+      metadata: { browser_location_result: "position_unavailable" },
+      location: { permission_state: "unavailable", provider: "browser" },
+    });
+    expectNoCoordinateEvidence(locationEvidence(submittedBody ?? {}));
+  });
+
+  test("unsupported geolocation submits unavailable evidence without calling browser location", async ({
+    page,
+  }) => {
+    await mockGeolocationUnsupported(page);
+    await prepareAttendancePage(page);
+    let submittedBody: Record<string, unknown> | undefined;
+
+    await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoPolicyResponse({
+            factualOutcome: "location_unavailable",
+            allowed: true,
+            reasonCode: "geo_location_unavailable",
+          }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(0);
+    expect(submittedBody).toMatchObject({
+      source: "web_geo",
+      metadata: { browser_location_result: "unsupported" },
+      location: { permission_state: "unavailable", provider: "browser" },
+    });
+    expectNoCoordinateEvidence(locationEvidence(submittedBody ?? {}));
+  });
+
+  test("insecure context sends unavailable evidence without invoking geolocation", async ({
+    page,
+  }) => {
+    await mockGeolocationBlocked(page, "insecure_context");
+    await prepareAttendancePage(page);
+    let submittedBody: Record<string, unknown> | undefined;
+
+    await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoPolicyResponse({
+            factualOutcome: "location_unavailable",
+            allowed: true,
+            reasonCode: "geo_location_unavailable",
+          }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(0);
+    expect(submittedBody).toMatchObject({
+      source: "web_geo",
+      metadata: {
+        browser_location_result: "insecure_context",
+      },
+      location: { permission_state: "unavailable", provider: "browser" },
     });
   });
 
-  await openAttendance(page);
-  await page.getByRole("button", { name: "Clock in", exact: true }).click();
+  test("permissions policy denial sends unavailable evidence without invoking geolocation", async ({
+    page,
+  }) => {
+    await mockGeolocationBlocked(page, "permissions_policy_blocked");
+    await prepareAttendancePage(page);
+    let submittedBody: Record<string, unknown> | undefined;
 
-  await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
-  expect(await geoCalls(page)).toBe(0);
-  expect(submittedBody).toMatchObject({
-    source: "web_geo",
-    metadata: {
-      browser_location_result: "permissions_policy_blocked",
-    },
-    location: { permission_state: "unavailable", provider: "browser" },
+    await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoPolicyResponse({
+            factualOutcome: "location_unavailable",
+            allowed: true,
+            reasonCode: "geo_location_unavailable",
+          }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(0);
+    expect(submittedBody).toMatchObject({
+      source: "web_geo",
+      metadata: {
+        browser_location_result: "permissions_policy_blocked",
+      },
+      location: { permission_state: "unavailable", provider: "browser" },
+    });
+  });
+});
+
+test.describe("evidence quality", () => {
+  test("stale evidence uses an explicit old timestamp while backend provides the stale verdict", async ({
+    page,
+  }) => {
+    await mockGeolocationSuccess(page, {
+      ...FIXED_SUCCESS,
+      timestamp: OLD_LOCATION_TIMESTAMP,
+    });
+    await prepareAttendancePage(page);
+    let submittedBody: Record<string, unknown> | undefined;
+
+    await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoDenialResponse({
+            reasonCode: "geo_stale_evidence",
+            factualOutcome: "stale_evidence",
+            message: "Location evidence is stale; denied by policy.",
+          }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
+    await expect(page.getByText("Clock-in was not recorded", { exact: true })).toBeVisible();
+    await expect(page.getByText(/captured location was too old/u)).toBeVisible();
+    expect(locationEvidence(submittedBody ?? {})).toMatchObject({
+      latitude: FIXED_SUCCESS.latitude,
+      longitude: FIXED_SUCCESS.longitude,
+      accuracy_meters: FIXED_SUCCESS.accuracy,
+      captured_at: new Date(OLD_LOCATION_TIMESTAMP).toISOString(),
+    });
+    await expectNoBrowserCoordinateRetention(page, FIXED_SUCCESS);
+  });
+
+  test("low accuracy submits explicit accuracy while backend provides the accuracy verdict", async ({
+    page,
+  }) => {
+    await mockGeolocationSuccess(page, {
+      ...FIXED_SUCCESS,
+      accuracy: LOW_ACCURACY_METERS,
+    });
+    await prepareAttendancePage(page);
+    let submittedBody: Record<string, unknown> | undefined;
+
+    await routeAttendanceSummary(page, () => "not_started", {
+      ...GEO_POLICY,
+      accuracy_exceeded_action: "allow",
+    });
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoPolicyResponse({
+            factualOutcome: "accuracy_exceeded",
+            selectedAction: "allow",
+            allowed: true,
+            reasonCode: "geo_accuracy_exceeded",
+          }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
+    await expect(page.getByText("Clock-in recorded provisionally", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Location accuracy was too low/u)).toBeVisible();
+    expect(locationEvidence(submittedBody ?? {})).toMatchObject({
+      latitude: FIXED_SUCCESS.latitude,
+      longitude: FIXED_SUCCESS.longitude,
+      accuracy_meters: LOW_ACCURACY_METERS,
+      captured_at: new Date(FIXED_SUCCESS.timestamp).toISOString(),
+    });
+    await expectNoBrowserCoordinateRetention(page, FIXED_SUCCESS);
+  });
+});
+
+test.describe("manual fallback", () => {
+  test("permission denied fallback submits reference without coordinates or location reacquisition", async ({
+    page,
+  }) => {
+    await mockGeolocationPermissionDenied(page);
+    await prepareAttendancePage(page);
+    const { punches, fallbackRequests } = await setupFallbackScenario(page, {
+      reasonCode: "geo_permission_denied",
+      outcome: "permission_denied",
+      reference: "geo-denied-fallback",
+      policyPatch: { permission_denied_action: "manual_fallback" },
+    });
+
+    await expectContinueManuallyFor(page, /Location access is blocked/u);
+    await page.getByRole("button", { name: "Continue manually" }).click();
+
+    await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(1);
+    expect(punches).toHaveLength(1);
+    expect(fallbackRequests).toHaveLength(1);
+    expectNoCoordinateEvidence(locationEvidence(punches[0].body));
+    expect(fallbackRequests[0].body).toEqual({});
+    expect(fallbackRequests[0].idempotencyKey).toBeTruthy();
+    expect(fallbackRequests[0].idempotencyKey).not.toBe(punches[0].idempotencyKey);
+    await expectNoBrowserCoordinateRetention(page);
+  });
+
+  test("timeout fallback is backend-driven and does not reacquire browser location", async ({
+    page,
+  }) => {
+    await mockGeolocationTimeout(page);
+    await prepareAttendancePage(page);
+    const { punches, fallbackRequests } = await setupFallbackScenario(page, {
+      reasonCode: "geo_location_unavailable",
+      outcome: "location_unavailable",
+      reference: "geo-timeout-fallback",
+      policyPatch: { location_unavailable_action: "manual_fallback" },
+    });
+
+    await expectContinueManuallyFor(page, /Your location could not be determined/u);
+    await page.getByRole("button", { name: "Continue manually" }).click();
+
+    await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(1);
+    expect(fallbackRequests).toHaveLength(1);
+    expect(fallbackRequests[0].idempotencyKey).toBeTruthy();
+    expect(fallbackRequests[0].idempotencyKey).not.toBe(punches[0].idempotencyKey);
+    expectNoCoordinateEvidence(locationEvidence(punches[0].body));
+  });
+
+  test("stale and low-accuracy fallback availability comes from backend responses", async ({
+    page,
+  }) => {
+    await mockGeolocationSuccess(page, {
+      ...FIXED_SUCCESS,
+      timestamp: OLD_LOCATION_TIMESTAMP,
+    });
+    await prepareAttendancePage(page);
+    const { punches } = await setupFallbackScenario(page, {
+      reasonCode: "geo_stale_evidence",
+      outcome: "stale_evidence",
+      reference: "geo-stale-fallback",
+      policyPatch: { stale_evidence_action: "manual_fallback" },
+    });
+
+    await expectContinueManuallyFor(page, /captured location was too old/u);
+    expect(locationEvidence(punches[0].body)).toMatchObject({
+      captured_at: new Date(OLD_LOCATION_TIMESTAMP).toISOString(),
+    });
+  });
+
+  test("low accuracy fallback displays backend-provided fallback CTA", async ({ page }) => {
+    await mockGeolocationSuccess(page, {
+      ...FIXED_SUCCESS,
+      accuracy: LOW_ACCURACY_METERS,
+    });
+    await prepareAttendancePage(page);
+    const { punches } = await setupFallbackScenario(page, {
+      reasonCode: "geo_accuracy_exceeded",
+      outcome: "accuracy_exceeded",
+      reference: "geo-accuracy-fallback",
+      policyPatch: { accuracy_exceeded_action: "manual_fallback" },
+    });
+
+    await expectContinueManuallyFor(page, /Location accuracy was too low/u);
+    expect(locationEvidence(punches[0].body)).toMatchObject({
+      accuracy_meters: LOW_ACCURACY_METERS,
+    });
+    await expectNoBrowserCoordinateRetention(page, FIXED_SUCCESS);
+  });
+
+  test("fallback unavailable does not show CTA or submit fallback reference", async ({ page }) => {
+    await mockGeolocationPermissionDenied(page);
+    await prepareAttendancePage(page);
+    let fallbackRequests = 0;
+
+    await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoDenialResponse({
+            reasonCode: "geo_permission_denied",
+            factualOutcome: "permission_denied",
+            message: "Location permission denied; fallback unavailable.",
+          }),
+        ),
+      });
+    });
+    await page.route("**/api/v1/attendance/geo-fallbacks/**/submit", async (route) => {
+      fallbackRequests += 1;
+      await route.fulfill({ status: 500, body: "{}" });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Location access is blocked/u)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue manually" })).toHaveCount(0);
+    expect(fallbackRequests).toBe(0);
+  });
+
+  test("rapid duplicate fallback clicks submit only one fallback request", async ({ page }) => {
+    await mockGeolocationPermissionDenied(page);
+    await prepareAttendancePage(page);
+    const { fallbackRequests } = await setupFallbackScenario(page, {
+      reasonCode: "geo_permission_denied",
+      outcome: "permission_denied",
+      reference: "geo-duplicate-fallback",
+      policyPatch: { permission_denied_action: "manual_fallback" },
+    });
+
+    await expectContinueManuallyFor(page, /Location access is blocked/u);
+    await page.getByRole("button", { name: "Continue manually" }).evaluate((button) => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+    expect(fallbackRequests).toHaveLength(1);
+    expect(await getGeolocationCallCount(page)).toBe(1);
+  });
+});
+
+test.describe("network uncertainty", () => {
+  test("uncertain geo punch retry reuses request identity and does not show fallback", async ({
+    page,
+  }) => {
+    await mockGeolocationSuccess(page, { ...FIXED_SUCCESS });
+    await prepareAttendancePage(page);
+    let state: ManualSessionState = "not_started";
+    const punches: CapturedRequest[] = [];
+
+    await routeAttendanceSummary(page, () => state, GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      punches.push({
+        body: route.request().postDataJSON() as Record<string, unknown>,
+        idempotencyKey: route.request().headers()["idempotency-key"],
+      });
+      if (punches.length === 1) {
+        await route.abort("connectionfailed");
+        return;
+      }
+      state = "open";
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoPolicyResponse({ factualOutcome: "inside_confident", allowed: true }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+    await expect(page.getByText("Outcome not confirmed", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue manually" })).toHaveCount(0);
+    expect(await getGeolocationCallCount(page)).toBe(1);
+
+    await page.getByRole("button", { name: "Retry same action" }).click();
+
+    await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
+    await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start break" })).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(1);
+    expect(punches).toHaveLength(2);
+    expect(punches[1]).toEqual(punches[0]);
+    expect(punches[0].body).toMatchObject({
+      source: "web_geo",
+      metadata: {
+        browser_location_result: "success",
+      },
+      location: {
+        latitude: FIXED_SUCCESS.latitude,
+        longitude: FIXED_SUCCESS.longitude,
+        accuracy_meters: FIXED_SUCCESS.accuracy,
+        provider: "browser",
+        permission_state: "granted",
+      },
+    });
+
+    await page.getByRole("button", { name: "Start break" }).click();
+
+    await expect(page.getByText("Break started", { exact: true })).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(2);
+    expect(punches).toHaveLength(3);
+    expect(punches[2].idempotencyKey).not.toBe(punches[0].idempotencyKey);
+    expect(punches[2].body).toMatchObject({
+      event_type: "break_start",
+      source: "web_geo",
+      metadata: {
+        browser_location_result: "success",
+      },
+    });
+  });
+
+  test("rapid interaction does not duplicate geolocation or punch requests", async ({ page }) => {
+    await mockGeolocationSuccess(page, { ...FIXED_SUCCESS, delayMs: 250 });
+    await prepareAttendancePage(page);
+    let punchRequests = 0;
+
+    await routeAttendanceSummary(page, () => "not_started", GEO_POLICY);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      punchRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          geoPolicyResponse({ factualOutcome: "inside_confident", allowed: true }),
+        ),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).evaluate((button) => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
+    expect(await getGeolocationCallCount(page)).toBe(1);
+    expect(punchRequests).toBe(1);
   });
 });
