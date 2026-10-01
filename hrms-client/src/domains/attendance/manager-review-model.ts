@@ -1,4 +1,5 @@
 import type {
+  AttendanceExactLocationAccessState,
   AttendanceGeoFactualOutcome,
   AttendanceGeoReviewType,
   AttendancePunchEventType,
@@ -17,6 +18,10 @@ export interface AttendanceReviewEvidence {
   occurredAt: string | null;
 }
 
+export interface AttendanceReviewExactLocationAccess {
+  state: AttendanceExactLocationAccessState;
+}
+
 export interface AttendanceReviewRequest {
   id: string;
   kind: "regularization" | "geo_fallback";
@@ -32,6 +37,7 @@ export interface AttendanceReviewRequest {
   evidence: AttendanceReviewEvidence[];
   geoReviewType: AttendanceGeoReviewType | null;
   geoOutcome: AttendanceGeoFactualOutcome | null;
+  exactLocationAccess: AttendanceReviewExactLocationAccess;
   canDecide: boolean;
 }
 
@@ -66,6 +72,12 @@ const GEO_OUTCOMES = new Set<AttendanceGeoFactualOutcome>([
 ]);
 
 const GEO_REVIEW_TYPES = new Set<AttendanceGeoReviewType>(["manual_fallback", "geo_decision"]);
+
+const EXACT_LOCATION_ACCESS_STATES = new Set<AttendanceExactLocationAccessState>([
+  "available_authorized",
+  "available_restricted",
+  "unavailable",
+]);
 
 const GEO_REASON_CODES = new Set([
   "geo_not_required",
@@ -314,6 +326,13 @@ function safeGeoEvidence(row: Record<string, unknown>): AttendanceReviewEvidence
   };
 }
 
+function exactLocationAccess(value: unknown): AttendanceReviewExactLocationAccess {
+  const state = stringValue(record(value).state).toLowerCase() as AttendanceExactLocationAccessState;
+  return {
+    state: EXACT_LOCATION_ACCESS_STATES.has(state) ? state : "unavailable",
+  };
+}
+
 function reviewEvidence(row: Record<string, unknown>): AttendanceReviewEvidence[] {
   const normalizedItems = array(row.items);
   const corrections =
@@ -357,6 +376,7 @@ function reviewRequest(value: unknown): AttendanceReviewRequest | null {
     evidence: reviewEvidence(row),
     geoReviewType: geoReviewType(row.review_type ?? summary.review_type),
     geoOutcome: geoOutcome(row.geo_outcome ?? summary.outcome),
+    exactLocationAccess: exactLocationAccess(row.exact_location_access),
     canDecide: status === "pending" && version > 0,
   };
 }

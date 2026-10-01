@@ -566,6 +566,17 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     );
   });
 
+  fastify.post("/geo-fallbacks/:id/exact-location", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const params = idParamSchema.parse(request.params);
+    return new AttendanceService(fastify.store).revealManagerGeoFallbackExactLocation(
+      request.actor,
+      params.id,
+    );
+  });
+
   fastify.post("/geo-fallbacks/:id/decision", async (request) => {
     if (!request.actor) {
       throw unauthorized();

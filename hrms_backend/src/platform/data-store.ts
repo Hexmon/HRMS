@@ -717,9 +717,15 @@ function rbacPermissionId(group: string, action: string): string {
     .replace(/^_+|_+$/gu, "")}:${action}`;
 }
 
+function rbacActionsForGroup(group: string): string[] {
+  return RbacPermissionActions.filter(
+    (action) => action !== "view_exact_location" || group === "Attendance",
+  );
+}
+
 function defaultRbacPermissionsFor(roleKey: string): string[] {
   const all = RbacPermissionGroups.flatMap((group) =>
-    RbacPermissionActions.map((action) => rbacPermissionId(group, action)),
+    rbacActionsForGroup(group).map((action) => rbacPermissionId(group, action)),
   );
   const viewExport = RbacPermissionGroups.flatMap((group) =>
     ["view", "export"].map((action) => rbacPermissionId(group, action)),

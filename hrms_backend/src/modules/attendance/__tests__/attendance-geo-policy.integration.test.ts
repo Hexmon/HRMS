@@ -464,6 +464,28 @@ function expectUniqueReasonCodes(reasonCodes: string[]): void {
   expect(reasonCodes).toEqual([...new Set(reasonCodes)]);
 }
 
+function grantExactLocationAccess(app: TestApp, roleKey: string): void {
+  const now = new Date().toISOString();
+  const permissionId = "attendance:view_exact_location";
+  const existing = app.store.rbacRolePermissions.find(
+    (permission) =>
+      permission.role_key === roleKey &&
+      permission.permission_id === permissionId &&
+      permission.status === "active" &&
+      !permission.deleted_at,
+  );
+  if (existing) return;
+  app.store.rbacRolePermissions.push({
+    id: randomUUID(),
+    role_key: roleKey,
+    permission_id: permissionId,
+    status: "active",
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  });
+}
+
 async function submitGeoFallbackAttempt(
   app: TestApp,
   token: string,
@@ -1551,6 +1573,119 @@ describe("PostgreSQL attendance geo policy enforcement", () => {
       });
       expect(response.statusCode).toBe(400);
     }
+  });
+
+  it("keeps exact geo fallback coordinates permissioned, audited, and out of routine queues", async () => {
+    const manager = await loginAs(app, "D1");
+    const employee = await loginAs(app, "E1");
+    const otherEmployee = await loginAs(app, "E2");
+    const companyId = employeeCompanyId(app, employee.user.id);
+    const geofenceId = await createPublishedPolygonGeofence(app, companyId);
+    await assignAttendancePolicy(app, {
+      companyId,
+      employeeUserId: employee.user.id,
+      config: {
+        effectiveGeofenceId: geofenceId,
+        outsideFenceAction: "manual_fallback",
+        fallbackApprovalMode: "approval_required",
+      },
+    });
+
+    const submit = await submitOutsideFenceFallback(app, employee.token, "check_in");
+    const review = submit.manual_fallback as { review_id: string; version: number };
+
+    const restrictedQueue = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/geo-fallbacks/queue/manager?status=pending&page=1&page_size=10",
+      headers: authHeader(manager.token),
+    });
+    expect(restrictedQueue.statusCode, restrictedQueue.body).toBe(200);
+    expect(restrictedQueue.json().items[0]).toMatchObject({
+      id: review.review_id,
+      exact_location_access: { state: "available_restricted" },
+    });
+    expect(JSON.stringify(restrictedQueue.json())).not.toMatch(
+      /"latitude"|"longitude"|12\.974|77\.597/u,
+    );
+
+    const restrictedReveal = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/exact-location`,
+      headers: authHeader(manager.token),
+      payload: {},
+    });
+    expect(restrictedReveal.statusCode).toBe(403);
+
+    grantExactLocationAccess(app, manager.user.roles[0]!);
+
+    const authorizedQueue = await app.inject({
+      method: "GET",
+      url: "/api/v1/attendance/geo-fallbacks/queue/manager?status=pending&page=1&page_size=10",
+      headers: authHeader(manager.token),
+    });
+    expect(authorizedQueue.statusCode, authorizedQueue.body).toBe(200);
+    expect(authorizedQueue.json().items[0]).toMatchObject({
+      id: review.review_id,
+      exact_location_access: { state: "available_authorized" },
+    });
+    expect(JSON.stringify(authorizedQueue.json())).not.toMatch(
+      /"latitude"|"longitude"|12\.974|77\.597/u,
+    );
+
+    const reveal = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/exact-location`,
+      headers: authHeader(manager.token),
+      payload: {},
+    });
+    expect(reveal.statusCode, reveal.body).toBe(200);
+    expect(Object.keys(reveal.json()).sort()).toEqual([
+      "accuracy_meters",
+      "captured_at",
+      "latitude",
+      "longitude",
+    ]);
+    expect(reveal.json()).toMatchObject({
+      latitude: 12.974,
+      longitude: 77.597,
+      accuracy_meters: 8,
+    });
+
+    const audits = await app.store.pgPool!.query<{
+      action: string;
+      actor_user_id: string;
+      metadata: Record<string, unknown>;
+    }>(
+      `SELECT action, actor_user_id, metadata
+         FROM attendance.location_access_audit_logs
+        WHERE company_id = $1
+          AND action = 'attendance.location_coordinates.viewed'
+        ORDER BY created_at`,
+      [companyId],
+    );
+    expect(audits.rows).toHaveLength(1);
+    expect(audits.rows[0]).toMatchObject({
+      action: "attendance.location_coordinates.viewed",
+      actor_user_id: manager.user.id,
+    });
+    expect(JSON.stringify(audits.rows[0]!.metadata)).not.toMatch(/12\.974|77\.597/u);
+
+    grantExactLocationAccess(app, otherEmployee.user.roles[0]!);
+    const noRecordAccess = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/exact-location`,
+      headers: authHeader(otherEmployee.token),
+      payload: {},
+    });
+    expect(noRecordAccess.statusCode).toBe(403);
+
+    const employeeReveal = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/geo-fallbacks/${review.review_id}/exact-location`,
+      headers: authHeader(employee.token),
+      payload: {},
+    });
+    expect(employeeReveal.statusCode).toBe(403);
   });
 
   it("presents and filters safe geo review evidence for outside, boundary, stale, and manual fallback", async () => {

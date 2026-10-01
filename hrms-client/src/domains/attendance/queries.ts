@@ -198,3 +198,9 @@ export function useAttendanceGeoFallbackDecisionMutation() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("attendance") }),
   });
 }
+
+export function useAttendanceExactLocationRevealMutation() {
+  return useMutation({
+    mutationFn: (id: string) => attendanceApi.revealGeoFallbackExactLocation(id),
+  });
+}

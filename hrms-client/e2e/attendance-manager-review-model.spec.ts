@@ -69,6 +69,7 @@ test.describe("attendance manager review model", () => {
       status: "pending",
       version: 4,
       canDecide: true,
+      exactLocationAccess: { state: "unavailable" },
     });
     expect(queue.items[0].evidence).toEqual([
       {
@@ -177,6 +178,49 @@ test.describe("attendance manager review model", () => {
     expect(renderedModel).not.toContain("19.076");
     expect(renderedModel).not.toContain("72.8777");
     expect(renderedModel).not.toContain("raw_coordinates");
+  });
+
+  test("parses exact-location access capability without retaining coordinates", () => {
+    const queue = parseAttendanceReviewQueue({
+      items: [
+        {
+          id: "geo-authorized",
+          kind: "geo_fallback",
+          employee: { full_name: "Authorized Reviewer", employee_code: "EMP-AUTH" },
+          status: "pending",
+          version: 1,
+          exact_location_access: {
+            state: "available_authorized",
+            latitude: 19.076,
+            longitude: 72.8777,
+          },
+        },
+        {
+          id: "geo-restricted",
+          kind: "geo_fallback",
+          status: "pending",
+          version: 1,
+          exact_location_access: { state: "available_restricted" },
+        },
+        {
+          id: "geo-unavailable",
+          kind: "geo_fallback",
+          status: "pending",
+          version: 1,
+          exact_location_access: { state: "unexpected", coordinates: "19.076,72.8777" },
+        },
+      ],
+    });
+
+    expect(queue.items.map((item) => item.exactLocationAccess.state)).toEqual([
+      "available_authorized",
+      "available_restricted",
+      "unavailable",
+    ]);
+    const renderedModel = JSON.stringify(queue);
+    expect(renderedModel).not.toContain("19.076");
+    expect(renderedModel).not.toContain("72.8777");
+    expect(renderedModel).not.toContain("coordinates");
   });
 
   test("fails closed for malformed rows and validates decision remarks", () => {

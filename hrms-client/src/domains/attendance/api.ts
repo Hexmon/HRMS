@@ -17,6 +17,10 @@ export type AttendanceGeoFactualOutcome =
   | "permission_denied"
   | "location_unavailable"
   | "fence_not_configured";
+export type AttendanceExactLocationAccessState =
+  | "available_authorized"
+  | "available_restricted"
+  | "unavailable";
 export type AttendanceRegularizationEventType = Extract<
   AttendancePunchEventType,
   "check_in" | "check_out"
@@ -97,6 +101,17 @@ export interface AttendanceGeoEvidenceSummary {
   grace_meters: number | null;
   work_site_name: string | null;
   work_site_type: string | null;
+}
+
+export interface AttendanceExactLocationAccess {
+  state: AttendanceExactLocationAccessState;
+}
+
+export interface AttendanceExactLocationEvidence {
+  latitude: number;
+  longitude: number;
+  captured_at: string;
+  accuracy_meters: number | null;
 }
 
 export interface AttendanceCommandDevice {
@@ -337,6 +352,15 @@ export const attendanceApi = {
       {
         method: "POST",
         body: input,
+      },
+    );
+  },
+  revealGeoFallbackExactLocation(id: string) {
+    return apiRequest<AttendanceExactLocationEvidence>(
+      `/api/v1/attendance/geo-fallbacks/${id}/exact-location`,
+      {
+        method: "POST",
+        body: {},
       },
     );
   },

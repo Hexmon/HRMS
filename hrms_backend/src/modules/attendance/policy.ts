@@ -1,6 +1,9 @@
-import type { AuthUser, CoreUser } from "#shared";
+import type { AuthUser, CoreUser, RbacRolePermissionRecord } from "#shared";
 import { Roles } from "#shared";
 import { forbidden, selfApprovalBlocked } from "../../platform/errors.js";
+
+export const ATTENDANCE_EXACT_LOCATION_PERMISSION_ID =
+  "attendance:view_exact_location";
 
 const SYSTEM_WIDE_ATTENDANCE_ROLES: readonly string[] = [
   Roles.Admin,
@@ -84,6 +87,31 @@ export function canManageAllAttendance(actor: AuthUser): boolean {
   return actor.roles.some(
     (role) => role === Roles.Admin || role === Roles.HRManager,
   );
+}
+
+export function hasExactAttendanceLocationPermission(
+  actor: AuthUser,
+  permissions: readonly RbacRolePermissionRecord[],
+): boolean {
+  const actorRoles = new Set(actor.roles);
+  return permissions.some(
+    (permission) =>
+      actorRoles.has(permission.role_key as AuthUser["roles"][number]) &&
+      permission.permission_id === ATTENDANCE_EXACT_LOCATION_PERMISSION_ID &&
+      permission.status === "active" &&
+      !permission.deleted_at,
+  );
+}
+
+export function assertCanViewExactAttendanceLocation(
+  actor: AuthUser,
+  permissions: readonly RbacRolePermissionRecord[],
+): void {
+  if (!hasExactAttendanceLocationPermission(actor, permissions)) {
+    throw forbidden(
+      "Exact attendance location access requires additional authorization.",
+    );
+  }
 }
 
 export function assertCanAssistCurrentPunch(

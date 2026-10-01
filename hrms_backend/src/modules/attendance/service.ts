@@ -62,12 +62,14 @@ import {
   assertCanDecideRegularization,
   assertCanAssistCurrentPunch,
   assertCanCreateHistoricalCorrection,
+  assertCanViewExactAttendanceLocation,
   assertCanSeeAttendanceUser,
   assertCanUseSelfAttendance,
   canManageAllAttendance,
   canSeeAllAttendance,
   canUseSelfAttendance,
   canSeeAttendanceUser,
+  hasExactAttendanceLocationPermission,
 } from "./policy.js";
 import { AttendanceRepository } from "./repository.js";
 import { PostgresGeofenceRepository } from "./geofence-repository.js";
@@ -97,6 +99,7 @@ import {
   type AttendanceApprovalFact,
 } from "./daily-projection.js";
 import { acquirePayrollAttendancePeriodLock } from "./payroll-period-service.js";
+import { AttendanceLocationAccessAuditService } from "./location-access-audit.js";
 
 export interface AttendancePageQuery {
   page: number;
@@ -154,6 +157,18 @@ interface GeoFallbackSessionStateRow {
 interface SafeGeoWorkSiteLabel {
   name: string;
   site_type: string | null;
+}
+
+type ExactAttendanceLocationAccessState =
+  | "available_authorized"
+  | "available_restricted"
+  | "unavailable";
+
+interface ExactAttendanceLocationRevealResponse {
+  latitude: number;
+  longitude: number;
+  captured_at: string;
+  accuracy_meters: number | null;
 }
 
 type EmployeeAttendanceSummarySourceType =
@@ -1441,10 +1456,19 @@ export class AttendanceService {
         review.status === requestedStatus &&
         matchesGeoReviewFilter(review, query),
     );
+    const exactLocationStates = await this.geoFallbackExactLocationAccessStates(
+      actor,
+      companyId,
+      filtered,
+    );
     return {
       ...page(
         filtered.map((review) =>
-          this.presentGeoFallbackReview(review, workSiteLabels),
+          this.presentGeoFallbackReview(
+            review,
+            workSiteLabels,
+            exactLocationStates.get(review.id) ?? "unavailable",
+          ),
         ),
         query.page,
         query.page_size,
@@ -1452,6 +1476,62 @@ export class AttendanceService {
       queue_counts: this.geoFallbackQueueCounts(
         scoped.filter((review) => matchesGeoReviewFilter(review, query)),
       ),
+    };
+  }
+
+  async revealManagerGeoFallbackExactLocation(
+    actor: AuthUser,
+    id: UUID,
+  ): Promise<ExactAttendanceLocationRevealResponse> {
+    const companyId = this.resolveAttendanceCompanyContext(
+      actor,
+      "attendance.manager_geo_fallback_exact_location",
+    ).companyId;
+    if (!this.store.pgPool) {
+      throw conflict("Exact attendance location requires location evidence persistence.");
+    }
+
+    const review = await this.findGeoFallbackReview(companyId, id);
+    if (!review) {
+      throw notFound("Geo fallback review was not found.");
+    }
+    this.assertCanAccessGeoFallbackReview(actor, companyId, review);
+    assertCanViewExactAttendanceLocation(actor, this.store.rbacRolePermissions);
+
+    const locationEvidenceId = await this.resolveGeoFallbackLocationEvidenceId(
+      companyId,
+      review.id,
+    );
+    if (!locationEvidenceId) {
+      throw notFound("Exact coordinate evidence was not found for this review.");
+    }
+
+    const evidence = await new AttendanceLocationAccessAuditService(
+      this.store.pgPool,
+    ).withAuditedExactCoordinateView({
+      companyId,
+      actorUserId: actor.id,
+      locationEvidenceId,
+      reasonCode: "manager_review_exact_location",
+      operationContext: "attendance.manager_geo_fallback.exact_location",
+      metadata: {
+        audit_scope: "exact_coordinate_view",
+        request_scope: "geo_fallback_review",
+        ui_surface: "manager_attendance_review",
+        work_date: review.work_date,
+      },
+    });
+
+    if (evidence.employeeUserId !== review.employee_user_id) {
+      throw forbidden("Exact coordinate evidence does not belong to this attendance review.");
+    }
+
+    return {
+      latitude: Number(evidence.latitude),
+      longitude: Number(evidence.longitude),
+      captured_at: evidence.capturedAt,
+      accuracy_meters:
+        evidence.accuracyMeters === null ? null : Number(evidence.accuracyMeters),
     };
   }
 
@@ -3634,6 +3714,154 @@ export class AttendanceService {
     });
   }
 
+  private async geoFallbackExactLocationAccessStates(
+    actor: AuthUser,
+    companyId: UUID,
+    reviews: AttendanceGeoFallbackReview[],
+  ): Promise<Map<UUID, ExactAttendanceLocationAccessState>> {
+    const states = new Map<UUID, ExactAttendanceLocationAccessState>();
+    if (reviews.length === 0) return states;
+    const authorized = hasExactAttendanceLocationPermission(
+      actor,
+      this.store.rbacRolePermissions,
+    );
+    if (!this.store.pgPool) {
+      for (const review of reviews) states.set(review.id, "unavailable");
+      return states;
+    }
+    const availableReviewIds = await this.availableGeoFallbackExactLocationReviewIds(
+      companyId,
+      reviews.map((review) => review.id),
+    );
+    for (const review of reviews) {
+      states.set(
+        review.id,
+        availableReviewIds.has(review.id)
+          ? authorized
+            ? "available_authorized"
+            : "available_restricted"
+          : "unavailable",
+      );
+    }
+    return states;
+  }
+
+  private async availableGeoFallbackExactLocationReviewIds(
+    companyId: UUID,
+    reviewIds: UUID[],
+  ): Promise<Set<UUID>> {
+    if (!this.store.pgPool || reviewIds.length === 0) return new Set();
+    const result = await this.store.pgPool.query<{ review_id: UUID }>(
+      `SELECT DISTINCT review.id AS review_id
+         FROM attendance.geo_fallback_reviews review
+         JOIN attendance.attendance_events event
+           ON event.company_id = review.company_id
+          AND event.command_execution_id = review.original_command_id
+          AND event.employee_user_id = review.employee_user_id
+         JOIN attendance.location_evidence location
+           ON location.company_id = event.company_id
+          AND location.attendance_event_id = event.id
+          AND location.employee_user_id = review.employee_user_id
+        WHERE review.company_id = $1
+          AND review.id = ANY($2::uuid[])
+          AND review.deleted_at IS NULL
+          AND location.latitude IS NOT NULL
+          AND location.longitude IS NOT NULL
+          AND location.coordinates_purged_at IS NULL
+          AND location.coordinates_expire_at IS NOT NULL
+          AND location.coordinates_expire_at > now()`,
+      [companyId, reviewIds],
+    );
+    return new Set(result.rows.map((row) => row.review_id));
+  }
+
+  private async findGeoFallbackReview(
+    companyId: UUID,
+    reviewId: UUID,
+  ): Promise<AttendanceGeoFallbackReview | null> {
+    if (this.store.pgPool) {
+      const result = await this.store.pgPool.query<AttendanceGeoFallbackReview>(
+        `SELECT id, company_id, employee_user_id, submitted_by_user_id,
+            current_approver_user_id, original_command_id, original_decision_id,
+            fallback_command_id, punch_event_id, event_type, work_date::text,
+            occurred_at::text, reason_code, reason_detail, geo_policy, status,
+            decision_remarks, decided_by_user_id, decided_at::text, version,
+            created_at::text, updated_at::text, deleted_at::text
+         FROM attendance.geo_fallback_reviews
+         WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL`,
+        [reviewId, companyId],
+      );
+      return result.rows[0] ?? null;
+    }
+    return (
+      this.store.attendanceGeoFallbackReviews.find(
+        (review) =>
+          review.id === reviewId &&
+          review.company_id === companyId &&
+          !review.deleted_at,
+      ) ?? null
+    );
+  }
+
+  private assertCanAccessGeoFallbackReview(
+    actor: AuthUser,
+    companyId: UUID,
+    review: AttendanceGeoFallbackReview,
+  ): void {
+    if (actor.id === review.employee_user_id) {
+      throw forbidden("Employees cannot reveal exact attendance coordinates.");
+    }
+    const subject = this.store.users.find(
+      (user) =>
+        user.id === review.employee_user_id &&
+        this.isUserInCompany(user.id, companyId),
+    );
+    if (!subject) {
+      throw notFound("Geo fallback review employee was not found.");
+    }
+    assertCanSeeAttendanceUser(actor, subject);
+    if (
+      canSeeAllAttendance(actor) ||
+      review.current_approver_user_id === actor.id
+    ) {
+      return;
+    }
+    throw forbidden(
+      "Exact location access is limited to the assigned attendance reviewer, HR, Admin, or Auditor users.",
+    );
+  }
+
+  private async resolveGeoFallbackLocationEvidenceId(
+    companyId: UUID,
+    reviewId: UUID,
+  ): Promise<UUID | null> {
+    if (!this.store.pgPool) return null;
+    const result = await this.store.pgPool.query<{ location_evidence_id: UUID }>(
+      `SELECT location.id AS location_evidence_id
+         FROM attendance.geo_fallback_reviews review
+         JOIN attendance.attendance_events event
+           ON event.company_id = review.company_id
+          AND event.command_execution_id = review.original_command_id
+          AND event.employee_user_id = review.employee_user_id
+         JOIN attendance.location_evidence location
+           ON location.company_id = event.company_id
+          AND location.attendance_event_id = event.id
+          AND location.employee_user_id = review.employee_user_id
+        WHERE review.company_id = $1
+          AND review.id = $2
+          AND review.deleted_at IS NULL
+          AND location.latitude IS NOT NULL
+          AND location.longitude IS NOT NULL
+          AND location.coordinates_purged_at IS NULL
+          AND location.coordinates_expire_at IS NOT NULL
+          AND location.coordinates_expire_at > now()
+        ORDER BY location.captured_at DESC, location.id
+        LIMIT 1`,
+      [companyId, reviewId],
+    );
+    return result.rows[0]?.location_evidence_id ?? null;
+  }
+
   private company(companyId: UUID) {
     const company = this.store.companyProfiles.find(
       (candidate) =>
@@ -4808,6 +5036,7 @@ export class AttendanceService {
   private presentGeoFallbackReview(
     request: AttendanceGeoFallbackReview,
     workSiteLabels = new Map<UUID, SafeGeoWorkSiteLabel>(),
+    exactLocationAccessState: ExactAttendanceLocationAccessState = "unavailable",
   ) {
     const user = this.store.users.find(
       (candidate) => candidate.id === request.employee_user_id,
@@ -4851,6 +5080,9 @@ export class AttendanceService {
       ],
       geo_evidence_summary: {
         ...safeGeoEvidenceSummary(request, workSiteLabels),
+      },
+      exact_location_access: {
+        state: exactLocationAccessState,
       },
       manual_fallback: {
         original_command_id: request.original_command_id,

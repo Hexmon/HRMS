@@ -2177,7 +2177,9 @@ function monthName(month: number): string {
 
 function permissionCatalog(): RbacPermissionDefinition[] {
   return RbacPermissionGroups.flatMap((group) =>
-    RbacPermissionActions.map((action) => {
+    RbacPermissionActions.filter(
+      (action) => action !== "view_exact_location" || group === "Attendance",
+    ).map((action) => {
       const id = permissionId(group, action);
       return {
         id,

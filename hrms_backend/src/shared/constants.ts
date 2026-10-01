@@ -63,7 +63,8 @@ export const RbacPermissionActions = [
   "delete",
   "approve",
   "export",
-  "configure"
+  "configure",
+  "view_exact_location"
 ] as const;
 
 export type RbacPermissionAction = (typeof RbacPermissionActions)[number];

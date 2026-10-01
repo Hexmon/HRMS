@@ -6,6 +6,9 @@ import {
   Check,
   ClipboardCheck,
   Clock3,
+  Eye,
+  LockKeyhole,
+  MapPin,
   MapPinCheck,
   Plus,
   RefreshCw,
@@ -46,6 +49,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DataTable, StatusBadge, UserAvatar, type Column } from "@/components/ui-kit";
 import { ApiError, userFacingErrorMessage } from "@/shared/api";
 import {
+  useAttendanceExactLocationRevealMutation,
   useAttendanceRegularizationDecisionMutation,
   useAttendanceGeoFallbackDecisionMutation,
   useManagerAttendanceRegularizationQueue,
@@ -64,7 +68,11 @@ import {
   type AttendanceReviewRequest,
   type AttendanceReviewStatus,
 } from "./manager-review-model";
-import type { AttendanceGeoFactualOutcome, AttendanceGeoReviewType } from "./api";
+import type {
+  AttendanceExactLocationEvidence,
+  AttendanceGeoFactualOutcome,
+  AttendanceGeoReviewType,
+} from "./api";
 
 const PAGE_SIZE = 20;
 
@@ -167,6 +175,98 @@ function DecisionButton({
   );
 }
 
+function formatExactCoordinate(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(6) : "Not available";
+}
+
+function formatAccuracy(value: number | null): string {
+  return value === null || !Number.isFinite(value) ? "Not available" : `${Math.round(value)} m`;
+}
+
+function ExactLocationAccessSection({
+  request,
+  onReveal,
+}: {
+  request: AttendanceReviewRequest;
+  onReveal: () => void;
+}) {
+  if (request.kind !== "geo_fallback") return null;
+
+  const state = request.exactLocationAccess.state;
+  if (state === "available_authorized") {
+    return (
+      <section className="rounded-md border border-border p-4">
+        <div className="flex items-start gap-3">
+          <MapPin className="mt-0.5 h-4 w-4 text-primary" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold">Exact location</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Exact coordinates are sensitive attendance evidence. Viewing them is audited.
+            </p>
+            <Button className="mt-3" size="sm" onClick={onReveal}>
+              <Eye className="h-4 w-4" />
+              View exact location
+            </Button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (state === "available_restricted") {
+    return (
+      <section className="rounded-md border border-border p-4">
+        <div className="flex items-start gap-3">
+          <LockKeyhole className="mt-0.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold">Exact location</h3>
+            <p className="mt-1 text-sm font-medium">Permission required</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              You can review the location summary, but exact coordinates require additional
+              authorization. Ask a system administrator to grant exact-location access.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-md border border-border p-4">
+      <div className="flex items-start gap-3">
+        <MapPinCheck className="mt-0.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">Exact location</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Exact coordinates are not available for this attendance evidence.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ExactLocationRows({ evidence }: { evidence: AttendanceExactLocationEvidence }) {
+  const rows = [
+    ["Latitude", formatExactCoordinate(evidence.latitude)],
+    ["Longitude", formatExactCoordinate(evidence.longitude)],
+    ["Recorded", formatAttendanceReviewDateTime(evidence.captured_at)],
+    ["Accuracy", formatAccuracy(evidence.accuracy_meters)],
+  ];
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {rows.map(([label, value]) => (
+        <div key={label} className="rounded-md border bg-muted/20 p-3">
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <p className="mt-1 break-words text-sm font-semibold tabular-nums text-foreground">
+            {value}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) {
   const [status, setStatus] = useState<AttendanceReviewStatus>("pending");
   const [month, setMonth] = useState(currentMonth);
@@ -178,6 +278,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
   const [decision, setDecision] = useState<AttendanceReviewDecision | null>(null);
   const [remarks, setRemarks] = useState("");
   const [remarksError, setRemarksError] = useState<string | null>(null);
+  const [exactLocationOpen, setExactLocationOpen] = useState(false);
 
   const queueQuery = useManagerAttendanceRegularizationQueue(
     {
@@ -193,9 +294,39 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
   );
   const decisionMutation = useAttendanceRegularizationDecisionMutation();
   const geoFallbackDecisionMutation = useAttendanceGeoFallbackDecisionMutation();
+  const exactLocationMutation = useAttendanceExactLocationRevealMutation();
   const queue = useMemo(() => parseAttendanceReviewQueue(queueQuery.data), [queueQuery.data]);
   const visibleItems = queue.items;
   const pageCount = Math.max(1, Math.ceil(queue.total / queue.pageSize));
+
+  const clearExactLocation = () => {
+    setExactLocationOpen(false);
+    exactLocationMutation.reset();
+  };
+
+  const selectRequest = (request: AttendanceReviewRequest | null) => {
+    clearExactLocation();
+    setSelected(request);
+  };
+
+  const closeReviewDetail = () => {
+    selectRequest(null);
+  };
+
+  const closeExactLocation = () => {
+    if (exactLocationMutation.isPending) return;
+    clearExactLocation();
+  };
+
+  const confirmExactLocationReveal = async () => {
+    if (!selected || selected.kind !== "geo_fallback") return;
+    exactLocationMutation.reset();
+    try {
+      await exactLocationMutation.mutateAsync(selected.id);
+    } catch {
+      // Error details are rendered inside the audited reveal dialog.
+    }
+  };
 
   const columns = useMemo<Column<AttendanceReviewRequest>[]>(
     () => [
@@ -261,25 +392,25 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
   const changeStatus = (value: string) => {
     setStatus(value as AttendanceReviewStatus);
     setPage(1);
-    setSelected(null);
+    closeReviewDetail();
   };
 
   const changeMonth = (value: string) => {
     setMonth(value || currentMonth());
     setPage(1);
-    setSelected(null);
+    closeReviewDetail();
   };
 
   const changeGeoOutcome = (value: string) => {
     setGeoOutcome(value as AttendanceGeoFactualOutcome | "all");
     setPage(1);
-    setSelected(null);
+    closeReviewDetail();
   };
 
   const changeReviewType = (value: string) => {
     setReviewType(value as AttendanceGeoReviewType | "all");
     setPage(1);
-    setSelected(null);
+    closeReviewDetail();
   };
 
   const openDecision = (nextDecision: AttendanceReviewDecision) => {
@@ -326,14 +457,14 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
         description: `${selected.employeeName}'s request has been updated.`,
       });
       setDecision(null);
-      setSelected(null);
+      closeReviewDetail();
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         toast.error("This request changed before your decision was saved.", {
           description: "The queue has been refreshed. Review the latest version and try again.",
         });
         setDecision(null);
-        setSelected(null);
+        closeReviewDetail();
         await queueQuery.refetch();
         return;
       }
@@ -387,7 +518,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                 onChange={(event) => {
                   setSearch(event.target.value);
                   setPage(1);
-                  setSelected(null);
+                  closeReviewDetail();
                 }}
               />
             </div>
@@ -456,11 +587,11 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
         hideToolbar
         emptyTitle={`No ${status} requests`}
         emptyDescription={`There are no ${status} attendance reviews for ${month}.`}
-        onRowClick={setSelected}
+        onRowClick={selectRequest}
         rowActions={(request) => [
           {
             label: request.status === "pending" ? "Review request" : "View request",
-            onClick: () => setSelected(request),
+            onClick: () => selectRequest(request),
           },
         ]}
       />
@@ -492,7 +623,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
         </div>
       </div>
 
-      <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
+      <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && closeReviewDetail()}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
           {selected && (
             <div className="flex min-h-full flex-col">
@@ -555,6 +686,14 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                   )}
                 </section>
 
+                <ExactLocationAccessSection
+                  request={selected}
+                  onReveal={() => {
+                    exactLocationMutation.reset();
+                    setExactLocationOpen(true);
+                  }}
+                />
+
                 <section className="grid grid-cols-1 gap-3 border-y py-4 text-sm sm:grid-cols-2">
                   <div>
                     <p className="text-xs text-muted-foreground">Submitted</p>
@@ -602,6 +741,94 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
           )}
         </SheetContent>
       </Sheet>
+
+      <Dialog open={exactLocationOpen} onOpenChange={(open) => !open && closeExactLocation()}>
+        <DialogContent>
+          {selected && (
+            <>
+              <DialogHeader>
+                <DialogTitle>View exact location?</DialogTitle>
+                <DialogDescription>
+                  Exact coordinates are sensitive attendance evidence. This access will be recorded
+                  in the audit log.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+                  <p className="font-medium">Sensitive attendance evidence - access audited</p>
+                  <p className="mt-1 text-muted-foreground">
+                    Summary evidence remains available without revealing exact coordinates.
+                  </p>
+                </div>
+
+                {exactLocationMutation.data && (
+                  <ExactLocationRows evidence={exactLocationMutation.data} />
+                )}
+
+                {exactLocationMutation.isError && (
+                  <Alert
+                    variant={
+                      exactLocationMutation.error instanceof ApiError &&
+                      exactLocationMutation.error.status === 403
+                        ? "default"
+                        : "destructive"
+                    }
+                  >
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>
+                      {exactLocationMutation.error instanceof ApiError &&
+                      exactLocationMutation.error.status === 403
+                        ? "Permission denied"
+                        : exactLocationMutation.error instanceof ApiError &&
+                            exactLocationMutation.error.status === 404
+                          ? "Exact location unavailable"
+                          : "Exact location could not be shown"}
+                    </AlertTitle>
+                    <AlertDescription>
+                      {userFacingErrorMessage(
+                        exactLocationMutation.error,
+                        "The exact attendance location could not be shown.",
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={closeExactLocation}
+                  disabled={exactLocationMutation.isPending}
+                >
+                  {exactLocationMutation.data ? "Close" : "Cancel"}
+                </Button>
+                {!exactLocationMutation.data &&
+                  !(
+                    exactLocationMutation.error instanceof ApiError &&
+                    exactLocationMutation.error.status === 403
+                  ) && (
+                    <Button
+                      onClick={confirmExactLocationReveal}
+                      disabled={exactLocationMutation.isPending}
+                    >
+                      {exactLocationMutation.isPending ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                      {exactLocationMutation.isPending
+                        ? "Viewing"
+                        : exactLocationMutation.isError
+                          ? "Try again"
+                          : "View exact location"}
+                    </Button>
+                  )}
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(decision)} onOpenChange={(open) => !open && closeDecision()}>
         <DialogContent>

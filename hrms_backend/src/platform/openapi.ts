@@ -1283,6 +1283,7 @@ const adminRbacPermissionSchema = {
         "approve",
         "export",
         "configure",
+        "view_exact_location",
       ],
       example: "view",
     },
@@ -4962,6 +4963,33 @@ const attendanceRegularizationSchema = {
     decision_remarks: null,
     version: 1,
   },
+};
+
+const attendanceExactLocationResponseSchema = {
+  type: "object",
+  required: ["latitude", "longitude", "captured_at", "accuracy_meters"],
+  properties: {
+    latitude: {
+      type: "number",
+      minimum: -90,
+      maximum: 90,
+      example: 12.971599,
+    },
+    longitude: {
+      type: "number",
+      minimum: -180,
+      maximum: 180,
+      example: 77.594566,
+    },
+    captured_at: dateTime("Location evidence capture timestamp"),
+    accuracy_meters: {
+      type: "number",
+      nullable: true,
+      minimum: 0,
+      example: 18,
+    },
+  },
+  additionalProperties: false,
 };
 
 const attendanceGeofenceCircleShapeSchema = {
@@ -9391,6 +9419,37 @@ const routeDocs: Record<string, RouteSchema> = {
       response200: { type: "object", additionalProperties: true },
     },
   ),
+  "GET /api/v1/attendance/geo-fallbacks/queue/manager": operation(
+    "Attendance",
+    "Manager geo fallback queue",
+    "Lists geo fallback reviews assigned to the authenticated manager, or all in-scope reviews for HR/Admin/Auditor monitor views. Routine responses contain summary evidence and exact-location capability state only; exact coordinates are never included.",
+    {
+      querystring: attendanceQuerySchema,
+      response200: {
+        ...paginated(attendanceRegularizationSchema),
+        additionalProperties: true,
+      },
+    },
+  ),
+  "POST /api/v1/attendance/geo-fallbacks/{id}/exact-location": operation(
+    "Attendance",
+    "Reveal exact attendance location",
+    "Reveals minimal exact coordinates for a manager-visible geo fallback review after record-level authorization, dedicated exact-location permission, and the audited exact-coordinate read path succeed.",
+    {
+      params: idParamSchema,
+      response200: attendanceExactLocationResponseSchema,
+    },
+  ),
+  "POST /api/v1/attendance/geo-fallbacks/{id}/decision": operation(
+    "Attendance",
+    "Decide geo fallback review",
+    "Approves, returns, or rejects a pending geo fallback review with optimistic concurrency. Reject/return require remarks and self-processing is blocked.",
+    {
+      params: idParamSchema,
+      body: attendanceRegularizationDecisionBody,
+      response200: { type: "object", additionalProperties: true },
+    },
+  ),
   "POST /api/v1/attendance/payroll-periods": operation(
     "Attendance",
     "Create attendance payroll period",
@@ -11866,6 +11925,7 @@ export const openApiComponents = {
     AttendanceRegularizationItem: (
       attendanceRegularizationCreateBody.properties.items as RouteSchema
     ).items,
+    AttendanceExactLocationReveal: attendanceExactLocationResponseSchema,
     AttendanceGeofenceCircleShape: attendanceGeofenceCircleShapeSchema,
     AttendanceGeofencePolygonShape: attendanceGeofencePolygonShapeSchema,
     AttendanceGeofencePublishedVersion:
