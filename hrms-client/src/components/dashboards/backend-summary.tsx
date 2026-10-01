@@ -18,6 +18,10 @@ import { Link } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { DataCard, EmptyState, SkeletonStats, StatCard, StatusBadge } from "@/components/ui-kit";
+import {
+  ATTENDANCE_REPORTING_EVIDENCE_OPTIONS,
+  attendanceReportingEvidenceLabel,
+} from "@/domains/attendance/reporting-evidence";
 import type { DashboardMetric, DashboardSummary } from "@/domains/dashboard";
 
 interface Props {
@@ -77,7 +81,7 @@ export function BackendDashboardSummary({ summary, loading, error }: Props) {
         })}
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-4">
         <DataCard
           title="Headcount by department"
           description="Active employees across your workspace structure"
@@ -107,6 +111,15 @@ export function BackendDashboardSummary({ summary, loading, error }: Props) {
         </DataCard>
 
         <DataCard
+          title="Attendance evidence"
+          description="Current reporting confidence"
+          className="glass-panel dashboard-glass-card"
+          padded={false}
+        >
+          <AttendanceEvidencePanel summary={summary} />
+        </DataCard>
+
+        <DataCard
           title="Approval queue"
           description="Work waiting for leadership attention"
           className="glass-panel dashboard-glass-card"
@@ -131,6 +144,40 @@ export function BackendDashboardSummary({ summary, loading, error }: Props) {
           <OperationsPanel summary={summary} />
         </DataCard>
       </div>
+    </div>
+  );
+}
+
+function AttendanceEvidencePanel({ summary }: { summary: DashboardSummary }) {
+  const counts = summary.attendance?.evidence_categories ?? {};
+  const total = ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.reduce(
+    (sum, option) => sum + Number(counts[option.value] ?? 0),
+    0,
+  );
+  return (
+    <div className="space-y-3 p-3">
+      {total === 0 ? (
+        <div className="dashboard-liquid-hero rounded-2xl p-4">
+          <p className="text-sm font-semibold">No evidence states today</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Attendance evidence categories will appear as team records are processed.
+          </p>
+        </div>
+      ) : null}
+      <ul className="space-y-2">
+        {ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.map((option) => (
+          <li
+            key={option.value}
+            className="dashboard-liquid-row flex items-center justify-between gap-3 rounded-xl px-3.5 py-3"
+          >
+            <StatusBadge
+              status={option.value}
+              label={attendanceReportingEvidenceLabel(option.value)}
+            />
+            <span className="text-sm font-semibold">{Number(counts[option.value] ?? 0)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
