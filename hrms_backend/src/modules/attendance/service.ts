@@ -98,6 +98,12 @@ import {
   secondsBetween,
   type AttendanceApprovalFact,
 } from "./daily-projection.js";
+import {
+  countAttendanceReportingEvidenceCategories,
+  deriveAttendanceReportingEvidenceCategory,
+  type AttendanceReportingEvidenceCategory,
+  type AttendanceReportingEvidenceSignals,
+} from "./reporting-evidence.js";
 import { acquirePayrollAttendancePeriodLock } from "./payroll-period-service.js";
 import { AttendanceLocationAccessAuditService } from "./location-access-audit.js";
 
@@ -112,7 +118,10 @@ export interface AttendancePageQuery {
   company_id?: UUID | null;
   user_id?: UUID;
   department_id?: UUID;
+  manager_user_id?: UUID;
   status?: string;
+  evidence_category?: AttendanceReportingEvidenceCategory;
+  reporting_evidence_category?: AttendanceReportingEvidenceCategory;
   exception_type?: string;
   employee_search?: string;
   geo_outcome?: string;
@@ -321,7 +330,10 @@ export interface AttendanceExportInput {
     user_id?: UUID;
     employee_user_id?: UUID;
     department_id?: UUID;
+    manager_user_id?: UUID;
     status?: string;
+    evidence_category?: AttendanceReportingEvidenceCategory;
+    reporting_evidence_category?: AttendanceReportingEvidenceCategory;
     date_from?: string;
     date_to?: string;
   };
@@ -1057,6 +1069,7 @@ export class AttendanceService {
       actor,
       companyId,
       query.department_id,
+      query.manager_user_id,
     );
     const activeUsers = visibleUsers.filter(
       (user) => user.employment_status === EmploymentStatuses.Active,
@@ -1084,6 +1097,9 @@ export class AttendanceService {
       generated_at: nowIso(),
       date,
       totals: this.teamTotals(records, activeUsers.length),
+      evidence_categories: countAttendanceReportingEvidenceCategories(
+        records.map((record) => this.reportingEvidenceCategory(record)),
+      ),
       department_summary: this.departmentSummary(records, activeUsers),
       exceptions,
     };
@@ -1138,7 +1154,7 @@ export class AttendanceService {
       todayDate(this.timezoneForUser(actor.id, companyId));
     const users = query.user_id
       ? [this.requireUser(query.user_id)]
-      : this.visibleUsers(actor, companyId, query.department_id);
+      : this.visibleUsers(actor, companyId, query.department_id, query.manager_user_id);
     for (const user of users) {
       assertCanSeeAttendanceUser(actor, user);
       this.assertTargetUserInCompany(user.id, companyId, {
@@ -1326,6 +1342,7 @@ export class AttendanceService {
       actor,
       companyId,
       query.department_id,
+      query.manager_user_id,
     ).filter((user) => user.id !== actor.id);
     visibleUsers = filterAttendanceUsers(visibleUsers, query);
     const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
@@ -1410,6 +1427,7 @@ export class AttendanceService {
       actor,
       companyId,
       query.department_id,
+      query.manager_user_id,
     );
     visibleUsers = filterAttendanceUsers(visibleUsers, query);
     const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
@@ -2051,6 +2069,7 @@ export class AttendanceService {
       actor,
       companyId,
       query.department_id,
+      query.manager_user_id,
     );
     const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
     const regularizations = this.repository.listRegularizations({
@@ -2433,6 +2452,7 @@ export class AttendanceService {
           "employee",
           "date",
           "status",
+          "reporting_evidence_category",
           "in_time",
           "out_time",
           "hours",
@@ -2500,6 +2520,15 @@ export class AttendanceService {
           !textFilter(filters.status) ||
           matchesLegacyAttendanceStatus(record, textFilter(filters.status)!),
       )
+      .filter((record) => {
+        const requestedCategory =
+          textFilter(filters.reporting_evidence_category) ??
+          textFilter(filters.evidence_category);
+        return (
+          !requestedCategory ||
+          this.reportingEvidenceCategory(record) === requestedCategory
+        );
+      })
       .filter(
         (record) =>
           !textFilter(filters.date_from) ||
@@ -2517,6 +2546,22 @@ export class AttendanceService {
         return (
           !textFilter(filters.department_id) ||
           user?.department_id === textFilter(filters.department_id)
+        );
+      })
+      .filter((record) => {
+        const managerId = textFilter(filters.manager_user_id);
+        if (!managerId) return true;
+        const user = this.store.users.find(
+          (candidate) => candidate.id === record.employee_user_id,
+        );
+        const manager = this.store.users.find(
+          (candidate) => candidate.id === managerId && !candidate.deleted_at,
+        );
+        return Boolean(
+          user &&
+            manager &&
+            (user.id === manager.id ||
+              user.hierarchy_path.startsWith(`${manager.hierarchy_path}.`)),
         );
       })
       .sort((left, right) => right.work_date.localeCompare(left.work_date))
@@ -2542,6 +2587,8 @@ export class AttendanceService {
           date: record.work_date,
           work_date: record.work_date,
           status: record.status,
+          reporting_evidence_category:
+            this.reportingEvidenceCategory(record) ?? "",
           day_classification: record.day_classification,
           presence_state: record.presence_state,
           punctuality_state: record.punctuality_state,
@@ -4174,11 +4221,67 @@ export class AttendanceService {
       .filter((row) => row.strength > 0);
   }
 
+  private reportingEvidenceCategory(
+    record: AttendanceDayRecord,
+  ): AttendanceReportingEvidenceCategory | null {
+    return deriveAttendanceReportingEvidenceCategory({
+      day: record,
+      signals: this.reportingEvidenceSignals(record),
+    });
+  }
+
+  private reportingEvidenceSignals(
+    record: AttendanceDayRecord,
+  ): AttendanceReportingEvidenceSignals {
+    const reviews = this.store.attendanceGeoFallbackReviews.filter(
+      (review) =>
+        review.company_id === record.company_id &&
+        review.employee_user_id === record.employee_user_id &&
+        review.work_date === record.work_date &&
+        !review.deleted_at,
+    );
+    const offlineVerificationStatuses = this.store.outbox
+      .filter(
+        (event) =>
+          event.event_type === "attendance.provisional.recorded" &&
+          event.payload.company_id === record.company_id &&
+          event.payload.subject_employee_user_id === record.employee_user_id &&
+          typeof event.payload.captured_at === "string" &&
+          event.payload.captured_at.slice(0, 10) === record.work_date,
+      )
+      .map((event) => event.payload.verification_status);
+    return {
+      reviewRequired: reviews.some(
+        (review) => review.status === "pending" || review.status === "returned",
+      ) || offlineVerificationStatuses.includes("review_required"),
+      operativeRejected: offlineVerificationStatuses.includes("rejected"),
+      provisional: offlineVerificationStatuses.includes("unverified"),
+      hasContributingEvidence: Boolean(
+        record.first_check_in ||
+          record.last_check_out ||
+          record.work_seconds > 0 ||
+          offlineVerificationStatuses.length > 0 ||
+          reviews.some((review) => review.status === "approved"),
+      ),
+    };
+  }
+
   private visibleUsers(
     actor: AuthUser,
     companyId: UUID,
     departmentId?: UUID,
+    managerUserId?: UUID,
   ): CoreUser[] {
+    const manager = managerUserId ? this.store.users.find(
+      (user) =>
+        user.id === managerUserId &&
+        !user.deleted_at &&
+        this.isUserInCompany(user.id, companyId) &&
+        canSeeAttendanceUser(actor, user),
+    ) : null;
+    if (managerUserId && !manager) {
+      return [];
+    }
     return this.store.users.filter((user) => {
       if (
         !visibleUserPredicate(actor, user) ||
@@ -4187,6 +4290,13 @@ export class AttendanceService {
         return false;
       }
       if (departmentId && user.department_id !== departmentId) {
+        return false;
+      }
+      if (
+        manager &&
+        user.id !== manager.id &&
+        !user.hierarchy_path.startsWith(`${manager.hierarchy_path}.`)
+      ) {
         return false;
       }
       return true;
@@ -5002,6 +5112,7 @@ export class AttendanceService {
   private presentDay(day: AttendanceDayRecord, timeZone: string) {
     return {
       ...day,
+      reporting_evidence_category: this.reportingEvidenceCategory(day),
       in_time: timeText(day.first_check_in, timeZone),
       out_time: timeText(day.last_check_out, timeZone),
       hours: minutesToHours(day.work_minutes),

@@ -22,6 +22,10 @@ import {
   useMyAttendanceSummary,
   useTeamAttendanceSummary,
 } from "@/domains/attendance";
+import {
+  ATTENDANCE_REPORTING_EVIDENCE_OPTIONS,
+  attendanceReportingEvidenceLabel,
+} from "@/domains/attendance/reporting-evidence";
 import { currentLocalMonth, localIsoDate } from "@/domains/attendance/live";
 import {
   asArray,
@@ -77,6 +81,7 @@ function AdminView() {
   const query = useTeamAttendanceSummary({ date_from: todayIsoDate(), page: 1, page_size: 8 });
   const data = asRecord(query.data);
   const totals = asRecord(data.totals);
+  const evidenceCategories = asRecord(data.evidence_categories);
   const departments = records(data.department_summary);
   const exceptions = records(data.exceptions);
   const total = numberValue(totals.total);
@@ -175,6 +180,29 @@ function AdminView() {
                   </li>
                 );
               })}
+            </ul>
+          )}
+        </DataCard>
+
+        <DataCard title="Evidence state" description="Today">
+          {query.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading evidence states...</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.map((option) => (
+                <li
+                  key={option.value}
+                  className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5 text-sm"
+                >
+                  <StatusBadge
+                    status={option.value}
+                    label={attendanceReportingEvidenceLabel(option.value)}
+                  />
+                  <span className="font-semibold">
+                    {numberValue(evidenceCategories[option.value])}
+                  </span>
+                </li>
+              ))}
             </ul>
           )}
         </DataCard>

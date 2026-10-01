@@ -16,6 +16,7 @@ import {
 import { badRequest, conflict, forbidden, unauthorized } from "../../platform/errors.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { AttendanceService } from "./service.js";
+import { AttendanceReportingEvidenceCategoryValues } from "./reporting-evidence.js";
 import { AttendancePayrollPeriodService } from "./payroll-period-service.js";
 import { AttendanceOfflineSyncService } from "./offline-sync-service.js";
 import { AttendanceGeoPolicySimulationService } from "./geo-policy-simulation-service.js";
@@ -52,7 +53,12 @@ const attendanceQuerySchema = paginationQuerySchema.extend({
   month: monthQuerySchema.optional(),
   user_id: z.uuid().optional(),
   department_id: z.uuid().optional(),
+  manager_user_id: z.uuid().optional(),
   status: z.string().optional(),
+  evidence_category: z.enum(AttendanceReportingEvidenceCategoryValues).optional(),
+  reporting_evidence_category: z
+    .enum(AttendanceReportingEvidenceCategoryValues)
+    .optional(),
   employee_search: z.string().trim().max(120).optional(),
   geo_outcome: z.string().trim().max(80).optional(),
   review_type: z.enum(["manual_fallback", "geo_decision"]).optional(),
@@ -65,7 +71,12 @@ const attendanceExportFiltersSchema = z.object({
   user_id: z.uuid().optional(),
   employee_user_id: z.uuid().optional(),
   department_id: z.uuid().optional(),
+  manager_user_id: z.uuid().optional(),
   status: z.string().optional(),
+  evidence_category: z.enum(AttendanceReportingEvidenceCategoryValues).optional(),
+  reporting_evidence_category: z
+    .enum(AttendanceReportingEvidenceCategoryValues)
+    .optional(),
   date_from: isoDateQuerySchema.optional(),
   date_to: isoDateQuerySchema.optional(),
 });

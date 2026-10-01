@@ -73,7 +73,10 @@ export interface AttendanceQuery extends PageQuery {
   month?: string;
   user_id?: string;
   department_id?: string;
+  manager_user_id?: string;
   status?: string;
+  evidence_category?: string;
+  reporting_evidence_category?: string;
   employee_search?: string;
   geo_outcome?: AttendanceGeoFactualOutcome;
   review_type?: AttendanceGeoReviewType;
