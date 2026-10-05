@@ -58,6 +58,10 @@ requests. New clients should use `items`.
 | `POST` | `/api/v1/attendance/employees/{employeeUserId}/historical-corrections` | Admin/HR historical check-in/check-out correction. | Current privileged endpoint |
 | `POST` | `/api/v1/attendance/regularizations` | Employee regularization request. | Current endpoint with deprecated `requested_punches` field |
 | `POST` | `/api/v1/attendance/regularizations/{id}/decision` | Manager decision on a regularization request. | Current manager endpoint |
+| `POST` | `/api/v1/attendance/geo-fallbacks/{id}/submit` | Employee confirmation of an existing manual geo fallback decision. | Current idempotent endpoint with empty body |
+| `GET` | `/api/v1/attendance/geo-fallbacks/queue/manager` | Manager/HR/Admin/Auditor queue for manual geo fallback reviews. | Current safe-evidence endpoint |
+| `POST` | `/api/v1/attendance/geo-fallbacks/{id}/exact-location` | Privileged exact coordinate reveal for a manager-visible geo fallback review. | Current audited endpoint requiring exact-location permission |
+| `POST` | `/api/v1/attendance/geo-fallbacks/{id}/decision` | Manager decision on a geo fallback review. | Current manager endpoint |
 
 All command endpoints require an authenticated actor. Self-service and mobile
 clients should use `Authorization: Bearer <access_token>`. Browser clients may
@@ -96,9 +100,35 @@ mobile clients because mobile attendance evidence requires a valid
 
 ### Current Envelope
 
-Use the current envelope for all new web, kiosk, and online mobile clients:
+Use the current envelope for all new web, kiosk, and online mobile clients.
+Browser web clients currently send `device: null`; native mobile clients send a
+non-null device object with `registered_device_id`.
+
+Browser web envelope example:
+
+```json
+{
+  "client_event_id": "00000000-0000-4000-8000-000000000101",
+  "captured_at": "2026-08-21T09:00:00.000+05:30",
+  "device": null,
+  "command": {
+    "event_type": "check_in",
+    "work_mode": "office",
+    "source": "web",
+    "metadata": {
+      "source_view": "attendance_self_service",
+      "client_timezone": "Asia/Kolkata"
+    }
+  }
+}
+```
+
+Device metadata such as `device_id`, `platform`, `app_version`, and
+`os_version` is bounded audit metadata. It does not establish authentication,
+tenancy, geofence policy, or authorization.
 
 Online mobile envelope example:
+
 
 ```json
 {
@@ -208,6 +238,52 @@ Coordinate evidence includes:
 
 Failure evidence uses `permission_state` `denied` or `unavailable` and must not
 include coordinates. For `source: "web_geo"`, location evidence is required.
+
+Browser failure evidence example:
+
+```json
+{
+  "captured_at": "2026-08-21T03:29:58.000Z",
+  "provider": "browser",
+  "permission_state": "denied",
+  "integrity_status": "permission_denied"
+}
+```
+
+Do not include `latitude`, `longitude`, or coordinate arrays in failure
+evidence.
+
+### Geo Evidence Privacy Boundary
+
+Command input may include exact coordinates as one-shot evidence when the source
+schema allows it. Routine employee and manager responses expose only safe geo
+summaries: outcome, reason code, selected action, work-site label, thresholds,
+distance/margin values, and exact-location capability state where applicable.
+
+Exact coordinates are returned only from:
+
+```text
+POST /api/v1/attendance/geo-fallbacks/{id}/exact-location
+```
+
+That endpoint requires record-level visibility plus the
+`attendance:view_exact_location` permission and uses the audited exact-coordinate
+read path. Permission denial is a `403` error envelope, not a `200` response with
+null coordinates.
+
+### Employee Self Evidence
+
+`GET /api/v1/attendance/calendar/daily` may include `self_evidence` for the
+authenticated employee's own day. The self-evidence block contains:
+
+- day summary state;
+- `summary_sources`;
+- events with decision/reason context;
+- safe geo context without raw coordinates;
+- regularization relationships and safe target-punch summaries.
+
+Managers and auditors should use their scoped queue/read APIs; the self-evidence
+block is not a privileged exact-location reveal.
 
 ## Idempotency And Replay Contract
 
@@ -487,12 +563,7 @@ curl -sS -X POST "$BASE_URL/api/v1/attendance/punches" \
   -d '{
     "client_event_id": "00000000-0000-4000-8000-000000000101",
     "captured_at": "2026-08-21T09:00:00.000+05:30",
-    "device": {
-      "device_id": "web-browser-session",
-      "platform": "web",
-      "app_version": "2026.08.21",
-      "os_version": "Windows 11"
-    },
+    "device": null,
     "command": {
       "event_type": "check_in",
       "work_mode": "office",
@@ -514,12 +585,7 @@ curl -sS -X POST "$BASE_URL/api/v1/attendance/punches" \
   -d '{
     "client_event_id": "00000000-0000-4000-8000-000000000102",
     "captured_at": "2026-08-21T09:00:00.000+05:30",
-    "device": {
-      "device_id": "web-browser-session",
-      "platform": "web",
-      "app_version": "2026.08.21",
-      "os_version": "Windows 11"
-    },
+    "device": null,
     "command": {
       "event_type": "check_in",
       "work_mode": "office",
@@ -635,12 +701,7 @@ REPLAY_KEY="00000000-0000-4000-8000-000000000301"
 REPLAY_BODY='{
   "client_event_id": "00000000-0000-4000-8000-000000000301",
   "captured_at": "2026-08-21T09:00:00.000+05:30",
-  "device": {
-    "device_id": "web-browser-session",
-    "platform": "web",
-    "app_version": "2026.08.21",
-    "os_version": "Windows 11"
-  },
+  "device": null,
   "command": {
     "event_type": "check_in",
     "work_mode": "office",
@@ -674,12 +735,7 @@ CONFLICT_KEY="00000000-0000-4000-8000-000000000302"
 CONFLICT_ORIGINAL='{
   "client_event_id": "00000000-0000-4000-8000-000000000302",
   "captured_at": "2026-08-21T09:00:00.000+05:30",
-  "device": {
-    "device_id": "web-browser-session",
-    "platform": "web",
-    "app_version": "2026.08.21",
-    "os_version": "Windows 11"
-  },
+  "device": null,
   "command": {
     "event_type": "check_in",
     "work_mode": "office",
@@ -689,12 +745,7 @@ CONFLICT_ORIGINAL='{
 CONFLICT_CHANGED='{
   "client_event_id": "00000000-0000-4000-8000-000000000302",
   "captured_at": "2026-08-21T09:00:00.000+05:30",
-  "device": {
-    "device_id": "web-browser-session",
-    "platform": "web",
-    "app_version": "2026.08.21",
-    "os_version": "Windows 11"
-  },
+  "device": null,
   "command": {
     "event_type": "check_out",
     "work_mode": "office",
@@ -751,12 +802,7 @@ Body:
 {
   "client_event_id": "{{client_event_id}}",
   "captured_at": "2026-08-21T09:00:00.000+05:30",
-  "device": {
-    "device_id": "web-browser-session",
-    "platform": "web",
-    "app_version": "2026.08.21",
-    "os_version": "Windows 11"
-  },
+  "device": null,
   "command": {
     "event_type": "check_in",
     "work_mode": "office",
@@ -872,6 +918,74 @@ to an `items` entry with operation `add`.
 New clients should send `items` directly. Responses may still include derived
 `requested_punches` for compatibility, but that derived representation cannot
 fully represent all `items` operations such as void operations.
+
+Canonical `items` request forms:
+
+```json
+{
+  "work_date": "2026-08-21",
+  "reason": "Forgot to punch out after shift handoff.",
+  "items": [
+    {
+      "operation": "add",
+      "event_type": "check_out",
+      "occurred_at": "2026-08-21T12:50:00.000Z"
+    }
+  ]
+}
+```
+
+```json
+{
+  "work_date": "2026-08-21",
+  "reason": "Correcting the check-in time from the access log.",
+  "items": [
+    {
+      "operation": "replace",
+      "target_punch_event_id": "00000000-0000-4000-8000-000000000701",
+      "event_type": "check_in",
+      "occurred_at": "2026-08-21T03:35:00.000Z"
+    }
+  ]
+}
+```
+
+```json
+{
+  "work_date": "2026-08-21",
+  "reason": "Duplicate checkout was recorded by mistake.",
+  "items": [
+    {
+      "operation": "void",
+      "target_punch_event_id": "00000000-0000-4000-8000-000000000702"
+    }
+  ]
+}
+```
+
+A request may contain mixed `add`, `replace`, and `void` items. `void` items do
+not include `event_type` or `occurred_at`.
+
+Regularization responses include normalized `items`, safe `target_punch`
+summaries for replace/void targets, `status`, `version`, `can_decide`, and
+`allowed_decisions`. Supported statuses are `pending`, `approved`, `returned`,
+and `rejected`.
+
+Manager decisions use:
+
+```json
+{
+  "decision": "approve",
+  "remarks": "Access log confirms the requested correction.",
+  "expected_version": 1
+}
+```
+
+`approve` remarks are optional. `return` and `reject` require remarks. A stale
+`expected_version`, non-pending request, or repeated processing returns
+`409 WORKFLOW_CONFLICT`. A requester/employee cannot decide their own request;
+that returns `403 SELF_APPROVAL_BLOCKED`, and queue actionability may show
+`can_decide: false` with `allowed_decisions: []`.
 
 ## Deprecation Plan
 

@@ -1,12 +1,15 @@
 # Offline Attendance Sync Contract
 
-Status: Proposed contract for Sprint 13 GEO-S13-004. This endpoint is not registered in Fastify and is not available in the generated OpenAPI contract.
+Status: Implemented Sprint 13 offline sync contract. The endpoint is registered
+in Fastify and available in the generated OpenAPI contract.
 
 ## Purpose
 
-Define the backend contract shape for future mobile offline attendance synchronization without mutating attendance state in Sprint 13.
+Define the backend contract shape for mobile offline attendance synchronization.
+Accepted events are provisional: offline sync does not immediately create live
+punch/session/daily/payroll authority.
 
-The proposed future endpoint is:
+Endpoint:
 
 ```txt
 POST /api/v1/attendance/offline-sync
@@ -16,21 +19,25 @@ Version one is authenticated self-service only. The server derives company and a
 
 ## Non-Goals
 
-- No executable sync ingestion endpoint.
-- No offline batch or event persistence tables.
-- No device registration API, attestation, signatures, or trust enforcement.
-- No persistent sequence watermark.
 - No historical attendance replayer.
-- No offline verification or review workflow.
-- No promotion from unverified to verified.
-- No session, daily projection, outbox, payroll, or worker changes.
-- No frontend or mobile queue implementation.
+- No promotion from unverified to verified in this request.
+- No live session, daily projection, or payroll finalization from accepted
+  offline events.
+- No frontend or mobile queue implementation in this backend contract document.
 
 ## Outbox Readiness
 
-Sprint 13 GEO-S13-008 adds the `attendance.provisional.recorded` outbox event contract only. This document still does not define an executable ingestion endpoint, and the event is not emitted by current ordinary attendance commands.
+Accepted and deferred offline events use the provisional offline inbox/evidence
+workflow and may emit `attendance.provisional.recorded`. Ordinary online
+attendance commands are separate and do not use this offline outbox path.
 
-The future producer belongs inside the future offline event-level ingestion transaction after one logical event is accepted provisionally with `verification_status=unverified` or `verification_status=review_required`. It must run only when the durable `client_event_id` check determines the logical event is not a replay. The future outbox identity is `aggregate_type=attendance`, `aggregate_id=attendance_event_id`, with a stable idempotency key derived from the accepted attendance event or authoritative provisional transition.
+The producer belongs inside the offline event-level ingestion transaction after
+one logical event is accepted provisionally with
+`verification_status=unverified` or `verification_status=review_required`. It
+runs only when the durable `client_event_id` check determines the logical event
+is not a replay. The outbox identity is `aggregate_type=attendance`,
+`aggregate_id=attendance_event_id`, with a stable idempotency key derived from
+the accepted attendance event or authoritative provisional transition.
 
 The provisional event payload is an explicit allowlist: schema version, company and actor IDs from server context, subject employee ID, attendance event ID, optional command ID, source channel, verification status, provisional reason code, captured time, and server receipt time. It must not contain exact coordinates, raw location evidence, request snapshots, device envelopes, device secrets, tokens, authorization inputs, or raw client metadata.
 
@@ -43,6 +50,7 @@ Top-level request fields:
   "contract_version": "attendance.offline_sync.v1",
   "batch_id": "00000000-0000-4000-8000-000000000100",
   "device": {
+    "registered_device_id": "00000000-0000-4000-8000-000000000301",
     "device_id": "mobile-installation-handle",
     "platform": "android",
     "app_version": "2026.08.03",
@@ -77,7 +85,10 @@ Top-level request fields:
 
 `batch_id` is transport correlation metadata only. It is not replay identity.
 
-`device` is required for this mobile-offline envelope and contains client-supplied informational device and application metadata. Device fields are untrusted: they do not determine company or actor, authorize attendance, prove registration or attestation, replace `client_event_id`, or provide cryptographic sequence trust.
+`device` is required for this mobile-offline envelope. Runtime requires
+`device.registered_device_id`; the other fields are bounded audit metadata. They
+do not determine company or actor, authorize attendance, replace
+`client_event_id`, or provide cryptographic sequence trust.
 
 Each event contains one logical attendance action. `sequence` must be a positive safe integer.
 
@@ -87,9 +98,9 @@ The batch, device, event, metadata, and location schemas are strict. They reject
 
 - `events[].captured_at`: client-reported action capture time. It is untrusted audit and transport metadata.
 - `events[].location.captured_at`: client-reported GPS sample time. It is distinct from event capture time.
-- top-level `server_received_at`: future server-generated receipt time for the current batch request.
+- top-level `server_received_at`: server-generated receipt time for the current batch request.
 - per-result `server_received_at`: original server receipt time for that logical event. On replay this can differ from the current batch receipt time.
-- `processed_at`: optional future server verification time.
+- `processed_at`: optional server processing time.
 
 `captured_at` must never be treated as authoritative attendance `occurred_at`. Current self-service attendance remains server-time authoritative.
 
@@ -103,7 +114,7 @@ company_id + authenticated actor_user_id + client_event_id
 
 `company_id` and `actor_user_id` come from server context only. `batch_id` never replaces event-level identity.
 
-Expected future behavior:
+Current behavior:
 
 - Same `client_event_id` and same canonical event: replay stored result.
 - Same `client_event_id` and different canonical event: conflict.
@@ -116,13 +127,14 @@ The canonical event hash excludes `batch_id`, batch array position, `server_rece
 
 `sequence` is a positive monotonically increasing client value.
 
-Future intended stream scope:
+Stream scope:
 
 ```txt
 company + actor + device installation
 ```
 
-Device identity is currently untrusted. Version one does not claim cryptographic trust, enforce persistent sequence watermarks, use sequence for authorization, or use sequence as the primary replay key.
+Device metadata is not a cryptographic attestation. Version one does not use
+sequence for authorization or as the primary replay key.
 
 Within one batch:
 
@@ -130,7 +142,10 @@ Within one batch:
 - Duplicate `sequence` values for the submitted device stream are invalid.
 - Result order should match deterministic event order.
 
-Future runtime behavior should classify gaps, lower/out-of-order sequences, same-sequence different events, and device reset or reinstallation as synchronization facts for review. Sequence anomalies must not be treated as permission to apply historical events directly to the current session state.
+Runtime behavior classifies gaps, lower/out-of-order sequences, same-sequence
+different events, and device reset or reinstallation as synchronization facts
+for review or rejection. Sequence anomalies must not be treated as permission to
+apply historical events directly to the current session state.
 
 ## Response Envelope
 
@@ -197,7 +212,9 @@ Unverified offline events must never finalize payroll unless a future explicit p
 
 For Sprint 13 contract semantics, `payroll_eligible` is always the literal value `false`.
 
-An `accepted` sync result means the future transport accepted the event for replay/review processing. It does not mean verified attendance, final attendance, or payroll-ready time.
+An `accepted` sync result means the transport accepted the event for
+replay/review processing. It does not mean verified attendance, final
+attendance, or payroll-ready time.
 
 ## Partial Batch Semantics
 

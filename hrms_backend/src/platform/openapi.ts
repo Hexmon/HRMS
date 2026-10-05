@@ -15,6 +15,7 @@ import {
   AttendanceRegularizationOperations,
   AttendanceRegularizationStatuses,
 } from "#shared";
+import { attendanceOpenApiExamples } from "../modules/attendance/attendance-openapi-examples.js";
 
 type JsonSchema = Record<string, unknown>;
 type RouteSchema = Record<string, unknown>;
@@ -3645,20 +3646,8 @@ const attendanceLocationEvidenceSchema = {
   description:
     "One-shot location evidence captured at employee action time. Required for source=web_geo. Failure evidence must not include coordinates.",
   examples: [
-    {
-      latitude: 12.971599,
-      longitude: 77.594566,
-      accuracy_meters: 12.5,
-      captured_at: "2026-05-04T03:40:00.000Z",
-      provider: "browser",
-      permission_state: "granted",
-    },
-    {
-      captured_at: "2026-05-04T03:40:00.000Z",
-      provider: "browser",
-      permission_state: "denied",
-      integrity_status: "permission_denied",
-    },
+    attendanceOpenApiExamples.evidence.browserCoordinate,
+    attendanceOpenApiExamples.evidence.browserPermissionDenied,
   ],
 };
 
@@ -3835,22 +3824,7 @@ const attendancePunchCommandBody = {
     location: attendanceLocationEvidenceSchema,
   },
   additionalProperties: false,
-  example: {
-    event_type: "check_in",
-    work_mode: "office",
-    source: "web_geo",
-    metadata: {
-      client_timezone: "Asia/Kolkata",
-    },
-    location: {
-      latitude: 12.971599,
-      longitude: 77.594566,
-      accuracy_meters: 12.5,
-      captured_at: "2026-05-04T03:40:00.000Z",
-      provider: "browser",
-      permission_state: "granted",
-    },
-  },
+  example: attendanceOpenApiExamples.requests.webGeoPunch.value.command,
 };
 
 const attendanceCommandDeviceBody = {
@@ -3902,32 +3876,7 @@ const attendancePunchBody = {
     command: attendancePunchCommandBody,
   },
   additionalProperties: false,
-  example: {
-    client_event_id: "019fc5b7-0811-7a33-ae47-46a559f9e797",
-    captured_at: "2026-05-04T09:10:00.000+05:30",
-    device: {
-      device_id: "browser-session-device",
-      platform: "web",
-      app_version: "2026.08.03",
-      os_version: "Windows 11",
-    },
-    command: {
-      event_type: "check_in",
-      work_mode: "office",
-      source: "web_geo",
-      metadata: {
-        client_timezone: "Asia/Kolkata",
-      },
-      location: {
-        latitude: 12.971599,
-        longitude: 77.594566,
-        accuracy_meters: 12.5,
-        captured_at: "2026-05-04T03:40:00.000Z",
-        provider: "browser",
-        permission_state: "granted",
-      },
-    },
-  },
+  example: attendanceOpenApiExamples.requests.webPunch.value,
 };
 
 const attendanceAssistedCurrentPunchBody = {
@@ -4723,8 +4672,18 @@ const attendanceDailyCalendarSchema = {
       items: { type: "object", additionalProperties: true },
     },
     totals: { type: "object", additionalProperties: true },
+    self_evidence: {
+      type: "object",
+      additionalProperties: true,
+      description:
+        "Included for authenticated employee self views. Contains safe evidence only: day summary, source labels, events, decisions, safe geo context, and regularization relationships. Exact coordinates and location evidence identifiers are not returned here.",
+      example:
+        attendanceOpenApiExamples.responses.employeeSelfEvidenceDaily.value
+          .self_evidence,
+    },
   },
   additionalProperties: true,
+  example: attendanceOpenApiExamples.responses.employeeSelfEvidenceDaily.value,
 };
 
 const attendanceRegularizationCreateBody = {
@@ -4824,17 +4783,13 @@ const attendanceRegularizationCreateBody = {
     },
   },
   additionalProperties: false,
-  example: {
-    work_date: "2026-05-04",
-    reason: "Forgot to punch out after shift handoff.",
-    items: [
-      {
-        operation: "add",
-        event_type: "check_out",
-        occurred_at: "2026-05-04T18:20:00.000+05:30",
-      },
-    ],
-  },
+  example: attendanceOpenApiExamples.requests.regularizationAdd.value,
+  examples: [
+    attendanceOpenApiExamples.requests.regularizationAdd.value,
+    attendanceOpenApiExamples.requests.regularizationReplace.value,
+    attendanceOpenApiExamples.requests.regularizationVoid.value,
+    attendanceOpenApiExamples.requests.regularizationMixed.value,
+  ],
 };
 
 const attendanceRegularizationDecisionBody = {
@@ -4855,10 +4810,13 @@ const attendanceRegularizationDecisionBody = {
   },
   additionalProperties: false,
   example: {
-    decision: "approve",
-    remarks: "Access log confirms the requested punch.",
-    expected_version: 1,
+    ...attendanceOpenApiExamples.requests.regularizationApprove.value,
   },
+  examples: [
+    attendanceOpenApiExamples.requests.regularizationApprove.value,
+    attendanceOpenApiExamples.requests.regularizationReturn.value,
+    attendanceOpenApiExamples.requests.regularizationReject.value,
+  ],
 };
 
 const attendanceRegularizationSchema = {
@@ -4964,36 +4922,16 @@ const attendanceRegularizationSchema = {
     version: { type: "integer", minimum: 1, example: 1 },
   },
   additionalProperties: true,
-  example: {
-    id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9401",
-    employee_user_id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9003",
-    submitted_by_user_id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9003",
-    work_date: "2026-05-04",
-    reason: "Forgot to punch out after shift handoff.",
-    requested_punches: [
-      {
-        event_type: "check_out",
-        occurred_at: "2026-05-04T18:20:00.000+05:30",
-      },
-    ],
-    items: [
-      {
-        id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9402",
-        ordinal: 0,
-        operation: "add",
-        target_punch_event_id: null,
-        event_type: "check_out",
-        occurred_at: "2026-05-04T18:20:00.000+05:30",
-        target_punch: null,
-      },
-    ],
-    status: "pending",
-    current_approver_user_id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9004",
-    decision_remarks: null,
-    can_decide: true,
-    allowed_decisions: ["approve", "return", "reject"],
-    version: 1,
-  },
+  example: attendanceOpenApiExamples.responses.regularization.value,
+};
+
+const attendanceGeoFallbackSubmitBody = {
+  type: "object",
+  description:
+    "Empty confirmation body. The path id references the existing manual-fallback attendance command decision, and Idempotency-Key protects this submit action.",
+  additionalProperties: false,
+  maxProperties: 0,
+  example: attendanceOpenApiExamples.requests.geoFallbackSubmit.value,
 };
 
 const attendanceExactLocationResponseSchema = {
@@ -5021,6 +4959,7 @@ const attendanceExactLocationResponseSchema = {
     },
   },
   additionalProperties: false,
+  example: attendanceOpenApiExamples.responses.exactLocationReveal.value,
 };
 
 const attendanceGeofenceCircleShapeSchema = {
@@ -5103,6 +5042,135 @@ const attendanceGeofencePolygonShapeSchema = {
   },
 };
 
+const attendanceGeoSimulationBodySchema = {
+  type: "object",
+  required: [
+    "employee_user_id",
+    "event_at",
+    "policy_source",
+    "geofence_source",
+    "scenario",
+  ],
+  properties: {
+    employee_user_id: uuid("Employee user UUID to simulate"),
+    event_at: dateTime("Simulation event timestamp"),
+    policy_source: {
+      oneOf: [
+        {
+          type: "object",
+          required: ["mode"],
+          properties: { mode: { type: "string", enum: ["effective_employee"] } },
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          required: ["mode", "policy_id"],
+          properties: {
+            mode: { type: "string", enum: ["persisted_policy"] },
+            policy_id: uuid("Persisted policy UUID"),
+            version_id: uuid("Optional policy version UUID"),
+          },
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          required: ["mode", "config"],
+          properties: {
+            mode: { type: "string", enum: ["draft_policy"] },
+            config: { type: "object", additionalProperties: true },
+          },
+          additionalProperties: false,
+        },
+      ],
+    },
+    geofence_source: {
+      oneOf: [
+        {
+          type: "object",
+          required: ["mode"],
+          properties: { mode: { type: "string", enum: ["policy_effective"] } },
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          required: ["mode", "geofence_ids"],
+          properties: {
+            mode: { type: "string", enum: ["persisted"] },
+            geofence_ids: {
+              type: "array",
+              minItems: 1,
+              maxItems: 20,
+              items: uuid("Persisted geofence UUID"),
+            },
+          },
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          required: ["mode", "geofences"],
+          properties: {
+            mode: { type: "string", enum: ["draft"] },
+            geofences: {
+              type: "array",
+              minItems: 1,
+              maxItems: 20,
+              items: {
+                oneOf: [
+                  attendanceGeofenceCircleShapeSchema,
+                  attendanceGeofencePolygonShapeSchema,
+                ],
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+      ],
+    },
+    scenario: {
+      oneOf: [
+        {
+          type: "object",
+          required: ["type", "latitude", "longitude", "accuracy_meters"],
+          properties: {
+            type: { type: "string", enum: ["coordinates"] },
+            latitude: { type: "number", minimum: -90, maximum: 90 },
+            longitude: { type: "number", minimum: -180, maximum: 180 },
+            accuracy_meters: { type: "number", exclusiveMinimum: true },
+            evidence_age_ms: { type: "integer", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          required: ["type"],
+          properties: {
+            type: {
+              type: "string",
+              enum: ["permission_denied", "location_unavailable", "missing"],
+            },
+            evidence_age_ms: { type: "integer", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+      ],
+    },
+  },
+  additionalProperties: false,
+  example: {
+    employee_user_id: "00000000-0000-4000-8000-000000000501",
+    event_at: "2026-08-21T03:30:02.000Z",
+    policy_source: { mode: "effective_employee" },
+    geofence_source: { mode: "policy_effective" },
+    scenario: {
+      type: "coordinates",
+      latitude: 12.971599,
+      longitude: 77.594566,
+      accuracy_meters: 18,
+      evidence_age_ms: 2000,
+    },
+  },
+};
+
 const attendanceOfflineEventEnvelopeSchema = {
   type: "object",
   required: [
@@ -5179,30 +5247,7 @@ const attendanceOfflineEventEnvelopeSchema = {
     location: attendanceLocationEvidenceSchema,
   },
   additionalProperties: false,
-  example: {
-    client_event_id: "019fc5b7-0811-7a33-ae47-46a559f9e797",
-    sequence: 7,
-    command_kind: "employee_manual_now",
-    captured_at: "2026-05-04T09:10:00.000+05:30",
-    source: "mobile_offline",
-    event_type: "check_in",
-    work_mode: "office",
-    metadata: {
-      app_state: "foreground",
-      capture_method: "user_action",
-      client_timezone: "Asia/Kolkata",
-      network_state: "offline",
-      offline_reason: "network_unavailable",
-    },
-    location: {
-      latitude: 12.971599,
-      longitude: 77.594566,
-      accuracy_meters: 12.5,
-      captured_at: "2026-05-04T03:40:00.000Z",
-      provider: "device",
-      permission_state: "granted",
-    },
-  },
+  example: attendanceOpenApiExamples.requests.offlineBatch.value.events[0],
 };
 
 const attendanceOfflineBatchEnvelopeSchema = {
@@ -5224,17 +5269,7 @@ const attendanceOfflineBatchEnvelopeSchema = {
     },
   },
   additionalProperties: false,
-  example: {
-    contract_version: AttendanceOfflineSyncContractVersion,
-    batch_id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9501",
-    device: {
-      device_id: "ios-device-001",
-      platform: "ios",
-      app_version: "2026.08.03",
-      os_version: "iOS 18.5",
-    },
-    events: [attendanceOfflineEventEnvelopeSchema.example],
-  },
+  example: attendanceOpenApiExamples.requests.offlineBatch.value,
 };
 
 const attendanceOfflineSyncResultSchema = {
@@ -5347,12 +5382,7 @@ const attendanceOfflineSyncResponseSchema = {
     },
   },
   additionalProperties: false,
-  example: {
-    contract_version: AttendanceOfflineSyncContractVersion,
-    batch_id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9501",
-    server_received_at: "2026-05-04T03:45:00.000Z",
-    results: attendanceOfflineSyncResultSchema.examples,
-  },
+  example: attendanceOpenApiExamples.responses.offlineSync.value,
 };
 const attendanceExportBody = {
   type: "object",
@@ -9450,6 +9480,38 @@ const routeDocs: Record<string, RouteSchema> = {
       response200: { type: "object", additionalProperties: true },
     },
   ),
+  "POST /api/v1/attendance/geo-fallbacks/{id}/submit": operation(
+    "Attendance",
+    "Submit manual geo fallback",
+    "Confirms an existing manual geo-fallback decision for the authenticated employee. The request body is empty, the path id references the original attendance command decision, and Idempotency-Key protects the submit action. Same-key/same-body retries replay the original submit result with Idempotency-Replayed: true; same key with different canonical submit context returns a workflow conflict.",
+    {
+      params: idParamSchema,
+      headers: {
+        type: "object",
+        required: ["idempotency-key"],
+        properties: {
+          "idempotency-key": { type: "string", minLength: 8, maxLength: 200 },
+        },
+      },
+      body: attendanceGeoFallbackSubmitBody,
+      response: {
+        200: {
+          ...success(attendancePunchCommandResponseSchema),
+          headers: replayResponseHeaders,
+        },
+        409: {
+          description:
+            "Geo fallback submit is unavailable, already submitted, or conflicts with idempotency state.",
+          headers: replayResponseHeaders,
+          content: {
+            "application/json": {
+              schema: attendanceBusinessErrorResponseSchema,
+            },
+          },
+        },
+      },
+    },
+  ),
   "GET /api/v1/attendance/geo-fallbacks/queue/manager": operation(
     "Attendance",
     "Manager geo fallback queue",
@@ -9514,6 +9576,15 @@ const routeDocs: Record<string, RouteSchema> = {
     {
       params: idParamSchema,
       response200: attendancePayrollPeriodSummarySchema,
+    },
+  ),
+  "POST /api/v1/attendance/geo/simulate": operation(
+    "Attendance",
+    "Simulate attendance geo policy",
+    "Runs a read-only HR/Admin attendance geo-policy simulation for an employee, policy source, geofence source, and location scenario. Simulation input may include test coordinates, but it does not mutate attendance state or expose exact-location evidence from stored employee punches.",
+    {
+      body: attendanceGeoSimulationBodySchema,
+      response200: { type: "object", additionalProperties: true },
     },
   ),
   "GET /api/v1/attendance/work-sites": operation(
@@ -12004,6 +12075,171 @@ function normaliseRoutePath(path: string): string {
   return path.replace(/:([A-Za-z0-9_]+)/gu, "{$1}");
 }
 
+type OpenApiExample = {
+  summary?: string;
+  description?: string;
+  value: unknown;
+};
+
+type OpenApiMedia = {
+  examples?: Record<string, OpenApiExample>;
+};
+
+type OpenApiResponse = {
+  content?: Record<string, OpenApiMedia>;
+};
+
+type OpenApiOperation = {
+  requestBody?: {
+    content?: Record<string, OpenApiMedia>;
+  };
+  responses?: Record<string, OpenApiResponse>;
+};
+
+type OpenApiDocument = {
+  paths?: Record<string, Partial<Record<string, OpenApiOperation>> | undefined>;
+  [key: string]: unknown;
+};
+
+function withAttendanceOperationExamples<T>(document: T): T {
+  const paths = ((document as OpenApiDocument).paths ?? {});
+  setRequestExamples(paths["/api/v1/attendance/punches"]?.post, {
+    webPunch: attendanceOpenApiExamples.requests.webPunch,
+    webGeoPunch: attendanceOpenApiExamples.requests.webGeoPunch,
+    webGeoPermissionDenied:
+      attendanceOpenApiExamples.requests.webGeoPermissionDenied,
+    mobilePunch: attendanceOpenApiExamples.requests.mobilePunch,
+  });
+  setResponseExamples(paths["/api/v1/attendance/punches"]?.post, "200", {
+    punchRecorded: attendanceOpenApiExamples.responses.punchRecorded,
+  });
+  setResponseExamples(paths["/api/v1/attendance/punches"]?.post, "400", {
+    validationError: attendanceOpenApiExamples.errors.validation,
+  });
+  setResponseExamples(paths["/api/v1/attendance/punches"]?.post, "409", {
+    idempotencyConflict: attendanceOpenApiExamples.errors.idempotencyConflict,
+  });
+
+  setRequestExamples(paths["/api/v1/attendance/offline-sync"]?.post, {
+    offlineBatch: attendanceOpenApiExamples.requests.offlineBatch,
+  });
+  setResponseExamples(paths["/api/v1/attendance/offline-sync"]?.post, "200", {
+    offlineSync: attendanceOpenApiExamples.responses.offlineSync,
+  });
+
+  setResponseExamples(paths["/api/v1/attendance/calendar/daily"]?.get, "200", {
+    employeeSelfEvidenceDaily:
+      attendanceOpenApiExamples.responses.employeeSelfEvidenceDaily,
+  });
+
+  setRequestExamples(paths["/api/v1/attendance/regularizations"]?.post, {
+    regularizationAdd: attendanceOpenApiExamples.requests.regularizationAdd,
+    regularizationReplace:
+      attendanceOpenApiExamples.requests.regularizationReplace,
+    regularizationVoid: attendanceOpenApiExamples.requests.regularizationVoid,
+    regularizationMixed: attendanceOpenApiExamples.requests.regularizationMixed,
+  });
+  setResponseExamples(paths["/api/v1/attendance/regularizations"]?.post, "200", {
+    regularization: attendanceOpenApiExamples.responses.regularization,
+  });
+
+  const regularizationDecision =
+    paths["/api/v1/attendance/regularizations/{id}/decision"]?.post;
+  setDecisionRequestExamples(regularizationDecision);
+  setResponseExamples(regularizationDecision, "200", {
+    regularization: attendanceOpenApiExamples.responses.regularization,
+  });
+  setResponseExamples(regularizationDecision, "403", {
+    selfApprovalBlocked: attendanceOpenApiExamples.errors.selfApprovalBlocked,
+  });
+  setResponseExamples(regularizationDecision, "409", {
+    workflowConflict: attendanceOpenApiExamples.errors.workflowConflict,
+  });
+
+  const geoFallbackSubmit =
+    paths["/api/v1/attendance/geo-fallbacks/{id}/submit"]?.post;
+  setRequestExamples(geoFallbackSubmit, {
+    geoFallbackSubmit: attendanceOpenApiExamples.requests.geoFallbackSubmit,
+  });
+  setResponseExamples(geoFallbackSubmit, "200", {
+    punchRecorded: attendanceOpenApiExamples.responses.punchRecorded,
+  });
+  setResponseExamples(geoFallbackSubmit, "409", {
+    workflowConflict: attendanceOpenApiExamples.errors.workflowConflict,
+  });
+
+  setResponseExamples(
+    paths["/api/v1/attendance/geo-fallbacks/queue/manager"]?.get,
+    "200",
+    {
+      geoFallbackQueue: attendanceOpenApiExamples.responses.geoFallbackQueue,
+      safeGeoEvidenceSummary:
+        attendanceOpenApiExamples.responses.safeGeoEvidenceSummary,
+    },
+  );
+
+  const exactLocation =
+    paths["/api/v1/attendance/geo-fallbacks/{id}/exact-location"]?.post;
+  setResponseExamples(exactLocation, "200", {
+    exactLocationReveal: attendanceOpenApiExamples.responses.exactLocationReveal,
+  });
+  setResponseExamples(exactLocation, "403", {
+    exactLocationForbidden:
+      attendanceOpenApiExamples.errors.exactLocationForbidden,
+  });
+  setResponseExamples(exactLocation, "404", {
+    notFound: attendanceOpenApiExamples.errors.notFound,
+  });
+
+  const geoFallbackDecision =
+    paths["/api/v1/attendance/geo-fallbacks/{id}/decision"]?.post;
+  setDecisionRequestExamples(geoFallbackDecision);
+  setResponseExamples(geoFallbackDecision, "200", {
+    geoFallbackReview: {
+      summary: "Geo fallback review",
+      value: attendanceOpenApiExamples.responses.geoFallbackQueue.value.items[0],
+    },
+  });
+  setResponseExamples(geoFallbackDecision, "403", {
+    selfApprovalBlocked: attendanceOpenApiExamples.errors.selfApprovalBlocked,
+  });
+  setResponseExamples(geoFallbackDecision, "409", {
+    workflowConflict: attendanceOpenApiExamples.errors.workflowConflict,
+  });
+
+  return document;
+}
+
+function setDecisionRequestExamples(operation: OpenApiOperation | undefined): void {
+  setRequestExamples(operation, {
+    regularizationApprove:
+      attendanceOpenApiExamples.requests.regularizationApprove,
+    regularizationReturn: attendanceOpenApiExamples.requests.regularizationReturn,
+    regularizationReject: attendanceOpenApiExamples.requests.regularizationReject,
+  });
+}
+
+function setRequestExamples(
+  operation: OpenApiOperation | undefined,
+  examples: Record<string, OpenApiExample>,
+): void {
+  const media = operation?.requestBody?.content?.["application/json"];
+  if (media) {
+    media.examples = examples;
+  }
+}
+
+function setResponseExamples(
+  operation: OpenApiOperation | undefined,
+  status: string,
+  examples: Record<string, OpenApiExample>,
+): void {
+  const media = operation?.responses?.[status]?.content?.["application/json"];
+  if (media) {
+    media.examples = examples;
+  }
+}
+
 export const swaggerTransformObject = ((
   documentObject: SwaggerTransformObjectInput,
 ) => {
@@ -12011,7 +12247,7 @@ export const swaggerTransformObject = ((
     return documentObject.swaggerObject;
   }
   const { openapiObject } = documentObject;
-  return {
+  return withAttendanceOperationExamples({
     ...openapiObject,
     tags: openApiTags,
     components: {
@@ -12030,5 +12266,5 @@ export const swaggerTransformObject = ((
         ...openapiObject.components?.parameters,
       },
     },
-  } as never;
+  }) as never;
 }) as NonNullable<FastifyDynamicSwaggerOptions["transformObject"]>;

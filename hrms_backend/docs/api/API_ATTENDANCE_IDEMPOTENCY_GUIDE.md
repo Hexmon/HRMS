@@ -4,7 +4,9 @@ This backend standard applies to client-originated self-service attendance punch
 
 `POST /api/v1/attendance/punches`
 
-It does not introduce offline queue storage, bulk sync, device registration, or new sync endpoints.
+It also summarizes the implemented event-level identity rules for:
+
+`POST /api/v1/attendance/offline-sync`
 
 ## Client Identity
 
@@ -49,12 +51,39 @@ Replay is semantic business-response replay, not byte-for-byte transport replay.
 
 Durable `client_event_id` replay protects retries even after the 24-hour `platform.idempotency_keys` window expires.
 
-## Future Offline Synchronization
+## Offline Synchronization
 
-Sprint 13 GEO-S13-004 defines a proposed offline synchronization contract only. It does not register a new endpoint.
+Offline sync is implemented at:
 
-Future offline batches must reuse the same event-level `client_event_id` replay model described above. The durable identity remains `company_id + authenticated actor_user_id + client_event_id`, with company and actor derived from server-side authenticated context. A future `batch_id` is correlation metadata for transport and diagnostics only; it must not replace event-level replay identity or create a second idempotency persistence mechanism.
+`POST /api/v1/attendance/offline-sync`
 
-Offline event hashes must use the same canonical sorted-JSON SHA-256 behavior as current attendance command request and response hashes: object keys are sorted recursively and array order remains significant.
+Offline batches do not send a top-level `Idempotency-Key`. Replay identity is
+per event through `client_event_id`, with company, actor, employee, and device
+context derived from authenticated server-side context and the registered mobile
+device path.
 
-The proposed contract is documented in `docs/api/OFFLINE_ATTENDANCE_SYNC_CONTRACT.md`.
+The top-level `batch_id` is transport correlation metadata. It must not replace
+event-level replay identity.
+
+Each event includes:
+
+- `client_event_id`
+- `sequence`
+- `command_kind: "employee_manual_now"`
+- `captured_at`
+- `source: "mobile_offline"`
+- event/work mode
+- optional strict metadata
+- optional location evidence
+
+The submitted batch must not contain duplicate `client_event_id` or duplicate
+`sequence` values. Per-event results use `accepted`, `replayed`, `conflict`,
+`rejected`, or `deferred` with the matching verification status and reason code.
+
+Offline event hashes use the same canonical sorted-JSON SHA-256 behavior as
+current attendance command request and response hashes: object keys are sorted
+recursively and array order remains significant.
+
+The current contract is documented in
+`docs/api/OFFLINE_ATTENDANCE_SYNC_CONTRACT.md` and the generated OpenAPI
+operation examples.
