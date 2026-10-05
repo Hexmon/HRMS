@@ -27,6 +27,12 @@ export type AttendanceRegularizationEventType = Extract<
 >;
 export type AttendanceRegularizationOperation = "add" | "replace" | "void";
 export type AttendanceRegularizationStatus = "pending" | "approved" | "returned" | "rejected";
+export type AttendanceRegularizationDecision = "approve" | "return" | "reject";
+
+export interface AttendanceRegularizationTargetPunchSummary {
+  event_type: AttendanceRegularizationEventType | string;
+  occurred_at: string;
+}
 
 export type AttendanceRegularizationItem =
   | {
@@ -146,14 +152,31 @@ export interface AttendanceRegularizationBody extends ApiRecord {
   items: AttendanceRegularizationItem[];
 }
 
-export interface AttendanceRegularizationItemRecord extends ApiRecord {
+interface AttendanceRegularizationItemRecordBase extends ApiRecord {
   id: string;
   ordinal: number;
-  operation: AttendanceRegularizationOperation;
-  target_punch_event_id: string | null;
-  event_type: AttendanceRegularizationEventType | null;
-  occurred_at: string | null;
+  target_punch?: AttendanceRegularizationTargetPunchSummary | null;
 }
+
+export type AttendanceRegularizationItemRecord =
+  | (AttendanceRegularizationItemRecordBase & {
+      operation: "add";
+      target_punch_event_id: null;
+      event_type: AttendanceRegularizationEventType;
+      occurred_at: string;
+    })
+  | (AttendanceRegularizationItemRecordBase & {
+      operation: "replace";
+      target_punch_event_id: string | null;
+      event_type: AttendanceRegularizationEventType | null;
+      occurred_at: string | null;
+    })
+  | (AttendanceRegularizationItemRecordBase & {
+      operation: "void";
+      target_punch_event_id: string | null;
+      event_type: null;
+      occurred_at: null;
+    });
 
 export interface AttendanceRegularizationRecord extends ApiRecord {
   id: string;
@@ -163,6 +186,10 @@ export interface AttendanceRegularizationRecord extends ApiRecord {
   version: number;
   items: AttendanceRegularizationItemRecord[];
   approver?: ApiRecord | null;
+  decision_remarks?: string | null;
+  decided_at?: string | null;
+  can_decide?: boolean;
+  allowed_decisions?: AttendanceRegularizationDecision[];
   created_at?: string;
   updated_at?: string;
 }
@@ -237,6 +264,7 @@ export interface EmployeeAttendanceEvidenceRegularizationItem {
   operation: AttendanceRegularizationOperation | string;
   event_type: AttendanceRegularizationEventType | string | null;
   occurred_at: string | null;
+  target_punch?: AttendanceRegularizationTargetPunchSummary | null;
   relationship: "requested" | "applied";
 }
 

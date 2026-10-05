@@ -65,6 +65,7 @@ import {
   parseAttendanceReviewQueue,
   type AttendanceReviewDecision,
   type AttendanceReviewEvidence,
+  type AttendanceReviewRegularizationItem,
   type AttendanceReviewRequest,
   type AttendanceReviewStatus,
 } from "./manager-review-model";
@@ -82,6 +83,8 @@ const STATUS_OPTIONS: Array<{ value: AttendanceReviewStatus; label: string }> = 
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
 ];
+
+const DECISION_BUTTON_ORDER: AttendanceReviewDecision[] = ["return", "reject", "approve"];
 
 const DECISION_COPY: Record<
   AttendanceReviewDecision,
@@ -270,6 +273,49 @@ function ExactLocationRows({ evidence }: { evidence: AttendanceExactLocationEvid
   );
 }
 
+function RegularizationReviewItems({ items }: { items: AttendanceReviewRegularizationItem[] }) {
+  if (items.length === 0) {
+    return (
+      <p className="mt-2 text-sm text-muted-foreground">
+        No structured correction actions were supplied.
+      </p>
+    );
+  }
+
+  return (
+    <ol className="mt-2 space-y-3">
+      {items.map((item, index) => (
+        <li key={item.key} className="rounded-md border border-border p-3">
+          <p className="break-words text-sm font-medium">
+            {items.length > 1 ? `${index + 1}. ` : ""}
+            {item.operationLabel}
+          </p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {item.targetPunchLabel && (
+              <RegularizationReviewFact label="Original" value={item.targetPunchLabel} />
+            )}
+            {item.requestedPunchLabel && (
+              <RegularizationReviewFact label="Requested" value={item.requestedPunchLabel} />
+            )}
+          </div>
+          {item.helperText && (
+            <p className="mt-2 break-words text-xs text-muted-foreground">{item.helperText}</p>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function RegularizationReviewFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md bg-muted/40 px-2.5 py-2">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-0.5 break-words text-xs font-semibold">{value}</p>
+    </div>
+  );
+}
+
 export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) {
   const [status, setStatus] = useState<AttendanceReviewStatus>("pending");
   const [month, setMonth] = useState(currentMonth);
@@ -366,7 +412,15 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
               {request.geoReviewType && <span>{geoReviewTypeLabel(request.geoReviewType)}</span>}
               {request.geoOutcome && <span>{geoOutcomeLabel(request.geoOutcome)}</span>}
               <span>
-                {request.evidence.length} evidence item{request.evidence.length === 1 ? "" : "s"}
+                {request.kind === "regularization"
+                  ? request.regularizationItems.length
+                  : request.evidence.length}{" "}
+                {request.kind === "regularization" ? "action" : "evidence item"}
+                {(request.kind === "regularization"
+                  ? request.regularizationItems.length
+                  : request.evidence.length) === 1
+                  ? ""
+                  : "s"}
               </span>
             </div>
           </div>
@@ -420,6 +474,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
   };
 
   const openDecision = (nextDecision: AttendanceReviewDecision) => {
+    if (!selected?.allowedDecisions.includes(nextDecision)) return;
     setRemarks("");
     setRemarksError(null);
     decisionMutation.reset();
@@ -436,6 +491,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
 
   const submitDecision = async () => {
     if (!selected || !decision) return;
+    if (!selected.allowedDecisions.includes(decision)) return;
     const validationError = attendanceDecisionRemarksError(decision, remarks);
     if (validationError) {
       setRemarksError(validationError);
@@ -657,49 +713,58 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                   </p>
                 </section>
 
-                <section>
-                  <h3 className="text-sm font-semibold">Evidence summary</h3>
-                  {selected.evidence.length === 0 ? (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      No structured correction evidence was supplied.
-                    </p>
-                  ) : (
-                    <div className="mt-2 divide-y rounded-md border">
-                      {selected.evidence.map((evidence) => (
-                        <div key={evidence.id} className="flex min-w-0 gap-3 p-3">
-                          <span className="mt-0.5 text-primary">
-                            <EvidenceIcon evidence={evidence} />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="break-words text-sm font-medium">{evidence.title}</p>
-                            {evidence.occurredAt && (
-                              <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                                <Clock3 className="h-3.5 w-3.5 shrink-0" />
-                                <span className="break-words">
-                                  {formatAttendanceReviewDateTime(evidence.occurredAt)}
-                                </span>
-                              </p>
-                            )}
-                            {evidence.detail && (
-                              <p className="mt-1 break-words text-xs text-muted-foreground">
-                                {evidence.detail}
-                              </p>
-                            )}
-                            {evidence.detailLines.length > 0 && (
-                              <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                                {evidence.detailLines.map((line) => (
-                                  <p key={line} className="break-words">
-                                    {line}
-                                  </p>
-                                ))}
-                              </div>
-                            )}
+                {selected.kind === "regularization" && (
+                  <section>
+                    <h3 className="text-sm font-semibold">Requested corrections</h3>
+                    <RegularizationReviewItems items={selected.regularizationItems} />
+                  </section>
+                )}
+
+                {selected.kind === "geo_fallback" && (
+                  <section>
+                    <h3 className="text-sm font-semibold">Evidence summary</h3>
+                    {selected.evidence.length === 0 ? (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        No structured correction evidence was supplied.
+                      </p>
+                    ) : (
+                      <div className="mt-2 divide-y rounded-md border">
+                        {selected.evidence.map((evidence) => (
+                          <div key={evidence.id} className="flex min-w-0 gap-3 p-3">
+                            <span className="mt-0.5 text-primary">
+                              <EvidenceIcon evidence={evidence} />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="break-words text-sm font-medium">{evidence.title}</p>
+                              {evidence.occurredAt && (
+                                <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                                  <Clock3 className="h-3.5 w-3.5 shrink-0" />
+                                  <span className="break-words">
+                                    {formatAttendanceReviewDateTime(evidence.occurredAt)}
+                                  </span>
+                                </p>
+                              )}
+                              {evidence.detail && (
+                                <p className="mt-1 break-words text-xs text-muted-foreground">
+                                  {evidence.detail}
+                                </p>
+                              )}
+                              {evidence.detailLines.length > 0 && (
+                                <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                                  {evidence.detailLines.map((line) => (
+                                    <p key={line} className="break-words">
+                                      {line}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
 
                 <ExactLocationAccessSection
                   request={selected}
@@ -735,26 +800,25 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                 </section>
               </div>
 
-              {selected.canDecide && (
+              {!selected.canDecide && selected.status === "pending" && (
+                <p className="sticky bottom-0 mt-6 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
+                  Decision actions are unavailable for this request.
+                </p>
+              )}
+
+              {selected.allowedDecisions.length > 0 && (
                 <div className="sticky bottom-0 mt-6 grid grid-cols-1 gap-2 border-t bg-background py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:flex sm:flex-wrap sm:justify-end">
-                  <DecisionButton
-                    decision="return"
-                    className="min-h-10 w-full whitespace-normal sm:min-h-9 sm:w-auto"
-                    disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
-                    onClick={() => openDecision("return")}
-                  />
-                  <DecisionButton
-                    decision="reject"
-                    className="min-h-10 w-full whitespace-normal sm:min-h-9 sm:w-auto"
-                    disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
-                    onClick={() => openDecision("reject")}
-                  />
-                  <DecisionButton
-                    decision="approve"
-                    className="min-h-10 w-full whitespace-normal sm:min-h-9 sm:w-auto"
-                    disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
-                    onClick={() => openDecision("approve")}
-                  />
+                  {DECISION_BUTTON_ORDER.filter((option) =>
+                    selected.allowedDecisions.includes(option),
+                  ).map((option) => (
+                    <DecisionButton
+                      key={option}
+                      decision={option}
+                      className="min-h-10 w-full whitespace-normal sm:min-h-9 sm:w-auto"
+                      disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
+                      onClick={() => openDecision(option)}
+                    />
+                  ))}
                 </div>
               )}
             </div>

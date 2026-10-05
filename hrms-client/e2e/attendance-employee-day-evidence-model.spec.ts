@@ -92,6 +92,28 @@ test.describe("employee day evidence model", () => {
               occurred_at: "2026-07-18T03:40:00.000Z",
               relationship: "applied",
             },
+            {
+              operation: "replace",
+              event_type: "check_out",
+              occurred_at: "2026-07-18T12:30:00.000Z",
+              target_punch: {
+                event_type: "check_out",
+                occurred_at: "2026-07-18T12:45:00.000Z",
+                latitude: 19.076,
+              },
+              relationship: "requested",
+            },
+            {
+              operation: "void",
+              event_type: null,
+              occurred_at: null,
+              target_punch: {
+                event_type: "check_in",
+                occurred_at: "2026-07-18T03:25:00.000Z",
+                command_id: "internal-command",
+              },
+              relationship: "requested",
+            },
           ],
         },
       ],
@@ -119,12 +141,27 @@ test.describe("employee day evidence model", () => {
       statusLabel: "Approved",
       operationsLabel: "Add missing punch",
     });
+    expect(view?.regularizations[0].items).toHaveLength(3);
+    expect(view?.regularizations[0].items[0]).toMatchObject({
+      operationLabel: "Add missing punch",
+    });
+    expect(view?.regularizations[0].items[1]).toMatchObject({
+      operationLabel: "Replace punch",
+    });
+    expect(view?.regularizations[0].items[1].targetPunchLabel).toContain("Check-out");
+    expect(view?.regularizations[0].items[1].requestedPunchLabel).toContain("Check-out");
+    expect(view?.regularizations[0].items[2]).toMatchObject({
+      operationLabel: "Remove punch",
+      requestedPunchLabel: null,
+    });
+    expect(view?.regularizations[0].items[2].targetPunchLabel).toContain("Check-in");
 
     const serialized = JSON.stringify(view);
     expect(serialized).not.toContain("19.076");
     expect(serialized).not.toContain("72.8777");
     expect(serialized).not.toContain("coordinates");
     expect(serialized).not.toContain("command_id");
+    expect(serialized).not.toContain("internal-command");
     expect(serialized).not.toContain("raw_payload");
   });
 });

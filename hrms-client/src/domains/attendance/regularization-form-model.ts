@@ -4,8 +4,8 @@ import type {
   AttendanceRegularizationItem,
   AttendanceRegularizationOperation,
   AttendanceRegularizationRecord,
+  AttendanceRegularizationTargetPunchSummary,
 } from "./api";
-import { localIsoDate } from "./live";
 
 export const REGULARIZATION_EVENT_LABEL: Record<AttendanceRegularizationEventType, string> = {
   check_in: "Check-in",
@@ -14,8 +14,8 @@ export const REGULARIZATION_EVENT_LABEL: Record<AttendanceRegularizationEventTyp
 
 export const REGULARIZATION_OPERATION_LABEL: Record<AttendanceRegularizationOperation, string> = {
   add: "Add missing punch",
-  replace: "Replace incorrect punch",
-  void: "Remove duplicate punch",
+  replace: "Replace punch",
+  void: "Remove punch",
 };
 
 export const REGULARIZATION_OPERATION_DESCRIPTION: Record<
@@ -24,8 +24,39 @@ export const REGULARIZATION_OPERATION_DESCRIPTION: Record<
 > = {
   add: "Create a missing historical check-in or check-out.",
   replace: "Keep the original evidence and request a corrected punch.",
-  void: "Keep the original evidence but exclude it from attendance calculations.",
+  void: "Keep the original punch in audit history but exclude it from attendance calculations after approval.",
 };
+
+export const REGULARIZATION_VOID_HELPER_TEXT =
+  "This punch remains in attendance history and is excluded from attendance calculations if approved.";
+
+export interface RegularizationItemDisplay {
+  key: string;
+  ordinal: number;
+  operation: AttendanceRegularizationOperation | string;
+  operationLabel: string;
+  targetPunchLabel: string | null;
+  requestedPunchLabel: string | null;
+  helperText: string | null;
+  relationshipLabel: string | null;
+}
+
+export interface RegularizationDisplayItemInput {
+  id?: unknown;
+  ordinal?: unknown;
+  operation?: unknown;
+  event_type?: unknown;
+  occurred_at?: unknown;
+  target_punch?: unknown;
+  relationship?: unknown;
+}
+
+function localIsoDate(value = new Date()): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 export interface RegularizationDraftItem {
   key: string;
@@ -127,6 +158,43 @@ export function formatRegularizationTime(value: string): string {
   });
 }
 
+export function regularizationEventLabel(value: unknown): string {
+  const key = String(value || "");
+  if (key === "check_in" || key === "check_out") return REGULARIZATION_EVENT_LABEL[key];
+  return humanizeRegularizationToken(key, "Attendance punch");
+}
+
+export function regularizationOperationLabel(value: unknown): string {
+  const key = String(value || "");
+  if (key === "add" || key === "replace" || key === "void") {
+    return REGULARIZATION_OPERATION_LABEL[key];
+  }
+  return humanizeRegularizationToken(key, "Historical correction");
+}
+
+export function formatRegularizationDateTime(value: string | null | undefined): string {
+  if (!value) return "Time unavailable";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function formatRegularizationTimeFromIso(value: string | null | undefined): string {
+  if (!value) return "Time unavailable";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function regularizationPunchLabel(punch: RegularizationPunchOption): string {
   const source = punch.source.trim().replaceAll("_", " ");
   return `${REGULARIZATION_EVENT_LABEL[punch.eventType]} at ${punch.time}${
@@ -134,12 +202,102 @@ export function regularizationPunchLabel(punch: RegularizationPunchOption): stri
   }`;
 }
 
+export function regularizationPunchSummaryLabel(
+  punch: AttendanceRegularizationTargetPunchSummary | null | undefined,
+): string | null {
+  if (!punch?.event_type || !punch.occurred_at) return null;
+  return `${regularizationEventLabel(punch.event_type)} · ${formatRegularizationTimeFromIso(
+    punch.occurred_at,
+  )}`;
+}
+
 export function regularizationRequestOperationSummary(
   request: AttendanceRegularizationRecord,
 ): string {
   const operations = Array.from(new Set((request.items ?? []).map((item) => item.operation)));
   if (operations.length === 0) return "Historical correction";
-  return operations.map((operation) => REGULARIZATION_OPERATION_LABEL[operation]).join(", ");
+  return operations.map(regularizationOperationLabel).join(", ");
+}
+
+export function regularizationItemDisplays(
+  items: readonly RegularizationDisplayItemInput[] | null | undefined,
+): RegularizationItemDisplay[] {
+  return [...(items ?? [])]
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (left, right) =>
+        ordinalValue(left.item.ordinal, left.index) - ordinalValue(right.item.ordinal, right.index),
+    )
+    .map(({ item, index }) => regularizationItemDisplay(item, index));
+}
+
+export function regularizationItemDisplay(
+  item: RegularizationDisplayItemInput,
+  index = 0,
+): RegularizationItemDisplay {
+  const operation = String(item.operation || "add");
+  const targetPunch = targetPunchSummary(item.target_punch);
+  const targetPunchLabel = regularizationPunchSummaryLabel(targetPunch);
+  const requestedPunchLabel =
+    operation === "void" ? null : requestedPunchSummaryLabel(item.event_type, item.occurred_at);
+
+  return {
+    key: `${stringValue(item.id) || operation || "item"}:${index}`,
+    ordinal: ordinalValue(item.ordinal, index),
+    operation,
+    operationLabel: regularizationOperationLabel(operation),
+    targetPunchLabel:
+      operation === "replace" || operation === "void"
+        ? (targetPunchLabel ?? "Original punch details unavailable")
+        : null,
+    requestedPunchLabel,
+    helperText: operation === "void" ? REGULARIZATION_VOID_HELPER_TEXT : null,
+    relationshipLabel: item.relationship
+      ? humanizeRegularizationToken(item.relationship, "Requested")
+      : null,
+  };
+}
+
+function requestedPunchSummaryLabel(eventType: unknown, occurredAt: unknown): string | null {
+  const occurredAtText = stringValue(occurredAt);
+  if (!eventType || !occurredAtText) return null;
+  return `${regularizationEventLabel(eventType)} · ${formatRegularizationTimeFromIso(
+    occurredAtText,
+  )}`;
+}
+
+function targetPunchSummary(value: unknown): AttendanceRegularizationTargetPunchSummary | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const eventType = stringValue(record.event_type);
+  const occurredAt = stringValue(record.occurred_at);
+  if (!eventType || !occurredAt) return null;
+  return { event_type: eventType, occurred_at: occurredAt };
+}
+
+function ordinalValue(value: unknown, fallback: number): number {
+  const parsed =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function stringValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
+
+function humanizeRegularizationToken(value: unknown, fallback: string): string {
+  const token = String(value || "")
+    .trim()
+    .slice(0, 80)
+    .replace(/[^a-zA-Z0-9_-]+/gu, " ")
+    .replace(/[_-]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+
+  if (!token) return fallback;
+  return token.replace(/\b\w/gu, (letter) => letter.toUpperCase());
 }
 
 export function buildRegularizationRequest(

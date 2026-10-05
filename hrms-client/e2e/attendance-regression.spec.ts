@@ -131,6 +131,24 @@ test("submits a normalized historical regularization request", async ({ page }) 
   await prepareAttendancePage(page);
   const workDate = previousLocalDate();
   let submittedBody: Record<string, unknown> | undefined;
+  const targetPunches = [
+    {
+      id: "punch-check-in",
+      event_type: "check_in",
+      occurred_at: `${workDate}T03:42:00.000Z`,
+      work_date: workDate,
+      time: "09:12",
+      source: "web",
+    },
+    {
+      id: "punch-check-out",
+      event_type: "check_out",
+      occurred_at: `${workDate}T12:20:00.000Z`,
+      work_date: workDate,
+      time: "17:50",
+      source: "web",
+    },
+  ];
 
   await page.route("**/api/v1/attendance/summary/my**", async (route) => {
     await route.fulfill({
@@ -139,9 +157,27 @@ test("submits a normalized historical regularization request", async ({ page }) 
       body: JSON.stringify(attendanceSummary("not_started")),
     });
   });
+  await page.route("**/api/v1/attendance/punches/my**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: targetPunches,
+        page: 1,
+        page_size: 100,
+        total: targetPunches.length,
+      }),
+    });
+  });
   await page.route("**/api/v1/attendance/regularizations", async (route) => {
     submittedBody = route.request().postDataJSON() as Record<string, unknown>;
     const items = submittedBody.items as Array<Record<string, unknown>>;
+    const targetSummaryById = new Map(
+      targetPunches.map((punch) => [
+        punch.id,
+        { event_type: punch.event_type, occurred_at: punch.occurred_at },
+      ]),
+    );
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -156,7 +192,10 @@ test("submits a normalized historical regularization request", async ({ page }) 
           ...item,
           id: `created-item-${index + 1}`,
           ordinal: index + 1,
-          target_punch_event_id: null,
+          target_punch_event_id: item.target_punch_event_id ?? null,
+          target_punch: item.target_punch_event_id
+            ? targetSummaryById.get(String(item.target_punch_event_id))
+            : null,
         })),
       }),
     });
@@ -166,6 +205,17 @@ test("submits a normalized historical regularization request", async ({ page }) 
   await page.getByLabel("Attendance date").fill(workDate);
   await page.getByLabel("Reason").fill("Missed check-in after an approved client visit.");
   await page.getByTestId("regularization-time-1").fill("09:15");
+  await page.getByRole("button", { name: "Add action" }).click();
+  await page.getByTestId("regularization-operation-2").click();
+  await page.getByRole("option", { name: "Replace punch" }).click();
+  await page.getByTestId("regularization-target-2").click();
+  await page.getByRole("option", { name: /Check-in at 09:12/u }).click();
+  await page.getByTestId("regularization-time-2").fill("09:00");
+  await page.getByRole("button", { name: "Add action" }).click();
+  await page.getByTestId("regularization-operation-3").click();
+  await page.getByRole("option", { name: "Remove punch" }).click();
+  await page.getByTestId("regularization-target-3").click();
+  await page.getByRole("option", { name: /Check-out at 17:50/u }).click();
   await page.getByTestId("attendance-regularization-submit").click();
 
   const submittedPanel = page.getByTestId("attendance-regularization-submitted");
@@ -178,10 +228,27 @@ test("submits a normalized historical regularization request", async ({ page }) 
   expect(requestBody).toMatchObject({
     work_date: workDate,
     reason: "Missed check-in after an approved client visit.",
-    items: [{ operation: "add", event_type: "check_in" }],
+    items: [
+      { operation: "add", event_type: "check_in" },
+      {
+        operation: "replace",
+        target_punch_event_id: "punch-check-in",
+        event_type: "check_in",
+      },
+      { operation: "void", target_punch_event_id: "punch-check-out" },
+    ],
   });
-  const submittedItem = (requestBody.items as Array<Record<string, unknown>>)[0];
-  expect(String(submittedItem.occurred_at)).toContain(workDate);
+  expect(requestBody).not.toHaveProperty("requested_punches");
+  const submittedItems = requestBody.items as Array<Record<string, unknown>>;
+  expect(String(submittedItems[0].occurred_at)).toContain(workDate);
+  expect(String(submittedItems[1].occurred_at)).toContain(workDate);
+  expect(submittedItems[2]).not.toHaveProperty("event_type");
+  expect(submittedItems[2]).not.toHaveProperty("occurred_at");
+  await expect(submittedPanel.getByText("1. Add missing punch", { exact: true })).toBeVisible();
+  await expect(submittedPanel.getByText("2. Replace punch", { exact: true })).toBeVisible();
+  await expect(submittedPanel.getByText("3. Remove punch", { exact: true })).toBeVisible();
+  await expect(submittedPanel.getByText("Original").first()).toBeVisible();
+  await expect(submittedPanel.getByText("Requested").first()).toBeVisible();
 });
 
 test("shows employee day evidence on the attendance calendar without raw coordinates", async ({
@@ -298,6 +365,28 @@ test("shows employee day evidence on the attendance calendar without raw coordin
                   occurred_at: `${workDate}T03:40:00.000Z`,
                   relationship: "applied",
                 },
+                {
+                  operation: "replace",
+                  event_type: "check_out",
+                  occurred_at: `${workDate}T12:30:00.000Z`,
+                  target_punch: {
+                    event_type: "check_out",
+                    occurred_at: `${workDate}T12:45:00.000Z`,
+                    latitude: 19.076,
+                  },
+                  relationship: "requested",
+                },
+                {
+                  operation: "void",
+                  event_type: null,
+                  occurred_at: null,
+                  target_punch: {
+                    event_type: "check_in",
+                    occurred_at: `${workDate}T03:25:00.000Z`,
+                    longitude: 72.8777,
+                  },
+                  relationship: "requested",
+                },
               ],
             },
           ],
@@ -319,6 +408,11 @@ test("shows employee day evidence on the attendance calendar without raw coordin
   await expect(
     panel.getByText("Location check: Inside work area - Bhubaneswar Office"),
   ).toBeVisible();
+  await expect(panel.getByText("1. Add missing punch", { exact: true })).toBeVisible();
+  await expect(panel.getByText("2. Replace punch", { exact: true })).toBeVisible();
+  await expect(panel.getByText("3. Remove punch", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Original").first()).toBeVisible();
+  await expect(panel.getByText("Requested").first()).toBeVisible();
 
   const rendered = await page.locator("body").innerText();
   expect(rendered).not.toMatch(/latitude|longitude|coordinates/i);
@@ -360,6 +454,12 @@ test("manager reviews and approves an assigned correction", async ({ page }) => 
     .first()
     .click();
   await expect(page.getByRole("heading", { name: "Scoped Employee" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Requested corrections" })).toBeVisible();
+  await expect(page.getByText("1. Add missing punch", { exact: true })).toBeVisible();
+  await expect(page.getByText("2. Replace punch", { exact: true })).toBeVisible();
+  await expect(page.getByText("3. Remove punch", { exact: true })).toBeVisible();
+  await expect(page.getByText("Original").first()).toBeVisible();
+  await expect(page.getByText("Requested").first()).toBeVisible();
   await page.getByRole("button", { name: "Approve", exact: true }).click();
   await page.getByRole("button", { name: "Approve request", exact: true }).click();
 
@@ -368,6 +468,60 @@ test("manager reviews and approves an assigned correction", async ({ page }) => 
   await expect(
     page.getByRole("table").getByText("Missed check-in after client meeting", { exact: true }),
   ).toHaveCount(0);
+});
+
+test("manager detail hides decisions when can_decide is false", async ({ page }) => {
+  await prepareAttendancePage(page, "Reviewer");
+  const workDate = previousLocalDate();
+
+  await page.route("**/api/v1/attendance/regularizations/queue/manager**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [
+          {
+            id: "self-owned-review",
+            employee: {
+              full_name: "Scoped Employee",
+              employee_code: "EMP-SELF",
+            },
+            work_date: workDate,
+            reason: "Own pending correction",
+            status: "pending",
+            version: 4,
+            can_decide: false,
+            allowed_decisions: [],
+            created_at: new Date().toISOString(),
+            items: [
+              {
+                id: "self-owned-item-1",
+                ordinal: 1,
+                operation: "add",
+                target_punch_event_id: null,
+                event_type: "check_in",
+                occurred_at: `${workDate}T03:30:00.000Z`,
+                target_punch: null,
+              },
+            ],
+          },
+        ],
+        page: 1,
+        page_size: 20,
+        total: 1,
+        queue_counts: { total: 1, pending: 1, approved: 0, returned: 0, rejected: 0 },
+      }),
+    });
+  });
+
+  await openAttendance(page, "/attendance/approvals");
+  await page.getByRole("table").getByText("Own pending correction", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Scoped Employee" })).toBeVisible();
+  await expect(page.getByText("Add missing punch", { exact: true })).toBeVisible();
+  await expect(page.getByText("Decision actions are unavailable for this request.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Return", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reject", exact: true })).toHaveCount(0);
 });
 
 test("manager queue exposes a recoverable loading error", async ({ page }) => {

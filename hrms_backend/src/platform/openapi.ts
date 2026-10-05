@@ -4898,6 +4898,7 @@ const attendanceRegularizationSchema = {
           "target_punch_event_id",
           "event_type",
           "occurred_at",
+          "target_punch",
         ],
         properties: {
           id: uuid("Regularization request item UUID"),
@@ -4919,6 +4920,21 @@ const attendanceRegularizationSchema = {
             ...dateTime("Requested punch timestamp"),
             nullable: true,
           },
+          target_punch: {
+            type: "object",
+            nullable: true,
+            description:
+              "Safe display summary for the existing target punch on REPLACE or VOID items. Does not include coordinates, metadata, or internal command evidence.",
+            required: ["event_type", "occurred_at"],
+            properties: {
+              event_type: {
+                type: "string",
+                enum: enumValues(AttendanceHistoricalCorrectionEventTypeValues),
+              },
+              occurred_at: dateTime("Target punch timestamp"),
+            },
+            additionalProperties: false,
+          },
         },
         additionalProperties: true,
       },
@@ -4933,6 +4949,18 @@ const attendanceRegularizationSchema = {
       nullable: true,
     },
     decision_remarks: { type: "string", nullable: true },
+    can_decide: {
+      type: "boolean",
+      description:
+        "Whether the current actor is allowed to approve, return, or reject this request.",
+      example: true,
+    },
+    allowed_decisions: {
+      type: "array",
+      description:
+        "Request-level decisions the current actor may perform. Empty for completed, self-owned, or otherwise non-actionable requests.",
+      items: { type: "string", enum: ["approve", "return", "reject"] },
+    },
     version: { type: "integer", minimum: 1, example: 1 },
   },
   additionalProperties: true,
@@ -4956,11 +4984,14 @@ const attendanceRegularizationSchema = {
         target_punch_event_id: null,
         event_type: "check_out",
         occurred_at: "2026-05-04T18:20:00.000+05:30",
+        target_punch: null,
       },
     ],
     status: "pending",
     current_approver_user_id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9004",
     decision_remarks: null,
+    can_decide: true,
+    allowed_decisions: ["approve", "return", "reject"],
     version: 1,
   },
 };

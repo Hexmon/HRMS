@@ -4,6 +4,11 @@ import type {
   AttendanceGeoReviewType,
   AttendancePunchEventType,
 } from "./api";
+import {
+  regularizationItemDisplay,
+  regularizationItemDisplays,
+  type RegularizationItemDisplay,
+} from "./regularization-form-model";
 
 export type AttendanceReviewStatus = "pending" | "approved" | "returned" | "rejected";
 export type AttendanceReviewDecision = "approve" | "return" | "reject";
@@ -17,6 +22,8 @@ export interface AttendanceReviewEvidence {
   detailLines: string[];
   occurredAt: string | null;
 }
+
+export type AttendanceReviewRegularizationItem = RegularizationItemDisplay;
 
 export interface AttendanceReviewExactLocationAccess {
   state: AttendanceExactLocationAccessState;
@@ -34,11 +41,13 @@ export interface AttendanceReviewRequest {
   createdAt: string | null;
   decidedAt: string | null;
   decisionRemarks: string | null;
+  regularizationItems: AttendanceReviewRegularizationItem[];
   evidence: AttendanceReviewEvidence[];
   geoReviewType: AttendanceGeoReviewType | null;
   geoOutcome: AttendanceGeoFactualOutcome | null;
   exactLocationAccess: AttendanceReviewExactLocationAccess;
   canDecide: boolean;
+  allowedDecisions: AttendanceReviewDecision[];
 }
 
 export interface AttendanceReviewQueue {
@@ -57,6 +66,8 @@ const REVIEW_STATUSES = new Set<AttendanceReviewStatus>([
 ]);
 
 const REVIEW_OPERATIONS = new Set<AttendanceReviewOperation>(["add", "replace", "void"]);
+const REVIEW_DECISIONS = new Set<AttendanceReviewDecision>(["approve", "return", "reject"]);
+const DEFAULT_REVIEW_DECISIONS: AttendanceReviewDecision[] = ["approve", "return", "reject"];
 
 const GEO_OUTCOMES = new Set<AttendanceGeoFactualOutcome>([
   "not_required",
@@ -183,6 +194,16 @@ function nullableString(value: unknown): string | null {
   return parsed || null;
 }
 
+function booleanValue(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return null;
+}
+
 function isoDateTime(value: unknown): string | null {
   const parsed = nullableString(value);
   if (!parsed || Number.isNaN(Date.parse(parsed))) return null;
@@ -207,10 +228,6 @@ function reviewStatus(value: unknown): AttendanceReviewStatus {
   return REVIEW_STATUSES.has(status) ? status : "pending";
 }
 
-function eventLabel(value: unknown): string {
-  return humanizeToken(value, "Attendance punch");
-}
-
 function operation(value: unknown): AttendanceReviewOperation {
   const parsed = stringValue(value).toLowerCase() as AttendanceReviewOperation;
   return REVIEW_OPERATIONS.has(parsed) ? parsed : "add";
@@ -218,39 +235,44 @@ function operation(value: unknown): AttendanceReviewOperation {
 
 function operationEvidence(itemValue: unknown, index: number): AttendanceReviewEvidence {
   const item = record(itemValue);
-  const itemOperation = operation(item.operation);
-  const event = eventLabel(item.event_type);
+  const display = regularizationItemDisplay(item, index);
+  const itemOperation = operation(display.operation);
   const occurredAt = isoDateTime(item.occurred_at);
-  const title =
-    itemOperation === "replace"
-      ? `Replace ${event}`
-      : itemOperation === "void"
-        ? "Remove recorded punch"
-        : `Add ${event}`;
+  const detailLines = [
+    display.targetPunchLabel ? `Original: ${display.targetPunchLabel}` : null,
+    display.requestedPunchLabel ? `Requested: ${display.requestedPunchLabel}` : null,
+  ].filter((line): line is string => Boolean(line));
 
   return {
     id: stringValue(item.id, `item-${index + 1}`),
     operation: itemOperation,
-    title,
+    title: display.operationLabel,
     detail:
-      itemOperation === "void"
-        ? "The original punch remains in the audit trail."
-        : occurredAt
-          ? null
-          : "Requested time was not supplied.",
-    detailLines: [],
+      display.helperText ??
+      (itemOperation !== "void" && !occurredAt ? "Requested time was not supplied." : null),
+    detailLines,
     occurredAt,
   };
 }
 
 function legacyPunchEvidence(itemValue: unknown, index: number): AttendanceReviewEvidence {
   const item = record(itemValue);
+  const display = regularizationItemDisplay(
+    {
+      id: `legacy-${index + 1}`,
+      ordinal: index,
+      operation: "add",
+      event_type: item.event_type,
+      occurred_at: item.occurred_at,
+    },
+    index,
+  );
   return {
     id: `legacy-${index + 1}`,
     operation: "add",
-    title: `Add ${eventLabel(item.event_type)}`,
+    title: display.operationLabel,
     detail: null,
-    detailLines: [],
+    detailLines: display.requestedPunchLabel ? [`Requested: ${display.requestedPunchLabel}`] : [],
     occurredAt: isoDateTime(item.occurred_at),
   };
 }
@@ -327,7 +349,9 @@ function safeGeoEvidence(row: Record<string, unknown>): AttendanceReviewEvidence
 }
 
 function exactLocationAccess(value: unknown): AttendanceReviewExactLocationAccess {
-  const state = stringValue(record(value).state).toLowerCase() as AttendanceExactLocationAccessState;
+  const state = stringValue(
+    record(value).state,
+  ).toLowerCase() as AttendanceExactLocationAccessState;
   return {
     state: EXACT_LOCATION_ACCESS_STATES.has(state) ? state : "unavailable",
   };
@@ -349,6 +373,41 @@ function reviewEvidence(row: Record<string, unknown>): AttendanceReviewEvidence[
   return geoEvidence ? [...corrections, geoEvidence] : corrections;
 }
 
+function legacyRegularizationItems(
+  row: Record<string, unknown>,
+): AttendanceReviewRegularizationItem[] {
+  return regularizationItemDisplays(
+    array(row.requested_punches).map((itemValue, index) => {
+      const item = record(itemValue);
+      return {
+        id: `legacy-${index + 1}`,
+        ordinal: index,
+        operation: "add",
+        event_type: item.event_type,
+        occurred_at: item.occurred_at,
+      };
+    }),
+  );
+}
+
+function reviewRegularizationItems(
+  row: Record<string, unknown>,
+): AttendanceReviewRegularizationItem[] {
+  const normalizedItems = array(row.items);
+  return normalizedItems.length > 0
+    ? regularizationItemDisplays(normalizedItems.map(record))
+    : legacyRegularizationItems(row);
+}
+
+function allowedDecisions(value: unknown): AttendanceReviewDecision[] {
+  const unique = new Set<AttendanceReviewDecision>();
+  for (const item of array(value)) {
+    const decision = stringValue(item).toLowerCase() as AttendanceReviewDecision;
+    if (REVIEW_DECISIONS.has(decision)) unique.add(decision);
+  }
+  return [...unique];
+}
+
 function reviewRequest(value: unknown): AttendanceReviewRequest | null {
   const row = record(value);
   const id = stringValue(row.id).trim();
@@ -358,6 +417,18 @@ function reviewRequest(value: unknown): AttendanceReviewRequest | null {
   const status = reviewStatus(row.status);
   const version = Math.max(0, Math.trunc(numberValue(row.version)));
   const summary = record(row.geo_evidence_summary ?? row.evidence_summary);
+  const serverCanDecide = booleanValue(row.can_decide);
+  const parsedAllowedDecisions = allowedDecisions(row.allowed_decisions);
+  const fallbackCanDecide = status === "pending" && version > 0;
+  const canDecide =
+    status === "pending" &&
+    (serverCanDecide ?? (parsedAllowedDecisions.length > 0 || fallbackCanDecide));
+  const effectiveAllowedDecisions = canDecide
+    ? parsedAllowedDecisions.length > 0
+      ? parsedAllowedDecisions
+      : DEFAULT_REVIEW_DECISIONS
+    : [];
+  const regularizationItems = reviewRegularizationItems(row);
 
   return {
     id,
@@ -373,11 +444,13 @@ function reviewRequest(value: unknown): AttendanceReviewRequest | null {
     createdAt: nullableString(row.created_at),
     decidedAt: nullableString(row.decided_at),
     decisionRemarks: nullableString(row.decision_remarks),
+    regularizationItems,
     evidence: reviewEvidence(row),
     geoReviewType: geoReviewType(row.review_type ?? summary.review_type),
     geoOutcome: geoOutcome(row.geo_outcome ?? summary.outcome),
     exactLocationAccess: exactLocationAccess(row.exact_location_access),
-    canDecide: status === "pending" && version > 0,
+    canDecide,
+    allowedDecisions: effectiveAllowedDecisions,
   };
 }
 

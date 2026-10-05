@@ -161,24 +161,51 @@ export function previousLocalDate(): string {
 }
 
 export function managerQueueResponse(includeRequest = true): Record<string, unknown> {
+  const workDate = previousLocalDate();
   const item = {
     id: "regularization-review-1",
     employee: {
       full_name: "Scoped Employee",
       employee_code: "EMP-101",
     },
-    work_date: previousLocalDate(),
+    work_date: workDate,
     reason: "Missed check-in after client meeting",
     status: "pending",
     version: 4,
+    can_decide: true,
+    allowed_decisions: ["approve", "return", "reject"],
     created_at: new Date().toISOString(),
     items: [
       {
         id: "regularization-item-1",
         ordinal: 1,
         operation: "add",
+        target_punch_event_id: null,
         event_type: "check_in",
-        occurred_at: new Date().toISOString(),
+        occurred_at: `${workDate}T03:30:00.000Z`,
+        target_punch: null,
+      },
+      {
+        id: "regularization-item-2",
+        ordinal: 2,
+        operation: "replace",
+        target_punch_event_id: "manager-target-check-in",
+        target_punch: {
+          event_type: "check_in",
+          occurred_at: `${workDate}T03:42:00.000Z`,
+        },
+        event_type: "check_in",
+        occurred_at: `${workDate}T03:30:00.000Z`,
+      },
+      {
+        id: "regularization-item-3",
+        ordinal: 3,
+        operation: "void",
+        target_punch_event_id: "manager-target-check-out",
+        target_punch: {
+          event_type: "check_out",
+          occurred_at: `${workDate}T12:20:00.000Z`,
+        },
       },
     ],
   };

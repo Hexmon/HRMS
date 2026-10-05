@@ -30,12 +30,15 @@ import {
   REGULARIZATION_OPERATION_DESCRIPTION,
   buildRegularizationRequest,
   createRegularizationDraftItem,
+  formatRegularizationDateTime,
   formatRegularizationWorkDate,
   monthsAgoLocalDate,
   previousLocalDate,
+  regularizationItemDisplays,
   regularizationPunchLabel,
   regularizationRequestOperationSummary,
   type RegularizationDraftItem,
+  type RegularizationItemDisplay,
   type RegularizationPunchOption,
 } from "./regularization-form-model";
 import {
@@ -386,8 +389,8 @@ export function EmployeeRegularizationForm() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="add">Add missing punch</SelectItem>
-                          <SelectItem value="replace">Replace incorrect punch</SelectItem>
-                          <SelectItem value="void">Remove duplicate punch</SelectItem>
+                          <SelectItem value="replace">Replace punch</SelectItem>
+                          <SelectItem value="void">Remove punch</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -559,6 +562,20 @@ export function EmployeeRegularizationForm() {
                   action
                   {(request.items ?? []).length === 1 ? "" : "s"}
                 </p>
+                <RegularizationItemsList items={regularizationItemDisplays(request.items)} />
+                {request.decision_remarks &&
+                  (request.status === "returned" ||
+                    request.status === "rejected" ||
+                    request.status === "approved") && (
+                    <p className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                      Decision remarks: {request.decision_remarks}
+                    </p>
+                  )}
+                {request.decided_at && request.status !== "pending" && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Decided {formatRegularizationDateTime(request.decided_at)}
+                  </p>
+                )}
               </li>
             ))}
           </ul>
@@ -609,14 +626,10 @@ function SubmittedRegularization({
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Requested actions
         </p>
-        <ul className="mt-2 space-y-2 text-sm">
-          {state.summaries.map((summary, index) => (
-            <li key={`${index}-${summary}`} className="flex gap-2">
-              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-              <span className="min-w-0 break-words">{summary}</span>
-            </li>
-          ))}
-        </ul>
+        <RegularizationItemsList
+          items={regularizationItemDisplays(state.response.items)}
+          fallbackSummaries={state.summaries}
+        />
         <p className="mt-4 break-words rounded-lg bg-background px-3 py-2 text-xs text-muted-foreground">
           Reason: {state.response.reason}
         </p>
@@ -632,6 +645,68 @@ function SubmittedRegularization({
           Submit another request
         </Button>
       </div>
+    </div>
+  );
+}
+
+function RegularizationItemsList({
+  items,
+  fallbackSummaries = [],
+}: {
+  items: RegularizationItemDisplay[];
+  fallbackSummaries?: string[];
+}) {
+  if (items.length === 0) {
+    return fallbackSummaries.length > 0 ? (
+      <ul className="mt-2 space-y-2 text-sm">
+        {fallbackSummaries.map((summary, index) => (
+          <li key={`${index}-${summary}`} className="flex gap-2">
+            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+            <span className="min-w-0 break-words">{summary}</span>
+          </li>
+        ))}
+      </ul>
+    ) : null;
+  }
+
+  return (
+    <ol className="mt-2 space-y-2">
+      {items.map((item, index) => (
+        <li
+          key={item.key}
+          className="rounded-lg border border-border/60 bg-background px-3 py-2 text-xs"
+        >
+          <p className="break-words text-sm font-medium">
+            {items.length > 1 ? `${index + 1}. ` : ""}
+            {item.operationLabel}
+          </p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {item.targetPunchLabel && (
+              <RegularizationItemFact label="Original" value={item.targetPunchLabel} />
+            )}
+            {item.requestedPunchLabel && (
+              <RegularizationItemFact label="Requested" value={item.requestedPunchLabel} />
+            )}
+          </div>
+          {item.helperText && (
+            <p className="mt-2 break-words text-muted-foreground">{item.helperText}</p>
+          )}
+          {item.relationshipLabel && (
+            <p className="mt-2 break-words text-[11px] text-muted-foreground">
+              {item.relationshipLabel}
+            </p>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function RegularizationItemFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md bg-muted/40 px-2.5 py-2">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-0.5 break-words text-xs font-semibold">{value}</p>
     </div>
   );
 }

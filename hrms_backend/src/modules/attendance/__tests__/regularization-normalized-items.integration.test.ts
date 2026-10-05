@@ -1066,6 +1066,163 @@ describe("regularization normalized items and actions", () => {
     )).rows[0].count).toBe(0);
   });
 
+  it("enriches regularization responses with safe target summaries and decision capability", async () => {
+    const employee = await loginAs(app, "E1");
+    const manager = await loginAs(app, "D1");
+    const peer = await loginAs(app, "E2");
+    const companyId = companyIdFor(employee.user.id);
+    const workDate = "2026-05-28";
+    const replaceTargetId = await insertPunchFixture({
+      companyId,
+      employeeUserId: employee.user.id,
+      eventType: "check_in",
+      occurredAt: "2026-05-28T03:42:00.000Z",
+    });
+    const voidTargetId = await insertPunchFixture({
+      companyId,
+      employeeUserId: employee.user.id,
+      eventType: "check_out",
+      occurredAt: "2026-05-28T12:20:00.000Z",
+    });
+
+    const request = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/regularizations",
+      headers: authHeader(employee.token),
+      payload: {
+        work_date: workDate,
+        reason: "Mixed normalized corrections",
+        items: [
+          {
+            operation: "add",
+            event_type: "check_out",
+            occurred_at: "2026-05-28T12:37:00.000Z",
+          },
+          {
+            operation: "replace",
+            target_punch_event_id: replaceTargetId,
+            event_type: "check_in",
+            occurred_at: "2026-05-28T03:30:00.000Z",
+          },
+          {
+            operation: "void",
+            target_punch_event_id: voidTargetId,
+          },
+        ],
+      },
+    });
+    expect(request.statusCode, request.body).toBe(200);
+    expect(request.json()).toMatchObject({
+      can_decide: false,
+      allowed_decisions: [],
+      items: [
+        { operation: "add", target_punch: null },
+        {
+          operation: "replace",
+          target_punch: {
+            event_type: "check_in",
+            occurred_at: "2026-05-28T03:42:00.000Z",
+          },
+        },
+        {
+          operation: "void",
+          target_punch: {
+            event_type: "check_out",
+            occurred_at: "2026-05-28T12:20:00.000Z",
+          },
+        },
+      ],
+    });
+
+    const myHistory = await app.inject({
+      method: "GET",
+      url: `/api/v1/attendance/regularizations/my?date_from=${workDate}&date_to=${workDate}`,
+      headers: authHeader(employee.token),
+    });
+    expect(myHistory.statusCode, myHistory.body).toBe(200);
+    const ownRequest = myHistory.json().items.find(
+      (item: { id: string }) => item.id === request.json().id,
+    );
+    expect(ownRequest).toMatchObject({
+      can_decide: false,
+      allowed_decisions: [],
+    });
+
+    const queue = await app.inject({
+      method: "GET",
+      url:
+        `/api/v1/attendance/regularizations/queue/manager?status=pending` +
+        `&date_from=${workDate}&date_to=${workDate}`,
+      headers: authHeader(manager.token),
+    });
+    expect(queue.statusCode, queue.body).toBe(200);
+    const queuedRequest = queue.json().items.find(
+      (item: { id: string }) => item.id === request.json().id,
+    );
+    expect(queuedRequest).toMatchObject({
+      can_decide: true,
+      allowed_decisions: ["approve", "return", "reject"],
+      items: [
+        { operation: "add", target_punch: null },
+        {
+          operation: "replace",
+          target_punch: {
+            event_type: "check_in",
+            occurred_at: "2026-05-28T03:42:00.000Z",
+          },
+        },
+        {
+          operation: "void",
+          target_punch: {
+            event_type: "check_out",
+            occurred_at: "2026-05-28T12:20:00.000Z",
+          },
+        },
+      ],
+    });
+    const targetSummaries = JSON.stringify(
+      queuedRequest.items.map((item: { target_punch: unknown }) => item.target_punch),
+    );
+    expect(targetSummaries).not.toMatch(/latitude|longitude|coordinates|metadata|command_id/iu);
+
+    const peerQueue = await app.inject({
+      method: "GET",
+      url: `/api/v1/attendance/regularizations/queue/manager?status=pending`,
+      headers: authHeader(peer.token),
+    });
+    expect(peerQueue.statusCode).toBe(403);
+
+    const approved = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/regularizations/${request.json().id}/decision`,
+      headers: authHeader(manager.token),
+      payload: { decision: "approve", expected_version: 1 },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect(approved.json()).toMatchObject({
+      status: "approved",
+      can_decide: false,
+      allowed_decisions: [],
+    });
+
+    const completedQueue = await app.inject({
+      method: "GET",
+      url:
+        `/api/v1/attendance/regularizations/queue/manager?status=approved` +
+        `&date_from=${workDate}&date_to=${workDate}`,
+      headers: authHeader(manager.token),
+    });
+    expect(completedQueue.statusCode, completedQueue.body).toBe(200);
+    const completedRequest = completedQueue.json().items.find(
+      (item: { id: string }) => item.id === request.json().id,
+    );
+    expect(completedRequest).toMatchObject({
+      status: "approved",
+      can_decide: false,
+      allowed_decisions: [],
+    });
+  });
+
   it("rejects regularization items targeting another employee or company before creating a request", async () => {
     const employee = await loginAs(app, "E1");
     const otherEmployee = await loginAs(app, "E2");

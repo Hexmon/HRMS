@@ -197,6 +197,8 @@ test.describe("attendance mobile responsive polish", () => {
         "Location check: Inside work area - Bhubaneswar Office With An Extra Long Worksite Name",
       ),
     ).toBeVisible();
+    await expect(page.getByText("2. Replace punch", { exact: true })).toBeVisible();
+    await expect(page.getByText("3. Remove punch", { exact: true })).toBeVisible();
     await expectNoHorizontalOverflow(page, "employee calendar evidence");
 
     const bodyText = await page.locator("body").innerText();
@@ -463,6 +465,28 @@ function employeeEvidence(workDate: string): Record<string, unknown> {
             event_type: "check_in",
             occurred_at: `${workDate}T03:40:00.000Z`,
             relationship: "applied",
+          },
+          {
+            operation: "replace",
+            event_type: "check_out",
+            occurred_at: `${workDate}T12:30:00.000Z`,
+            target_punch: {
+              event_type: "check_out",
+              occurred_at: `${workDate}T12:45:00.000Z`,
+              latitude: 19.076,
+            },
+            relationship: "requested",
+          },
+          {
+            operation: "void",
+            event_type: null,
+            occurred_at: null,
+            target_punch: {
+              event_type: "check_in",
+              occurred_at: `${workDate}T03:25:00.000Z`,
+              longitude: 72.8777,
+            },
+            relationship: "requested",
           },
         ],
       },

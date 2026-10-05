@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
 import { useAttendanceDailyCalendar, useAttendanceMonthlyCalendar } from "@/domains/attendance";
 import { employeeDayEvidenceView } from "@/domains/attendance/employee-day-evidence-model";
+import type { RegularizationItemDisplay } from "@/domains/attendance/regularization-form-model";
 import {
   asArray,
   asRecord,
@@ -403,11 +404,49 @@ function EmployeeDayEvidencePanel({
                     Decided: {request.decidedAtLabel}
                   </p>
                 )}
+                <RegularizationEvidenceItems items={request.items} />
               </div>
             ))}
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+function RegularizationEvidenceItems({ items }: { items: RegularizationItemDisplay[] }) {
+  if (items.length === 0) return null;
+
+  return (
+    <ol className="mt-2 space-y-1.5">
+      {items.map((item, index) => (
+        <li key={item.key} className="rounded-md border border-border/60 bg-background p-2">
+          <p className="break-words font-medium">
+            {items.length > 1 ? `${index + 1}. ` : ""}
+            {item.operationLabel}
+          </p>
+          <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
+            {item.targetPunchLabel && (
+              <RegularizationEvidenceFact label="Original" value={item.targetPunchLabel} />
+            )}
+            {item.requestedPunchLabel && (
+              <RegularizationEvidenceFact label="Requested" value={item.requestedPunchLabel} />
+            )}
+          </div>
+          {item.helperText && (
+            <p className="mt-1.5 break-words text-muted-foreground">{item.helperText}</p>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function RegularizationEvidenceFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md bg-muted/50 px-2 py-1.5">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-0.5 break-words font-semibold">{value}</p>
     </div>
   );
 }

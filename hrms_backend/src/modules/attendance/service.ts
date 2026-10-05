@@ -231,6 +231,7 @@ interface EmployeeAttendanceEvidenceRegularizationItem {
   operation: string;
   event_type: string | null;
   occurred_at: string | null;
+  target_punch: SafeRegularizationPunchSummary | null;
   relationship: "requested" | "applied";
 }
 
@@ -292,6 +293,7 @@ interface EmployeeDayEvidenceEventRow {
 
 interface EmployeeDayRegularizationRow {
   id: UUID;
+  company_id: UUID;
   status: string;
   reason: string;
   created_at: Date | string | null;
@@ -307,6 +309,8 @@ interface EmployeeDayRegularizationItemRow {
   target_punch_event_id: UUID | null;
   event_type: string | null;
   occurred_at: Date | string | null;
+  target_event_type: string | null;
+  target_occurred_at: Date | string | null;
 }
 
 interface EmployeeDayRegularizationApplicationRow {
@@ -323,6 +327,13 @@ interface EmployeeDayRegularizationBundle {
   items: EmployeeDayRegularizationItemRow[];
   applications: EmployeeDayRegularizationApplicationRow[];
 }
+
+interface SafeRegularizationPunchSummary {
+  event_type: string;
+  occurred_at: string;
+}
+
+const REGULARIZATION_DECISIONS = ["approve", "return", "reject"] as const;
 
 export interface AttendanceExportInput {
   company_id?: UUID | null;
@@ -1193,19 +1204,16 @@ export class AttendanceService {
           record.employee_user_id,
           companyId,
         );
+        const regularizationCapability = request
+          ? this.regularizationDecisionCapability(actor, request)
+          : { can_decide: false };
         return {
           ...this.presentDay(record, timeZone),
           employee: userLabel(user),
-          regularization: request ? this.presentRegularization(request) : null,
+          regularization: request ? this.presentRegularization(request, actor) : null,
           regularization_pending:
             request?.status === AttendanceRegularizationStatuses.Pending,
-          can_decide_regularization: Boolean(
-            request &&
-            request.status === AttendanceRegularizationStatuses.Pending &&
-            actor.id !== request.employee_user_id &&
-            (canSeeAllAttendance(actor) ||
-              request.current_approver_user_id === actor.id),
-          ),
+          can_decide_regularization: regularizationCapability.can_decide,
         };
       })
       .sort((a, b) =>
@@ -1371,7 +1379,7 @@ export class AttendanceService {
     observeManagerRegularizationQueueAge(scoped);
     return {
       ...page(
-        filtered.map((request) => this.presentRegularization(request)),
+        filtered.map((request) => this.presentRegularization(request, actor)),
         query.page,
         query.page_size,
       ),
@@ -4736,7 +4744,7 @@ export class AttendanceService {
     if (!this.store.pgPool) return [];
     const requests = (
       await this.store.pgPool.query<EmployeeDayRegularizationRow>(
-        `SELECT id, status, reason, created_at, updated_at, decided_at
+        `SELECT id, company_id, status, reason, created_at, updated_at, decided_at
            FROM attendance.regularization_requests
           WHERE company_id = $1
             AND employee_user_id = $2
@@ -4750,12 +4758,18 @@ export class AttendanceService {
     const requestIds = requests.map((request) => request.id);
     const items = (
       await this.store.pgPool.query<EmployeeDayRegularizationItemRow>(
-        `SELECT regularization_request_id, id, ordinal, operation,
-                target_punch_event_id, event_type, occurred_at
-           FROM attendance.regularization_request_items
-          WHERE company_id = $1
-            AND regularization_request_id = ANY($2::uuid[])
-          ORDER BY regularization_request_id ASC, ordinal ASC`,
+        `SELECT item.regularization_request_id, item.id, item.ordinal, item.operation,
+                item.target_punch_event_id, item.event_type, item.occurred_at,
+                target.event_type AS target_event_type,
+                target.occurred_at AS target_occurred_at
+           FROM attendance.regularization_request_items item
+           LEFT JOIN attendance.punch_events target
+             ON target.company_id = item.company_id
+            AND target.id = item.target_punch_event_id
+            AND target.deleted_at IS NULL
+          WHERE item.company_id = $1
+            AND item.regularization_request_id = ANY($2::uuid[])
+          ORDER BY item.regularization_request_id ASC, item.ordinal ASC`,
         [companyId, requestIds],
       )
     ).rows;
@@ -4797,21 +4811,27 @@ export class AttendanceService {
       .map((request) => ({
         request: {
           id: request.id,
+          company_id: request.company_id,
           status: request.status,
           reason: request.reason,
           created_at: request.created_at,
           updated_at: request.updated_at,
           decided_at: request.decided_at,
         },
-        items: request.items.map((item) => ({
-          regularization_request_id: request.id,
-          id: item.id,
-          ordinal: item.ordinal,
-          operation: item.operation,
-          target_punch_event_id: item.target_punch_event_id,
-          event_type: item.event_type,
-          occurred_at: item.occurred_at,
-        })),
+        items: request.items.map((item) => {
+          const target = this.regularizationTargetPunchSummary(item, companyId);
+          return {
+            regularization_request_id: request.id,
+            id: item.id,
+            ordinal: item.ordinal,
+            operation: item.operation,
+            target_punch_event_id: item.target_punch_event_id,
+            event_type: item.event_type,
+            occurred_at: item.occurred_at,
+            target_event_type: target?.event_type ?? null,
+            target_occurred_at: target?.occurred_at ?? null,
+          };
+        }),
         applications: this.store.attendanceRegularizationCorrectionApplications
           .filter(
             (application) =>
@@ -5014,6 +5034,10 @@ export class AttendanceService {
           operation: item.operation,
           event_type: item.event_type,
           occurred_at: isoDateValue(item.occurred_at),
+          target_punch: this.regularizationItemTargetSummary(
+            item,
+            bundle.request.company_id,
+          ),
           relationship: application ? "applied" : "requested",
         };
       }),
@@ -5121,7 +5145,58 @@ export class AttendanceService {
     };
   }
 
-  private presentRegularization(request: AttendanceRegularizationRequest) {
+  private regularizationTargetPunchSummary(
+    item: Pick<AttendanceRegularizationRequestItem, "target_punch_event_id">,
+    companyId: UUID,
+  ): SafeRegularizationPunchSummary | null {
+    if (!item.target_punch_event_id) return null;
+    const punch = this.store.attendancePunches.find(
+      (candidate) =>
+        candidate.id === item.target_punch_event_id &&
+        candidate.company_id === companyId &&
+        !candidate.deleted_at,
+    );
+    if (!punch) return null;
+    return {
+      event_type: punch.event_type,
+      occurred_at: punch.occurred_at,
+    };
+  }
+
+  private regularizationItemTargetSummary(
+    item: EmployeeDayRegularizationItemRow,
+    companyId: UUID,
+  ): SafeRegularizationPunchSummary | null {
+    const eventType = stringField(item.target_event_type);
+    const occurredAt = isoDateValue(item.target_occurred_at);
+    if (eventType && occurredAt) {
+      return {
+        event_type: eventType,
+        occurred_at: occurredAt,
+      };
+    }
+    return this.regularizationTargetPunchSummary(item, companyId);
+  }
+
+  private regularizationDecisionCapability(
+    actor: AuthUser | undefined,
+    request: AttendanceRegularizationRequest,
+  ): { can_decide: boolean; allowed_decisions: string[] } {
+    if (!actor || request.status !== AttendanceRegularizationStatuses.Pending) {
+      return { can_decide: false, allowed_decisions: [] };
+    }
+    try {
+      assertCanDecideRegularization(actor, request);
+      return { can_decide: true, allowed_decisions: [...REGULARIZATION_DECISIONS] };
+    } catch {
+      return { can_decide: false, allowed_decisions: [] };
+    }
+  }
+
+  private presentRegularization(
+    request: AttendanceRegularizationRequest,
+    decisionActor?: AuthUser,
+  ) {
     const user = this.store.users.find(
       (candidate) => candidate.id === request.employee_user_id,
     );
@@ -5130,15 +5205,45 @@ export class AttendanceService {
           (candidate) => candidate.id === request.current_approver_user_id,
         )
       : undefined;
-    const items = [...request.items].sort((left, right) => left.ordinal - right.ordinal);
+    const items = [...request.items]
+      .sort((left, right) => left.ordinal - right.ordinal)
+      .map((item) => ({
+        id: item.id,
+        company_id: item.company_id,
+        regularization_request_id: item.regularization_request_id,
+        ordinal: item.ordinal,
+        operation: item.operation,
+        target_punch_event_id: item.target_punch_event_id,
+        event_type: item.event_type,
+        occurred_at: item.occurred_at,
+        created_at: item.created_at,
+        target_punch: this.regularizationTargetPunchSummary(item, request.company_id),
+      }));
+    const capability = this.regularizationDecisionCapability(decisionActor, request);
     return {
-      ...request,
+      id: request.id,
+      employee_user_id: request.employee_user_id,
+      submitted_by_user_id: request.submitted_by_user_id,
+      company_id: request.company_id,
+      work_date: request.work_date,
+      reason: request.reason,
+      status: request.status,
+      current_approver_user_id: request.current_approver_user_id,
+      decision_remarks: request.decision_remarks,
+      decided_by_user_id: request.decided_by_user_id,
+      decided_at: request.decided_at,
+      version: request.version,
+      created_at: request.created_at,
+      updated_at: request.updated_at,
+      deleted_at: request.deleted_at,
       items,
       requested_punches: items.flatMap((item) =>
         item.event_type && item.occurred_at
           ? [{ event_type: item.event_type, occurred_at: item.occurred_at }]
           : [],
       ),
+      can_decide: capability.can_decide,
+      allowed_decisions: capability.allowed_decisions,
       employee: userLabel(user),
       approver: approver ? userLabel(approver) : null,
     };
@@ -5213,6 +5318,9 @@ export class AttendanceService {
       (candidate) => candidate.id === record.employee_user_id,
     );
     const exceptionType = request ? "correction" : record.exception_type;
+    const capability = request
+      ? this.regularizationDecisionCapability(actor, request)
+      : { can_decide: false, allowed_decisions: [] };
     return {
       id: request?.id ?? record.id,
       request_id: request?.id ?? null,
@@ -5224,18 +5332,12 @@ export class AttendanceService {
       detail: request?.reason ?? this.exceptionDetail(record),
       status: request?.status ?? record.regularization_status ?? "pending",
       expected_version: request?.version ?? record.version,
-      can_decide: Boolean(
-        request &&
-        request.status === AttendanceRegularizationStatuses.Pending &&
-        actor.id !== request.employee_user_id &&
-        (canSeeAllAttendance(actor) ||
-          request.current_approver_user_id === actor.id),
-      ),
+      can_decide: capability.can_decide,
       record: this.presentDay(
         record,
         this.timezoneForUser(record.employee_user_id, record.company_id),
       ),
-      request: request ? this.presentRegularization(request) : null,
+      request: request ? this.presentRegularization(request, actor) : null,
     };
   }
 

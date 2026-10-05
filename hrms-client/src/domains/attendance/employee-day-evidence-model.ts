@@ -5,6 +5,11 @@ import type {
   EmployeeAttendanceSummarySource,
 } from "./api";
 import { employeeGeoReasonDescription } from "./geo-decision-display";
+import {
+  regularizationItemDisplays,
+  regularizationOperationLabel,
+  type RegularizationItemDisplay,
+} from "./regularization-form-model";
 
 export interface EmployeeDayEvidenceView {
   generatedAt: string | null;
@@ -41,7 +46,7 @@ export interface EmployeeDayEvidenceRegularizationView {
   reason: string;
   decidedAtLabel: string | null;
   operationsLabel: string;
-  items: string[];
+  items: RegularizationItemDisplay[];
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -49,12 +54,6 @@ const EVENT_LABELS: Record<string, string> = {
   break_start: "Break start",
   break_end: "Break end",
   check_out: "Check-out",
-};
-
-const REGULARIZATION_OPERATION_LABELS: Record<string, string> = {
-  add: "Add missing punch",
-  replace: "Replace incorrect punch",
-  void: "Remove duplicate punch",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -184,7 +183,7 @@ function regularizationView(
 ): EmployeeDayEvidenceRegularizationView {
   const status = String(regularization.status || "pending");
   const operations = regularization.operations.length
-    ? regularization.operations.map(operationLabel)
+    ? regularization.operations.map(regularizationOperationLabel)
     : ["Historical correction"];
 
   return {
@@ -194,12 +193,7 @@ function regularizationView(
     reason: regularization.reason || "No reason supplied.",
     decidedAtLabel: regularization.decided_at ? formatDateTime(regularization.decided_at) : null,
     operationsLabel: operations.join(", "),
-    items: regularization.items.map((item) => {
-      const action = operationLabel(String(item.operation));
-      const event = item.event_type ? eventLabel(item.event_type) : null;
-      const time = item.occurred_at ? formatDateTime(item.occurred_at) : null;
-      return [action, event, time, humanize(item.relationship)].filter(Boolean).join(" - ");
-    }),
+    items: regularizationItemDisplays(regularization.items),
   };
 }
 
@@ -235,13 +229,6 @@ function sourceLabel(source: string | null, origin: string | null): string | nul
   if (origin === "manager_assisted_now") return "Assisted attendance";
   if (!source) return null;
   return SOURCE_LABELS[source] || humanize(source);
-}
-
-function operationLabel(value: string): string {
-  if (value === "add" || value === "replace" || value === "void") {
-    return REGULARIZATION_OPERATION_LABELS[value];
-  }
-  return humanize(value) || "Historical correction";
 }
 
 function regularizationRelationshipLabel(relationship: string, status: string): string {

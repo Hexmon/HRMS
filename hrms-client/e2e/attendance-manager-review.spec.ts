@@ -21,8 +21,8 @@ test("manager reviews and returns an assigned attendance correction", async ({ p
 
   await reasonCell.click();
   await expect(page.getByRole("heading", { name: regularization.employeeName })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Evidence summary" })).toBeVisible();
-  await expect(page.getByText("Add Check In", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Requested corrections" })).toBeVisible();
+  await expect(page.getByText("Add missing punch", { exact: true })).toBeVisible();
   await expect(page.getByText(/latitude|longitude|coordinates/i)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Return", exact: true }).click();

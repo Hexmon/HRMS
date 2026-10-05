@@ -18,6 +18,8 @@ test.describe("attendance manager review model", () => {
           reason: "The office check-out was not recorded.",
           status: "pending",
           version: 4,
+          can_decide: true,
+          allowed_decisions: ["approve", "return", "reject"],
           created_at: "2026-07-19T08:30:00.000Z",
           items: [
             {
@@ -25,6 +27,12 @@ test.describe("attendance manager review model", () => {
               ordinal: 2,
               operation: "replace",
               target_punch_event_id: "punch-private",
+              target_punch: {
+                event_type: "check_out",
+                occurred_at: "2026-07-18T12:20:00.000Z",
+                latitude: 19.076,
+                command_id: "internal-command",
+              },
               event_type: "check_out",
               occurred_at: "2026-07-18T12:30:00.000Z",
             },
@@ -33,6 +41,11 @@ test.describe("attendance manager review model", () => {
               ordinal: 1,
               operation: "void",
               target_punch_event_id: "punch-duplicate",
+              target_punch: {
+                event_type: "check_in",
+                occurred_at: "2026-07-18T03:42:00.000Z",
+                longitude: 72.8777,
+              },
             },
           ],
         },
@@ -69,26 +82,45 @@ test.describe("attendance manager review model", () => {
       status: "pending",
       version: 4,
       canDecide: true,
+      allowedDecisions: ["approve", "return", "reject"],
       exactLocationAccess: { state: "unavailable" },
     });
+    expect(queue.items[0].regularizationItems).toHaveLength(2);
+    expect(queue.items[0].regularizationItems[0]).toMatchObject({
+      operation: "void",
+      operationLabel: "Remove punch",
+      requestedPunchLabel: null,
+    });
+    expect(queue.items[0].regularizationItems[0].targetPunchLabel).toContain("Check-in");
+    expect(queue.items[0].regularizationItems[1]).toMatchObject({
+      operation: "replace",
+      operationLabel: "Replace punch",
+    });
+    expect(queue.items[0].regularizationItems[1].targetPunchLabel).toContain("Check-out");
+    expect(queue.items[0].regularizationItems[1].requestedPunchLabel).toContain("Check-out");
     expect(queue.items[0].evidence).toEqual([
-      {
+      expect.objectContaining({
         id: "item-1",
         operation: "void",
-        title: "Remove recorded punch",
-        detail: "The original punch remains in the audit trail.",
-        detailLines: [],
+        title: "Remove punch",
+        detail:
+          "This punch remains in attendance history and is excluded from attendance calculations if approved.",
         occurredAt: null,
-      },
-      {
+      }),
+      expect.objectContaining({
         id: "item-2",
         operation: "replace",
-        title: "Replace Check Out",
+        title: "Replace punch",
         detail: null,
-        detailLines: [],
         occurredAt: "2026-07-18T12:30:00.000Z",
-      },
+      }),
     ]);
+    const serialized = JSON.stringify(queue);
+    expect(serialized).not.toContain("punch-private");
+    expect(serialized).not.toContain("punch-duplicate");
+    expect(serialized).not.toContain("19.076");
+    expect(serialized).not.toContain("72.8777");
+    expect(serialized).not.toContain("internal-command");
   });
 
   test("supports the legacy requested-punches contract", () => {
@@ -117,12 +149,82 @@ test.describe("attendance manager review model", () => {
       employeeCode: "EMP-OLD",
       status: "approved",
       canDecide: false,
+      allowedDecisions: [],
+    });
+    expect(queue.items[0].regularizationItems[0]).toMatchObject({
+      operation: "add",
+      operationLabel: "Add missing punch",
     });
     expect(queue.items[0].evidence[0]).toMatchObject({
       operation: "add",
-      title: "Add Check In",
+      title: "Add missing punch",
       occurredAt: "2026-07-01T03:30:00.000Z",
     });
+  });
+
+  test("uses explicit can_decide false instead of pending/version fallback", () => {
+    const queue = parseAttendanceReviewQueue({
+      items: [
+        {
+          id: "self-owned",
+          employee: { full_name: "Self Reviewer", employee_code: "EMP-SELF" },
+          work_date: "2026-07-18",
+          reason: "Own pending correction",
+          status: "pending",
+          version: 4,
+          can_decide: false,
+          allowed_decisions: [],
+          items: [
+            {
+              id: "item-1",
+              ordinal: 1,
+              operation: "add",
+              event_type: "check_in",
+              occurred_at: "2026-07-18T03:30:00.000Z",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(queue.items[0]).toMatchObject({
+      status: "pending",
+      version: 4,
+      canDecide: false,
+      allowedDecisions: [],
+    });
+    expect(queue.items[0].regularizationItems[0]).toMatchObject({
+      operationLabel: "Add missing punch",
+    });
+  });
+
+  test("completed regularization states are never actionable", () => {
+    const queue = parseAttendanceReviewQueue({
+      items: ["approved", "returned", "rejected"].map((status) => ({
+        id: `completed-${status}`,
+        employee: { full_name: "Completed Reviewer", employee_code: "EMP-DONE" },
+        work_date: "2026-07-18",
+        reason: `${status} correction`,
+        status,
+        version: 4,
+        can_decide: true,
+        allowed_decisions: ["approve", "return", "reject"],
+        decision_remarks: "Decision note",
+        items: [
+          {
+            id: `item-${status}`,
+            ordinal: 1,
+            operation: "add",
+            event_type: "check_in",
+            occurred_at: "2026-07-18T03:30:00.000Z",
+          },
+        ],
+      })),
+    });
+
+    expect(queue.items.map((item) => item.status)).toEqual(["approved", "returned", "rejected"]);
+    expect(queue.items.every((item) => item.canDecide === false)).toBe(true);
+    expect(queue.items.every((item) => item.allowedDecisions.length === 0)).toBe(true);
   });
 
   test("whitelists location evidence and discards raw coordinates", () => {
