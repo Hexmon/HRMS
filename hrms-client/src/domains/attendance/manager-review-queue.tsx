@@ -104,10 +104,7 @@ const DECISION_COPY: Record<
   },
 };
 
-function decisionCopy(
-  decision: AttendanceReviewDecision,
-  request: AttendanceReviewRequest | null,
-) {
+function decisionCopy(decision: AttendanceReviewDecision, request: AttendanceReviewRequest | null) {
   if (request?.kind !== "geo_fallback") return DECISION_COPY[decision];
   if (decision === "approve") {
     return {
@@ -146,14 +143,16 @@ function DecisionButton({
   decision,
   onClick,
   disabled,
+  className,
 }: {
   decision: AttendanceReviewDecision;
   onClick: () => void;
   disabled: boolean;
+  className?: string;
 }) {
   if (decision === "approve") {
     return (
-      <Button onClick={onClick} disabled={disabled}>
+      <Button className={className} onClick={onClick} disabled={disabled}>
         <Check className="h-4 w-4" />
         Approve
       </Button>
@@ -161,14 +160,14 @@ function DecisionButton({
   }
   if (decision === "return") {
     return (
-      <Button variant="outline" onClick={onClick} disabled={disabled}>
+      <Button variant="outline" className={className} onClick={onClick} disabled={disabled}>
         <RotateCcw className="h-4 w-4" />
         Return
       </Button>
     );
   }
   return (
-    <Button variant="destructive" onClick={onClick} disabled={disabled}>
+    <Button variant="destructive" className={className} onClick={onClick} disabled={disabled}>
       <X className="h-4 w-4" />
       Reject
     </Button>
@@ -203,7 +202,11 @@ function ExactLocationAccessSection({
             <p className="mt-1 text-sm text-muted-foreground">
               Exact coordinates are sensitive attendance evidence. Viewing them is audited.
             </p>
-            <Button className="mt-3" size="sm" onClick={onReveal}>
+            <Button
+              className="mt-3 min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
+              size="sm"
+              onClick={onReveal}
+            >
               <Eye className="h-4 w-4" />
               View exact location
             </Button>
@@ -256,7 +259,7 @@ function ExactLocationRows({ evidence }: { evidence: AttendanceExactLocationEvid
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {rows.map(([label, value]) => (
-        <div key={label} className="rounded-md border bg-muted/20 p-3">
+        <div key={label} className="min-w-0 rounded-md border bg-muted/20 p-3">
           <p className="text-xs font-medium text-muted-foreground">{label}</p>
           <p className="mt-1 break-words text-sm font-semibold tabular-nums text-foreground">
             {value}
@@ -334,7 +337,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
         key: "employee",
         header: "Employee",
         render: (request) => (
-          <div className="flex min-w-[12rem] items-center gap-2.5">
+          <div className="flex min-w-0 items-center gap-2.5 md:min-w-[12rem]">
             <UserAvatar name={request.employeeName} size="sm" />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-foreground">{request.employeeName}</p>
@@ -360,9 +363,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
           <div className="max-w-sm">
             <p className="line-clamp-2 text-sm text-foreground">{request.reason}</p>
             <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-              {request.geoReviewType && (
-                <span>{geoReviewTypeLabel(request.geoReviewType)}</span>
-              )}
+              {request.geoReviewType && <span>{geoReviewTypeLabel(request.geoReviewType)}</span>}
               {request.geoOutcome && <span>{geoOutcomeLabel(request.geoOutcome)}</span>}
               <span>
                 {request.evidence.length} evidence item{request.evidence.length === 1 ? "" : "s"}
@@ -383,7 +384,12 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
       {
         key: "status",
         header: "Status",
-        render: (request) => <StatusBadge status={request.status} />,
+        render: (request) => (
+          <StatusBadge
+            status={request.status}
+            className="max-w-full whitespace-normal break-words"
+          />
+        ),
       },
     ],
     [],
@@ -624,24 +630,29 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
       </div>
 
       <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && closeReviewDetail()}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+        <SheetContent className="w-full overflow-y-auto p-4 sm:max-w-xl sm:p-6">
           {selected && (
             <div className="flex min-h-full flex-col">
               <SheetHeader className="pr-8">
                 <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge status={selected.status} />
-                  <span className="text-xs text-muted-foreground">{selected.employeeCode}</span>
+                  <StatusBadge
+                    status={selected.status}
+                    className="max-w-full whitespace-normal break-words"
+                  />
+                  <span className="break-words text-xs text-muted-foreground">
+                    {selected.employeeCode}
+                  </span>
                 </div>
-                <SheetTitle>{selected.employeeName}</SheetTitle>
-                <SheetDescription>
+                <SheetTitle className="break-words">{selected.employeeName}</SheetTitle>
+                <SheetDescription className="break-words">
                   Attendance review for {formatAttendanceReviewDate(selected.workDate)}
                 </SheetDescription>
               </SheetHeader>
 
-              <div className="mt-6 flex-1 space-y-6">
+              <div className="mt-6 flex-1 space-y-6 pb-4">
                 <section>
                   <h3 className="text-sm font-semibold">Request reason</h3>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
                     {selected.reason}
                   </p>
                 </section>
@@ -655,27 +666,31 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                   ) : (
                     <div className="mt-2 divide-y rounded-md border">
                       {selected.evidence.map((evidence) => (
-                        <div key={evidence.id} className="flex gap-3 p-3">
+                        <div key={evidence.id} className="flex min-w-0 gap-3 p-3">
                           <span className="mt-0.5 text-primary">
                             <EvidenceIcon evidence={evidence} />
                           </span>
                           <div className="min-w-0">
-                            <p className="text-sm font-medium">{evidence.title}</p>
+                            <p className="break-words text-sm font-medium">{evidence.title}</p>
                             {evidence.occurredAt && (
-                              <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                                <Clock3 className="h-3.5 w-3.5" />
-                                {formatAttendanceReviewDateTime(evidence.occurredAt)}
+                              <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                                <Clock3 className="h-3.5 w-3.5 shrink-0" />
+                                <span className="break-words">
+                                  {formatAttendanceReviewDateTime(evidence.occurredAt)}
+                                </span>
                               </p>
                             )}
                             {evidence.detail && (
-                              <p className="mt-1 text-xs text-muted-foreground">
+                              <p className="mt-1 break-words text-xs text-muted-foreground">
                                 {evidence.detail}
                               </p>
                             )}
                             {evidence.detailLines.length > 0 && (
                               <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                                 {evidence.detailLines.map((line) => (
-                                  <p key={line}>{line}</p>
+                                  <p key={line} className="break-words">
+                                    {line}
+                                  </p>
                                 ))}
                               </div>
                             )}
@@ -712,26 +727,31 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                   {selected.decisionRemarks && (
                     <div className="sm:col-span-2">
                       <p className="text-xs text-muted-foreground">Decision remarks</p>
-                      <p className="mt-1 whitespace-pre-wrap">{selected.decisionRemarks}</p>
+                      <p className="mt-1 whitespace-pre-wrap break-words">
+                        {selected.decisionRemarks}
+                      </p>
                     </div>
                   )}
                 </section>
               </div>
 
               {selected.canDecide && (
-                <div className="sticky bottom-0 mt-6 flex flex-wrap justify-end gap-2 border-t bg-background py-4">
+                <div className="sticky bottom-0 mt-6 grid grid-cols-1 gap-2 border-t bg-background py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:flex sm:flex-wrap sm:justify-end">
                   <DecisionButton
                     decision="return"
+                    className="min-h-10 w-full whitespace-normal sm:min-h-9 sm:w-auto"
                     disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                     onClick={() => openDecision("return")}
                   />
                   <DecisionButton
                     decision="reject"
+                    className="min-h-10 w-full whitespace-normal sm:min-h-9 sm:w-auto"
                     disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                     onClick={() => openDecision("reject")}
                   />
                   <DecisionButton
                     decision="approve"
+                    className="min-h-10 w-full whitespace-normal sm:min-h-9 sm:w-auto"
                     disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                     onClick={() => openDecision("approve")}
                   />
@@ -795,9 +815,10 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                 )}
               </div>
 
-              <DialogFooter>
+              <DialogFooter className="gap-2 sm:gap-0">
                 <Button
                   variant="outline"
+                  className="min-h-10 w-full whitespace-normal sm:w-auto"
                   onClick={closeExactLocation}
                   disabled={exactLocationMutation.isPending}
                 >
@@ -809,6 +830,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                     exactLocationMutation.error.status === 403
                   ) && (
                     <Button
+                      className="min-h-10 w-full whitespace-normal sm:w-auto"
                       onClick={confirmExactLocationReveal}
                       disabled={exactLocationMutation.isPending}
                     >
@@ -880,9 +902,10 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                 </div>
               </div>
 
-              <DialogFooter>
+              <DialogFooter className="gap-2 sm:gap-0">
                 <Button
                   variant="outline"
+                  className="min-h-10 w-full whitespace-normal sm:w-auto"
                   onClick={closeDecision}
                   disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                 >
@@ -890,6 +913,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                 </Button>
                 <Button
                   variant={decision === "reject" ? "destructive" : "default"}
+                  className="min-h-10 w-full whitespace-normal sm:w-auto"
                   onClick={submitDecision}
                   disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                 >

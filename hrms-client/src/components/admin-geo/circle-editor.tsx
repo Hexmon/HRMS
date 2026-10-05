@@ -45,7 +45,8 @@ export function CircleEditor({
     const latitude = parseNumberInput(latitudeValue);
     onChange({
       ...draft,
-      center: isValidLongitude(longitude) && isValidLatitude(latitude) ? [longitude, latitude] : null,
+      center:
+        isValidLongitude(longitude) && isValidLatitude(latitude) ? [longitude, latitude] : null,
     });
   }
 
@@ -106,18 +107,31 @@ export function CircleEditor({
           />
         </div>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" onClick={onUseMapClicks} disabled={disabled}>
+      <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-10 w-full whitespace-normal sm:w-auto"
+          onClick={onUseMapClicks}
+          disabled={disabled}
+        >
           <MousePointer2 className="h-4 w-4" />
           Set center on map
         </Button>
-        <Button type="button" variant="outline" onClick={onFit} disabled={!ready}>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-10 w-full whitespace-normal sm:w-auto"
+          onClick={onFit}
+          disabled={!ready}
+        >
           <Crosshair className="h-4 w-4" />
           Fit
         </Button>
         <Button
           type="button"
           variant="outline"
+          className="min-h-10 w-full whitespace-normal sm:w-auto"
           onClick={() => onChange(resetCircleDraft())}
           disabled={disabled}
         >

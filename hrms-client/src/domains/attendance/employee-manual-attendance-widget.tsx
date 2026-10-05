@@ -275,6 +275,7 @@ export function EmployeeManualAttendanceWidget({
                     <StatusBadge
                       status={action.result.geoDecisionDisplay.decision}
                       label={action.result.geoDecisionDisplay.title}
+                      className="max-w-full whitespace-normal break-words"
                     />
                   )}
                   <p className="font-semibold">{action.result.title}</p>
@@ -285,10 +286,11 @@ export function EmployeeManualAttendanceWidget({
                     <p className="mt-1">{action.result.geoDecisionDisplay.reasonDescription}</p>
                   )}
                 {action.result.kind === "uncertain" && (
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     <Button
                       size="sm"
                       variant="outline"
+                      className="min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
                       onClick={() => void contextQuery.refetch()}
                       disabled={contextQuery.isFetching}
                     >
@@ -296,7 +298,12 @@ export function EmployeeManualAttendanceWidget({
                       Check status
                     </Button>
                     {action.canRetry && (
-                      <Button size="sm" onClick={() => void action.retry()} disabled={disabled}>
+                      <Button
+                        size="sm"
+                        className="min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
+                        onClick={() => void action.retry()}
+                        disabled={disabled}
+                      >
                         <RotateCcw />
                         Retry same action
                       </Button>
@@ -304,9 +311,10 @@ export function EmployeeManualAttendanceWidget({
                   </div>
                 )}
                 {action.canSubmitManualFallback && action.result.manualFallback && (
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     <Button
                       size="sm"
+                      className="min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
                       onClick={() => void action.submitManualFallback()}
                       disabled={disabled}
                     >
@@ -338,13 +346,17 @@ export function EmployeeManualAttendanceWidget({
           ) : null}
         </div>
 
-        <div className="flex min-h-9 flex-wrap gap-2" aria-label="Attendance actions">
+        <div
+          className="grid min-h-9 grid-cols-1 gap-2 sm:flex sm:flex-wrap"
+          aria-label="Attendance actions"
+        >
           {ACTIONS.filter(({ action: actionName }) =>
             context.allowedActions.includes(actionName),
           ).map(({ action: actionName, label, icon: Icon, variant: buttonVariant }) => (
             <Button
               key={actionName}
               variant={buttonVariant}
+              className="min-h-10 w-full whitespace-normal sm:min-h-9 sm:w-auto"
               disabled={disabled || action.result?.kind === "uncertain"}
               onClick={() => void action.execute(actionName)}
             >

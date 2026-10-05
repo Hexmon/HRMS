@@ -136,21 +136,27 @@ function AttendanceReports() {
 
   const cols: Column<AttRow>[] = [
     {
+      key: "employee",
+      header: "Employee",
+      render: (r) => <span className="break-words font-medium">{r.employee}</span>,
+    },
+    {
       key: "date",
       header: "Date",
       render: (r) => <span className="font-mono text-xs">{r.date}</span>,
     },
     {
-      key: "employee",
-      header: "Employee",
-      render: (r) => <span className="font-medium">{r.employee}</span>,
-    },
-    {
       key: "department",
       header: "Department",
-      render: (r) => <span className="text-sm">{r.department}</span>,
+      render: (r) => <span className="break-words text-sm">{r.department}</span>,
     },
-    { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      render: (r) => (
+        <StatusBadge status={r.status} className="max-w-full whitespace-normal break-words" />
+      ),
+    },
     {
       key: "reportingEvidenceCategory",
       header: "Evidence state",
@@ -159,6 +165,7 @@ function AttendanceReports() {
           <StatusBadge
             status={r.reportingEvidenceCategory}
             label={attendanceReportingEvidenceLabel(r.reportingEvidenceCategory)}
+            className="max-w-full whitespace-normal break-words"
           />
         ) : (
           <span className="text-sm text-muted-foreground">—</span>
@@ -182,7 +189,9 @@ function AttendanceReports() {
     {
       key: "note",
       header: "Note",
-      render: (r) => <span className="text-xs text-muted-foreground">{r.note ?? "—"}</span>,
+      render: (r) => (
+        <span className="break-words text-xs text-muted-foreground">{r.note ?? "—"}</span>
+      ),
     },
   ];
 
@@ -198,13 +207,25 @@ function AttendanceReports() {
 
   return (
     <Tabs defaultValue="daily">
-      <TabsList className="w-full justify-start">
-        <TabsTrigger value="daily">Daily Attendance</TabsTrigger>
-        <TabsTrigger value="late">Late Arrivals</TabsTrigger>
-        <TabsTrigger value="early">Early Departures</TabsTrigger>
-        <TabsTrigger value="absent">Absenteeism</TabsTrigger>
-        <TabsTrigger value="monthly">Monthly Summary</TabsTrigger>
-        <TabsTrigger value="exceptions">Exceptions</TabsTrigger>
+      <TabsList className="-mx-1 h-auto w-[calc(100%+0.5rem)] justify-start overflow-x-auto px-1 py-1 sm:mx-0 sm:w-full">
+        <TabsTrigger value="daily" className="min-h-9 shrink-0 whitespace-nowrap">
+          Daily Attendance
+        </TabsTrigger>
+        <TabsTrigger value="late" className="min-h-9 shrink-0 whitespace-nowrap">
+          Late Arrivals
+        </TabsTrigger>
+        <TabsTrigger value="early" className="min-h-9 shrink-0 whitespace-nowrap">
+          Early Departures
+        </TabsTrigger>
+        <TabsTrigger value="absent" className="min-h-9 shrink-0 whitespace-nowrap">
+          Absenteeism
+        </TabsTrigger>
+        <TabsTrigger value="monthly" className="min-h-9 shrink-0 whitespace-nowrap">
+          Monthly Summary
+        </TabsTrigger>
+        <TabsTrigger value="exceptions" className="min-h-9 shrink-0 whitespace-nowrap">
+          Exceptions
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="daily" className="mt-4">
@@ -451,7 +472,7 @@ function MonthlySummary({ all }: { all: AttRow[] }) {
         {
           key: "employee",
           header: "Employee",
-          render: (r) => <span className="font-medium">{r.employee}</span>,
+          render: (r) => <span className="break-words font-medium">{r.employee}</span>,
         },
         {
           key: "present",

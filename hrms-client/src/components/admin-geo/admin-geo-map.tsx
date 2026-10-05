@@ -179,7 +179,7 @@ export function AdminGeoMap({
   if (!config) {
     return (
       <div
-        className="grid min-h-[360px] place-items-center rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center"
+        className="grid min-h-[300px] place-items-center rounded-lg border border-dashed border-border bg-muted/30 p-4 text-center sm:min-h-[360px] sm:p-6"
         data-testid="admin-geo-map-missing"
       >
         <div className="max-w-md space-y-2">
@@ -198,14 +198,16 @@ export function AdminGeoMap({
       <div
         ref={containerRef}
         className={cn(
-          "relative min-h-[420px] overflow-hidden rounded-lg border border-border bg-muted",
+          "relative min-h-[320px] overflow-hidden rounded-lg border border-border bg-muted sm:min-h-[420px]",
           status === "error" && "ring-1 ring-destructive/40",
         )}
         data-testid="admin-geo-map"
       />
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>{status === "loading" ? "Initializing map provider..." : hint}</span>
-        <span className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <span className="break-words">
+          {status === "loading" ? "Initializing map provider..." : hint}
+        </span>
+        <span className="flex flex-wrap items-center gap-2">
           {simulationPoint ? (
             <span data-testid="geo-simulation-map-state">
               Simulation point active{simulationVerdict ? ` - ${simulationVerdict}` : ""}

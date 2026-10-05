@@ -174,7 +174,7 @@ export function ReportShell<T extends { id: string }>({
           variant="outline"
           onClick={handleExport}
           disabled={apiMode && exportMutation.isPending}
-          className="w-full sm:w-auto"
+          className="min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
         >
           <Download className="mr-1 h-3.5 w-3.5" />
           {apiMode && exportMutation.isPending ? "Exporting" : "Export CSV"}
@@ -186,7 +186,7 @@ export function ReportShell<T extends { id: string }>({
           <Filter className="h-3.5 w-3.5" /> Filters
         </div>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <Label className="text-[11px]">From</Label>
             <Input
               type="date"
@@ -195,7 +195,7 @@ export function ReportShell<T extends { id: string }>({
               className="h-9"
             />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <Label className="text-[11px]">To</Label>
             <Input
               type="date"
@@ -205,7 +205,7 @@ export function ReportShell<T extends { id: string }>({
             />
           </div>
           {facets?.showDepartment && (
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-[11px]">Department</Label>
               <Select
                 value={f.department}
@@ -214,7 +214,7 @@ export function ReportShell<T extends { id: string }>({
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-72">
                   <SelectItem value="all">All departments</SelectItem>
                   {departments.map((d) => (
                     <SelectItem key={d.id} value={d.name}>
@@ -226,7 +226,7 @@ export function ReportShell<T extends { id: string }>({
             </div>
           )}
           {facets?.showEmployee && (
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-[11px]">Employee</Label>
               <Select value={f.employee} onValueChange={(value) => setFilter({ employee: value })}>
                 <SelectTrigger className="h-9">
@@ -244,13 +244,13 @@ export function ReportShell<T extends { id: string }>({
             </div>
           )}
           {facets?.showStatus && (
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-[11px]">Status</Label>
               <Select value={f.status} onValueChange={(value) => setFilter({ status: value })}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-72">
                   <SelectItem value="all">All statuses</SelectItem>
                   {(facets.statusOptions ?? []).map((s) => (
                     <SelectItem key={s.value} value={s.value}>
@@ -262,7 +262,7 @@ export function ReportShell<T extends { id: string }>({
             </div>
           )}
           {facets?.showEvidenceCategory && (
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-[11px]">Evidence state</Label>
               <Select
                 value={f.evidenceCategory}
@@ -271,7 +271,7 @@ export function ReportShell<T extends { id: string }>({
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-72">
                   <SelectItem value="all">All evidence states</SelectItem>
                   {ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
@@ -283,7 +283,7 @@ export function ReportShell<T extends { id: string }>({
             </div>
           )}
           {facets?.showTeam && (
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-[11px]">Team</Label>
               <Select
                 value={f.managerUserId}

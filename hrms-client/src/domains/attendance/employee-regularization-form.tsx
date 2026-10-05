@@ -128,7 +128,10 @@ export function EmployeeRegularizationForm() {
     [draftItems],
   );
 
-  const recentRequests = requestsQuery.data?.items ?? [];
+  const recentRequests = useMemo(
+    () => requestsQuery.data?.items ?? [],
+    [requestsQuery.data?.items],
+  );
   const unavailableTargetIds = useMemo(() => {
     const ids = new Set<string>();
     for (const request of recentRequests) {
@@ -321,7 +324,7 @@ export function EmployeeRegularizationForm() {
             </div>
 
             <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h4 className="text-sm font-semibold">Requested actions</h4>
                   <p className="text-xs text-muted-foreground">
@@ -334,6 +337,7 @@ export function EmployeeRegularizationForm() {
                   size="sm"
                   onClick={addRegularizationDraftItem}
                   disabled={draftItems.length >= 20}
+                  className="min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
                 >
                   <Plus className="h-4 w-4" /> Add action
                 </Button>
@@ -505,7 +509,7 @@ export function EmployeeRegularizationForm() {
               <Button
                 type="submit"
                 data-testid="attendance-regularization-submit"
-                className="rounded-full"
+                className="min-h-10 w-full rounded-full whitespace-normal sm:w-auto"
                 disabled={mutation.isPending || (hasTargetOperation && punchesBusy)}
               >
                 <Send className="h-4 w-4" />
@@ -536,18 +540,21 @@ export function EmployeeRegularizationForm() {
           <ul className="space-y-3">
             {recentRequests.map((request) => (
               <li key={request.id} className="rounded-xl border border-border/60 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold">
                       {formatRegularizationWorkDate(request.work_date)}
                     </p>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                    <p className="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground">
                       {request.reason}
                     </p>
                   </div>
-                  <StatusBadge status={request.status} />
+                  <StatusBadge
+                    status={request.status}
+                    className="w-fit max-w-full whitespace-normal break-words sm:shrink-0"
+                  />
                 </div>
-                <p className="mt-2 text-[11px] text-muted-foreground">
+                <p className="mt-2 break-words text-[11px] text-muted-foreground">
                   {regularizationRequestOperationSummary(request)} · {(request.items ?? []).length}{" "}
                   action
                   {(request.items ?? []).length === 1 ? "" : "s"}
@@ -574,7 +581,7 @@ function SubmittedRegularization({
   return (
     <div
       data-testid="attendance-regularization-submitted"
-      className="flex min-h-[420px] flex-col justify-center"
+      className="flex min-h-[280px] flex-col justify-center sm:min-h-[420px]"
       aria-live="polite"
     >
       <div className="mx-auto max-w-xl text-center">
@@ -586,7 +593,10 @@ function SubmittedRegularization({
           <CheckCircle2 className="h-8 w-8" />
         </div>
         <div className="mt-4 flex justify-center">
-          <StatusBadge status={state.response.status} />
+          <StatusBadge
+            status={state.response.status}
+            className="max-w-full whitespace-normal break-words"
+          />
         </div>
         <h3 className="mt-3 text-lg font-semibold">Regularization request submitted</h3>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -603,17 +613,22 @@ function SubmittedRegularization({
           {state.summaries.map((summary, index) => (
             <li key={`${index}-${summary}`} className="flex gap-2">
               <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-              <span>{summary}</span>
+              <span className="min-w-0 break-words">{summary}</span>
             </li>
           ))}
         </ul>
-        <p className="mt-4 rounded-lg bg-background px-3 py-2 text-xs text-muted-foreground">
+        <p className="mt-4 break-words rounded-lg bg-background px-3 py-2 text-xs text-muted-foreground">
           Reason: {state.response.reason}
         </p>
       </div>
 
       <div className="mt-6 flex justify-center">
-        <Button type="button" variant="outline" className="rounded-full" onClick={onReset}>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-10 w-full rounded-full whitespace-normal sm:w-auto"
+          onClick={onReset}
+        >
           Submit another request
         </Button>
       </div>

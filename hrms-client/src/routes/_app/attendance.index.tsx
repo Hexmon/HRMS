@@ -192,13 +192,14 @@ function AdminView() {
               {ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.map((option) => (
                 <li
                   key={option.value}
-                  className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5 text-sm"
+                  className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-sm"
                 >
                   <StatusBadge
                     status={option.value}
                     label={attendanceReportingEvidenceLabel(option.value)}
+                    className="max-w-full whitespace-normal break-words"
                   />
-                  <span className="font-semibold">
+                  <span className="shrink-0 font-semibold">
                     {numberValue(evidenceCategories[option.value])}
                   </span>
                 </li>
@@ -220,13 +221,20 @@ function AdminView() {
               {exceptions.map((exception) => (
                 <li
                   key={text(exception.id)}
-                  className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5 text-sm"
+                  className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-sm"
                 >
-                  <div>
-                    <p className="font-medium">{text(exception.employee, "Employee")}</p>
-                    <p className="text-xs text-muted-foreground">{text(exception.detail)}</p>
+                  <div className="min-w-0">
+                    <p className="break-words font-medium">
+                      {text(exception.employee, "Employee")}
+                    </p>
+                    <p className="break-words text-xs text-muted-foreground">
+                      {text(exception.detail)}
+                    </p>
                   </div>
-                  <StatusBadge status={text(exception.status, "pending")} />
+                  <StatusBadge
+                    status={text(exception.status, "pending")}
+                    className="max-w-full whitespace-normal break-words sm:shrink-0"
+                  />
                 </li>
               ))}
             </ul>
@@ -267,17 +275,20 @@ function EmployeeView() {
               {weekRecords.map((record) => (
                 <li
                   key={text(record.work_date)}
-                  className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2"
+                  className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3 py-2"
                 >
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium">{displayDate(record.work_date)}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="break-words text-xs text-muted-foreground">
                       {text(record.in_time, "-")} - {text(record.out_time, "-")}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="min-w-0 text-right">
                     <p className="text-xs font-semibold">{text(record.hours, "0h 00m")}</p>
-                    <StatusBadge status={text(record.status, "pending")} />
+                    <StatusBadge
+                      status={text(record.status, "pending")}
+                      className="max-w-full whitespace-normal break-words"
+                    />
                   </div>
                 </li>
               ))}
@@ -329,13 +340,16 @@ function EmployeeView() {
             {exceptionHistory.map((record) => (
               <li
                 key={`${text(record.date)}-${text(record.reason)}`}
-                className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0"
+                className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
               >
-                <div>
+                <div className="min-w-0">
                   <p className="font-medium">{displayDate(record.date)}</p>
-                  <p className="text-xs text-muted-foreground">{text(record.reason)}</p>
+                  <p className="break-words text-xs text-muted-foreground">{text(record.reason)}</p>
                 </div>
-                <StatusBadge status={text(record.status, "pending")} />
+                <StatusBadge
+                  status={text(record.status, "pending")}
+                  className="max-w-full whitespace-normal break-words sm:shrink-0"
+                />
               </li>
             ))}
           </ul>

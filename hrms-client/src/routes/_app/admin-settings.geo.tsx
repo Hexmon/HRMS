@@ -139,7 +139,7 @@ function AdminGeoScreen() {
                 publishing.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <Badge
                 variant={selectedVersion?.versionStatus === "published" ? "default" : "outline"}
               >
@@ -148,6 +148,7 @@ function AdminGeoScreen() {
               <Button
                 type="button"
                 variant="outline"
+                className="min-h-10 w-full whitespace-normal sm:w-auto"
                 onClick={() => setFitRequestKey((key) => key + 1)}
               >
                 <Crosshair className="h-4 w-4" />

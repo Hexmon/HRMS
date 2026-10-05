@@ -173,8 +173,11 @@ function AttendanceEvidencePanel({ summary }: { summary: DashboardSummary }) {
             <StatusBadge
               status={option.value}
               label={attendanceReportingEvidenceLabel(option.value)}
+              className="max-w-full whitespace-normal break-words"
             />
-            <span className="text-sm font-semibold">{Number(counts[option.value] ?? 0)}</span>
+            <span className="shrink-0 text-sm font-semibold">
+              {Number(counts[option.value] ?? 0)}
+            </span>
           </li>
         ))}
       </ul>

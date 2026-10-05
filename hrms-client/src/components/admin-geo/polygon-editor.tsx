@@ -79,21 +79,39 @@ export function PolygonEditor({
           />
         </div>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Button type="button" disabled={disabled || !vertexInput} onClick={addInputVertex}>
+      <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+        <Button
+          type="button"
+          className="min-h-10 w-full whitespace-normal sm:w-auto"
+          disabled={disabled || !vertexInput}
+          onClick={addInputVertex}
+        >
           Add vertex
         </Button>
-        <Button type="button" variant="outline" onClick={onUseMapClicks} disabled={disabled}>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-10 w-full whitespace-normal sm:w-auto"
+          onClick={onUseMapClicks}
+          disabled={disabled}
+        >
           <MousePointer2 className="h-4 w-4" />
           Add from map
         </Button>
-        <Button type="button" variant="outline" onClick={onFit} disabled={!ready}>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-10 w-full whitespace-normal sm:w-auto"
+          onClick={onFit}
+          disabled={!ready}
+        >
           <Crosshair className="h-4 w-4" />
           Fit
         </Button>
         <Button
           type="button"
           variant="outline"
+          className="min-h-10 w-full whitespace-normal sm:w-auto"
           disabled={disabled || draft.vertices.length === 0}
           onClick={() => onChange(removeLastVertex(draft))}
         >
@@ -103,6 +121,7 @@ export function PolygonEditor({
         <Button
           type="button"
           variant="outline"
+          className="min-h-10 w-full whitespace-normal sm:w-auto"
           disabled={disabled || draft.vertices.length === 0}
           onClick={() => onChange(resetPolygonDraft())}
         >
@@ -123,7 +142,7 @@ export function PolygonEditor({
           draft.vertices.map(([longitude, latitude], index) => (
             <li
               className={cn(
-                "flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm",
+                "flex flex-col gap-1 rounded-md border px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3",
                 !isValidLongitude(longitude) || !isValidLatitude(latitude)
                   ? "border-destructive/40 text-destructive"
                   : "border-border",
@@ -131,7 +150,7 @@ export function PolygonEditor({
               key={`${longitude}:${latitude}:${index}`}
             >
               <span className="font-medium">#{index + 1}</span>
-              <span className="font-mono text-xs">
+              <span className="break-all font-mono text-xs">
                 {formatCoordinate(longitude)}, {formatCoordinate(latitude)}
               </span>
             </li>

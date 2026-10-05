@@ -129,14 +129,24 @@ function EmployeeAttendanceCalendar() {
 
   return (
     <div className="grid grid-cols-1 gap-4 pt-2 lg:grid-cols-3">
-      <Card className="rounded-2xl border-border/60 p-5 lg:col-span-2">
-        <div className="mb-4 flex items-center justify-between">
+      <Card className="rounded-2xl border-border/60 p-3 sm:p-5 lg:col-span-2">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <h3 className="text-base font-semibold">{monthName}</h3>
           <div className="flex gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={prev}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 rounded-full sm:h-8 sm:w-8"
+              onClick={prev}
+            >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={next}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 rounded-full sm:h-8 sm:w-8"
+              onClick={next}
+            >
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -148,12 +158,12 @@ function EmployeeAttendanceCalendar() {
           />
         ) : (
           <>
-            <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:gap-1.5">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                 <div key={d}>{d}</div>
               ))}
             </div>
-            <div className="mt-2 grid grid-cols-7 gap-1.5">
+            <div className="mt-2 grid grid-cols-7 gap-1 sm:gap-1.5">
               {Array.from({ length: firstDow }).map((_, i) => (
                 <div key={"e" + i} />
               ))}
@@ -162,12 +172,25 @@ function EmployeeAttendanceCalendar() {
                 const record = data.get(day);
                 const status = dayStatus(record);
                 const isSelected = day === selected;
+                const dayDate = new Date(cursor.y, cursor.m, day);
+                const isToday = dayDate.toDateString() === today.toDateString();
+                const dayLabel = dayDate.toLocaleDateString(undefined, {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                });
                 return (
                   <button
                     key={day}
                     onClick={() => setSelected(day)}
+                    aria-current={isToday ? "date" : undefined}
+                    aria-pressed={isSelected}
+                    aria-label={`${STATUS_LABELS[status]} attendance for ${dayLabel}${
+                      isSelected ? ", selected" : ""
+                    }`}
                     className={cn(
-                      "relative aspect-square rounded-xl border p-1.5 text-left text-xs transition hover:-translate-y-0.5 hover:shadow-sm",
+                      "relative aspect-square min-h-10 rounded-xl border p-1.5 text-left text-xs transition hover:-translate-y-0.5 hover:shadow-sm sm:min-h-0",
                       STATUS_CLS[status],
                       isSelected && "ring-2 ring-primary ring-offset-1",
                       monthlyQuery.isLoading && "animate-pulse",
@@ -178,7 +201,7 @@ function EmployeeAttendanceCalendar() {
                 );
               })}
             </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-xs">
+            <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 text-xs">
               {(
                 ["present", "wfh", "late", "absent", "leave", "holiday", "weekend"] as DayStatus[]
               ).map((status) => (
@@ -209,6 +232,7 @@ function EmployeeAttendanceCalendar() {
               <StatusBadge
                 status={selectedStatus === "leave" ? "approved" : selectedStatus}
                 label={STATUS_LABELS[selectedStatus]}
+                className="max-w-full whitespace-normal break-words"
               />
               {(text(selectedRecord.in_time) ||
                 text(selectedRecord.out_time) ||
@@ -297,7 +321,7 @@ function EmployeeDayEvidencePanel({
             {evidence.summarySources.map((source) => (
               <span
                 key={source.type}
-                className="rounded-full border border-border bg-background px-2 py-0.5 text-xs"
+                className="max-w-full break-words rounded-full border border-border bg-background px-2 py-0.5 text-xs"
               >
                 {source.label}
               </span>
@@ -319,26 +343,32 @@ function EmployeeDayEvidencePanel({
           <ol className="space-y-2">
             {evidence.events.map((event) => (
               <li key={event.key} className="rounded-md border border-border/70 p-2.5">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <p className="font-medium">{event.eventLabel}</p>
+                    <p className="break-words font-medium">{event.eventLabel}</p>
                     <p className="text-xs text-muted-foreground">{event.timeLabel}</p>
                   </div>
-                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs">
+                  <span className="w-fit max-w-full break-words rounded-full bg-muted px-2 py-0.5 text-xs sm:shrink-0">
                     {event.decisionLabel}
                   </span>
                 </div>
                 <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                  {event.sourceLabel && <p>Source: {event.sourceLabel}</p>}
-                  {event.workModeLabel && <p>Work mode: {event.workModeLabel}</p>}
-                  <p>{event.reasonText || event.decisionDescription}</p>
+                  {event.sourceLabel && <p className="break-words">Source: {event.sourceLabel}</p>}
+                  {event.workModeLabel && (
+                    <p className="break-words">Work mode: {event.workModeLabel}</p>
+                  )}
+                  <p className="break-words">{event.reasonText || event.decisionDescription}</p>
                   {event.reasonCode && (
                     <p className="break-words font-mono text-[11px]">
                       Reason code: {event.reasonCode}
                     </p>
                   )}
-                  {event.geoLabel && <p>Location check: {event.geoLabel}</p>}
-                  {event.regularizationLabel && <p>{event.regularizationLabel}</p>}
+                  {event.geoLabel && (
+                    <p className="break-words">Location check: {event.geoLabel}</p>
+                  )}
+                  {event.regularizationLabel && (
+                    <p className="break-words">{event.regularizationLabel}</p>
+                  )}
                 </div>
               </li>
             ))}
@@ -361,15 +391,17 @@ function EmployeeDayEvidencePanel({
           <div className="space-y-2">
             {evidence.regularizations.map((request) => (
               <div key={request.key} className="rounded-md bg-muted/50 p-2.5 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{request.operationsLabel}</span>
-                  <span className="rounded-full bg-background px-2 py-0.5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="break-words font-medium">{request.operationsLabel}</span>
+                  <span className="w-fit max-w-full break-words rounded-full bg-background px-2 py-0.5">
                     {request.statusLabel}
                   </span>
                 </div>
-                <p className="mt-1 text-muted-foreground">{request.reason}</p>
+                <p className="mt-1 break-words text-muted-foreground">{request.reason}</p>
                 {request.decidedAtLabel && (
-                  <p className="mt-1 text-muted-foreground">Decided: {request.decidedAtLabel}</p>
+                  <p className="mt-1 break-words text-muted-foreground">
+                    Decided: {request.decidedAtLabel}
+                  </p>
                 )}
               </div>
             ))}

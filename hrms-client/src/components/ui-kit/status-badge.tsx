@@ -97,13 +97,22 @@ const MAP: Record<string, { label: string; cls: string }> = {
   withdrawn: { label: "Withdrawn", cls: "bg-muted text-muted-foreground border-border" },
 };
 
-export function StatusBadge({ status, label }: { status: string; label?: string }) {
+export function StatusBadge({
+  status,
+  label,
+  className,
+}: {
+  status: string;
+  label?: string;
+  className?: string;
+}) {
   const m = MAP[status] ?? { label: status, cls: "bg-muted text-muted-foreground border-border" };
   return (
     <span
       className={cn(
         "inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide",
         m.cls,
+        className,
       )}
     >
       <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current opacity-80" />
