@@ -246,7 +246,8 @@ async function expectGeneratedExportDownload(page: Page, reportTitle: string): P
 
   const exportResponsePromise = page.waitForResponse(
     (response) =>
-      response.url().includes("/api/v1/reports/exports") && response.request().method() === "POST",
+      response.url().includes(exportCreatePath(reportTitle)) &&
+      response.request().method() === "POST",
   );
   const downloadResponsePromise = page.waitForResponse(
     (response) =>
@@ -264,6 +265,12 @@ async function expectGeneratedExportDownload(page: Page, reportTitle: string): P
       message: `${reportTitle} should call window.open with the generated download URL`,
     })
     .toBeGreaterThan(0);
+}
+
+function exportCreatePath(reportTitle: string): string {
+  return reportTitle === "Attendance Reports"
+    ? "/api/v1/attendance/exports"
+    : "/api/v1/reports/exports";
 }
 
 async function expectResponseOk(
