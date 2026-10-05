@@ -17,6 +17,7 @@ import { DataTable, type Column } from "@/components/ui-kit";
 import { exportCsv, daysAgo, isoToday } from "@/lib/reports/utils";
 import { useEmployees } from "@/lib/employees-store";
 import { documentsApi } from "@/domains/documents";
+import { useAttendanceExportMutation } from "@/domains/attendance";
 import { useCreateReportExportMutation } from "@/domains/reports";
 import { ATTENDANCE_REPORTING_EVIDENCE_OPTIONS } from "@/domains/attendance/reporting-evidence";
 import { useApiRouteEnabled, userFacingErrorMessage } from "@/shared/api";
@@ -89,6 +90,7 @@ export function ReportShell<T extends { id: string }>({
   const path = useRouterState({ select: (state) => state.location.pathname });
   const apiMode = useApiRouteEnabled(["/reports"]);
   const exportMutation = useCreateReportExportMutation();
+  const attendanceExportMutation = useAttendanceExportMutation();
   const [internalFilters, setInternalFilters] = useState<ReportFilters>({
     from: defaultFrom ?? daysAgo(90),
     to: defaultTo ?? isoToday(),
@@ -121,16 +123,20 @@ export function ReportShell<T extends { id: string }>({
       }
 
       try {
-        const job = await exportMutation.mutateAsync({
-          format: "csv",
-          report_type: reportType,
-          filters: buildBackendFilters(f, {
-            departments,
-            employees,
-            exportName,
-            title,
-          }),
+        const filters = buildBackendFilters(f, {
+          departments,
+          employees,
+          exportName,
+          title,
         });
+        const job =
+          reportType === "attendance/summary"
+            ? await attendanceExportMutation.mutateAsync({ format: "csv", filters })
+            : await exportMutation.mutateAsync({
+                format: "csv",
+                report_type: reportType,
+                filters,
+              });
         const jobId = String(job.job_id ?? job.export_id ?? "created").slice(0, 8);
         if (typeof job.download_document_id === "string" && job.download_document_id) {
           const download = await documentsApi.createDownloadUrl(job.download_document_id);
@@ -173,11 +179,13 @@ export function ReportShell<T extends { id: string }>({
           size="sm"
           variant="outline"
           onClick={handleExport}
-          disabled={apiMode && exportMutation.isPending}
+          disabled={apiMode && (exportMutation.isPending || attendanceExportMutation.isPending)}
           className="min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
         >
           <Download className="mr-1 h-3.5 w-3.5" />
-          {apiMode && exportMutation.isPending ? "Exporting" : "Export CSV"}
+          {apiMode && (exportMutation.isPending || attendanceExportMutation.isPending)
+            ? "Exporting"
+            : "Export CSV"}
         </Button>
       </div>
 

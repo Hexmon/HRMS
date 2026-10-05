@@ -46,10 +46,9 @@ test("admin attendance policies show read-only mobile device placeholders withou
 
   await expect.poll(() => requests.policyUpdates.length).toBe(0);
 
-  await page
-    .getByText("Grace minutes (no late mark)", { exact: true })
-    .locator("xpath=following-sibling::input")
-    .fill("12");
+  const graceMinutesInput = page.getByRole("spinbutton").first();
+  await expect(graceMinutesInput).toHaveValue("10");
+  await graceMinutesInput.fill("12");
   await page.getByRole("button", { name: "Save policy" }).click();
 
   await expect.poll(() => requests.policyUpdates.length).toBe(1);

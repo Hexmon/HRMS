@@ -58,8 +58,9 @@ async function createEmployeeRegularization(
     data: {
       work_date: workDate,
       reason,
-      requested_punches: [
+      items: [
         {
+          operation: "add",
           event_type: "check_in",
           occurred_at: new Date(`${workDate}T09:30:00+05:30`).toISOString(),
         },

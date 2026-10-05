@@ -124,8 +124,14 @@ export function userFacingErrorMessage(error: unknown, fallback?: string): strin
 
 export function toastApiError(error: unknown, fallback?: string): void {
   const formatted = formatUserFacingError(error, fallback);
+  const description = [
+    formatted.description,
+    formatted.requestId ? `Request ID: ${formatted.requestId}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
   toast.error(formatted.title, {
-    description: formatted.description,
+    description: description || undefined,
   });
 }
 
