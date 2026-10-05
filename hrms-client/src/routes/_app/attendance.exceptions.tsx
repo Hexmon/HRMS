@@ -116,21 +116,25 @@ function Queue({
         r.canDecide ? (
           <div className="flex gap-2">
             <Button
-              size="sm"
-              className="h-7 rounded-full"
+              size="icon"
+              className="h-9 w-9 rounded-full"
+              aria-label={`Approve attendance exception for ${r.employee} on ${displayDate(r.date)}`}
+              title="Approve"
               disabled={decision.isPending}
               onClick={() => act(r, true)}
             >
-              <Check className="h-3.5 w-3.5" />
+              <Check className="h-4 w-4" />
             </Button>
             <Button
-              size="sm"
+              size="icon"
               variant="outline"
-              className="h-7 rounded-full"
+              className="h-9 w-9 rounded-full"
+              aria-label={`Reject attendance exception for ${r.employee} on ${displayDate(r.date)}`}
+              title="Reject"
               disabled={decision.isPending}
               onClick={() => act(r, false)}
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </Button>
           </div>
         ) : (
@@ -202,11 +206,19 @@ function ExceptionsPage() {
         <p className="text-sm text-muted-foreground">Loading attendance exception queues...</p>
       ) : (
         <Tabs defaultValue="late">
-          <TabsList className="flex w-full flex-wrap justify-start">
-            <TabsTrigger value="late">Late</TabsTrigger>
-            <TabsTrigger value="missing">Missing punch-out</TabsTrigger>
-            <TabsTrigger value="absent">Absent</TabsTrigger>
-            <TabsTrigger value="correction">Corrections</TabsTrigger>
+          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 p-1">
+            <TabsTrigger value="late" className="min-h-9 whitespace-normal text-center">
+              Late
+            </TabsTrigger>
+            <TabsTrigger value="missing" className="min-h-9 whitespace-normal text-center">
+              Missing punch-out
+            </TabsTrigger>
+            <TabsTrigger value="absent" className="min-h-9 whitespace-normal text-center">
+              Absent
+            </TabsTrigger>
+            <TabsTrigger value="correction" className="min-h-9 whitespace-normal text-center">
+              Corrections
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="late" className="mt-4">
             <Queue rows={late} kind="Late" decision={decision} />
