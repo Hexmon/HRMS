@@ -15,6 +15,7 @@ New developers should start with the KT pack:
 - `knowledge-transfer/backend-guide.md` - backend architecture and module conventions.
 - `knowledge-transfer/database-and-data.md` - schemas, migrations, persistence, and seed data.
 - `knowledge-transfer/api-contract-and-integrations.md` - API contract, client integration, and external services.
+- `knowledge-transfer/mobile-api-handoff.md` - employee mobile app API handoff, attendance retry rules, registered-device behavior, and privacy boundaries.
 - `knowledge-transfer/modules-and-roles.md` - role/module matrix and business workflows.
 - `knowledge-transfer/testing-release-qa.md` - verification, CI, QA handoff, and release checks.
 - `knowledge-transfer/operations-runbooks.md` - hosted operations and incident references.
