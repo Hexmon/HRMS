@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { AuthUser, CoreUser, ExpensePayment, ExpenseTicket, OutboxEvent, ProjectRecord, UUID } from "#shared";
-import { addMoney, AssetStatuses, compareMoney, ExpenseStatuses, HelpdeskTicketStatuses, ProjectMemberStatuses, ProjectStatuses, Roles, RequiredDocumentsByExpenseSubType } from "#shared";
+import type { AttendanceDayRecord, AuthUser, CoreUser, ExpensePayment, ExpenseTicket, OutboxEvent, ProjectRecord, UUID } from "#shared";
+import { addMoney, AssetStatuses, AttendanceDayClassifications, AttendancePresenceStates, AttendancePunctualityStates, compareMoney, ExpenseStatuses, HelpdeskTicketStatuses, ProjectMemberStatuses, ProjectStatuses, Roles, RequiredDocumentsByExpenseSubType } from "#shared";
 import type { ExpenseApprovalRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { ReportRepository } from "./repository.js";
 import { assertReportRole } from "./policy.js";
@@ -8,6 +8,13 @@ import { forbidden, notFound } from "../../platform/errors.js";
 import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { canSeeProject } from "../projects/policy.js";
+import { matchesLegacyAttendanceStatus } from "../attendance/daily-projection.js";
+import {
+  countAttendanceReportingEvidenceCategories,
+  deriveAttendanceReportingEvidenceCategory,
+  isAttendanceReportingEvidenceCategory,
+  type AttendanceReportingEvidenceCategory,
+} from "../attendance/reporting-evidence.js";
 
 export interface ExpenseReportQuery {
   page: number;
@@ -33,8 +40,11 @@ export interface ReportSummaryQuery {
   type?: string;
   request_kind?: "leave" | "wfh";
   department_id?: UUID;
+  manager_user_id?: UUID;
   user_id?: UUID;
   employee_user_id?: UUID;
+  evidence_category?: AttendanceReportingEvidenceCategory;
+  reporting_evidence_category?: AttendanceReportingEvidenceCategory;
   project_id?: UUID;
   assigned_to_user_id?: UUID;
   actor_user_id?: UUID;
@@ -375,19 +385,32 @@ export class ReportService {
   }
 
   attendanceSummary(actor: AuthUser, query: ReportSummaryQuery) {
-    const rows = this.store.attendanceDayRecords
+    const requestedEvidenceCategory =
+      query.reporting_evidence_category ?? query.evidence_category;
+    const rowContexts = this.store.attendanceDayRecords
       .filter((record) => !record.deleted_at)
       .filter((record) => this.canSeeUserReportRow(actor, record.employee_user_id, "attendance"))
       .filter((record) => !query.user_id || record.employee_user_id === query.user_id)
       .filter((record) => !query.employee_user_id || record.employee_user_id === query.employee_user_id)
-      .filter((record) => !query.status || record.status === query.status)
+      .filter((record) => !query.status || matchesLegacyAttendanceStatus(record, query.status))
       .filter((record) => !query.date_from || record.work_date >= query.date_from)
       .filter((record) => !query.date_to || record.work_date <= query.date_to)
+      .filter((record) => !query.manager_user_id || this.isInRequestedManagerScope(actor, record.employee_user_id, query.manager_user_id))
       .filter((record) => {
         const user = this.user(record.employee_user_id);
         return !query.department_id || user?.department_id === query.department_id;
       })
-      .map((record) => {
+      .map((record) => ({
+        record,
+        reporting_evidence_category: this.reportingEvidenceCategory(record)
+      }))
+      .filter(
+        (row) =>
+          !requestedEvidenceCategory ||
+          row.reporting_evidence_category === requestedEvidenceCategory,
+      );
+    const rows = rowContexts
+      .map(({ record, reporting_evidence_category }) => {
         const user = this.user(record.employee_user_id);
         return {
           id: record.id,
@@ -398,9 +421,22 @@ export class ReportService {
           department_id: user?.department_id ?? null,
           department: user ? this.departmentName(user.department_id) : null,
           status: record.status,
+          reporting_evidence_category,
+          day_classification: record.day_classification,
+          presence_state: record.presence_state,
+          punctuality_state: record.punctuality_state,
+          evidence_state: record.evidence_state,
+          approval_kind: record.approval_kind,
+          approval_state: record.approval_state,
+          payroll_state: record.payroll_state,
           in_time: record.first_check_in?.slice(11, 16) ?? "",
           out_time: record.last_check_out?.slice(11, 16) ?? "",
-          hours: Math.round((record.work_minutes / 60) * 10) / 10,
+          hours: Math.round((record.work_seconds / 3600) * 10) / 10,
+          work_seconds: record.work_seconds,
+          break_seconds: record.break_seconds,
+          scheduled_seconds: record.scheduled_seconds,
+          late_seconds: record.late_seconds,
+          early_departure_seconds: record.early_departure_seconds,
           late_minutes: record.late_minutes,
           early_out_minutes: record.early_out_minutes,
           work_mode: record.work_mode,
@@ -412,14 +448,24 @@ export class ReportService {
     return pageWithMeta(rows, query.page, query.page_size, {
       totals: {
         records: rows.length,
-        present: rows.filter((row) => row.status === "present").length,
-        late: rows.filter((row) => row.status === "late").length,
-        absent: rows.filter((row) => row.status === "absent").length,
-        wfh: rows.filter((row) => row.status === "wfh").length,
-        leave: rows.filter((row) => row.status === "leave").length,
+        present: rows.filter((row) => row.presence_state === AttendancePresenceStates.Present).length,
+        late: rows.filter((row) =>
+          row.punctuality_state === AttendancePunctualityStates.Late ||
+          row.punctuality_state === AttendancePunctualityStates.LateAndEarlyDeparture,
+        ).length,
+        absent: rows.filter((row) => row.presence_state === AttendancePresenceStates.Absent).length,
+        wfh: rows.filter((row) => row.day_classification === AttendanceDayClassifications.Wfh).length,
+        leave: rows.filter((row) => row.day_classification === AttendanceDayClassifications.Leave).length,
         average_hours: average(rows.map((row) => row.hours))
       },
+      evidence_categories: countAttendanceReportingEvidenceCategories(
+        rows.map((row) => row.reporting_evidence_category),
+      ),
       status_breakdown: groupCount(rows, (row) => row.status),
+      evidence_category_breakdown: groupCount(
+        rows.filter((row) => row.reporting_evidence_category),
+        (row) => row.reporting_evidence_category ?? "Unknown",
+      ),
       department_breakdown: groupCount(rows, (row) => row.department ?? "Unknown"),
       filters: this.appliedSummaryFilters(query)
     });
@@ -933,6 +979,60 @@ export class ReportService {
     return false;
   }
 
+  private isInRequestedManagerScope(
+    actor: AuthUser,
+    userId: UUID,
+    managerUserId: UUID,
+  ): boolean {
+    const user = this.user(userId);
+    const manager = this.user(managerUserId);
+    if (!user || !manager) return false;
+    if (!this.canSeeUserReportRow(actor, manager.id, "attendance")) return false;
+    return (
+      user.id === manager.id ||
+      user.hierarchy_path.startsWith(`${manager.hierarchy_path}.`)
+    );
+  }
+
+  private reportingEvidenceCategory(
+    record: AttendanceDayRecord,
+  ): AttendanceReportingEvidenceCategory | null {
+    const reviews = this.store.attendanceGeoFallbackReviews.filter(
+      (review) =>
+        review.company_id === record.company_id &&
+        review.employee_user_id === record.employee_user_id &&
+        review.work_date === record.work_date &&
+        !review.deleted_at,
+    );
+    const offlineVerificationStatuses = this.store.outbox
+      .filter(
+        (event) =>
+          event.event_type === "attendance.provisional.recorded" &&
+          event.payload.company_id === record.company_id &&
+          event.payload.subject_employee_user_id === record.employee_user_id &&
+          typeof event.payload.captured_at === "string" &&
+          event.payload.captured_at.slice(0, 10) === record.work_date,
+      )
+      .map((event) => event.payload.verification_status);
+    return deriveAttendanceReportingEvidenceCategory({
+      day: record,
+      signals: {
+        reviewRequired: reviews.some(
+          (review) => review.status === "pending" || review.status === "returned",
+        ) || offlineVerificationStatuses.includes("review_required"),
+        operativeRejected: offlineVerificationStatuses.includes("rejected"),
+        provisional: offlineVerificationStatuses.includes("unverified"),
+        hasContributingEvidence: Boolean(
+          record.first_check_in ||
+            record.last_check_out ||
+            record.work_seconds > 0 ||
+            offlineVerificationStatuses.length > 0 ||
+            reviews.some((review) => review.status === "approved"),
+        ),
+      },
+    });
+  }
+
   private user(userId: UUID): CoreUser | null {
     return this.store.users.find((candidate) => candidate.id === userId && !candidate.deleted_at) ?? null;
   }
@@ -1028,8 +1128,13 @@ export class ReportService {
       page: 1,
       page_size: exportPageSize(filters),
       department_id: textOrUndefined(filters.department_id),
+      manager_user_id: textOrUndefined(filters.manager_user_id),
       user_id: textOrUndefined(filters.user_id),
       employee_user_id: textOrUndefined(filters.employee_user_id),
+      evidence_category: reportingEvidenceCategoryOrUndefined(filters.evidence_category),
+      reporting_evidence_category: reportingEvidenceCategoryOrUndefined(
+        filters.reporting_evidence_category,
+      ),
       project_id: textOrUndefined(filters.project_id),
       assigned_to_user_id: textOrUndefined(filters.assigned_to_user_id),
       actor_user_id: textOrUndefined(filters.actor_user_id),
@@ -1403,8 +1508,11 @@ export class ReportService {
       type: query.type ?? null,
       request_kind: query.request_kind ?? null,
       department_id: query.department_id ?? null,
+      manager_user_id: query.manager_user_id ?? null,
       user_id: query.user_id ?? null,
       employee_user_id: query.employee_user_id ?? null,
+      evidence_category: query.evidence_category ?? null,
+      reporting_evidence_category: query.reporting_evidence_category ?? null,
       project_id: query.project_id ?? null,
       assigned_to_user_id: query.assigned_to_user_id ?? null,
       actor_user_id: query.actor_user_id ?? null,
@@ -1624,6 +1732,12 @@ function exportPageSize(filters: Record<string, unknown>): number {
 
 function textOrUndefined(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function reportingEvidenceCategoryOrUndefined(
+  value: unknown,
+): AttendanceReportingEvidenceCategory | undefined {
+  return isAttendanceReportingEvidenceCategory(value) ? value : undefined;
 }
 
 function stringOrNull(value: unknown): string | null {

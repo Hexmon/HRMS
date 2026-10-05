@@ -56,6 +56,9 @@ export interface DashboardSummary {
     notifications_pending: number;
     outbox_pending: number;
   };
+  attendance?: {
+    evidence_categories?: Record<string, number>;
+  };
   workload: {
     work_segments_total: number;
     submitted_hours_total: string;
