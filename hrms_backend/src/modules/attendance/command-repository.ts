@@ -98,6 +98,39 @@ export interface AttendanceRegisteredDeviceRecord {
   offline_sequence_cursor: string;
 }
 
+export type AttendanceMobileEvidenceWarningCategory =
+  | "replay_warning"
+  | "device_eligibility";
+
+export type AttendanceMobileEvidenceWarningReasonCode =
+  | "mobile_replay.changed_body_conflict"
+  | "offline_sync.changed_body_conflict"
+  | "offline_sync.duplicate_sequence"
+  | "mobile_registered_device_required"
+  | "mobile_registered_device_revoked"
+  | "mobile_registered_device_suspended"
+  | "mobile_registered_device_unavailable";
+
+export type AttendanceMobileEvidenceWarningSource = Extract<
+  AttendancePunchSourceChannel,
+  "mobile" | "mobile_foreground" | "mobile_offline"
+>;
+
+export interface CreateAttendanceMobileEvidenceWarningInput {
+  companyId: UUID;
+  employeeUserId: UUID;
+  category: AttendanceMobileEvidenceWarningCategory;
+  reasonCode: AttendanceMobileEvidenceWarningReasonCode;
+  eventType: AttendancePunchEventType;
+  workMode: "office" | "remote" | "wfh" | "field" | null;
+  source: AttendanceMobileEvidenceWarningSource;
+  workDate: string;
+  capturedAt: string | null;
+  serverReceivedAt: string;
+  clientEventId: UUID;
+  registeredDeviceId?: UUID | null;
+}
+
 export interface AttendanceOfflineInboxRecord {
   id: UUID;
   company_id: UUID;
@@ -448,6 +481,41 @@ export class AttendanceCommandTransactionRepository {
       throw new Error("PostgreSQL transaction timestamp is unavailable.");
     }
     return timestamp.toISOString();
+  }
+
+  async insertMobileEvidenceWarning(
+    input: CreateAttendanceMobileEvidenceWarningInput,
+  ): Promise<void> {
+    await this.client.query(
+      `INSERT INTO attendance.mobile_evidence_warnings (
+          company_id, employee_user_id, category, reason_code, event_type,
+          work_mode, source, work_date, captured_at, server_received_at,
+          client_event_id, registered_device_id
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12)
+        ON CONFLICT (
+          company_id,
+          employee_user_id,
+          client_event_id,
+          category,
+          reason_code
+        )
+        DO NOTHING`,
+      [
+        input.companyId,
+        input.employeeUserId,
+        input.category,
+        input.reasonCode,
+        input.eventType,
+        input.workMode,
+        input.source,
+        input.workDate,
+        input.capturedAt,
+        input.serverReceivedAt,
+        input.clientEventId,
+        input.registeredDeviceId ?? null,
+      ],
+    );
   }
 
   async findPlatformIdempotencyKeyForUpdate(input: {

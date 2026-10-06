@@ -5,7 +5,7 @@ import type {
 } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
-import { badRequest, conflict } from "../../platform/errors.js";
+import { badRequest, conflict, type AppError } from "../../platform/errors.js";
 import {
   buildProvisionalRecordedEvent,
 } from "./events.js";
@@ -29,6 +29,8 @@ import { resolveEffectiveAttendancePolicy } from "./policy-resolver.js";
 import {
   PostgresAttendanceCommandRepository,
   type AttendanceCommandTransactionRepository,
+  type AttendanceMobileEvidenceWarningReasonCode,
+  type AttendanceMobileEvidenceWarningSource,
   type AttendanceOfflineInboxRecord,
   type OfflineSyncSecuritySignalType,
 } from "./command-repository.js";
@@ -44,6 +46,10 @@ type IndexedOfflineEvent = {
   eventHash: string;
   eventPayload: ReturnType<typeof canonicalOfflineAttendanceEventProjection>;
 };
+
+type OfflineSyncTransactionOutcome =
+  | { response: AttendanceOfflineSyncResponse }
+  | { error: AppError };
 
 export const OFFLINE_LOCATION_EVIDENCE_MAX_AGE_MS = 2_147_483_647;
 
@@ -61,13 +67,32 @@ export class AttendanceOfflineSyncService {
       requireActiveEmployment: true,
     });
     const registeredDeviceId = input.device.registered_device_id;
+    const pool = this.store.pgPool;
     if (!registeredDeviceId) {
+      if (pool) {
+        const repository = new PostgresAttendanceCommandRepository(pool);
+        await repository.transaction(async (tx) => {
+          const serverReceivedAt = await tx.getTransactionTimestamp();
+          await insertOfflineDeviceEligibilityWarnings(tx, {
+            companyId: context.companyId,
+            employeeUserId: context.userId,
+            events: input.events,
+            reasonCode: "mobile_registered_device_required",
+            serverReceivedAt,
+            registeredDeviceId: null,
+            timeZone: offlineTimeZoneForUser(
+              this.store,
+              context.userId,
+              context.companyId,
+            ),
+          });
+        });
+      }
       throw badRequest("registered_device_id is required for offline attendance sync.", {
         reason_code: "mobile_registered_device_required",
         source_channel: "mobile_offline",
       });
     }
-    const pool = this.store.pgPool;
     if (!pool) {
       throw conflict("Offline attendance sync requires PostgreSQL persistence.", {
         reason_code: "offline_sync.processing_deferred",
@@ -75,94 +100,142 @@ export class AttendanceOfflineSyncService {
     }
 
     const repository = new PostgresAttendanceCommandRepository(pool);
-    const response = await repository.transaction(async (tx) => {
-      await tx.lockOfflineClientEventIds({
-        companyId: context.companyId,
-        actorUserId: context.userId,
-        clientEventIds: input.events.map((event) => event.client_event_id),
-      });
-      const device = await tx.lockRegisteredDeviceForOfflineSync({
-        companyId: context.companyId,
-        registeredDeviceId,
-      });
-      if (!device || device.user_id !== context.userId) {
-        throw conflict("Registered mobile device is not active for attendance.", {
-          reason_code: "mobile_registered_device_unavailable",
-          source_channel: "mobile_offline",
-        });
-      }
-      if (device.status !== "registered") {
-        throw conflict("Registered mobile device is not active for attendance.", {
-          reason_code:
-            device.status === "suspended"
-              ? "mobile_registered_device_suspended"
-              : "mobile_registered_device_revoked",
-          source_channel: "mobile_offline",
-          registered_device_id: registeredDeviceId,
-        });
-      }
-
-      const serverReceivedAt = await tx.getTransactionTimestamp();
-      const deviceSnapshot = {
-        registered_device_id: registeredDeviceId,
-        device_id: input.device.device_id ?? null,
-        platform: input.device.platform ?? null,
-        app_version: input.device.app_version ?? null,
-        os_version: input.device.os_version ?? null,
-      };
-      const indexedEvents = input.events.map((event, index): IndexedOfflineEvent => ({
-        index,
-        event,
-        eventHash: canonicalOfflineAttendanceEventHash(event),
-        eventPayload: canonicalOfflineAttendanceEventProjection(event),
-      }));
-      const sortedEvents = [...indexedEvents].sort((left, right) =>
-        left.event.sequence === right.event.sequence
-          ? left.event.client_event_id.localeCompare(right.event.client_event_id)
-          : left.event.sequence - right.event.sequence,
-      );
-      const results: AttendanceOfflineSyncResult[] = new Array(input.events.length);
-      let sequenceCursor = Number(device.offline_sequence_cursor);
-      let expectedNextSequence = sequenceCursor + 1;
-
-      const policy = await resolveEffectiveAttendancePolicy(tx, {
-        companyId: context.companyId,
-        subjectEmployeeUserId: context.userId,
-        asOf: serverReceivedAt,
-      });
-
-      for (const indexed of sortedEvents) {
-        const result = await this.processEvent(tx, {
-          actor,
-          companyId: context.companyId,
-          employeeUserId: context.userId,
-          batchId: input.batch_id,
-          registeredDeviceId,
-          deviceSnapshot,
-          serverReceivedAt,
-          expectedNextSequence,
-          indexed,
-          policy,
-        });
-        results[indexed.index] = result.result;
-        if (result.cursorAdvanceEligible) {
-          sequenceCursor = await advanceContiguousSequenceCursor(tx, {
+    const transactionResult =
+      await repository.transaction<OfflineSyncTransactionOutcome>(
+        async (tx) => {
+          await tx.lockOfflineClientEventIds({
             companyId: context.companyId,
             actorUserId: context.userId,
-            registeredDeviceId,
-            sequenceCursor,
+            clientEventIds: input.events.map((event) => event.client_event_id),
           });
-          expectedNextSequence = sequenceCursor + 1;
-        }
-      }
+          const serverReceivedAt = await tx.getTransactionTimestamp();
+          const timeZone = offlineTimeZoneForUser(
+            this.store,
+            context.userId,
+            context.companyId,
+          );
+          const device = await tx.lockRegisteredDeviceForOfflineSync({
+            companyId: context.companyId,
+            registeredDeviceId,
+          });
+          if (!device || device.user_id !== context.userId) {
+            await insertOfflineDeviceEligibilityWarnings(tx, {
+              companyId: context.companyId,
+              employeeUserId: context.userId,
+              events: input.events,
+              reasonCode: "mobile_registered_device_unavailable",
+              serverReceivedAt,
+              registeredDeviceId: device?.id ?? null,
+              timeZone,
+            });
+            return {
+              error: conflict(
+                "Registered mobile device is not active for attendance.",
+                {
+                  reason_code: "mobile_registered_device_unavailable",
+                  source_channel: "mobile_offline",
+                },
+              ),
+            };
+          }
+          if (device.status !== "registered") {
+            const reasonCode =
+              device.status === "suspended"
+                ? "mobile_registered_device_suspended"
+                : "mobile_registered_device_revoked";
+            await insertOfflineDeviceEligibilityWarnings(tx, {
+              companyId: context.companyId,
+              employeeUserId: context.userId,
+              events: input.events,
+              reasonCode,
+              serverReceivedAt,
+              registeredDeviceId,
+              timeZone,
+            });
+            return {
+              error: conflict(
+                "Registered mobile device is not active for attendance.",
+                {
+                  reason_code: reasonCode,
+                  source_channel: "mobile_offline",
+                  registered_device_id: registeredDeviceId,
+                },
+              ),
+            };
+          }
 
-      return attendanceOfflineSyncResponseSchema.parse({
-        contract_version: ATTENDANCE_OFFLINE_SYNC_CONTRACT_VERSION,
-        batch_id: input.batch_id,
-        server_received_at: serverReceivedAt,
-        results,
-      });
-    });
+          const deviceSnapshot = {
+            registered_device_id: registeredDeviceId,
+            device_id: input.device.device_id ?? null,
+            platform: input.device.platform ?? null,
+            app_version: input.device.app_version ?? null,
+            os_version: input.device.os_version ?? null,
+          };
+          const indexedEvents = input.events.map(
+            (event, index): IndexedOfflineEvent => ({
+              index,
+              event,
+              eventHash: canonicalOfflineAttendanceEventHash(event),
+              eventPayload: canonicalOfflineAttendanceEventProjection(event),
+            }),
+          );
+          const sortedEvents = [...indexedEvents].sort((left, right) =>
+            left.event.sequence === right.event.sequence
+              ? left.event.client_event_id.localeCompare(
+                  right.event.client_event_id,
+                )
+              : left.event.sequence - right.event.sequence,
+          );
+          const results: AttendanceOfflineSyncResult[] = new Array(
+            input.events.length,
+          );
+          let sequenceCursor = Number(device.offline_sequence_cursor);
+          let expectedNextSequence = sequenceCursor + 1;
+
+          const policy = await resolveEffectiveAttendancePolicy(tx, {
+            companyId: context.companyId,
+            subjectEmployeeUserId: context.userId,
+            asOf: serverReceivedAt,
+          });
+
+          for (const indexed of sortedEvents) {
+            const result = await this.processEvent(tx, {
+              actor,
+              companyId: context.companyId,
+              employeeUserId: context.userId,
+              batchId: input.batch_id,
+              registeredDeviceId,
+              timeZone,
+              deviceSnapshot,
+              serverReceivedAt,
+              expectedNextSequence,
+              indexed,
+              policy,
+            });
+            results[indexed.index] = result.result;
+            if (result.cursorAdvanceEligible) {
+              sequenceCursor = await advanceContiguousSequenceCursor(tx, {
+                companyId: context.companyId,
+                actorUserId: context.userId,
+                registeredDeviceId,
+                sequenceCursor,
+              });
+              expectedNextSequence = sequenceCursor + 1;
+            }
+          }
+
+          return {
+            response: attendanceOfflineSyncResponseSchema.parse({
+              contract_version: ATTENDANCE_OFFLINE_SYNC_CONTRACT_VERSION,
+              batch_id: input.batch_id,
+              server_received_at: serverReceivedAt,
+              results,
+            }),
+          };
+        },
+      );
+    if ("error" in transactionResult) throw transactionResult.error;
+    const response = transactionResult.response;
     for (const [index, result] of response.results.entries()) {
       const duplicateObservation = offlineDuplicateObservation(result);
       if (duplicateObservation) {
@@ -191,6 +264,7 @@ export class AttendanceOfflineSyncService {
       employeeUserId: UUID;
       batchId: UUID;
       registeredDeviceId: UUID;
+      timeZone: string;
       deviceSnapshot: Record<string, unknown>;
       serverReceivedAt: string;
       expectedNextSequence: number;
@@ -227,6 +301,15 @@ export class AttendanceOfflineSyncService {
         observedEventHash: eventHash,
         existingEventHash: existing.event_hash,
       });
+      await insertOfflineReplayWarning(tx, {
+        companyId: input.companyId,
+        employeeUserId: input.employeeUserId,
+        event,
+        reasonCode: "offline_sync.changed_body_conflict",
+        serverReceivedAt: input.serverReceivedAt,
+        registeredDeviceId: input.registeredDeviceId,
+        timeZone: input.timeZone,
+      });
       return {
         result: conflictResult(event, input.serverReceivedAt),
         sequenceStored: false,
@@ -252,6 +335,15 @@ export class AttendanceOfflineSyncService {
         conflictingClientEventId: sequenceOwner.client_event_id,
         observedEventHash: eventHash,
         existingEventHash: sequenceOwner.event_hash,
+      });
+      await insertOfflineReplayWarning(tx, {
+        companyId: input.companyId,
+        employeeUserId: input.employeeUserId,
+        event,
+        reasonCode: "offline_sync.duplicate_sequence",
+        serverReceivedAt: input.serverReceivedAt,
+        registeredDeviceId: input.registeredDeviceId,
+        timeZone: input.timeZone,
       });
       return {
         result: duplicateSequenceResult(event, input.serverReceivedAt),
@@ -350,9 +442,22 @@ export class AttendanceOfflineSyncService {
           observedEventHash: eventHash,
           existingEventHash: stored?.event_hash ?? null,
         });
+        await insertOfflineReplayWarning(tx, {
+          companyId: input.companyId,
+          employeeUserId: input.employeeUserId,
+          event,
+          reasonCode: stored
+            ? "offline_sync.changed_body_conflict"
+            : "offline_sync.duplicate_sequence",
+          serverReceivedAt: input.serverReceivedAt,
+          registeredDeviceId: input.registeredDeviceId,
+          timeZone: input.timeZone,
+        });
       }
       return {
-        result: stored ? conflictResult(event, input.serverReceivedAt) : duplicateSequenceResult(event, input.serverReceivedAt),
+        result: stored
+          ? conflictResult(event, input.serverReceivedAt)
+          : duplicateSequenceResult(event, input.serverReceivedAt),
         sequenceStored: false,
         cursorAdvanceEligible: false,
       };
@@ -429,6 +534,97 @@ export class AttendanceOfflineSyncService {
       cursorAdvanceEligible: sequenceReason === null,
     };
   }
+}
+
+async function insertOfflineDeviceEligibilityWarnings(
+  tx: AttendanceCommandTransactionRepository,
+  input: {
+    companyId: UUID;
+    employeeUserId: UUID;
+    events: readonly AttendanceOfflineEventEnvelope[];
+    reasonCode: AttendanceMobileEvidenceWarningReasonCode;
+    serverReceivedAt: string;
+    registeredDeviceId: UUID | null;
+    timeZone: string;
+  },
+): Promise<void> {
+  for (const event of input.events) {
+    await insertOfflineWarning(tx, {
+      ...input,
+      event,
+      category: "device_eligibility",
+    });
+  }
+}
+
+async function insertOfflineReplayWarning(
+  tx: AttendanceCommandTransactionRepository,
+  input: {
+    companyId: UUID;
+    employeeUserId: UUID;
+    event: AttendanceOfflineEventEnvelope;
+    reasonCode: AttendanceMobileEvidenceWarningReasonCode;
+    serverReceivedAt: string;
+    registeredDeviceId: UUID | null;
+    timeZone: string;
+  },
+): Promise<void> {
+  await insertOfflineWarning(tx, {
+    ...input,
+    category: "replay_warning",
+  });
+}
+
+async function insertOfflineWarning(
+  tx: AttendanceCommandTransactionRepository,
+  input: {
+    companyId: UUID;
+    employeeUserId: UUID;
+    event: AttendanceOfflineEventEnvelope;
+    category: "replay_warning" | "device_eligibility";
+    reasonCode: AttendanceMobileEvidenceWarningReasonCode;
+    serverReceivedAt: string;
+    registeredDeviceId: UUID | null;
+    timeZone: string;
+  },
+): Promise<void> {
+  await tx.insertMobileEvidenceWarning({
+    companyId: input.companyId,
+    employeeUserId: input.employeeUserId,
+    category: input.category,
+    reasonCode: input.reasonCode,
+    eventType: input.event.event_type,
+    workMode: input.event.work_mode,
+    source: "mobile_offline" as AttendanceMobileEvidenceWarningSource,
+    workDate: dateInTimeZone(input.event.captured_at, input.timeZone),
+    capturedAt: input.event.captured_at,
+    serverReceivedAt: input.serverReceivedAt,
+    clientEventId: input.event.client_event_id,
+    registeredDeviceId: input.registeredDeviceId,
+  });
+}
+
+function offlineTimeZoneForUser(
+  store: MemoryDataStore,
+  userId: UUID,
+  companyId: UUID,
+): string {
+  const user = store.users.find((candidate) => candidate.id === userId);
+  const company = store.companyProfiles.find(
+    (candidate) => candidate.id === companyId,
+  );
+  return user?.timezone ?? company?.timezone ?? "Asia/Kolkata";
+}
+
+function dateInTimeZone(value: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const data = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${data.year}-${data.month}-${data.day}`;
 }
 
 async function advanceContiguousSequenceCursor(

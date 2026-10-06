@@ -475,6 +475,32 @@ export const attendanceOpenApiExamples = {
                 },
               },
             ],
+            mobile_evidence_warnings: [
+              {
+                category: "replay_warning",
+                reason_code: "offline_sync.changed_body_conflict",
+                reason:
+                  "The same offline event was submitted again with different content.",
+                event_type: "check_in",
+                source: "mobile_offline",
+                work_mode: "office",
+                captured_at: "2026-08-21T03:33:00.000Z",
+                server_received_at: "2026-08-21T07:11:30.000Z",
+                evidence_status: "integrity_conflict",
+              },
+              {
+                category: "device_eligibility",
+                reason_code: "mobile_registered_device_revoked",
+                reason:
+                  "Attendance was attempted from a revoked registered device.",
+                event_type: "check_out",
+                source: "mobile",
+                work_mode: "office",
+                captured_at: "2026-08-21T12:45:00.000Z",
+                server_received_at: "2026-08-21T12:45:03.000Z",
+                evidence_status: "device_revoked",
+              },
+            ],
           },
         ],
         page: 1,

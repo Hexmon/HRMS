@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AttendanceCoordinateRetentionDefaults } from "#shared";
 import { authHeader, loginAs } from "#testing";
@@ -20,6 +21,7 @@ async function clearAttendanceRuntimeFixtures(
 
   await pool.query(`
     TRUNCATE TABLE
+      attendance.mobile_evidence_warnings,
       attendance.decision_reasons,
       attendance.attendance_decisions,
       attendance.location_evidence,
@@ -84,6 +86,54 @@ async function allowCurrentPunchesOnAnyWeekday(app: TestApp): Promise<void> {
   if (!company) throw new Error("Expected seeded active company.");
   company.working_week = "Mon-Sun";
   await app.store.persistence?.flushDomain?.("platform");
+}
+
+function employeeCompanyId(app: TestApp, employeeUserId: string): string {
+  const companyId = app.store.userSessionPreferences.find(
+    (preference) => preference.user_id === employeeUserId,
+  )?.company_id;
+  if (!companyId) throw new Error("Employee company fixture is unavailable.");
+  return companyId;
+}
+
+async function insertRegisteredDevice(
+  app: TestApp,
+  input: {
+    companyId: string;
+    userId: string;
+  },
+): Promise<string> {
+  const installationHash = createHash("sha256")
+    .update(`attendance-command-idempotency:${randomUUID()}`)
+    .digest("hex");
+  const result = await app.store.pgPool!.query<{ id: string }>(
+    `INSERT INTO platform.registered_devices (
+       company_id, user_id, installation_id_hash, platform, status, status_changed_at
+     )
+     VALUES ($1, $2, $3, 'android', 'registered', now())
+     RETURNING id`,
+    [input.companyId, input.userId, installationHash],
+  );
+  return result.rows[0]!.id;
+}
+
+async function mobileWarningRows(app: TestApp): Promise<Array<{
+  category: string;
+  reason_code: string;
+  event_type: string;
+  source: string;
+}>> {
+  const result = await app.store.pgPool!.query<{
+    category: string;
+    reason_code: string;
+    event_type: string;
+    source: string;
+  }>(
+    `SELECT category, reason_code, event_type, source
+       FROM attendance.mobile_evidence_warnings
+      ORDER BY server_received_at ASC, reason_code ASC`,
+  );
+  return result.rows;
 }
 
 describe("PostgreSQL attendance command idempotency", () => {
@@ -944,6 +994,70 @@ describe("PostgreSQL attendance command idempotency", () => {
     expect(changedDevice.json().message).toContain(
       "already used with a different attendance command",
     );
+  });
+
+  it("persists safe mobile replay warnings for changed live mobile command bodies", async () => {
+    const employee = await loginAs(app, "E1");
+    const companyId = employeeCompanyId(app, employee.user.id);
+    const registeredDeviceId = await insertRegisteredDevice(app, {
+      companyId,
+      userId: employee.user.id,
+    });
+    const clientEventId = "00000000-0000-4000-8000-000000000204";
+    const payload = punchEnvelope({
+      clientEventId,
+      capturedAt: "2026-07-08T04:02:00.000Z",
+      device: {
+        registered_device_id: registeredDeviceId,
+        platform: "android",
+      },
+      command: {
+        event_type: "check_in",
+        work_mode: "office",
+        source: "mobile",
+        metadata: {},
+      },
+    });
+    const headers = {
+      ...authHeader(employee.token),
+      "idempotency-key": clientEventId,
+    };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers,
+      payload,
+    });
+    const changed = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/punches",
+      headers,
+      payload: {
+        ...payload,
+        command: {
+          event_type: "check_out",
+          work_mode: "office",
+          source: "mobile",
+          metadata: {},
+        },
+      },
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(changed.statusCode).toBe(409);
+    expect(changed.json()).toMatchObject({
+      message: "Client event was already used with a different attendance command.",
+      details: { code: "CLIENT_EVENT_REUSED", client_event_id: clientEventId },
+    });
+    expect(await mobileWarningRows(app)).toEqual([
+      expect.objectContaining({
+        category: "replay_warning",
+        reason_code: "mobile_replay.changed_body_conflict",
+        event_type: "check_out",
+        source: "mobile",
+      }),
+    ]);
   });
 
   it("uses the built-in attendance policy when no active policy is persisted", async () => {

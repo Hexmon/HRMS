@@ -1593,6 +1593,116 @@
           }
         }
       },
+      "AttendanceMobileEvidenceWarning": {
+        "type": "object",
+        "required": [
+          "category",
+          "reason_code",
+          "reason",
+          "event_type",
+          "source",
+          "work_mode",
+          "captured_at",
+          "server_received_at",
+          "evidence_status"
+        ],
+        "description": "Safe mobile warning evidence for a selected employee/day. Does not include client event IDs, device identifiers, request hashes, raw payloads, or exact coordinates.",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "replay_warning",
+              "device_eligibility"
+            ],
+            "example": "replay_warning"
+          },
+          "reason_code": {
+            "type": "string",
+            "enum": [
+              "mobile_replay.changed_body_conflict",
+              "offline_sync.changed_body_conflict",
+              "offline_sync.duplicate_sequence",
+              "mobile_registered_device_required",
+              "mobile_registered_device_revoked",
+              "mobile_registered_device_suspended",
+              "mobile_registered_device_unavailable"
+            ],
+            "example": "offline_sync.changed_body_conflict"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Server-owned safe user-facing reason copy.",
+            "example": "The same offline event was submitted again with different content."
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "check_in",
+              "break_start",
+              "break_end",
+              "check_out"
+            ],
+            "example": "check_in"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "mobile",
+              "mobile_foreground",
+              "mobile_offline"
+            ],
+            "example": "mobile_offline"
+          },
+          "work_mode": {
+            "type": "string",
+            "enum": [
+              "office",
+              "remote",
+              "wfh",
+              "field"
+            ],
+            "nullable": true,
+            "example": "office"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Client capture timestamp for the warning event",
+            "example": "2026-05-04T10:00:00.000Z",
+            "nullable": true
+          },
+          "server_received_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server receipt timestamp for the warning event",
+            "example": "2026-05-04T10:00:00.000Z"
+          },
+          "evidence_status": {
+            "type": "string",
+            "enum": [
+              "integrity_conflict",
+              "duplicate_sequence",
+              "registered_device_required",
+              "device_revoked",
+              "device_suspended",
+              "device_unavailable"
+            ],
+            "example": "integrity_conflict"
+          }
+        },
+        "additionalProperties": false,
+        "example": {
+          "category": "replay_warning",
+          "reason_code": "offline_sync.changed_body_conflict",
+          "reason": "The same offline event was submitted again with different content.",
+          "event_type": "check_in",
+          "source": "mobile_offline",
+          "work_mode": "office",
+          "captured_at": "2026-08-21T03:33:00.000Z",
+          "server_received_at": "2026-08-21T07:11:00.000Z",
+          "evidence_status": "integrity_conflict"
+        }
+      },
       "AttendanceGeofenceCircleShape": {
         "type": "object",
         "required": [
@@ -74645,6 +74755,120 @@
                             }
                           }
                         },
+                        "mobile_evidence_warnings": {
+                          "type": "array",
+                          "description": "Optional manager/HR/Admin selected-day visibility for rejected mobile evidence, replay conflicts, and device eligibility warnings. Present only on selected employee/day reads when warnings exist.",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "category",
+                              "reason_code",
+                              "reason",
+                              "event_type",
+                              "source",
+                              "work_mode",
+                              "captured_at",
+                              "server_received_at",
+                              "evidence_status"
+                            ],
+                            "description": "Safe mobile warning evidence for a selected employee/day. Does not include client event IDs, device identifiers, request hashes, raw payloads, or exact coordinates.",
+                            "properties": {
+                              "category": {
+                                "type": "string",
+                                "enum": [
+                                  "replay_warning",
+                                  "device_eligibility"
+                                ],
+                                "example": "replay_warning"
+                              },
+                              "reason_code": {
+                                "type": "string",
+                                "enum": [
+                                  "mobile_replay.changed_body_conflict",
+                                  "offline_sync.changed_body_conflict",
+                                  "offline_sync.duplicate_sequence",
+                                  "mobile_registered_device_required",
+                                  "mobile_registered_device_revoked",
+                                  "mobile_registered_device_suspended",
+                                  "mobile_registered_device_unavailable"
+                                ],
+                                "example": "offline_sync.changed_body_conflict"
+                              },
+                              "reason": {
+                                "type": "string",
+                                "description": "Server-owned safe user-facing reason copy.",
+                                "example": "The same offline event was submitted again with different content."
+                              },
+                              "event_type": {
+                                "type": "string",
+                                "enum": [
+                                  "check_in",
+                                  "break_start",
+                                  "break_end",
+                                  "check_out"
+                                ],
+                                "example": "check_in"
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "mobile",
+                                  "mobile_foreground",
+                                  "mobile_offline"
+                                ],
+                                "example": "mobile_offline"
+                              },
+                              "work_mode": {
+                                "type": "string",
+                                "enum": [
+                                  "office",
+                                  "remote",
+                                  "wfh",
+                                  "field"
+                                ],
+                                "nullable": true,
+                                "example": "office"
+                              },
+                              "captured_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Client capture timestamp for the warning event",
+                                "example": "2026-05-04T10:00:00.000Z",
+                                "nullable": true
+                              },
+                              "server_received_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Server receipt timestamp for the warning event",
+                                "example": "2026-05-04T10:00:00.000Z"
+                              },
+                              "evidence_status": {
+                                "type": "string",
+                                "enum": [
+                                  "integrity_conflict",
+                                  "duplicate_sequence",
+                                  "registered_device_required",
+                                  "device_revoked",
+                                  "device_suspended",
+                                  "device_unavailable"
+                                ],
+                                "example": "integrity_conflict"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "example": {
+                              "category": "replay_warning",
+                              "reason_code": "offline_sync.changed_body_conflict",
+                              "reason": "The same offline event was submitted again with different content.",
+                              "event_type": "check_in",
+                              "source": "mobile_offline",
+                              "work_mode": "office",
+                              "captured_at": "2026-08-21T03:33:00.000Z",
+                              "server_received_at": "2026-08-21T07:11:00.000Z",
+                              "evidence_status": "integrity_conflict"
+                            }
+                          }
+                        },
                         "detail": {
                           "type": "string",
                           "example": "9h 10m"
@@ -75027,6 +75251,120 @@
                                   "reason": "Offline attendance evidence was received and is awaiting verification.",
                                   "server_received_at": "2026-08-21T07:11:00.000Z"
                                 }
+                              }
+                            }
+                          },
+                          "mobile_evidence_warnings": {
+                            "type": "array",
+                            "description": "Optional manager/HR/Admin selected-day visibility for rejected mobile evidence, replay conflicts, and device eligibility warnings. Present only on selected employee/day reads when warnings exist.",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "category",
+                                "reason_code",
+                                "reason",
+                                "event_type",
+                                "source",
+                                "work_mode",
+                                "captured_at",
+                                "server_received_at",
+                                "evidence_status"
+                              ],
+                              "description": "Safe mobile warning evidence for a selected employee/day. Does not include client event IDs, device identifiers, request hashes, raw payloads, or exact coordinates.",
+                              "properties": {
+                                "category": {
+                                  "type": "string",
+                                  "enum": [
+                                    "replay_warning",
+                                    "device_eligibility"
+                                  ],
+                                  "example": "replay_warning"
+                                },
+                                "reason_code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "mobile_replay.changed_body_conflict",
+                                    "offline_sync.changed_body_conflict",
+                                    "offline_sync.duplicate_sequence",
+                                    "mobile_registered_device_required",
+                                    "mobile_registered_device_revoked",
+                                    "mobile_registered_device_suspended",
+                                    "mobile_registered_device_unavailable"
+                                  ],
+                                  "example": "offline_sync.changed_body_conflict"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "description": "Server-owned safe user-facing reason copy.",
+                                  "example": "The same offline event was submitted again with different content."
+                                },
+                                "event_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "check_in",
+                                    "break_start",
+                                    "break_end",
+                                    "check_out"
+                                  ],
+                                  "example": "check_in"
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "mobile",
+                                    "mobile_foreground",
+                                    "mobile_offline"
+                                  ],
+                                  "example": "mobile_offline"
+                                },
+                                "work_mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "office",
+                                    "remote",
+                                    "wfh",
+                                    "field"
+                                  ],
+                                  "nullable": true,
+                                  "example": "office"
+                                },
+                                "captured_at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "Client capture timestamp for the warning event",
+                                  "example": "2026-05-04T10:00:00.000Z",
+                                  "nullable": true
+                                },
+                                "server_received_at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "Server receipt timestamp for the warning event",
+                                  "example": "2026-05-04T10:00:00.000Z"
+                                },
+                                "evidence_status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "integrity_conflict",
+                                    "duplicate_sequence",
+                                    "registered_device_required",
+                                    "device_revoked",
+                                    "device_suspended",
+                                    "device_unavailable"
+                                  ],
+                                  "example": "integrity_conflict"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "example": {
+                                "category": "replay_warning",
+                                "reason_code": "offline_sync.changed_body_conflict",
+                                "reason": "The same offline event was submitted again with different content.",
+                                "event_type": "check_in",
+                                "source": "mobile_offline",
+                                "work_mode": "office",
+                                "captured_at": "2026-08-21T03:33:00.000Z",
+                                "server_received_at": "2026-08-21T07:11:00.000Z",
+                                "evidence_status": "integrity_conflict"
                               }
                             }
                           },
@@ -76337,6 +76675,120 @@
                               }
                             }
                           },
+                          "mobile_evidence_warnings": {
+                            "type": "array",
+                            "description": "Optional manager/HR/Admin selected-day visibility for rejected mobile evidence, replay conflicts, and device eligibility warnings. Present only on selected employee/day reads when warnings exist.",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "category",
+                                "reason_code",
+                                "reason",
+                                "event_type",
+                                "source",
+                                "work_mode",
+                                "captured_at",
+                                "server_received_at",
+                                "evidence_status"
+                              ],
+                              "description": "Safe mobile warning evidence for a selected employee/day. Does not include client event IDs, device identifiers, request hashes, raw payloads, or exact coordinates.",
+                              "properties": {
+                                "category": {
+                                  "type": "string",
+                                  "enum": [
+                                    "replay_warning",
+                                    "device_eligibility"
+                                  ],
+                                  "example": "replay_warning"
+                                },
+                                "reason_code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "mobile_replay.changed_body_conflict",
+                                    "offline_sync.changed_body_conflict",
+                                    "offline_sync.duplicate_sequence",
+                                    "mobile_registered_device_required",
+                                    "mobile_registered_device_revoked",
+                                    "mobile_registered_device_suspended",
+                                    "mobile_registered_device_unavailable"
+                                  ],
+                                  "example": "offline_sync.changed_body_conflict"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "description": "Server-owned safe user-facing reason copy.",
+                                  "example": "The same offline event was submitted again with different content."
+                                },
+                                "event_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "check_in",
+                                    "break_start",
+                                    "break_end",
+                                    "check_out"
+                                  ],
+                                  "example": "check_in"
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "mobile",
+                                    "mobile_foreground",
+                                    "mobile_offline"
+                                  ],
+                                  "example": "mobile_offline"
+                                },
+                                "work_mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "office",
+                                    "remote",
+                                    "wfh",
+                                    "field"
+                                  ],
+                                  "nullable": true,
+                                  "example": "office"
+                                },
+                                "captured_at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "Client capture timestamp for the warning event",
+                                  "example": "2026-05-04T10:00:00.000Z",
+                                  "nullable": true
+                                },
+                                "server_received_at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "Server receipt timestamp for the warning event",
+                                  "example": "2026-05-04T10:00:00.000Z"
+                                },
+                                "evidence_status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "integrity_conflict",
+                                    "duplicate_sequence",
+                                    "registered_device_required",
+                                    "device_revoked",
+                                    "device_suspended",
+                                    "device_unavailable"
+                                  ],
+                                  "example": "integrity_conflict"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "example": {
+                                "category": "replay_warning",
+                                "reason_code": "offline_sync.changed_body_conflict",
+                                "reason": "The same offline event was submitted again with different content.",
+                                "event_type": "check_in",
+                                "source": "mobile_offline",
+                                "work_mode": "office",
+                                "captured_at": "2026-08-21T03:33:00.000Z",
+                                "server_received_at": "2026-08-21T07:11:00.000Z",
+                                "evidence_status": "integrity_conflict"
+                              }
+                            }
+                          },
                           "detail": {
                             "type": "string",
                             "example": "9h 10m"
@@ -77164,6 +77616,120 @@
                               }
                             }
                           },
+                          "mobile_evidence_warnings": {
+                            "type": "array",
+                            "description": "Optional manager/HR/Admin selected-day visibility for rejected mobile evidence, replay conflicts, and device eligibility warnings. Present only on selected employee/day reads when warnings exist.",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "category",
+                                "reason_code",
+                                "reason",
+                                "event_type",
+                                "source",
+                                "work_mode",
+                                "captured_at",
+                                "server_received_at",
+                                "evidence_status"
+                              ],
+                              "description": "Safe mobile warning evidence for a selected employee/day. Does not include client event IDs, device identifiers, request hashes, raw payloads, or exact coordinates.",
+                              "properties": {
+                                "category": {
+                                  "type": "string",
+                                  "enum": [
+                                    "replay_warning",
+                                    "device_eligibility"
+                                  ],
+                                  "example": "replay_warning"
+                                },
+                                "reason_code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "mobile_replay.changed_body_conflict",
+                                    "offline_sync.changed_body_conflict",
+                                    "offline_sync.duplicate_sequence",
+                                    "mobile_registered_device_required",
+                                    "mobile_registered_device_revoked",
+                                    "mobile_registered_device_suspended",
+                                    "mobile_registered_device_unavailable"
+                                  ],
+                                  "example": "offline_sync.changed_body_conflict"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "description": "Server-owned safe user-facing reason copy.",
+                                  "example": "The same offline event was submitted again with different content."
+                                },
+                                "event_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "check_in",
+                                    "break_start",
+                                    "break_end",
+                                    "check_out"
+                                  ],
+                                  "example": "check_in"
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "mobile",
+                                    "mobile_foreground",
+                                    "mobile_offline"
+                                  ],
+                                  "example": "mobile_offline"
+                                },
+                                "work_mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "office",
+                                    "remote",
+                                    "wfh",
+                                    "field"
+                                  ],
+                                  "nullable": true,
+                                  "example": "office"
+                                },
+                                "captured_at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "Client capture timestamp for the warning event",
+                                  "example": "2026-05-04T10:00:00.000Z",
+                                  "nullable": true
+                                },
+                                "server_received_at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "Server receipt timestamp for the warning event",
+                                  "example": "2026-05-04T10:00:00.000Z"
+                                },
+                                "evidence_status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "integrity_conflict",
+                                    "duplicate_sequence",
+                                    "registered_device_required",
+                                    "device_revoked",
+                                    "device_suspended",
+                                    "device_unavailable"
+                                  ],
+                                  "example": "integrity_conflict"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "example": {
+                                "category": "replay_warning",
+                                "reason_code": "offline_sync.changed_body_conflict",
+                                "reason": "The same offline event was submitted again with different content.",
+                                "event_type": "check_in",
+                                "source": "mobile_offline",
+                                "work_mode": "office",
+                                "captured_at": "2026-08-21T03:33:00.000Z",
+                                "server_received_at": "2026-08-21T07:11:00.000Z",
+                                "evidence_status": "integrity_conflict"
+                              }
+                            }
+                          },
                           "detail": {
                             "type": "string",
                             "example": "9h 10m"
@@ -77543,6 +78109,30 @@
                               "server_received_at": "2026-08-21T07:11:00.000Z"
                             }
                           }
+                        ],
+                        "mobile_evidence_warnings": [
+                          {
+                            "category": "replay_warning",
+                            "reason_code": "offline_sync.changed_body_conflict",
+                            "reason": "The same offline event was submitted again with different content.",
+                            "event_type": "check_in",
+                            "source": "mobile_offline",
+                            "work_mode": "office",
+                            "captured_at": "2026-08-21T03:33:00.000Z",
+                            "server_received_at": "2026-08-21T07:11:30.000Z",
+                            "evidence_status": "integrity_conflict"
+                          },
+                          {
+                            "category": "device_eligibility",
+                            "reason_code": "mobile_registered_device_revoked",
+                            "reason": "Attendance was attempted from a revoked registered device.",
+                            "event_type": "check_out",
+                            "source": "mobile",
+                            "work_mode": "office",
+                            "captured_at": "2026-08-21T12:45:00.000Z",
+                            "server_received_at": "2026-08-21T12:45:03.000Z",
+                            "evidence_status": "device_revoked"
+                          }
                         ]
                       }
                     ],
@@ -77703,6 +78293,30 @@
                                 "reason": "Offline attendance evidence was received and is awaiting verification.",
                                 "server_received_at": "2026-08-21T07:11:00.000Z"
                               }
+                            }
+                          ],
+                          "mobile_evidence_warnings": [
+                            {
+                              "category": "replay_warning",
+                              "reason_code": "offline_sync.changed_body_conflict",
+                              "reason": "The same offline event was submitted again with different content.",
+                              "event_type": "check_in",
+                              "source": "mobile_offline",
+                              "work_mode": "office",
+                              "captured_at": "2026-08-21T03:33:00.000Z",
+                              "server_received_at": "2026-08-21T07:11:30.000Z",
+                              "evidence_status": "integrity_conflict"
+                            },
+                            {
+                              "category": "device_eligibility",
+                              "reason_code": "mobile_registered_device_revoked",
+                              "reason": "Attendance was attempted from a revoked registered device.",
+                              "event_type": "check_out",
+                              "source": "mobile",
+                              "work_mode": "office",
+                              "captured_at": "2026-08-21T12:45:00.000Z",
+                              "server_received_at": "2026-08-21T12:45:03.000Z",
+                              "evidence_status": "device_revoked"
                             }
                           ]
                         }

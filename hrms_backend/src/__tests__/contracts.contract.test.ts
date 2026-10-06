@@ -1699,6 +1699,20 @@ describe("API contracts", () => {
         ?.offline_evidence?.items?.properties?.offline,
     ).toBeDefined();
     expect(
+      dailyCalendarSchema?.properties?.items?.items?.properties
+        ?.mobile_evidence_warnings?.items?.properties?.evidence_status?.enum,
+    ).toEqual([
+      "integrity_conflict",
+      "duplicate_sequence",
+      "registered_device_required",
+      "device_revoked",
+      "device_suspended",
+      "device_unavailable",
+    ]);
+    expect(
+      spec.components?.schemas?.AttendanceMobileEvidenceWarning,
+    ).toBeDefined();
+    expect(
       spec.components?.schemas?.AttendanceGeofenceCircleShape,
     ).toBeDefined();
     expect(

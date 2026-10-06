@@ -5,6 +5,10 @@ export type AttendancePunchEventType = "check_in" | "break_start" | "break_end" 
 export type AttendanceGeoReviewType = "manual_fallback" | "geo_decision";
 export type AttendancePunchWorkMode = "office" | "remote" | "wfh" | "field";
 export type AttendancePunchSource = "web" | "web_geo" | "mobile" | "kiosk";
+export type AttendanceMobileEvidenceWarningSource =
+  | "mobile"
+  | "mobile_foreground"
+  | "mobile_offline";
 export type AttendanceOfflineSyncStatus =
   | "accepted"
   | "replayed"
@@ -65,6 +69,37 @@ export interface AttendanceOfflineEvidenceItem {
   time: string | null;
   source: "mobile_offline";
   offline: AttendanceOfflineEvidenceMetadata;
+}
+
+export type AttendanceMobileEvidenceWarningCategory = "replay_warning" | "device_eligibility";
+
+export type AttendanceMobileEvidenceWarningReasonCode =
+  | "mobile_replay.changed_body_conflict"
+  | "offline_sync.changed_body_conflict"
+  | "offline_sync.duplicate_sequence"
+  | "mobile_registered_device_required"
+  | "mobile_registered_device_revoked"
+  | "mobile_registered_device_suspended"
+  | "mobile_registered_device_unavailable";
+
+export type AttendanceMobileEvidenceWarningEvidenceStatus =
+  | "integrity_conflict"
+  | "duplicate_sequence"
+  | "registered_device_required"
+  | "device_revoked"
+  | "device_suspended"
+  | "device_unavailable";
+
+export interface AttendanceMobileEvidenceWarning {
+  category: AttendanceMobileEvidenceWarningCategory | string;
+  reason_code: AttendanceMobileEvidenceWarningReasonCode | string;
+  reason: string;
+  event_type: AttendancePunchEventType | string;
+  source: AttendanceMobileEvidenceWarningSource | string;
+  work_mode: AttendancePunchWorkMode | string | null;
+  captured_at: string | null;
+  server_received_at: string;
+  evidence_status: AttendanceMobileEvidenceWarningEvidenceStatus | string;
 }
 
 export type AttendanceRegularizationItem =

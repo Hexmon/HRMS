@@ -248,6 +248,39 @@ interface AttendanceOfflineEvidenceItem {
   offline: AttendanceOfflineEvidenceMetadata;
 }
 
+type AttendanceMobileEvidenceWarningCategory =
+  | "replay_warning"
+  | "device_eligibility";
+
+type AttendanceMobileEvidenceWarningReasonCode =
+  | "mobile_replay.changed_body_conflict"
+  | "offline_sync.changed_body_conflict"
+  | "offline_sync.duplicate_sequence"
+  | "mobile_registered_device_required"
+  | "mobile_registered_device_revoked"
+  | "mobile_registered_device_suspended"
+  | "mobile_registered_device_unavailable";
+
+type AttendanceMobileEvidenceWarningEvidenceStatus =
+  | "integrity_conflict"
+  | "duplicate_sequence"
+  | "registered_device_required"
+  | "device_revoked"
+  | "device_suspended"
+  | "device_unavailable";
+
+interface AttendanceMobileEvidenceWarningItem {
+  category: AttendanceMobileEvidenceWarningCategory;
+  reason_code: AttendanceMobileEvidenceWarningReasonCode;
+  reason: string;
+  event_type: string;
+  source: "mobile" | "mobile_foreground" | "mobile_offline";
+  work_mode: string | null;
+  captured_at: string | null;
+  server_received_at: string;
+  evidence_status: AttendanceMobileEvidenceWarningEvidenceStatus;
+}
+
 interface EmployeeAttendanceEvidenceRegularizationItem {
   operation: string;
   event_type: string | null;
@@ -325,6 +358,16 @@ interface AttendanceOfflineEvidenceRow {
   offline_verification_status: AttendanceOfflineVerificationStatus;
   offline_reason_code: AttendanceOfflineSyncReasonCode | null;
   offline_server_received_at: Date | string;
+}
+
+interface AttendanceMobileEvidenceWarningRow {
+  category: AttendanceMobileEvidenceWarningCategory;
+  reason_code: AttendanceMobileEvidenceWarningReasonCode;
+  event_type: string;
+  source: "mobile" | "mobile_foreground" | "mobile_offline";
+  work_mode: string | null;
+  captured_at: Date | string | null;
+  server_received_at: Date | string;
 }
 
 interface EmployeeDayRegularizationRow {
@@ -1313,13 +1356,29 @@ export class AttendanceService {
       date,
       targetTimeZone,
     );
-    if (offlineEvidence.length === 0) return response;
+    const mobileEvidenceWarnings =
+      await this.mobileEvidenceWarningsForSelectedDayPostgres(
+        companyId,
+        query.user_id,
+        date,
+      );
+    if (offlineEvidence.length === 0 && mobileEvidenceWarnings.length === 0) {
+      return response;
+    }
 
     return {
       ...response,
       items: response.items.map((item) =>
         item.employee_user_id === query.user_id
-          ? { ...item, offline_evidence: offlineEvidence }
+          ? {
+              ...item,
+              ...(offlineEvidence.length > 0
+                ? { offline_evidence: offlineEvidence }
+                : {}),
+              ...(mobileEvidenceWarnings.length > 0
+                ? { mobile_evidence_warnings: mobileEvidenceWarnings }
+                : {}),
+            }
           : item,
       ),
     };
@@ -5050,6 +5109,57 @@ export class AttendanceService {
       .filter((item): item is AttendanceOfflineEvidenceItem => Boolean(item));
   }
 
+  private async mobileEvidenceWarningsForSelectedDayPostgres(
+    companyId: UUID,
+    employeeUserId: UUID,
+    workDate: string,
+  ): Promise<AttendanceMobileEvidenceWarningItem[]> {
+    if (!this.store.pgPool) return [];
+    const result =
+      await this.store.pgPool.query<AttendanceMobileEvidenceWarningRow>(
+        `SELECT
+            category,
+            reason_code,
+            event_type,
+            source,
+            work_mode,
+            captured_at,
+            server_received_at
+           FROM attendance.mobile_evidence_warnings
+          WHERE company_id = $1
+            AND employee_user_id = $2
+            AND work_date = $3::date
+          ORDER BY COALESCE(captured_at, server_received_at) ASC,
+                   server_received_at ASC,
+                   event_type ASC,
+                   reason_code ASC`,
+        [companyId, employeeUserId, workDate],
+      );
+    return result.rows
+      .map((row) => this.presentMobileEvidenceWarning(row))
+      .filter((item): item is AttendanceMobileEvidenceWarningItem =>
+        Boolean(item),
+      );
+  }
+
+  private presentMobileEvidenceWarning(
+    row: AttendanceMobileEvidenceWarningRow,
+  ): AttendanceMobileEvidenceWarningItem | null {
+    const serverReceivedAt = isoDateValue(row.server_received_at);
+    if (!serverReceivedAt) return null;
+    return {
+      category: row.category,
+      reason_code: row.reason_code,
+      reason: this.mobileEvidenceWarningReason(row.reason_code),
+      event_type: row.event_type,
+      source: row.source,
+      work_mode: row.work_mode,
+      captured_at: isoDateValue(row.captured_at),
+      server_received_at: serverReceivedAt,
+      evidence_status: this.mobileEvidenceWarningStatus(row.reason_code),
+    };
+  }
+
   private presentOfflineEvidenceItem(
     row: AttendanceOfflineEvidenceRow,
     timeZone: string,
@@ -5124,6 +5234,54 @@ export class AttendanceService {
       return "Offline attendance evidence was already synced.";
     }
     return "Offline attendance evidence was received.";
+  }
+
+  private mobileEvidenceWarningReason(
+    reasonCode: AttendanceMobileEvidenceWarningReasonCode,
+  ): string {
+    if (reasonCode === "mobile_replay.changed_body_conflict") {
+      return "The same mobile attendance event was retried with changed request content.";
+    }
+    if (reasonCode === "offline_sync.changed_body_conflict") {
+      return "The same offline event was submitted again with different content.";
+    }
+    if (reasonCode === "offline_sync.duplicate_sequence") {
+      return "A device sequence value was reused by another offline event.";
+    }
+    if (reasonCode === "mobile_registered_device_required") {
+      return "Attendance was attempted without a registered mobile device.";
+    }
+    if (reasonCode === "mobile_registered_device_revoked") {
+      return "Attendance was attempted from a revoked registered device.";
+    }
+    if (reasonCode === "mobile_registered_device_suspended") {
+      return "Attendance was attempted from a suspended registered device.";
+    }
+    return "Attendance was attempted from a registered device that is unavailable for this employee.";
+  }
+
+  private mobileEvidenceWarningStatus(
+    reasonCode: AttendanceMobileEvidenceWarningReasonCode,
+  ): AttendanceMobileEvidenceWarningEvidenceStatus {
+    if (
+      reasonCode === "mobile_replay.changed_body_conflict" ||
+      reasonCode === "offline_sync.changed_body_conflict"
+    ) {
+      return "integrity_conflict";
+    }
+    if (reasonCode === "offline_sync.duplicate_sequence") {
+      return "duplicate_sequence";
+    }
+    if (reasonCode === "mobile_registered_device_required") {
+      return "registered_device_required";
+    }
+    if (reasonCode === "mobile_registered_device_revoked") {
+      return "device_revoked";
+    }
+    if (reasonCode === "mobile_registered_device_suspended") {
+      return "device_suspended";
+    }
+    return "device_unavailable";
   }
 
   private employeeDecisionFromRow(

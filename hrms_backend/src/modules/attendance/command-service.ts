@@ -8,7 +8,7 @@ import type {
   UUID,
 } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
-import { badRequest, conflict } from "../../platform/errors.js";
+import { badRequest, conflict, type AppError } from "../../platform/errors.js";
 import {
   AttendanceApprovalKinds,
   AttendanceDayClassifications,
@@ -20,6 +20,8 @@ import {
   ATTENDANCE_GEO_EVALUATOR_VERSION,
   type AttendanceCommandTransactionRepository,
   type AttendanceCommandDecisionReasonCode,
+  type AttendanceMobileEvidenceWarningReasonCode,
+  type AttendanceMobileEvidenceWarningSource,
   type PlatformIdempotencyKeyRecord,
   type AttendanceSessionRecord,
   type AttendanceCommandExecutionRecord,
@@ -121,6 +123,14 @@ interface AttendanceCommandOutcome {
   locationAccuracyObservation?: AttendanceLocationAccuracyObservation;
   duplicateObservation?: AttendanceDuplicateEventObservation;
 }
+
+interface AttendanceCommandErrorOutcome {
+  error: AppError;
+}
+
+type AttendanceCommandTransactionOutcome =
+  | AttendanceCommandOutcome
+  | AttendanceCommandErrorOutcome;
 
 interface LocationEvidenceDecisionContext {
   present: boolean;
@@ -689,7 +699,7 @@ export class AttendanceCommandService {
     const scope = `${ATTENDANCE_IDEMPOTENCY_SCOPE_PREFIX}:${commandKind}:${input.companyId}`;
     const repository = new PostgresAttendanceCommandRepository(pool);
     try {
-      const result = await repository.transaction<AttendanceCommandOutcome>(
+      const result = await repository.transaction<AttendanceCommandTransactionOutcome>(
         async (tx) => {
           if (input.clientEnvelope) {
             const existingClientEventCommand =
@@ -699,18 +709,59 @@ export class AttendanceCommandService {
                 clientEventId: input.clientEnvelope.clientEventId,
               });
             if (existingClientEventCommand) {
+              if (existingClientEventCommand.request_hash !== requestHash) {
+                await this.insertLiveMobileReplayWarning(tx, {
+                  companyId: input.companyId,
+                  employeeUserId: subjectEmployeeUserId,
+                  timeZone: input.timeZone,
+                  command: commandInput,
+                  clientEnvelope: input.clientEnvelope,
+                });
+                return {
+                  error: clientEventReusedConflict(existingClientEventCommand),
+                };
+              }
               return this.replayCompletedCommandFromCommand(
                 existingClientEventCommand,
                 requestHash,
               );
             }
           }
-          await this.assertRegisteredDeviceAllowsMobileEvidence(tx, {
-            companyId: input.companyId,
-            actorUserId: input.actor.id,
-            sourceChannel: commandInput.source,
-            device: input.clientEnvelope?.device ?? null,
-          });
+          const deviceEligibilityError =
+            await this.mobileEvidenceDeviceEligibilityError(tx, {
+              companyId: input.companyId,
+              employeeUserId: subjectEmployeeUserId,
+              actorUserId: input.actor.id,
+              timeZone: input.timeZone,
+              command: commandInput,
+              clientEnvelope: input.clientEnvelope,
+            });
+          if (deviceEligibilityError) return { error: deviceEligibilityError };
+          if (
+            input.clientEnvelope &&
+            isPersonalMobileSource(commandInput.source)
+          ) {
+            const existingPlatformKey =
+              await tx.findPlatformIdempotencyKeyForUpdate({
+                scope,
+                actorUserId: input.actor.id,
+                idempotencyKey: input.idempotencyKey,
+              });
+            if (
+              existingPlatformKey &&
+              !existingPlatformKey.is_expired &&
+              existingPlatformKey.request_hash !== requestHash
+            ) {
+              await this.insertLiveMobileReplayWarning(tx, {
+                companyId: input.companyId,
+                employeeUserId: subjectEmployeeUserId,
+                timeZone: input.timeZone,
+                command: commandInput,
+                clientEnvelope: input.clientEnvelope,
+              });
+              return { error: platformIdempotencyChangedConflict() };
+            }
+          }
           const platformKey = await this.acquirePlatformIdempotencyKey(tx, {
             scope,
             actorUserId: input.actor.id,
@@ -1239,6 +1290,7 @@ export class AttendanceCommandService {
           };
         },
       );
+      if ("error" in result) throw result.error;
       emitAttendanceCommandObservability(result);
       if (result.responseStatus === 409) {
         return this.finalizeSelfServiceOutcome(result);
@@ -1249,15 +1301,22 @@ export class AttendanceCommandService {
         if (input.clientEnvelope) {
           const result = await new PostgresAttendanceCommandRepository(
             pool,
-          ).transaction((tx) =>
-            this.replayCompletedCommandFromClientEvent(
+          ).transaction<AttendanceCommandTransactionOutcome>((tx) =>
+            this.replayCompletedCommandFromClientEventOrWarning(
               tx,
               input.companyId,
+              subjectEmployeeUserId,
               input.actor.id,
               input.clientEnvelope!.clientEventId,
               requestHash,
+              {
+                timeZone: input.timeZone,
+                command: commandInput,
+                clientEnvelope: input.clientEnvelope!,
+              },
             ),
           );
+          if ("error" in result) throw result.error;
           emitAttendanceCommandObservability(result);
           return this.finalizeSelfServiceOutcome(result);
         }
@@ -2750,22 +2809,38 @@ export class AttendanceCommandService {
     };
   }
 
-  private async replayCompletedCommandFromClientEvent(
+  private async replayCompletedCommandFromClientEventOrWarning(
     tx: AttendanceCommandTransactionRepository,
     companyId: UUID,
+    employeeUserId: UUID,
     actorUserId: UUID,
     clientEventId: UUID,
     requestHash: string,
-  ): Promise<AttendanceCommandOutcome> {
+    warningInput: {
+      timeZone: string;
+      command: AttendanceCommandInput;
+      clientEnvelope: AttendanceCommandEnvelopeInput;
+    },
+  ): Promise<AttendanceCommandTransactionOutcome> {
     const command = await tx.findCommandByClientEventIdForUpdate({
       companyId,
       actorUserId,
       clientEventId,
     });
     if (!command) {
-      throw conflict(
-        "Attendance command conflicts with an existing command. Retry with a new idempotency key.",
-      );
+      return {
+        error: conflict(
+          "Attendance command conflicts with an existing command. Retry with a new idempotency key.",
+        ),
+      };
+    }
+    if (command.request_hash !== requestHash) {
+      await this.insertLiveMobileReplayWarning(tx, {
+        companyId,
+        employeeUserId,
+        ...warningInput,
+      });
+      return { error: clientEventReusedConflict(command) };
     }
     return this.replayCompletedCommandFromCommand(command, requestHash);
   }
@@ -2862,25 +2937,33 @@ export class AttendanceCommandService {
       : result.response;
   }
 
-  private async assertRegisteredDeviceAllowsMobileEvidence(
+  private async mobileEvidenceDeviceEligibilityError(
     tx: AttendanceCommandTransactionRepository,
     input: {
       companyId: UUID;
+      employeeUserId: UUID;
       actorUserId: UUID;
-      sourceChannel: AttendanceCommandInput["source"];
-      device: AttendanceCommandDeviceMetadata | null;
+      timeZone: string;
+      command: AttendanceCommandInput;
+      clientEnvelope?: AttendanceCommandEnvelopeInput;
     },
-  ): Promise<void> {
-    if (!isPersonalMobileSource(input.sourceChannel)) {
-      return;
+  ): Promise<AppError | null> {
+    if (!isPersonalMobileSource(input.command.source)) {
+      return null;
     }
-    const registeredDeviceId = input.device?.registered_device_id;
+    const registeredDeviceId =
+      input.clientEnvelope?.device?.registered_device_id;
     if (!registeredDeviceId) {
-      throw badRequest(
+      await this.insertMobileDeviceEligibilityWarning(tx, {
+        ...input,
+        reasonCode: "mobile_registered_device_required",
+        registeredDeviceId: null,
+      });
+      return badRequest(
         "registered_device_id is required for mobile attendance evidence.",
         {
           reason_code: "mobile_registered_device_required",
-          source_channel: input.sourceChannel,
+          source_channel: input.command.source,
         },
       );
     }
@@ -2889,21 +2972,94 @@ export class AttendanceCommandService {
       registeredDeviceId,
     });
     if (!device || device.user_id !== input.actorUserId) {
-      throw conflict("Registered mobile device is not active for attendance.", {
+      await this.insertMobileDeviceEligibilityWarning(tx, {
+        ...input,
+        reasonCode: "mobile_registered_device_unavailable",
+        registeredDeviceId: device?.id ?? null,
+      });
+      return conflict("Registered mobile device is not active for attendance.", {
         reason_code: "mobile_registered_device_unavailable",
-        source_channel: input.sourceChannel,
+        source_channel: input.command.source,
       });
     }
     if (device.status !== "registered") {
-      throw conflict("Registered mobile device is not active for attendance.", {
-        reason_code:
-          device.status === "suspended"
-            ? "mobile_registered_device_suspended"
-            : "mobile_registered_device_revoked",
-        source_channel: input.sourceChannel,
+      const reasonCode =
+        device.status === "suspended"
+          ? "mobile_registered_device_suspended"
+          : "mobile_registered_device_revoked";
+      await this.insertMobileDeviceEligibilityWarning(tx, {
+        ...input,
+        reasonCode,
+        registeredDeviceId,
+      });
+      return conflict("Registered mobile device is not active for attendance.", {
+        reason_code: reasonCode,
+        source_channel: input.command.source,
         registered_device_id: registeredDeviceId,
       });
     }
+    return null;
+  }
+
+  private async insertLiveMobileReplayWarning(
+    tx: AttendanceCommandTransactionRepository,
+    input: {
+      companyId: UUID;
+      employeeUserId: UUID;
+      timeZone: string;
+      command: AttendanceCommandInput;
+      clientEnvelope: AttendanceCommandEnvelopeInput;
+    },
+  ): Promise<void> {
+    if (!isPersonalMobileSource(input.command.source)) return;
+    const serverReceivedAt = await tx.getTransactionTimestamp();
+    await tx.insertMobileEvidenceWarning({
+      companyId: input.companyId,
+      employeeUserId: input.employeeUserId,
+      category: "replay_warning",
+      reasonCode: "mobile_replay.changed_body_conflict",
+      eventType: input.command.event_type,
+      workMode: input.command.work_mode,
+      source: input.command.source as AttendanceMobileEvidenceWarningSource,
+      workDate: dateInTimeZone(input.clientEnvelope.capturedAt, input.timeZone),
+      capturedAt: input.clientEnvelope.capturedAt,
+      serverReceivedAt,
+      clientEventId: input.clientEnvelope.clientEventId,
+      registeredDeviceId:
+        input.clientEnvelope.device?.registered_device_id ?? null,
+    });
+  }
+
+  private async insertMobileDeviceEligibilityWarning(
+    tx: AttendanceCommandTransactionRepository,
+    input: {
+      companyId: UUID;
+      employeeUserId: UUID;
+      timeZone: string;
+      command: AttendanceCommandInput;
+      clientEnvelope?: AttendanceCommandEnvelopeInput;
+      reasonCode: AttendanceMobileEvidenceWarningReasonCode;
+      registeredDeviceId: UUID | null;
+    },
+  ): Promise<void> {
+    if (!input.clientEnvelope || !isPersonalMobileSource(input.command.source)) {
+      return;
+    }
+    const serverReceivedAt = await tx.getTransactionTimestamp();
+    await tx.insertMobileEvidenceWarning({
+      companyId: input.companyId,
+      employeeUserId: input.employeeUserId,
+      category: "device_eligibility",
+      reasonCode: input.reasonCode,
+      eventType: input.command.event_type,
+      workMode: input.command.work_mode,
+      source: input.command.source as AttendanceMobileEvidenceWarningSource,
+      workDate: dateInTimeZone(input.clientEnvelope.capturedAt, input.timeZone),
+      capturedAt: input.clientEnvelope.capturedAt,
+      serverReceivedAt,
+      clientEventId: input.clientEnvelope.clientEventId,
+      registeredDeviceId: input.registeredDeviceId,
+    });
   }
 
   private async persistLocationEvidence(
@@ -3007,6 +3163,25 @@ function isPersonalMobileSource(
     sourceChannel === "mobile" ||
     sourceChannel === "mobile_foreground" ||
     sourceChannel === "mobile_offline"
+  );
+}
+
+function clientEventReusedConflict(
+  command: AttendanceCommandExecutionRecord,
+): AppError {
+  return conflict(
+    "Client event was already used with a different attendance command.",
+    {
+      code: "CLIENT_EVENT_REUSED",
+      client_event_id: command.client_event_id,
+      command_id: command.id,
+    },
+  );
+}
+
+function platformIdempotencyChangedConflict(): AppError {
+  return conflict(
+    "Idempotency key was already used with a different attendance command.",
   );
 }
 

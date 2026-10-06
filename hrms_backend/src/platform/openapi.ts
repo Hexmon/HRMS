@@ -4572,6 +4572,96 @@ const attendanceOfflineEvidenceItemSchema = {
   },
 };
 
+const attendanceMobileEvidenceWarningSchema = {
+  type: "object",
+  required: [
+    "category",
+    "reason_code",
+    "reason",
+    "event_type",
+    "source",
+    "work_mode",
+    "captured_at",
+    "server_received_at",
+    "evidence_status",
+  ],
+  description:
+    "Safe mobile warning evidence for a selected employee/day. Does not include client event IDs, device identifiers, request hashes, raw payloads, or exact coordinates.",
+  properties: {
+    category: {
+      type: "string",
+      enum: ["replay_warning", "device_eligibility"],
+      example: "replay_warning",
+    },
+    reason_code: {
+      type: "string",
+      enum: [
+        "mobile_replay.changed_body_conflict",
+        "offline_sync.changed_body_conflict",
+        "offline_sync.duplicate_sequence",
+        "mobile_registered_device_required",
+        "mobile_registered_device_revoked",
+        "mobile_registered_device_suspended",
+        "mobile_registered_device_unavailable",
+      ],
+      example: "offline_sync.changed_body_conflict",
+    },
+    reason: {
+      type: "string",
+      description: "Server-owned safe user-facing reason copy.",
+      example:
+        "The same offline event was submitted again with different content.",
+    },
+    event_type: {
+      type: "string",
+      enum: Object.values(AttendancePunchEventTypes),
+      example: "check_in",
+    },
+    source: {
+      type: "string",
+      enum: ["mobile", "mobile_foreground", "mobile_offline"],
+      example: "mobile_offline",
+    },
+    work_mode: {
+      type: "string",
+      enum: ["office", "remote", "wfh", "field"],
+      nullable: true,
+      example: "office",
+    },
+    captured_at: {
+      ...dateTime("Client capture timestamp for the warning event"),
+      nullable: true,
+    },
+    server_received_at: dateTime(
+      "Server receipt timestamp for the warning event",
+    ),
+    evidence_status: {
+      type: "string",
+      enum: [
+        "integrity_conflict",
+        "duplicate_sequence",
+        "registered_device_required",
+        "device_revoked",
+        "device_suspended",
+        "device_unavailable",
+      ],
+      example: "integrity_conflict",
+    },
+  },
+  additionalProperties: false,
+  example: {
+    category: "replay_warning",
+    reason_code: "offline_sync.changed_body_conflict",
+    reason: "The same offline event was submitted again with different content.",
+    event_type: "check_in",
+    source: "mobile_offline",
+    work_mode: "office",
+    captured_at: "2026-08-21T03:33:00.000Z",
+    server_received_at: "2026-08-21T07:11:00.000Z",
+    evidence_status: "integrity_conflict",
+  },
+};
+
 const attendanceDaySchema = {
   type: "object",
   required: [
@@ -4762,6 +4852,12 @@ const attendanceDaySchema = {
       description:
         "Optional manager/HR/Admin selected-day visibility for offline/provisional evidence. Present only on selected employee/day reads when offline evidence exists.",
       items: attendanceOfflineEvidenceItemSchema,
+    },
+    mobile_evidence_warnings: {
+      type: "array",
+      description:
+        "Optional manager/HR/Admin selected-day visibility for rejected mobile evidence, replay conflicts, and device eligibility warnings. Present only on selected employee/day reads when warnings exist.",
+      items: attendanceMobileEvidenceWarningSchema,
     },
     detail: { type: "string", example: "9h 10m" },
     version: { type: "integer", minimum: 1, example: 1 },
@@ -12287,6 +12383,7 @@ export const openApiComponents = {
     AttendanceExactLocationReveal: attendanceExactLocationResponseSchema,
     AttendanceOfflineEvidenceMetadata: attendanceOfflineEvidenceMetadataSchema,
     AttendanceOfflineEvidenceItem: attendanceOfflineEvidenceItemSchema,
+    AttendanceMobileEvidenceWarning: attendanceMobileEvidenceWarningSchema,
     AttendanceGeofenceCircleShape: attendanceGeofenceCircleShapeSchema,
     AttendanceGeofencePolygonShape: attendanceGeofencePolygonShapeSchema,
     AttendanceGeofencePublishedVersion:

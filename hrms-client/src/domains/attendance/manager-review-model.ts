@@ -111,9 +111,9 @@ export const GEO_OUTCOME_FILTER_OPTIONS: Array<{
   value: AttendanceGeoFactualOutcome;
   label: string;
 }> = [
-  { value: "outside_confident", label: "Outside work area" },
+  { value: "outside_confident", label: "Outside - confident" },
   { value: "boundary_uncertain", label: "Boundary uncertain" },
-  { value: "stale_evidence", label: "Stale location" },
+  { value: "stale_evidence", label: "Evidence stale" },
 ];
 
 export const GEO_REVIEW_TYPE_OPTIONS: Array<{
@@ -122,11 +122,11 @@ export const GEO_REVIEW_TYPE_OPTIONS: Array<{
 }> = [{ value: "manual_fallback", label: "Manual fallback" }];
 
 export function geoOutcomeLabel(value: AttendanceGeoFactualOutcome | null): string {
-  if (value === "outside_confident") return "Outside work area";
+  if (value === "outside_confident") return "Outside - confident";
   if (value === "boundary_uncertain") return "Boundary uncertain";
-  if (value === "stale_evidence") return "Stale location";
-  if (value === "inside_confident") return "Inside work area";
-  if (value === "accuracy_exceeded") return "Low accuracy";
+  if (value === "stale_evidence") return "Evidence stale";
+  if (value === "inside_confident") return "Inside - confident";
+  if (value === "accuracy_exceeded") return "Accuracy insufficient";
   if (value === "missing") return "Location missing";
   if (value === "permission_denied") return "Permission denied";
   if (value === "location_unavailable") return "Location unavailable";
@@ -137,7 +137,7 @@ export function geoOutcomeLabel(value: AttendanceGeoFactualOutcome | null): stri
 
 export function geoOutcomeDescription(value: AttendanceGeoFactualOutcome | null): string {
   if (value === "outside_confident") {
-    return "The reported location was outside the configured attendance boundary.";
+    return "The reported location was outside the configured attendance boundary with sufficient confidence.";
   }
   if (value === "boundary_uncertain") {
     return "Location accuracy overlaps the configured work-area boundary.";
@@ -343,7 +343,12 @@ function safeGeoEvidence(row: Record<string, unknown>): AttendanceReviewEvidence
     detail:
       nullableString(summary.reason) ??
       (reasonCode ? `Reason: ${humanizeToken(reasonCode, "Not specified")}` : null),
-    detailLines: [`Action: ${action}`, geoOutcomeDescription(outcome), ...geoDetailLines(summary)],
+    detailLines: [
+      `Action: ${action}`,
+      reasonCode ? `Reason code: ${reasonCode}` : null,
+      geoOutcomeDescription(outcome),
+      ...geoDetailLines(summary),
+    ].filter((line): line is string => Boolean(line)),
     occurredAt: isoDateTime(summary.captured_at ?? summary.event_time),
   };
 }

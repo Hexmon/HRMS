@@ -363,6 +363,9 @@ describe("attendance offline sync ingestion", () => {
     });
     await expectDeviceCursor(app, registeredDeviceId, "1");
     await expectSecurityAuditSignals(app, ["changed_body_conflict"]);
+    expect(await mobileWarningReasons(app)).toEqual([
+      "offline_sync.changed_body_conflict",
+    ]);
   });
 
   it("rejects a different event that reuses a device sequence", async () => {
@@ -405,6 +408,9 @@ describe("attendance offline sync ingestion", () => {
     });
     await expectDeviceCursor(app, registeredDeviceId, "1");
     await expectSecurityAuditSignals(app, ["duplicate_sequence"]);
+    expect(await mobileWarningReasons(app)).toEqual([
+      "offline_sync.duplicate_sequence",
+    ]);
 
     const daily = await dailyCalendar(
       app,
@@ -418,6 +424,15 @@ describe("attendance offline sync ingestion", () => {
         (item: { source: string }) => item.source === "mobile_offline",
       );
     expect(offlineEvents).toHaveLength(1);
+    expect(daily.json().items[0].mobile_evidence_warnings).toEqual([
+      expect.objectContaining({
+        category: "replay_warning",
+        reason_code: "offline_sync.duplicate_sequence",
+        evidence_status: "duplicate_sequence",
+        event_type: "check_out",
+        source: "mobile_offline",
+      }),
+    ]);
     expect(offlineEvents[0]).toMatchObject({
       event_type: "check_in",
       occurred_at: acceptedEvent.captured_at,
@@ -614,6 +629,11 @@ describe("attendance offline sync ingestion", () => {
     expect(suspended.json().details.reason_code).toBe("mobile_registered_device_suspended");
     expect(revoked.statusCode).toBe(409);
     expect(revoked.json().details.reason_code).toBe("mobile_registered_device_revoked");
+    expect(await mobileWarningReasons(app)).toEqual([
+      "mobile_registered_device_required",
+      "mobile_registered_device_revoked",
+      "mobile_registered_device_suspended",
+    ]);
     await expectCounts(app, {
       inbox: "0",
       events: "0",
@@ -955,6 +975,7 @@ async function expectStoredOfflineResult(
 async function clearAttendanceRuntimeFixtures(app: TestApp): Promise<void> {
   await app.store.pgPool!.query(`
     TRUNCATE TABLE
+      attendance.mobile_evidence_warnings,
       attendance.offline_sync_security_audit_logs,
       attendance.offline_event_inbox,
       attendance.decision_reasons,
@@ -982,6 +1003,15 @@ async function clearAttendanceRuntimeFixtures(app: TestApp): Promise<void> {
     UPDATE platform.registered_devices
     SET offline_sequence_cursor = 0
   `);
+}
+
+async function mobileWarningReasons(app: TestApp): Promise<string[]> {
+  const result = await app.store.pgPool!.query<{ reason_code: string }>(
+    `SELECT reason_code
+       FROM attendance.mobile_evidence_warnings
+      ORDER BY reason_code ASC, server_received_at ASC`,
+  );
+  return result.rows.map((row) => row.reason_code);
 }
 
 async function expectCounts(

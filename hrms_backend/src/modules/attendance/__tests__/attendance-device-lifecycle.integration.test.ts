@@ -89,6 +89,7 @@ describe("attendance registered device lifecycle enforcement", () => {
     expect(response.statusCode).toBe(409);
     expect(response.json().details.reason_code).toBe(reasonCode);
     expect(await attendanceSideEffectCounts(app)).toEqual(before);
+    expect(await mobileWarningCount(app, reasonCode)).toBe("1");
   });
 
   it.each([
@@ -122,6 +123,7 @@ describe("attendance registered device lifecycle enforcement", () => {
     expect(response.statusCode).toBe(409);
     expect(response.json().details.reason_code).toBe("mobile_registered_device_unavailable");
     expect(await attendanceSideEffectCounts(app)).toEqual(before);
+    expect(await mobileWarningCount(app, "mobile_registered_device_unavailable")).toBe("1");
   });
 
   it("requires registered_device_id for mobile source", async () => {
@@ -133,6 +135,7 @@ describe("attendance registered device lifecycle enforcement", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json().details.reason_code).toBe("mobile_registered_device_required");
     expect(await attendanceSideEffectCounts(app)).toEqual(before);
+    expect(await mobileWarningCount(app, "mobile_registered_device_required")).toBe("1");
   });
 
   it.each(["mobile_foreground", "mobile_offline"] as const)(
@@ -172,6 +175,7 @@ describe("attendance registered device lifecycle enforcement", () => {
         details: { reason_code: "mobile_registered_device_revoked" },
       });
       expect(await attendanceSideEffectCounts(app)).toEqual(before);
+      expect(await mobileWarningCount(app, "mobile_registered_device_revoked")).toBe("1");
     },
   );
 
@@ -261,6 +265,7 @@ describe("attendance registered device lifecycle enforcement", () => {
     expect(response.statusCode).toBe(409);
     expect(response.json().details.reason_code).toBe("mobile_registered_device_revoked");
     expect(await attendanceSideEffectCounts(app)).toEqual(before);
+    expect(await mobileWarningCount(app, "mobile_registered_device_revoked")).toBe("1");
   });
 });
 
@@ -295,6 +300,7 @@ async function mobilePunch(
 async function clearAttendanceRuntimeFixtures(app: TestApp): Promise<void> {
   await app.store.pgPool!.query(`
     TRUNCATE TABLE
+      attendance.mobile_evidence_warnings,
       attendance.decision_reasons,
       attendance.attendance_decisions,
       attendance.location_evidence,
@@ -315,6 +321,19 @@ async function clearAttendanceRuntimeFixtures(app: TestApp): Promise<void> {
     DELETE FROM platform.idempotency_keys
     WHERE scope LIKE 'attendance.punch:%'
   `);
+}
+
+async function mobileWarningCount(
+  app: TestApp,
+  reasonCode: string,
+): Promise<string> {
+  const result = await app.store.pgPool!.query<{ warnings: string }>(
+    `SELECT count(*) AS warnings
+       FROM attendance.mobile_evidence_warnings
+      WHERE reason_code = $1`,
+    [reasonCode],
+  );
+  return result.rows[0]?.warnings ?? "0";
 }
 
 function employeeCompanyId(app: TestApp, employeeUserId: string): string {

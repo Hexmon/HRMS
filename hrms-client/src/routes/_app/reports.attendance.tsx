@@ -417,41 +417,90 @@ function OfflineEvidenceDetail({
   }
 
   const evidence = offlineEvidenceFromDaily(query.data);
-  if (evidence.length === 0) return null;
+  const warnings = mobileEvidenceWarningsFromDaily(query.data);
+  if (evidence.length === 0 && warnings.length === 0) return null;
 
   return (
-    <DataCard title="Offline / provisional evidence" description={`${row.employee} - ${row.date}`}>
-      <div className="space-y-2" data-testid="manager-offline-evidence">
-        {evidence.map((item) => (
-          <div key={item.key} className="rounded-md border border-border/70 p-3 text-sm">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <p className="break-words font-medium">
-                  {item.eventLabel} · Mobile - captured offline
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  This offline evidence is not payroll-final.
+    <DataCard title="Mobile evidence details" description={`${row.employee} - ${row.date}`}>
+      <div className="space-y-4">
+        {evidence.length > 0 && (
+          <section className="space-y-2" data-testid="manager-offline-evidence">
+            <div>
+              <h3 className="text-sm font-semibold">Offline / provisional evidence</h3>
+              <p className="text-xs text-muted-foreground">
+                Offline sync visibility is informational and not payroll-final.
+              </p>
+            </div>
+            {evidence.map((item) => (
+              <div key={item.key} className="rounded-md border border-border/70 p-3 text-sm">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="break-words font-medium">
+                      {item.eventLabel} · Mobile - captured offline
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      This offline evidence is not payroll-final.
+                    </p>
+                  </div>
+                  <StatusBadge
+                    status={item.badgeStatus}
+                    label={item.verificationLabel}
+                    className="w-fit max-w-full whitespace-normal break-words sm:shrink-0"
+                  />
+                </div>
+                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                  <EvidenceFact label="Captured offline" value={item.capturedLabel} />
+                  <EvidenceFact label="Received by server" value={item.serverReceivedLabel} />
+                  <EvidenceFact label="Sync state" value={item.syncLabel} />
+                  {item.reason && <EvidenceFact label="Reason" value={item.reason} />}
+                </div>
+                {item.reasonCode && (
+                  <p className="mt-2 break-words font-mono text-[11px] text-muted-foreground">
+                    Reason code: {item.reasonCode}
+                  </p>
+                )}
+              </div>
+            ))}
+          </section>
+        )}
+        {warnings.length > 0 && (
+          <section className="space-y-2" data-testid="manager-mobile-evidence-warnings">
+            <div>
+              <h3 className="text-sm font-semibold">Mobile integrity / device evidence</h3>
+              <p className="text-xs text-muted-foreground">
+                Rejected attempts and replay conflicts are shown without device IDs or coordinates.
+              </p>
+            </div>
+            {warnings.map((item) => (
+              <div key={item.key} className="rounded-md border border-border/70 p-3 text-sm">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="break-words font-medium">
+                      {item.eventLabel} · {item.categoryLabel}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{item.sourceLabel}</p>
+                  </div>
+                  <StatusBadge
+                    status={item.badgeStatus}
+                    label={item.statusLabel}
+                    className="w-fit max-w-full whitespace-normal break-words sm:shrink-0"
+                  />
+                </div>
+                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                  <EvidenceFact label="Captured" value={item.capturedLabel} />
+                  <EvidenceFact label="Received by server" value={item.serverReceivedLabel} />
+                  {item.workModeLabel && (
+                    <EvidenceFact label="Work mode" value={item.workModeLabel} />
+                  )}
+                  <EvidenceFact label="Reason" value={item.reason} />
+                </div>
+                <p className="mt-2 break-words font-mono text-[11px] text-muted-foreground">
+                  Reason code: {item.reasonCode}
                 </p>
               </div>
-              <StatusBadge
-                status={item.badgeStatus}
-                label={item.verificationLabel}
-                className="w-fit max-w-full whitespace-normal break-words sm:shrink-0"
-              />
-            </div>
-            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-              <EvidenceFact label="Captured offline" value={item.capturedLabel} />
-              <EvidenceFact label="Received by server" value={item.serverReceivedLabel} />
-              <EvidenceFact label="Sync state" value={item.syncLabel} />
-              {item.reason && <EvidenceFact label="Reason" value={item.reason} />}
-            </div>
-            {item.reasonCode && (
-              <p className="mt-2 break-words font-mono text-[11px] text-muted-foreground">
-                Reason code: {item.reasonCode}
-              </p>
-            )}
-          </div>
-        ))}
+            ))}
+          </section>
+        )}
       </div>
     </DataCard>
   );
@@ -467,6 +516,20 @@ interface OfflineEvidenceDisplay {
   badgeStatus: string;
   reasonCode: string | null;
   reason: string | null;
+}
+
+interface MobileEvidenceWarningDisplay {
+  key: string;
+  eventLabel: string;
+  categoryLabel: string;
+  statusLabel: string;
+  badgeStatus: string;
+  sourceLabel: string;
+  workModeLabel: string | null;
+  capturedLabel: string;
+  serverReceivedLabel: string;
+  reasonCode: string;
+  reason: string;
 }
 
 function offlineEvidenceFromDaily(value: unknown): OfflineEvidenceDisplay[] {
@@ -487,6 +550,32 @@ function offlineEvidenceFromDaily(value: unknown): OfflineEvidenceDisplay[] {
       badgeStatus: verificationBadgeStatus(verificationStatus),
       reasonCode,
       reason: nullableText(offline.reason) ?? (reasonCode ? offlineReason(reasonCode) : null),
+    };
+  });
+}
+
+function mobileEvidenceWarningsFromDaily(value: unknown): MobileEvidenceWarningDisplay[] {
+  const item = asArray(asRecord(value).items).map(asRecord)[0];
+  return asArray(item?.mobile_evidence_warnings).map((entry, index) => {
+    const record = asRecord(entry);
+    const reasonCode = text(record.reason_code);
+    const status = safeToken(record.evidence_status);
+    const category = safeToken(record.category);
+    const source = safeToken(record.source);
+    return {
+      key: `${text(record.server_received_at, "warning")}:${index}`,
+      eventLabel: eventLabel(text(record.event_type)),
+      categoryLabel: mobileWarningCategoryLabel(category),
+      statusLabel: mobileWarningStatusLabel(status),
+      badgeStatus: mobileWarningBadgeStatus(status),
+      sourceLabel: sourceLabel(source),
+      workModeLabel: nullableText(record.work_mode) ? humanize(text(record.work_mode)) : null,
+      capturedLabel: nullableText(record.captured_at)
+        ? formatDateTime(text(record.captured_at))
+        : "Capture time unavailable",
+      serverReceivedLabel: formatDateTime(text(record.server_received_at)),
+      reasonCode,
+      reason: nullableText(record.reason) ?? mobileWarningReason(reasonCode),
     };
   });
 }
@@ -565,7 +654,82 @@ function offlineReason(reasonCode: string): string {
   if (reasonCode === "offline_sync.review_required") {
     return "Offline attendance evidence requires review because verification could not be completed.";
   }
+  if (reasonCode === "offline_sync.processing_deferred") {
+    return "Offline attendance evidence was deferred for review.";
+  }
+  if (reasonCode === "offline_sync.validation_failed") {
+    return "Offline attendance evidence could not be validated.";
+  }
+  if (reasonCode === "offline_sync.changed_body_conflict") {
+    return "Offline attendance evidence conflicted with a previously received event.";
+  }
+  if (reasonCode === "offline_sync.duplicate_sequence") {
+    return "Offline attendance evidence reused a device sequence and was not accepted.";
+  }
+  if (reasonCode === "offline_sync.replayed") {
+    return "Offline attendance evidence was already synced.";
+  }
   return "Offline attendance evidence was received.";
+}
+
+function mobileWarningCategoryLabel(value: string): string {
+  if (value === "replay_warning") return "Replay integrity warning";
+  if (value === "device_eligibility") return "Device eligibility warning";
+  return humanize(value) || "Mobile warning";
+}
+
+function mobileWarningStatusLabel(value: string): string {
+  if (value === "integrity_conflict") return "Integrity conflict";
+  if (value === "duplicate_sequence") return "Duplicate sequence";
+  if (value === "registered_device_required") return "Device required";
+  if (value === "device_revoked") return "Device revoked";
+  if (value === "device_suspended") return "Device suspended";
+  if (value === "device_unavailable") return "Device unavailable";
+  return humanize(value) || "Warning";
+}
+
+function mobileWarningBadgeStatus(value: string): string {
+  if (
+    value === "device_revoked" ||
+    value === "device_suspended" ||
+    value === "device_unavailable" ||
+    value === "registered_device_required"
+  ) {
+    return "rejected";
+  }
+  return "warning";
+}
+
+function mobileWarningReason(reasonCode: string): string {
+  if (reasonCode === "mobile_replay.changed_body_conflict") {
+    return "The same mobile attendance event was retried with changed request content.";
+  }
+  if (reasonCode === "offline_sync.changed_body_conflict") {
+    return "The same offline event was submitted again with different content.";
+  }
+  if (reasonCode === "offline_sync.duplicate_sequence") {
+    return "A device sequence value was reused by another offline event.";
+  }
+  if (reasonCode === "mobile_registered_device_required") {
+    return "Attendance was attempted without a registered mobile device.";
+  }
+  if (reasonCode === "mobile_registered_device_revoked") {
+    return "Attendance was attempted from a revoked registered device.";
+  }
+  if (reasonCode === "mobile_registered_device_suspended") {
+    return "Attendance was attempted from a suspended registered device.";
+  }
+  if (reasonCode === "mobile_registered_device_unavailable") {
+    return "Attendance was attempted from a registered device that is unavailable for this employee.";
+  }
+  return "Mobile evidence requires review.";
+}
+
+function sourceLabel(value: string): string {
+  if (value === "mobile_offline") return "Mobile - offline sync";
+  if (value === "mobile_foreground") return "Mobile - foreground";
+  if (value === "mobile") return "Mobile";
+  return humanize(value) || "Mobile evidence";
 }
 
 function nullableText(value: unknown): string | null {
