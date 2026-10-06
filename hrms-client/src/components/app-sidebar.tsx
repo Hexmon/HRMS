@@ -95,7 +95,7 @@ function getLiquidIndicatorBox(content: HTMLElement, activeItem: HTMLElement): L
 }
 
 export function AppSidebar() {
-  const { state, isMobile } = useSidebar();
+  const { state, isMobile, setOpenMobile } = useSidebar();
   const collapsed = state === "collapsed";
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { activeRole } = useAuth();
@@ -175,6 +175,14 @@ export function AppSidebar() {
     [moveIndicatorToElement],
   );
 
+  const handleNavigationClick = useCallback(
+    (url: string, element: HTMLElement) => {
+      handleNavigationIntent(url, element);
+      if (isMobile) setOpenMobile(false);
+    },
+    [handleNavigationIntent, isMobile, setOpenMobile],
+  );
+
   useEffect(() => {
     const frame = window.requestAnimationFrame(updateIndicator);
     return () => window.cancelAnimationFrame(frame);
@@ -230,14 +238,14 @@ export function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   isActive={isActive(item.url)}
-                  className="glass-sidebar-item rounded-xl"
+                  className="glass-sidebar-item min-h-11 rounded-xl md:min-h-8"
                   tooltip={item.title}
                 >
                   <Link
                     to={item.url}
                     className="flex items-center gap-3"
                     onPointerDown={(event) => handleNavigationIntent(item.url, event.currentTarget)}
-                    onClick={(event) => handleNavigationIntent(item.url, event.currentTarget)}
+                    onClick={(event) => handleNavigationClick(item.url, event.currentTarget)}
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
                     {!collapsed && <span className="flex-1 truncate">{item.title}</span>}

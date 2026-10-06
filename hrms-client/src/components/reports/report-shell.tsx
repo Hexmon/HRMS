@@ -17,7 +17,9 @@ import { DataTable, type Column } from "@/components/ui-kit";
 import { exportCsv, daysAgo, isoToday } from "@/lib/reports/utils";
 import { useEmployees } from "@/lib/employees-store";
 import { documentsApi } from "@/domains/documents";
+import { useAttendanceExportMutation } from "@/domains/attendance";
 import { useCreateReportExportMutation } from "@/domains/reports";
+import { ATTENDANCE_REPORTING_EVIDENCE_OPTIONS } from "@/domains/attendance/reporting-evidence";
 import { useApiRouteEnabled, userFacingErrorMessage } from "@/shared/api";
 
 export interface ReportFilters {
@@ -26,13 +28,18 @@ export interface ReportFilters {
   department: string;
   employee: string;
   status: string;
+  evidenceCategory: string;
+  managerUserId: string;
 }
 
 interface FacetOptions {
   showDepartment?: boolean;
   showEmployee?: boolean;
   showStatus?: boolean;
+  showEvidenceCategory?: boolean;
+  showTeam?: boolean;
   statusOptions?: { value: string; label: string }[];
+  teamOptions?: { value: string; label: string }[];
   employeePool?: string[];
 }
 
@@ -47,6 +54,8 @@ interface Props<T extends { id: string }> {
     value: ReactNode;
     tone?: "default" | "success" | "warning" | "destructive" | "info";
   }[];
+  filters?: ReportFilters;
+  onFiltersChange?: (filters: ReportFilters) => void;
   build: (filters: ReportFilters) => T[];
   columns: Column<T>[];
   searchKeys?: (keyof T)[];
@@ -69,6 +78,8 @@ export function ReportShell<T extends { id: string }>({
   defaultTo,
   facets,
   summary,
+  filters,
+  onFiltersChange,
   build,
   columns,
   searchKeys,
@@ -79,13 +90,26 @@ export function ReportShell<T extends { id: string }>({
   const path = useRouterState({ select: (state) => state.location.pathname });
   const apiMode = useApiRouteEnabled(["/reports"]);
   const exportMutation = useCreateReportExportMutation();
-  const [from, setFrom] = useState(defaultFrom ?? daysAgo(90));
-  const [to, setTo] = useState(defaultTo ?? isoToday());
-  const [department, setDepartment] = useState("all");
-  const [employee, setEmployee] = useState("all");
-  const [status, setStatus] = useState("all");
+  const attendanceExportMutation = useAttendanceExportMutation();
+  const [internalFilters, setInternalFilters] = useState<ReportFilters>({
+    from: defaultFrom ?? daysAgo(90),
+    to: defaultTo ?? isoToday(),
+    department: "all",
+    employee: "all",
+    status: "all",
+    evidenceCategory: "all",
+    managerUserId: "all",
+  });
 
-  const f: ReportFilters = { from, to, department, employee, status };
+  const f = filters ?? internalFilters;
+  const setFilter = (patch: Partial<ReportFilters>) => {
+    const next = { ...f, ...patch };
+    if (onFiltersChange) {
+      onFiltersChange(next);
+    } else {
+      setInternalFilters(next);
+    }
+  };
   const rows = build(f);
 
   const employeePool = facets?.employeePool ?? employees.map((e) => e.name);
@@ -99,16 +123,20 @@ export function ReportShell<T extends { id: string }>({
       }
 
       try {
-        const job = await exportMutation.mutateAsync({
-          format: "csv",
-          report_type: reportType,
-          filters: buildBackendFilters(f, {
-            departments,
-            employees,
-            exportName,
-            title,
-          }),
+        const filters = buildBackendFilters(f, {
+          departments,
+          employees,
+          exportName,
+          title,
         });
+        const job =
+          reportType === "attendance/summary"
+            ? await attendanceExportMutation.mutateAsync({ format: "csv", filters })
+            : await exportMutation.mutateAsync({
+                format: "csv",
+                report_type: reportType,
+                filters,
+              });
         const jobId = String(job.job_id ?? job.export_id ?? "created").slice(0, 8);
         if (typeof job.download_document_id === "string" && job.download_document_id) {
           const download = await documentsApi.createDownloadUrl(job.download_document_id);
@@ -151,11 +179,13 @@ export function ReportShell<T extends { id: string }>({
           size="sm"
           variant="outline"
           onClick={handleExport}
-          disabled={apiMode && exportMutation.isPending}
-          className="w-full sm:w-auto"
+          disabled={apiMode && (exportMutation.isPending || attendanceExportMutation.isPending)}
+          className="min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
         >
           <Download className="mr-1 h-3.5 w-3.5" />
-          {apiMode && exportMutation.isPending ? "Exporting" : "Export CSV"}
+          {apiMode && (exportMutation.isPending || attendanceExportMutation.isPending)
+            ? "Exporting"
+            : "Export CSV"}
         </Button>
       </div>
 
@@ -163,28 +193,36 @@ export function ReportShell<T extends { id: string }>({
         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           <Filter className="h-3.5 w-3.5" /> Filters
         </div>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-          <div className="space-y-1">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+          <div className="min-w-0 space-y-1">
             <Label className="text-[11px]">From</Label>
             <Input
               type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
+              value={f.from}
+              onChange={(e) => setFilter({ from: e.target.value })}
               className="h-9"
             />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <Label className="text-[11px]">To</Label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9" />
+            <Input
+              type="date"
+              value={f.to}
+              onChange={(e) => setFilter({ to: e.target.value })}
+              className="h-9"
+            />
           </div>
           {facets?.showDepartment && (
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-[11px]">Department</Label>
-              <Select value={department} onValueChange={setDepartment}>
+              <Select
+                value={f.department}
+                onValueChange={(value) => setFilter({ department: value })}
+              >
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-72">
                   <SelectItem value="all">All departments</SelectItem>
                   {departments.map((d) => (
                     <SelectItem key={d.id} value={d.name}>
@@ -196,9 +234,9 @@ export function ReportShell<T extends { id: string }>({
             </div>
           )}
           {facets?.showEmployee && (
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-[11px]">Employee</Label>
-              <Select value={employee} onValueChange={setEmployee}>
+              <Select value={f.employee} onValueChange={(value) => setFilter({ employee: value })}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
@@ -214,17 +252,59 @@ export function ReportShell<T extends { id: string }>({
             </div>
           )}
           {facets?.showStatus && (
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-[11px]">Status</Label>
-              <Select value={status} onValueChange={setStatus}>
+              <Select value={f.status} onValueChange={(value) => setFilter({ status: value })}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-72">
                   <SelectItem value="all">All statuses</SelectItem>
                   {(facets.statusOptions ?? []).map((s) => (
                     <SelectItem key={s.value} value={s.value}>
                       {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showEvidenceCategory && (
+            <div className="min-w-0 space-y-1">
+              <Label className="text-[11px]">Evidence state</Label>
+              <Select
+                value={f.evidenceCategory}
+                onValueChange={(value) => setFilter({ evidenceCategory: value })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All evidence states</SelectItem>
+                  {ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showTeam && (
+            <div className="min-w-0 space-y-1">
+              <Label className="text-[11px]">Team</Label>
+              <Select
+                value={f.managerUserId}
+                onValueChange={(value) => setFilter({ managerUserId: value })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All teams</SelectItem>
+                  {(facets.teamOptions ?? []).map((team) => (
+                    <SelectItem key={team.value} value={team.value}>
+                      {team.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -310,6 +390,14 @@ function buildBackendFilters(
 
   if (filters.status !== "all") {
     payload.status = filters.status;
+  }
+
+  if (filters.evidenceCategory !== "all") {
+    payload.evidence_category = filters.evidenceCategory;
+  }
+
+  if (filters.managerUserId !== "all") {
+    payload.manager_user_id = filters.managerUserId;
   }
 
   return payload;
