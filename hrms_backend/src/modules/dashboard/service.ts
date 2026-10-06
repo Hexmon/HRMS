@@ -1,7 +1,13 @@
-import type { AuthUser, CoreUser, ExpenseTicket, LeaveRequest, TimesheetSubmission, UUID, WfhRequest } from "#shared";
-import { AssetStatuses, AttendanceDayStatuses, EmploymentStatuses, ExpenseStatuses, LeaveRequestStatuses, Roles, TimesheetStatuses } from "#shared";
+import type { AttendanceDayRecord, AuthUser, CoreUser, ExpenseTicket, LeaveRequest, TimesheetSubmission, UUID, WfhRequest } from "#shared";
+import { AssetStatuses, AttendanceEvidenceStates, AttendancePresenceStates, AttendancePunctualityStates, EmploymentStatuses, ExpenseStatuses, LeaveRequestStatuses, Roles, TimesheetStatuses } from "#shared";
 import type { MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
+import {
+  countAttendanceReportingEvidenceCategories,
+  deriveAttendanceReportingEvidenceCategory,
+  emptyAttendanceReportingEvidenceCounts,
+  type AttendanceReportingEvidenceCounts,
+} from "../attendance/reporting-evidence.js";
 
 export interface DashboardMetric {
   key: string;
@@ -53,6 +59,9 @@ export interface DashboardSummary {
     assets_recovery_pending: number;
     notifications_pending: number;
     outbox_pending: number;
+  };
+  attendance: {
+    evidence_categories: AttendanceReportingEvidenceCounts;
   };
   workload: {
     work_segments_total: number;
@@ -148,6 +157,13 @@ export class DashboardService {
         document_verification_pending: pendingDocuments
       },
       operations,
+      attendance: {
+        evidence_categories: this.canSeeAttendanceReporting(actor, visibleUsers)
+          ? countAttendanceReportingEvidenceCategories(
+              visibleAttendance.map((record) => this.reportingEvidenceCategory(record)),
+            )
+          : emptyAttendanceReportingEvidenceCounts()
+      },
       workload,
       attention: [
         metric("pending_expense_approvals", "Expense approvals waiting", expensePending, "count", "expenses"),
@@ -182,6 +198,10 @@ export class DashboardService {
   private canSeeFinance(actor: AuthUser): boolean {
     const financeRoles: readonly string[] = [Roles.Admin, Roles.Auditor, Roles.FinanceManager];
     return actor.roles.some((role) => financeRoles.includes(role));
+  }
+
+  private canSeeAttendanceReporting(actor: AuthUser, visibleUsers: CoreUser[]): boolean {
+    return this.canSeeSystemWide(actor) || visibleUsers.some((user) => user.id !== actor.id);
   }
 
   private visibleUsers(actor: AuthUser): CoreUser[] {
@@ -281,13 +301,56 @@ export class DashboardService {
     return requests.filter((request) => visibleUserIds.has(request.employee_user_id) || request.current_approver_user_id === actor.id);
   }
 
-  private attendanceExceptionCount(records: Array<{ exception_type: string | null; status: string }>): number {
+  private attendanceExceptionCount(
+    records: Array<Pick<AttendanceDayRecord, "exception_type" | "evidence_state" | "presence_state" | "punctuality_state">>,
+  ): number {
     return records.filter(
       (record) =>
         record.exception_type ||
-        record.status === AttendanceDayStatuses.Absent ||
-        record.status === AttendanceDayStatuses.Late
+        record.evidence_state === AttendanceEvidenceStates.Missing ||
+        record.evidence_state === AttendanceEvidenceStates.Partial ||
+        record.evidence_state === AttendanceEvidenceStates.Disputed ||
+        record.presence_state === AttendancePresenceStates.Absent ||
+        record.punctuality_state === AttendancePunctualityStates.Late ||
+        record.punctuality_state === AttendancePunctualityStates.LateAndEarlyDeparture
     ).length;
+  }
+
+  private reportingEvidenceCategory(record: AttendanceDayRecord) {
+    const reviews = this.store.attendanceGeoFallbackReviews.filter(
+      (review) =>
+        review.company_id === record.company_id &&
+        review.employee_user_id === record.employee_user_id &&
+        review.work_date === record.work_date &&
+        !review.deleted_at,
+    );
+    const offlineVerificationStatuses = this.store.outbox
+      .filter(
+        (event) =>
+          event.event_type === "attendance.provisional.recorded" &&
+          event.payload.company_id === record.company_id &&
+          event.payload.subject_employee_user_id === record.employee_user_id &&
+          typeof event.payload.captured_at === "string" &&
+          event.payload.captured_at.slice(0, 10) === record.work_date,
+      )
+      .map((event) => event.payload.verification_status);
+    return deriveAttendanceReportingEvidenceCategory({
+      day: record,
+      signals: {
+        reviewRequired: reviews.some(
+          (review) => review.status === "pending" || review.status === "returned",
+        ) || offlineVerificationStatuses.includes("review_required"),
+        operativeRejected: offlineVerificationStatuses.includes("rejected"),
+        provisional: offlineVerificationStatuses.includes("unverified"),
+        hasContributingEvidence: Boolean(
+          record.first_check_in ||
+            record.last_check_out ||
+            record.work_seconds > 0 ||
+            offlineVerificationStatuses.length > 0 ||
+            reviews.some((review) => review.status === "approved"),
+        ),
+      },
+    });
   }
 
   private visibleAssets(actor: AuthUser, visibleUserIds: Set<UUID>) {

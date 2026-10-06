@@ -2,10 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { PolicySimulatorPanel } from "@/components/admin-geo/policy-simulator-panel";
 import { useAdminSettings, type Policies } from "@/lib/admin-settings-store";
 import { toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { useAdminPolicies, useUpdateAdminPolicyMutation } from "@/domains/admin/queries";
@@ -46,6 +48,14 @@ function PoliciesScreen() {
       null,
     [policiesQuery.data?.items],
   );
+  const attendanceSimulationConfig = useMemo(() => {
+    const apiConfig =
+      policiesQuery.data?.items.find((item) => item.policy_key === "attendance")?.config ?? {};
+    return {
+      ...apiConfig,
+      ...(policies.attendance as unknown as Record<string, AdminPolicyValue>),
+    };
+  }, [policies.attendance, policiesQuery.data?.items]);
 
   function setPolicy<K extends PolicyKey>(key: K, patch: Partial<Policies[K]>) {
     if (!apiEnabled) {
@@ -192,6 +202,12 @@ function PoliciesScreen() {
             onChange={(v) => setPolicy("attendance", { allowRegularization: v })}
           />
         </PolicyCard>
+        <MobileAttendancePolicyFacts />
+        {apiEnabled ? (
+          <div className="mt-4">
+            <PolicySimulatorPanel draftPolicyConfig={attendanceSimulationConfig} />
+          </div>
+        ) : null}
       </TabsContent>
 
       <TabsContent value="leave" className="mt-4">
@@ -377,6 +393,73 @@ function PoliciesScreen() {
         </PolicyCard>
       </TabsContent>
     </Tabs>
+  );
+}
+
+const MOBILE_POLICY_FACTS = [
+  {
+    label: "Registered Device Enforcement",
+    state: "Enforced",
+    description: "Required for personal mobile attendance and offline sync.",
+  },
+  {
+    label: "Web Attendance",
+    state: "Registered device not required",
+    description: "Web/web-geolocation do not require registered mobile device.",
+  },
+  {
+    label: "Offline Attendance",
+    state: "Available with registered device",
+    description: "Requires a registered device and remains provisional until sync completes.",
+  },
+  {
+    label: "Device Attestation",
+    state: "Not enforced",
+    description: "Future-facing and not currently an attendance gate.",
+  },
+  {
+    label: "Configurable Mobile Device Policy",
+    state: "Not currently configurable",
+    description: "Enforcement is runtime behavior, not editable Admin policy.",
+  },
+];
+
+function MobileAttendancePolicyFacts() {
+  return (
+    <Card
+      className="mt-4 rounded-2xl border-border/60 p-5"
+      aria-labelledby="mobile-attendance-policy-title"
+    >
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p id="mobile-attendance-policy-title" className="text-sm font-semibold">
+              Mobile attendance policy
+            </p>
+            <Badge variant="outline" className="border-success/30 bg-success/10 text-success">
+              Runtime enforcement active
+            </Badge>
+          </div>
+          <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+            Mobile device behavior is shown as read-only runtime state. These facts are not saved
+            as editable Admin policy fields.
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {MOBILE_POLICY_FACTS.map((fact) => (
+          <div key={fact.label} className="rounded-xl border bg-card/50 p-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <p className="text-sm font-medium">{fact.label}</p>
+              <Badge variant="outline" className="w-fit">
+                {fact.state}
+              </Badge>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{fact.description}</p>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
