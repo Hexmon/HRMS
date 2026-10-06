@@ -6,6 +6,7 @@ import {
   installFrontendOnlyApiGuard,
   loginAsMainAdmin,
   saveResponsiveScreenshot,
+  seedMainAdminSession,
 } from "./helpers";
 
 const ROUTES = [
@@ -131,8 +132,6 @@ const PUBLIC_AUTH_ROUTES = [
   },
 ] as const;
 
-test.describe.configure({ mode: "serial" });
-
 let assertNoApiRequests: () => void;
 
 test.beforeAll(async () => {
@@ -147,14 +146,17 @@ test.afterEach(async () => {
   assertNoApiRequests();
 });
 
-test("main authenticated routes do not create mobile document overflow", async ({
-  page,
-}, testInfo) => {
-  await loginAsMainAdmin(page);
-
-  for (const route of ROUTES) {
+for (const route of ROUTES) {
+  test(`authenticated route ${route} does not create mobile document overflow`, async ({
+    page,
+  }, testInfo) => {
+    await loginAsMainAdmin(page);
+    await seedMainAdminSession(page);
     await page.goto(route, { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Account menu" }),
+      `${route} should render the authenticated shell`,
+    ).toBeVisible();
     await expectNoDocumentHorizontalOverflow(page, route);
 
     const screenshotName = SCREENSHOT_ROUTES.get(route);
@@ -164,11 +166,13 @@ test("main authenticated routes do not create mobile document overflow", async (
         `${screenshotName}-${testInfo.project.name.replace(/\W+/g, "-")}.png`,
       );
     }
-  }
-});
+  });
+}
 
-test("public auth routes do not create mobile document overflow", async ({ page }, testInfo) => {
-  for (const route of PUBLIC_AUTH_ROUTES) {
+for (const route of PUBLIC_AUTH_ROUTES) {
+  test(`public route ${route.path} does not create mobile document overflow`, async ({
+    page,
+  }, testInfo) => {
     await page.goto(route.path, { waitUntil: "domcontentloaded" });
     await expect(page.getByText(route.visibleText).first()).toBeVisible();
     await expectNoDocumentHorizontalOverflow(page, route.path);
@@ -176,8 +180,8 @@ test("public auth routes do not create mobile document overflow", async ({ page 
       page,
       `${route.screenshot}-${testInfo.project.name.replace(/\W+/g, "-")}.png`,
     );
-  }
-});
+  });
+}
 
 test("authenticated floating controls stay inside the mobile viewport", async ({
   page,
