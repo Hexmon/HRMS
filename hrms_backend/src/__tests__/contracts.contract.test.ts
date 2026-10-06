@@ -14,6 +14,7 @@ import {
 } from "#shared";
 import { buildApp } from "../app.js";
 import { createMemoryDataStore } from "../platform/data-store.js";
+import { AttendanceReportExportColumnValues } from "../modules/attendance/reporting-projection.js";
 import { buildRealApp } from "./real-infra.js";
 
 type Operation = {
@@ -1761,6 +1762,38 @@ describe("API contracts", () => {
       );
       expect(documented, `${key} pagination query`).toBe(true);
     }
+  });
+
+  it("documents attendance reporting evidence fields and hardened export columns", async () => {
+    const spec = await openApiSpec(app);
+    const reportSerialized = JSON.stringify(
+      operation(spec, "GET /api/v1/reports/attendance/summary"),
+    );
+    for (const field of [
+      "attendance_channels",
+      "work_site_name",
+      "work_site_type",
+      "geo_outcome",
+      "geo_action",
+      "reason_codes",
+      "review_required",
+      "review_outcome",
+    ]) {
+      expect(reportSerialized).toContain(field);
+    }
+    expect(reportSerialized).not.toContain("exact_location");
+    expect(reportSerialized).not.toContain("latitude");
+    expect(reportSerialized).not.toContain("longitude");
+
+    const exportBody = operation(
+      spec,
+      "POST /api/v1/attendance/exports",
+    ).requestBody?.content?.["application/json"]?.schema as
+      | Record<string, any>
+      | undefined;
+    const columnEnum = exportBody?.properties?.columns?.items?.enum;
+    expect(columnEnum).toEqual([...AttendanceReportExportColumnValues]);
+    expect(columnEnum).not.toEqual(expect.arrayContaining(["exact_location"]));
   });
 
   it("omits removed reviewer/director expense surfaces from OpenAPI", async () => {

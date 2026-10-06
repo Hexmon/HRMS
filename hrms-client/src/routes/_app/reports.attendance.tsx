@@ -25,6 +25,14 @@ interface AttRow {
   department: string;
   status: string;
   reportingEvidenceCategory: AttendanceReportingEvidenceCategory | null;
+  attendanceChannels: string[];
+  workSiteName: string[];
+  workSiteType: string[];
+  geoOutcome: string[];
+  geoAction: string[];
+  reasonCodes: string[];
+  reviewRequired: boolean;
+  reviewOutcome: string[];
   inTime: string;
   outTime: string;
   hours: number;
@@ -83,6 +91,14 @@ function buildAttendance(employees: { id: string; name: string; department: stri
         department: e.department,
         status,
         reportingEvidenceCategory,
+        attendanceChannels: ["Web"],
+        workSiteName: [],
+        workSiteType: [],
+        geoOutcome: [],
+        geoAction: [],
+        reasonCodes: [],
+        reviewRequired: reportingEvidenceCategory === "review_required",
+        reviewOutcome: reportingEvidenceCategory === "review_required" ? ["pending"] : [],
         inTime,
         outTime,
         hours,
@@ -185,6 +201,26 @@ function AttendanceReports() {
         ) : (
           <span className="text-sm text-muted-foreground">—</span>
         ),
+    },
+    {
+      key: "attendanceChannels",
+      header: "Channel",
+      render: (r) => <ValueList values={r.attendanceChannels} />,
+    },
+    {
+      key: "workSiteName",
+      header: "Site",
+      render: (r) => <SiteCell row={r} />,
+    },
+    {
+      key: "geoOutcome",
+      header: "Geo",
+      render: (r) => <GeoCell row={r} />,
+    },
+    {
+      key: "reviewOutcome",
+      header: "Review",
+      render: (r) => <ReviewCell row={r} />,
     },
     {
       key: "inTime",
@@ -589,6 +625,80 @@ function EvidenceFact({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ValueList({
+  values,
+  fallback = "—",
+  mono = false,
+}: {
+  values: string[];
+  fallback?: string;
+  mono?: boolean;
+}) {
+  if (values.length === 0) {
+    return <span className="text-sm text-muted-foreground">{fallback}</span>;
+  }
+  return (
+    <span className={mono ? "break-words font-mono text-xs" : "break-words text-sm"}>
+      {values.join("; ")}
+    </span>
+  );
+}
+
+function SiteCell({ row }: { row: AttRow }) {
+  if (row.workSiteName.length === 0 && row.workSiteType.length === 0) {
+    return <span className="text-sm text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="min-w-0 space-y-0.5 text-sm">
+      <ValueList values={row.workSiteName} />
+      {row.workSiteType.length > 0 && (
+        <p className="break-words text-xs text-muted-foreground">
+          {row.workSiteType.map(humanize).join("; ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function GeoCell({ row }: { row: AttRow }) {
+  if (row.geoOutcome.length === 0 && row.geoAction.length === 0 && row.reasonCodes.length === 0) {
+    return <span className="text-sm text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="min-w-0 space-y-0.5 text-sm">
+      <ValueList values={row.geoOutcome.map(humanize)} />
+      {row.geoAction.length > 0 && (
+        <p className="break-words text-xs text-muted-foreground">
+          {row.geoAction.map(humanize).join("; ")}
+        </p>
+      )}
+      {row.reasonCodes.length > 0 && <ValueList values={row.reasonCodes} mono />}
+    </div>
+  );
+}
+
+function ReviewCell({ row }: { row: AttRow }) {
+  if (!row.reviewRequired && row.reviewOutcome.length === 0) {
+    return <span className="text-sm text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="min-w-0 space-y-1 text-sm">
+      {row.reviewRequired && (
+        <StatusBadge
+          status="review_required"
+          label="Required"
+          className="max-w-full whitespace-normal break-words"
+        />
+      )}
+      {row.reviewOutcome.length > 0 && (
+        <p className="break-words text-xs text-muted-foreground">
+          {row.reviewOutcome.map(humanize).join("; ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function attendanceFromApi(value: unknown): AttRow {
   const record = asRecord(value);
   return {
@@ -599,11 +709,35 @@ function attendanceFromApi(value: unknown): AttRow {
     department: text(record.department, "—"),
     status: text(record.status, "present") as AttRow["status"],
     reportingEvidenceCategory: reportingEvidenceCategory(record.reporting_evidence_category),
+    attendanceChannels: stringList(record.attendance_channels),
+    workSiteName: stringList(record.work_site_name),
+    workSiteType: stringList(record.work_site_type),
+    geoOutcome: stringList(record.geo_outcome),
+    geoAction: stringList(record.geo_action),
+    reasonCodes: stringList(record.reason_codes),
+    reviewRequired: Boolean(record.review_required),
+    reviewOutcome: stringList(record.review_outcome),
     inTime: text(record.in_time),
     outTime: text(record.out_time),
     hours: numberValue(record.hours),
     note: text(record.note),
   };
+}
+
+function stringList(value: unknown): string[] {
+  const source =
+    Array.isArray(value) && value.length > 0
+      ? asArray(value)
+      : typeof value === "string"
+        ? value.split(";")
+        : [];
+  return Array.from(
+    new Set(
+      source
+        .map((item) => text(item).trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 function reportingEvidenceCategory(value: unknown): AttendanceReportingEvidenceCategory | null {

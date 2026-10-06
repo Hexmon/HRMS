@@ -16,6 +16,11 @@ import {
   AttendanceRegularizationStatuses,
 } from "#shared";
 import { attendanceOpenApiExamples } from "../modules/attendance/attendance-openapi-examples.js";
+import {
+  AttendanceReportExportColumnHeaders,
+  AttendanceReportExportColumnValues,
+} from "../modules/attendance/reporting-projection.js";
+import { AttendanceReportingEvidenceCategoryValues } from "../modules/attendance/reporting-evidence.js";
 
 type JsonSchema = Record<string, unknown>;
 type RouteSchema = Record<string, unknown>;
@@ -5734,9 +5739,14 @@ const attendanceExportBody = {
     filters: { type: "object", additionalProperties: true },
     columns: {
       type: "array",
-      maxItems: 80,
-      items: { type: "string", maxLength: 80 },
-      example: ["employee_code", "employee", "date", "status"],
+      maxItems: AttendanceReportExportColumnValues.length,
+      items: {
+        type: "string",
+        enum: enumValues(AttendanceReportExportColumnValues),
+      },
+      description:
+        "Explicit registry of safe attendance export columns. Exact coordinates and exact-location flags are not exportable.",
+      example: enumValues(AttendanceReportExportColumnValues),
     },
     format: {
       type: "string",
@@ -5755,7 +5765,18 @@ const attendanceExportResponseSchema = {
     status: { type: "string", enum: ["queued", "ready"], example: "ready" },
     format: { type: "string", enum: ["csv", "xlsx", "json"], example: "csv" },
     filters: { type: "object", additionalProperties: true },
-    columns: { type: "array", items: { type: "string" } },
+    columns: {
+      type: "array",
+      items: { type: "string", enum: enumValues(AttendanceReportExportColumnValues) },
+      example: enumValues(AttendanceReportExportColumnValues),
+    },
+    column_headers: {
+      type: "array",
+      items: { type: "string" },
+      example: AttendanceReportExportColumnValues.map(
+        (column) => AttendanceReportExportColumnHeaders[column],
+      ),
+    },
     created_at: dateTime("Export job creation timestamp"),
     download_document_id: {
       ...uuid("Generated document UUID"),
@@ -6983,8 +7004,19 @@ const reportSummaryQuerySchema = {
   properties: {
     ...paginationQuerySchema.properties,
     department_id: uuid("Department filter UUID"),
+    manager_user_id: uuid("Manager hierarchy filter UUID"),
     user_id: uuid("User filter UUID"),
     employee_user_id: uuid("Employee user filter UUID"),
+    evidence_category: {
+      type: "string",
+      enum: enumValues(AttendanceReportingEvidenceCategoryValues),
+      example: "warning",
+    },
+    reporting_evidence_category: {
+      type: "string",
+      enum: enumValues(AttendanceReportingEvidenceCategoryValues),
+      example: "review_required",
+    },
     project_id: uuid("Project filter UUID"),
     assigned_to_user_id: uuid("Assigned user filter UUID"),
     actor_user_id: uuid("Audit actor filter UUID"),
@@ -7014,6 +7046,107 @@ const genericReportSummarySchema = {
     total: { type: "integer", minimum: 0, example: 12 },
     totals: { type: "object", additionalProperties: true },
     filters: { type: "object", additionalProperties: true },
+  },
+  additionalProperties: true,
+};
+
+const attendanceReportSummaryRowSchema = {
+  type: "object",
+  required: [
+    "id",
+    "date",
+    "employee_user_id",
+    "employee",
+    "status",
+    "reporting_evidence_category",
+    "attendance_channels",
+    "work_site_name",
+    "work_site_type",
+    "geo_outcome",
+    "geo_action",
+    "reason_codes",
+    "review_required",
+    "review_outcome",
+  ],
+  properties: {
+    id: uuid("Attendance day record UUID"),
+    date: date("Work date"),
+    employee_user_id: uuid("Employee user UUID"),
+    employee_code: { type: "string", nullable: true, example: "E001" },
+    employee: { type: "string", example: "Ananya Rao" },
+    department_id: { ...uuid("Department UUID"), nullable: true },
+    department: { type: "string", nullable: true, example: "Operations" },
+    status: { type: "string", example: "present" },
+    reporting_evidence_category: {
+      type: "string",
+      enum: enumValues(AttendanceReportingEvidenceCategoryValues),
+      nullable: true,
+      example: "warning",
+    },
+    attendance_channels: {
+      type: "array",
+      items: { type: "string" },
+      example: ["Mobile - captured offline"],
+    },
+    work_site_name: {
+      type: "array",
+      items: { type: "string" },
+      example: ["Mumbai HQ"],
+    },
+    work_site_type: {
+      type: "array",
+      items: { type: "string" },
+      example: ["office"],
+    },
+    geo_outcome: {
+      type: "array",
+      items: { type: "string" },
+      example: ["outside_confident"],
+    },
+    geo_action: {
+      type: "array",
+      items: { type: "string" },
+      example: ["fallback_review"],
+    },
+    reason_codes: {
+      type: "array",
+      items: { type: "string" },
+      example: ["geo_outside_fence", "offline_sync.changed_body_conflict"],
+    },
+    review_required: { type: "boolean", example: true },
+    review_outcome: {
+      type: "array",
+      items: { type: "string", enum: ["pending", "approved", "returned", "rejected"] },
+      example: ["pending"],
+    },
+    in_time: { type: "string", example: "09:00" },
+    out_time: { type: "string", example: "18:00" },
+    hours: { type: "number", example: 8.5 },
+    work_mode: { type: "string", nullable: true, example: "office" },
+  },
+  additionalProperties: true,
+};
+
+const attendanceReportSummarySchema = {
+  ...genericReportSummarySchema,
+  properties: {
+    ...genericReportSummarySchema.properties,
+    items: {
+      type: "array",
+      items: attendanceReportSummaryRowSchema,
+    },
+    evidence_categories: {
+      type: "object",
+      required: ["verified", "warning", "provisional", "review_required", "rejected"],
+      properties: {
+        verified: { type: "integer", minimum: 0, example: 8 },
+        warning: { type: "integer", minimum: 0, example: 2 },
+        provisional: { type: "integer", minimum: 0, example: 1 },
+        review_required: { type: "integer", minimum: 0, example: 1 },
+        rejected: { type: "integer", minimum: 0, example: 0 },
+      },
+      additionalProperties: false,
+    },
   },
   additionalProperties: true,
 };
@@ -11548,10 +11681,10 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/attendance/summary": operation(
     "Reports & Analytics",
     "Attendance report",
-    "Attendance report rows for daily status, work hours, late/early exceptions, and department/status rollups.",
+    "Attendance report rows for daily status, work hours, late/early exceptions, and safe day-level geo/offline/mobile evidence fields. Exact coordinates are intentionally excluded.",
     {
       querystring: reportSummaryQuerySchema,
-      response200: genericReportSummarySchema,
+      response200: attendanceReportSummarySchema,
     },
   ),
   "GET /api/v1/reports/leave-wfh/summary": operation(

@@ -17,6 +17,7 @@ import { badRequest, conflict, forbidden, unauthorized } from "../../platform/er
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { AttendanceService } from "./service.js";
 import { AttendanceReportingEvidenceCategoryValues } from "./reporting-evidence.js";
+import { AttendanceReportExportColumnValues } from "./reporting-projection.js";
 import { AttendancePayrollPeriodService } from "./payroll-period-service.js";
 import { AttendanceOfflineSyncService } from "./offline-sync-service.js";
 import { AttendanceGeoPolicySimulationService } from "./geo-policy-simulation-service.js";
@@ -84,7 +85,7 @@ const attendanceExportFiltersSchema = z.object({
 const attendanceExportSchema = z.object({
   company_id: z.uuid().optional(),
   filters: attendanceExportFiltersSchema.optional(),
-  columns: z.array(z.string().min(1).max(80)).max(80).optional(),
+  columns: z.array(z.enum(AttendanceReportExportColumnValues)).max(80).optional(),
   format: z.enum(["csv", "xlsx", "json"]).optional(),
 });
 const attendancePayrollPeriodCreateSchema = z.object({

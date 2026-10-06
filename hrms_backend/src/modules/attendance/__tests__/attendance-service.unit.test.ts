@@ -4,6 +4,7 @@ import {
   createMemoryDataStore,
   seedIds,
 } from "../../../platform/data-store.js";
+import { MemoryObjectStorage } from "../../../platform/object-storage.js";
 import { AttendanceService } from "../service.js";
 import { attendanceRegularizationCreateSchema, Roles } from "#shared";
 
@@ -1529,6 +1530,39 @@ describe("AttendanceService.punch", () => {
       expect(result.columns).toEqual(["employee_code", "status"]);
     });
 
+    it("uses the hardened attendance export registry by default", async () => {
+      const result = await service.createExportJob(admin(), {});
+
+      expect(result.columns).toEqual([
+        "employee_code",
+        "employee",
+        "department",
+        "date",
+        "status",
+        "work_mode",
+        "in_time",
+        "out_time",
+        "hours",
+        "reporting_evidence_category",
+        "attendance_channels",
+        "work_site_name",
+        "work_site_type",
+        "geo_outcome",
+        "geo_action",
+        "reason_codes",
+        "review_required",
+        "review_outcome",
+      ]);
+    });
+
+    it("rejects unknown or restricted attendance export columns", async () => {
+      await expect(
+        service.createExportJob(admin(), {
+          columns: ["employee_code", "exact_location"],
+        }),
+      ).rejects.toThrow(/Unsupported attendance export column/);
+    });
+
     it("stores filters in the export job", async () => {
       const result = await service.createExportJob(admin(), {
         filters: {
@@ -1572,6 +1606,32 @@ describe("AttendanceService.punch", () => {
       const result = await service.createExportJob(admin(), { format: "json" });
 
       expect(result.row_count).toBe(1);
+    });
+
+    it("renders safe headers and neutralizes formula-like CSV strings", async () => {
+      store.objectStorage = new MemoryObjectStorage();
+      employee().full_name = " =HYPERLINK(\"https://example.test\")";
+      service.punch(employee(), {
+        event_type: "check_in",
+        occurred_at: "2026-07-08T04:00:00.000Z",
+        work_mode: "office",
+        source: "web",
+        metadata: {},
+      });
+
+      const result = await service.createExportJob(admin(), {
+        format: "csv",
+        columns: ["employee", "hours"],
+      });
+      const document = store.documents.find(
+        (candidate) => candidate.id === result.download_document_id,
+      );
+      const object = await store.objectStorage!.getObject(document!.storage_key);
+      const csv = object!.body.toString("utf8");
+
+      expect(csv).toContain("\"Employee\",\"Hours\"");
+      expect(csv).toContain("\"' =HYPERLINK(\"\"https://example.test\"\")\"");
+      expect(csv).toContain("\",\"0\"");
     });
 
     it("blocks employees from exporting attendance", async () => {

@@ -11,10 +11,10 @@ import { canSeeProject } from "../projects/policy.js";
 import { matchesLegacyAttendanceStatus } from "../attendance/daily-projection.js";
 import {
   countAttendanceReportingEvidenceCategories,
-  deriveAttendanceReportingEvidenceCategory,
   isAttendanceReportingEvidenceCategory,
   type AttendanceReportingEvidenceCategory,
 } from "../attendance/reporting-evidence.js";
+import { buildAttendanceReportEvidenceIndex } from "../attendance/reporting-projection.js";
 
 export interface ExpenseReportQuery {
   page: number;
@@ -387,7 +387,7 @@ export class ReportService {
   attendanceSummary(actor: AuthUser, query: ReportSummaryQuery) {
     const requestedEvidenceCategory =
       query.reporting_evidence_category ?? query.evidence_category;
-    const rowContexts = this.store.attendanceDayRecords
+    const candidateRecords = this.store.attendanceDayRecords
       .filter((record) => !record.deleted_at)
       .filter((record) => this.canSeeUserReportRow(actor, record.employee_user_id, "attendance"))
       .filter((record) => !query.user_id || record.employee_user_id === query.user_id)
@@ -399,18 +399,20 @@ export class ReportService {
       .filter((record) => {
         const user = this.user(record.employee_user_id);
         return !query.department_id || user?.department_id === query.department_id;
-      })
+      });
+    const evidenceIndex = buildAttendanceReportEvidenceIndex(this.store, candidateRecords);
+    const rowContexts = candidateRecords
       .map((record) => ({
         record,
-        reporting_evidence_category: this.reportingEvidenceCategory(record)
+        evidence: evidenceIndex.summaryFor(record)
       }))
       .filter(
         (row) =>
           !requestedEvidenceCategory ||
-          row.reporting_evidence_category === requestedEvidenceCategory,
+          row.evidence.reporting_evidence_category === requestedEvidenceCategory,
       );
     const rows = rowContexts
-      .map(({ record, reporting_evidence_category }) => {
+      .map(({ record, evidence }) => {
         const user = this.user(record.employee_user_id);
         return {
           id: record.id,
@@ -421,7 +423,15 @@ export class ReportService {
           department_id: user?.department_id ?? null,
           department: user ? this.departmentName(user.department_id) : null,
           status: record.status,
-          reporting_evidence_category,
+          reporting_evidence_category: evidence.reporting_evidence_category,
+          attendance_channels: evidence.attendance_channels,
+          work_site_name: evidence.work_site_name,
+          work_site_type: evidence.work_site_type,
+          geo_outcome: evidence.geo_outcome,
+          geo_action: evidence.geo_action,
+          reason_codes: evidence.reason_codes,
+          review_required: evidence.review_required,
+          review_outcome: evidence.review_outcome,
           day_classification: record.day_classification,
           presence_state: record.presence_state,
           punctuality_state: record.punctuality_state,
@@ -992,45 +1002,6 @@ export class ReportService {
       user.id === manager.id ||
       user.hierarchy_path.startsWith(`${manager.hierarchy_path}.`)
     );
-  }
-
-  private reportingEvidenceCategory(
-    record: AttendanceDayRecord,
-  ): AttendanceReportingEvidenceCategory | null {
-    const reviews = this.store.attendanceGeoFallbackReviews.filter(
-      (review) =>
-        review.company_id === record.company_id &&
-        review.employee_user_id === record.employee_user_id &&
-        review.work_date === record.work_date &&
-        !review.deleted_at,
-    );
-    const offlineVerificationStatuses = this.store.outbox
-      .filter(
-        (event) =>
-          event.event_type === "attendance.provisional.recorded" &&
-          event.payload.company_id === record.company_id &&
-          event.payload.subject_employee_user_id === record.employee_user_id &&
-          typeof event.payload.captured_at === "string" &&
-          event.payload.captured_at.slice(0, 10) === record.work_date,
-      )
-      .map((event) => event.payload.verification_status);
-    return deriveAttendanceReportingEvidenceCategory({
-      day: record,
-      signals: {
-        reviewRequired: reviews.some(
-          (review) => review.status === "pending" || review.status === "returned",
-        ) || offlineVerificationStatuses.includes("review_required"),
-        operativeRejected: offlineVerificationStatuses.includes("rejected"),
-        provisional: offlineVerificationStatuses.includes("unverified"),
-        hasContributingEvidence: Boolean(
-          record.first_check_in ||
-            record.last_check_out ||
-            record.work_seconds > 0 ||
-            offlineVerificationStatuses.length > 0 ||
-            reviews.some((review) => review.status === "approved"),
-        ),
-      },
-    });
   }
 
   private user(userId: UUID): CoreUser | null {

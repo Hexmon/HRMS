@@ -107,6 +107,14 @@ import {
   type AttendanceReportingEvidenceCategory,
   type AttendanceReportingEvidenceSignals,
 } from "./reporting-evidence.js";
+import {
+  AttendanceReportExportColumnValues,
+  attendanceReportExportHeaders,
+  buildAttendanceReportEvidenceIndex,
+  formatAttendanceReportExportValue,
+  isAttendanceReportExportColumn,
+  type AttendanceReportExportColumn,
+} from "./reporting-projection.js";
 import { acquirePayrollAttendancePeriodLock } from "./payroll-period-service.js";
 import { AttendanceLocationAccessAuditService } from "./location-access-audit.js";
 
@@ -429,6 +437,32 @@ export interface AttendanceExportInput {
   };
   columns?: string[];
   format?: "csv" | "xlsx" | "json";
+}
+
+export { AttendanceReportExportColumnValues };
+
+function attendanceExportColumns(
+  input: readonly string[] | undefined,
+): AttendanceReportExportColumn[] {
+  const requested = input?.length ? input : AttendanceReportExportColumnValues;
+  const unknown = requested.filter((column) => !isAttendanceReportExportColumn(column));
+  if (unknown.length) {
+    throw badRequest(
+      `Unsupported attendance export column(s): ${Array.from(new Set(unknown)).join(", ")}`,
+    );
+  }
+  return Array.from(new Set(requested)) as AttendanceReportExportColumn[];
+}
+
+function projectAttendanceExportRow(
+  row: Record<string, unknown>,
+  columns: readonly AttendanceReportExportColumn[],
+): Record<string, unknown> {
+  const projected: Record<string, unknown> = {};
+  for (const column of columns) {
+    projected[column] = formatAttendanceReportExportValue(row[column]);
+  }
+  return projected;
 }
 
 function page<T>(items: T[], pageNumber: number, pageSize: number) {
@@ -2589,21 +2623,10 @@ export class AttendanceService {
     }
     const jobId = randomUUID();
     const format = input.format ?? "csv";
-    const columns = input.columns?.length
-      ? input.columns
-      : [
-          "employee_code",
-          "employee",
-          "date",
-          "status",
-          "reporting_evidence_category",
-          "in_time",
-          "out_time",
-          "hours",
-        ];
+    const columns = attendanceExportColumns(input.columns);
     const filters = input.filters ?? {};
     const createdAt = nowIso();
-    const rows = this.exportRows(companyId, filters);
+    const rows = this.exportRows(companyId, filters, columns);
     const generated = await createGeneratedExportDocument(this.store, {
       actor,
       businessObjectType: "attendance_export",
@@ -2612,6 +2635,7 @@ export class AttendanceService {
       format: format as GeneratedExportFormat,
       rows,
       columns,
+      columnHeaders: attendanceReportExportHeaders(columns),
       filters,
       filePrefix: "attendance-export",
     });
@@ -2631,6 +2655,7 @@ export class AttendanceService {
       format,
       filters: { ...filters, company_id: companyId },
       columns,
+      column_headers: attendanceReportExportHeaders(columns),
       requested_by_user_id: actor.id,
       created_at: createdAt,
       adapter: generated.adapter,
@@ -2646,8 +2671,12 @@ export class AttendanceService {
   private exportRows(
     companyId: UUID,
     filters: NonNullable<AttendanceExportInput["filters"]>,
+    columns: readonly AttendanceReportExportColumn[],
   ): Array<Record<string, unknown>> {
-    return this.store.attendanceDayRecords
+    const requestedCategory =
+      textFilter(filters.reporting_evidence_category) ??
+      textFilter(filters.evidence_category);
+    const candidateRecords = this.store.attendanceDayRecords
       .filter((record) => record.company_id === companyId && !record.deleted_at)
       .filter(
         (record) =>
@@ -2664,15 +2693,6 @@ export class AttendanceService {
           !textFilter(filters.status) ||
           matchesLegacyAttendanceStatus(record, textFilter(filters.status)!),
       )
-      .filter((record) => {
-        const requestedCategory =
-          textFilter(filters.reporting_evidence_category) ??
-          textFilter(filters.evidence_category);
-        return (
-          !requestedCategory ||
-          this.reportingEvidenceCategory(record) === requestedCategory
-        );
-      })
       .filter(
         (record) =>
           !textFilter(filters.date_from) ||
@@ -2707,9 +2727,20 @@ export class AttendanceService {
             (user.id === manager.id ||
               user.hierarchy_path.startsWith(`${manager.hierarchy_path}.`)),
         );
-      })
-      .sort((left, right) => right.work_date.localeCompare(left.work_date))
-      .map((record) => {
+      });
+    const evidenceIndex = buildAttendanceReportEvidenceIndex(this.store, candidateRecords);
+    return candidateRecords
+      .map((record) => ({
+        record,
+        evidence: evidenceIndex.summaryFor(record),
+      }))
+      .filter(
+        ({ evidence }) =>
+          !requestedCategory ||
+          evidence.reporting_evidence_category === requestedCategory,
+      )
+      .sort((left, right) => right.record.work_date.localeCompare(left.record.work_date))
+      .map(({ record, evidence }) => {
         const user = this.store.users.find(
           (candidate) => candidate.id === record.employee_user_id,
         );
@@ -2722,7 +2753,7 @@ export class AttendanceService {
           record.employee_user_id,
           companyId,
         );
-        return {
+        const row = {
           id: record.id,
           employee_user_id: record.employee_user_id,
           employee_code: user?.employee_code ?? "",
@@ -2732,7 +2763,15 @@ export class AttendanceService {
           work_date: record.work_date,
           status: record.status,
           reporting_evidence_category:
-            this.reportingEvidenceCategory(record) ?? "",
+            evidence.reporting_evidence_category ?? "",
+          attendance_channels: evidence.attendance_channels,
+          work_site_name: evidence.work_site_name,
+          work_site_type: evidence.work_site_type,
+          geo_outcome: evidence.geo_outcome,
+          geo_action: evidence.geo_action,
+          reason_codes: evidence.reason_codes,
+          review_required: evidence.review_required,
+          review_outcome: evidence.review_outcome,
           day_classification: record.day_classification,
           presence_state: record.presence_state,
           punctuality_state: record.punctuality_state,
@@ -2754,6 +2793,7 @@ export class AttendanceService {
           exception_type: record.exception_type ?? "",
           note: record.note ?? "",
         };
+        return projectAttendanceExportRow(row, columns);
       });
   }
 

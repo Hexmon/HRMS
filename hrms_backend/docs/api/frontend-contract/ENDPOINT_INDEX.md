@@ -6944,6 +6944,9 @@ Success body highlights:
 | `report_type` | query | no | string | - |
 | `date_from` | query | no | string<date> | - |
 | `date_to` | query | no | string<date> | - |
+| `manager_user_id` | query | no | string<uuid> | Manager hierarchy filter UUID |
+| `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 
 **Request body**
 
@@ -6971,6 +6974,7 @@ Success body highlights:
 | `total` | integer | required | minimum 0 |
 | `totals` | object | required | - |
 | `filters` | object | required | - |
+| `evidence_categories` | object | optional | - |
 
 **Frontend behavior notes**
 
@@ -11645,7 +11649,7 @@ Required: yes
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `filters` | object | optional | - |
-| `columns` | array of string | optional | - |
+| `columns` | array of string enum("employee_code", "employee", "department", "date", "status", "work_mode", "in_time", "out_time", "hours", "reporting_evidence_category", "attendance_channels", "work_site_name", "work_site_type", "geo_outcome", "geo_action", "reason_codes", "review_required", "review_outcome") | optional | Explicit registry of safe attendance export columns. Exact coordinates and exact-location flags are not exportable. |
 | `format` | string enum("csv", "xlsx", "json") | optional | default "csv" |
 
 **Responses**
@@ -11668,7 +11672,7 @@ Success body highlights:
 | `status` | string enum("queued", "ready") | required | - |
 | `format` | string enum("csv", "xlsx", "json") | required | - |
 | `filters` | object | required | - |
-| `columns` | array of string | required | - |
+| `columns` | array of string enum("employee_code", "employee", "department", "date", "status", "work_mode", "in_time", "out_time", "hours", "reporting_evidence_category", "attendance_channels", "work_site_name", "work_site_type", "geo_outcome", "geo_action", "reason_codes", "review_required", "review_outcome") | required | - |
 | `created_at` | string<date-time> | required | Export job creation timestamp |
 | `download_document_id` | string<uuid> | optional, nullable | Generated document UUID |
 | `download_url` | string | optional, nullable | - |
@@ -11677,6 +11681,7 @@ Success body highlights:
 | `row_count` | integer | optional | minimum 0 |
 | `size_bytes` | integer | optional, nullable | minimum 0 |
 | `generated_at` | string<date-time> | optional, nullable | Export file generation timestamp |
+| `column_headers` | array of string | optional | - |
 
 **Frontend behavior notes**
 

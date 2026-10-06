@@ -47403,7 +47403,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Attendance report rows for daily status, work hours, late/early exceptions, and department/status rollups.",
+        "description": "Attendance report rows for daily status, work hours, late/early exceptions, and safe day-level geo/offline/mobile evidence fields. Exact coordinates are intentionally excluded.",
         "parameters": [
           {
             "schema": {
@@ -47603,6 +47603,50 @@
             "name": "date_to",
             "required": false,
             "description": "Upper date filter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Manager hierarchy filter UUID",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "manager_user_id",
+            "required": false,
+            "description": "Manager hierarchy filter UUID"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "verified",
+                "warning",
+                "provisional",
+                "review_required",
+                "rejected"
+              ],
+              "example": "warning"
+            },
+            "in": "query",
+            "name": "evidence_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "verified",
+                "warning",
+                "provisional",
+                "review_required",
+                "rejected"
+              ],
+              "example": "review_required"
+            },
+            "in": "query",
+            "name": "reporting_evidence_category",
+            "required": false
           }
         ],
         "security": [
@@ -47633,6 +47677,170 @@
                       "type": "array",
                       "items": {
                         "type": "object",
+                        "required": [
+                          "id",
+                          "date",
+                          "employee_user_id",
+                          "employee",
+                          "status",
+                          "reporting_evidence_category",
+                          "attendance_channels",
+                          "work_site_name",
+                          "work_site_type",
+                          "geo_outcome",
+                          "geo_action",
+                          "reason_codes",
+                          "review_required",
+                          "review_outcome"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Attendance day record UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "date": {
+                            "type": "string",
+                            "format": "date",
+                            "description": "Work date",
+                            "example": "2026-05-04"
+                          },
+                          "employee_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Employee user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "employee_code": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "E001"
+                          },
+                          "employee": {
+                            "type": "string",
+                            "example": "Ananya Rao"
+                          },
+                          "department_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Department UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                            "nullable": true
+                          },
+                          "department": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Operations"
+                          },
+                          "status": {
+                            "type": "string",
+                            "example": "present"
+                          },
+                          "reporting_evidence_category": {
+                            "type": "string",
+                            "enum": [
+                              "verified",
+                              "warning",
+                              "provisional",
+                              "review_required",
+                              "rejected"
+                            ],
+                            "nullable": true,
+                            "example": "warning"
+                          },
+                          "attendance_channels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "Mobile - captured offline"
+                            ]
+                          },
+                          "work_site_name": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "Mumbai HQ"
+                            ]
+                          },
+                          "work_site_type": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "office"
+                            ]
+                          },
+                          "geo_outcome": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "outside_confident"
+                            ]
+                          },
+                          "geo_action": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "fallback_review"
+                            ]
+                          },
+                          "reason_codes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "geo_outside_fence",
+                              "offline_sync.changed_body_conflict"
+                            ]
+                          },
+                          "review_required": {
+                            "type": "boolean",
+                            "example": true
+                          },
+                          "review_outcome": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "pending",
+                                "approved",
+                                "returned",
+                                "rejected"
+                              ]
+                            },
+                            "example": [
+                              "pending"
+                            ]
+                          },
+                          "in_time": {
+                            "type": "string",
+                            "example": "09:00"
+                          },
+                          "out_time": {
+                            "type": "string",
+                            "example": "18:00"
+                          },
+                          "hours": {
+                            "type": "number",
+                            "example": 8.5
+                          },
+                          "work_mode": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "office"
+                          }
+                        },
                         "additionalProperties": true
                       }
                     },
@@ -47658,6 +47866,44 @@
                     "filters": {
                       "type": "object",
                       "additionalProperties": true
+                    },
+                    "evidence_categories": {
+                      "type": "object",
+                      "required": [
+                        "verified",
+                        "warning",
+                        "provisional",
+                        "review_required",
+                        "rejected"
+                      ],
+                      "properties": {
+                        "verified": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 8
+                        },
+                        "warning": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 2
+                        },
+                        "provisional": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 1
+                        },
+                        "review_required": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 1
+                        },
+                        "rejected": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": true
@@ -94020,16 +94266,50 @@
                   },
                   "columns": {
                     "type": "array",
-                    "maxItems": 80,
+                    "maxItems": 18,
                     "items": {
                       "type": "string",
-                      "maxLength": 80
+                      "enum": [
+                        "employee_code",
+                        "employee",
+                        "department",
+                        "date",
+                        "status",
+                        "work_mode",
+                        "in_time",
+                        "out_time",
+                        "hours",
+                        "reporting_evidence_category",
+                        "attendance_channels",
+                        "work_site_name",
+                        "work_site_type",
+                        "geo_outcome",
+                        "geo_action",
+                        "reason_codes",
+                        "review_required",
+                        "review_outcome"
+                      ]
                     },
+                    "description": "Explicit registry of safe attendance export columns. Exact coordinates and exact-location flags are not exportable.",
                     "example": [
                       "employee_code",
                       "employee",
+                      "department",
                       "date",
-                      "status"
+                      "status",
+                      "work_mode",
+                      "in_time",
+                      "out_time",
+                      "hours",
+                      "reporting_evidence_category",
+                      "attendance_channels",
+                      "work_site_name",
+                      "work_site_type",
+                      "geo_outcome",
+                      "geo_action",
+                      "reason_codes",
+                      "review_required",
+                      "review_outcome"
                     ]
                   },
                   "format": {
@@ -94102,8 +94382,48 @@
                     "columns": {
                       "type": "array",
                       "items": {
-                        "type": "string"
-                      }
+                        "type": "string",
+                        "enum": [
+                          "employee_code",
+                          "employee",
+                          "department",
+                          "date",
+                          "status",
+                          "work_mode",
+                          "in_time",
+                          "out_time",
+                          "hours",
+                          "reporting_evidence_category",
+                          "attendance_channels",
+                          "work_site_name",
+                          "work_site_type",
+                          "geo_outcome",
+                          "geo_action",
+                          "reason_codes",
+                          "review_required",
+                          "review_outcome"
+                        ]
+                      },
+                      "example": [
+                        "employee_code",
+                        "employee",
+                        "department",
+                        "date",
+                        "status",
+                        "work_mode",
+                        "in_time",
+                        "out_time",
+                        "hours",
+                        "reporting_evidence_category",
+                        "attendance_channels",
+                        "work_site_name",
+                        "work_site_type",
+                        "geo_outcome",
+                        "geo_action",
+                        "reason_codes",
+                        "review_required",
+                        "review_outcome"
+                      ]
                     },
                     "created_at": {
                       "type": "string",
@@ -94148,6 +94468,32 @@
                       "description": "Export file generation timestamp",
                       "example": "2026-05-04T10:00:00.000Z",
                       "nullable": true
+                    },
+                    "column_headers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "Employee Code",
+                        "Employee",
+                        "Department",
+                        "Date",
+                        "Attendance Status",
+                        "Work Mode",
+                        "In",
+                        "Out",
+                        "Hours",
+                        "Evidence State",
+                        "Channel",
+                        "Work Site",
+                        "Site Type",
+                        "Geo Outcome",
+                        "Geo Action",
+                        "Reason Codes",
+                        "Review Required",
+                        "Review Outcome"
+                      ]
                     }
                   },
                   "additionalProperties": true

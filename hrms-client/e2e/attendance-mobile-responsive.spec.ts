@@ -342,7 +342,16 @@ test.describe("attendance mobile responsive polish", () => {
     await waitForWorkspace(page);
     await expect(page.getByRole("heading", { name: "Daily Attendance" })).toBeVisible();
     await expect(page.getByText("Mobile Report Employee").first()).toBeVisible();
+    await expect(page.getByText("Channel", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Site", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Geo", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Review", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Review required", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Mobile - captured offline", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Mumbai HQ", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Outside Confident", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Fallback Review", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("offline_sync.sequence_gap", { exact: true }).first()).toBeVisible();
     await page.getByText("Mobile Report Employee").first().click();
     const managerEvidence = page.getByTestId("manager-offline-evidence");
     await expect(managerEvidence).toBeVisible();
@@ -891,6 +900,14 @@ function attendanceReportResponse(): Record<string, unknown> {
         department: "Mobile Reporting Department With Long Name",
         status: "late",
         reporting_evidence_category: "review_required",
+        attendance_channels: ["Mobile - captured offline"],
+        work_site_name: ["Mumbai HQ"],
+        work_site_type: ["office"],
+        geo_outcome: ["outside_confident"],
+        geo_action: ["fallback_review"],
+        reason_codes: ["offline_sync.sequence_gap"],
+        review_required: true,
+        review_outcome: ["pending"],
         in_time: "09:42",
         out_time: "18:05",
         hours: 8.4,
