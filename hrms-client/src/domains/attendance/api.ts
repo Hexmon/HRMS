@@ -5,6 +5,23 @@ export type AttendancePunchEventType = "check_in" | "break_start" | "break_end" 
 export type AttendanceGeoReviewType = "manual_fallback" | "geo_decision";
 export type AttendancePunchWorkMode = "office" | "remote" | "wfh" | "field";
 export type AttendancePunchSource = "web" | "web_geo" | "mobile" | "kiosk";
+export type AttendanceOfflineSyncStatus =
+  | "accepted"
+  | "replayed"
+  | "conflict"
+  | "rejected"
+  | "deferred";
+export type AttendanceOfflineVerificationStatus = "unverified" | "review_required" | "rejected";
+export type AttendanceOfflineSyncReasonCode =
+  | "offline_sync.accepted_unverified"
+  | "offline_sync.replayed"
+  | "offline_sync.changed_body_conflict"
+  | "offline_sync.validation_failed"
+  | "offline_sync.processing_deferred"
+  | "offline_sync.sequence_gap"
+  | "offline_sync.sequence_out_of_order"
+  | "offline_sync.duplicate_sequence"
+  | "offline_sync.review_required";
 export type AttendanceLocationProvider = "browser" | "device" | "network" | "unknown";
 export type AttendanceGeoFactualOutcome =
   | "not_required"
@@ -32,6 +49,22 @@ export type AttendanceRegularizationDecision = "approve" | "return" | "reject";
 export interface AttendanceRegularizationTargetPunchSummary {
   event_type: AttendanceRegularizationEventType | string;
   occurred_at: string;
+}
+
+export interface AttendanceOfflineEvidenceMetadata {
+  sync_status: AttendanceOfflineSyncStatus | string;
+  verification_status: AttendanceOfflineVerificationStatus | string;
+  reason_code: AttendanceOfflineSyncReasonCode | string | null;
+  reason: string | null;
+  server_received_at: string;
+}
+
+export interface AttendanceOfflineEvidenceItem {
+  event_type: AttendancePunchEventType | string;
+  occurred_at: string;
+  time: string | null;
+  source: "mobile_offline";
+  offline: AttendanceOfflineEvidenceMetadata;
 }
 
 export type AttendanceRegularizationItem =
@@ -196,6 +229,7 @@ export interface AttendanceRegularizationRecord extends ApiRecord {
 
 export type EmployeeAttendanceSummarySourceType =
   | "employee_punch"
+  | "mobile_offline"
   | "manager_assisted_punch"
   | "historical_correction"
   | "approved_regularization"
@@ -239,6 +273,7 @@ export interface EmployeeAttendanceEvidenceEvent {
   decision: EmployeeAttendanceEvidenceDecision | null;
   geo: EmployeeAttendanceEvidenceGeo | null;
   regularization: EmployeeAttendanceEvidenceRegularization | null;
+  offline?: AttendanceOfflineEvidenceMetadata;
 }
 
 export interface EmployeeAttendanceEvidenceDay {

@@ -200,6 +200,13 @@ test.describe("attendance mobile responsive polish", () => {
         "Location check: Inside work area - Bhubaneswar Office With An Extra Long Worksite Name",
       ),
     ).toBeVisible();
+    await expect(page.getByText("Mobile - captured offline", { exact: true })).toBeVisible();
+    await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
+    await expect(page.getByText("Captured offline", { exact: true })).toBeVisible();
+    await expect(page.getByText("Received by server", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("This offline evidence is not payroll-final.", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("2. Replace punch", { exact: true })).toBeVisible();
     await expect(page.getByText("3. Remove punch", { exact: true })).toBeVisible();
     await expectNoHorizontalOverflow(page, "employee calendar evidence");
@@ -284,6 +291,7 @@ test.describe("attendance mobile responsive polish", () => {
     page,
   }) => {
     await prepareAdminPage(page);
+    let dailyCalendarRequestUrl: string | undefined;
     await page.route("**/api/v1/attendance/summary/team**", async (route) => {
       await route.fulfill({
         status: 200,
@@ -303,6 +311,14 @@ test.describe("attendance mobile responsive polish", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(attendanceReportResponse()),
+      });
+    });
+    await page.route("**/api/v1/attendance/calendar/daily**", async (route) => {
+      dailyCalendarRequestUrl = route.request().url();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(managerDailyEvidenceResponse(previousLocalDate())),
       });
     });
 
@@ -327,7 +343,24 @@ test.describe("attendance mobile responsive polish", () => {
     await expect(page.getByRole("heading", { name: "Daily Attendance" })).toBeVisible();
     await expect(page.getByText("Mobile Report Employee").first()).toBeVisible();
     await expect(page.getByText("Review required", { exact: true }).first()).toBeVisible();
+    await page.getByText("Mobile Report Employee").first().click();
+    const managerEvidence = page.getByTestId("manager-offline-evidence");
+    await expect(managerEvidence).toBeVisible();
+    await expect(
+      managerEvidence.getByText(/Break start.*Mobile - captured offline/u),
+    ).toBeVisible();
+    await expect(
+      managerEvidence.getByText("This offline evidence is not payroll-final.", { exact: true }),
+    ).toBeVisible();
+    await expect(managerEvidence.getByText("Received by server", { exact: true })).toBeVisible();
+    expect(dailyCalendarRequestUrl).toContain("user_id=mobile-report-employee");
+    expect(dailyCalendarRequestUrl).toContain("page=1");
+    expect(dailyCalendarRequestUrl).toContain("page_size=1");
     await expectNoHorizontalOverflow(page, "attendance reports");
+
+    const reportsBodyText = await page.locator("body").innerText();
+    expect(reportsBodyText).not.toMatch(/latitude|longitude|coordinates/i);
+    expect(reportsBodyText).not.toMatch(/client_event_id|registered_device_id|payroll_eligible/i);
   });
 });
 
@@ -631,6 +664,7 @@ function employeeEvidence(workDate: string): Record<string, unknown> {
     },
     summary_sources: [
       { type: "employee_punch", label: "Employee attendance punch" },
+      { type: "mobile_offline", label: "Mobile - captured offline" },
       {
         type: "approved_regularization",
         label: "Approved regularization with a long explanatory source label",
@@ -677,6 +711,24 @@ function employeeEvidence(workDate: string): Record<string, unknown> {
           work_site_type: "office",
         },
         regularization: null,
+      },
+      {
+        event_type: "break_start",
+        occurred_at: `${workDate}T07:00:00.000Z`,
+        time: "12:30",
+        source: "mobile_offline",
+        origin: null,
+        work_mode: "office",
+        decision: null,
+        geo: null,
+        regularization: null,
+        offline: {
+          sync_status: "accepted",
+          verification_status: "unverified",
+          reason_code: "offline_sync.accepted_unverified",
+          reason: "Offline attendance evidence was received and is awaiting verification.",
+          server_received_at: `${workDate}T07:05:00.000Z`,
+        },
       },
     ],
     regularizations: [
@@ -833,6 +885,7 @@ function attendanceReportResponse(): Record<string, unknown> {
     items: [
       {
         id: "attendance-report-mobile-1",
+        employee_user_id: "mobile-report-employee",
         date: previousLocalDate(),
         employee: "Mobile Report Employee",
         department: "Mobile Reporting Department With Long Name",
@@ -853,6 +906,39 @@ function attendanceReportResponse(): Record<string, unknown> {
     },
     page: 1,
     page_size: 100,
+    total: 1,
+  };
+}
+
+function managerDailyEvidenceResponse(workDate: string): Record<string, unknown> {
+  return {
+    items: [
+      {
+        id: "attendance-report-mobile-1",
+        employee_user_id: "mobile-report-employee",
+        work_date: workDate,
+        date: workDate,
+        status: "late",
+        offline_evidence: [
+          {
+            event_type: "break_start",
+            occurred_at: `${workDate}T07:00:00.000Z`,
+            time: "12:30",
+            source: "mobile_offline",
+            offline: {
+              sync_status: "deferred",
+              verification_status: "review_required",
+              reason_code: "offline_sync.sequence_gap",
+              reason:
+                "Offline attendance evidence was received out of sequence and requires review.",
+              server_received_at: `${workDate}T07:05:00.000Z`,
+            },
+          },
+        ],
+      },
+    ],
+    page: 1,
+    page_size: 1,
     total: 1,
   };
 }

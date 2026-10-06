@@ -61,6 +61,7 @@ interface Props<T extends { id: string }> {
   searchKeys?: (keyof T)[];
   exportName?: string;
   emptyTitle?: string;
+  onRowClick?: (row: T) => void;
 }
 
 const TONE: Record<string, string> = {
@@ -85,6 +86,7 @@ export function ReportShell<T extends { id: string }>({
   searchKeys,
   exportName,
   emptyTitle,
+  onRowClick,
 }: Props<T>) {
   const { departments, employees } = useEmployees();
   const path = useRouterState({ select: (state) => state.location.pathname });
@@ -333,6 +335,7 @@ export function ReportShell<T extends { id: string }>({
         searchKeys={searchKeys}
         emptyTitle={emptyTitle ?? "No matching rows"}
         emptyDescription="Try adjusting filters or expanding the date range."
+        onRowClick={onRowClick}
       />
     </div>
   );

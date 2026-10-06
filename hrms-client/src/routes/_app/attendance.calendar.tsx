@@ -379,14 +379,32 @@ function EmployeeDayEvidencePanel({
                     <p className="break-words font-medium">{event.eventLabel}</p>
                     <p className="text-xs text-muted-foreground">{event.timeLabel}</p>
                   </div>
-                  <span className="w-fit max-w-full break-words rounded-full bg-muted px-2 py-0.5 text-xs sm:shrink-0">
-                    {event.decisionLabel}
-                  </span>
+                  <StatusBadge
+                    status={event.badgeStatus}
+                    label={event.decisionLabel}
+                    className="w-fit max-w-full whitespace-normal break-words sm:shrink-0"
+                  />
                 </div>
                 <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                   {event.sourceLabel && <p className="break-words">Source: {event.sourceLabel}</p>}
                   {event.workModeLabel && (
                     <p className="break-words">Work mode: {event.workModeLabel}</p>
+                  )}
+                  {event.offline && (
+                    <div className="grid gap-1 rounded-md bg-muted/50 p-2 sm:grid-cols-2">
+                      <EvidenceFact
+                        label="Captured offline"
+                        value={formatEvidenceDateTime(event.occurredAt)}
+                      />
+                      <EvidenceFact
+                        label="Received by server"
+                        value={event.offline.serverReceivedAtLabel}
+                      />
+                      <EvidenceFact label="Sync state" value={event.offline.syncLabel} />
+                      <p className="break-words sm:col-span-2">
+                        This offline evidence is not payroll-final.
+                      </p>
+                    </div>
                   )}
                   <p className="break-words">{event.reasonText || event.decisionDescription}</p>
                   {event.reasonCode && (
@@ -479,4 +497,25 @@ function RegularizationEvidenceFact({ label, value }: { label: string; value: st
       <p className="mt-0.5 break-words font-semibold">{value}</p>
     </div>
   );
+}
+
+function EvidenceFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-0.5 break-words font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function formatEvidenceDateTime(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value || "Time unavailable";
+  return parsed.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

@@ -1653,6 +1653,51 @@ describe("API contracts", () => {
         },
       },
     );
+    const offlineEvidenceMetadata = spec.components?.schemas
+      ?.AttendanceOfflineEvidenceMetadata as Record<string, any> | undefined;
+    expect(offlineEvidenceMetadata).toMatchObject({
+      required: [
+        "sync_status",
+        "verification_status",
+        "reason_code",
+        "reason",
+        "server_received_at",
+      ],
+      properties: {
+        sync_status: { enum: ["accepted", "deferred"] },
+        verification_status: { enum: ["unverified", "review_required"] },
+        reason_code: { enum: [...AttendanceOfflineSyncReasonCodeValues] },
+        server_received_at: { format: "date-time" },
+      },
+    });
+    expect(Object.keys(offlineEvidenceMetadata?.properties ?? {})).not.toEqual(
+      expect.arrayContaining([
+        "captured_at",
+        "processed_at",
+        "payroll_eligible",
+        "client_event_id",
+        "registered_device_id",
+        "latitude",
+        "longitude",
+      ]),
+    );
+    expect(
+      spec.components?.schemas?.AttendanceOfflineEvidenceItem,
+    ).toBeDefined();
+
+    const dailyCalendar = spec.paths?.["/api/v1/attendance/calendar/daily"]
+      ?.get as Record<string, any> | undefined;
+    const dailyCalendarSchema = dailyCalendar?.responses?.["200"]?.content?.[
+      "application/json"
+    ]?.schema as Record<string, any> | undefined;
+    expect(
+      dailyCalendarSchema?.properties?.self_evidence?.properties?.events?.items
+        ?.properties?.offline,
+    ).toBeDefined();
+    expect(
+      dailyCalendarSchema?.properties?.items?.items?.properties
+        ?.offline_evidence?.items?.properties?.offline,
+    ).toBeDefined();
     expect(
       spec.components?.schemas?.AttendanceGeofenceCircleShape,
     ).toBeDefined();

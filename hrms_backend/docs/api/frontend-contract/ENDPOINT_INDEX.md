@@ -10038,7 +10038,7 @@ Success body highlights:
 | `summary` | object | required | - |
 | `exceptions` | array of object | required | - |
 | `totals` | object | required | - |
-| `self_evidence` | object | optional | Included for authenticated employee self views. Contains safe evidence only: day summary, source labels, events, decisions, safe geo context, and regularization relationships. Exact coordinates and location evidence identifiers are not returned here. |
+| `self_evidence` | object | optional | Included for authenticated employee self views. Contains safe evidence only: day summary, source labels, events, decisions, safe geo context, regularization relationships, and optional offline metadata. Exact coordinates and location evidence identifiers are not returned here. |
 
 **Frontend behavior notes**
 

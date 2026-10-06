@@ -1404,6 +1404,195 @@
           "accuracy_meters": 18
         }
       },
+      "AttendanceOfflineEvidenceMetadata": {
+        "type": "object",
+        "required": [
+          "sync_status",
+          "verification_status",
+          "reason_code",
+          "reason",
+          "server_received_at"
+        ],
+        "description": "Safe offline/provisional evidence metadata for read models. Does not include client event IDs, device identifiers, raw payloads, location evidence identifiers, or coordinates.",
+        "properties": {
+          "sync_status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "deferred"
+            ],
+            "description": "Read-model sync state for evidence rows that were accepted or deferred into the attendance evidence ledger.",
+            "example": "accepted"
+          },
+          "verification_status": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "review_required"
+            ],
+            "description": "Primary provisional UI status. Sync acceptance is not authoritative attendance approval.",
+            "example": "unverified"
+          },
+          "reason_code": {
+            "type": "string",
+            "enum": [
+              "offline_sync.accepted_unverified",
+              "offline_sync.replayed",
+              "offline_sync.changed_body_conflict",
+              "offline_sync.validation_failed",
+              "offline_sync.processing_deferred",
+              "offline_sync.sequence_gap",
+              "offline_sync.sequence_out_of_order",
+              "offline_sync.duplicate_sequence",
+              "offline_sync.review_required"
+            ],
+            "nullable": true,
+            "example": "offline_sync.accepted_unverified"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Server-owned safe user-facing reason copy.",
+            "example": "Offline attendance evidence was received and is awaiting verification."
+          },
+          "server_received_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server receipt timestamp for the offline event",
+            "example": "2026-05-04T10:00:00.000Z"
+          }
+        },
+        "additionalProperties": false,
+        "example": {
+          "sync_status": "accepted",
+          "verification_status": "unverified",
+          "reason_code": "offline_sync.accepted_unverified",
+          "reason": "Offline attendance evidence was received and is awaiting verification.",
+          "server_received_at": "2026-08-21T07:11:00.000Z"
+        }
+      },
+      "AttendanceOfflineEvidenceItem": {
+        "type": "object",
+        "required": [
+          "event_type",
+          "occurred_at",
+          "time",
+          "source",
+          "offline"
+        ],
+        "description": "Visibility-only offline evidence for a selected employee/day. This supplements, but does not alter, authoritative day status, in/out time, hours, payroll state, or next action.",
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "check_in",
+              "break_start",
+              "break_end",
+              "check_out"
+            ],
+            "example": "check_in"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Original offline client capture timestamp copied from captured_at",
+            "example": "2026-05-04T10:00:00.000Z"
+          },
+          "time": {
+            "type": "string",
+            "nullable": true,
+            "example": "09:03"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "mobile_offline"
+            ],
+            "example": "mobile_offline"
+          },
+          "offline": {
+            "type": "object",
+            "required": [
+              "sync_status",
+              "verification_status",
+              "reason_code",
+              "reason",
+              "server_received_at"
+            ],
+            "description": "Safe offline/provisional evidence metadata for read models. Does not include client event IDs, device identifiers, raw payloads, location evidence identifiers, or coordinates.",
+            "properties": {
+              "sync_status": {
+                "type": "string",
+                "enum": [
+                  "accepted",
+                  "deferred"
+                ],
+                "description": "Read-model sync state for evidence rows that were accepted or deferred into the attendance evidence ledger.",
+                "example": "accepted"
+              },
+              "verification_status": {
+                "type": "string",
+                "enum": [
+                  "unverified",
+                  "review_required"
+                ],
+                "description": "Primary provisional UI status. Sync acceptance is not authoritative attendance approval.",
+                "example": "unverified"
+              },
+              "reason_code": {
+                "type": "string",
+                "enum": [
+                  "offline_sync.accepted_unverified",
+                  "offline_sync.replayed",
+                  "offline_sync.changed_body_conflict",
+                  "offline_sync.validation_failed",
+                  "offline_sync.processing_deferred",
+                  "offline_sync.sequence_gap",
+                  "offline_sync.sequence_out_of_order",
+                  "offline_sync.duplicate_sequence",
+                  "offline_sync.review_required"
+                ],
+                "nullable": true,
+                "example": "offline_sync.accepted_unverified"
+              },
+              "reason": {
+                "type": "string",
+                "nullable": true,
+                "description": "Server-owned safe user-facing reason copy.",
+                "example": "Offline attendance evidence was received and is awaiting verification."
+              },
+              "server_received_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Server receipt timestamp for the offline event",
+                "example": "2026-05-04T10:00:00.000Z"
+              }
+            },
+            "additionalProperties": false,
+            "example": {
+              "sync_status": "accepted",
+              "verification_status": "unverified",
+              "reason_code": "offline_sync.accepted_unverified",
+              "reason": "Offline attendance evidence was received and is awaiting verification.",
+              "server_received_at": "2026-08-21T07:11:00.000Z"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "example": {
+          "event_type": "check_in",
+          "occurred_at": "2026-08-21T03:33:00.000Z",
+          "time": "09:03",
+          "source": "mobile_offline",
+          "offline": {
+            "sync_status": "accepted",
+            "verification_status": "unverified",
+            "reason_code": "offline_sync.accepted_unverified",
+            "reason": "Offline attendance evidence was received and is awaiting verification.",
+            "server_received_at": "2026-08-21T07:11:00.000Z"
+          }
+        }
+      },
       "AttendanceGeofenceCircleShape": {
         "type": "object",
         "required": [
@@ -74330,6 +74519,132 @@
                           "nullable": true,
                           "example": "pending"
                         },
+                        "offline_evidence": {
+                          "type": "array",
+                          "description": "Optional manager/HR/Admin selected-day visibility for offline/provisional evidence. Present only on selected employee/day reads when offline evidence exists.",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "event_type",
+                              "occurred_at",
+                              "time",
+                              "source",
+                              "offline"
+                            ],
+                            "description": "Visibility-only offline evidence for a selected employee/day. This supplements, but does not alter, authoritative day status, in/out time, hours, payroll state, or next action.",
+                            "properties": {
+                              "event_type": {
+                                "type": "string",
+                                "enum": [
+                                  "check_in",
+                                  "break_start",
+                                  "break_end",
+                                  "check_out"
+                                ],
+                                "example": "check_in"
+                              },
+                              "occurred_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Original offline client capture timestamp copied from captured_at",
+                                "example": "2026-05-04T10:00:00.000Z"
+                              },
+                              "time": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "09:03"
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "mobile_offline"
+                                ],
+                                "example": "mobile_offline"
+                              },
+                              "offline": {
+                                "type": "object",
+                                "required": [
+                                  "sync_status",
+                                  "verification_status",
+                                  "reason_code",
+                                  "reason",
+                                  "server_received_at"
+                                ],
+                                "description": "Safe offline/provisional evidence metadata for read models. Does not include client event IDs, device identifiers, raw payloads, location evidence identifiers, or coordinates.",
+                                "properties": {
+                                  "sync_status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "accepted",
+                                      "deferred"
+                                    ],
+                                    "description": "Read-model sync state for evidence rows that were accepted or deferred into the attendance evidence ledger.",
+                                    "example": "accepted"
+                                  },
+                                  "verification_status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unverified",
+                                      "review_required"
+                                    ],
+                                    "description": "Primary provisional UI status. Sync acceptance is not authoritative attendance approval.",
+                                    "example": "unverified"
+                                  },
+                                  "reason_code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "offline_sync.accepted_unverified",
+                                      "offline_sync.replayed",
+                                      "offline_sync.changed_body_conflict",
+                                      "offline_sync.validation_failed",
+                                      "offline_sync.processing_deferred",
+                                      "offline_sync.sequence_gap",
+                                      "offline_sync.sequence_out_of_order",
+                                      "offline_sync.duplicate_sequence",
+                                      "offline_sync.review_required"
+                                    ],
+                                    "nullable": true,
+                                    "example": "offline_sync.accepted_unverified"
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Server-owned safe user-facing reason copy.",
+                                    "example": "Offline attendance evidence was received and is awaiting verification."
+                                  },
+                                  "server_received_at": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "description": "Server receipt timestamp for the offline event",
+                                    "example": "2026-05-04T10:00:00.000Z"
+                                  }
+                                },
+                                "additionalProperties": false,
+                                "example": {
+                                  "sync_status": "accepted",
+                                  "verification_status": "unverified",
+                                  "reason_code": "offline_sync.accepted_unverified",
+                                  "reason": "Offline attendance evidence was received and is awaiting verification.",
+                                  "server_received_at": "2026-08-21T07:11:00.000Z"
+                                }
+                              }
+                            },
+                            "additionalProperties": false,
+                            "example": {
+                              "event_type": "check_in",
+                              "occurred_at": "2026-08-21T03:33:00.000Z",
+                              "time": "09:03",
+                              "source": "mobile_offline",
+                              "offline": {
+                                "sync_status": "accepted",
+                                "verification_status": "unverified",
+                                "reason_code": "offline_sync.accepted_unverified",
+                                "reason": "Offline attendance evidence was received and is awaiting verification.",
+                                "server_received_at": "2026-08-21T07:11:00.000Z"
+                              }
+                            }
+                          }
+                        },
                         "detail": {
                           "type": "string",
                           "example": "9h 10m"
@@ -74588,6 +74903,132 @@
                             "type": "string",
                             "nullable": true,
                             "example": "pending"
+                          },
+                          "offline_evidence": {
+                            "type": "array",
+                            "description": "Optional manager/HR/Admin selected-day visibility for offline/provisional evidence. Present only on selected employee/day reads when offline evidence exists.",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "event_type",
+                                "occurred_at",
+                                "time",
+                                "source",
+                                "offline"
+                              ],
+                              "description": "Visibility-only offline evidence for a selected employee/day. This supplements, but does not alter, authoritative day status, in/out time, hours, payroll state, or next action.",
+                              "properties": {
+                                "event_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "check_in",
+                                    "break_start",
+                                    "break_end",
+                                    "check_out"
+                                  ],
+                                  "example": "check_in"
+                                },
+                                "occurred_at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "Original offline client capture timestamp copied from captured_at",
+                                  "example": "2026-05-04T10:00:00.000Z"
+                                },
+                                "time": {
+                                  "type": "string",
+                                  "nullable": true,
+                                  "example": "09:03"
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "mobile_offline"
+                                  ],
+                                  "example": "mobile_offline"
+                                },
+                                "offline": {
+                                  "type": "object",
+                                  "required": [
+                                    "sync_status",
+                                    "verification_status",
+                                    "reason_code",
+                                    "reason",
+                                    "server_received_at"
+                                  ],
+                                  "description": "Safe offline/provisional evidence metadata for read models. Does not include client event IDs, device identifiers, raw payloads, location evidence identifiers, or coordinates.",
+                                  "properties": {
+                                    "sync_status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "accepted",
+                                        "deferred"
+                                      ],
+                                      "description": "Read-model sync state for evidence rows that were accepted or deferred into the attendance evidence ledger.",
+                                      "example": "accepted"
+                                    },
+                                    "verification_status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "unverified",
+                                        "review_required"
+                                      ],
+                                      "description": "Primary provisional UI status. Sync acceptance is not authoritative attendance approval.",
+                                      "example": "unverified"
+                                    },
+                                    "reason_code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "offline_sync.accepted_unverified",
+                                        "offline_sync.replayed",
+                                        "offline_sync.changed_body_conflict",
+                                        "offline_sync.validation_failed",
+                                        "offline_sync.processing_deferred",
+                                        "offline_sync.sequence_gap",
+                                        "offline_sync.sequence_out_of_order",
+                                        "offline_sync.duplicate_sequence",
+                                        "offline_sync.review_required"
+                                      ],
+                                      "nullable": true,
+                                      "example": "offline_sync.accepted_unverified"
+                                    },
+                                    "reason": {
+                                      "type": "string",
+                                      "nullable": true,
+                                      "description": "Server-owned safe user-facing reason copy.",
+                                      "example": "Offline attendance evidence was received and is awaiting verification."
+                                    },
+                                    "server_received_at": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "description": "Server receipt timestamp for the offline event",
+                                      "example": "2026-05-04T10:00:00.000Z"
+                                    }
+                                  },
+                                  "additionalProperties": false,
+                                  "example": {
+                                    "sync_status": "accepted",
+                                    "verification_status": "unverified",
+                                    "reason_code": "offline_sync.accepted_unverified",
+                                    "reason": "Offline attendance evidence was received and is awaiting verification.",
+                                    "server_received_at": "2026-08-21T07:11:00.000Z"
+                                  }
+                                }
+                              },
+                              "additionalProperties": false,
+                              "example": {
+                                "event_type": "check_in",
+                                "occurred_at": "2026-08-21T03:33:00.000Z",
+                                "time": "09:03",
+                                "source": "mobile_offline",
+                                "offline": {
+                                  "sync_status": "accepted",
+                                  "verification_status": "unverified",
+                                  "reason_code": "offline_sync.accepted_unverified",
+                                  "reason": "Offline attendance evidence was received and is awaiting verification.",
+                                  "server_received_at": "2026-08-21T07:11:00.000Z"
+                                }
+                              }
+                            }
                           },
                           "detail": {
                             "type": "string",
@@ -75770,6 +76211,132 @@
                             "nullable": true,
                             "example": "pending"
                           },
+                          "offline_evidence": {
+                            "type": "array",
+                            "description": "Optional manager/HR/Admin selected-day visibility for offline/provisional evidence. Present only on selected employee/day reads when offline evidence exists.",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "event_type",
+                                "occurred_at",
+                                "time",
+                                "source",
+                                "offline"
+                              ],
+                              "description": "Visibility-only offline evidence for a selected employee/day. This supplements, but does not alter, authoritative day status, in/out time, hours, payroll state, or next action.",
+                              "properties": {
+                                "event_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "check_in",
+                                    "break_start",
+                                    "break_end",
+                                    "check_out"
+                                  ],
+                                  "example": "check_in"
+                                },
+                                "occurred_at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "Original offline client capture timestamp copied from captured_at",
+                                  "example": "2026-05-04T10:00:00.000Z"
+                                },
+                                "time": {
+                                  "type": "string",
+                                  "nullable": true,
+                                  "example": "09:03"
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "mobile_offline"
+                                  ],
+                                  "example": "mobile_offline"
+                                },
+                                "offline": {
+                                  "type": "object",
+                                  "required": [
+                                    "sync_status",
+                                    "verification_status",
+                                    "reason_code",
+                                    "reason",
+                                    "server_received_at"
+                                  ],
+                                  "description": "Safe offline/provisional evidence metadata for read models. Does not include client event IDs, device identifiers, raw payloads, location evidence identifiers, or coordinates.",
+                                  "properties": {
+                                    "sync_status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "accepted",
+                                        "deferred"
+                                      ],
+                                      "description": "Read-model sync state for evidence rows that were accepted or deferred into the attendance evidence ledger.",
+                                      "example": "accepted"
+                                    },
+                                    "verification_status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "unverified",
+                                        "review_required"
+                                      ],
+                                      "description": "Primary provisional UI status. Sync acceptance is not authoritative attendance approval.",
+                                      "example": "unverified"
+                                    },
+                                    "reason_code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "offline_sync.accepted_unverified",
+                                        "offline_sync.replayed",
+                                        "offline_sync.changed_body_conflict",
+                                        "offline_sync.validation_failed",
+                                        "offline_sync.processing_deferred",
+                                        "offline_sync.sequence_gap",
+                                        "offline_sync.sequence_out_of_order",
+                                        "offline_sync.duplicate_sequence",
+                                        "offline_sync.review_required"
+                                      ],
+                                      "nullable": true,
+                                      "example": "offline_sync.accepted_unverified"
+                                    },
+                                    "reason": {
+                                      "type": "string",
+                                      "nullable": true,
+                                      "description": "Server-owned safe user-facing reason copy.",
+                                      "example": "Offline attendance evidence was received and is awaiting verification."
+                                    },
+                                    "server_received_at": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "description": "Server receipt timestamp for the offline event",
+                                      "example": "2026-05-04T10:00:00.000Z"
+                                    }
+                                  },
+                                  "additionalProperties": false,
+                                  "example": {
+                                    "sync_status": "accepted",
+                                    "verification_status": "unverified",
+                                    "reason_code": "offline_sync.accepted_unverified",
+                                    "reason": "Offline attendance evidence was received and is awaiting verification.",
+                                    "server_received_at": "2026-08-21T07:11:00.000Z"
+                                  }
+                                }
+                              },
+                              "additionalProperties": false,
+                              "example": {
+                                "event_type": "check_in",
+                                "occurred_at": "2026-08-21T03:33:00.000Z",
+                                "time": "09:03",
+                                "source": "mobile_offline",
+                                "offline": {
+                                  "sync_status": "accepted",
+                                  "verification_status": "unverified",
+                                  "reason_code": "offline_sync.accepted_unverified",
+                                  "reason": "Offline attendance evidence was received and is awaiting verification.",
+                                  "server_received_at": "2026-08-21T07:11:00.000Z"
+                                }
+                              }
+                            }
+                          },
                           "detail": {
                             "type": "string",
                             "example": "9h 10m"
@@ -76471,6 +77038,132 @@
                             "nullable": true,
                             "example": "pending"
                           },
+                          "offline_evidence": {
+                            "type": "array",
+                            "description": "Optional manager/HR/Admin selected-day visibility for offline/provisional evidence. Present only on selected employee/day reads when offline evidence exists.",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "event_type",
+                                "occurred_at",
+                                "time",
+                                "source",
+                                "offline"
+                              ],
+                              "description": "Visibility-only offline evidence for a selected employee/day. This supplements, but does not alter, authoritative day status, in/out time, hours, payroll state, or next action.",
+                              "properties": {
+                                "event_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "check_in",
+                                    "break_start",
+                                    "break_end",
+                                    "check_out"
+                                  ],
+                                  "example": "check_in"
+                                },
+                                "occurred_at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "Original offline client capture timestamp copied from captured_at",
+                                  "example": "2026-05-04T10:00:00.000Z"
+                                },
+                                "time": {
+                                  "type": "string",
+                                  "nullable": true,
+                                  "example": "09:03"
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "mobile_offline"
+                                  ],
+                                  "example": "mobile_offline"
+                                },
+                                "offline": {
+                                  "type": "object",
+                                  "required": [
+                                    "sync_status",
+                                    "verification_status",
+                                    "reason_code",
+                                    "reason",
+                                    "server_received_at"
+                                  ],
+                                  "description": "Safe offline/provisional evidence metadata for read models. Does not include client event IDs, device identifiers, raw payloads, location evidence identifiers, or coordinates.",
+                                  "properties": {
+                                    "sync_status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "accepted",
+                                        "deferred"
+                                      ],
+                                      "description": "Read-model sync state for evidence rows that were accepted or deferred into the attendance evidence ledger.",
+                                      "example": "accepted"
+                                    },
+                                    "verification_status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "unverified",
+                                        "review_required"
+                                      ],
+                                      "description": "Primary provisional UI status. Sync acceptance is not authoritative attendance approval.",
+                                      "example": "unverified"
+                                    },
+                                    "reason_code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "offline_sync.accepted_unverified",
+                                        "offline_sync.replayed",
+                                        "offline_sync.changed_body_conflict",
+                                        "offline_sync.validation_failed",
+                                        "offline_sync.processing_deferred",
+                                        "offline_sync.sequence_gap",
+                                        "offline_sync.sequence_out_of_order",
+                                        "offline_sync.duplicate_sequence",
+                                        "offline_sync.review_required"
+                                      ],
+                                      "nullable": true,
+                                      "example": "offline_sync.accepted_unverified"
+                                    },
+                                    "reason": {
+                                      "type": "string",
+                                      "nullable": true,
+                                      "description": "Server-owned safe user-facing reason copy.",
+                                      "example": "Offline attendance evidence was received and is awaiting verification."
+                                    },
+                                    "server_received_at": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "description": "Server receipt timestamp for the offline event",
+                                      "example": "2026-05-04T10:00:00.000Z"
+                                    }
+                                  },
+                                  "additionalProperties": false,
+                                  "example": {
+                                    "sync_status": "accepted",
+                                    "verification_status": "unverified",
+                                    "reason_code": "offline_sync.accepted_unverified",
+                                    "reason": "Offline attendance evidence was received and is awaiting verification.",
+                                    "server_received_at": "2026-08-21T07:11:00.000Z"
+                                  }
+                                }
+                              },
+                              "additionalProperties": false,
+                              "example": {
+                                "event_type": "check_in",
+                                "occurred_at": "2026-08-21T03:33:00.000Z",
+                                "time": "09:03",
+                                "source": "mobile_offline",
+                                "offline": {
+                                  "sync_status": "accepted",
+                                  "verification_status": "unverified",
+                                  "reason_code": "offline_sync.accepted_unverified",
+                                  "reason": "Offline attendance evidence was received and is awaiting verification.",
+                                  "server_received_at": "2026-08-21T07:11:00.000Z"
+                                }
+                              }
+                            }
+                          },
                           "detail": {
                             "type": "string",
                             "example": "9h 10m"
@@ -76528,8 +77221,186 @@
                     },
                     "self_evidence": {
                       "type": "object",
+                      "required": [
+                        "generated_at",
+                        "date",
+                        "day",
+                        "summary_sources",
+                        "events",
+                        "regularizations"
+                      ],
+                      "properties": {
+                        "generated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Self evidence generation timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "date": {
+                          "type": "string",
+                          "format": "date",
+                          "description": "Evidence work date",
+                          "example": "2026-05-04"
+                        },
+                        "day": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "summary_sources": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "event_type",
+                              "occurred_at",
+                              "time",
+                              "source",
+                              "origin",
+                              "work_mode",
+                              "decision",
+                              "geo",
+                              "regularization"
+                            ],
+                            "properties": {
+                              "event_type": {
+                                "type": "string",
+                                "enum": [
+                                  "check_in",
+                                  "break_start",
+                                  "break_end",
+                                  "check_out"
+                                ],
+                                "example": "check_in"
+                              },
+                              "occurred_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Evidence occurrence timestamp",
+                                "example": "2026-05-04T10:00:00.000Z"
+                              },
+                              "time": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "09:03"
+                              },
+                              "source": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "mobile_offline"
+                              },
+                              "origin": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "employee_manual_now"
+                              },
+                              "work_mode": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "office"
+                              },
+                              "decision": {
+                                "type": "object",
+                                "nullable": true,
+                                "additionalProperties": true
+                              },
+                              "geo": {
+                                "type": "object",
+                                "nullable": true,
+                                "additionalProperties": true
+                              },
+                              "regularization": {
+                                "type": "object",
+                                "nullable": true,
+                                "additionalProperties": true
+                              },
+                              "offline": {
+                                "type": "object",
+                                "required": [
+                                  "sync_status",
+                                  "verification_status",
+                                  "reason_code",
+                                  "reason",
+                                  "server_received_at"
+                                ],
+                                "description": "Safe offline/provisional evidence metadata for read models. Does not include client event IDs, device identifiers, raw payloads, location evidence identifiers, or coordinates.",
+                                "properties": {
+                                  "sync_status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "accepted",
+                                      "deferred"
+                                    ],
+                                    "description": "Read-model sync state for evidence rows that were accepted or deferred into the attendance evidence ledger.",
+                                    "example": "accepted"
+                                  },
+                                  "verification_status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unverified",
+                                      "review_required"
+                                    ],
+                                    "description": "Primary provisional UI status. Sync acceptance is not authoritative attendance approval.",
+                                    "example": "unverified"
+                                  },
+                                  "reason_code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "offline_sync.accepted_unverified",
+                                      "offline_sync.replayed",
+                                      "offline_sync.changed_body_conflict",
+                                      "offline_sync.validation_failed",
+                                      "offline_sync.processing_deferred",
+                                      "offline_sync.sequence_gap",
+                                      "offline_sync.sequence_out_of_order",
+                                      "offline_sync.duplicate_sequence",
+                                      "offline_sync.review_required"
+                                    ],
+                                    "nullable": true,
+                                    "example": "offline_sync.accepted_unverified"
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Server-owned safe user-facing reason copy.",
+                                    "example": "Offline attendance evidence was received and is awaiting verification."
+                                  },
+                                  "server_received_at": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "description": "Server receipt timestamp for the offline event",
+                                    "example": "2026-05-04T10:00:00.000Z"
+                                  }
+                                },
+                                "additionalProperties": false,
+                                "example": {
+                                  "sync_status": "accepted",
+                                  "verification_status": "unverified",
+                                  "reason_code": "offline_sync.accepted_unverified",
+                                  "reason": "Offline attendance evidence was received and is awaiting verification.",
+                                  "server_received_at": "2026-08-21T07:11:00.000Z"
+                                }
+                              }
+                            },
+                            "additionalProperties": true
+                          }
+                        },
+                        "regularizations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        }
+                      },
                       "additionalProperties": true,
-                      "description": "Included for authenticated employee self views. Contains safe evidence only: day summary, source labels, events, decisions, safe geo context, and regularization relationships. Exact coordinates and location evidence identifiers are not returned here.",
+                      "description": "Included for authenticated employee self views. Contains safe evidence only: day summary, source labels, events, decisions, safe geo context, regularization relationships, and optional offline metadata. Exact coordinates and location evidence identifiers are not returned here.",
                       "example": {
                         "generated_at": "2026-08-21T13:10:00.000Z",
                         "date": "2026-08-21",
@@ -76553,6 +77424,10 @@
                         },
                         "summary_sources": [
                           {
+                            "type": "mobile_offline",
+                            "label": "Mobile - captured offline"
+                          },
+                          {
                             "type": "employee_punch",
                             "label": "Employee attendance punch"
                           },
@@ -76564,26 +77439,39 @@
                         "events": [
                           {
                             "event_type": "check_in",
-                            "occurred_at": "2026-08-21T03:30:02.000Z",
-                            "time": "09:00",
-                            "source": "web_geo",
-                            "origin": "employee_manual_now",
+                            "occurred_at": "2026-08-21T03:33:00.000Z",
+                            "time": "09:03",
+                            "source": "mobile_offline",
+                            "origin": null,
                             "work_mode": "office",
-                            "decision": {
-                              "outcome": "allowed",
-                              "reason_codes": [
-                                "geo_inside_fence"
-                              ],
-                              "reason": null
-                            },
-                            "geo": {
-                              "outcome": "inside_confident",
-                              "reason_code": "geo_inside_fence",
-                              "selected_action": "allow",
-                              "work_site_name": "Bengaluru HQ",
-                              "work_site_type": "office"
-                            },
-                            "regularization": null
+                            "decision": null,
+                            "geo": null,
+                            "regularization": null,
+                            "offline": {
+                              "sync_status": "accepted",
+                              "verification_status": "unverified",
+                              "reason_code": "offline_sync.accepted_unverified",
+                              "reason": "Offline attendance evidence was received and is awaiting verification.",
+                              "server_received_at": "2026-08-21T07:11:00.000Z"
+                            }
+                          },
+                          {
+                            "event_type": "break_start",
+                            "occurred_at": "2026-08-21T07:30:00.000Z",
+                            "time": "13:00",
+                            "source": "mobile_offline",
+                            "origin": null,
+                            "work_mode": "office",
+                            "decision": null,
+                            "geo": null,
+                            "regularization": null,
+                            "offline": {
+                              "sync_status": "deferred",
+                              "verification_status": "review_required",
+                              "reason_code": "offline_sync.sequence_gap",
+                              "reason": "Offline attendance evidence was received out of sequence and requires review.",
+                              "server_received_at": "2026-08-21T08:00:00.000Z"
+                            }
                           },
                           {
                             "event_type": "check_out",
@@ -76633,13 +77521,29 @@
                     "items": [
                       {
                         "id": "00000000-0000-4000-8000-000000000901",
+                        "employee_user_id": "00000000-0000-4000-8000-000000000501",
                         "work_date": "2026-08-21",
                         "status": "present",
                         "presence_state": "completed",
                         "reporting_evidence_category": "employee_punch",
                         "in_time": "09:00",
                         "out_time": "18:20",
-                        "hours": "08:50"
+                        "hours": "08:50",
+                        "offline_evidence": [
+                          {
+                            "event_type": "check_in",
+                            "occurred_at": "2026-08-21T03:33:00.000Z",
+                            "time": "09:03",
+                            "source": "mobile_offline",
+                            "offline": {
+                              "sync_status": "accepted",
+                              "verification_status": "unverified",
+                              "reason_code": "offline_sync.accepted_unverified",
+                              "reason": "Offline attendance evidence was received and is awaiting verification.",
+                              "server_received_at": "2026-08-21T07:11:00.000Z"
+                            }
+                          }
+                        ]
                       }
                     ],
                     "page": 1,
@@ -76679,6 +77583,10 @@
                       },
                       "summary_sources": [
                         {
+                          "type": "mobile_offline",
+                          "label": "Mobile - captured offline"
+                        },
+                        {
                           "type": "employee_punch",
                           "label": "Employee attendance punch"
                         },
@@ -76690,26 +77598,39 @@
                       "events": [
                         {
                           "event_type": "check_in",
-                          "occurred_at": "2026-08-21T03:30:02.000Z",
-                          "time": "09:00",
-                          "source": "web_geo",
-                          "origin": "employee_manual_now",
+                          "occurred_at": "2026-08-21T03:33:00.000Z",
+                          "time": "09:03",
+                          "source": "mobile_offline",
+                          "origin": null,
                           "work_mode": "office",
-                          "decision": {
-                            "outcome": "allowed",
-                            "reason_codes": [
-                              "geo_inside_fence"
-                            ],
-                            "reason": null
-                          },
-                          "geo": {
-                            "outcome": "inside_confident",
-                            "reason_code": "geo_inside_fence",
-                            "selected_action": "allow",
-                            "work_site_name": "Bengaluru HQ",
-                            "work_site_type": "office"
-                          },
-                          "regularization": null
+                          "decision": null,
+                          "geo": null,
+                          "regularization": null,
+                          "offline": {
+                            "sync_status": "accepted",
+                            "verification_status": "unverified",
+                            "reason_code": "offline_sync.accepted_unverified",
+                            "reason": "Offline attendance evidence was received and is awaiting verification.",
+                            "server_received_at": "2026-08-21T07:11:00.000Z"
+                          }
+                        },
+                        {
+                          "event_type": "break_start",
+                          "occurred_at": "2026-08-21T07:30:00.000Z",
+                          "time": "13:00",
+                          "source": "mobile_offline",
+                          "origin": null,
+                          "work_mode": "office",
+                          "decision": null,
+                          "geo": null,
+                          "regularization": null,
+                          "offline": {
+                            "sync_status": "deferred",
+                            "verification_status": "review_required",
+                            "reason_code": "offline_sync.sequence_gap",
+                            "reason": "Offline attendance evidence was received out of sequence and requires review.",
+                            "server_received_at": "2026-08-21T08:00:00.000Z"
+                          }
                         },
                         {
                           "event_type": "check_out",
@@ -76761,13 +77682,29 @@
                       "items": [
                         {
                           "id": "00000000-0000-4000-8000-000000000901",
+                          "employee_user_id": "00000000-0000-4000-8000-000000000501",
                           "work_date": "2026-08-21",
                           "status": "present",
                           "presence_state": "completed",
                           "reporting_evidence_category": "employee_punch",
                           "in_time": "09:00",
                           "out_time": "18:20",
-                          "hours": "08:50"
+                          "hours": "08:50",
+                          "offline_evidence": [
+                            {
+                              "event_type": "check_in",
+                              "occurred_at": "2026-08-21T03:33:00.000Z",
+                              "time": "09:03",
+                              "source": "mobile_offline",
+                              "offline": {
+                                "sync_status": "accepted",
+                                "verification_status": "unverified",
+                                "reason_code": "offline_sync.accepted_unverified",
+                                "reason": "Offline attendance evidence was received and is awaiting verification.",
+                                "server_received_at": "2026-08-21T07:11:00.000Z"
+                              }
+                            }
+                          ]
                         }
                       ],
                       "page": 1,
@@ -76807,6 +77744,10 @@
                         },
                         "summary_sources": [
                           {
+                            "type": "mobile_offline",
+                            "label": "Mobile - captured offline"
+                          },
+                          {
                             "type": "employee_punch",
                             "label": "Employee attendance punch"
                           },
@@ -76818,26 +77759,39 @@
                         "events": [
                           {
                             "event_type": "check_in",
-                            "occurred_at": "2026-08-21T03:30:02.000Z",
-                            "time": "09:00",
-                            "source": "web_geo",
-                            "origin": "employee_manual_now",
+                            "occurred_at": "2026-08-21T03:33:00.000Z",
+                            "time": "09:03",
+                            "source": "mobile_offline",
+                            "origin": null,
                             "work_mode": "office",
-                            "decision": {
-                              "outcome": "allowed",
-                              "reason_codes": [
-                                "geo_inside_fence"
-                              ],
-                              "reason": null
-                            },
-                            "geo": {
-                              "outcome": "inside_confident",
-                              "reason_code": "geo_inside_fence",
-                              "selected_action": "allow",
-                              "work_site_name": "Bengaluru HQ",
-                              "work_site_type": "office"
-                            },
-                            "regularization": null
+                            "decision": null,
+                            "geo": null,
+                            "regularization": null,
+                            "offline": {
+                              "sync_status": "accepted",
+                              "verification_status": "unverified",
+                              "reason_code": "offline_sync.accepted_unverified",
+                              "reason": "Offline attendance evidence was received and is awaiting verification.",
+                              "server_received_at": "2026-08-21T07:11:00.000Z"
+                            }
+                          },
+                          {
+                            "event_type": "break_start",
+                            "occurred_at": "2026-08-21T07:30:00.000Z",
+                            "time": "13:00",
+                            "source": "mobile_offline",
+                            "origin": null,
+                            "work_mode": "office",
+                            "decision": null,
+                            "geo": null,
+                            "regularization": null,
+                            "offline": {
+                              "sync_status": "deferred",
+                              "verification_status": "review_required",
+                              "reason_code": "offline_sync.sequence_gap",
+                              "reason": "Offline attendance evidence was received out of sequence and requires review.",
+                              "server_received_at": "2026-08-21T08:00:00.000Z"
+                            }
                           },
                           {
                             "event_type": "check_out",

@@ -4488,6 +4488,90 @@ const attendancePunchCommandResponseSchema = {
   },
 };
 
+const attendanceOfflineEvidenceMetadataSchema = {
+  type: "object",
+  required: [
+    "sync_status",
+    "verification_status",
+    "reason_code",
+    "reason",
+    "server_received_at",
+  ],
+  description:
+    "Safe offline/provisional evidence metadata for read models. Does not include client event IDs, device identifiers, raw payloads, location evidence identifiers, or coordinates.",
+  properties: {
+    sync_status: {
+      type: "string",
+      enum: ["accepted", "deferred"],
+      description:
+        "Read-model sync state for evidence rows that were accepted or deferred into the attendance evidence ledger.",
+      example: "accepted",
+    },
+    verification_status: {
+      type: "string",
+      enum: ["unverified", "review_required"],
+      description:
+        "Primary provisional UI status. Sync acceptance is not authoritative attendance approval.",
+      example: "unverified",
+    },
+    reason_code: {
+      type: "string",
+      enum: enumValues(AttendanceOfflineSyncReasonCodeValues),
+      nullable: true,
+      example: "offline_sync.accepted_unverified",
+    },
+    reason: {
+      type: "string",
+      nullable: true,
+      description: "Server-owned safe user-facing reason copy.",
+      example:
+        "Offline attendance evidence was received and is awaiting verification.",
+    },
+    server_received_at: dateTime("Server receipt timestamp for the offline event"),
+  },
+  additionalProperties: false,
+  example: {
+    sync_status: "accepted",
+    verification_status: "unverified",
+    reason_code: "offline_sync.accepted_unverified",
+    reason:
+      "Offline attendance evidence was received and is awaiting verification.",
+    server_received_at: "2026-08-21T07:11:00.000Z",
+  },
+};
+
+const attendanceOfflineEvidenceItemSchema = {
+  type: "object",
+  required: ["event_type", "occurred_at", "time", "source", "offline"],
+  description:
+    "Visibility-only offline evidence for a selected employee/day. This supplements, but does not alter, authoritative day status, in/out time, hours, payroll state, or next action.",
+  properties: {
+    event_type: {
+      type: "string",
+      enum: Object.values(AttendancePunchEventTypes),
+      example: "check_in",
+    },
+    occurred_at: dateTime(
+      "Original offline client capture timestamp copied from captured_at",
+    ),
+    time: { type: "string", nullable: true, example: "09:03" },
+    source: {
+      type: "string",
+      enum: ["mobile_offline"],
+      example: "mobile_offline",
+    },
+    offline: attendanceOfflineEvidenceMetadataSchema,
+  },
+  additionalProperties: false,
+  example: {
+    event_type: "check_in",
+    occurred_at: "2026-08-21T03:33:00.000Z",
+    time: "09:03",
+    source: "mobile_offline",
+    offline: attendanceOfflineEvidenceMetadataSchema.example,
+  },
+};
+
 const attendanceDaySchema = {
   type: "object",
   required: [
@@ -4673,6 +4757,12 @@ const attendanceDaySchema = {
       nullable: true,
       example: "pending",
     },
+    offline_evidence: {
+      type: "array",
+      description:
+        "Optional manager/HR/Admin selected-day visibility for offline/provisional evidence. Present only on selected employee/day reads when offline evidence exists.",
+      items: attendanceOfflineEvidenceItemSchema,
+    },
     detail: { type: "string", example: "9h 10m" },
     version: { type: "integer", minimum: 1, example: 1 },
   },
@@ -4740,6 +4830,79 @@ const attendanceCalendarSchema = {
   },
   additionalProperties: true,
 };
+
+const attendanceEmployeeSelfEvidenceEventSchema = {
+  type: "object",
+  required: [
+    "event_type",
+    "occurred_at",
+    "time",
+    "source",
+    "origin",
+    "work_mode",
+    "decision",
+    "geo",
+    "regularization",
+  ],
+  properties: {
+    event_type: {
+      type: "string",
+      enum: Object.values(AttendancePunchEventTypes),
+      example: "check_in",
+    },
+    occurred_at: dateTime("Evidence occurrence timestamp"),
+    time: { type: "string", nullable: true, example: "09:03" },
+    source: { type: "string", nullable: true, example: "mobile_offline" },
+    origin: { type: "string", nullable: true, example: "employee_manual_now" },
+    work_mode: { type: "string", nullable: true, example: "office" },
+    decision: {
+      type: "object",
+      nullable: true,
+      additionalProperties: true,
+    },
+    geo: {
+      type: "object",
+      nullable: true,
+      additionalProperties: true,
+    },
+    regularization: {
+      type: "object",
+      nullable: true,
+      additionalProperties: true,
+    },
+    offline: attendanceOfflineEvidenceMetadataSchema,
+  },
+  additionalProperties: true,
+};
+
+const attendanceEmployeeSelfEvidenceSchema = {
+  type: "object",
+  required: ["generated_at", "date", "day", "summary_sources", "events", "regularizations"],
+  properties: {
+    generated_at: dateTime("Self evidence generation timestamp"),
+    date: date("Evidence work date"),
+    day: { type: "object", additionalProperties: true },
+    summary_sources: {
+      type: "array",
+      items: { type: "object", additionalProperties: true },
+    },
+    events: {
+      type: "array",
+      items: attendanceEmployeeSelfEvidenceEventSchema,
+    },
+    regularizations: {
+      type: "array",
+      items: { type: "object", additionalProperties: true },
+    },
+  },
+  additionalProperties: true,
+  description:
+    "Included for authenticated employee self views. Contains safe evidence only: day summary, source labels, events, decisions, safe geo context, regularization relationships, and optional offline metadata. Exact coordinates and location evidence identifiers are not returned here.",
+  example:
+    attendanceOpenApiExamples.responses.employeeSelfEvidenceDaily.value
+      .self_evidence,
+};
+
 const attendanceDailyCalendarSchema = {
   ...paginated(attendanceDaySchema),
   required: [
@@ -4764,13 +4927,7 @@ const attendanceDailyCalendarSchema = {
     },
     totals: { type: "object", additionalProperties: true },
     self_evidence: {
-      type: "object",
-      additionalProperties: true,
-      description:
-        "Included for authenticated employee self views. Contains safe evidence only: day summary, source labels, events, decisions, safe geo context, and regularization relationships. Exact coordinates and location evidence identifiers are not returned here.",
-      example:
-        attendanceOpenApiExamples.responses.employeeSelfEvidenceDaily.value
-          .self_evidence,
+      ...attendanceEmployeeSelfEvidenceSchema,
     },
   },
   additionalProperties: true,
@@ -12128,6 +12285,8 @@ export const openApiComponents = {
       attendanceRegularizationCreateBody.properties.items as RouteSchema
     ).items,
     AttendanceExactLocationReveal: attendanceExactLocationResponseSchema,
+    AttendanceOfflineEvidenceMetadata: attendanceOfflineEvidenceMetadataSchema,
+    AttendanceOfflineEvidenceItem: attendanceOfflineEvidenceItemSchema,
     AttendanceGeofenceCircleShape: attendanceGeofenceCircleShapeSchema,
     AttendanceGeofencePolygonShape: attendanceGeofencePolygonShapeSchema,
     AttendanceGeofencePublishedVersion:

@@ -451,6 +451,7 @@ export const attendanceOpenApiExamples = {
         items: [
           {
             id: "00000000-0000-4000-8000-000000000901",
+            employee_user_id: attendanceExampleIds.employeeUserId,
             work_date: "2026-08-21",
             status: "present",
             presence_state: "completed",
@@ -458,6 +459,22 @@ export const attendanceOpenApiExamples = {
             in_time: "09:00",
             out_time: "18:20",
             hours: "08:50",
+            offline_evidence: [
+              {
+                event_type: "check_in",
+                occurred_at: "2026-08-21T03:33:00.000Z",
+                time: "09:03",
+                source: "mobile_offline",
+                offline: {
+                  sync_status: "accepted",
+                  verification_status: "unverified",
+                  reason_code: "offline_sync.accepted_unverified",
+                  reason:
+                    "Offline attendance evidence was received and is awaiting verification.",
+                  server_received_at: "2026-08-21T07:11:00.000Z",
+                },
+              },
+            ],
           },
         ],
         page: 1,
@@ -497,6 +514,10 @@ export const attendanceOpenApiExamples = {
           },
           summary_sources: [
             {
+              type: "mobile_offline",
+              label: "Mobile - captured offline",
+            },
+            {
               type: "employee_punch",
               label: "Employee attendance punch",
             },
@@ -508,24 +529,41 @@ export const attendanceOpenApiExamples = {
           events: [
             {
               event_type: "check_in",
-              occurred_at: "2026-08-21T03:30:02.000Z",
-              time: "09:00",
-              source: "web_geo",
-              origin: "employee_manual_now",
+              occurred_at: "2026-08-21T03:33:00.000Z",
+              time: "09:03",
+              source: "mobile_offline",
+              origin: null,
               work_mode: "office",
-              decision: {
-                outcome: "allowed",
-                reason_codes: ["geo_inside_fence"],
-                reason: null,
-              },
-              geo: {
-                outcome: "inside_confident",
-                reason_code: "geo_inside_fence",
-                selected_action: "allow",
-                work_site_name: "Bengaluru HQ",
-                work_site_type: "office",
-              },
+              decision: null,
+              geo: null,
               regularization: null,
+              offline: {
+                sync_status: "accepted",
+                verification_status: "unverified",
+                reason_code: "offline_sync.accepted_unverified",
+                reason:
+                  "Offline attendance evidence was received and is awaiting verification.",
+                server_received_at: "2026-08-21T07:11:00.000Z",
+              },
+            },
+            {
+              event_type: "break_start",
+              occurred_at: "2026-08-21T07:30:00.000Z",
+              time: "13:00",
+              source: "mobile_offline",
+              origin: null,
+              work_mode: "office",
+              decision: null,
+              geo: null,
+              regularization: null,
+              offline: {
+                sync_status: "deferred",
+                verification_status: "review_required",
+                reason_code: "offline_sync.sequence_gap",
+                reason:
+                  "Offline attendance evidence was received out of sequence and requires review.",
+                server_received_at: "2026-08-21T08:00:00.000Z",
+              },
             },
             {
               event_type: "check_out",

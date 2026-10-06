@@ -70,6 +70,141 @@ describe("attendance offline sync ingestion", () => {
     await expectSecurityAuditSignals(app, []);
   });
 
+  it("exposes accepted offline evidence in employee daily self-evidence without sensitive fields", async () => {
+    const employee = await loginAs(app, "E1");
+    const companyId = employeeCompanyId(app, employee.user.id);
+    const registeredDeviceId = await insertRegisteredDevice(app, {
+      companyId,
+      userId: employee.user.id,
+    });
+    const offlineEvent = event({ sequence: 1, event_type: "check_in" });
+
+    const response = await sync(app, employee.token, batch(registeredDeviceId, [
+      offlineEvent,
+    ]));
+    expect(response.statusCode).toBe(200);
+    const result = response.json().results[0];
+    const daily = await dailyCalendar(
+      app,
+      employee.token,
+      workDateForOfflineEvent(offlineEvent),
+    );
+
+    expect(daily.statusCode, daily.body).toBe(200);
+    expect(daily.json().self_evidence.summary_sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "mobile_offline",
+          label: "Mobile - captured offline",
+        }),
+      ]),
+    );
+    const offlineEvents = daily
+      .json()
+      .self_evidence.events.filter(
+        (item: { source: string }) => item.source === "mobile_offline",
+      );
+    expect(offlineEvents).toHaveLength(1);
+    expect(offlineEvents[0]).toMatchObject({
+      event_type: "check_in",
+      occurred_at: offlineEvent.captured_at,
+      offline: {
+        sync_status: "accepted",
+        verification_status: "unverified",
+        reason_code: "offline_sync.accepted_unverified",
+        reason:
+          "Offline attendance evidence was received and is awaiting verification.",
+        server_received_at: result.server_received_at,
+      },
+    });
+    expect(offlineEvents[0].offline).not.toHaveProperty("payroll_eligible");
+    expect(offlineEvents[0].offline).not.toHaveProperty("processed_at");
+
+    const serialized = JSON.stringify(daily.json().self_evidence);
+    expect(serialized).not.toContain("latitude");
+    expect(serialized).not.toContain("longitude");
+    expect(serialized).not.toContain("coordinates");
+    expect(serialized).not.toContain("client_event_id");
+    expect(serialized).not.toContain("registered_device_id");
+    expect(serialized).not.toContain("installation");
+    expect(serialized).not.toContain("event_payload");
+    expect(serialized).not.toContain("processed_at");
+    await expectCounts(app, {
+      inbox: "1",
+      events: "1",
+      locationEvidence: "1",
+      sessions: "0",
+      punches: "0",
+      dailyRecords: "1",
+      provisionalOutbox: "1",
+    });
+  });
+
+  it("exposes selected-day offline evidence to managers without decision or sensitive fields", async () => {
+    const employee = await loginAs(app, "E1");
+    const manager = await loginAs(app, "D1");
+    const peer = await loginAs(app, "E2");
+    const companyId = employeeCompanyId(app, employee.user.id);
+    const registeredDeviceId = await insertRegisteredDevice(app, {
+      companyId,
+      userId: employee.user.id,
+    });
+    const offlineEvent = event({ sequence: 1, event_type: "check_in" });
+
+    const response = await sync(app, employee.token, batch(registeredDeviceId, [
+      offlineEvent,
+    ]));
+    expect(response.statusCode).toBe(200);
+    const result = response.json().results[0];
+
+    const managerDaily = await dailyCalendar(
+      app,
+      manager.token,
+      workDateForOfflineEvent(offlineEvent),
+      employee.user.id,
+    );
+
+    expect(managerDaily.statusCode, managerDaily.body).toBe(200);
+    expect(managerDaily.json().items[0]).toMatchObject({
+      employee_user_id: employee.user.id,
+      offline_evidence: [
+        {
+          event_type: "check_in",
+          occurred_at: offlineEvent.captured_at,
+          source: "mobile_offline",
+          offline: {
+            sync_status: "accepted",
+            verification_status: "unverified",
+            reason_code: "offline_sync.accepted_unverified",
+            server_received_at: result.server_received_at,
+          },
+        },
+      ],
+    });
+    const selectedEvidence = JSON.stringify(
+      managerDaily.json().items[0].offline_evidence,
+    );
+    expect(selectedEvidence).not.toContain("can_decide");
+    expect(selectedEvidence).not.toContain("allowed_decisions");
+    expect(selectedEvidence).not.toContain("payroll_eligible");
+    expect(selectedEvidence).not.toContain("processed_at");
+    expect(selectedEvidence).not.toContain("latitude");
+    expect(selectedEvidence).not.toContain("longitude");
+    expect(selectedEvidence).not.toContain("coordinates");
+    expect(selectedEvidence).not.toContain("client_event_id");
+    expect(selectedEvidence).not.toContain("registered_device_id");
+    expect(selectedEvidence).not.toContain("installation");
+    expect(selectedEvidence).not.toContain("event_payload");
+
+    const unauthorized = await dailyCalendar(
+      app,
+      peer.token,
+      workDateForOfflineEvent(offlineEvent),
+      employee.user.id,
+    );
+    expect(unauthorized.statusCode).toBe(403);
+  });
+
   it("rejects coordinate evidence older than the persisted age range without leaking internals", async () => {
     const employee = await loginAs(app, "E1");
     const companyId = employeeCompanyId(app, employee.user.id);
@@ -130,7 +265,8 @@ describe("attendance offline sync ingestion", () => {
       companyId,
       userId: employee.user.id,
     });
-    const payload = batch(registeredDeviceId, [event({ sequence: 1 })]);
+    const offlineEvent = event({ sequence: 1 });
+    const payload = batch(registeredDeviceId, [offlineEvent]);
 
     const first = await sync(app, employee.token, payload);
     const replay = await sync(app, employee.token, payload);
@@ -162,6 +298,26 @@ describe("attendance offline sync ingestion", () => {
     });
     await expectDeviceCursor(app, registeredDeviceId, "1");
     await expectSecurityAuditSignals(app, []);
+
+    const daily = await dailyCalendar(
+      app,
+      employee.token,
+      workDateForOfflineEvent(offlineEvent),
+    );
+    expect(daily.statusCode, daily.body).toBe(200);
+    const offlineEvents = daily
+      .json()
+      .self_evidence.events.filter(
+        (item: { source: string }) => item.source === "mobile_offline",
+      );
+    expect(offlineEvents).toHaveLength(1);
+    expect(offlineEvents[0]).toMatchObject({
+      offline: {
+        sync_status: "accepted",
+        verification_status: "unverified",
+        reason_code: "offline_sync.accepted_unverified",
+      },
+    });
   });
 
   it("returns changed-body conflict for reused client_event_id", async () => {
@@ -221,9 +377,10 @@ describe("attendance offline sync ingestion", () => {
       userId: employee.user.id,
     });
 
-    await sync(app, employee.token, batch(registeredDeviceId, [event({ sequence: 1 })]));
+    const acceptedEvent = event({ sequence: 1, event_type: "check_in" });
+    await sync(app, employee.token, batch(registeredDeviceId, [acceptedEvent]));
     const duplicate = await sync(app, employee.token, batch(registeredDeviceId, [
-      event({ sequence: 1, client_event_id: randomUUID() }),
+      event({ sequence: 1, client_event_id: randomUUID(), event_type: "check_out" }),
     ]));
 
     expect(duplicate.statusCode).toBe(200);
@@ -248,6 +405,31 @@ describe("attendance offline sync ingestion", () => {
     });
     await expectDeviceCursor(app, registeredDeviceId, "1");
     await expectSecurityAuditSignals(app, ["duplicate_sequence"]);
+
+    const daily = await dailyCalendar(
+      app,
+      employee.token,
+      workDateForOfflineEvent(acceptedEvent),
+    );
+    expect(daily.statusCode, daily.body).toBe(200);
+    const offlineEvents = daily
+      .json()
+      .self_evidence.events.filter(
+        (item: { source: string }) => item.source === "mobile_offline",
+      );
+    expect(offlineEvents).toHaveLength(1);
+    expect(offlineEvents[0]).toMatchObject({
+      event_type: "check_in",
+      occurred_at: acceptedEvent.captured_at,
+      offline: {
+        sync_status: "accepted",
+        verification_status: "unverified",
+        reason_code: "offline_sync.accepted_unverified",
+      },
+    });
+    expect(JSON.stringify(daily.json().self_evidence)).not.toContain(
+      "offline_sync.duplicate_sequence",
+    );
   });
 
   it("treats a first sequence greater than 1 as a suspicious gap without advancing cursor", async () => {
@@ -262,8 +444,9 @@ describe("attendance offline sync ingestion", () => {
       userId: employee.user.id,
     });
 
+    const gapEvent = event({ sequence: 42, event_type: "break_start" });
     const gap = await sync(app, employee.token, batch(registeredDeviceId, [
-      event({ sequence: 42 }),
+      gapEvent,
     ]));
 
     expect(gap.json().results[0]).toMatchObject({
@@ -287,6 +470,30 @@ describe("attendance offline sync ingestion", () => {
     });
     await expectDeviceCursor(app, registeredDeviceId, "0");
     await expectSecurityAuditSignals(app, ["sequence_gap"]);
+
+    const daily = await dailyCalendar(
+      app,
+      employee.token,
+      workDateForOfflineEvent(gapEvent),
+    );
+    expect(daily.statusCode, daily.body).toBe(200);
+    const offlineEvents = daily
+      .json()
+      .self_evidence.events.filter(
+        (item: { source: string }) => item.source === "mobile_offline",
+      );
+    expect(offlineEvents).toHaveLength(1);
+    expect(offlineEvents[0]).toMatchObject({
+      event_type: "break_start",
+      occurred_at: gapEvent.captured_at,
+      offline: {
+        sync_status: "deferred",
+        verification_status: "review_required",
+        reason_code: "offline_sync.sequence_gap",
+        reason:
+          "Offline attendance evidence was received out of sequence and requires review.",
+      },
+    });
   });
 
   it("keeps multiple gap arrivals deferred until the missing sequence appears", async () => {
@@ -615,6 +822,43 @@ async function sync(
     headers: authHeader(token),
     payload,
   });
+}
+
+async function dailyCalendar(
+  app: TestApp,
+  token: string,
+  date: string,
+  userId?: string,
+) {
+  const params = new URLSearchParams({
+    date,
+    page: "1",
+    page_size: "1",
+  });
+  if (userId) params.set("user_id", userId);
+  return app.inject({
+    method: "GET",
+    url: `/api/v1/attendance/calendar/daily?${params.toString()}`,
+    headers: authHeader(token),
+  });
+}
+
+function workDateForOfflineEvent(offlineEvent: Record<string, unknown>): string {
+  const capturedAt = String(offlineEvent.captured_at);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Calcutta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(capturedAt));
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+  const year = values.get("year");
+  const month = values.get("month");
+  const day = values.get("day");
+  if (!year || !month || !day) {
+    throw new Error(`Unable to derive work date for ${capturedAt}`);
+  }
+  return `${year}-${month}-${day}`;
 }
 
 async function insertRegisteredDevice(

@@ -31,12 +31,26 @@ export interface EmployeeDayEvidenceEventView {
   timeLabel: string;
   sourceLabel: string | null;
   workModeLabel: string | null;
+  badgeStatus: string;
   decisionLabel: string;
   decisionDescription: string;
   reasonCode: string | null;
   reasonText: string | null;
   geoLabel: string | null;
   regularizationLabel: string | null;
+  offline: EmployeeDayEvidenceOfflineView | null;
+}
+
+export interface EmployeeDayEvidenceOfflineView {
+  verificationStatus: string;
+  verificationLabel: string;
+  badgeStatus: string;
+  syncStatus: string;
+  syncLabel: string;
+  serverReceivedAt: string;
+  serverReceivedAtLabel: string;
+  reasonCode: string | null;
+  reasonText: string | null;
 }
 
 export interface EmployeeDayEvidenceRegularizationView {
@@ -61,7 +75,7 @@ const SOURCE_LABELS: Record<string, string> = {
   web_geo: "Web attendance with location",
   mobile: "Mobile attendance",
   mobile_foreground: "Mobile attendance",
-  mobile_offline: "Mobile offline attendance",
+  mobile_offline: "Mobile - captured offline",
   kiosk: "Kiosk attendance",
   admin: "Assisted attendance",
   auto_geofence: "Automatic geofence attendance",
@@ -69,6 +83,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const SUMMARY_SOURCE_LABELS: Record<string, string> = {
   employee_punch: "Employee attendance punch",
+  mobile_offline: "Mobile - captured offline",
   manager_assisted_punch: "Assisted attendance punch",
   historical_correction: "Historical correction",
   approved_regularization: "Approved regularization",
@@ -141,9 +156,12 @@ function eventView(
   event: EmployeeAttendanceEvidenceEvent,
   index: number,
 ): EmployeeDayEvidenceEventView {
+  const offline = offlineView(event.offline);
   const reasonCode = firstReasonCode(event);
   const decision = decisionCopy(event.decision?.outcome);
-  const reasonText = reasonCode ? reasonDescription(reasonCode) : (event.decision?.reason ?? null);
+  const reasonText =
+    offline?.reasonText ??
+    (reasonCode ? reasonDescription(reasonCode) : (event.decision?.reason ?? null));
   const geoLabel = event.geo
     ? [geoOutcomeLabel(event.geo.outcome), event.geo.work_site_name].filter(Boolean).join(" - ")
     : null;
@@ -155,9 +173,10 @@ function eventView(
     timeLabel: event.time || formatTime(event.occurred_at),
     sourceLabel: sourceLabel(event.source, event.origin),
     workModeLabel: event.work_mode ? humanize(event.work_mode) : null,
-    decisionLabel: decision.label,
-    decisionDescription: event.decision?.reason || decision.description,
-    reasonCode,
+    badgeStatus: offline?.badgeStatus ?? decisionBadgeStatus(event.decision?.outcome),
+    decisionLabel: offline?.verificationLabel ?? decision.label,
+    decisionDescription: offline?.reasonText ?? (event.decision?.reason || decision.description),
+    reasonCode: offline?.reasonCode ?? reasonCode,
     reasonText,
     geoLabel: geoLabel || null,
     regularizationLabel: event.regularization
@@ -166,6 +185,7 @@ function eventView(
           event.regularization.status,
         )
       : null,
+    offline,
   };
 }
 
@@ -195,6 +215,93 @@ function regularizationView(
     operationsLabel: operations.join(", "),
     items: regularizationItemDisplays(regularization.items),
   };
+}
+
+function offlineView(
+  offline: EmployeeAttendanceEvidenceEvent["offline"],
+): EmployeeDayEvidenceOfflineView | null {
+  if (!offline || typeof offline !== "object") return null;
+  const serverReceivedAt =
+    typeof offline.server_received_at === "string" &&
+    !Number.isNaN(Date.parse(offline.server_received_at))
+      ? offline.server_received_at
+      : "";
+  if (!serverReceivedAt) return null;
+  const verificationStatus = safeToken(offline.verification_status);
+  const syncStatus = safeToken(offline.sync_status);
+  const reasonCode = safeText(offline.reason_code);
+  const reason = safeText(offline.reason);
+  return {
+    verificationStatus,
+    verificationLabel: offlineVerificationLabel(verificationStatus),
+    badgeStatus: offlineVerificationBadgeStatus(verificationStatus),
+    syncStatus,
+    syncLabel: offlineSyncLabel(syncStatus),
+    serverReceivedAt,
+    serverReceivedAtLabel: formatDateTime(serverReceivedAt),
+    reasonCode,
+    reasonText: reason || (reasonCode ? offlineReasonDescription(reasonCode) : null),
+  };
+}
+
+function offlineVerificationLabel(value: string): string {
+  if (value === "unverified") return "Provisional";
+  if (value === "review_required") return "Review required";
+  if (value === "rejected") return "Rejected";
+  return "Provisional";
+}
+
+function offlineVerificationBadgeStatus(value: string): string {
+  if (value === "review_required") return "review_required";
+  if (value === "rejected") return "rejected";
+  return "provisional";
+}
+
+function offlineSyncLabel(value: string): string {
+  if (value === "accepted") return "Synced";
+  if (value === "deferred") return "Deferred";
+  if (value === "replayed") return "Already synced";
+  if (value === "conflict") return "Conflict";
+  if (value === "rejected") return "Sync rejected";
+  return humanize(value) || "Sync status unavailable";
+}
+
+function offlineReasonDescription(reasonCode: string): string {
+  if (reasonCode === "offline_sync.accepted_unverified") {
+    return "Offline attendance evidence was received and is awaiting verification.";
+  }
+  if (reasonCode === "offline_sync.sequence_gap") {
+    return "Offline attendance evidence was received out of sequence and requires review.";
+  }
+  if (reasonCode === "offline_sync.sequence_out_of_order") {
+    return "Offline attendance evidence arrived out of order and requires review.";
+  }
+  if (reasonCode === "offline_sync.review_required") {
+    return "Offline attendance evidence requires review because verification could not be completed.";
+  }
+  if (reasonCode === "offline_sync.processing_deferred") {
+    return "Offline attendance evidence was deferred for review.";
+  }
+  if (reasonCode === "offline_sync.validation_failed") {
+    return "Offline attendance evidence could not be validated.";
+  }
+  if (reasonCode === "offline_sync.replayed")
+    return "Offline attendance evidence was already synced.";
+  if (reasonCode === "offline_sync.changed_body_conflict") {
+    return "Offline attendance evidence conflicted with a previously received event.";
+  }
+  if (reasonCode === "offline_sync.duplicate_sequence") {
+    return "Offline attendance evidence reused a device sequence and was not accepted.";
+  }
+  return "Offline attendance evidence was received.";
+}
+
+function decisionBadgeStatus(value: string | undefined | null): string {
+  const key = String(value || "").toLowerCase();
+  if (key === "allowed" || key === "passed" || key === "recorded") return "accepted";
+  if (key === "denied" || key === "failed") return "rejected";
+  if (key === "indeterminate") return "review_required";
+  return "pending";
 }
 
 function firstReasonCode(event: EmployeeAttendanceEvidenceEvent): string | null {
@@ -277,6 +384,21 @@ function formatDateTime(value: string): string {
 function isoString(value: string | null | undefined): string | null {
   if (!value) return null;
   return Number.isNaN(Date.parse(value)) ? null : value;
+}
+
+function safeText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function safeToken(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/gu, "")
+    .slice(0, 80);
 }
 
 function humanize(value: string | null | undefined): string {

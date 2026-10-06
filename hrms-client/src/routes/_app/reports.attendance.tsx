@@ -2,22 +2,24 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ReportShell, type ReportFilters } from "@/components/reports/report-shell";
-import { StatusBadge, type Column } from "@/components/ui-kit";
+import { DataCard, StatusBadge, type Column } from "@/components/ui-kit";
 import { useEmployees } from "@/lib/employees-store";
 import { daysAgo, inDateRange, isoToday } from "@/lib/reports/utils";
 import { useAttendanceReport } from "@/domains/reports/queries";
+import { useAttendanceDailyCalendar } from "@/domains/attendance";
 import type { ReportParams } from "@/domains/reports/api";
 import {
   ATTENDANCE_REPORTING_EVIDENCE_OPTIONS,
   attendanceReportingEvidenceLabel,
   type AttendanceReportingEvidenceCategory,
 } from "@/domains/attendance/reporting-evidence";
-import { asRecord, numberValue, text, useApiRouteEnabled } from "@/shared/api";
+import { asArray, asRecord, numberValue, text, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/reports/attendance")({ component: AttendanceReports });
 
 interface AttRow {
   id: string;
+  employeeUserId: string;
   date: string;
   employee: string;
   department: string;
@@ -75,6 +77,7 @@ function buildAttendance(employees: { id: string; name: string; department: stri
       }
       out.push({
         id: e.id + "-" + iso,
+        employeeUserId: e.id,
         date: iso,
         employee: e.name,
         department: e.department,
@@ -93,6 +96,7 @@ function buildAttendance(employees: { id: string; name: string; department: stri
 function AttendanceReports() {
   const { departments, employees } = useEmployees();
   const apiMode = useApiRouteEnabled(["/reports"]);
+  const [selectedAttendanceRow, setSelectedAttendanceRow] = useState<AttRow | null>(null);
   const [filters, setFilters] = useState<ReportFilters>({
     from: daysAgo(90),
     to: isoToday(),
@@ -107,6 +111,17 @@ function AttendanceReports() {
     [departments, employees, filters],
   );
   const reportQuery = useAttendanceReport(apiMode, reportParams);
+  const selectedDailyQuery = useAttendanceDailyCalendar(
+    selectedAttendanceRow?.employeeUserId
+      ? {
+          date: selectedAttendanceRow.date,
+          user_id: selectedAttendanceRow.employeeUserId,
+          page: 1,
+          page_size: 1,
+        }
+      : {},
+    apiMode && Boolean(selectedAttendanceRow?.employeeUserId),
+  );
   const localRows = useMemo(
     () =>
       buildAttendance(employees.map((e) => ({ id: e.id, name: e.name, department: e.department }))),
@@ -229,53 +244,57 @@ function AttendanceReports() {
       </TabsList>
 
       <TabsContent value="daily" className="mt-4">
-        <ReportShell
-          title="Daily Attendance"
-          description="Day-wise attendance with in/out times and worked hours."
-          facets={{
-            showDepartment: true,
-            showEmployee: true,
-            showStatus: true,
-            showEvidenceCategory: true,
-            showTeam: true,
-            statusOptions,
-            teamOptions,
-          }}
-          filters={filters}
-          onFiltersChange={setFilters}
-          summary={[
-            { label: "Records", value: all.length, tone: "info" },
-            {
-              label: "Verified",
-              value: evidenceCounts.verified,
-              tone: "success",
-            },
-            {
-              label: "Warning",
-              value: evidenceCounts.warning,
-              tone: "warning",
-            },
-            {
-              label: "Provisional",
-              value: evidenceCounts.provisional,
-              tone: "warning",
-            },
-            {
-              label: "Review required",
-              value: evidenceCounts.review_required,
-              tone: "warning",
-            },
-            {
-              label: "Rejected",
-              value: evidenceCounts.rejected,
-              tone: "destructive",
-            },
-          ]}
-          build={(f) => baseFilter(all, f)}
-          columns={cols}
-          searchKeys={["employee", "department"]}
-          exportName="daily-attendance"
-        />
+        <div className="space-y-4">
+          <ReportShell
+            title="Daily Attendance"
+            description="Day-wise attendance with in/out times and worked hours."
+            facets={{
+              showDepartment: true,
+              showEmployee: true,
+              showStatus: true,
+              showEvidenceCategory: true,
+              showTeam: true,
+              statusOptions,
+              teamOptions,
+            }}
+            filters={filters}
+            onFiltersChange={setFilters}
+            summary={[
+              { label: "Records", value: all.length, tone: "info" },
+              {
+                label: "Verified",
+                value: evidenceCounts.verified,
+                tone: "success",
+              },
+              {
+                label: "Warning",
+                value: evidenceCounts.warning,
+                tone: "warning",
+              },
+              {
+                label: "Provisional",
+                value: evidenceCounts.provisional,
+                tone: "warning",
+              },
+              {
+                label: "Review required",
+                value: evidenceCounts.review_required,
+                tone: "warning",
+              },
+              {
+                label: "Rejected",
+                value: evidenceCounts.rejected,
+                tone: "destructive",
+              },
+            ]}
+            build={(f) => baseFilter(all, f)}
+            columns={cols}
+            searchKeys={["employee", "department"]}
+            exportName="daily-attendance"
+            onRowClick={setSelectedAttendanceRow}
+          />
+          <OfflineEvidenceDetail row={selectedAttendanceRow} query={selectedDailyQuery} />
+        </div>
       </TabsContent>
 
       <TabsContent value="late" className="mt-4">
@@ -361,10 +380,131 @@ function AttendanceReports() {
   );
 }
 
+function OfflineEvidenceDetail({
+  row,
+  query,
+}: {
+  row: AttRow | null;
+  query: {
+    data?: unknown;
+    isLoading: boolean;
+    isError: boolean;
+    error: unknown;
+  };
+}) {
+  if (!row || !row.employeeUserId) return null;
+  if (query.isLoading) {
+    return (
+      <DataCard
+        title="Offline / provisional evidence"
+        description={`${row.employee} - ${row.date}`}
+      >
+        <p className="text-sm text-muted-foreground">Loading offline evidence...</p>
+      </DataCard>
+    );
+  }
+  if (query.isError) {
+    return (
+      <DataCard
+        title="Offline / provisional evidence"
+        description={`${row.employee} - ${row.date}`}
+      >
+        <p className="text-sm text-destructive">
+          {query.error instanceof Error ? query.error.message : "Offline evidence could not load."}
+        </p>
+      </DataCard>
+    );
+  }
+
+  const evidence = offlineEvidenceFromDaily(query.data);
+  if (evidence.length === 0) return null;
+
+  return (
+    <DataCard title="Offline / provisional evidence" description={`${row.employee} - ${row.date}`}>
+      <div className="space-y-2" data-testid="manager-offline-evidence">
+        {evidence.map((item) => (
+          <div key={item.key} className="rounded-md border border-border/70 p-3 text-sm">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="break-words font-medium">
+                  {item.eventLabel} · Mobile - captured offline
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  This offline evidence is not payroll-final.
+                </p>
+              </div>
+              <StatusBadge
+                status={item.badgeStatus}
+                label={item.verificationLabel}
+                className="w-fit max-w-full whitespace-normal break-words sm:shrink-0"
+              />
+            </div>
+            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+              <EvidenceFact label="Captured offline" value={item.capturedLabel} />
+              <EvidenceFact label="Received by server" value={item.serverReceivedLabel} />
+              <EvidenceFact label="Sync state" value={item.syncLabel} />
+              {item.reason && <EvidenceFact label="Reason" value={item.reason} />}
+            </div>
+            {item.reasonCode && (
+              <p className="mt-2 break-words font-mono text-[11px] text-muted-foreground">
+                Reason code: {item.reasonCode}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </DataCard>
+  );
+}
+
+interface OfflineEvidenceDisplay {
+  key: string;
+  eventLabel: string;
+  capturedLabel: string;
+  serverReceivedLabel: string;
+  syncLabel: string;
+  verificationLabel: string;
+  badgeStatus: string;
+  reasonCode: string | null;
+  reason: string | null;
+}
+
+function offlineEvidenceFromDaily(value: unknown): OfflineEvidenceDisplay[] {
+  const item = asArray(asRecord(value).items).map(asRecord)[0];
+  return asArray(item?.offline_evidence).map((entry, index) => {
+    const record = asRecord(entry);
+    const offline = asRecord(record.offline);
+    const verificationStatus = safeToken(offline.verification_status);
+    const syncStatus = safeToken(offline.sync_status);
+    const reasonCode = nullableText(offline.reason_code);
+    return {
+      key: `${text(record.occurred_at, "offline")}:${index}`,
+      eventLabel: eventLabel(text(record.event_type)),
+      capturedLabel: formatDateTime(text(record.occurred_at)),
+      serverReceivedLabel: formatDateTime(text(offline.server_received_at)),
+      syncLabel: syncLabel(syncStatus),
+      verificationLabel: verificationLabel(verificationStatus),
+      badgeStatus: verificationBadgeStatus(verificationStatus),
+      reasonCode,
+      reason: nullableText(offline.reason) ?? (reasonCode ? offlineReason(reasonCode) : null),
+    };
+  });
+}
+
+function EvidenceFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md bg-muted/40 px-2 py-1.5">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-0.5 break-words font-semibold">{value}</p>
+    </div>
+  );
+}
+
 function attendanceFromApi(value: unknown): AttRow {
   const record = asRecord(value);
   return {
     id: text(record.id),
+    employeeUserId: text(record.employee_user_id),
     date: text(record.date),
     employee: text(record.employee),
     department: text(record.department, "—"),
@@ -381,6 +521,84 @@ function reportingEvidenceCategory(value: unknown): AttendanceReportingEvidenceC
   return ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.some((option) => option.value === value)
     ? (value as AttendanceReportingEvidenceCategory)
     : null;
+}
+
+function eventLabel(value: string): string {
+  if (value === "check_in") return "Check-in";
+  if (value === "break_start") return "Break start";
+  if (value === "break_end") return "Break end";
+  if (value === "check_out") return "Check-out";
+  return humanize(value) || "Attendance event";
+}
+
+function verificationLabel(value: string): string {
+  if (value === "review_required") return "Review required";
+  if (value === "rejected") return "Rejected";
+  return "Provisional";
+}
+
+function verificationBadgeStatus(value: string): string {
+  if (value === "review_required") return "review_required";
+  if (value === "rejected") return "rejected";
+  return "provisional";
+}
+
+function syncLabel(value: string): string {
+  if (value === "accepted") return "Synced";
+  if (value === "deferred") return "Deferred";
+  if (value === "replayed") return "Already synced";
+  if (value === "conflict") return "Conflict";
+  if (value === "rejected") return "Sync rejected";
+  return humanize(value) || "Sync status unavailable";
+}
+
+function offlineReason(reasonCode: string): string {
+  if (reasonCode === "offline_sync.accepted_unverified") {
+    return "Offline attendance evidence was received and is awaiting verification.";
+  }
+  if (reasonCode === "offline_sync.sequence_gap") {
+    return "Offline attendance evidence was received out of sequence and requires review.";
+  }
+  if (reasonCode === "offline_sync.sequence_out_of_order") {
+    return "Offline attendance evidence arrived out of order and requires review.";
+  }
+  if (reasonCode === "offline_sync.review_required") {
+    return "Offline attendance evidence requires review because verification could not be completed.";
+  }
+  return "Offline attendance evidence was received.";
+}
+
+function nullableText(value: unknown): string | null {
+  const parsed = text(value).trim();
+  return parsed || null;
+}
+
+function safeToken(value: unknown): string {
+  return text(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/gu, "")
+    .slice(0, 80);
+}
+
+function formatDateTime(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value || "Time unavailable";
+  return parsed.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function humanize(value: string): string {
+  return value
+    .trim()
+    .replace(/[_-]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .replace(/\b\w/gu, (letter) => letter.toUpperCase());
 }
 
 function reportParamsFromFilters(

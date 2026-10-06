@@ -5,6 +5,9 @@ import type {
   AttendanceDayStatus,
   AttendanceGeoFallbackReview,
   AttendanceLocationEvidenceInput,
+  AttendanceOfflineSyncReasonCode,
+  AttendanceOfflineSyncStatus,
+  AttendanceOfflineVerificationStatus,
   AttendancePunch,
   AttendancePunchEventType,
   AttendancePublicPunchSourceChannel,
@@ -182,6 +185,7 @@ interface ExactAttendanceLocationRevealResponse {
 
 type EmployeeAttendanceSummarySourceType =
   | "employee_punch"
+  | "mobile_offline"
   | "manager_assisted_punch"
   | "historical_correction"
   | "approved_regularization"
@@ -215,6 +219,14 @@ interface EmployeeAttendanceEvidenceRegularization {
   applied_at: string | null;
 }
 
+interface AttendanceOfflineEvidenceMetadata {
+  sync_status: AttendanceOfflineSyncStatus;
+  verification_status: AttendanceOfflineVerificationStatus;
+  reason_code: AttendanceOfflineSyncReasonCode | null;
+  reason: string | null;
+  server_received_at: string;
+}
+
 interface EmployeeAttendanceEvidenceEvent {
   event_type: string;
   occurred_at: string;
@@ -225,6 +237,15 @@ interface EmployeeAttendanceEvidenceEvent {
   decision: EmployeeAttendanceEvidenceDecision | null;
   geo: EmployeeAttendanceEvidenceGeo | null;
   regularization: EmployeeAttendanceEvidenceRegularization | null;
+  offline?: AttendanceOfflineEvidenceMetadata;
+}
+
+interface AttendanceOfflineEvidenceItem {
+  event_type: string;
+  occurred_at: string;
+  time: string | null;
+  source: "mobile_offline";
+  offline: AttendanceOfflineEvidenceMetadata;
 }
 
 interface EmployeeAttendanceEvidenceRegularizationItem {
@@ -275,6 +296,10 @@ interface EmployeeDayEvidenceEventRow {
   event_type: string;
   event_source: string | null;
   event_occurred_at: Date | string;
+  offline_sync_status: AttendanceOfflineSyncStatus | null;
+  offline_verification_status: AttendanceOfflineVerificationStatus | null;
+  offline_reason_code: AttendanceOfflineSyncReasonCode | null;
+  offline_server_received_at: Date | string | null;
   punch_id: UUID | null;
   punch_event_type: string | null;
   punch_source: string | null;
@@ -289,6 +314,17 @@ interface EmployeeDayEvidenceEventRow {
   audit_decision_type: string | null;
   audit_evaluation_context: Record<string, unknown> | null;
   audit_reason_codes: string[] | null;
+}
+
+interface AttendanceOfflineEvidenceRow {
+  employee_user_id: UUID;
+  event_type: string;
+  event_source: "mobile_offline" | string | null;
+  event_occurred_at: Date | string;
+  offline_sync_status: AttendanceOfflineSyncStatus;
+  offline_verification_status: AttendanceOfflineVerificationStatus;
+  offline_reason_code: AttendanceOfflineSyncReasonCode | null;
+  offline_server_received_at: Date | string;
 }
 
 interface EmployeeDayRegularizationRow {
@@ -1243,9 +1279,50 @@ export class AttendanceService {
     actor: AuthUser,
     query: AttendancePageQuery,
   ) {
-    const response = this.dailyCalendar(actor, query);
+    const response = await this.dailyCalendarWithSelectedOfflineEvidence(
+      actor,
+      query,
+      this.dailyCalendar(actor, query),
+    );
     const evidence = await this.employeeSelfDayEvidence(actor, query);
     return evidence ? { ...response, self_evidence: evidence } : response;
+  }
+
+  private async dailyCalendarWithSelectedOfflineEvidence(
+    actor: AuthUser,
+    query: AttendancePageQuery,
+    response: ReturnType<AttendanceService["dailyCalendar"]>,
+  ): Promise<ReturnType<AttendanceService["dailyCalendar"]>> {
+    if (!this.store.pgPool || !query.user_id || query.user_id === actor.id) {
+      return response;
+    }
+
+    const companyId = this.resolveAttendanceCompanyContext(
+      actor,
+      "attendance.daily_calendar.offline_evidence",
+      query.company_id,
+    ).companyId;
+    const date =
+      query.date ??
+      query.date_from ??
+      todayDate(this.timezoneForUser(actor.id, companyId));
+    const targetTimeZone = this.timezoneForUser(query.user_id, companyId);
+    const offlineEvidence = await this.offlineEvidenceForSelectedDayPostgres(
+      companyId,
+      query.user_id,
+      date,
+      targetTimeZone,
+    );
+    if (offlineEvidence.length === 0) return response;
+
+    return {
+      ...response,
+      items: response.items.map((item) =>
+        item.employee_user_id === query.user_id
+          ? { ...item, offline_evidence: offlineEvidence }
+          : item,
+      ),
+    };
   }
 
   createRegularization(
@@ -4638,6 +4715,10 @@ export class AttendanceService {
           event.event_type AS event_type,
           event.source AS event_source,
           event.occurred_at AS event_occurred_at,
+          offline.sync_status AS offline_sync_status,
+          offline.verification_status AS offline_verification_status,
+          offline.reason_code AS offline_reason_code,
+          offline.server_received_at AS offline_server_received_at,
           punch.id AS punch_id,
           punch.event_type AS punch_event_type,
           punch.source AS punch_source,
@@ -4657,6 +4738,10 @@ export class AttendanceService {
             ARRAY[]::text[]
           ) AS audit_reason_codes
          FROM attendance.attendance_events event
+         LEFT JOIN attendance.offline_event_inbox offline
+           ON offline.company_id = event.company_id
+          AND offline.attendance_event_id = event.id
+          AND offline.sync_status IN ('accepted', 'deferred')
          LEFT JOIN attendance.punch_events punch
            ON punch.company_id = event.company_id
           AND punch.command_execution_id = event.command_execution_id
@@ -4677,6 +4762,10 @@ export class AttendanceService {
           event.event_type,
           event.source,
           event.occurred_at,
+          offline.sync_status,
+          offline.verification_status,
+          offline.reason_code,
+          offline.server_received_at,
           punch.id,
           punch.event_type,
           punch.source,
@@ -4909,6 +4998,7 @@ export class AttendanceService {
   ): EmployeeAttendanceEvidenceEvent {
     const occurredAt = isoDateValue(row.event_occurred_at) ?? "";
     const geoPolicy = this.employeeGeoPolicyFromRow(row);
+    const offline = this.offlineEvidenceMetadataFromRow(row);
     return {
       event_type: row.punch_event_type ?? row.event_type,
       occurred_at: occurredAt,
@@ -4923,7 +5013,117 @@ export class AttendanceService {
         row.punch_regularization_request_id,
         regularizations,
       ),
+      ...(offline ? { offline } : {}),
     };
+  }
+
+  private async offlineEvidenceForSelectedDayPostgres(
+    companyId: UUID,
+    employeeUserId: UUID,
+    workDate: string,
+    timeZone: string,
+  ): Promise<AttendanceOfflineEvidenceItem[]> {
+    if (!this.store.pgPool) return [];
+    const result = await this.store.pgPool.query<AttendanceOfflineEvidenceRow>(
+      `SELECT
+          event.employee_user_id,
+          event.event_type AS event_type,
+          event.source AS event_source,
+          event.occurred_at AS event_occurred_at,
+          offline.sync_status AS offline_sync_status,
+          offline.verification_status AS offline_verification_status,
+          offline.reason_code AS offline_reason_code,
+          offline.server_received_at AS offline_server_received_at
+         FROM attendance.attendance_events event
+         JOIN attendance.offline_event_inbox offline
+           ON offline.company_id = event.company_id
+          AND offline.attendance_event_id = event.id
+          AND offline.sync_status IN ('accepted', 'deferred')
+        WHERE event.company_id = $1
+          AND event.employee_user_id = $2
+          AND to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD') = $4
+        ORDER BY event.occurred_at ASC, event.event_type ASC`,
+      [companyId, employeeUserId, timeZone, workDate],
+    );
+    return result.rows
+      .map((row) => this.presentOfflineEvidenceItem(row, timeZone))
+      .filter((item): item is AttendanceOfflineEvidenceItem => Boolean(item));
+  }
+
+  private presentOfflineEvidenceItem(
+    row: AttendanceOfflineEvidenceRow,
+    timeZone: string,
+  ): AttendanceOfflineEvidenceItem | null {
+    const occurredAt = isoDateValue(row.event_occurred_at);
+    const offline = this.offlineEvidenceMetadataFromRow(row);
+    if (!occurredAt || !offline) return null;
+    return {
+      event_type: row.event_type,
+      occurred_at: occurredAt,
+      time: timeText(occurredAt, timeZone),
+      source: "mobile_offline",
+      offline,
+    };
+  }
+
+  private offlineEvidenceMetadataFromRow(
+    row: Pick<
+      EmployeeDayEvidenceEventRow | AttendanceOfflineEvidenceRow,
+      | "offline_sync_status"
+      | "offline_verification_status"
+      | "offline_reason_code"
+      | "offline_server_received_at"
+    >,
+  ): AttendanceOfflineEvidenceMetadata | null {
+    const receivedAt = isoDateValue(row.offline_server_received_at);
+    if (
+      !row.offline_sync_status ||
+      !row.offline_verification_status ||
+      !receivedAt
+    ) {
+      return null;
+    }
+    return {
+      sync_status: row.offline_sync_status,
+      verification_status: row.offline_verification_status,
+      reason_code: row.offline_reason_code,
+      reason: this.offlineSyncReason(row.offline_reason_code),
+      server_received_at: receivedAt,
+    };
+  }
+
+  private offlineSyncReason(
+    reasonCode: AttendanceOfflineSyncReasonCode | null,
+  ): string | null {
+    if (!reasonCode) return null;
+    if (reasonCode === "offline_sync.accepted_unverified") {
+      return "Offline attendance evidence was received and is awaiting verification.";
+    }
+    if (reasonCode === "offline_sync.review_required") {
+      return "Offline attendance evidence requires review because verification could not be completed.";
+    }
+    if (reasonCode === "offline_sync.sequence_gap") {
+      return "Offline attendance evidence was received out of sequence and requires review.";
+    }
+    if (reasonCode === "offline_sync.sequence_out_of_order") {
+      return "Offline attendance evidence arrived out of order and requires review.";
+    }
+    if (reasonCode === "offline_sync.processing_deferred") {
+      return "Offline attendance evidence was deferred for review.";
+    }
+    if (reasonCode === "offline_sync.validation_failed") {
+      return "Offline attendance evidence could not be validated.";
+    }
+    if (reasonCode === "offline_sync.changed_body_conflict") {
+      return "Offline attendance evidence conflicted with a previously received event.";
+    }
+    if (reasonCode === "offline_sync.duplicate_sequence") {
+      return "Offline attendance evidence reused a device sequence and was not accepted.";
+    }
+    if (reasonCode === "offline_sync.replayed") {
+      return "Offline attendance evidence was already synced.";
+    }
+    return "Offline attendance evidence was received.";
   }
 
   private employeeDecisionFromRow(
@@ -5103,6 +5303,7 @@ export class AttendanceService {
       return "approved_regularization";
     }
     if (event.origin === "historical_correction") return "historical_correction";
+    if (event.source === "mobile_offline") return "mobile_offline";
     if (event.origin === "manager_assisted_now" || event.source === "admin") {
       return "manager_assisted_punch";
     }
@@ -5120,6 +5321,7 @@ export class AttendanceService {
   ): string {
     if (type === "approved_regularization") return "Approved regularization";
     if (type === "historical_correction") return "Historical correction";
+    if (type === "mobile_offline") return "Mobile - captured offline";
     if (type === "manager_assisted_punch") return "Assisted attendance punch";
     if (type === "system_daily_summary") return "Daily attendance processing";
     return "Employee attendance punch";

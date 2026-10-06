@@ -27,6 +27,7 @@ test.describe("employee day evidence model", () => {
       },
       summary_sources: [
         { type: "employee_punch", label: "Employee attendance punch" },
+        { type: "mobile_offline", label: "Mobile - captured offline" },
         { type: "approved_regularization", label: "Approved regularization" },
       ],
       events: [
@@ -53,6 +54,30 @@ test.describe("employee day evidence model", () => {
           latitude: 19.076,
           longitude: 72.8777,
           command_id: "internal-command",
+        },
+        {
+          event_type: "break_start",
+          occurred_at: "2026-07-18T07:00:00.000Z",
+          time: "12:30",
+          source: "mobile_offline",
+          origin: null,
+          work_mode: "office",
+          decision: null,
+          geo: null,
+          regularization: null,
+          offline: {
+            sync_status: "deferred",
+            verification_status: "review_required",
+            reason_code: "offline_sync.sequence_gap",
+            reason: "Offline attendance evidence was received out of sequence and requires review.",
+            server_received_at: "2026-07-18T07:05:00.000Z",
+            payroll_eligible: false,
+            processed_at: "2026-07-18T07:05:05.000Z",
+          },
+          client_event_id: "internal-client-event",
+          registered_device_id: "internal-device",
+          installation_id_hash: "internal-installation",
+          raw_payload: { coordinates: [72.8777, 19.076] },
         },
         {
           event_type: "check_in",
@@ -122,9 +147,14 @@ test.describe("employee day evidence model", () => {
 
     expect(view?.summarySources.map((source) => source.label)).toEqual([
       "Employee attendance punch",
+      "Mobile - captured offline",
       "Approved regularization",
     ]);
-    expect(view?.events.map((event) => event.eventLabel)).toEqual(["Check-in", "Check-out"]);
+    expect(view?.events.map((event) => event.eventLabel)).toEqual([
+      "Check-in",
+      "Break start",
+      "Check-out",
+    ]);
     expect(view?.events[0]).toMatchObject({
       decisionLabel: "Accepted",
       reasonCode: "unknown_future_reason",
@@ -132,6 +162,19 @@ test.describe("employee day evidence model", () => {
       regularizationLabel: "Added by Approved regularization",
     });
     expect(view?.events[1]).toMatchObject({
+      sourceLabel: "Mobile - captured offline",
+      badgeStatus: "review_required",
+      decisionLabel: "Review required",
+      reasonCode: "offline_sync.sequence_gap",
+      reasonText: "Offline attendance evidence was received out of sequence and requires review.",
+      offline: {
+        syncStatus: "deferred",
+        syncLabel: "Deferred",
+        verificationStatus: "review_required",
+        verificationLabel: "Review required",
+      },
+    });
+    expect(view?.events[2]).toMatchObject({
       sourceLabel: "Web attendance with location",
       reasonCode: "geo_inside_fence",
       reasonText: "Your location was verified within an allowed work area.",
@@ -162,6 +205,14 @@ test.describe("employee day evidence model", () => {
     expect(serialized).not.toContain("coordinates");
     expect(serialized).not.toContain("command_id");
     expect(serialized).not.toContain("internal-command");
+    expect(serialized).not.toContain("client_event_id");
+    expect(serialized).not.toContain("internal-client-event");
+    expect(serialized).not.toContain("registered_device_id");
+    expect(serialized).not.toContain("internal-device");
+    expect(serialized).not.toContain("installation_id_hash");
+    expect(serialized).not.toContain("internal-installation");
+    expect(serialized).not.toContain("payroll_eligible");
+    expect(serialized).not.toContain("processed_at");
     expect(serialized).not.toContain("raw_payload");
   });
 });
