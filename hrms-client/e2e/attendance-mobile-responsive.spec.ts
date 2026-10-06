@@ -1,11 +1,14 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   attendanceSummary,
   openAttendance,
   prepareAttendancePage,
   punchCommand,
 } from "./attendance-regression.helpers";
-import { mockGeolocationPermissionDenied } from "./helpers/mock-geolocation";
+import {
+  getGeolocationCallCount,
+  mockGeolocationPermissionDenied,
+} from "./helpers/mock-geolocation";
 
 test.describe("attendance mobile responsive polish", () => {
   test.use({
@@ -328,6 +331,210 @@ test.describe("attendance mobile responsive polish", () => {
   });
 });
 
+test.describe("attendance narrow phone fallback", () => {
+  test.use({
+    viewport: { width: 320, height: 568 },
+    isMobile: true,
+    hasTouch: true,
+  });
+
+  test("attendance shell and sidebar navigation stay usable at 320px", async ({ page }) => {
+    await prepareAttendancePage(page);
+    await page.route("**/api/v1/attendance/summary/my**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(attendanceSummary("not_started")),
+      });
+    });
+
+    await openAttendance(page);
+    await expectNoHorizontalOverflow(page, "narrow attendance shell");
+    await expect(page.getByRole("button", { name: "Clock in" })).toBeVisible();
+    await expect(page.getByText("8h 00m", { exact: true })).toBeVisible();
+
+    const trigger = page.getByRole("button", { name: "Toggle Sidebar" });
+    await expectMinimumTargetSize(trigger, "mobile sidebar trigger");
+    await trigger.click();
+    const sidebar = page.getByRole("dialog", { name: "Sidebar" });
+    await expect(sidebar).toBeVisible();
+    await sidebar.getByRole("link", { name: "Attendance", exact: true }).click();
+    await expect(page).toHaveURL(/\/attendance\/?$/u);
+    await expect(sidebar).toBeHidden();
+  });
+
+  test("permission-denied fallback remains reachable without document overflow", async ({
+    page,
+  }) => {
+    await prepareAttendancePage(page);
+    await mockGeolocationPermissionDenied(page);
+    let fallbackCalls = 0;
+
+    await page.route("**/api/v1/attendance/summary/my**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          attendanceSummary("not_started", {
+            attendance_mode: "geo_required",
+            fallback_approval_mode: "approval_required",
+            permission_denied_action: "manual_fallback",
+            location_unavailable_action: "manual_fallback",
+            outside_fence_action: "deny",
+          }),
+        ),
+      });
+    });
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "ATTENDANCE_PUNCH_DENIED",
+          message: "Location permission requires manual fallback review.",
+          details: {
+            reason_code: "geo_permission_denied",
+            geo_policy: {
+              factual_outcome: "permission_denied",
+              selected_action: "manual_fallback",
+              fallback_used: true,
+              allowed: true,
+              reason_code: "geo_permission_denied",
+            },
+            manual_fallback: {
+              available: true,
+              review_required: true,
+              reference: "narrow-permission-denied",
+              reason_code: "geo_permission_denied",
+            },
+          },
+        }),
+      });
+    });
+    await page.route(
+      "**/api/v1/attendance/geo-fallbacks/narrow-permission-denied/submit",
+      async (route) => {
+        fallbackCalls += 1;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            geo_policy: {
+              factual_outcome: "permission_denied",
+              selected_action: "manual_fallback",
+              fallback_used: true,
+              allowed: true,
+              reason_code: "geo_permission_denied",
+            },
+            manual_fallback: {
+              submitted: true,
+              review_required: true,
+              review_id: "narrow-permission-denied-review",
+            },
+          }),
+        });
+      },
+    );
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in" }).click();
+    await expect(
+      page.getByText(
+        /Location access is blocked|Location permission requires manual fallback review|Location permission was denied/u,
+      ),
+    ).toBeVisible();
+    const fallbackButton = page.getByRole("button", { name: "Continue manually" });
+    await expect(fallbackButton).toBeVisible();
+    await expectNoHorizontalOverflow(page, "narrow permission denied fallback");
+    expect(await getGeolocationCallCount(page)).toBe(1);
+
+    await fallbackButton.click();
+    await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+    expect(fallbackCalls).toBe(1);
+    expect(await getGeolocationCallCount(page)).toBe(1);
+    await expectNoHorizontalOverflow(page, "narrow manual fallback submitted");
+  });
+
+  test("narrow calendar scrolls locally and passes date context to regularization", async ({
+    page,
+  }) => {
+    await prepareAttendancePage(page);
+    const workDate = previousLocalDate();
+    const editableDate = offsetLocalDate(-2);
+    const month = workDate.slice(0, 7);
+    const dayRecord = {
+      work_date: workDate,
+      status: "present",
+      in_time: "09:10",
+      out_time: "18:00",
+      hours: "8h 50m",
+      work_minutes: 530,
+      detail: "8h 50m",
+    };
+
+    await page.route("**/api/v1/attendance/summary/my**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(attendanceSummary("not_started")),
+      });
+    });
+    await page.route("**/api/v1/attendance/calendar/monthly**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          month,
+          calendar_days: [dayRecord],
+          summary: { present: 1, wfh: 0, late: 0, absent: 0, leave: 0, holiday: 0 },
+        }),
+      });
+    });
+    await page.route("**/api/v1/attendance/calendar/daily**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [dayRecord],
+          page: 1,
+          page_size: 1,
+          total: 1,
+          self_evidence: employeeEvidence(workDate),
+        }),
+      });
+    });
+
+    await openAttendance(page, "/attendance/calendar");
+    const calendarScroll = page.getByTestId("attendance-calendar-scroll");
+    await expect(calendarScroll).toBeVisible();
+    await expectLocalHorizontalScroll(calendarScroll, "narrow calendar");
+    await expectMinimumTargetSize(
+      page.getByRole("button", { name: "Previous month" }),
+      "previous month",
+    );
+    await expectMinimumTargetSize(page.getByRole("button", { name: "Next month" }), "next month");
+    await expectNoHorizontalOverflow(page, "narrow calendar before selection");
+
+    await page.getByRole("button", { name: /Present attendance/u }).click();
+    await expect(page.getByText("8h 50m", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("In", { exact: true })).toBeVisible();
+    await expect(page.getByText("Out", { exact: true })).toBeVisible();
+    await expectNoHorizontalOverflow(page, "narrow calendar selected day");
+
+    await page.getByRole("button", { name: "Regularize this day" }).click();
+    await expect(page).toHaveURL(new RegExp(`/attendance\\?regularizeDate=${workDate}$`, "u"));
+    const dateInput = page.getByLabel("Attendance date");
+    await expect(dateInput).toHaveValue(workDate);
+    await dateInput.fill(editableDate);
+    await expect(dateInput).toHaveValue(editableDate);
+
+    await page.goto("/attendance?regularizeDate=not-a-date", { waitUntil: "domcontentloaded" });
+    await waitForWorkspace(page);
+    await expect(page.getByLabel("Attendance date")).toHaveValue("");
+    await expectNoHorizontalOverflow(page, "invalid regularize date");
+  });
+});
+
 async function prepareAdminPage(page: Page): Promise<void> {
   await page.addInitScript(() => {
     window.sessionStorage.setItem("hawkaii_api_access_token", "attendance-mobile-admin-token");
@@ -382,6 +589,27 @@ async function expectNoHorizontalOverflow(page: Page, label: string): Promise<vo
   }));
   expect(result.rootOverflow, `${label} root horizontal overflow`).toBeLessThanOrEqual(1);
   expect(result.bodyOverflow, `${label} body horizontal overflow`).toBeLessThanOrEqual(1);
+}
+
+async function expectMinimumTargetSize(
+  locator: Locator,
+  label: string,
+  minimum = 43,
+): Promise<void> {
+  const box = await locator.boundingBox();
+  expect(box, `${label} should have a rendered box`).not.toBeNull();
+  expect(box!.width, `${label} width`).toBeGreaterThanOrEqual(minimum);
+  expect(box!.height, `${label} height`).toBeGreaterThanOrEqual(minimum);
+}
+
+async function expectLocalHorizontalScroll(locator: Locator, label: string): Promise<void> {
+  const metrics = await locator.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(metrics.scrollWidth, `${label} should own horizontal overflow`).toBeGreaterThan(
+    metrics.clientWidth,
+  );
 }
 
 function employeeEvidence(workDate: string): Record<string, unknown> {
@@ -630,8 +858,12 @@ function attendanceReportResponse(): Record<string, unknown> {
 }
 
 function previousLocalDate(): string {
+  return offsetLocalDate(-1);
+}
+
+function offsetLocalDate(days: number): string {
   const value = new Date();
-  value.setDate(value.getDate() - 1);
+  value.setDate(value.getDate() + days);
   return localIsoDate(value);
 }
 

@@ -37,15 +37,23 @@ import {
 } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/attendance/")({
+  validateSearch: (search: Record<string, unknown>): AttendanceOverviewSearch => ({
+    regularizeDate: canonicalIsoDate(search.regularizeDate),
+  }),
   component: AttendanceOverview,
 });
 
 const ADMIN_ROLES: Role[] = ["hr_admin", "main_admin", "manager"];
 
+interface AttendanceOverviewSearch {
+  regularizeDate?: string;
+}
+
 function AttendanceOverview() {
   const { activeRole } = useAuth();
+  const { regularizeDate } = Route.useSearch();
   const isAdmin = activeRole && ADMIN_ROLES.includes(activeRole);
-  return isAdmin ? <AdminView /> : <EmployeeView />;
+  return isAdmin ? <AdminView /> : <EmployeeView initialRegularizeDate={regularizeDate} />;
 }
 
 function records(value: unknown): ApiRecord[] {
@@ -58,6 +66,22 @@ function todayIsoDate(): string {
 
 function currentMonth(): string {
   return currentLocalMonth();
+}
+
+function canonicalIsoDate(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) return undefined;
+
+  const [yearValue, monthValue, dayValue] = value.split("-").map(Number);
+  const parsed = new Date(yearValue, monthValue - 1, dayValue);
+  if (
+    parsed.getFullYear() !== yearValue ||
+    parsed.getMonth() !== monthValue - 1 ||
+    parsed.getDate() !== dayValue
+  ) {
+    return undefined;
+  }
+
+  return value;
 }
 
 function formatMinutes(minutes: number): string {
@@ -245,7 +269,7 @@ function AdminView() {
   );
 }
 
-function EmployeeView() {
+function EmployeeView({ initialRegularizeDate }: { initialRegularizeDate?: string }) {
   const query = useMyAttendanceSummary({ month: currentMonth(), page: 1, page_size: 50 });
   const data = asRecord(query.data);
   const summary = asRecord(data.summary);
@@ -320,7 +344,7 @@ function EmployeeView() {
         />
       </div>
 
-      <EmployeeRegularizationForm />
+      <EmployeeRegularizationForm initialWorkDate={initialRegularizeDate} />
 
       <DataCard title="Late & absent history" description="Last 30 days">
         {query.isError ? (

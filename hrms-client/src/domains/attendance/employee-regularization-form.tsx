@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { CheckCircle2, Clock3, Plus, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -52,10 +52,15 @@ interface SubmittedState {
   summaries: string[];
 }
 
-export function EmployeeRegularizationForm() {
+interface EmployeeRegularizationFormProps {
+  initialWorkDate?: string;
+}
+
+export function EmployeeRegularizationForm({ initialWorkDate }: EmployeeRegularizationFormProps) {
   const mutation = useAttendanceRegularizationMutation();
   const itemSequence = useRef(1);
-  const [workDate, setWorkDate] = useState("");
+  const lastInitialWorkDate = useRef(initialWorkDate);
+  const [workDate, setWorkDate] = useState(initialWorkDate ?? "");
   const [reason, setReason] = useState("");
   const [draftItems, setRegularizationDraftItems] = useState<RegularizationDraftItem[]>([
     createRegularizationDraftItem("regularization-item-0"),
@@ -66,6 +71,17 @@ export function EmployeeRegularizationForm() {
   const today = localIsoDate();
   const maximumWorkDate = previousLocalDate();
   const historyDateFrom = monthsAgoLocalDate(6);
+
+  useEffect(() => {
+    if (initialWorkDate === lastInitialWorkDate.current) return;
+    lastInitialWorkDate.current = initialWorkDate;
+    setWorkDate(initialWorkDate ?? "");
+    setRegularizationDraftItems((current) =>
+      current.map((item) => ({ ...item, targetPunchEventId: "" })),
+    );
+    setValidationErrors([]);
+    setSubmitted(null);
+  }, [initialWorkDate]);
 
   // listMyPunches uses date_from/date_to for its range. Passing only `date` would
   // silently return the default month-to-date range and could expose wrong targets.
@@ -231,7 +247,7 @@ export function EmployeeRegularizationForm() {
 
   const resetForm = () => {
     itemSequence.current = 1;
-    setWorkDate("");
+    setWorkDate(initialWorkDate ?? "");
     setReason("");
     setRegularizationDraftItems([createRegularizationDraftItem("regularization-item-0")]);
     setValidationErrors([]);

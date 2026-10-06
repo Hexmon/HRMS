@@ -1,4 +1,4 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -92,10 +92,14 @@ function AttendanceCalendar() {
 }
 
 function EmployeeAttendanceCalendar() {
+  const navigate = useNavigate();
   const today = new Date();
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [selected, setSelected] = useState<number>(today.getDate());
   const selectedDate = `${monthValue(cursor.y, cursor.m)}-${String(selected).padStart(2, "0")}`;
+  const todayDate = `${monthValue(today.getFullYear(), today.getMonth())}-${String(
+    today.getDate(),
+  ).padStart(2, "0")}`;
   const monthlyQuery = useAttendanceMonthlyCalendar({
     month: monthValue(cursor.y, cursor.m),
     page: 1,
@@ -127,6 +131,13 @@ function EmployeeAttendanceCalendar() {
   const next = () => setCursor((c) => (c.m === 11 ? { y: c.y + 1, m: 0 } : { y: c.y, m: c.m + 1 }));
   const selectedRecord = data.get(selected);
   const selectedStatus = dayStatus(selectedRecord);
+  const canRegularizeSelectedDate = selectedDate < todayDate;
+  const regularizeSelectedDay = () => {
+    void navigate({
+      to: "/attendance",
+      search: { regularizeDate: selectedDate },
+    });
+  };
 
   return (
     <div className="grid grid-cols-1 gap-4 pt-2 lg:grid-cols-3">
@@ -137,16 +148,18 @@ function EmployeeAttendanceCalendar() {
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9 rounded-full sm:h-8 sm:w-8"
+              className="h-11 w-11 rounded-full md:h-8 md:w-8"
               onClick={prev}
+              aria-label="Previous month"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9 rounded-full sm:h-8 sm:w-8"
+              className="h-11 w-11 rounded-full md:h-8 md:w-8"
               onClick={next}
+              aria-label="Next month"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -159,48 +172,55 @@ function EmployeeAttendanceCalendar() {
           />
         ) : (
           <>
-            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:gap-1.5">
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                <div key={d}>{d}</div>
-              ))}
-            </div>
-            <div className="mt-2 grid grid-cols-7 gap-1 sm:gap-1.5">
-              {Array.from({ length: firstDow }).map((_, i) => (
-                <div key={"e" + i} />
-              ))}
-              {Array.from({ length: days }).map((_, i) => {
-                const day = i + 1;
-                const record = data.get(day);
-                const status = dayStatus(record);
-                const isSelected = day === selected;
-                const dayDate = new Date(cursor.y, cursor.m, day);
-                const isToday = dayDate.toDateString() === today.toDateString();
-                const dayLabel = dayDate.toLocaleDateString(undefined, {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                });
-                return (
-                  <button
-                    key={day}
-                    onClick={() => setSelected(day)}
-                    aria-current={isToday ? "date" : undefined}
-                    aria-pressed={isSelected}
-                    aria-label={`${STATUS_LABELS[status]} attendance for ${dayLabel}${
-                      isSelected ? ", selected" : ""
-                    }`}
-                    className={cn(
-                      "relative aspect-square min-h-10 rounded-xl border p-1.5 text-left text-xs transition hover:-translate-y-0.5 hover:shadow-sm sm:min-h-0",
-                      STATUS_CLS[status],
-                      isSelected && "ring-2 ring-primary ring-offset-1",
-                      monthlyQuery.isLoading && "animate-pulse",
-                    )}
-                  >
-                    <span className="font-semibold">{day}</span>
-                  </button>
-                );
-              })}
+            <div
+              data-testid="attendance-calendar-scroll"
+              className="-mx-1 overflow-x-auto overscroll-x-contain px-1"
+            >
+              <div className="min-w-[21rem] sm:min-w-0">
+                <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:gap-1.5">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                    <div key={d}>{d}</div>
+                  ))}
+                </div>
+                <div className="mt-2 grid grid-cols-7 gap-1 sm:gap-1.5">
+                  {Array.from({ length: firstDow }).map((_, i) => (
+                    <div key={"e" + i} />
+                  ))}
+                  {Array.from({ length: days }).map((_, i) => {
+                    const day = i + 1;
+                    const record = data.get(day);
+                    const status = dayStatus(record);
+                    const isSelected = day === selected;
+                    const dayDate = new Date(cursor.y, cursor.m, day);
+                    const isToday = dayDate.toDateString() === today.toDateString();
+                    const dayLabel = dayDate.toLocaleDateString(undefined, {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    });
+                    return (
+                      <button
+                        key={day}
+                        onClick={() => setSelected(day)}
+                        aria-current={isToday ? "date" : undefined}
+                        aria-pressed={isSelected}
+                        aria-label={`${STATUS_LABELS[status]} attendance for ${dayLabel}${
+                          isSelected ? ", selected" : ""
+                        }`}
+                        className={cn(
+                          "relative aspect-square min-h-11 rounded-xl border p-1.5 text-left text-xs transition hover:-translate-y-0.5 hover:shadow-sm sm:min-h-0",
+                          STATUS_CLS[status],
+                          isSelected && "ring-2 ring-primary ring-offset-1",
+                          monthlyQuery.isLoading && "animate-pulse",
+                        )}
+                      >
+                        <span className="font-semibold">{day}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 text-xs">
               {(
@@ -238,20 +258,20 @@ function EmployeeAttendanceCalendar() {
               {(text(selectedRecord.in_time) ||
                 text(selectedRecord.out_time) ||
                 numberValue(selectedRecord.work_minutes) > 0) && (
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-xl bg-muted/40 p-2">
+                <div className="grid grid-cols-3 gap-2 text-center max-[360px]:grid-cols-1">
+                  <div className="rounded-xl bg-muted/40 p-2 max-[360px]:flex max-[360px]:items-center max-[360px]:justify-between max-[360px]:gap-3">
                     <p className="text-[11px] text-muted-foreground">In</p>
                     <p className="font-semibold tabular-nums">
                       {text(selectedRecord.in_time, "-")}
                     </p>
                   </div>
-                  <div className="rounded-xl bg-muted/40 p-2">
+                  <div className="rounded-xl bg-muted/40 p-2 max-[360px]:flex max-[360px]:items-center max-[360px]:justify-between max-[360px]:gap-3">
                     <p className="text-[11px] text-muted-foreground">Out</p>
                     <p className="font-semibold tabular-nums">
                       {text(selectedRecord.out_time, "-")}
                     </p>
                   </div>
-                  <div className="rounded-xl bg-muted/40 p-2">
+                  <div className="rounded-xl bg-muted/40 p-2 max-[360px]:flex max-[360px]:items-center max-[360px]:justify-between max-[360px]:gap-3">
                     <p className="text-[11px] text-muted-foreground">Hours</p>
                     <p className="font-semibold tabular-nums">
                       {text(selectedRecord.hours, "0h 00m")}
@@ -270,6 +290,16 @@ function EmployeeAttendanceCalendar() {
                 </p>
               ) : (
                 <EmployeeDayEvidencePanel evidence={evidence} />
+              )}
+              {canRegularizeSelectedDate && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-10 w-full whitespace-normal sm:w-auto"
+                  onClick={regularizeSelectedDay}
+                >
+                  Regularize this day
+                </Button>
               )}
             </div>
           ) : (

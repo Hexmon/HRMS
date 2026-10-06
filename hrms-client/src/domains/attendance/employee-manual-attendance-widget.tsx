@@ -200,22 +200,22 @@ export function EmployeeManualAttendanceWidget({
           />
         </div>
 
-        <div className="grid grid-cols-3 divide-x rounded-lg border bg-muted/20 text-center">
+        <div className="grid grid-cols-3 divide-x rounded-lg border bg-muted/20 text-center max-[360px]:grid-cols-1 max-[360px]:divide-x-0 max-[360px]:divide-y">
           <div className="min-w-0 p-3 sm:p-4">
             <p className="text-xs text-muted-foreground">Work</p>
-            <p className="mt-1 truncate font-semibold tabular-nums">
+            <p className="mt-1 font-semibold tabular-nums">
               {formatAttendanceMinutes(live.workMinutes)}
             </p>
           </div>
           <div className="min-w-0 p-3 sm:p-4">
             <p className="text-xs text-muted-foreground">Break</p>
-            <p className="mt-1 truncate font-semibold tabular-nums">
+            <p className="mt-1 font-semibold tabular-nums">
               {formatAttendanceMinutes(live.breakMinutes)}
             </p>
           </div>
           <div className="min-w-0 p-3 sm:p-4">
             <p className="text-xs text-muted-foreground">Target</p>
-            <p className="mt-1 truncate font-semibold tabular-nums">
+            <p className="mt-1 font-semibold tabular-nums">
               {formatAttendanceMinutes(context.targetWorkMinutes)}
             </p>
           </div>
@@ -327,7 +327,7 @@ export function EmployeeManualAttendanceWidget({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 shrink-0"
+                  className="h-11 w-11 shrink-0 sm:h-7 sm:w-7"
                   onClick={action.clearResult}
                   aria-label="Dismiss attendance result"
                 >
