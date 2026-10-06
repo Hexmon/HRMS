@@ -14,6 +14,7 @@ import {
   useExtendedMasterData,
   useRbacRoles,
 } from "@/domains/admin/queries";
+import { useAdminRegisteredDevices } from "@/domains/platform/queries";
 import { useApiRouteEnabled } from "@/shared/api";
 import {
   Building2,
@@ -33,6 +34,7 @@ import {
   Wallet,
   Boxes,
   LifeBuoy,
+  Smartphone,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_app/admin-settings/")({ component: AdminSettingsIndex });
@@ -64,6 +66,10 @@ function AdminSettingsIndex() {
   const templatesQuery = useAdminEmailTemplates(apiEnabled);
   const notificationsQuery = useAdminNotificationChannels(apiEnabled);
   const auditQuery = useAdminAuditLog(apiEnabled && isMain);
+  const devicesQuery = useAdminRegisteredDevices(
+    { page: 1, page_size: 1 },
+    apiEnabled && isMain,
+  );
 
   const cards: CardDef[] = [
     {
@@ -227,6 +233,22 @@ function AdminSettingsIndex() {
       icon: LifeBuoy,
       to: "/admin-settings/policies",
       meta: () => policyMeta(apiEnabled, policiesQuery.isLoading, policiesQuery.error),
+    },
+    {
+      title: "Devices",
+      description: "Registered mobile app inventory and revocation.",
+      icon: Smartphone,
+      to: "/admin-settings/devices",
+      meta: () =>
+        countMeta(
+          apiEnabled,
+          devicesQuery.isLoading,
+          devicesQuery.error,
+          devicesQuery.data?.total,
+          0,
+          "devices",
+        ),
+      mainOnly: true,
     },
     {
       title: "Email Templates",
