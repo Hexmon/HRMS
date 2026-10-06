@@ -1,8 +1,16 @@
+import { paginationQuerySchema } from "#shared";
 import { z } from "zod";
+
+const devicePlatformSchema = z.enum(["ios", "android"]);
+const deviceLifecycleStatusSchema = z.enum([
+  "registered",
+  "suspended",
+  "revoked",
+]);
 
 export const deviceRegistrationSchema = z.object({
   installation_id_hash: z.string().regex(/^[0-9a-f]{64}$/u),
-  platform: z.enum(["ios", "android"])
+  platform: devicePlatformSchema
 }).strict();
 
 export const deviceLifecycleReasonSchema = z.enum([
@@ -16,6 +24,21 @@ export const deviceLifecycleReasonSchema = z.enum([
 export const deviceLifecycleSchema = z.object({
   reason: deviceLifecycleReasonSchema.optional(),
 }).strict();
+
+export const deviceAdminListQuerySchema = paginationQuerySchema.extend({
+  q: z.string().trim().max(160).optional(),
+  status: deviceLifecycleStatusSchema.optional(),
+  platform: devicePlatformSchema.optional(),
+  sort: z
+    .enum([
+      "updated_at_desc",
+      "status_changed_at_desc",
+      "employee_code_asc",
+    ])
+    .default("updated_at_desc"),
+});
+
+export type DeviceAdminListQuery = z.infer<typeof deviceAdminListQuerySchema>;
 
 export const financeGovernanceUpdateSchema = z.object({
   primary_finance_manager_user_id: z.uuid(),

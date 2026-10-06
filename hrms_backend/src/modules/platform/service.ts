@@ -1,9 +1,19 @@
-import { Roles, type AuthUser, type FinanceGovernanceConfig, type UUID } from "#shared";
+import {
+  Roles,
+  type AuthUser,
+  type FinanceGovernanceConfig,
+  type PaginatedResult,
+  type UUID,
+} from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { badRequest, notFound } from "../../platform/errors.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { CoreService } from "../core/service.js";
-import { PlatformRepository, type RegisteredDeviceReadModel } from "./repository.js";
+import {
+  PlatformRepository,
+  type AdminRegisteredDeviceReadModel,
+  type RegisteredDeviceReadModel,
+} from "./repository.js";
 import {
   assertCanManageDeviceLifecycle,
   assertCanReadFinanceGovernance,
@@ -11,6 +21,7 @@ import {
   canManageDeviceLifecycle,
 } from "./policy.js";
 import type { PlatformDeviceLifecycleReason } from "./events.js";
+import type { DeviceAdminListQuery } from "./schemas.js";
 
 export interface FinanceGovernanceReadModel {
   config: FinanceGovernanceConfig | null;
@@ -70,6 +81,27 @@ export class PlatformService {
         userId: context.userId
       })
     };
+  }
+
+  async listAdminDevices(
+    actor: AuthUser,
+    input: DeviceAdminListQuery,
+  ): Promise<PaginatedResult<AdminRegisteredDeviceReadModel>> {
+    assertCanManageDeviceLifecycle(actor);
+    const context = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: "platform.devices.admin.list",
+      requireActiveEmployment: true
+    });
+    return this.repository.listAdminDevices({
+      companyId: context.companyId,
+      page: input.page,
+      page_size: input.page_size,
+      q: input.q,
+      status: input.status,
+      platform: input.platform,
+      sort: input.sort
+    });
   }
 
   async revokeDevice(

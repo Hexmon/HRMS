@@ -9,7 +9,7 @@ const PLACEHOLDER_POLICY_KEYS = [
   "attestation_policy",
 ] as const;
 
-test("admin attendance policies show read-only mobile device placeholders without payload leakage", async ({
+test("admin attendance policies show read-only mobile device runtime facts without payload leakage", async ({
   page,
 }) => {
   const requests = await prepareAdminPoliciesPage(page);
@@ -21,28 +21,48 @@ test("admin attendance policies show read-only mobile device placeholders withou
 
   await expect(page.getByRole("tab", { name: "Attendance" })).toBeVisible();
   await expect(page.getByText("Mobile attendance policy", { exact: true })).toBeVisible();
-  await expect(page.getByText("Mobile backend pending", { exact: true })).toBeVisible();
+  await expect(page.getByText("Runtime enforcement active", { exact: true })).toBeVisible();
   await expect(
     page.getByText(
-      "These settings define the planned mobile attendance policy. They are currently read-only and are not saved or enforced from this admin page.",
+      "Mobile device behavior is shown as read-only runtime state. These facts are not saved as editable Admin policy fields.",
       { exact: true },
     ),
   ).toBeVisible();
 
-  const registeredDevice = page.getByRole("switch", { name: "Require registered device" });
-  await expect(registeredDevice).toBeVisible();
-  await expect(registeredDevice).toBeDisabled();
-  await expect(registeredDevice).toBeChecked();
-
-  const offlineCapture = page.getByRole("switch", { name: "Allow offline attendance capture" });
-  await expect(offlineCapture).toBeVisible();
-  await expect(offlineCapture).toBeDisabled();
-
-  const attestation = page.getByRole("combobox", { name: "Device attestation" });
-  await expect(attestation).toBeVisible();
-  await expect(attestation).toBeDisabled();
-  await expect(attestation).toContainText("Disabled");
-  await expect(page.getByText("Disabled and Preferred", { exact: false })).toBeVisible();
+  await expect(page.getByText("Registered Device Enforcement", { exact: true })).toBeVisible();
+  await expect(page.getByText("Enforced", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Required for personal mobile attendance and offline sync.", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Web Attendance", { exact: true })).toBeVisible();
+  await expect(page.getByText("Registered device not required", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Web/web-geolocation do not require registered mobile device.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("Offline Attendance", { exact: true })).toBeVisible();
+  await expect(page.getByText("Available with registered device", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Requires a registered device and remains provisional until sync completes.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("Device Attestation", { exact: true })).toBeVisible();
+  await expect(page.getByText("Not enforced", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Future-facing and not currently an attendance gate.", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Configurable Mobile Device Policy", { exact: true })).toBeVisible();
+  await expect(page.getByText("Not currently configurable", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Enforcement is runtime behavior, not editable Admin policy.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("Mobile backend pending", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "Require registered device" })).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Device attestation" })).toHaveCount(0);
 
   await expect.poll(() => requests.policyUpdates.length).toBe(0);
 

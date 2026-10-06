@@ -1,7 +1,7 @@
 import { nowIso } from "../../platform/data-store.js";
 import { conflict, notFound } from "../../platform/errors.js";
 import type { MemoryDataStore } from "../../platform/data-store.js";
-import type { FinanceGovernanceConfig, UUID } from "#shared";
+import type { FinanceGovernanceConfig, PaginatedResult, UUID } from "#shared";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import {
@@ -24,6 +24,13 @@ export interface RegisteredDeviceReadModel {
   updated_at: string;
 }
 
+export interface AdminRegisteredDeviceReadModel extends RegisteredDeviceReadModel {
+  owner: {
+    employee_code: string;
+    full_name: string;
+  };
+}
+
 interface RegisteredDeviceRow {
   id: UUID;
   company_id: UUID;
@@ -34,6 +41,11 @@ interface RegisteredDeviceRow {
   status_changed_at: Date;
   created_at: Date;
   updated_at: Date;
+}
+
+interface AdminRegisteredDeviceRow extends RegisteredDeviceRow {
+  owner_employee_code: string;
+  owner_full_name: string;
 }
 
 export class PlatformRepository {
@@ -172,6 +184,84 @@ export class PlatformRepository {
         ),
     );
     return result.rows.map(presentRegisteredDevice);
+  }
+
+  async listAdminDevices(input: {
+    companyId: UUID;
+    page: number;
+    page_size: number;
+    q?: string;
+    status?: "registered" | "suspended" | "revoked";
+    platform?: "ios" | "android";
+    sort: "updated_at_desc" | "status_changed_at_desc" | "employee_code_asc";
+  }): Promise<PaginatedResult<AdminRegisteredDeviceReadModel>> {
+    const pool = this.store.pgPool;
+    if (!pool) {
+      throw conflict("Admin device listing requires PostgreSQL persistence.", {
+        aggregate: "registered_device",
+        reason: "postgres_unavailable",
+      });
+    }
+
+    const clauses = ["device.company_id = $1"];
+    const values: unknown[] = [input.companyId];
+    if (input.status) {
+      values.push(input.status);
+      clauses.push(`device.status = $${values.length}`);
+    }
+    if (input.platform) {
+      values.push(input.platform);
+      clauses.push(`device.platform = $${values.length}`);
+    }
+    const search = input.q?.trim().toLowerCase();
+    if (search) {
+      values.push(`%${search}%`);
+      clauses.push(
+        `(lower(owner.employee_code) LIKE $${values.length} OR lower(owner.full_name) LIKE $${values.length})`,
+      );
+    }
+
+    const fromWhere = `
+      FROM platform.registered_devices device
+      INNER JOIN core.users owner
+        ON owner.id = device.user_id
+       AND owner.deleted_at IS NULL
+      WHERE ${clauses.join(" AND ")}`;
+    const orderBy = adminDeviceOrderBy(input.sort);
+    const offset = (input.page - 1) * input.page_size;
+
+    return withTenantDbTransaction(pool, input.companyId, async (client) => {
+      const totalResult = await client.query<{ total: number }>(
+        `SELECT count(*)::int AS total ${fromWhere}`,
+        values,
+      );
+      const rowsResult = await client.query<AdminRegisteredDeviceRow>(
+        `SELECT
+           device.id,
+           device.company_id,
+           device.user_id,
+           device.installation_id_hash,
+           device.platform,
+           device.status,
+           device.status_changed_at,
+           device.created_at,
+           device.updated_at,
+           owner.employee_code AS owner_employee_code,
+           owner.full_name AS owner_full_name
+         ${fromWhere}
+         ORDER BY ${orderBy}
+         LIMIT $${values.length + 1}
+         OFFSET $${values.length + 2}`,
+        [...values, input.page_size, offset],
+      );
+
+      return {
+        items: rowsResult.rows.map(presentAdminRegisteredDevice),
+        page: input.page,
+        page_size: input.page_size,
+        total: totalResult.rows[0]?.total ?? 0,
+      };
+    });
   }
 
   async transitionDeviceLifecycle(input: {
@@ -405,6 +495,31 @@ function presentRegisteredDevice(
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
   };
+}
+
+function presentAdminRegisteredDevice(
+  row: AdminRegisteredDeviceRow,
+): AdminRegisteredDeviceReadModel {
+  return {
+    ...presentRegisteredDevice(row),
+    owner: {
+      employee_code: row.owner_employee_code,
+      full_name: row.owner_full_name,
+    },
+  };
+}
+
+function adminDeviceOrderBy(
+  sort: "updated_at_desc" | "status_changed_at_desc" | "employee_code_asc",
+): string {
+  switch (sort) {
+    case "employee_code_asc":
+      return "owner.employee_code ASC, device.updated_at DESC, device.id ASC";
+    case "status_changed_at_desc":
+      return "device.status_changed_at DESC, device.id ASC";
+    case "updated_at_desc":
+      return "device.updated_at DESC, device.id ASC";
+  }
 }
 
 function isAllowedLifecycleTransition(

@@ -13,6 +13,7 @@ import {
   Lock,
   Map,
   ScrollText,
+  Smartphone,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_app/admin-settings")({
@@ -46,6 +47,7 @@ const TABS: Tab[] = [
   { to: "/admin-settings/roles", label: "Roles & Permissions", icon: ShieldCheck, mainOnly: true },
   { to: "/admin-settings/workflows", label: "Approval Workflows", icon: GitBranch, mainOnly: true },
   { to: "/admin-settings/policies", label: "Policies", icon: FileText },
+  { to: "/admin-settings/devices", label: "Devices", icon: Smartphone, mainOnly: true },
   { to: "/admin-settings/geo", label: "Geo", icon: Map },
   { to: "/admin-settings/email-templates", label: "Email Templates", icon: Mail },
   { to: "/admin-settings/notifications", label: "Notifications", icon: BellRing },

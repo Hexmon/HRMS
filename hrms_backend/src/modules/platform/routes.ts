@@ -2,7 +2,12 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { unauthorized } from "../../platform/errors.js";
 import { PlatformService } from "./service.js";
-import { deviceLifecycleSchema, deviceRegistrationSchema, financeGovernanceUpdateSchema } from "./schemas.js";
+import {
+  deviceAdminListQuerySchema,
+  deviceLifecycleSchema,
+  deviceRegistrationSchema,
+  financeGovernanceUpdateSchema,
+} from "./schemas.js";
 
 const deviceIdParamSchema = z.object({ deviceId: z.uuid() });
 
@@ -24,6 +29,17 @@ export const platformRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     return new PlatformService(fastify.store).listDevices(request.actor);
+  });
+
+  fastify.get("/admin/devices", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    const query = deviceAdminListQuerySchema.parse(request.query);
+    return new PlatformService(fastify.store).listAdminDevices(
+      request.actor,
+      query,
+    );
   });
 
   fastify.post("/devices/:deviceId/revoke", async (request) => {

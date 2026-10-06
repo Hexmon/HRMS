@@ -95,6 +95,7 @@ import { Route as AppAdminSettingsNotificationsRouteImport } from './routes/_app
 import { Route as AppAdminSettingsMasterDataRouteImport } from './routes/_app/admin-settings.master-data'
 import { Route as AppAdminSettingsGeoRouteImport } from './routes/_app/admin-settings.geo'
 import { Route as AppAdminSettingsEmailTemplatesRouteImport } from './routes/_app/admin-settings.email-templates'
+import { Route as AppAdminSettingsDevicesRouteImport } from './routes/_app/admin-settings.devices'
 import { Route as AppAdminSettingsCompanyRouteImport } from './routes/_app/admin-settings.company'
 import { Route as AppAdminSettingsAuditRouteImport } from './routes/_app/admin-settings.audit'
 
@@ -533,6 +534,11 @@ const AppAdminSettingsEmailTemplatesRoute =
     path: '/email-templates',
     getParentRoute: () => AppAdminSettingsRoute,
   } as any)
+const AppAdminSettingsDevicesRoute = AppAdminSettingsDevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
+  getParentRoute: () => AppAdminSettingsRoute,
+} as any)
 const AppAdminSettingsCompanyRoute = AppAdminSettingsCompanyRouteImport.update({
   id: '/company',
   path: '/company',
@@ -568,6 +574,7 @@ export interface FileRoutesByFullPath {
   '/timesheet': typeof AppTimesheetRouteWithChildren
   '/admin-settings/audit': typeof AppAdminSettingsAuditRoute
   '/admin-settings/company': typeof AppAdminSettingsCompanyRoute
+  '/admin-settings/devices': typeof AppAdminSettingsDevicesRoute
   '/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
   '/admin-settings/geo': typeof AppAdminSettingsGeoRoute
   '/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
@@ -648,6 +655,7 @@ export interface FileRoutesByTo {
   '/team-utilization': typeof AppTeamUtilizationRoute
   '/admin-settings/audit': typeof AppAdminSettingsAuditRoute
   '/admin-settings/company': typeof AppAdminSettingsCompanyRoute
+  '/admin-settings/devices': typeof AppAdminSettingsDevicesRoute
   '/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
   '/admin-settings/geo': typeof AppAdminSettingsGeoRoute
   '/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
@@ -739,6 +747,7 @@ export interface FileRoutesById {
   '/_app/timesheet': typeof AppTimesheetRouteWithChildren
   '/_app/admin-settings/audit': typeof AppAdminSettingsAuditRoute
   '/_app/admin-settings/company': typeof AppAdminSettingsCompanyRoute
+  '/_app/admin-settings/devices': typeof AppAdminSettingsDevicesRoute
   '/_app/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
   '/_app/admin-settings/geo': typeof AppAdminSettingsGeoRoute
   '/_app/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
@@ -830,6 +839,7 @@ export interface FileRouteTypes {
     | '/timesheet'
     | '/admin-settings/audit'
     | '/admin-settings/company'
+    | '/admin-settings/devices'
     | '/admin-settings/email-templates'
     | '/admin-settings/geo'
     | '/admin-settings/master-data'
@@ -910,6 +920,7 @@ export interface FileRouteTypes {
     | '/team-utilization'
     | '/admin-settings/audit'
     | '/admin-settings/company'
+    | '/admin-settings/devices'
     | '/admin-settings/email-templates'
     | '/admin-settings/geo'
     | '/admin-settings/master-data'
@@ -1000,6 +1011,7 @@ export interface FileRouteTypes {
     | '/_app/timesheet'
     | '/_app/admin-settings/audit'
     | '/_app/admin-settings/company'
+    | '/_app/admin-settings/devices'
     | '/_app/admin-settings/email-templates'
     | '/_app/admin-settings/geo'
     | '/_app/admin-settings/master-data'
@@ -1682,6 +1694,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminSettingsEmailTemplatesRouteImport
       parentRoute: typeof AppAdminSettingsRoute
     }
+    '/_app/admin-settings/devices': {
+      id: '/_app/admin-settings/devices'
+      path: '/devices'
+      fullPath: '/admin-settings/devices'
+      preLoaderRoute: typeof AppAdminSettingsDevicesRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
     '/_app/admin-settings/company': {
       id: '/_app/admin-settings/company'
       path: '/company'
@@ -1702,6 +1721,7 @@ declare module '@tanstack/react-router' {
 interface AppAdminSettingsRouteChildren {
   AppAdminSettingsAuditRoute: typeof AppAdminSettingsAuditRoute
   AppAdminSettingsCompanyRoute: typeof AppAdminSettingsCompanyRoute
+  AppAdminSettingsDevicesRoute: typeof AppAdminSettingsDevicesRoute
   AppAdminSettingsEmailTemplatesRoute: typeof AppAdminSettingsEmailTemplatesRoute
   AppAdminSettingsGeoRoute: typeof AppAdminSettingsGeoRoute
   AppAdminSettingsMasterDataRoute: typeof AppAdminSettingsMasterDataRoute
@@ -1716,6 +1736,7 @@ interface AppAdminSettingsRouteChildren {
 const AppAdminSettingsRouteChildren: AppAdminSettingsRouteChildren = {
   AppAdminSettingsAuditRoute: AppAdminSettingsAuditRoute,
   AppAdminSettingsCompanyRoute: AppAdminSettingsCompanyRoute,
+  AppAdminSettingsDevicesRoute: AppAdminSettingsDevicesRoute,
   AppAdminSettingsEmailTemplatesRoute: AppAdminSettingsEmailTemplatesRoute,
   AppAdminSettingsGeoRoute: AppAdminSettingsGeoRoute,
   AppAdminSettingsMasterDataRoute: AppAdminSettingsMasterDataRoute,

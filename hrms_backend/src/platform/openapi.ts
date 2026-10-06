@@ -782,6 +782,46 @@ const platformRegisteredDeviceSchema = {
   },
 };
 
+const platformAdminRegisteredDeviceOwnerSchema = {
+  type: "object",
+  required: ["employee_code", "full_name"],
+  properties: {
+    employee_code: { type: "string", example: "E1" },
+    full_name: { type: "string", example: "Employee E1" },
+  },
+  additionalProperties: false,
+};
+
+const platformAdminRegisteredDeviceSchema = {
+  type: "object",
+  required: [
+    "registered_device_id",
+    "platform",
+    "status",
+    "status_changed_at",
+    "created_at",
+    "updated_at",
+    "owner",
+  ],
+  properties: {
+    ...platformRegisteredDeviceSchema.properties,
+    owner: platformAdminRegisteredDeviceOwnerSchema,
+  },
+  additionalProperties: false,
+  example: {
+    registered_device_id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9101",
+    platform: "android",
+    status: "registered",
+    status_changed_at: "2026-08-09T03:40:00.000Z",
+    created_at: "2026-08-09T03:40:00.000Z",
+    updated_at: "2026-08-09T03:40:00.000Z",
+    owner: {
+      employee_code: "E1",
+      full_name: "Employee E1",
+    },
+  },
+};
+
 const platformDeviceRegistrationBodySchema = {
   type: "object",
   required: ["installation_id_hash", "platform"],
@@ -826,6 +866,57 @@ const platformRegisteredDeviceListSchema = {
       type: "array",
       items: platformRegisteredDeviceSchema,
     },
+  },
+  additionalProperties: false,
+};
+
+const platformAdminRegisteredDeviceListQuerySchema = {
+  ...paginationQuerySchema,
+  properties: {
+    ...paginationQuerySchema.properties,
+    q: {
+      type: "string",
+      maxLength: 160,
+      description: "Search employee code or full name.",
+      example: "E1",
+    },
+    status: {
+      type: "string",
+      enum: ["registered", "suspended", "revoked"],
+      description: "Filter by device lifecycle status.",
+      example: "registered",
+    },
+    platform: {
+      type: "string",
+      enum: ["ios", "android"],
+      description: "Filter by mobile platform.",
+      example: "android",
+    },
+    sort: {
+      type: "string",
+      enum: [
+        "updated_at_desc",
+        "status_changed_at_desc",
+        "employee_code_asc",
+      ],
+      default: "updated_at_desc",
+      description: "Sort key for the admin device inventory.",
+    },
+  },
+  additionalProperties: false,
+};
+
+const platformAdminRegisteredDeviceListSchema = {
+  type: "object",
+  required: ["items", "page", "page_size", "total"],
+  properties: {
+    items: {
+      type: "array",
+      items: platformAdminRegisteredDeviceSchema,
+    },
+    page: { type: "integer", minimum: 1, example: 1 },
+    page_size: { type: "integer", minimum: 1, maximum: 100, example: 25 },
+    total: { type: "integer", minimum: 0, example: 1 },
   },
   additionalProperties: false,
 };
@@ -8695,6 +8786,15 @@ const routeDocs: Record<string, RouteSchema> = {
     "List my mobile devices",
     "Lists registered, suspended, and revoked mobile devices owned by the authenticated actor in the active company. The backend scopes by both company_id and user_id derived from server context.",
     { response200: platformRegisteredDeviceListSchema },
+  ),
+  "GET /api/v1/platform/admin/devices": operation(
+    "Platform / Devices",
+    "List company mobile devices",
+    "Admin-only paginated inventory of registered, suspended, and revoked mobile devices in the authenticated Admin's active company. Supports employee code/full-name search, lifecycle status and platform filters, and whitelisted sort keys. The response intentionally excludes installation hashes, raw user IDs, company IDs, offline cursors, attestation details, keys, and secrets.",
+    {
+      querystring: platformAdminRegisteredDeviceListQuerySchema,
+      response200: platformAdminRegisteredDeviceListSchema,
+    },
   ),
   "POST /api/v1/platform/devices/{deviceId}/revoke": operation(
     "Platform / Devices",
