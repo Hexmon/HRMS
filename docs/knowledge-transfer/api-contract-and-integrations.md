@@ -1,6 +1,6 @@
 # API Contract And Integrations
 
-Last verified from the repository: 2026-06-30.
+Last verified from the repository: 2026-10-05.
 
 The backend OpenAPI contract is the canonical API reference. The frontend should consume API behavior through domain adapters and generated contract docs, not by guessing route shapes.
 
@@ -20,8 +20,8 @@ Current generated backend contract:
 
 | Metric | Count |
 | --- | --- |
-| Operations | 245 |
-| Paths | 214 |
+| Operations | 279 |
+| Paths | 238 |
 
 ## Operation Tags
 
@@ -29,8 +29,9 @@ Current generated backend contract:
 | --- | ---: |
 | Platform / Health | 6 |
 | Auth & Sessions | 12 |
-| Core / Employees & Hierarchy | 19 |
+| Core / Employees & Hierarchy | 20 |
 | Dashboard | 1 |
+| Platform / Devices | 5 |
 | Admin / Configuration | 34 |
 | Expenses / Requester | 10 |
 | Expenses / Manager | 3 |
@@ -40,7 +41,7 @@ Current generated backend contract:
 | Assets | 23 |
 | Outbox / Platform Events | 1 |
 | Timesheets | 12 |
-| Attendance | 12 |
+| Attendance | 40 |
 | Leave / WFH / Holidays | 15 |
 | EMS | 23 |
 | Projects / Utilization | 15 |

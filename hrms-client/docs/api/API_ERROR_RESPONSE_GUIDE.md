@@ -26,15 +26,15 @@ Date: 2026-05-01
 
 ## Important Status Codes
 
-| Status | Meaning                                  | Consumer action                                 |
-| ------ | ---------------------------------------- | ----------------------------------------------- |
-| `400`  | Invalid request or business precondition | Fix fields, required remarks, state, or payload |
-| `401`  | Missing/invalid auth                     | Login and send bearer token or cookie           |
-| `403`  | Role/object policy denial                | Show forbidden state; do not retry blindly      |
-| `404`  | Resource not found or not visible        | Check id and object access                      |
-| `409`  | OCC conflict                             | Refresh latest record/version and retry         |
-| `429`  | Rate limit exceeded                      | Wait for `Retry-After` seconds and retry safely |
-| `500`  | Unexpected server error                  | Capture `request_id` and report defect          |
+| Status | Meaning | Consumer action |
+|---|---|---|
+| `400` | Invalid request or business precondition | Fix fields, required remarks, state, or payload |
+| `401` | Missing/invalid auth | Login and send bearer token or cookie |
+| `403` | Role/object policy denial | Show forbidden state; do not retry blindly |
+| `404` | Resource not found or not visible | Check id and object access |
+| `409` | OCC conflict | Refresh latest record/version and retry |
+| `429` | Rate limit exceeded | Wait for `Retry-After` seconds and retry safely |
+| `500` | Unexpected server error | Capture `request_id` and report defect |
 
 ## OCC Conflict Example
 
@@ -81,6 +81,62 @@ When the limit is exceeded, the API returns `429` with `Retry-After`, `X-RateLim
 ```
 
 Consumers should avoid tight retry loops and wait at least the documented retry interval.
+
+## Attendance Examples
+
+Attendance APIs use the same envelope. Representative domain examples:
+
+Validation failure:
+
+```json
+{
+  "code": "VALIDATION_FAILED",
+  "message": "Request validation failed",
+  "details": {
+    "formErrors": [],
+    "fieldErrors": {
+      "command.location": ["location is required when source is web_geo."]
+    }
+  },
+  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+}
+```
+
+Idempotency or workflow conflict:
+
+```json
+{
+  "code": "WORKFLOW_CONFLICT",
+  "message": "Attendance command conflicts with an existing command. Retry with a new idempotency key.",
+  "details": {
+    "reason_code": "idempotency_conflict"
+  },
+  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+}
+```
+
+Self approval blocked:
+
+```json
+{
+  "code": "SELF_APPROVAL_BLOCKED",
+  "message": "Users cannot approve, return, or reject their own attendance regularization.",
+  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+}
+```
+
+Exact attendance location denial:
+
+```json
+{
+  "code": "FORBIDDEN",
+  "message": "Exact attendance location access requires additional authorization.",
+  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+}
+```
+
+Exact coordinate permission denials are `403` responses. They are not `200`
+responses with null coordinates.
 
 ## Defect Reporting
 
