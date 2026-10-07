@@ -54,6 +54,16 @@ export function useEmployeeAttendanceContext(enabled = true) {
   });
 }
 
+export function useAttendancePrivacy(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.action("attendance", "privacy", "current"),
+    queryFn: () => attendanceApi.privacy(),
+    enabled,
+    staleTime: queryTimings.detailStaleMs,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useTeamAttendanceSummary(query: AttendanceQuery = {}, enabled = true) {
   return useQuery({
     queryKey: queryKeys.list("attendance", "summary-team", query),

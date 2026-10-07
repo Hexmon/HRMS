@@ -158,6 +158,96 @@ export interface AttendanceQuery extends PageQuery {
   exception_type?: string;
 }
 
+export type AttendancePrivacyMode =
+  | "manual_only"
+  | "geo_optional"
+  | "geo_preferred"
+  | "geo_required";
+export type AttendancePrivacyAction = "allow" | "deny" | "manual_fallback";
+export type AttendancePrivacyApprovalMode = "disabled" | "approval_required";
+export type AttendancePrivacyLocationRequirement =
+  | "not_requested"
+  | "requested_optional"
+  | "requested_policy_controlled";
+
+export interface EmployeeAttendancePrivacySummary {
+  generated_at: string;
+  as_of: string;
+  effective_policy: {
+    attendance_mode: AttendancePrivacyMode;
+    policy_source: "assignment" | "built_in";
+    effective_from: string | null;
+    effective_until: string | null;
+    location_requirement: AttendancePrivacyLocationRequirement;
+    fallback_approval_mode: AttendancePrivacyApprovalMode;
+    regularization_mode: AttendancePrivacyApprovalMode;
+    max_location_age_ms: number | null;
+    max_accuracy_meters: number | null;
+    geofence: {
+      configured: boolean;
+      grace_meters: number;
+    };
+    actions: {
+      permission_denied: AttendancePrivacyAction;
+      location_unavailable: AttendancePrivacyAction;
+      outside_fence: AttendancePrivacyAction;
+      boundary_uncertain: AttendancePrivacyAction;
+      stale_evidence: AttendancePrivacyAction;
+      accuracy_exceeded: AttendancePrivacyAction;
+    };
+  };
+  manual_fallback: {
+    approval_mode: AttendancePrivacyApprovalMode;
+    available_when_policy_selects_manual_fallback: boolean;
+    explicit_submission_required: true;
+    review_required: boolean;
+  };
+  regularization: {
+    mode: AttendancePrivacyApprovalMode;
+    correction_path: "/attendance";
+  };
+  retention: {
+    coordinate_retention_class: string;
+    coordinate_retention_seconds: number;
+    applies_to_new_coordinate_evidence: true;
+    historical_evidence_uses_recorded_expiry: true;
+    purge: {
+      eligibility: "eligible_after_retention_duration";
+      processing: "background_worker";
+      immediate_at_expiry: false;
+    };
+  };
+  evidence_access: {
+    routine_evidence: {
+      employee_self_view: "sanitized_own_evidence";
+      manager_view: "scoped_sanitized_evidence";
+      hr_admin_auditor_view: "role_scoped_sanitized_evidence";
+      reports_exclude_exact_coordinates: true;
+    };
+    exact_location: {
+      employee_can_view_exact_coordinates: false;
+      requires_record_visibility: true;
+      requires_permission: "attendance:view_exact_location";
+      successful_authorized_reveals_audited: true;
+      denied_reveals_not_guaranteed_in_exact_coordinate_audit: true;
+      available_only_while_unexpired_unpurged: true;
+    };
+  };
+  offline_mobile: {
+    registered_device_required: true;
+    offline_supported_for_registered_devices: true;
+    offline_evidence_may_include_location: true;
+    accepted_offline_events_are_provisional: true;
+    payroll_eligible_from_offline_sync: false;
+  };
+  employee_controls: {
+    browser_permission_control: "browser_or_os_settings";
+    review_attendance_path: "/attendance/calendar";
+    correct_attendance_path: "/attendance";
+    manage_devices_path: "/ems/profile";
+  };
+}
+
 export interface AttendanceGeoEvidenceSummary {
   source: "geo";
   review_type: AttendanceGeoReviewType;
@@ -404,6 +494,9 @@ export const attendanceApi = {
   },
   mySummary(query: AttendanceQuery = {}) {
     return apiRequest<ApiRecord>("/api/v1/attendance/summary/my", { query });
+  },
+  privacy() {
+    return apiRequest<EmployeeAttendancePrivacySummary>("/api/v1/attendance/privacy");
   },
   teamSummary(query: AttendanceQuery = {}) {
     return apiRequest<ApiRecord>("/api/v1/attendance/summary/team", { query });

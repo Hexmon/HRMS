@@ -4894,6 +4894,372 @@ const attendanceSummarySchema = {
   additionalProperties: true,
 };
 
+const attendancePrivacyModeSchema = {
+  type: "string",
+  enum: ["manual_only", "geo_optional", "geo_preferred", "geo_required"],
+  example: "geo_required",
+};
+
+const attendancePrivacyActionSchema = {
+  type: "string",
+  enum: ["allow", "deny", "manual_fallback"],
+  example: "manual_fallback",
+};
+
+const attendancePrivacyApprovalModeSchema = {
+  type: "string",
+  enum: ["disabled", "approval_required"],
+  example: "approval_required",
+};
+
+const attendancePrivacySummarySchema = {
+  type: "object",
+  required: [
+    "generated_at",
+    "as_of",
+    "effective_policy",
+    "manual_fallback",
+    "regularization",
+    "retention",
+    "evidence_access",
+    "offline_mobile",
+    "employee_controls",
+  ],
+  properties: {
+    generated_at: dateTime("Privacy summary generation timestamp"),
+    as_of: dateTime(
+      "Server timestamp used to resolve the currently effective attendance policy.",
+    ),
+    effective_policy: {
+      type: "object",
+      required: [
+        "attendance_mode",
+        "policy_source",
+        "effective_from",
+        "effective_until",
+        "location_requirement",
+        "fallback_approval_mode",
+        "regularization_mode",
+        "max_location_age_ms",
+        "max_accuracy_meters",
+        "geofence",
+        "actions",
+      ],
+      properties: {
+        attendance_mode: attendancePrivacyModeSchema,
+        policy_source: {
+          type: "string",
+          enum: ["assignment", "built_in"],
+          example: "assignment",
+        },
+        effective_from: {
+          ...dateTime("Effective policy version start timestamp"),
+          nullable: true,
+        },
+        effective_until: {
+          ...dateTime("Effective policy version end timestamp"),
+          nullable: true,
+        },
+        location_requirement: {
+          type: "string",
+          enum: [
+            "not_requested",
+            "requested_optional",
+            "requested_policy_controlled",
+          ],
+          example: "requested_policy_controlled",
+        },
+        fallback_approval_mode: attendancePrivacyApprovalModeSchema,
+        regularization_mode: attendancePrivacyApprovalModeSchema,
+        max_location_age_ms: {
+          type: "integer",
+          minimum: 1,
+          nullable: true,
+          example: 120000,
+        },
+        max_accuracy_meters: {
+          type: "number",
+          minimum: 0,
+          nullable: true,
+          example: 75,
+        },
+        geofence: {
+          type: "object",
+          required: ["configured", "grace_meters"],
+          properties: {
+            configured: { type: "boolean", example: true },
+            grace_meters: { type: "number", minimum: 0, example: 25 },
+          },
+          additionalProperties: false,
+        },
+        actions: {
+          type: "object",
+          required: [
+            "permission_denied",
+            "location_unavailable",
+            "outside_fence",
+            "boundary_uncertain",
+            "stale_evidence",
+            "accuracy_exceeded",
+          ],
+          properties: {
+            permission_denied: attendancePrivacyActionSchema,
+            location_unavailable: attendancePrivacyActionSchema,
+            outside_fence: attendancePrivacyActionSchema,
+            boundary_uncertain: attendancePrivacyActionSchema,
+            stale_evidence: attendancePrivacyActionSchema,
+            accuracy_exceeded: attendancePrivacyActionSchema,
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+    manual_fallback: {
+      type: "object",
+      required: [
+        "approval_mode",
+        "available_when_policy_selects_manual_fallback",
+        "explicit_submission_required",
+        "review_required",
+      ],
+      properties: {
+        approval_mode: attendancePrivacyApprovalModeSchema,
+        available_when_policy_selects_manual_fallback: {
+          type: "boolean",
+          example: true,
+        },
+        explicit_submission_required: { type: "boolean", enum: [true] },
+        review_required: { type: "boolean", example: true },
+      },
+      additionalProperties: false,
+    },
+    regularization: {
+      type: "object",
+      required: ["mode", "correction_path"],
+      properties: {
+        mode: attendancePrivacyApprovalModeSchema,
+        correction_path: { type: "string", example: "/attendance" },
+      },
+      additionalProperties: false,
+    },
+    retention: {
+      type: "object",
+      required: [
+        "coordinate_retention_class",
+        "coordinate_retention_seconds",
+        "applies_to_new_coordinate_evidence",
+        "historical_evidence_uses_recorded_expiry",
+        "purge",
+      ],
+      properties: {
+        coordinate_retention_class: {
+          type: "string",
+          minLength: 1,
+          example: "standard",
+        },
+        coordinate_retention_seconds: {
+          type: "integer",
+          minimum: 60,
+          example: 2592000,
+        },
+        applies_to_new_coordinate_evidence: { type: "boolean", enum: [true] },
+        historical_evidence_uses_recorded_expiry: {
+          type: "boolean",
+          enum: [true],
+        },
+        purge: {
+          type: "object",
+          required: ["eligibility", "processing", "immediate_at_expiry"],
+          properties: {
+            eligibility: {
+              type: "string",
+              enum: ["eligible_after_retention_duration"],
+            },
+            processing: { type: "string", enum: ["background_worker"] },
+            immediate_at_expiry: { type: "boolean", enum: [false] },
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+    evidence_access: {
+      type: "object",
+      required: ["routine_evidence", "exact_location"],
+      properties: {
+        routine_evidence: {
+          type: "object",
+          required: [
+            "employee_self_view",
+            "manager_view",
+            "hr_admin_auditor_view",
+            "reports_exclude_exact_coordinates",
+          ],
+          properties: {
+            employee_self_view: {
+              type: "string",
+              enum: ["sanitized_own_evidence"],
+            },
+            manager_view: {
+              type: "string",
+              enum: ["scoped_sanitized_evidence"],
+            },
+            hr_admin_auditor_view: {
+              type: "string",
+              enum: ["role_scoped_sanitized_evidence"],
+            },
+            reports_exclude_exact_coordinates: { type: "boolean", enum: [true] },
+          },
+          additionalProperties: false,
+        },
+        exact_location: {
+          type: "object",
+          required: [
+            "employee_can_view_exact_coordinates",
+            "requires_record_visibility",
+            "requires_permission",
+            "successful_authorized_reveals_audited",
+            "denied_reveals_not_guaranteed_in_exact_coordinate_audit",
+            "available_only_while_unexpired_unpurged",
+          ],
+          properties: {
+            employee_can_view_exact_coordinates: { type: "boolean", enum: [false] },
+            requires_record_visibility: { type: "boolean", enum: [true] },
+            requires_permission: {
+              type: "string",
+              enum: ["attendance:view_exact_location"],
+            },
+            successful_authorized_reveals_audited: { type: "boolean", enum: [true] },
+            denied_reveals_not_guaranteed_in_exact_coordinate_audit: {
+              type: "boolean",
+              enum: [true],
+            },
+            available_only_while_unexpired_unpurged: {
+              type: "boolean",
+              enum: [true],
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+    offline_mobile: {
+      type: "object",
+      required: [
+        "registered_device_required",
+        "offline_supported_for_registered_devices",
+        "offline_evidence_may_include_location",
+        "accepted_offline_events_are_provisional",
+        "payroll_eligible_from_offline_sync",
+      ],
+      properties: {
+        registered_device_required: { type: "boolean", enum: [true] },
+        offline_supported_for_registered_devices: { type: "boolean", enum: [true] },
+        offline_evidence_may_include_location: { type: "boolean", enum: [true] },
+        accepted_offline_events_are_provisional: { type: "boolean", enum: [true] },
+        payroll_eligible_from_offline_sync: { type: "boolean", enum: [false] },
+      },
+      additionalProperties: false,
+    },
+    employee_controls: {
+      type: "object",
+      required: [
+        "browser_permission_control",
+        "review_attendance_path",
+        "correct_attendance_path",
+        "manage_devices_path",
+      ],
+      properties: {
+        browser_permission_control: {
+          type: "string",
+          enum: ["browser_or_os_settings"],
+        },
+        review_attendance_path: {
+          type: "string",
+          example: "/attendance/calendar",
+        },
+        correct_attendance_path: { type: "string", example: "/attendance" },
+        manage_devices_path: { type: "string", example: "/ems/profile" },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+  example: {
+    generated_at: "2026-10-07T10:30:00.000Z",
+    as_of: "2026-10-07T10:30:00.000Z",
+    effective_policy: {
+      attendance_mode: "geo_required",
+      policy_source: "assignment",
+      effective_from: "2026-01-01T00:00:00.000Z",
+      effective_until: null,
+      location_requirement: "requested_policy_controlled",
+      fallback_approval_mode: "approval_required",
+      regularization_mode: "approval_required",
+      max_location_age_ms: 120000,
+      max_accuracy_meters: 75,
+      geofence: { configured: true, grace_meters: 25 },
+      actions: {
+        permission_denied: "manual_fallback",
+        location_unavailable: "manual_fallback",
+        outside_fence: "deny",
+        boundary_uncertain: "allow",
+        stale_evidence: "manual_fallback",
+        accuracy_exceeded: "manual_fallback",
+      },
+    },
+    manual_fallback: {
+      approval_mode: "approval_required",
+      available_when_policy_selects_manual_fallback: true,
+      explicit_submission_required: true,
+      review_required: true,
+    },
+    regularization: { mode: "approval_required", correction_path: "/attendance" },
+    retention: {
+      coordinate_retention_class: "standard",
+      coordinate_retention_seconds: 2592000,
+      applies_to_new_coordinate_evidence: true,
+      historical_evidence_uses_recorded_expiry: true,
+      purge: {
+        eligibility: "eligible_after_retention_duration",
+        processing: "background_worker",
+        immediate_at_expiry: false,
+      },
+    },
+    evidence_access: {
+      routine_evidence: {
+        employee_self_view: "sanitized_own_evidence",
+        manager_view: "scoped_sanitized_evidence",
+        hr_admin_auditor_view: "role_scoped_sanitized_evidence",
+        reports_exclude_exact_coordinates: true,
+      },
+      exact_location: {
+        employee_can_view_exact_coordinates: false,
+        requires_record_visibility: true,
+        requires_permission: "attendance:view_exact_location",
+        successful_authorized_reveals_audited: true,
+        denied_reveals_not_guaranteed_in_exact_coordinate_audit: true,
+        available_only_while_unexpired_unpurged: true,
+      },
+    },
+    offline_mobile: {
+      registered_device_required: true,
+      offline_supported_for_registered_devices: true,
+      offline_evidence_may_include_location: true,
+      accepted_offline_events_are_provisional: true,
+      payroll_eligible_from_offline_sync: false,
+    },
+    employee_controls: {
+      browser_permission_control: "browser_or_os_settings",
+      review_attendance_path: "/attendance/calendar",
+      correct_attendance_path: "/attendance",
+      manage_devices_path: "/ems/profile",
+    },
+  },
+};
+
 const attendanceTeamSummarySchema = {
   type: "object",
   required: [
@@ -9897,6 +10263,14 @@ const routeDocs: Record<string, RouteSchema> = {
     {
       querystring: attendanceQuerySchema,
       response200: attendanceSummarySchema,
+    },
+  ),
+  "GET /api/v1/attendance/privacy": operation(
+    "Attendance",
+    "My attendance privacy summary",
+    "Returns the authenticated employee's current effective attendance privacy summary. The response is self-service scoped, policy-derived, and intentionally excludes exact coordinates, geofence identifiers, device identifiers, evidence identifiers, request snapshots, and raw location payloads.",
+    {
+      response200: attendancePrivacySummarySchema,
     },
   ),
   "GET /api/v1/attendance/summary/team": operation(

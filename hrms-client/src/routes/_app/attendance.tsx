@@ -2,7 +2,13 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { PageHeader, ModuleTabs } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
-import { LayoutDashboard, CalendarDays, AlertTriangle, ClipboardCheck } from "lucide-react";
+import {
+  LayoutDashboard,
+  CalendarDays,
+  AlertTriangle,
+  ClipboardCheck,
+  ShieldCheck,
+} from "lucide-react";
 
 export const Route = createFileRoute("/_app/attendance")({
   component: AttendanceLayout,
@@ -15,6 +21,7 @@ const ATTENDANCE_REVIEW_ROLES: Role[] = ["manager", "director", "hr_admin", "mai
 const TABS = [
   { to: "/attendance", label: "Overview", icon: LayoutDashboard, exact: true },
   { to: "/attendance/calendar", label: "Calendar", icon: CalendarDays, selfOnly: true },
+  { to: "/attendance/privacy", label: "Privacy", icon: ShieldCheck, selfOnly: true },
   {
     to: "/attendance/approvals",
     label: "Review queue",

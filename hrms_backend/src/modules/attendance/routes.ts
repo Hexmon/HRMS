@@ -474,6 +474,13 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     );
   });
 
+  fastify.get("/privacy", async (request) => {
+    if (!request.actor) {
+      throw unauthorized();
+    }
+    return new AttendanceService(fastify.store).attendancePrivacy(request.actor);
+  });
+
   fastify.get("/summary/team", async (request) => {
     if (!request.actor) {
       throw unauthorized();

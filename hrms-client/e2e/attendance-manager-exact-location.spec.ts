@@ -78,7 +78,8 @@ test("manager review handles stale exact-location permission denial without show
   await dialog.getByRole("button", { name: "View exact location" }).click();
 
   await expect(dialog.getByText("Permission denied", { exact: true })).toBeVisible();
-  await expect(page.getByText("Outside work area - Manual fallback")).toBeVisible();
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByText("Outside - confident - Manual fallback")).toBeVisible();
   await expect(page.getByText(/12\.974000|77\.597000|12\.974|77\.597/u)).toHaveCount(0);
   expect(requests.revealCalls).toBe(1);
 });

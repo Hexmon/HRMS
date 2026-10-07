@@ -78,6 +78,7 @@ import { Route as AppEmsDocumentsRouteImport } from './routes/_app/ems.documents
 import { Route as AppEmsApprovalsRouteImport } from './routes/_app/ems.approvals'
 import { Route as AppEmsAdminRouteImport } from './routes/_app/ems.admin'
 import { Route as AppEmployeesIdRouteImport } from './routes/_app/employees.$id'
+import { Route as AppAttendancePrivacyRouteImport } from './routes/_app/attendance.privacy'
 import { Route as AppAttendanceExceptionsRouteImport } from './routes/_app/attendance.exceptions'
 import { Route as AppAttendanceCalendarRouteImport } from './routes/_app/attendance.calendar'
 import { Route as AppAttendanceApprovalsRouteImport } from './routes/_app/attendance.approvals'
@@ -443,6 +444,11 @@ const AppEmployeesIdRoute = AppEmployeesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppEmployeesRoute,
 } as any)
+const AppAttendancePrivacyRoute = AppAttendancePrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => AppAttendanceRoute,
+} as any)
 const AppAttendanceExceptionsRoute = AppAttendanceExceptionsRouteImport.update({
   id: '/exceptions',
   path: '/exceptions',
@@ -592,6 +598,7 @@ export interface FileRoutesByFullPath {
   '/attendance/approvals': typeof AppAttendanceApprovalsRoute
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
+  '/attendance/privacy': typeof AppAttendancePrivacyRoute
   '/employees/$id': typeof AppEmployeesIdRoute
   '/ems/admin': typeof AppEmsAdminRoute
   '/ems/approvals': typeof AppEmsApprovalsRoute
@@ -673,6 +680,7 @@ export interface FileRoutesByTo {
   '/attendance/approvals': typeof AppAttendanceApprovalsRoute
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
+  '/attendance/privacy': typeof AppAttendancePrivacyRoute
   '/employees/$id': typeof AppEmployeesIdRoute
   '/ems/admin': typeof AppEmsAdminRoute
   '/ems/approvals': typeof AppEmsApprovalsRoute
@@ -765,6 +773,7 @@ export interface FileRoutesById {
   '/_app/attendance/approvals': typeof AppAttendanceApprovalsRoute
   '/_app/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/_app/attendance/exceptions': typeof AppAttendanceExceptionsRoute
+  '/_app/attendance/privacy': typeof AppAttendancePrivacyRoute
   '/_app/employees/$id': typeof AppEmployeesIdRoute
   '/_app/ems/admin': typeof AppEmsAdminRoute
   '/_app/ems/approvals': typeof AppEmsApprovalsRoute
@@ -857,6 +866,7 @@ export interface FileRouteTypes {
     | '/attendance/approvals'
     | '/attendance/calendar'
     | '/attendance/exceptions'
+    | '/attendance/privacy'
     | '/employees/$id'
     | '/ems/admin'
     | '/ems/approvals'
@@ -938,6 +948,7 @@ export interface FileRouteTypes {
     | '/attendance/approvals'
     | '/attendance/calendar'
     | '/attendance/exceptions'
+    | '/attendance/privacy'
     | '/employees/$id'
     | '/ems/admin'
     | '/ems/approvals'
@@ -1029,6 +1040,7 @@ export interface FileRouteTypes {
     | '/_app/attendance/approvals'
     | '/_app/attendance/calendar'
     | '/_app/attendance/exceptions'
+    | '/_app/attendance/privacy'
     | '/_app/employees/$id'
     | '/_app/ems/admin'
     | '/_app/ems/approvals'
@@ -1575,6 +1587,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppEmployeesIdRouteImport
       parentRoute: typeof AppEmployeesRoute
     }
+    '/_app/attendance/privacy': {
+      id: '/_app/attendance/privacy'
+      path: '/privacy'
+      fullPath: '/attendance/privacy'
+      preLoaderRoute: typeof AppAttendancePrivacyRouteImport
+      parentRoute: typeof AppAttendanceRoute
+    }
     '/_app/attendance/exceptions': {
       id: '/_app/attendance/exceptions'
       path: '/exceptions'
@@ -1779,6 +1798,7 @@ interface AppAttendanceRouteChildren {
   AppAttendanceApprovalsRoute: typeof AppAttendanceApprovalsRoute
   AppAttendanceCalendarRoute: typeof AppAttendanceCalendarRoute
   AppAttendanceExceptionsRoute: typeof AppAttendanceExceptionsRoute
+  AppAttendancePrivacyRoute: typeof AppAttendancePrivacyRoute
   AppAttendanceIndexRoute: typeof AppAttendanceIndexRoute
 }
 
@@ -1786,6 +1806,7 @@ const AppAttendanceRouteChildren: AppAttendanceRouteChildren = {
   AppAttendanceApprovalsRoute: AppAttendanceApprovalsRoute,
   AppAttendanceCalendarRoute: AppAttendanceCalendarRoute,
   AppAttendanceExceptionsRoute: AppAttendanceExceptionsRoute,
+  AppAttendancePrivacyRoute: AppAttendancePrivacyRoute,
   AppAttendanceIndexRoute: AppAttendanceIndexRoute,
 }
 

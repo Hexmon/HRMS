@@ -68,6 +68,7 @@ import {
   assertCanViewExactAttendanceLocation,
   assertCanSeeAttendanceUser,
   assertCanUseSelfAttendance,
+  ATTENDANCE_EXACT_LOCATION_PERMISSION_ID,
   canManageAllAttendance,
   canSeeAllAttendance,
   canUseSelfAttendance,
@@ -84,11 +85,14 @@ import {
 } from "./command-service.js";
 import {
   AttendanceCommandTransactionRepository,
+  PostgresAttendanceCommandRepository,
 } from "./command-repository.js";
 import { recordAttendanceReviewQueueAge } from "./observability.js";
 import {
   normalizeAttendancePolicyConfig,
+  resolveCoordinateRetention,
   type AttendanceMode,
+  type AttendanceApprovalMode,
   type NormalizedAttendanceGeoPolicyAction,
 } from "./policy-config.js";
 import { resolveEffectiveAttendancePolicy } from "./policy-resolver.js";
@@ -138,6 +142,98 @@ export interface AttendancePageQuery {
   geo_outcome?: string;
   review_type?: string;
   reason_code?: string;
+}
+
+type AttendancePrivacyMode =
+  | "manual_only"
+  | "geo_optional"
+  | "geo_preferred"
+  | "geo_required";
+
+type AttendancePrivacyAction = "allow" | "deny" | "manual_fallback";
+type AttendancePrivacyApprovalMode = "disabled" | "approval_required";
+type AttendancePrivacyPolicySource = "assignment" | "built_in";
+type AttendancePrivacyLocationRequirement =
+  | "not_requested"
+  | "requested_optional"
+  | "requested_policy_controlled";
+
+interface EmployeeAttendancePrivacySummary {
+  generated_at: string;
+  as_of: string;
+  effective_policy: {
+    attendance_mode: AttendancePrivacyMode;
+    policy_source: AttendancePrivacyPolicySource;
+    effective_from: string | null;
+    effective_until: string | null;
+    location_requirement: AttendancePrivacyLocationRequirement;
+    fallback_approval_mode: AttendancePrivacyApprovalMode;
+    regularization_mode: AttendancePrivacyApprovalMode;
+    max_location_age_ms: number | null;
+    max_accuracy_meters: number | null;
+    geofence: {
+      configured: boolean;
+      grace_meters: number;
+    };
+    actions: {
+      permission_denied: AttendancePrivacyAction;
+      location_unavailable: AttendancePrivacyAction;
+      outside_fence: AttendancePrivacyAction;
+      boundary_uncertain: AttendancePrivacyAction;
+      stale_evidence: AttendancePrivacyAction;
+      accuracy_exceeded: AttendancePrivacyAction;
+    };
+  };
+  manual_fallback: {
+    approval_mode: AttendancePrivacyApprovalMode;
+    available_when_policy_selects_manual_fallback: boolean;
+    explicit_submission_required: true;
+    review_required: boolean;
+  };
+  regularization: {
+    mode: AttendancePrivacyApprovalMode;
+    correction_path: "/attendance";
+  };
+  retention: {
+    coordinate_retention_class: string;
+    coordinate_retention_seconds: number;
+    applies_to_new_coordinate_evidence: true;
+    historical_evidence_uses_recorded_expiry: true;
+    purge: {
+      eligibility: "eligible_after_retention_duration";
+      processing: "background_worker";
+      immediate_at_expiry: false;
+    };
+  };
+  evidence_access: {
+    routine_evidence: {
+      employee_self_view: "sanitized_own_evidence";
+      manager_view: "scoped_sanitized_evidence";
+      hr_admin_auditor_view: "role_scoped_sanitized_evidence";
+      reports_exclude_exact_coordinates: true;
+    };
+    exact_location: {
+      employee_can_view_exact_coordinates: false;
+      requires_record_visibility: true;
+      requires_permission: typeof ATTENDANCE_EXACT_LOCATION_PERMISSION_ID;
+      successful_authorized_reveals_audited: true;
+      denied_reveals_not_guaranteed_in_exact_coordinate_audit: true;
+      available_only_while_unexpired_unpurged: true;
+    };
+  };
+  offline_mobile: {
+    registered_device_required: true;
+    offline_supported_for_registered_devices: true;
+    offline_evidence_may_include_location: true;
+    accepted_offline_events_are_provisional: true;
+    payroll_eligible_from_offline_sync: false;
+  };
+  employee_controls: {
+    browser_permission_control: "browser_or_os_settings";
+    review_attendance_path: "/attendance/calendar";
+    correct_attendance_path: "/attendance";
+    manage_devices_path: "/ems/profile";
+  };
 }
 
 type RegularizationItemInput = Pick<
@@ -1178,6 +1274,139 @@ export class AttendanceService {
       ),
       weekly_balance: weeklyBalance,
       exception_history: exceptionHistory,
+    };
+  }
+
+  async attendancePrivacy(
+    actor: AuthUser,
+  ): Promise<EmployeeAttendancePrivacySummary> {
+    const context = this.resolveAttendanceCompanyContext(
+      actor,
+      "attendance.privacy",
+    );
+    assertCanUseSelfAttendance(actor);
+    if (!this.store.pgPool) {
+      throw conflict("Attendance privacy summary requires policy persistence.");
+    }
+
+    const generatedAt = nowIso();
+    const policy = await new PostgresAttendanceCommandRepository(
+      this.store.pgPool,
+    ).transaction((tx) =>
+      resolveEffectiveAttendancePolicy(tx, {
+        companyId: context.companyId,
+        subjectEmployeeUserId: actor.id,
+        asOf: generatedAt,
+      }),
+    );
+    const attendanceMode = this.attendancePrivacyMode(policy.attendanceMode);
+    const fallbackApprovalMode = this.attendancePrivacyApprovalMode(
+      policy.fallbackApprovalMode,
+      "fallbackApprovalMode",
+    );
+    const regularizationMode = this.attendancePrivacyApprovalMode(
+      policy.regularizationMode,
+      "regularizationMode",
+    );
+    const coordinateRetention = resolveCoordinateRetention(policy);
+    const manualFallbackAvailable =
+      fallbackApprovalMode === "approval_required";
+
+    return {
+      generated_at: generatedAt,
+      as_of: generatedAt,
+      effective_policy: {
+        attendance_mode: attendanceMode,
+        policy_source: policy.source === "assignment" ? "assignment" : "built_in",
+        effective_from: policy.effectiveFrom,
+        effective_until: policy.effectiveUntil,
+        location_requirement:
+          this.attendancePrivacyLocationRequirement(attendanceMode),
+        fallback_approval_mode: fallbackApprovalMode,
+        regularization_mode: regularizationMode,
+        max_location_age_ms: policy.maxLocationAgeMs,
+        max_accuracy_meters: policy.maxAccuracyMeters,
+        geofence: {
+          configured: policy.effectiveGeofenceIds.length > 0,
+          grace_meters: policy.geofenceGraceMeters,
+        },
+        actions: {
+          permission_denied: this.attendancePrivacyAction(
+            policy.permissionDeniedAction,
+            "permissionDeniedAction",
+          ),
+          location_unavailable: this.attendancePrivacyAction(
+            policy.locationUnavailableAction,
+            "locationUnavailableAction",
+          ),
+          outside_fence: this.attendancePrivacyAction(
+            policy.outsideFenceAction,
+            "outsideFenceAction",
+          ),
+          boundary_uncertain: this.attendancePrivacyAction(
+            policy.boundaryUncertainAction,
+            "boundaryUncertainAction",
+          ),
+          stale_evidence: this.attendancePrivacyAction(
+            policy.staleEvidenceAction,
+            "staleEvidenceAction",
+          ),
+          accuracy_exceeded: this.attendancePrivacyAction(
+            policy.accuracyExceededAction,
+            "accuracyExceededAction",
+          ),
+        },
+      },
+      manual_fallback: {
+        approval_mode: fallbackApprovalMode,
+        available_when_policy_selects_manual_fallback: manualFallbackAvailable,
+        explicit_submission_required: true,
+        review_required: manualFallbackAvailable,
+      },
+      regularization: {
+        mode: regularizationMode,
+        correction_path: "/attendance",
+      },
+      retention: {
+        coordinate_retention_class: coordinateRetention.retentionClass,
+        coordinate_retention_seconds: coordinateRetention.retentionSeconds,
+        applies_to_new_coordinate_evidence: true,
+        historical_evidence_uses_recorded_expiry: true,
+        purge: {
+          eligibility: "eligible_after_retention_duration",
+          processing: "background_worker",
+          immediate_at_expiry: false,
+        },
+      },
+      evidence_access: {
+        routine_evidence: {
+          employee_self_view: "sanitized_own_evidence",
+          manager_view: "scoped_sanitized_evidence",
+          hr_admin_auditor_view: "role_scoped_sanitized_evidence",
+          reports_exclude_exact_coordinates: true,
+        },
+        exact_location: {
+          employee_can_view_exact_coordinates: false,
+          requires_record_visibility: true,
+          requires_permission: ATTENDANCE_EXACT_LOCATION_PERMISSION_ID,
+          successful_authorized_reveals_audited: true,
+          denied_reveals_not_guaranteed_in_exact_coordinate_audit: true,
+          available_only_while_unexpired_unpurged: true,
+        },
+      },
+      offline_mobile: {
+        registered_device_required: true,
+        offline_supported_for_registered_devices: true,
+        offline_evidence_may_include_location: true,
+        accepted_offline_events_are_provisional: true,
+        payroll_eligible_from_offline_sync: false,
+      },
+      employee_controls: {
+        browser_permission_control: "browser_or_os_settings",
+        review_attendance_path: "/attendance/calendar",
+        correct_attendance_path: "/attendance",
+        manage_devices_path: "/ems/profile",
+      },
     };
   }
 
@@ -2963,6 +3192,57 @@ export class AttendanceService {
       blocked_reason: availability.blocked_reason,
       blocked_action_reasons: availability.blocked_action_reasons,
     };
+  }
+
+  private attendancePrivacyMode(value: AttendanceMode): AttendancePrivacyMode {
+    if (
+      value === "manual_only" ||
+      value === "geo_optional" ||
+      value === "geo_preferred" ||
+      value === "geo_required"
+    ) {
+      return value;
+    }
+    throw conflict("Resolved attendance policy mode is not supported.", {
+      code: "attendance_privacy_invalid_policy_mode",
+      attendance_mode: value,
+    });
+  }
+
+  private attendancePrivacyAction(
+    value: NormalizedAttendanceGeoPolicyAction,
+    field: string,
+  ): AttendancePrivacyAction {
+    if (value === "allow" || value === "deny" || value === "manual_fallback") {
+      return value;
+    }
+    throw conflict("Resolved attendance geo policy action is not supported.", {
+      code: "attendance_privacy_invalid_policy_action",
+      field,
+      action: value,
+    });
+  }
+
+  private attendancePrivacyApprovalMode(
+    value: AttendanceApprovalMode,
+    field: string,
+  ): AttendancePrivacyApprovalMode {
+    if (value === "disabled" || value === "approval_required") {
+      return value;
+    }
+    throw conflict("Resolved attendance approval mode is not supported.", {
+      code: "attendance_privacy_invalid_approval_mode",
+      field,
+      mode: value,
+    });
+  }
+
+  private attendancePrivacyLocationRequirement(
+    mode: AttendancePrivacyMode,
+  ): AttendancePrivacyLocationRequirement {
+    if (mode === "manual_only") return "not_requested";
+    if (mode === "geo_optional") return "requested_optional";
+    return "requested_policy_controlled";
   }
 
   private autoPunchOutCutoffIso(
