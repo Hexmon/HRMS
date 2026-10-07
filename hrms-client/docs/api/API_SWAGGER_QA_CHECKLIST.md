@@ -55,3 +55,23 @@ Confirm these groups are readable:
 - OCC mutations document `409`.
 - Common error schemas show `code`, `message`, `details`, `request_id`.
 - No secrets or production credentials appear in examples.
+
+## Attendance Sprint 13 Examples
+
+- `POST /api/v1/attendance/punches` shows the command envelope.
+- Browser web examples show `device: null`.
+- `Idempotency-Key` equals `client_event_id` for online punch examples.
+- `web_geo` coordinate evidence uses provider `browser`.
+- `web_geo` denied/unavailable evidence contains no `latitude`, `longitude`, or coordinate pair.
+- Online mobile examples use `source: "mobile"` and a non-null `device.registered_device_id`.
+- Offline sync examples use `contract_version: "attendance.offline_sync.v1"` and no top-level `Idempotency-Key`.
+- Offline sync documents one to 50 events, event `sequence`, event-level `client_event_id`, and accepted/replayed/conflict/deferred outcomes.
+- Routine safe geo evidence summaries contain no raw coordinates.
+- Exact-location reveal is documented separately as privileged, audited, and permission-gated.
+- Exact-location permission denial is a `403` error envelope, not a `200` response with null coordinates.
+- Daily self-evidence examples contain `self_evidence`, `summary_sources`, events, safe geo context, and regularization relationships without raw coordinates.
+- Regularization examples use canonical `items` with `add`, `replace`, `void`, and mixed operations.
+- Regularization decision examples include `expected_version`, and return/reject examples include required remarks.
+- Manager queue/actionability examples document `can_decide` and `allowed_decisions`.
+- Error examples use the common envelope and include validation, idempotency/workflow conflict, self-approval blocked, and exact-location denied cases.
+- Backend and frontend-contract OpenAPI artifacts are synchronized after generation.

@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useId, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -12,12 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Download, Filter } from "lucide-react";
+import { Download, Filter, RotateCcw } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui-kit";
 import { exportCsv, daysAgo, isoToday } from "@/lib/reports/utils";
 import { useEmployees } from "@/lib/employees-store";
 import { documentsApi } from "@/domains/documents";
+import { useAttendanceExportMutation } from "@/domains/attendance";
 import { useCreateReportExportMutation } from "@/domains/reports";
+import { ATTENDANCE_REPORTING_EVIDENCE_OPTIONS } from "@/domains/attendance/reporting-evidence";
 import { useApiRouteEnabled, userFacingErrorMessage } from "@/shared/api";
 
 export interface ReportFilters {
@@ -26,13 +28,30 @@ export interface ReportFilters {
   department: string;
   employee: string;
   status: string;
+  evidenceCategory: string;
+  sourceCategory: string;
+  geoOutcome: string;
+  reviewType: string;
+  reasonCode: string;
+  managerUserId: string;
 }
 
-interface FacetOptions {
+export interface FacetOptions {
   showDepartment?: boolean;
   showEmployee?: boolean;
   showStatus?: boolean;
+  showEvidenceCategory?: boolean;
+  showSourceCategory?: boolean;
+  showGeoOutcome?: boolean;
+  showReviewType?: boolean;
+  showReasonCode?: boolean;
+  showTeam?: boolean;
   statusOptions?: { value: string; label: string }[];
+  sourceCategoryOptions?: { value: string; label: string }[];
+  geoOutcomeOptions?: { value: string; label: string }[];
+  reviewTypeOptions?: { value: string; label: string }[];
+  reasonCodeOptions?: { value: string; label: string }[];
+  teamOptions?: { value: string; label: string }[];
   employeePool?: string[];
 }
 
@@ -47,11 +66,15 @@ interface Props<T extends { id: string }> {
     value: ReactNode;
     tone?: "default" | "success" | "warning" | "destructive" | "info";
   }[];
+  filters?: ReportFilters;
+  onFiltersChange?: (filters: ReportFilters) => void;
   build: (filters: ReportFilters) => T[];
   columns: Column<T>[];
   searchKeys?: (keyof T)[];
   exportName?: string;
+  exportMode?: string;
   emptyTitle?: string;
+  onRowClick?: (row: T) => void;
 }
 
 const TONE: Record<string, string> = {
@@ -69,26 +92,79 @@ export function ReportShell<T extends { id: string }>({
   defaultTo,
   facets,
   summary,
+  filters,
+  onFiltersChange,
   build,
   columns,
   searchKeys,
   exportName,
+  exportMode,
   emptyTitle,
+  onRowClick,
 }: Props<T>) {
   const { departments, employees } = useEmployees();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const apiMode = useApiRouteEnabled(["/reports"]);
+  const filterId = useId();
   const exportMutation = useCreateReportExportMutation();
-  const [from, setFrom] = useState(defaultFrom ?? daysAgo(90));
-  const [to, setTo] = useState(defaultTo ?? isoToday());
-  const [department, setDepartment] = useState("all");
-  const [employee, setEmployee] = useState("all");
-  const [status, setStatus] = useState("all");
+  const attendanceExportMutation = useAttendanceExportMutation();
+  const defaultReportFilters = (): ReportFilters => ({
+    from: defaultFrom ?? daysAgo(90),
+    to: defaultTo ?? isoToday(),
+    department: "all",
+    employee: "all",
+    status: "all",
+    evidenceCategory: "all",
+    sourceCategory: "all",
+    geoOutcome: "all",
+    reviewType: "all",
+    reasonCode: "all",
+    managerUserId: "all",
+  });
+  const [internalFilters, setInternalFilters] = useState<ReportFilters>(() => defaultReportFilters());
 
-  const f: ReportFilters = { from, to, department, employee, status };
+  const f = filters ?? internalFilters;
+  const setFilter = (patch: Partial<ReportFilters>) => {
+    const next = { ...f, ...patch };
+    if (onFiltersChange) {
+      onFiltersChange(next);
+    } else {
+      setInternalFilters(next);
+    }
+  };
+  const defaultFilters = defaultReportFilters();
+  const filtersChanged = (Object.keys(defaultFilters) as Array<keyof ReportFilters>).some(
+    (key) => f[key] !== defaultFilters[key],
+  );
+  const resetFilters = () => setFilter(defaultFilters);
   const rows = build(f);
 
   const employeePool = facets?.employeePool ?? employees.map((e) => e.name);
+  const fromId = `${filterId}-report-filter-from`;
+  const fromLabelId = `${fromId}-label`;
+  const toId = `${filterId}-report-filter-to`;
+  const toLabelId = `${toId}-label`;
+  const departmentId = `${filterId}-report-filter-department`;
+  const departmentLabelId = `${departmentId}-label`;
+  const employeeId = `${filterId}-report-filter-employee`;
+  const employeeLabelId = `${employeeId}-label`;
+  const statusId = `${filterId}-report-filter-status`;
+  const statusLabelId = `${statusId}-label`;
+  const evidenceCategoryId = `${filterId}-report-filter-evidence-category`;
+  const evidenceCategoryLabelId = `${evidenceCategoryId}-label`;
+  const sourceCategoryId = `${filterId}-report-filter-source-category`;
+  const sourceCategoryLabelId = `${sourceCategoryId}-label`;
+  const geoOutcomeId = `${filterId}-report-filter-geo-outcome`;
+  const geoOutcomeLabelId = `${geoOutcomeId}-label`;
+  const reviewTypeId = `${filterId}-report-filter-review-type`;
+  const reviewTypeLabelId = `${reviewTypeId}-label`;
+  const reasonCodeId = `${filterId}-report-filter-reason-code`;
+  const reasonCodeLabelId = `${reasonCodeId}-label`;
+  const teamId = `${filterId}-report-filter-team`;
+  const teamLabelId = `${teamId}-label`;
+  const tableSearchLabel = path.startsWith("/reports/attendance")
+    ? "Search attendance records"
+    : `Search ${title.toLowerCase()} records`;
 
   const handleExport = async () => {
     if (apiMode) {
@@ -99,16 +175,21 @@ export function ReportShell<T extends { id: string }>({
       }
 
       try {
-        const job = await exportMutation.mutateAsync({
-          format: "csv",
-          report_type: reportType,
-          filters: buildBackendFilters(f, {
-            departments,
-            employees,
-            exportName,
-            title,
-          }),
+        const filters = buildBackendFilters(f, {
+          departments,
+          employees,
+          exportName,
+          exportMode,
+          title,
         });
+        const job =
+          reportType === "attendance/summary"
+            ? await attendanceExportMutation.mutateAsync({ format: "csv", filters })
+            : await exportMutation.mutateAsync({
+                format: "csv",
+                report_type: reportType,
+                filters,
+              });
         const jobId = String(job.job_id ?? job.export_id ?? "created").slice(0, 8);
         if (typeof job.download_document_id === "string" && job.download_document_id) {
           const download = await documentsApi.createDownloadUrl(job.download_document_id);
@@ -151,11 +232,13 @@ export function ReportShell<T extends { id: string }>({
           size="sm"
           variant="outline"
           onClick={handleExport}
-          disabled={apiMode && exportMutation.isPending}
-          className="w-full sm:w-auto"
+          disabled={apiMode && (exportMutation.isPending || attendanceExportMutation.isPending)}
+          className="min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
         >
           <Download className="mr-1 h-3.5 w-3.5" />
-          {apiMode && exportMutation.isPending ? "Exporting" : "Export CSV"}
+          {apiMode && (exportMutation.isPending || attendanceExportMutation.isPending)
+            ? "Exporting"
+            : "Export CSV"}
         </Button>
       </div>
 
@@ -163,28 +246,50 @@ export function ReportShell<T extends { id: string }>({
         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           <Filter className="h-3.5 w-3.5" /> Filters
         </div>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-          <div className="space-y-1">
-            <Label className="text-[11px]">From</Label>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+          <div className="min-w-0 space-y-1">
+            <Label id={fromLabelId} htmlFor={fromId} className="text-[11px]">
+              From
+            </Label>
             <Input
+              id={fromId}
               type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
+              value={f.from}
+              onChange={(e) => setFilter({ from: e.target.value })}
+              aria-labelledby={fromLabelId}
               className="h-9"
             />
           </div>
-          <div className="space-y-1">
-            <Label className="text-[11px]">To</Label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9" />
+          <div className="min-w-0 space-y-1">
+            <Label id={toLabelId} htmlFor={toId} className="text-[11px]">
+              To
+            </Label>
+            <Input
+              id={toId}
+              type="date"
+              value={f.to}
+              onChange={(e) => setFilter({ to: e.target.value })}
+              aria-labelledby={toLabelId}
+              className="h-9"
+            />
           </div>
           {facets?.showDepartment && (
-            <div className="space-y-1">
-              <Label className="text-[11px]">Department</Label>
-              <Select value={department} onValueChange={setDepartment}>
-                <SelectTrigger className="h-9">
+            <div className="min-w-0 space-y-1">
+              <Label id={departmentLabelId} htmlFor={departmentId} className="text-[11px]">
+                Department
+              </Label>
+              <Select
+                value={f.department}
+                onValueChange={(value) => setFilter({ department: value })}
+              >
+                <SelectTrigger
+                  id={departmentId}
+                  aria-labelledby={departmentLabelId}
+                  className="h-9"
+                >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-72">
                   <SelectItem value="all">All departments</SelectItem>
                   {departments.map((d) => (
                     <SelectItem key={d.id} value={d.name}>
@@ -196,10 +301,12 @@ export function ReportShell<T extends { id: string }>({
             </div>
           )}
           {facets?.showEmployee && (
-            <div className="space-y-1">
-              <Label className="text-[11px]">Employee</Label>
-              <Select value={employee} onValueChange={setEmployee}>
-                <SelectTrigger className="h-9">
+            <div className="min-w-0 space-y-1">
+              <Label id={employeeLabelId} htmlFor={employeeId} className="text-[11px]">
+                Employee
+              </Label>
+              <Select value={f.employee} onValueChange={(value) => setFilter({ employee: value })}>
+                <SelectTrigger id={employeeId} aria-labelledby={employeeLabelId} className="h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
@@ -214,13 +321,15 @@ export function ReportShell<T extends { id: string }>({
             </div>
           )}
           {facets?.showStatus && (
-            <div className="space-y-1">
-              <Label className="text-[11px]">Status</Label>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger className="h-9">
+            <div className="min-w-0 space-y-1">
+              <Label id={statusLabelId} htmlFor={statusId} className="text-[11px]">
+                Status
+              </Label>
+              <Select value={f.status} onValueChange={(value) => setFilter({ status: value })}>
+                <SelectTrigger id={statusId} aria-labelledby={statusLabelId} className="h-9">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-72">
                   <SelectItem value="all">All statuses</SelectItem>
                   {(facets.statusOptions ?? []).map((s) => (
                     <SelectItem key={s.value} value={s.value}>
@@ -231,6 +340,169 @@ export function ReportShell<T extends { id: string }>({
               </Select>
             </div>
           )}
+          {facets?.showEvidenceCategory && (
+            <div className="min-w-0 space-y-1">
+              <Label
+                id={evidenceCategoryLabelId}
+                htmlFor={evidenceCategoryId}
+                className="text-[11px]"
+              >
+                Evidence state
+              </Label>
+              <Select
+                value={f.evidenceCategory}
+                onValueChange={(value) => setFilter({ evidenceCategory: value })}
+              >
+                <SelectTrigger
+                  id={evidenceCategoryId}
+                  aria-labelledby={evidenceCategoryLabelId}
+                  className="h-9"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All evidence states</SelectItem>
+                  {ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showSourceCategory && (
+            <div className="min-w-0 space-y-1">
+              <Label id={sourceCategoryLabelId} htmlFor={sourceCategoryId} className="text-[11px]">
+                Source
+              </Label>
+              <Select
+                value={f.sourceCategory}
+                onValueChange={(value) => setFilter({ sourceCategory: value })}
+              >
+                <SelectTrigger
+                  id={sourceCategoryId}
+                  aria-labelledby={sourceCategoryLabelId}
+                  className="h-9"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All sources</SelectItem>
+                  {(facets.sourceCategoryOptions ?? []).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showGeoOutcome && (
+            <div className="min-w-0 space-y-1">
+              <Label id={geoOutcomeLabelId} htmlFor={geoOutcomeId} className="text-[11px]">
+                Geo outcome
+              </Label>
+              <Select
+                value={f.geoOutcome}
+                onValueChange={(value) => setFilter({ geoOutcome: value })}
+              >
+                <SelectTrigger id={geoOutcomeId} aria-labelledby={geoOutcomeLabelId} className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All geo outcomes</SelectItem>
+                  {(facets.geoOutcomeOptions ?? []).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showReviewType && (
+            <div className="min-w-0 space-y-1">
+              <Label id={reviewTypeLabelId} htmlFor={reviewTypeId} className="text-[11px]">
+                Review type
+              </Label>
+              <Select
+                value={f.reviewType}
+                onValueChange={(value) => setFilter({ reviewType: value })}
+              >
+                <SelectTrigger id={reviewTypeId} aria-labelledby={reviewTypeLabelId} className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All review types</SelectItem>
+                  {(facets.reviewTypeOptions ?? []).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showReasonCode && (
+            <div className="min-w-0 space-y-1">
+              <Label id={reasonCodeLabelId} htmlFor={reasonCodeId} className="text-[11px]">
+                Reason
+              </Label>
+              <Select
+                value={f.reasonCode}
+                onValueChange={(value) => setFilter({ reasonCode: value })}
+              >
+                <SelectTrigger id={reasonCodeId} aria-labelledby={reasonCodeLabelId} className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All reasons</SelectItem>
+                  {(facets.reasonCodeOptions ?? []).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showTeam && (
+            <div className="min-w-0 space-y-1">
+              <Label id={teamLabelId} htmlFor={teamId} className="text-[11px]">
+                Team
+              </Label>
+              <Select
+                value={f.managerUserId}
+                onValueChange={(value) => setFilter({ managerUserId: value })}
+              >
+                <SelectTrigger id={teamId} aria-labelledby={teamLabelId} className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All teams</SelectItem>
+                  {(facets.teamOptions ?? []).map((team) => (
+                    <SelectItem key={team.value} value={team.value}>
+                      {team.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="flex min-w-0 items-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={resetFilters}
+              disabled={!filtersChanged}
+              className="h-9 w-full justify-start sm:w-auto"
+            >
+              <RotateCcw className="mr-1 h-3.5 w-3.5" />
+              Reset
+            </Button>
+          </div>
         </div>
       </Card>
 
@@ -253,6 +525,8 @@ export function ReportShell<T extends { id: string }>({
         searchKeys={searchKeys}
         emptyTitle={emptyTitle ?? "No matching rows"}
         emptyDescription="Try adjusting filters or expanding the date range."
+        onRowClick={onRowClick}
+        searchLabel={tableSearchLabel}
       />
     </div>
   );
@@ -277,6 +551,7 @@ function buildBackendFilters(
     departments: { id: string; name: string }[];
     employees: { id: string; name: string }[];
     exportName?: string;
+    exportMode?: string;
     title: string;
   },
 ): Record<string, unknown> {
@@ -310,6 +585,34 @@ function buildBackendFilters(
 
   if (filters.status !== "all") {
     payload.status = filters.status;
+  }
+
+  if (filters.evidenceCategory !== "all") {
+    payload.evidence_category = filters.evidenceCategory;
+  }
+
+  if (filters.sourceCategory !== "all") {
+    payload.source_category = filters.sourceCategory;
+  }
+
+  if (filters.geoOutcome !== "all") {
+    payload.geo_outcome = filters.geoOutcome;
+  }
+
+  if (filters.reviewType !== "all") {
+    payload.review_type = filters.reviewType;
+  }
+
+  if (filters.reasonCode !== "all") {
+    payload.reason_code = filters.reasonCode;
+  }
+
+  if (filters.managerUserId !== "all") {
+    payload.manager_user_id = filters.managerUserId;
+  }
+
+  if (context.exportMode) {
+    payload.report_mode = context.exportMode;
   }
 
   return payload;
