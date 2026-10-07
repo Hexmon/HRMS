@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 import { ApiError, ApiUnavailableError } from "./errors";
-import { asArray, asRecord, text } from "./records";
+import { asArray, asRecord, isRecord, text } from "./records";
 
 export interface UserFacingError {
   title: string;
@@ -18,6 +18,39 @@ function sentence(value: string): string {
     : `${trimmed}.`;
 }
 
+const SENSITIVE_LEAF_KEYS = new Set(["latitude", "longitude", "lat", "lng", "lon"]);
+
+const SENSITIVE_BRANCH_KEYS = new Set([
+  "coordinate",
+  "coordinates",
+  "location_evidence",
+  "location_evidence_id",
+  "raw_evidence",
+  "raw_request",
+  "raw_payload",
+  "request_snapshot",
+  "request_body",
+  "raw_location",
+  "browser_location",
+]);
+const SENSITIVE_LEAF_KEY_PATTERN = /(^|_)(latitude|longitude|lat|lng|lon)($|_)/u;
+
+function normalizedDetailKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/gu, "$1_$2")
+    .replace(/[\s-]+/gu, "_")
+    .toLowerCase();
+}
+
+function isSensitiveDetailField(key: string, value: unknown): boolean {
+  const normalized = normalizedDetailKey(key);
+  if (SENSITIVE_LEAF_KEYS.has(normalized) || SENSITIVE_LEAF_KEY_PATTERN.test(normalized)) {
+    return true;
+  }
+  if (SENSITIVE_BRANCH_KEYS.has(normalized) || normalized.includes("coordinate")) return true;
+  return normalized === "location" && (Array.isArray(value) || isRecord(value));
+}
+
 function detailsFromUnknown(value: unknown): string[] {
   if (!value) return [];
   if (typeof value === "string") return [value];
@@ -32,6 +65,7 @@ function detailsFromUnknown(value: unknown): string[] {
 
   const fieldErrors = asRecord(record.fieldErrors);
   for (const [field, fieldValue] of Object.entries(fieldErrors)) {
+    if (isSensitiveDetailField(field, fieldValue)) continue;
     for (const entry of detailsFromUnknown(fieldValue)) {
       messages.push(`${field}: ${entry}`);
     }
@@ -39,6 +73,7 @@ function detailsFromUnknown(value: unknown): string[] {
 
   for (const [field, fieldValue] of Object.entries(record)) {
     if (field === "formErrors" || field === "fieldErrors") continue;
+    if (isSensitiveDetailField(field, fieldValue)) continue;
     for (const entry of detailsFromUnknown(fieldValue)) {
       messages.push(`${field}: ${entry}`);
     }
@@ -124,8 +159,14 @@ export function userFacingErrorMessage(error: unknown, fallback?: string): strin
 
 export function toastApiError(error: unknown, fallback?: string): void {
   const formatted = formatUserFacingError(error, fallback);
+  const description = [
+    formatted.description,
+    formatted.requestId ? `Request ID: ${formatted.requestId}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
   toast.error(formatted.title, {
-    description: formatted.description,
+    description: description || undefined,
   });
 }
 
