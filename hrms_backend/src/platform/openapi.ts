@@ -19,6 +19,7 @@ import { attendanceOpenApiExamples } from "../modules/attendance/attendance-open
 import {
   AttendanceReportExportColumnHeaders,
   AttendanceReportExportColumnValues,
+  AttendanceReportSourceCategoryValues,
 } from "../modules/attendance/reporting-projection.js";
 import { AttendanceReportingEvidenceCategoryValues } from "../modules/attendance/reporting-evidence.js";
 
@@ -3472,6 +3473,7 @@ const dashboardSummarySchema = {
     "workforce",
     "approvals",
     "operations",
+    "attendance",
     "workload",
     "attention",
     "unavailable_features",
@@ -3578,6 +3580,36 @@ const dashboardSummarySchema = {
         assets_recovery_pending: { type: "integer", minimum: 0, example: 0 },
         notifications_pending: { type: "integer", minimum: 0, example: 1 },
         outbox_pending: { type: "integer", minimum: 0, example: 1 },
+      },
+      additionalProperties: false,
+    },
+    attendance: {
+      type: "object",
+      required: ["evidence_categories", "source_categories"],
+      properties: {
+        evidence_categories: {
+          type: "object",
+          required: ["verified", "warning", "provisional", "review_required", "rejected"],
+          properties: {
+            verified: { type: "integer", minimum: 0, example: 8 },
+            warning: { type: "integer", minimum: 0, example: 2 },
+            provisional: { type: "integer", minimum: 0, example: 1 },
+            review_required: { type: "integer", minimum: 0, example: 1 },
+            rejected: { type: "integer", minimum: 0, example: 0 },
+          },
+          additionalProperties: false,
+        },
+        source_categories: {
+          type: "object",
+          required: enumValues(AttendanceReportSourceCategoryValues),
+          properties: Object.fromEntries(
+            AttendanceReportSourceCategoryValues.map((value) => [
+              value,
+              { type: "integer", minimum: 0, example: value === "geo" ? 2 : 0 },
+            ]),
+          ),
+          additionalProperties: false,
+        },
       },
       additionalProperties: false,
     },
@@ -7383,6 +7415,33 @@ const reportSummaryQuerySchema = {
       enum: enumValues(AttendanceReportingEvidenceCategoryValues),
       example: "review_required",
     },
+    attendance_channel: {
+      type: "string",
+      example: "Web + location",
+    },
+    source_category: {
+      type: "string",
+      enum: enumValues(AttendanceReportSourceCategoryValues),
+      example: "geo",
+    },
+    geo_outcome: {
+      type: "string",
+      enum: enumValues(AttendanceGeoFactualOutcomeValues),
+      example: "outside_confident",
+    },
+    geo_action: {
+      type: "string",
+      example: "manual_fallback",
+    },
+    review_type: {
+      type: "string",
+      enum: ["manual_fallback", "geo_decision"],
+      example: "manual_fallback",
+    },
+    reason_code: {
+      type: "string",
+      example: "geo_outside_fence",
+    },
     project_id: uuid("Project filter UUID"),
     assigned_to_user_id: uuid("Assigned user filter UUID"),
     actor_user_id: uuid("Audit actor filter UUID"),
@@ -7426,10 +7485,12 @@ const attendanceReportSummaryRowSchema = {
     "status",
     "reporting_evidence_category",
     "attendance_channels",
+    "source_categories",
     "work_site_name",
     "work_site_type",
     "geo_outcome",
     "geo_action",
+    "review_type",
     "reason_codes",
     "review_required",
     "review_outcome",
@@ -7454,6 +7515,11 @@ const attendanceReportSummaryRowSchema = {
       items: { type: "string" },
       example: ["Mobile - captured offline"],
     },
+    source_categories: {
+      type: "array",
+      items: { type: "string", enum: enumValues(AttendanceReportSourceCategoryValues) },
+      example: ["geo", "manual"],
+    },
     work_site_name: {
       type: "array",
       items: { type: "string" },
@@ -7473,6 +7539,11 @@ const attendanceReportSummaryRowSchema = {
       type: "array",
       items: { type: "string" },
       example: ["fallback_review"],
+    },
+    review_type: {
+      type: "array",
+      items: { type: "string", enum: ["manual_fallback", "geo_decision"] },
+      example: ["manual_fallback"],
     },
     reason_codes: {
       type: "array",
@@ -7511,6 +7582,17 @@ const attendanceReportSummarySchema = {
         review_required: { type: "integer", minimum: 0, example: 1 },
         rejected: { type: "integer", minimum: 0, example: 0 },
       },
+      additionalProperties: false,
+    },
+    source_categories: {
+      type: "object",
+      required: enumValues(AttendanceReportSourceCategoryValues),
+      properties: Object.fromEntries(
+        AttendanceReportSourceCategoryValues.map((value) => [
+          value,
+          { type: "integer", minimum: 0, example: value === "geo" ? 2 : 0 },
+        ]),
+      ),
       additionalProperties: false,
     },
   },

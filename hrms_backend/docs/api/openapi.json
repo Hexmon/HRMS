@@ -21468,6 +21468,7 @@
                     "workforce",
                     "approvals",
                     "operations",
+                    "attendance",
                     "workload",
                     "attention",
                     "unavailable_features"
@@ -21725,6 +21726,98 @@
                           "type": "integer",
                           "minimum": 0,
                           "example": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "attendance": {
+                      "type": "object",
+                      "required": [
+                        "evidence_categories",
+                        "source_categories"
+                      ],
+                      "properties": {
+                        "evidence_categories": {
+                          "type": "object",
+                          "required": [
+                            "verified",
+                            "warning",
+                            "provisional",
+                            "review_required",
+                            "rejected"
+                          ],
+                          "properties": {
+                            "verified": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 8
+                            },
+                            "warning": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 2
+                            },
+                            "provisional": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 1
+                            },
+                            "review_required": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 1
+                            },
+                            "rejected": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 0
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "source_categories": {
+                          "type": "object",
+                          "required": [
+                            "web",
+                            "geo",
+                            "mobile",
+                            "manual",
+                            "kiosk",
+                            "system"
+                          ],
+                          "properties": {
+                            "web": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 0
+                            },
+                            "geo": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 2
+                            },
+                            "mobile": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 0
+                            },
+                            "manual": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 0
+                            },
+                            "kiosk": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 0
+                            },
+                            "system": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 0
+                            }
+                          },
+                          "additionalProperties": false
                         }
                       },
                       "additionalProperties": false
@@ -46973,6 +47066,84 @@
           {
             "schema": {
               "type": "string",
+              "example": "Web + location"
+            },
+            "in": "query",
+            "name": "attendance_channel",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "geo",
+                "mobile",
+                "manual",
+                "kiosk",
+                "system"
+              ],
+              "example": "geo"
+            },
+            "in": "query",
+            "name": "source_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_required",
+                "inside_confident",
+                "outside_confident",
+                "boundary_uncertain",
+                "stale_evidence",
+                "accuracy_exceeded",
+                "missing",
+                "permission_denied",
+                "location_unavailable",
+                "fence_not_configured"
+              ],
+              "example": "outside_confident"
+            },
+            "in": "query",
+            "name": "geo_outcome",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "geo_action",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "manual_fallback",
+                "geo_decision"
+              ],
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "review_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "geo_outside_fence"
+            },
+            "in": "query",
+            "name": "reason_code",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "uuid",
               "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
             },
@@ -47560,6 +47731,84 @@
           {
             "schema": {
               "type": "string",
+              "example": "Web + location"
+            },
+            "in": "query",
+            "name": "attendance_channel",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "geo",
+                "mobile",
+                "manual",
+                "kiosk",
+                "system"
+              ],
+              "example": "geo"
+            },
+            "in": "query",
+            "name": "source_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_required",
+                "inside_confident",
+                "outside_confident",
+                "boundary_uncertain",
+                "stale_evidence",
+                "accuracy_exceeded",
+                "missing",
+                "permission_denied",
+                "location_unavailable",
+                "fence_not_configured"
+              ],
+              "example": "outside_confident"
+            },
+            "in": "query",
+            "name": "geo_outcome",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "geo_action",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "manual_fallback",
+                "geo_decision"
+              ],
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "review_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "geo_outside_fence"
+            },
+            "in": "query",
+            "name": "reason_code",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "uuid",
               "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
             },
@@ -47727,10 +47976,12 @@
                           "status",
                           "reporting_evidence_category",
                           "attendance_channels",
+                          "source_categories",
                           "work_site_name",
                           "work_site_type",
                           "geo_outcome",
                           "geo_action",
+                          "review_type",
                           "reason_codes",
                           "review_required",
                           "review_outcome"
@@ -47800,6 +48051,24 @@
                               "Mobile - captured offline"
                             ]
                           },
+                          "source_categories": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "web",
+                                "geo",
+                                "mobile",
+                                "manual",
+                                "kiosk",
+                                "system"
+                              ]
+                            },
+                            "example": [
+                              "geo",
+                              "manual"
+                            ]
+                          },
                           "work_site_name": {
                             "type": "array",
                             "items": {
@@ -47834,6 +48103,19 @@
                             },
                             "example": [
                               "fallback_review"
+                            ]
+                          },
+                          "review_type": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "manual_fallback",
+                                "geo_decision"
+                              ]
+                            },
+                            "example": [
+                              "manual_fallback"
                             ]
                           },
                           "reason_codes": {
@@ -47940,6 +48222,50 @@
                           "example": 1
                         },
                         "rejected": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "source_categories": {
+                      "type": "object",
+                      "required": [
+                        "web",
+                        "geo",
+                        "mobile",
+                        "manual",
+                        "kiosk",
+                        "system"
+                      ],
+                      "properties": {
+                        "web": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        },
+                        "geo": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 2
+                        },
+                        "mobile": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        },
+                        "manual": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        },
+                        "kiosk": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        },
+                        "system": {
                           "type": "integer",
                           "minimum": 0,
                           "example": 0
@@ -48344,6 +48670,84 @@
             },
             "in": "query",
             "name": "reporting_evidence_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Web + location"
+            },
+            "in": "query",
+            "name": "attendance_channel",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "geo",
+                "mobile",
+                "manual",
+                "kiosk",
+                "system"
+              ],
+              "example": "geo"
+            },
+            "in": "query",
+            "name": "source_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_required",
+                "inside_confident",
+                "outside_confident",
+                "boundary_uncertain",
+                "stale_evidence",
+                "accuracy_exceeded",
+                "missing",
+                "permission_denied",
+                "location_unavailable",
+                "fence_not_configured"
+              ],
+              "example": "outside_confident"
+            },
+            "in": "query",
+            "name": "geo_outcome",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "geo_action",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "manual_fallback",
+                "geo_decision"
+              ],
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "review_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "geo_outside_fence"
+            },
+            "in": "query",
+            "name": "reason_code",
             "required": false
           },
           {
@@ -48936,6 +49340,84 @@
           {
             "schema": {
               "type": "string",
+              "example": "Web + location"
+            },
+            "in": "query",
+            "name": "attendance_channel",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "geo",
+                "mobile",
+                "manual",
+                "kiosk",
+                "system"
+              ],
+              "example": "geo"
+            },
+            "in": "query",
+            "name": "source_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_required",
+                "inside_confident",
+                "outside_confident",
+                "boundary_uncertain",
+                "stale_evidence",
+                "accuracy_exceeded",
+                "missing",
+                "permission_denied",
+                "location_unavailable",
+                "fence_not_configured"
+              ],
+              "example": "outside_confident"
+            },
+            "in": "query",
+            "name": "geo_outcome",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "geo_action",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "manual_fallback",
+                "geo_decision"
+              ],
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "review_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "geo_outside_fence"
+            },
+            "in": "query",
+            "name": "reason_code",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "uuid",
               "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
             },
@@ -49518,6 +50000,84 @@
             },
             "in": "query",
             "name": "reporting_evidence_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Web + location"
+            },
+            "in": "query",
+            "name": "attendance_channel",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "geo",
+                "mobile",
+                "manual",
+                "kiosk",
+                "system"
+              ],
+              "example": "geo"
+            },
+            "in": "query",
+            "name": "source_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_required",
+                "inside_confident",
+                "outside_confident",
+                "boundary_uncertain",
+                "stale_evidence",
+                "accuracy_exceeded",
+                "missing",
+                "permission_denied",
+                "location_unavailable",
+                "fence_not_configured"
+              ],
+              "example": "outside_confident"
+            },
+            "in": "query",
+            "name": "geo_outcome",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "geo_action",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "manual_fallback",
+                "geo_decision"
+              ],
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "review_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "geo_outside_fence"
+            },
+            "in": "query",
+            "name": "reason_code",
             "required": false
           },
           {
@@ -50110,6 +50670,84 @@
           {
             "schema": {
               "type": "string",
+              "example": "Web + location"
+            },
+            "in": "query",
+            "name": "attendance_channel",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "geo",
+                "mobile",
+                "manual",
+                "kiosk",
+                "system"
+              ],
+              "example": "geo"
+            },
+            "in": "query",
+            "name": "source_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_required",
+                "inside_confident",
+                "outside_confident",
+                "boundary_uncertain",
+                "stale_evidence",
+                "accuracy_exceeded",
+                "missing",
+                "permission_denied",
+                "location_unavailable",
+                "fence_not_configured"
+              ],
+              "example": "outside_confident"
+            },
+            "in": "query",
+            "name": "geo_outcome",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "geo_action",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "manual_fallback",
+                "geo_decision"
+              ],
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "review_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "geo_outside_fence"
+            },
+            "in": "query",
+            "name": "reason_code",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "uuid",
               "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
             },
@@ -50692,6 +51330,84 @@
             },
             "in": "query",
             "name": "reporting_evidence_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Web + location"
+            },
+            "in": "query",
+            "name": "attendance_channel",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "geo",
+                "mobile",
+                "manual",
+                "kiosk",
+                "system"
+              ],
+              "example": "geo"
+            },
+            "in": "query",
+            "name": "source_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_required",
+                "inside_confident",
+                "outside_confident",
+                "boundary_uncertain",
+                "stale_evidence",
+                "accuracy_exceeded",
+                "missing",
+                "permission_denied",
+                "location_unavailable",
+                "fence_not_configured"
+              ],
+              "example": "outside_confident"
+            },
+            "in": "query",
+            "name": "geo_outcome",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "geo_action",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "manual_fallback",
+                "geo_decision"
+              ],
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "review_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "geo_outside_fence"
+            },
+            "in": "query",
+            "name": "reason_code",
             "required": false
           },
           {
@@ -51284,6 +52000,84 @@
           {
             "schema": {
               "type": "string",
+              "example": "Web + location"
+            },
+            "in": "query",
+            "name": "attendance_channel",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "geo",
+                "mobile",
+                "manual",
+                "kiosk",
+                "system"
+              ],
+              "example": "geo"
+            },
+            "in": "query",
+            "name": "source_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_required",
+                "inside_confident",
+                "outside_confident",
+                "boundary_uncertain",
+                "stale_evidence",
+                "accuracy_exceeded",
+                "missing",
+                "permission_denied",
+                "location_unavailable",
+                "fence_not_configured"
+              ],
+              "example": "outside_confident"
+            },
+            "in": "query",
+            "name": "geo_outcome",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "geo_action",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "manual_fallback",
+                "geo_decision"
+              ],
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "review_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "geo_outside_fence"
+            },
+            "in": "query",
+            "name": "reason_code",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "uuid",
               "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
             },
@@ -51866,6 +52660,84 @@
             },
             "in": "query",
             "name": "reporting_evidence_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "Web + location"
+            },
+            "in": "query",
+            "name": "attendance_channel",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "geo",
+                "mobile",
+                "manual",
+                "kiosk",
+                "system"
+              ],
+              "example": "geo"
+            },
+            "in": "query",
+            "name": "source_category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_required",
+                "inside_confident",
+                "outside_confident",
+                "boundary_uncertain",
+                "stale_evidence",
+                "accuracy_exceeded",
+                "missing",
+                "permission_denied",
+                "location_unavailable",
+                "fence_not_configured"
+              ],
+              "example": "outside_confident"
+            },
+            "in": "query",
+            "name": "geo_outcome",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "geo_action",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "manual_fallback",
+                "geo_decision"
+              ],
+              "example": "manual_fallback"
+            },
+            "in": "query",
+            "name": "review_type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "geo_outside_fence"
+            },
+            "in": "query",
+            "name": "reason_code",
             "required": false
           },
           {
@@ -95478,7 +96350,7 @@
                   },
                   "columns": {
                     "type": "array",
-                    "maxItems": 18,
+                    "maxItems": 27,
                     "items": {
                       "type": "string",
                       "enum": [
@@ -95493,13 +96365,22 @@
                         "hours",
                         "reporting_evidence_category",
                         "attendance_channels",
+                        "source_categories",
                         "work_site_name",
                         "work_site_type",
                         "geo_outcome",
                         "geo_action",
+                        "review_type",
                         "reason_codes",
                         "review_required",
-                        "review_outcome"
+                        "review_outcome",
+                        "total_days",
+                        "present_days",
+                        "late_days",
+                        "absent_days",
+                        "wfh_days",
+                        "leave_days",
+                        "attendance_percent"
                       ]
                     },
                     "description": "Explicit registry of safe attendance export columns. Exact coordinates and exact-location flags are not exportable.",
@@ -95515,13 +96396,22 @@
                       "hours",
                       "reporting_evidence_category",
                       "attendance_channels",
+                      "source_categories",
                       "work_site_name",
                       "work_site_type",
                       "geo_outcome",
                       "geo_action",
+                      "review_type",
                       "reason_codes",
                       "review_required",
-                      "review_outcome"
+                      "review_outcome",
+                      "total_days",
+                      "present_days",
+                      "late_days",
+                      "absent_days",
+                      "wfh_days",
+                      "leave_days",
+                      "attendance_percent"
                     ]
                   },
                   "format": {
@@ -95607,13 +96497,22 @@
                           "hours",
                           "reporting_evidence_category",
                           "attendance_channels",
+                          "source_categories",
                           "work_site_name",
                           "work_site_type",
                           "geo_outcome",
                           "geo_action",
+                          "review_type",
                           "reason_codes",
                           "review_required",
-                          "review_outcome"
+                          "review_outcome",
+                          "total_days",
+                          "present_days",
+                          "late_days",
+                          "absent_days",
+                          "wfh_days",
+                          "leave_days",
+                          "attendance_percent"
                         ]
                       },
                       "example": [
@@ -95628,13 +96527,22 @@
                         "hours",
                         "reporting_evidence_category",
                         "attendance_channels",
+                        "source_categories",
                         "work_site_name",
                         "work_site_type",
                         "geo_outcome",
                         "geo_action",
+                        "review_type",
                         "reason_codes",
                         "review_required",
-                        "review_outcome"
+                        "review_outcome",
+                        "total_days",
+                        "present_days",
+                        "late_days",
+                        "absent_days",
+                        "wfh_days",
+                        "leave_days",
+                        "attendance_percent"
                       ]
                     },
                     "column_headers": {
@@ -95654,13 +96562,22 @@
                         "Hours",
                         "Evidence State",
                         "Channel",
+                        "Source Segment",
                         "Work Site",
                         "Site Type",
                         "Geo Outcome",
                         "Geo Action",
+                        "Review Type",
                         "Reason Codes",
                         "Review Required",
-                        "Review Outcome"
+                        "Review Outcome",
+                        "Total Days",
+                        "Present Days",
+                        "Late Days",
+                        "Absent Days",
+                        "WFH Days",
+                        "Leave Days",
+                        "Attendance %"
                       ]
                     },
                     "created_at": {

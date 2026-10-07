@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Download, Filter } from "lucide-react";
+import { Download, Filter, RotateCcw } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui-kit";
 import { exportCsv, daysAgo, isoToday } from "@/lib/reports/utils";
 import { useEmployees } from "@/lib/employees-store";
@@ -29,16 +29,28 @@ export interface ReportFilters {
   employee: string;
   status: string;
   evidenceCategory: string;
+  sourceCategory: string;
+  geoOutcome: string;
+  reviewType: string;
+  reasonCode: string;
   managerUserId: string;
 }
 
-interface FacetOptions {
+export interface FacetOptions {
   showDepartment?: boolean;
   showEmployee?: boolean;
   showStatus?: boolean;
   showEvidenceCategory?: boolean;
+  showSourceCategory?: boolean;
+  showGeoOutcome?: boolean;
+  showReviewType?: boolean;
+  showReasonCode?: boolean;
   showTeam?: boolean;
   statusOptions?: { value: string; label: string }[];
+  sourceCategoryOptions?: { value: string; label: string }[];
+  geoOutcomeOptions?: { value: string; label: string }[];
+  reviewTypeOptions?: { value: string; label: string }[];
+  reasonCodeOptions?: { value: string; label: string }[];
   teamOptions?: { value: string; label: string }[];
   employeePool?: string[];
 }
@@ -60,6 +72,7 @@ interface Props<T extends { id: string }> {
   columns: Column<T>[];
   searchKeys?: (keyof T)[];
   exportName?: string;
+  exportMode?: string;
   emptyTitle?: string;
   onRowClick?: (row: T) => void;
 }
@@ -85,6 +98,7 @@ export function ReportShell<T extends { id: string }>({
   columns,
   searchKeys,
   exportName,
+  exportMode,
   emptyTitle,
   onRowClick,
 }: Props<T>) {
@@ -94,15 +108,20 @@ export function ReportShell<T extends { id: string }>({
   const filterId = useId();
   const exportMutation = useCreateReportExportMutation();
   const attendanceExportMutation = useAttendanceExportMutation();
-  const [internalFilters, setInternalFilters] = useState<ReportFilters>({
+  const defaultReportFilters = (): ReportFilters => ({
     from: defaultFrom ?? daysAgo(90),
     to: defaultTo ?? isoToday(),
     department: "all",
     employee: "all",
     status: "all",
     evidenceCategory: "all",
+    sourceCategory: "all",
+    geoOutcome: "all",
+    reviewType: "all",
+    reasonCode: "all",
     managerUserId: "all",
   });
+  const [internalFilters, setInternalFilters] = useState<ReportFilters>(() => defaultReportFilters());
 
   const f = filters ?? internalFilters;
   const setFilter = (patch: Partial<ReportFilters>) => {
@@ -113,6 +132,11 @@ export function ReportShell<T extends { id: string }>({
       setInternalFilters(next);
     }
   };
+  const defaultFilters = defaultReportFilters();
+  const filtersChanged = (Object.keys(defaultFilters) as Array<keyof ReportFilters>).some(
+    (key) => f[key] !== defaultFilters[key],
+  );
+  const resetFilters = () => setFilter(defaultFilters);
   const rows = build(f);
 
   const employeePool = facets?.employeePool ?? employees.map((e) => e.name);
@@ -128,6 +152,14 @@ export function ReportShell<T extends { id: string }>({
   const statusLabelId = `${statusId}-label`;
   const evidenceCategoryId = `${filterId}-report-filter-evidence-category`;
   const evidenceCategoryLabelId = `${evidenceCategoryId}-label`;
+  const sourceCategoryId = `${filterId}-report-filter-source-category`;
+  const sourceCategoryLabelId = `${sourceCategoryId}-label`;
+  const geoOutcomeId = `${filterId}-report-filter-geo-outcome`;
+  const geoOutcomeLabelId = `${geoOutcomeId}-label`;
+  const reviewTypeId = `${filterId}-report-filter-review-type`;
+  const reviewTypeLabelId = `${reviewTypeId}-label`;
+  const reasonCodeId = `${filterId}-report-filter-reason-code`;
+  const reasonCodeLabelId = `${reasonCodeId}-label`;
   const teamId = `${filterId}-report-filter-team`;
   const teamLabelId = `${teamId}-label`;
   const tableSearchLabel = path.startsWith("/reports/attendance")
@@ -147,6 +179,7 @@ export function ReportShell<T extends { id: string }>({
           departments,
           employees,
           exportName,
+          exportMode,
           title,
         });
         const job =
@@ -338,6 +371,102 @@ export function ReportShell<T extends { id: string }>({
               </Select>
             </div>
           )}
+          {facets?.showSourceCategory && (
+            <div className="min-w-0 space-y-1">
+              <Label id={sourceCategoryLabelId} htmlFor={sourceCategoryId} className="text-[11px]">
+                Source
+              </Label>
+              <Select
+                value={f.sourceCategory}
+                onValueChange={(value) => setFilter({ sourceCategory: value })}
+              >
+                <SelectTrigger
+                  id={sourceCategoryId}
+                  aria-labelledby={sourceCategoryLabelId}
+                  className="h-9"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All sources</SelectItem>
+                  {(facets.sourceCategoryOptions ?? []).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showGeoOutcome && (
+            <div className="min-w-0 space-y-1">
+              <Label id={geoOutcomeLabelId} htmlFor={geoOutcomeId} className="text-[11px]">
+                Geo outcome
+              </Label>
+              <Select
+                value={f.geoOutcome}
+                onValueChange={(value) => setFilter({ geoOutcome: value })}
+              >
+                <SelectTrigger id={geoOutcomeId} aria-labelledby={geoOutcomeLabelId} className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All geo outcomes</SelectItem>
+                  {(facets.geoOutcomeOptions ?? []).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showReviewType && (
+            <div className="min-w-0 space-y-1">
+              <Label id={reviewTypeLabelId} htmlFor={reviewTypeId} className="text-[11px]">
+                Review type
+              </Label>
+              <Select
+                value={f.reviewType}
+                onValueChange={(value) => setFilter({ reviewType: value })}
+              >
+                <SelectTrigger id={reviewTypeId} aria-labelledby={reviewTypeLabelId} className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All review types</SelectItem>
+                  {(facets.reviewTypeOptions ?? []).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showReasonCode && (
+            <div className="min-w-0 space-y-1">
+              <Label id={reasonCodeLabelId} htmlFor={reasonCodeId} className="text-[11px]">
+                Reason
+              </Label>
+              <Select
+                value={f.reasonCode}
+                onValueChange={(value) => setFilter({ reasonCode: value })}
+              >
+                <SelectTrigger id={reasonCodeId} aria-labelledby={reasonCodeLabelId} className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All reasons</SelectItem>
+                  {(facets.reasonCodeOptions ?? []).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {facets?.showTeam && (
             <div className="min-w-0 space-y-1">
               <Label id={teamLabelId} htmlFor={teamId} className="text-[11px]">
@@ -361,6 +490,19 @@ export function ReportShell<T extends { id: string }>({
               </Select>
             </div>
           )}
+          <div className="flex min-w-0 items-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={resetFilters}
+              disabled={!filtersChanged}
+              className="h-9 w-full justify-start sm:w-auto"
+            >
+              <RotateCcw className="mr-1 h-3.5 w-3.5" />
+              Reset
+            </Button>
+          </div>
         </div>
       </Card>
 
@@ -409,6 +551,7 @@ function buildBackendFilters(
     departments: { id: string; name: string }[];
     employees: { id: string; name: string }[];
     exportName?: string;
+    exportMode?: string;
     title: string;
   },
 ): Record<string, unknown> {
@@ -448,8 +591,28 @@ function buildBackendFilters(
     payload.evidence_category = filters.evidenceCategory;
   }
 
+  if (filters.sourceCategory !== "all") {
+    payload.source_category = filters.sourceCategory;
+  }
+
+  if (filters.geoOutcome !== "all") {
+    payload.geo_outcome = filters.geoOutcome;
+  }
+
+  if (filters.reviewType !== "all") {
+    payload.review_type = filters.reviewType;
+  }
+
+  if (filters.reasonCode !== "all") {
+    payload.reason_code = filters.reasonCode;
+  }
+
   if (filters.managerUserId !== "all") {
     payload.manager_user_id = filters.managerUserId;
+  }
+
+  if (context.exportMode) {
+    payload.report_mode = context.exportMode;
   }
 
   return payload;

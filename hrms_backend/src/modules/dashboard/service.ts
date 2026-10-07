@@ -4,10 +4,15 @@ import type { MemoryDataStore, WorkSegment } from "../../platform/data-store.js"
 import { nowIso } from "../../platform/data-store.js";
 import {
   countAttendanceReportingEvidenceCategories,
-  deriveAttendanceReportingEvidenceCategory,
   emptyAttendanceReportingEvidenceCounts,
   type AttendanceReportingEvidenceCounts,
 } from "../attendance/reporting-evidence.js";
+import {
+  buildAttendanceReportEvidenceIndex,
+  countAttendanceReportSourceCategories,
+  emptyAttendanceReportSourceCategoryCounts,
+  type AttendanceReportSourceCategoryCounts,
+} from "../attendance/reporting-projection.js";
 
 export interface DashboardMetric {
   key: string;
@@ -62,6 +67,7 @@ export interface DashboardSummary {
   };
   attendance: {
     evidence_categories: AttendanceReportingEvidenceCounts;
+    source_categories: AttendanceReportSourceCategoryCounts;
   };
   workload: {
     work_segments_total: number;
@@ -94,6 +100,10 @@ export class DashboardService {
     const visibleSubmissions = this.visibleTimesheetSubmissions(actor, visibleUserIds);
     const visibleSegments = this.visibleWorkSegments(actor, visibleUserIds);
     const visibleAttendance = this.visibleAttendanceDays(actor, visibleUserIds);
+    const canSeeAttendance = this.canSeeAttendanceReporting(actor, visibleUsers);
+    const attendanceEvidence = canSeeAttendance
+      ? this.attendanceEvidenceSummaries(visibleAttendance)
+      : [];
     const visibleLeaveRequests = this.visibleLeaveRequests(actor, visibleUserIds);
     const visibleWfhRequests = this.visibleWfhRequests(actor, visibleUserIds);
     const visibleAssets = this.visibleAssets(actor, visibleUserIds);
@@ -158,11 +168,16 @@ export class DashboardService {
       },
       operations,
       attendance: {
-        evidence_categories: this.canSeeAttendanceReporting(actor, visibleUsers)
+        evidence_categories: canSeeAttendance
           ? countAttendanceReportingEvidenceCategories(
-              visibleAttendance.map((record) => this.reportingEvidenceCategory(record)),
+              attendanceEvidence.map((evidence) => evidence.reporting_evidence_category),
             )
-          : emptyAttendanceReportingEvidenceCounts()
+          : emptyAttendanceReportingEvidenceCounts(),
+        source_categories: canSeeAttendance
+          ? countAttendanceReportSourceCategories(
+              attendanceEvidence.map((evidence) => evidence.source_categories),
+            )
+          : emptyAttendanceReportSourceCategoryCounts()
       },
       workload,
       attention: [
@@ -316,41 +331,9 @@ export class DashboardService {
     ).length;
   }
 
-  private reportingEvidenceCategory(record: AttendanceDayRecord) {
-    const reviews = this.store.attendanceGeoFallbackReviews.filter(
-      (review) =>
-        review.company_id === record.company_id &&
-        review.employee_user_id === record.employee_user_id &&
-        review.work_date === record.work_date &&
-        !review.deleted_at,
-    );
-    const offlineVerificationStatuses = this.store.outbox
-      .filter(
-        (event) =>
-          event.event_type === "attendance.provisional.recorded" &&
-          event.payload.company_id === record.company_id &&
-          event.payload.subject_employee_user_id === record.employee_user_id &&
-          typeof event.payload.captured_at === "string" &&
-          event.payload.captured_at.slice(0, 10) === record.work_date,
-      )
-      .map((event) => event.payload.verification_status);
-    return deriveAttendanceReportingEvidenceCategory({
-      day: record,
-      signals: {
-        reviewRequired: reviews.some(
-          (review) => review.status === "pending" || review.status === "returned",
-        ) || offlineVerificationStatuses.includes("review_required"),
-        operativeRejected: offlineVerificationStatuses.includes("rejected"),
-        provisional: offlineVerificationStatuses.includes("unverified"),
-        hasContributingEvidence: Boolean(
-          record.first_check_in ||
-            record.last_check_out ||
-            record.work_seconds > 0 ||
-            offlineVerificationStatuses.length > 0 ||
-            reviews.some((review) => review.status === "approved"),
-        ),
-      },
-    });
+  private attendanceEvidenceSummaries(records: AttendanceDayRecord[]) {
+    const evidenceIndex = buildAttendanceReportEvidenceIndex(this.store, records);
+    return records.map((record) => evidenceIndex.summaryFor(record));
   }
 
   private visibleAssets(actor: AuthUser, visibleUserIds: Set<UUID>) {

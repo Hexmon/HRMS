@@ -1771,10 +1771,12 @@ describe("API contracts", () => {
     );
     for (const field of [
       "attendance_channels",
+      "source_categories",
       "work_site_name",
       "work_site_type",
       "geo_outcome",
       "geo_action",
+      "review_type",
       "reason_codes",
       "review_required",
       "review_outcome",

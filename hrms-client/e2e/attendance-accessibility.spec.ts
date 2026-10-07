@@ -199,7 +199,7 @@ test.describe("attendance accessibility", () => {
   test("attendance report filters and search expose programmatic labels at mobile width", async ({
     page,
   }) => {
-    await prepareAttendanceReportPage(page);
+    const requests = await prepareAttendanceReportPage(page);
     await page.setViewportSize({ width: 320, height: 568 });
 
     await page.goto("/reports/attendance", { waitUntil: "domcontentloaded" });
@@ -210,11 +210,60 @@ test.describe("attendance accessibility", () => {
     await expect(page.getByRole("combobox", { name: "Employee" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Status" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Evidence state" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Source" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Geo outcome" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Review type" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Reason" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Team" })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Search attendance records" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Export CSV" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Export", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Filters", exact: true })).toHaveCount(0);
+
+    await page.getByRole("combobox", { name: "Evidence state" }).click();
+    await page.getByRole("option", { name: "Provisional" }).click();
+    await page.getByRole("combobox", { name: "Source" }).click();
+    await page.getByRole("option", { name: "Geo evidence" }).click();
+    await expect
+      .poll(() => requests.reportRequests.at(-1) ?? "")
+      .toContain("evidence_category=provisional");
+    expect(requests.reportRequests.at(-1)).toContain("source_category=geo");
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    await expect.poll(() => requests.exportRequests.length).toBe(1);
+    expect(requests.exportRequests[0]).toMatchObject({
+      format: "csv",
+      filters: {
+        evidence_category: "provisional",
+        source_category: "geo",
+        report_mode: "daily",
+      },
+    });
+
+    await page.getByRole("button", { name: "Reset" }).click();
+    await expect(page.getByRole("combobox", { name: "Evidence state" })).toContainText(
+      "All evidence states",
+    );
+    await expect(page.getByRole("combobox", { name: "Source" })).toContainText("All sources");
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    await expect.poll(() => requests.exportRequests.length).toBe(2);
+    expect(requests.exportRequests[1]).toMatchObject({
+      format: "csv",
+      filters: { report_mode: "daily" },
+    });
+    expect(requests.exportRequests[1]?.filters).not.toHaveProperty("evidence_category");
+    expect(requests.exportRequests[1]?.filters).not.toHaveProperty("source_category");
+    await page.getByRole("tab", { name: "Late Arrivals" }).click();
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    await expect.poll(() => requests.exportRequests.length).toBe(3);
+    expect(requests.exportRequests[2]).toMatchObject({
+      filters: { report_mode: "late" },
+    });
+    await page.getByRole("tab", { name: "Monthly Summary" }).click();
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    await expect.poll(() => requests.exportRequests.length).toBe(4);
+    expect(requests.exportRequests[3]).toMatchObject({
+      filters: { report_mode: "monthly_summary" },
+    });
     await expectNoDocumentHorizontalOverflow(page, "/reports/attendance accessibility");
   });
 });
@@ -410,9 +459,14 @@ async function prepareExactLocationPage(page: Page): Promise<void> {
   );
 }
 
-async function prepareAttendanceReportPage(page: Page): Promise<void> {
+async function prepareAttendanceReportPage(
+  page: Page,
+): Promise<{ reportRequests: string[]; exportRequests: Array<Record<string, unknown>> }> {
+  const reportRequests: string[] = [];
+  const exportRequests: Array<Record<string, unknown>> = [];
   await installRole(page, "Main Admin", "Main Admin");
   await page.route("**/api/v1/reports/attendance/summary**", async (route) => {
+    reportRequests.push(route.request().url());
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -427,10 +481,12 @@ async function prepareAttendanceReportPage(page: Page): Promise<void> {
             status: "present",
             reporting_evidence_category: "verified",
             attendance_channels: ["Web"],
+            source_categories: ["web"],
             work_site_name: ["Bengaluru Office"],
             work_site_type: ["office"],
             geo_outcome: ["inside_confident"],
             geo_action: ["allow"],
+            review_type: ["geo_decision"],
             reason_codes: ["offline_sync.changed_body_conflict"],
             review_required: false,
             review_outcome: [],
@@ -461,6 +517,22 @@ async function prepareAttendanceReportPage(page: Page): Promise<void> {
       body: JSON.stringify({ items: [] }),
     });
   });
+  await page.route("**/api/v1/attendance/exports", async (route) => {
+    exportRequests.push(route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        job_id: "attendance-report-a11y-export",
+        status: "queued",
+        format: "csv",
+        filters: {},
+        columns: [],
+        created_at: "2026-01-15T10:00:00.000Z",
+      }),
+    });
+  });
+  return { reportRequests, exportRequests };
 }
 
 function managerRegularizationQueue(includeReview: boolean): Record<string, unknown> {

@@ -14,7 +14,13 @@ import {
   isAttendanceReportingEvidenceCategory,
   type AttendanceReportingEvidenceCategory,
 } from "../attendance/reporting-evidence.js";
-import { buildAttendanceReportEvidenceIndex } from "../attendance/reporting-projection.js";
+import {
+  AttendanceReportSourceCategoryValues,
+  buildAttendanceReportEvidenceIndex,
+  countAttendanceReportSourceCategories,
+  matchesAttendanceReportEvidenceFilters,
+  type AttendanceReportSourceCategory,
+} from "../attendance/reporting-projection.js";
 
 export interface ExpenseReportQuery {
   page: number;
@@ -45,6 +51,12 @@ export interface ReportSummaryQuery {
   employee_user_id?: UUID;
   evidence_category?: AttendanceReportingEvidenceCategory;
   reporting_evidence_category?: AttendanceReportingEvidenceCategory;
+  attendance_channel?: string;
+  source_category?: AttendanceReportSourceCategory;
+  geo_outcome?: string;
+  geo_action?: string;
+  review_type?: "manual_fallback" | "geo_decision";
+  reason_code?: string;
   project_id?: UUID;
   assigned_to_user_id?: UUID;
   actor_user_id?: UUID;
@@ -410,6 +422,16 @@ export class ReportService {
         (row) =>
           !requestedEvidenceCategory ||
           row.evidence.reporting_evidence_category === requestedEvidenceCategory,
+      )
+      .filter((row) =>
+        matchesAttendanceReportEvidenceFilters(row.evidence, {
+          attendance_channel: query.attendance_channel,
+          source_category: query.source_category,
+          geo_outcome: query.geo_outcome,
+          geo_action: query.geo_action,
+          review_type: query.review_type,
+          reason_code: query.reason_code,
+        }),
       );
     const rows = rowContexts
       .map(({ record, evidence }) => {
@@ -425,10 +447,12 @@ export class ReportService {
           status: record.status,
           reporting_evidence_category: evidence.reporting_evidence_category,
           attendance_channels: evidence.attendance_channels,
+          source_categories: evidence.source_categories,
           work_site_name: evidence.work_site_name,
           work_site_type: evidence.work_site_type,
           geo_outcome: evidence.geo_outcome,
           geo_action: evidence.geo_action,
+          review_type: evidence.review_type,
           reason_codes: evidence.reason_codes,
           review_required: evidence.review_required,
           review_outcome: evidence.review_outcome,
@@ -470,6 +494,9 @@ export class ReportService {
       },
       evidence_categories: countAttendanceReportingEvidenceCategories(
         rows.map((row) => row.reporting_evidence_category),
+      ),
+      source_categories: countAttendanceReportSourceCategories(
+        rows.map((row) => row.source_categories),
       ),
       status_breakdown: groupCount(rows, (row) => row.status),
       evidence_category_breakdown: groupCount(
@@ -1106,6 +1133,12 @@ export class ReportService {
       reporting_evidence_category: reportingEvidenceCategoryOrUndefined(
         filters.reporting_evidence_category,
       ),
+      attendance_channel: textOrUndefined(filters.attendance_channel),
+      source_category: sourceCategoryOrUndefined(filters.source_category),
+      geo_outcome: textOrUndefined(filters.geo_outcome),
+      geo_action: textOrUndefined(filters.geo_action),
+      review_type: reviewTypeOrUndefined(filters.review_type),
+      reason_code: textOrUndefined(filters.reason_code),
       project_id: textOrUndefined(filters.project_id),
       assigned_to_user_id: textOrUndefined(filters.assigned_to_user_id),
       actor_user_id: textOrUndefined(filters.actor_user_id),
@@ -1484,6 +1517,12 @@ export class ReportService {
       employee_user_id: query.employee_user_id ?? null,
       evidence_category: query.evidence_category ?? null,
       reporting_evidence_category: query.reporting_evidence_category ?? null,
+      attendance_channel: query.attendance_channel ?? null,
+      source_category: query.source_category ?? null,
+      geo_outcome: query.geo_outcome ?? null,
+      geo_action: query.geo_action ?? null,
+      review_type: query.review_type ?? null,
+      reason_code: query.reason_code ?? null,
       project_id: query.project_id ?? null,
       assigned_to_user_id: query.assigned_to_user_id ?? null,
       actor_user_id: query.actor_user_id ?? null,
@@ -1709,6 +1748,17 @@ function reportingEvidenceCategoryOrUndefined(
   value: unknown,
 ): AttendanceReportingEvidenceCategory | undefined {
   return isAttendanceReportingEvidenceCategory(value) ? value : undefined;
+}
+
+function sourceCategoryOrUndefined(value: unknown): AttendanceReportSourceCategory | undefined {
+  return typeof value === "string" &&
+    AttendanceReportSourceCategoryValues.includes(value as AttendanceReportSourceCategory)
+    ? value as AttendanceReportSourceCategory
+    : undefined;
+}
+
+function reviewTypeOrUndefined(value: unknown): "manual_fallback" | "geo_decision" | undefined {
+  return value === "manual_fallback" || value === "geo_decision" ? value : undefined;
 }
 
 function stringOrNull(value: unknown): string | null {

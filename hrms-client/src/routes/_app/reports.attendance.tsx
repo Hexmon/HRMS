@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ReportShell, type ReportFilters } from "@/components/reports/report-shell";
+import { ReportShell, type FacetOptions, type ReportFilters } from "@/components/reports/report-shell";
 import { DataCard, StatusBadge, type Column } from "@/components/ui-kit";
 import { useEmployees } from "@/lib/employees-store";
 import { daysAgo, inDateRange, isoToday } from "@/lib/reports/utils";
@@ -26,10 +26,12 @@ interface AttRow {
   status: string;
   reportingEvidenceCategory: AttendanceReportingEvidenceCategory | null;
   attendanceChannels: string[];
+  sourceCategories: string[];
   workSiteName: string[];
   workSiteType: string[];
   geoOutcome: string[];
   geoAction: string[];
+  reviewType: string[];
   reasonCodes: string[];
   reviewRequired: boolean;
   reviewOutcome: string[];
@@ -38,6 +40,50 @@ interface AttRow {
   hours: number;
   note?: string;
 }
+
+const ATTENDANCE_SOURCE_CATEGORY_OPTIONS = [
+  { value: "geo", label: "Geo evidence" },
+  { value: "manual", label: "Manual evidence" },
+  { value: "mobile", label: "Mobile" },
+  { value: "web", label: "Web" },
+  { value: "kiosk", label: "Kiosk" },
+  { value: "system", label: "System" },
+];
+
+const GEO_OUTCOME_OPTIONS = [
+  { value: "inside_confident", label: "Inside fence" },
+  { value: "outside_confident", label: "Outside fence" },
+  { value: "boundary_uncertain", label: "Boundary uncertain" },
+  { value: "stale_evidence", label: "Stale location" },
+  { value: "accuracy_exceeded", label: "Accuracy exceeded" },
+  { value: "missing", label: "Missing location" },
+  { value: "permission_denied", label: "Permission denied" },
+  { value: "location_unavailable", label: "Location unavailable" },
+  { value: "fence_not_configured", label: "Fence not configured" },
+  { value: "not_required", label: "Not required" },
+];
+
+const REVIEW_TYPE_OPTIONS = [
+  { value: "manual_fallback", label: "Manual fallback" },
+  { value: "geo_decision", label: "Geo decision" },
+];
+
+const REASON_CODE_OPTIONS = [
+  { value: "geo_outside_fence", label: "Outside fence" },
+  { value: "geo_permission_denied", label: "Location permission denied" },
+  { value: "geo_location_unavailable", label: "Location unavailable" },
+  { value: "geo_accuracy_exceeded", label: "Accuracy exceeded" },
+  { value: "geo_stale_evidence", label: "Stale location" },
+  { value: "offline_sync.accepted_unverified", label: "Offline accepted unverified" },
+  { value: "offline_sync.review_required", label: "Offline review required" },
+  { value: "offline_sync.sequence_gap", label: "Offline sequence gap" },
+  { value: "offline_sync.changed_body_conflict", label: "Offline changed-body conflict" },
+  { value: "mobile_registered_device_required", label: "Registered device required" },
+  { value: "regularization.pending", label: "Correction pending" },
+  { value: "regularization.approved", label: "Correction approved" },
+  { value: "regularization.returned", label: "Correction returned" },
+  { value: "regularization.rejected", label: "Correction rejected" },
+];
 
 // Deterministic synth so values are stable across renders
 function hash(s: string) {
@@ -92,10 +138,12 @@ function buildAttendance(employees: { id: string; name: string; department: stri
         status,
         reportingEvidenceCategory,
         attendanceChannels: ["Web"],
+        sourceCategories: ["web"],
         workSiteName: [],
         workSiteType: [],
         geoOutcome: [],
         geoAction: [],
+        reviewType: [],
         reasonCodes: [],
         reviewRequired: reportingEvidenceCategory === "review_required",
         reviewOutcome: reportingEvidenceCategory === "review_required" ? ["pending"] : [],
@@ -120,6 +168,10 @@ function AttendanceReports() {
     employee: "all",
     status: "all",
     evidenceCategory: "all",
+    sourceCategory: "all",
+    geoOutcome: "all",
+    reviewType: "all",
+    reasonCode: "all",
     managerUserId: "all",
   });
   const reportParams = useMemo(
@@ -162,6 +214,12 @@ function AttendanceReports() {
       if (f.evidenceCategory !== "all" && r.reportingEvidenceCategory !== f.evidenceCategory) {
         return false;
       }
+      if (f.sourceCategory !== "all" && !r.sourceCategories.includes(f.sourceCategory)) {
+        return false;
+      }
+      if (f.geoOutcome !== "all" && !r.geoOutcome.includes(f.geoOutcome)) return false;
+      if (f.reviewType !== "all" && !r.reviewType.includes(f.reviewType)) return false;
+      if (f.reasonCode !== "all" && !r.reasonCodes.includes(f.reasonCode)) return false;
       return true;
     });
 
@@ -251,10 +309,24 @@ function AttendanceReports() {
     label: s,
   }));
   const evidenceCounts = evidenceCategoryCounts(reportQuery.data?.evidence_categories, all);
+  const sourceCounts = sourceCategoryCounts(reportQuery.data?.source_categories, all);
   const teamOptions = employees.map((employee) => ({
     value: employee.id,
     label: employee.name,
   }));
+  const attendanceFacets = {
+    showDepartment: true,
+    showEmployee: true,
+    showEvidenceCategory: true,
+    showSourceCategory: true,
+    showGeoOutcome: true,
+    showReviewType: true,
+    showReasonCode: true,
+    sourceCategoryOptions: ATTENDANCE_SOURCE_CATEGORY_OPTIONS,
+    geoOutcomeOptions: GEO_OUTCOME_OPTIONS,
+    reviewTypeOptions: REVIEW_TYPE_OPTIONS,
+    reasonCodeOptions: REASON_CODE_OPTIONS,
+  };
 
   return (
     <Tabs defaultValue="daily">
@@ -285,10 +357,8 @@ function AttendanceReports() {
             title="Daily Attendance"
             description="Day-wise attendance with in/out times and worked hours."
             facets={{
-              showDepartment: true,
-              showEmployee: true,
+              ...attendanceFacets,
               showStatus: true,
-              showEvidenceCategory: true,
               showTeam: true,
               statusOptions,
               teamOptions,
@@ -322,11 +392,22 @@ function AttendanceReports() {
                 value: evidenceCounts.rejected,
                 tone: "destructive",
               },
+              {
+                label: "Geo",
+                value: sourceCounts.geo,
+                tone: "info",
+              },
+              {
+                label: "Manual",
+                value: sourceCounts.manual,
+                tone: "default",
+              },
             ]}
             build={(f) => baseFilter(all, f)}
             columns={cols}
             searchKeys={["employee", "department"]}
             exportName="daily-attendance"
+            exportMode="daily"
             onRowClick={setSelectedAttendanceRow}
           />
           <OfflineEvidenceDetail row={selectedAttendanceRow} query={selectedDailyQuery} />
@@ -337,7 +418,7 @@ function AttendanceReports() {
         <ReportShell
           title="Late Arrivals"
           description="Employees who clocked in after 09:15."
-          facets={{ showDepartment: true, showEmployee: true, showEvidenceCategory: true }}
+          facets={attendanceFacets}
           filters={filters}
           onFiltersChange={setFilters}
           build={(f) =>
@@ -349,6 +430,7 @@ function AttendanceReports() {
           columns={cols}
           searchKeys={["employee"]}
           exportName="late-arrivals"
+          exportMode="late"
         />
       </TabsContent>
 
@@ -356,7 +438,7 @@ function AttendanceReports() {
         <ReportShell
           title="Early Departures"
           description="Employees who logged off before 17:30."
-          facets={{ showDepartment: true, showEmployee: true, showEvidenceCategory: true }}
+          facets={attendanceFacets}
           filters={filters}
           onFiltersChange={setFilters}
           build={(f) =>
@@ -368,6 +450,7 @@ function AttendanceReports() {
           columns={cols}
           searchKeys={["employee"]}
           exportName="early-departures"
+          exportMode="early"
         />
       </TabsContent>
 
@@ -375,7 +458,7 @@ function AttendanceReports() {
         <ReportShell
           title="Absenteeism Report"
           description="Unplanned absences without leave approval."
-          facets={{ showDepartment: true, showEmployee: true, showEvidenceCategory: true }}
+          facets={attendanceFacets}
           filters={filters}
           onFiltersChange={setFilters}
           build={(f) =>
@@ -387,18 +470,25 @@ function AttendanceReports() {
           columns={cols}
           searchKeys={["employee"]}
           exportName="absenteeism"
+          exportMode="absent"
         />
       </TabsContent>
 
       <TabsContent value="monthly" className="mt-4">
-        <MonthlySummary all={all} />
+        <MonthlySummary
+          all={all}
+          filters={filters}
+          onFiltersChange={setFilters}
+          baseFilter={baseFilter}
+          facets={attendanceFacets}
+        />
       </TabsContent>
 
       <TabsContent value="exceptions" className="mt-4">
         <ReportShell
           title="Attendance Exceptions"
           description="Late arrivals, missed punches and partial days."
-          facets={{ showDepartment: true, showEmployee: true, showEvidenceCategory: true }}
+          facets={attendanceFacets}
           filters={filters}
           onFiltersChange={setFilters}
           build={(f) =>
@@ -410,6 +500,7 @@ function AttendanceReports() {
           columns={cols}
           searchKeys={["employee"]}
           exportName="attendance-exceptions"
+          exportMode="exceptions"
         />
       </TabsContent>
     </Tabs>
@@ -710,10 +801,12 @@ function attendanceFromApi(value: unknown): AttRow {
     status: text(record.status, "present") as AttRow["status"],
     reportingEvidenceCategory: reportingEvidenceCategory(record.reporting_evidence_category),
     attendanceChannels: stringList(record.attendance_channels),
+    sourceCategories: stringList(record.source_categories),
     workSiteName: stringList(record.work_site_name),
     workSiteType: stringList(record.work_site_type),
     geoOutcome: stringList(record.geo_outcome),
     geoAction: stringList(record.geo_action),
+    reviewType: stringList(record.review_type),
     reasonCodes: stringList(record.reason_codes),
     reviewRequired: Boolean(record.review_required),
     reviewOutcome: stringList(record.review_outcome),
@@ -914,6 +1007,10 @@ function reportParamsFromFilters(
   };
   if (filters.status !== "all") params.status = filters.status;
   if (filters.evidenceCategory !== "all") params.evidence_category = filters.evidenceCategory;
+  if (filters.sourceCategory !== "all") params.source_category = filters.sourceCategory;
+  if (filters.geoOutcome !== "all") params.geo_outcome = filters.geoOutcome;
+  if (filters.reviewType !== "all") params.review_type = filters.reviewType as ReportParams["review_type"];
+  if (filters.reasonCode !== "all") params.reason_code = filters.reasonCode;
   if (filters.managerUserId !== "all") params.manager_user_id = filters.managerUserId;
   if (filters.department !== "all") {
     const department = context.departments.find((item) => item.name === filters.department);
@@ -950,13 +1047,41 @@ function evidenceCategoryCounts(value: unknown, rows: AttRow[]) {
   };
 }
 
-function MonthlySummary({ all }: { all: AttRow[] }) {
+function sourceCategoryCounts(value: unknown, rows: AttRow[]) {
+  const record = asRecord(value);
+  const categories = ["web", "geo", "mobile", "manual", "kiosk", "system"] as const;
+  if (Object.keys(record).length > 0) {
+    return Object.fromEntries(
+      categories.map((category) => [category, numberValue(record[category])]),
+    ) as Record<(typeof categories)[number], number>;
+  }
+  return Object.fromEntries(
+    categories.map((category) => [
+      category,
+      rows.filter((row) => row.sourceCategories.includes(category)).length,
+    ]),
+  ) as Record<(typeof categories)[number], number>;
+}
+
+function MonthlySummary({
+  all,
+  filters,
+  onFiltersChange,
+  baseFilter,
+  facets,
+}: {
+  all: AttRow[];
+  filters: ReportFilters;
+  onFiltersChange: (filters: ReportFilters) => void;
+  baseFilter: (rows: AttRow[], filters: ReportFilters) => AttRow[];
+  facets: FacetOptions;
+}) {
   const summary = useMemo(() => {
     const m = new Map<
       string,
       { present: number; late: number; absent: number; wfh: number; leave: number; total: number }
     >();
-    for (const r of all) {
+    for (const r of baseFilter(all, filters)) {
       const cur = m.get(r.employee) ?? {
         present: 0,
         late: 0,
@@ -977,12 +1102,15 @@ function MonthlySummary({ all }: { all: AttRow[] }) {
       ...v,
       attendance: Math.round(((v.present + v.late + v.wfh) / Math.max(1, v.total)) * 100),
     }));
-  }, [all]);
+  }, [all, baseFilter, filters]);
 
   return (
     <ReportShell
       title="Monthly Attendance Summary"
       description="Per-employee attendance percentage over the last 30 days."
+      facets={facets}
+      filters={filters}
+      onFiltersChange={onFiltersChange}
       build={() => summary}
       columns={[
         {
@@ -1021,8 +1149,21 @@ function MonthlySummary({ all }: { all: AttRow[] }) {
       ]}
       searchKeys={["employee"]}
       exportName="monthly-attendance"
+      exportMode="monthly_summary"
     />
   );
+}
+
+interface MonthlySummaryRow {
+  id: string;
+  employee: string;
+  present: number;
+  late: number;
+  absent: number;
+  wfh: number;
+  leave: number;
+  total: number;
+  attendance: number;
 }
 
 function isMonthlyAttendanceStatus(

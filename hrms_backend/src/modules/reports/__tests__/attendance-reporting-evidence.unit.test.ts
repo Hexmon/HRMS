@@ -231,10 +231,12 @@ describe("attendance report evidence categories", () => {
     expect(result.items[0]).toMatchObject({
       reporting_evidence_category: "review_required",
       attendance_channels: ["Web + location"],
+      source_categories: ["geo"],
       work_site_name: ["Mumbai HQ"],
       work_site_type: ["office"],
       geo_outcome: ["outside_confident"],
       geo_action: ["fallback_review"],
+      review_type: ["geo_decision"],
       reason_codes: ["geo_outside_fence"],
       review_required: true,
       review_outcome: ["pending"],
@@ -242,6 +244,62 @@ describe("attendance report evidence categories", () => {
     expect(result.items[0]).not.toHaveProperty("latitude");
     expect(result.items[0]).not.toHaveProperty("longitude");
     expect(result.items[0]).not.toHaveProperty("exact_location");
+  });
+
+  it("combines evidence state, source, geo, review type, channel, and reason filters", () => {
+    const store = createMemoryDataStore();
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    store.attendanceDayRecords.push(
+      attendanceDay(seedIds.employee1),
+      attendanceDay(seedIds.employee2),
+    );
+    for (const employeeUserId of [seedIds.employee1, seedIds.employee2]) {
+      store.attendancePunches.push({
+        id: randomUUID(),
+        employee_user_id: employeeUserId,
+        actor_user_id: employeeUserId,
+        company_id: companyId,
+        event_type: "check_in",
+        occurred_at: "2026-07-20T09:00:00.000Z",
+        work_mode: "office",
+        source: "web_geo",
+        origin: "employee_manual_now",
+        regularization_request_id: null,
+        metadata: {},
+        created_at: "2026-07-20T09:00:00.000Z",
+        deleted_at: null,
+      });
+    }
+    store.attendanceGeoFallbackReviews.push(
+      geoReview(seedIds.employee1, { fallback_command_id: randomUUID() }),
+      geoReview(seedIds.employee2),
+    );
+
+    const result = new ReportService(store).attendanceSummary(admin, {
+      page: 1,
+      page_size: 20,
+      evidence_category: "review_required",
+      source_category: "manual",
+      geo_outcome: "outside_confident",
+      review_type: "manual_fallback",
+      attendance_channel: "Web + location",
+      reason_code: "geo_outside_fence",
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toMatchObject({
+      employee_user_id: seedIds.employee1,
+      reporting_evidence_category: "review_required",
+      attendance_channels: ["Web + location"],
+      source_categories: ["geo", "manual"],
+      geo_outcome: ["outside_confident"],
+      review_type: ["manual_fallback"],
+      reason_codes: ["geo_outside_fence"],
+    });
+    expect(result.source_categories).toMatchObject({
+      geo: 1,
+      manual: 1,
+    });
   });
 
   it("downgrades device eligibility evidence to warning when accepted evidence exists", () => {

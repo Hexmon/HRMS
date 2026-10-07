@@ -113,11 +113,15 @@ import {
 } from "./reporting-evidence.js";
 import {
   AttendanceReportExportColumnValues,
+  DefaultAttendanceReportExportColumns,
+  MonthlyAttendanceReportExportColumns,
   attendanceReportExportHeaders,
   buildAttendanceReportEvidenceIndex,
   formatAttendanceReportExportValue,
   isAttendanceReportExportColumn,
+  matchesAttendanceReportEvidenceFilters,
   type AttendanceReportExportColumn,
+  type AttendanceReportSourceCategory,
 } from "./reporting-projection.js";
 import { acquirePayrollAttendancePeriodLock } from "./payroll-period-service.js";
 import { AttendanceLocationAccessAuditService } from "./location-access-audit.js";
@@ -139,7 +143,10 @@ export interface AttendancePageQuery {
   reporting_evidence_category?: AttendanceReportingEvidenceCategory;
   exception_type?: string;
   employee_search?: string;
+  attendance_channel?: string;
+  source_category?: AttendanceReportSourceCategory;
   geo_outcome?: string;
+  geo_action?: string;
   review_type?: string;
   reason_code?: string;
 }
@@ -528,6 +535,13 @@ export interface AttendanceExportInput {
     status?: string;
     evidence_category?: AttendanceReportingEvidenceCategory;
     reporting_evidence_category?: AttendanceReportingEvidenceCategory;
+    attendance_channel?: string;
+    source_category?: AttendanceReportSourceCategory;
+    geo_outcome?: string;
+    geo_action?: string;
+    review_type?: "manual_fallback" | "geo_decision";
+    reason_code?: string;
+    report_mode?: AttendanceExportReportMode;
     date_from?: string;
     date_to?: string;
   };
@@ -537,10 +551,23 @@ export interface AttendanceExportInput {
 
 export { AttendanceReportExportColumnValues };
 
+type AttendanceExportReportMode =
+  | "daily"
+  | "late"
+  | "early"
+  | "absent"
+  | "exceptions"
+  | "monthly_summary";
+
 function attendanceExportColumns(
   input: readonly string[] | undefined,
+  reportMode: AttendanceExportReportMode,
 ): AttendanceReportExportColumn[] {
-  const requested = input?.length ? input : AttendanceReportExportColumnValues;
+  const defaultColumns =
+    reportMode === "monthly_summary"
+      ? MonthlyAttendanceReportExportColumns
+      : DefaultAttendanceReportExportColumns;
+  const requested = input?.length ? input : defaultColumns;
   const unknown = requested.filter((column) => !isAttendanceReportExportColumn(column));
   if (unknown.length) {
     throw badRequest(
@@ -2852,21 +2879,25 @@ export class AttendanceService {
     }
     const jobId = randomUUID();
     const format = input.format ?? "csv";
-    const columns = attendanceExportColumns(input.columns);
     const filters = input.filters ?? {};
+    const reportMode = filters.report_mode ?? "daily";
+    const columns = attendanceExportColumns(input.columns, reportMode);
     const createdAt = nowIso();
     const rows = this.exportRows(companyId, filters, columns);
     const generated = await createGeneratedExportDocument(this.store, {
       actor,
       businessObjectType: "attendance_export",
       businessObjectId: jobId,
-      reportType: "attendance",
+      reportType: reportMode === "daily" ? "attendance" : `attendance/${reportMode}`,
       format: format as GeneratedExportFormat,
       rows,
       columns,
       columnHeaders: attendanceReportExportHeaders(columns),
       filters,
-      filePrefix: "attendance-export",
+      filePrefix:
+        reportMode === "monthly_summary"
+          ? "attendance-monthly-summary"
+          : `attendance-${reportMode}-export`,
     });
     appendAttendanceOutboxEvent(
       this.store,
@@ -2905,6 +2936,7 @@ export class AttendanceService {
     const requestedCategory =
       textFilter(filters.reporting_evidence_category) ??
       textFilter(filters.evidence_category);
+    const reportMode = filters.report_mode ?? "daily";
     const candidateRecords = this.store.attendanceDayRecords
       .filter((record) => record.company_id === companyId && !record.deleted_at)
       .filter(
@@ -2958,7 +2990,7 @@ export class AttendanceService {
         );
       });
     const evidenceIndex = buildAttendanceReportEvidenceIndex(this.store, candidateRecords);
-    return candidateRecords
+    const rowContexts = candidateRecords
       .map((record) => ({
         record,
         evidence: evidenceIndex.summaryFor(record),
@@ -2968,6 +3000,23 @@ export class AttendanceService {
           !requestedCategory ||
           evidence.reporting_evidence_category === requestedCategory,
       )
+      .filter(({ evidence }) =>
+        matchesAttendanceReportEvidenceFilters(evidence, {
+          attendance_channel: filters.attendance_channel,
+          source_category: filters.source_category,
+          geo_outcome: filters.geo_outcome,
+          geo_action: filters.geo_action,
+          review_type: filters.review_type,
+          reason_code: filters.reason_code,
+        }),
+      )
+      .filter(({ record }) => matchesAttendanceExportReportMode(record, reportMode));
+
+    if (reportMode === "monthly_summary") {
+      return this.monthlySummaryExportRows(rowContexts, columns);
+    }
+
+    return rowContexts
       .sort((left, right) => right.record.work_date.localeCompare(left.record.work_date))
       .map(({ record, evidence }) => {
         const user = this.store.users.find(
@@ -2994,10 +3043,12 @@ export class AttendanceService {
           reporting_evidence_category:
             evidence.reporting_evidence_category ?? "",
           attendance_channels: evidence.attendance_channels,
+          source_categories: evidence.source_categories,
           work_site_name: evidence.work_site_name,
           work_site_type: evidence.work_site_type,
           geo_outcome: evidence.geo_outcome,
           geo_action: evidence.geo_action,
+          review_type: evidence.review_type,
           reason_codes: evidence.reason_codes,
           review_required: evidence.review_required,
           review_outcome: evidence.review_outcome,
@@ -3024,6 +3075,71 @@ export class AttendanceService {
         };
         return projectAttendanceExportRow(row, columns);
       });
+  }
+
+  private monthlySummaryExportRows(
+    rowContexts: Array<{ record: AttendanceDayRecord }>,
+    columns: readonly AttendanceReportExportColumn[],
+  ): Array<Record<string, unknown>> {
+    const summary = new Map<
+      UUID,
+      {
+        employee_code: string;
+        employee: string;
+        department: string;
+        total_days: number;
+        present_days: number;
+        late_days: number;
+        absent_days: number;
+        wfh_days: number;
+        leave_days: number;
+      }
+    >();
+
+    for (const { record } of rowContexts) {
+      const user = this.store.users.find(
+        (candidate) => candidate.id === record.employee_user_id,
+      );
+      const department = user
+        ? this.store.departments.find(
+            (candidate) => candidate.id === user.department_id,
+          )
+        : null;
+      const current = summary.get(record.employee_user_id) ?? {
+        employee_code: user?.employee_code ?? "",
+        employee: user?.full_name ?? record.employee_user_id,
+        department: department?.name ?? "",
+        total_days: 0,
+        present_days: 0,
+        late_days: 0,
+        absent_days: 0,
+        wfh_days: 0,
+        leave_days: 0,
+      };
+      current.total_days += 1;
+      if (record.status === AttendanceDayStatuses.Present) current.present_days += 1;
+      if (record.status === AttendanceDayStatuses.Late) current.late_days += 1;
+      if (record.status === AttendanceDayStatuses.Absent) current.absent_days += 1;
+      if (record.status === AttendanceDayStatuses.Wfh) current.wfh_days += 1;
+      if (record.status === AttendanceDayStatuses.Leave) current.leave_days += 1;
+      summary.set(record.employee_user_id, current);
+    }
+
+    return [...summary.values()]
+      .sort((left, right) => left.employee_code.localeCompare(right.employee_code))
+      .map((row) =>
+        projectAttendanceExportRow(
+          {
+            ...row,
+            attendance_percent: Math.round(
+              ((row.present_days + row.late_days + row.wfh_days) /
+                Math.max(1, row.total_days)) *
+                100,
+            ),
+          },
+          columns,
+        ),
+      );
   }
 
   private nextAllowedActions(
@@ -6065,6 +6181,25 @@ function datesInclusive(from: string, to: string): string[] {
 
 function textFilter(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function matchesAttendanceExportReportMode(
+  record: AttendanceDayRecord,
+  reportMode: AttendanceExportReportMode,
+): boolean {
+  if (reportMode === "monthly_summary" || reportMode === "daily") return true;
+  if (reportMode === "late") return matchesLegacyAttendanceStatus(record, "late");
+  if (reportMode === "absent") return matchesLegacyAttendanceStatus(record, "absent");
+  if (reportMode === "exceptions") {
+    return (
+      matchesLegacyAttendanceStatus(record, "late") ||
+      matchesLegacyAttendanceStatus(record, "absent")
+    );
+  }
+  if (reportMode === "early") {
+    return record.work_seconds > 0 && record.work_seconds < 8 * 60 * 60;
+  }
+  return true;
 }
 const memoryHistoricalCorrectionIdempotency = new WeakMap<
   MemoryDataStore,

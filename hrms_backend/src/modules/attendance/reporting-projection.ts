@@ -15,6 +15,23 @@ import {
   type AttendanceReportingEvidenceSignals,
 } from "./reporting-evidence.js";
 
+export const AttendanceReportSourceCategoryValues = [
+  "web",
+  "geo",
+  "mobile",
+  "manual",
+  "kiosk",
+  "system",
+] as const;
+
+export type AttendanceReportSourceCategory =
+  (typeof AttendanceReportSourceCategoryValues)[number];
+
+export type AttendanceReportSourceCategoryCounts = Record<
+  AttendanceReportSourceCategory,
+  number
+>;
+
 export const AttendanceReportExportColumnValues = [
   "employee_code",
   "employee",
@@ -27,17 +44,62 @@ export const AttendanceReportExportColumnValues = [
   "hours",
   "reporting_evidence_category",
   "attendance_channels",
+  "source_categories",
   "work_site_name",
   "work_site_type",
   "geo_outcome",
   "geo_action",
+  "review_type",
   "reason_codes",
   "review_required",
   "review_outcome",
+  "total_days",
+  "present_days",
+  "late_days",
+  "absent_days",
+  "wfh_days",
+  "leave_days",
+  "attendance_percent",
 ] as const;
 
 export type AttendanceReportExportColumn =
   (typeof AttendanceReportExportColumnValues)[number];
+
+export const DefaultAttendanceReportExportColumns = [
+  "employee_code",
+  "employee",
+  "department",
+  "date",
+  "status",
+  "work_mode",
+  "in_time",
+  "out_time",
+  "hours",
+  "reporting_evidence_category",
+  "attendance_channels",
+  "source_categories",
+  "work_site_name",
+  "work_site_type",
+  "geo_outcome",
+  "geo_action",
+  "review_type",
+  "reason_codes",
+  "review_required",
+  "review_outcome",
+] as const satisfies readonly AttendanceReportExportColumn[];
+
+export const MonthlyAttendanceReportExportColumns = [
+  "employee_code",
+  "employee",
+  "department",
+  "total_days",
+  "present_days",
+  "late_days",
+  "absent_days",
+  "wfh_days",
+  "leave_days",
+  "attendance_percent",
+] as const satisfies readonly AttendanceReportExportColumn[];
 
 export const AttendanceReportExportColumnHeaders: Record<
   AttendanceReportExportColumn,
@@ -54,25 +116,45 @@ export const AttendanceReportExportColumnHeaders: Record<
   hours: "Hours",
   reporting_evidence_category: "Evidence State",
   attendance_channels: "Channel",
+  source_categories: "Source Segment",
   work_site_name: "Work Site",
   work_site_type: "Site Type",
   geo_outcome: "Geo Outcome",
   geo_action: "Geo Action",
+  review_type: "Review Type",
   reason_codes: "Reason Codes",
   review_required: "Review Required",
   review_outcome: "Review Outcome",
+  total_days: "Total Days",
+  present_days: "Present Days",
+  late_days: "Late Days",
+  absent_days: "Absent Days",
+  wfh_days: "WFH Days",
+  leave_days: "Leave Days",
+  attendance_percent: "Attendance %",
 };
 
 export interface AttendanceReportEvidenceSummary {
   reporting_evidence_category: AttendanceReportingEvidenceCategory | null;
   attendance_channels: string[];
+  source_categories: AttendanceReportSourceCategory[];
   work_site_name: string[];
   work_site_type: string[];
   geo_outcome: string[];
   geo_action: string[];
+  review_type: Array<"manual_fallback" | "geo_decision">;
   reason_codes: string[];
   review_required: boolean;
   review_outcome: string[];
+}
+
+export interface AttendanceReportEvidenceFilters {
+  attendance_channel?: string;
+  source_category?: AttendanceReportSourceCategory | string;
+  geo_outcome?: string;
+  geo_action?: string;
+  review_type?: string;
+  reason_code?: string;
 }
 
 type ReasonSourceGroup =
@@ -120,10 +202,12 @@ interface AttendanceReportEvidenceIndex {
 const EmptySummary: AttendanceReportEvidenceSummary = {
   reporting_evidence_category: null,
   attendance_channels: [],
+  source_categories: [],
   work_site_name: [],
   work_site_type: [],
   geo_outcome: [],
   geo_action: [],
+  review_type: [],
   reason_codes: [],
   review_required: false,
   review_outcome: [],
@@ -230,6 +314,71 @@ export function isAttendanceReportExportColumn(
   );
 }
 
+export function isAttendanceReportSourceCategory(
+  value: unknown,
+): value is AttendanceReportSourceCategory {
+  return (
+    typeof value === "string" &&
+    AttendanceReportSourceCategoryValues.includes(
+      value as AttendanceReportSourceCategory,
+    )
+  );
+}
+
+export function emptyAttendanceReportSourceCategoryCounts(): AttendanceReportSourceCategoryCounts {
+  return {
+    web: 0,
+    geo: 0,
+    mobile: 0,
+    manual: 0,
+    kiosk: 0,
+    system: 0,
+  };
+}
+
+export function countAttendanceReportSourceCategories(
+  categoriesByRecord: readonly AttendanceReportSourceCategory[][],
+): AttendanceReportSourceCategoryCounts {
+  const counts = emptyAttendanceReportSourceCategoryCounts();
+  for (const categories of categoriesByRecord) {
+    for (const category of new Set(categories)) {
+      counts[category] += 1;
+    }
+  }
+  return counts;
+}
+
+export function matchesAttendanceReportEvidenceFilters(
+  evidence: AttendanceReportEvidenceSummary,
+  filters: AttendanceReportEvidenceFilters,
+): boolean {
+  if (
+    filters.attendance_channel &&
+    !containsToken(evidence.attendance_channels, filters.attendance_channel)
+  ) {
+    return false;
+  }
+  if (
+    filters.source_category &&
+    !evidence.source_categories.includes(filters.source_category as AttendanceReportSourceCategory)
+  ) {
+    return false;
+  }
+  if (filters.geo_outcome && !containsToken(evidence.geo_outcome, filters.geo_outcome)) {
+    return false;
+  }
+  if (filters.geo_action && !containsToken(evidence.geo_action, filters.geo_action)) {
+    return false;
+  }
+  if (filters.review_type && !containsToken(evidence.review_type, filters.review_type)) {
+    return false;
+  }
+  if (filters.reason_code && !containsToken(evidence.reason_codes, filters.reason_code)) {
+    return false;
+  }
+  return true;
+}
+
 export function attendanceReportExportHeaders(
   columns: readonly AttendanceReportExportColumn[],
 ): string[] {
@@ -251,10 +400,12 @@ function summarizeDay(
   bucket: DayEvidenceBucket,
 ): AttendanceReportEvidenceSummary {
   const channels: OrderedValue[] = [];
+  const sourceCategories: OrderedValue[] = [];
   const sites: OrderedValue[] = [];
   const siteTypes: OrderedValue[] = [];
   const geoOutcomes: OrderedValue[] = [];
   const geoActions: OrderedValue[] = [];
+  const reviewTypes: OrderedValue[] = [];
   const reasonCodes: OrderedValue[] = [];
   const reviewOutcomes: string[] = [];
 
@@ -263,11 +414,21 @@ function summarizeDay(
     if (label) {
       channels.push(orderedValue(label, punch.occurred_at, "geo"));
     }
+    const sourceCategory = sourceCategoryForPunch(punch);
+    if (sourceCategory) {
+      sourceCategories.push(orderedValue(sourceCategory, punch.occurred_at, "geo"));
+    }
   }
 
   for (const review of bucket.reviews) {
     const policy = geoPolicyRecord(review);
     const occurredAt = review.occurred_at ?? review.created_at;
+    const reviewType = geoReviewType(review);
+    sourceCategories.push(orderedValue("geo", occurredAt, "geo"));
+    if (reviewType === "manual_fallback") {
+      sourceCategories.push(orderedValue("manual", occurredAt, "geo"));
+    }
+    reviewTypes.push(orderedValue(reviewType, occurredAt, "geo"));
     pushString(reasonCodes, review.reason_code, occurredAt, "geo");
     pushString(geoOutcomes, geoFactualOutcome(policy), occurredAt, "geo");
     pushString(geoActions, geoSelectedAction(policy), occurredAt, "geo");
@@ -279,6 +440,7 @@ function summarizeDay(
   for (const event of bucket.provisionalEvents) {
     const capturedAt = stringValue(event.payload.captured_at) ?? event.created_at;
     channels.push(orderedValue("Mobile - captured offline", capturedAt, "offline_sync"));
+    sourceCategories.push(orderedValue("mobile", capturedAt, "offline_sync"));
     pushString(reasonCodes, event.payload.reason_code, capturedAt, "offline_sync");
   }
 
@@ -287,6 +449,10 @@ function summarizeDay(
       isoValue(warning.captured_at) ?? isoValue(warning.server_received_at) ?? "";
     const label = channelLabelForSource(warning.source);
     if (label) channels.push(orderedValue(label, occurredAt, "mobile_warning"));
+    const sourceCategory = sourceCategoryForSource(warning.source);
+    if (sourceCategory) {
+      sourceCategories.push(orderedValue(sourceCategory, occurredAt, "mobile_warning"));
+    }
     pushString(reasonCodes, warning.reason_code, occurredAt, "mobile_warning");
   }
 
@@ -294,6 +460,7 @@ function summarizeDay(
     if (isActionableRegularization(regularization)) {
       const occurredAt = regularization.decided_at ?? regularization.updated_at;
       channels.push(orderedValue("Correction", occurredAt, "regularization-review"));
+      sourceCategories.push(orderedValue("manual", occurredAt, "regularization-review"));
       pushString(
         reasonCodes,
         `regularization.${regularization.status}`,
@@ -338,10 +505,12 @@ function summarizeDay(
       signals,
     }),
     attendance_channels: uniqueOrderedValues(channels),
+    source_categories: uniqueSourceCategories(sourceCategories),
     work_site_name: uniqueOrderedValues(sites),
     work_site_type: uniqueOrderedValues(siteTypes),
     geo_outcome: uniqueOrderedValues(geoOutcomes),
     geo_action: uniqueOrderedValues(geoActions),
+    review_type: uniqueReviewTypes(reviewTypes),
     reason_codes: uniqueOrderedValues(reasonCodes),
     review_required: reviewRequired,
     review_outcome: uniqueReviewOutcomes(reviewOutcomes),
@@ -397,6 +566,22 @@ function uniqueOrderedValues(values: OrderedValue[]): string[] {
     .map((entry) => entry.value);
 }
 
+function uniqueSourceCategories(values: OrderedValue[]): AttendanceReportSourceCategory[] {
+  return uniqueOrderedValues(values).filter(isAttendanceReportSourceCategory);
+}
+
+function uniqueReviewTypes(values: OrderedValue[]): Array<"manual_fallback" | "geo_decision"> {
+  return uniqueOrderedValues(values).filter(
+    (value): value is "manual_fallback" | "geo_decision" =>
+      value === "manual_fallback" || value === "geo_decision",
+  );
+}
+
+function containsToken(values: readonly string[], requested: string): boolean {
+  const normalized = requested.trim().toLowerCase();
+  return values.some((value) => value.trim().toLowerCase() === normalized);
+}
+
 function pushReviewOutcome(values: string[], value: unknown): void {
   const parsed = stringValue(value);
   if (parsed && ReviewOutcomeOrder.has(parsed)) {
@@ -436,6 +621,21 @@ function channelLabelForPunch(punch: AttendancePunch): string | null {
   return channelLabelForSource(punch.source);
 }
 
+function sourceCategoryForPunch(punch: AttendancePunch): AttendanceReportSourceCategory | null {
+  if (
+    punch.origin === "manager_assisted_now" ||
+    punch.source === "admin" ||
+    punch.origin === "approved_regularization" ||
+    punch.origin === "historical_correction"
+  ) {
+    return "manual";
+  }
+  if (punch.origin === "system" || punch.source === "auto_geofence") {
+    return "system";
+  }
+  return sourceCategoryForSource(punch.source);
+}
+
 function channelLabelForSource(
   source: AttendancePunchSourceChannel | string | null | undefined,
 ): string | null {
@@ -447,6 +647,26 @@ function channelLabelForSource(
   if (source === "admin") return "Assisted punch";
   if (source === "auto_geofence" || source === "system") return "System";
   return null;
+}
+
+function sourceCategoryForSource(
+  source: AttendancePunchSourceChannel | string | null | undefined,
+): AttendanceReportSourceCategory | null {
+  if (source === "web") return "web";
+  if (source === "web_geo") return "geo";
+  if (source === "mobile" || source === "mobile_foreground" || source === "mobile_offline") {
+    return "mobile";
+  }
+  if (source === "kiosk") return "kiosk";
+  if (source === "admin") return "manual";
+  if (source === "auto_geofence" || source === "system") return "system";
+  return null;
+}
+
+function geoReviewType(review: AttendanceGeoFallbackReview): "manual_fallback" | "geo_decision" {
+  return review.fallback_command_id || review.punch_event_id
+    ? "manual_fallback"
+    : "geo_decision";
 }
 
 function geoPolicyRecord(review: AttendanceGeoFallbackReview): Record<string, unknown> {

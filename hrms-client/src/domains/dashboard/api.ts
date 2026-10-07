@@ -58,6 +58,7 @@ export interface DashboardSummary {
   };
   attendance?: {
     evidence_categories?: Record<string, number>;
+    source_categories?: Record<string, number>;
   };
   workload: {
     work_segments_total: number;

@@ -17,6 +17,8 @@ test("dashboard renders company-scoped attendance evidence categories without lo
   await expectEvidenceCount(page, "Provisional", 1);
   await expectEvidenceCount(page, "Review required", 4);
   await expectEvidenceCount(page, "Rejected", 0);
+  await expectEvidenceCount(page, "Geo", 2);
+  await expectEvidenceCount(page, "Manual", 1);
 
   const bodyText = await page.locator("body").innerText();
   expect(bodyText).not.toMatch(/latitude|longitude|coordinates/i);
@@ -45,6 +47,7 @@ test("dashboard keeps zero attendance evidence counts stable", async ({ page }) 
   await expectEvidenceCount(page, "Provisional", 0);
   await expectEvidenceCount(page, "Review required", 0);
   await expectEvidenceCount(page, "Rejected", 0);
+  await expect(page.getByText("No source segments today", { exact: true })).toBeVisible();
 });
 
 async function expectEvidenceCount(page: Page, label: string, count: number): Promise<void> {
@@ -171,6 +174,7 @@ function authSession(): Record<string, unknown> {
 }
 
 function dashboardSummary(evidenceCategories: Record<string, number>): Record<string, unknown> {
+  const hasEvidence = Object.values(evidenceCategories).some((count) => Number(count) > 0);
   return {
     generated_at: "2026-10-05T09:00:00.000Z",
     scope: {
@@ -221,6 +225,23 @@ function dashboardSummary(evidenceCategories: Record<string, number>): Record<st
     },
     attendance: {
       evidence_categories: evidenceCategories,
+      source_categories: hasEvidence
+        ? {
+            geo: 2,
+            manual: 1,
+            mobile: 1,
+            web: 3,
+            kiosk: 0,
+            system: 0,
+          }
+        : {
+            geo: 0,
+            manual: 0,
+            mobile: 0,
+            web: 0,
+            kiosk: 0,
+            system: 0,
+          },
     },
     workload: {
       work_segments_total: 0,

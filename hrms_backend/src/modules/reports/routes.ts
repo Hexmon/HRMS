@@ -4,6 +4,7 @@ import { paginationQuerySchema, type AuthUser } from "#shared";
 import { unauthorized } from "../../platform/errors.js";
 import { ReportService } from "./service.js";
 import { AttendanceReportingEvidenceCategoryValues } from "../attendance/reporting-evidence.js";
+import { AttendanceReportSourceCategoryValues } from "../attendance/reporting-projection.js";
 
 const reportExpenseQuerySchema = paginationQuerySchema.extend({
   status: z.string().optional(),
@@ -28,6 +29,12 @@ const reportSummaryQuerySchema = paginationQuerySchema.extend({
   reporting_evidence_category: z
     .enum(AttendanceReportingEvidenceCategoryValues)
     .optional(),
+  attendance_channel: z.string().trim().max(80).optional(),
+  source_category: z.enum(AttendanceReportSourceCategoryValues).optional(),
+  geo_outcome: z.string().trim().max(80).optional(),
+  geo_action: z.string().trim().max(80).optional(),
+  review_type: z.enum(["manual_fallback", "geo_decision"]).optional(),
+  reason_code: z.string().trim().max(120).optional(),
   project_id: z.uuid().optional(),
   assigned_to_user_id: z.uuid().optional(),
   actor_user_id: z.uuid().optional(),

@@ -150,8 +150,13 @@ export function BackendDashboardSummary({ summary, loading, error }: Props) {
 
 function AttendanceEvidencePanel({ summary }: { summary: DashboardSummary }) {
   const counts = summary.attendance?.evidence_categories ?? {};
+  const sourceCounts = summary.attendance?.source_categories ?? {};
   const total = ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.reduce(
     (sum, option) => sum + Number(counts[option.value] ?? 0),
+    0,
+  );
+  const sourceTotal = ATTENDANCE_SOURCE_CATEGORY_OPTIONS.reduce(
+    (sum, option) => sum + Number(sourceCounts[option.value] ?? 0),
     0,
   );
   return (
@@ -164,6 +169,9 @@ function AttendanceEvidencePanel({ summary }: { summary: DashboardSummary }) {
           </p>
         </div>
       ) : null}
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Evidence state
+      </p>
       <ul className="space-y-2">
         {ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.map((option) => (
           <li
@@ -181,9 +189,42 @@ function AttendanceEvidencePanel({ summary }: { summary: DashboardSummary }) {
           </li>
         ))}
       </ul>
+      <div className="pt-2">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Source segment
+        </p>
+        {sourceTotal === 0 ? (
+          <p className="mt-2 rounded-xl bg-muted/40 px-3.5 py-3 text-sm text-muted-foreground">
+            No source segments today
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-2">
+            {ATTENDANCE_SOURCE_CATEGORY_OPTIONS.map((option) => (
+              <li
+                key={option.value}
+                className="dashboard-liquid-row flex items-center justify-between gap-3 rounded-xl px-3.5 py-3"
+              >
+                <span className="text-sm font-medium">{option.label}</span>
+                <span className="shrink-0 text-sm font-semibold">
+                  {Number(sourceCounts[option.value] ?? 0)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
+
+const ATTENDANCE_SOURCE_CATEGORY_OPTIONS = [
+  { value: "geo", label: "Geo" },
+  { value: "manual", label: "Manual" },
+  { value: "mobile", label: "Mobile" },
+  { value: "web", label: "Web" },
+  { value: "kiosk", label: "Kiosk" },
+  { value: "system", label: "System" },
+] as const;
 
 function DepartmentRow({
   department,

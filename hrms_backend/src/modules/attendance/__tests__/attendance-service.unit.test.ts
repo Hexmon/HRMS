@@ -6,7 +6,12 @@ import {
 } from "../../../platform/data-store.js";
 import { MemoryObjectStorage } from "../../../platform/object-storage.js";
 import { AttendanceService } from "../service.js";
-import { attendanceRegularizationCreateSchema, Roles } from "#shared";
+import {
+  AttendanceDayStatuses,
+  AttendancePunctualityStates,
+  attendanceRegularizationCreateSchema,
+  Roles,
+} from "#shared";
 
 function legacyPunch(workDate = "2026-07-08") {
   return [{ event_type: "check_in" as const, occurred_at: `${workDate}T04:00:00.000Z` }];
@@ -1545,10 +1550,12 @@ describe("AttendanceService.punch", () => {
         "hours",
         "reporting_evidence_category",
         "attendance_channels",
+        "source_categories",
         "work_site_name",
         "work_site_type",
         "geo_outcome",
         "geo_action",
+        "review_type",
         "reason_codes",
         "review_required",
         "review_outcome",
@@ -1575,6 +1582,71 @@ describe("AttendanceService.punch", () => {
         department_id: employee().department_id,
         status: "present",
       });
+    });
+
+    it("applies source filters to attendance exports", async () => {
+      service.punch(employee(), {
+        event_type: "check_in",
+        occurred_at: "2026-07-08T04:00:00.000Z",
+        work_mode: "office",
+        source: "web",
+        metadata: {},
+      });
+
+      const web = await service.createExportJob(admin(), {
+        format: "json",
+        filters: { source_category: "web" },
+      });
+      const geo = await service.createExportJob(admin(), {
+        format: "json",
+        filters: { source_category: "geo" },
+      });
+
+      expect(web.row_count).toBe(1);
+      expect(geo.row_count).toBe(0);
+    });
+
+    it("applies report mode filters and monthly summary columns", async () => {
+      service.punch(employee(), {
+        event_type: "check_in",
+        occurred_at: "2026-07-08T04:00:00.000Z",
+        work_mode: "office",
+        source: "web",
+        metadata: {},
+      });
+      store.attendanceDayRecords[0]!.status = AttendanceDayStatuses.Late;
+      store.attendanceDayRecords[0]!.punctuality_state = AttendancePunctualityStates.Late;
+      store.attendanceDayRecords[0]!.late_seconds = 600;
+      store.attendanceDayRecords[0]!.late_minutes = 10;
+
+      const late = await service.createExportJob(admin(), {
+        format: "json",
+        filters: { report_mode: "late" },
+      });
+      const absent = await service.createExportJob(admin(), {
+        format: "json",
+        filters: { report_mode: "absent" },
+      });
+      const monthly = await service.createExportJob(admin(), {
+        format: "json",
+        filters: { report_mode: "monthly_summary" },
+      });
+
+      expect(late.row_count).toBe(1);
+      expect(absent.row_count).toBe(0);
+      expect(monthly.row_count).toBe(1);
+      expect(monthly.columns).toEqual([
+        "employee_code",
+        "employee",
+        "department",
+        "total_days",
+        "present_days",
+        "late_days",
+        "absent_days",
+        "wfh_days",
+        "leave_days",
+        "attendance_percent",
+      ]);
     });
 
     it("creates an attendance export outbox event", async () => {
