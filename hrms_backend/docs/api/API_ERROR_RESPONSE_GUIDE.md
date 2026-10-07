@@ -82,6 +82,62 @@ When the limit is exceeded, the API returns `429` with `Retry-After`, `X-RateLim
 
 Consumers should avoid tight retry loops and wait at least the documented retry interval.
 
+## Attendance Examples
+
+Attendance APIs use the same envelope. Representative domain examples:
+
+Validation failure:
+
+```json
+{
+  "code": "VALIDATION_FAILED",
+  "message": "Request validation failed",
+  "details": {
+    "formErrors": [],
+    "fieldErrors": {
+      "command.location": ["location is required when source is web_geo."]
+    }
+  },
+  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+}
+```
+
+Idempotency or workflow conflict:
+
+```json
+{
+  "code": "WORKFLOW_CONFLICT",
+  "message": "Attendance command conflicts with an existing command. Retry with a new idempotency key.",
+  "details": {
+    "reason_code": "idempotency_conflict"
+  },
+  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+}
+```
+
+Self approval blocked:
+
+```json
+{
+  "code": "SELF_APPROVAL_BLOCKED",
+  "message": "Users cannot approve, return, or reject their own attendance regularization.",
+  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+}
+```
+
+Exact attendance location denial:
+
+```json
+{
+  "code": "FORBIDDEN",
+  "message": "Exact attendance location access requires additional authorization.",
+  "request_id": "601fe7b7-6361-463e-ae66-5d972673dd27"
+}
+```
+
+Exact coordinate permission denials are `403` responses. They are not `200`
+responses with null coordinates.
+
 ## Defect Reporting
 
 Always include:

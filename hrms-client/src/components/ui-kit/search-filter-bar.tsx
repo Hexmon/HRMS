@@ -8,6 +8,7 @@ interface Props {
   value: string;
   onValueChange: (v: string) => void;
   placeholder?: string;
+  searchLabel?: string;
   filtersSlot?: ReactNode;
   rightSlot?: ReactNode;
   showExport?: boolean;
@@ -18,6 +19,7 @@ export function SearchFilterBar({
   value,
   onValueChange,
   placeholder = "Search…",
+  searchLabel,
   filtersSlot,
   rightSlot,
   showExport = true,
@@ -42,6 +44,7 @@ export function SearchFilterBar({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={placeholder}
+          aria-label={searchLabel ?? placeholder ?? "Search"}
           className="h-9 rounded-full pl-9"
         />
       </div>
