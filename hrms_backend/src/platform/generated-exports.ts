@@ -14,6 +14,7 @@ export interface GeneratedExportDocumentInput {
   format: GeneratedExportFormat;
   rows: Array<Record<string, unknown>>;
   columns: string[];
+  columnHeaders?: string[];
   filters?: Record<string, unknown>;
   filePrefix: string;
 }
@@ -37,7 +38,12 @@ export async function createGeneratedExportDocument(
     return queuedResult(input);
   }
 
-  const rendered = renderExport(input.rows, input.columns, input.format);
+  const rendered = renderExport(
+    input.rows,
+    input.columns,
+    input.format,
+    input.columnHeaders,
+  );
   const now = nowIso();
   const extension = exportExtension(input.format);
   const mimeType = exportMimeType(input.format);
@@ -149,17 +155,23 @@ function exportMimeType(format: GeneratedExportFormat): string {
   return "text/csv";
 }
 
-function renderExport(rows: Array<Record<string, unknown>>, columns: string[], format: GeneratedExportFormat): Buffer {
+function renderExport(
+  rows: Array<Record<string, unknown>>,
+  columns: string[],
+  format: GeneratedExportFormat,
+  columnHeaders?: string[],
+): Buffer {
   if (format === "json") {
     return Buffer.from(JSON.stringify(rows, null, 2));
   }
   if (format === "xlsx") {
-    return renderXlsx(rows, columns);
+    return renderXlsx(rows, columns, columnHeaders);
   }
 
   const header = columns.length ? columns : inferColumns(rows);
+  const labels = columnHeaders?.length === header.length ? columnHeaders : header;
   const lines = [
-    header.map(csvCell).join(","),
+    labels.map(csvCell).join(","),
     ...rows.map((row) => header.map((column) => csvCell(row[column])).join(","))
   ];
   return Buffer.from(`${lines.join("\n")}\n`);
@@ -176,17 +188,35 @@ function inferColumns(rows: Array<Record<string, unknown>>): string[] {
 }
 
 function csvCell(value: unknown): string {
-  const text = value === null || value === undefined
+  const text = cellText(value);
+  const safeText = typeof value === "string" ? neutralizeSpreadsheetFormula(text) : text;
+  return `"${safeText.replaceAll("\"", "\"\"")}"`;
+}
+
+function neutralizeSpreadsheetFormula(value: string): string {
+  const first = value.trimStart()[0];
+  if (first === "=" || first === "+" || first === "-" || first === "@") {
+    return `'${value}`;
+  }
+  return value;
+}
+
+function cellText(value: unknown): string {
+  return value === null || value === undefined
     ? ""
     : typeof value === "object"
       ? JSON.stringify(value)
       : String(value);
-  return `"${text.replaceAll("\"", "\"\"")}"`;
 }
 
-function renderXlsx(rows: Array<Record<string, unknown>>, columns: string[]): Buffer {
+function renderXlsx(
+  rows: Array<Record<string, unknown>>,
+  columns: string[],
+  columnHeaders?: string[],
+): Buffer {
   const header = columns.length ? columns : inferColumns(rows);
-  const allRows = [header, ...rows.map((row) => header.map((column) => row[column]))];
+  const labels = columnHeaders?.length === header.length ? columnHeaders : header;
+  const allRows = [labels, ...rows.map((row) => header.map((column) => row[column]))];
   const sheetData = allRows
     .map((row, rowIndex) => {
       const rowNumber = rowIndex + 1;

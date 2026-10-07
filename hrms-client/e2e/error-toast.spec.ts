@@ -1,19 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const API_BASE_URL = process.env.E2E_API_BASE_URL ?? "http://127.0.0.1:3001";
-const LOCAL_DEMO_PASSWORD = process.env.E2E_LOCAL_DEMO_PASSWORD ?? "LocalDev@123";
-const EMPLOYEE_EMAIL = process.env.E2E_EMPLOYEE_EMAIL ?? "e1@example.test";
-
-test.beforeAll(async ({ request }) => {
-  const ready = await request.get(`${API_BASE_URL}/api/v1/health/ready`, { timeout: 5_000 });
-  expect(
-    ready.ok(),
-    `Backend API must be running before browser e2e. Expected readiness at ${API_BASE_URL}/api/v1/health/ready, got ${ready.status()}.`,
-  ).toBe(true);
-});
-
 test("API mutation failures show backend message and never show success", async ({ page }) => {
-  await login(page, EMPLOYEE_EMAIL);
+  await prepareHelpdeskPage(page);
 
   await page.route("**/api/v1/helpdesk/tickets", async (route) => {
     if (route.request().method() !== "POST") {
@@ -33,6 +21,7 @@ test("API mutation failures show backend message and never show success", async 
   });
 
   await page.goto("/helpdesk", { waitUntil: "networkidle" });
+  await waitForWorkspace(page);
   await page.getByRole("button", { name: "Raise ticket" }).click();
   await page.getByPlaceholder("Short summary").fill("Broken");
   await page
@@ -46,10 +35,122 @@ test("API mutation failures show backend message and never show success", async 
   await expect(page.getByText("Ticket created")).toHaveCount(0);
 });
 
-async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login", { waitUntil: "networkidle" });
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(LOCAL_DEMO_PASSWORD);
-  await page.getByRole("button", { name: /sign in/i }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+test("API error details redact coordinates while preserving safe context", async ({ page }) => {
+  await prepareHelpdeskPage(page);
+
+  await page.route("**/api/v1/helpdesk/tickets", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 422,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: "VALIDATION_FAILED",
+        message: "Backend rejected this ticket.",
+        details: {
+          latitude: 10.123,
+          longitude: 20.456,
+          deviceLatitude: 10.123,
+          reason_code: "geo_outside_fence",
+          selected_action: "manual_fallback",
+          evidence: {
+            coordinates: {
+              latitude: 10.123,
+              longitude: 20.456,
+            },
+          },
+          browserLocation: {
+            lat: 10.123,
+            lng: 20.456,
+          },
+          samples: [
+            {
+              raw_location: {
+                lat: 10.123,
+                lng: 20.456,
+              },
+              validation_note: "Safe validation detail remains visible",
+            },
+          ],
+          fieldErrors: {
+            subject: ["Use a more specific subject."],
+            latitude: ["10.123 should never be displayed"],
+          },
+        },
+        request_id: "req-toast-redaction-e2e",
+      }),
+    });
+  });
+
+  await page.goto("/helpdesk", { waitUntil: "networkidle" });
+  await waitForWorkspace(page);
+  await page.getByRole("button", { name: "Raise ticket" }).click();
+  await page.getByPlaceholder("Short summary").fill("Broken");
+  await page
+    .locator("textarea[placeholder^='Add as much detail']")
+    .fill("This deliberately exercises location error detail redaction.");
+  await page.getByRole("button", { name: "Submit ticket" }).click();
+
+  await expect(page.getByText("Backend rejected this ticket.")).toBeVisible();
+  await expect(page.getByText(/reason_code: geo_outside_fence/)).toBeVisible();
+  await expect(page.getByText(/selected_action: manual_fallback/)).toBeVisible();
+  await expect(page.getByText(/subject: Use a more specific subject\./)).toBeVisible();
+  await expect(page.getByText(/Safe validation detail remains visible/)).toBeVisible();
+  await expect(page.getByText(/Request ID: req-toast-redaction-e2e/)).toBeVisible();
+
+  const bodyText = await page.locator("body").innerText();
+  expect(bodyText).not.toMatch(/10\.123|20\.456/u);
+  expect(bodyText).not.toMatch(
+    /latitude|longitude|deviceLatitude|coordinates|raw_location|browserLocation/u,
+  );
+});
+
+async function prepareHelpdeskPage(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("hawkaii_api_access_token", "error-toast-token");
+  });
+  await page.route("**/api/v1/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [],
+        categories: [],
+        notifications: [],
+        unread_count: 0,
+        page: 1,
+        page_size: 20,
+        total: 0,
+        total_pages: 0,
+      }),
+    });
+  });
+  await page.route("**/api/v1/auth/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        user: {
+          id: "error-toast-employee",
+          employee_code: "ERR-001",
+          email: "error-toast@example.test",
+          full_name: "Error Toast Employee",
+          roles: ["Employee"],
+        },
+        active_role: { key: "Employee", label: "Employee", is_active: true },
+        available_roles: [{ key: "Employee", label: "Employee", is_active: true }],
+        permissions: [],
+        setup_required: false,
+      }),
+    });
+  });
+}
+
+async function waitForWorkspace(page: Page): Promise<void> {
+  await expect(page.getByRole("status", { name: "Loading workspace" })).toBeHidden({
+    timeout: 60_000,
+  });
+  await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible();
 }

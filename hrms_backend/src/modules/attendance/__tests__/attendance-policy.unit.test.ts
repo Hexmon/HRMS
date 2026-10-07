@@ -5,14 +5,17 @@ import {
   Roles,
   type AuthUser,
   type CoreUser,
+  type RbacRolePermissionRecord,
 } from "#shared";
 import {
+  assertCanViewExactAttendanceLocation,
   assertCanDecideRegularization,
   assertCanSeeAttendanceUser,
   assertCanUseSelfAttendance,
   canSeeAllAttendance,
   canSeeAttendanceUser,
   canUseSelfAttendance,
+  hasExactAttendanceLocationPermission,
 } from "../policy.js";
 
 function makeAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
@@ -43,6 +46,23 @@ function makeCoreUser(overrides: Partial<CoreUser> = {}): CoreUser {
     terminated_on: null,
     deleted_at: null,
     version: 1,
+    ...overrides,
+  };
+}
+
+function makeRolePermission(
+  roleKey: string,
+  overrides: Partial<RbacRolePermissionRecord> = {},
+): RbacRolePermissionRecord {
+  const now = new Date().toISOString();
+  return {
+    id: randomUUID(),
+    role_key: roleKey,
+    permission_id: "attendance:view_exact_location",
+    status: "active",
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
     ...overrides,
   };
 }
@@ -122,6 +142,16 @@ describe("attendance policy", () => {
         ),
       ).toBe(false);
     });
+
+    it("rejects admin even when employee role is also present", () => {
+      expect(
+        canUseSelfAttendance(
+          makeAuthUser({
+            roles: [Roles.Admin, Roles.Employee],
+          }),
+        ),
+      ).toBe(false);
+    });
   });
 
   describe("assertCanUseSelfAttendance", () => {
@@ -134,6 +164,16 @@ describe("attendance policy", () => {
         assertCanUseSelfAttendance(
           makeAuthUser({
             roles: [Roles.Admin],
+          }),
+        ),
+      ).toThrow();
+    });
+
+    it("throws for admin even when employee role is also present", () => {
+      expect(() =>
+        assertCanUseSelfAttendance(
+          makeAuthUser({
+            roles: [Roles.Admin, Roles.Employee],
           }),
         ),
       ).toThrow();
@@ -173,6 +213,50 @@ describe("attendance policy", () => {
 
     it("rejects employee", () => {
       expect(canSeeAllAttendance(makeAuthUser())).toBe(false);
+    });
+  });
+
+  describe("hasExactAttendanceLocationPermission", () => {
+    it("allows an actor role with active exact-location permission", () => {
+      const actor = makeAuthUser({
+        roles: [Roles.Reviewer],
+      });
+
+      expect(
+        hasExactAttendanceLocationPermission(actor, [
+          makeRolePermission(Roles.Reviewer),
+        ]),
+      ).toBe(true);
+    });
+
+    it("rejects missing, inactive, deleted, or unrelated permissions", () => {
+      const actor = makeAuthUser({
+        roles: [Roles.Reviewer],
+      });
+
+      expect(
+        hasExactAttendanceLocationPermission(actor, [
+          makeRolePermission(Roles.Employee),
+          makeRolePermission(Roles.Reviewer, { status: "inactive" }),
+          makeRolePermission(Roles.Reviewer, { deleted_at: new Date().toISOString() }),
+          makeRolePermission(Roles.Reviewer, { permission_id: "attendance:view" }),
+        ]),
+      ).toBe(false);
+    });
+  });
+
+  describe("assertCanViewExactAttendanceLocation", () => {
+    it("requires the dedicated exact-location permission", () => {
+      const actor = makeAuthUser({
+        roles: [Roles.Reviewer],
+      });
+
+      expect(() =>
+        assertCanViewExactAttendanceLocation(actor, [
+          makeRolePermission(Roles.Reviewer),
+        ]),
+      ).not.toThrow();
+      expect(() => assertCanViewExactAttendanceLocation(actor, [])).toThrow();
     });
   });
 
@@ -296,7 +380,7 @@ describe("attendance policy", () => {
       ).not.toThrow();
     });
 
-    it("allows auditor", () => {
+    it("rejects auditor", () => {
       const auditor = makeAuthUser({
         roles: [Roles.Auditor],
       });
@@ -306,7 +390,7 @@ describe("attendance policy", () => {
           employee_user_id: randomUUID(),
           current_approver_user_id: null,
         }),
-      ).not.toThrow();
+      ).toThrow();
     });
 
     it("rejects unrelated employee", () => {

@@ -28,22 +28,28 @@ export function installFrontendOnlyApiGuard(page: Page) {
   };
 }
 
-export async function loginAsMainAdmin(page: Page) {
-  await page.goto("/login", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
-  await page.waitForFunction(() => {
-    const emailInput = document.querySelector("#email");
-    const passwordInput = document.querySelector("#password");
-    return Boolean(
-      emailInput &&
-      passwordInput &&
-      "_valueTracker" in emailInput &&
-      "_valueTracker" in passwordInput,
+export async function seedMainAdminSession(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "hawkaii_session",
+      JSON.stringify({ userId: "u1", role: "main_admin" }),
     );
+    window.localStorage.setItem("hawkaii_company_setup", JSON.stringify(true));
   });
-  await page.locator("#email").fill("aanya@hawkaii.com");
-  await page.locator("#password").fill("LocalDev@123");
-  await page.getByRole("button", { name: /sign in/i }).click();
+  await page
+    .evaluate(() => {
+      window.localStorage.setItem(
+        "hawkaii_session",
+        JSON.stringify({ userId: "u1", role: "main_admin" }),
+      );
+      window.localStorage.setItem("hawkaii_company_setup", JSON.stringify(true));
+    })
+    .catch(() => undefined);
+}
+
+export async function loginAsMainAdmin(page: Page) {
+  await seedMainAdminSession(page);
+  await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/dashboard/);
   await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible();
 }
