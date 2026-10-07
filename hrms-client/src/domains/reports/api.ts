@@ -5,8 +5,11 @@ export interface ReportParams extends ApiRecord {
   page?: number;
   page_size?: number;
   department_id?: string;
+  manager_user_id?: string;
   user_id?: string;
   employee_user_id?: string;
+  evidence_category?: string;
+  reporting_evidence_category?: string;
   project_id?: string;
   assigned_to_user_id?: string;
   actor_user_id?: string;
