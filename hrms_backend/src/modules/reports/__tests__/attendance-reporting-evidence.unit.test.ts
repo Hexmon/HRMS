@@ -15,6 +15,8 @@ import { createMemoryDataStore, seedIds } from "../../../platform/data-store.js"
 import { ReportService } from "../service.js";
 
 const companyId = "00000000-0000-4000-8000-00000000a015";
+const mumbaiSiteId = "00000000-0000-4000-8000-000000000a51";
+const delhiSiteId = "00000000-0000-4000-8000-000000000a52";
 
 function attendanceDay(
   employeeUserId: string,
@@ -80,6 +82,7 @@ function geoReview(
     geo_policy: {
       factual_outcome: "outside_confident",
       selected_action: "fallback_review",
+      work_site_id: mumbaiSiteId,
       work_site_name: "Mumbai HQ",
       work_site_type: "office",
     },
@@ -232,6 +235,7 @@ describe("attendance report evidence categories", () => {
       reporting_evidence_category: "review_required",
       attendance_channels: ["Web + location"],
       source_categories: ["geo"],
+      work_site_id: [mumbaiSiteId],
       work_site_name: ["Mumbai HQ"],
       work_site_type: ["office"],
       geo_outcome: ["outside_confident"],
@@ -280,6 +284,7 @@ describe("attendance report evidence categories", () => {
       page_size: 20,
       evidence_category: "review_required",
       source_category: "manual",
+      work_site_id: mumbaiSiteId,
       geo_outcome: "outside_confident",
       review_type: "manual_fallback",
       attendance_channel: "Web + location",
@@ -292,6 +297,7 @@ describe("attendance report evidence categories", () => {
       reporting_evidence_category: "review_required",
       attendance_channels: ["Web + location"],
       source_categories: ["geo", "manual"],
+      work_site_id: [mumbaiSiteId],
       geo_outcome: ["outside_confident"],
       review_type: ["manual_fallback"],
       reason_codes: ["geo_outside_fence"],
@@ -393,5 +399,85 @@ describe("attendance report evidence categories", () => {
 
     expect(ownTeam.items.map((row) => row.employee_user_id)).toEqual([seedIds.employee1]);
     expect(unrelatedTeam.items).toHaveLength(0);
+  });
+
+  it("filters site and approval state independently from evidence state", () => {
+    const store = createMemoryDataStore();
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    store.attendanceDayRecords.push(
+      attendanceDay(seedIds.employee1, {
+        approval_kind: AttendanceApprovalKinds.Regularization,
+        approval_state: AttendanceApprovalStates.Pending,
+      }),
+      attendanceDay(seedIds.employee2, {
+        approval_kind: AttendanceApprovalKinds.Leave,
+        approval_state: AttendanceApprovalStates.Approved,
+      }),
+    );
+    store.attendanceGeoFallbackReviews.push(
+      geoReview(seedIds.employee1),
+      geoReview(seedIds.employee2, {
+        geo_policy: {
+          factual_outcome: "outside_confident",
+          selected_action: "fallback_review",
+          work_site_id: delhiSiteId,
+          work_site_name: "Delhi Office",
+          work_site_type: "office",
+        },
+      }),
+    );
+
+    const result = new ReportService(store).attendanceSummary(admin, {
+      page: 1,
+      page_size: 20,
+      date_from: "2026-07-20",
+      date_to: "2026-07-20",
+      evidence_category: "review_required",
+      work_site_id: mumbaiSiteId,
+      approval_state: AttendanceApprovalStates.Pending,
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toMatchObject({
+      employee_user_id: seedIds.employee1,
+      reporting_evidence_category: "review_required",
+      approval_state: AttendanceApprovalStates.Pending,
+      work_site_id: [mumbaiSiteId],
+      work_site_name: ["Mumbai HQ"],
+    });
+    expect(result.site_options).toEqual([
+      { id: mumbaiSiteId, label: "Mumbai HQ", type: "office" },
+    ]);
+  });
+
+  it("scopes site options to manager-visible attendance rows", () => {
+    const store = createMemoryDataStore();
+    const manager = store.users.find((user) => user.id === seedIds.manager)!;
+    store.attendanceDayRecords.push(
+      attendanceDay(seedIds.employee1),
+      attendanceDay(seedIds.alternateFinance),
+    );
+    store.attendanceGeoFallbackReviews.push(
+      geoReview(seedIds.employee1),
+      geoReview(seedIds.alternateFinance, {
+        geo_policy: {
+          factual_outcome: "outside_confident",
+          selected_action: "fallback_review",
+          work_site_id: delhiSiteId,
+          work_site_name: "Delhi Office",
+          work_site_type: "office",
+        },
+      }),
+    );
+
+    const result = new ReportService(store).attendanceSummary(manager, {
+      page: 1,
+      page_size: 20,
+    });
+
+    expect(result.items.map((row) => row.employee_user_id)).toEqual([seedIds.employee1]);
+    expect(result.site_options).toEqual([
+      { id: mumbaiSiteId, label: "Mumbai HQ", type: "office" },
+    ]);
   });
 });

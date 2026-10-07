@@ -6871,6 +6871,8 @@ Success body highlights:
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `attendance_channel` | query | no | string | - |
 | `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
 | `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
 | `geo_action` | query | no | string | - |
 | `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
@@ -6946,6 +6948,8 @@ Success body highlights:
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `attendance_channel` | query | no | string | - |
 | `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
 | `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
 | `geo_action` | query | no | string | - |
 | `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
@@ -6992,6 +6996,7 @@ Success body highlights:
 | `filters` | object | required | - |
 | `evidence_categories` | object | optional | - |
 | `source_categories` | object | optional | - |
+| `site_options` | array of object | optional | - |
 
 **Frontend behavior notes**
 
@@ -7023,6 +7028,8 @@ Success body highlights:
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `attendance_channel` | query | no | string | - |
 | `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
 | `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
 | `geo_action` | query | no | string | - |
 | `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
@@ -7098,6 +7105,8 @@ Success body highlights:
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `attendance_channel` | query | no | string | - |
 | `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
 | `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
 | `geo_action` | query | no | string | - |
 | `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
@@ -7173,6 +7182,8 @@ Success body highlights:
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `attendance_channel` | query | no | string | - |
 | `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
 | `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
 | `geo_action` | query | no | string | - |
 | `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
@@ -7248,6 +7259,8 @@ Success body highlights:
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `attendance_channel` | query | no | string | - |
 | `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
 | `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
 | `geo_action` | query | no | string | - |
 | `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
@@ -7323,6 +7336,8 @@ Success body highlights:
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `attendance_channel` | query | no | string | - |
 | `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
 | `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
 | `geo_action` | query | no | string | - |
 | `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
@@ -7398,6 +7413,8 @@ Success body highlights:
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `attendance_channel` | query | no | string | - |
 | `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
 | `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
 | `geo_action` | query | no | string | - |
 | `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
@@ -7473,6 +7490,8 @@ Success body highlights:
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `attendance_channel` | query | no | string | - |
 | `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
 | `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
 | `geo_action` | query | no | string | - |
 | `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |

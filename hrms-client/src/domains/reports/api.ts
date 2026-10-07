@@ -12,6 +12,8 @@ export interface ReportParams extends ApiRecord {
   reporting_evidence_category?: string;
   attendance_channel?: string;
   source_category?: string;
+  work_site_id?: string;
+  approval_state?: string;
   geo_outcome?: string;
   geo_action?: string;
   review_type?: "manual_fallback" | "geo_decision";

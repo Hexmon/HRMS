@@ -7,6 +7,8 @@ import {
 import { MemoryObjectStorage } from "../../../platform/object-storage.js";
 import { AttendanceService } from "../service.js";
 import {
+  AttendanceApprovalKinds,
+  AttendanceApprovalStates,
   AttendanceDayStatuses,
   AttendancePunctualityStates,
   attendanceRegularizationCreateSchema,
@@ -1606,6 +1608,140 @@ describe("AttendanceService.punch", () => {
       expect(geo.row_count).toBe(0);
     });
 
+    it("applies finalized date, source, site, evidence, and approval filters before export modes", async () => {
+      const mumbaiSiteId = randomUUID();
+      const delhiSiteId = randomUUID();
+      service.punch(employee(), {
+        event_type: "check_in",
+        occurred_at: "2026-07-08T04:00:00.000Z",
+        work_mode: "office",
+        source: "web_geo",
+        metadata: {},
+      });
+      service.punch(employee2(), {
+        event_type: "check_in",
+        occurred_at: "2026-07-09T04:00:00.000Z",
+        work_mode: "office",
+        source: "web_geo",
+        metadata: {},
+      });
+
+      const mumbaiRecord = store.attendanceDayRecords.find(
+        (record) => record.employee_user_id === employee().id,
+      )!;
+      const delhiRecord = store.attendanceDayRecords.find(
+        (record) => record.employee_user_id === employee2().id,
+      )!;
+      Object.assign(mumbaiRecord, {
+        status: AttendanceDayStatuses.Late,
+        punctuality_state: AttendancePunctualityStates.Late,
+        late_seconds: 600,
+        late_minutes: 10,
+        approval_kind: AttendanceApprovalKinds.Regularization,
+        approval_state: AttendanceApprovalStates.Pending,
+      });
+      Object.assign(delhiRecord, {
+        approval_kind: AttendanceApprovalKinds.Leave,
+        approval_state: AttendanceApprovalStates.Approved,
+      });
+      store.attendanceGeoFallbackReviews.push(
+        {
+          id: randomUUID(),
+          company_id: companyId(store),
+          employee_user_id: employee().id,
+          submitted_by_user_id: employee().id,
+          current_approver_user_id: manager().id,
+          original_command_id: randomUUID(),
+          original_decision_id: randomUUID(),
+          fallback_command_id: null,
+          punch_event_id: null,
+          event_type: "check_in",
+          work_date: "2026-07-08",
+          occurred_at: "2026-07-08T04:00:00.000Z",
+          reason_code: "geo_outside_fence",
+          reason_detail: null,
+          geo_policy: {
+            factual_outcome: "outside_confident",
+            selected_action: "fallback_review",
+            work_site_id: mumbaiSiteId,
+            work_site_name: "Mumbai HQ",
+            work_site_type: "office",
+          },
+          status: "pending",
+          decision_remarks: null,
+          decided_by_user_id: null,
+          decided_at: null,
+          version: 1,
+          created_at: "2026-07-08T04:00:00.000Z",
+          updated_at: "2026-07-08T04:00:00.000Z",
+          deleted_at: null,
+        },
+        {
+          id: randomUUID(),
+          company_id: companyId(store),
+          employee_user_id: employee2().id,
+          submitted_by_user_id: employee2().id,
+          current_approver_user_id: manager().id,
+          original_command_id: randomUUID(),
+          original_decision_id: randomUUID(),
+          fallback_command_id: null,
+          punch_event_id: null,
+          event_type: "check_in",
+          work_date: "2026-07-09",
+          occurred_at: "2026-07-09T04:00:00.000Z",
+          reason_code: "geo_outside_fence",
+          reason_detail: null,
+          geo_policy: {
+            factual_outcome: "outside_confident",
+            selected_action: "fallback_review",
+            work_site_id: delhiSiteId,
+            work_site_name: "Delhi Office",
+            work_site_type: "office",
+          },
+          status: "pending",
+          decision_remarks: null,
+          decided_by_user_id: null,
+          decided_at: null,
+          version: 1,
+          created_at: "2026-07-09T04:00:00.000Z",
+          updated_at: "2026-07-09T04:00:00.000Z",
+          deleted_at: null,
+        },
+      );
+
+      const filters = {
+        date_from: "2026-07-08",
+        date_to: "2026-07-08",
+        source_category: "geo" as const,
+        work_site_id: mumbaiSiteId,
+        evidence_category: "review_required" as const,
+        approval_state: AttendanceApprovalStates.Pending,
+      };
+      const daily = await service.createExportJob(admin(), { format: "json", filters });
+      const late = await service.createExportJob(admin(), {
+        format: "json",
+        filters: { ...filters, report_mode: "late" },
+      });
+      const monthly = await service.createExportJob(admin(), {
+        format: "json",
+        filters: { ...filters, report_mode: "monthly_summary" },
+      });
+      const wrongSite = await service.createExportJob(admin(), {
+        format: "json",
+        filters: { ...filters, work_site_id: delhiSiteId },
+      });
+      const wrongApproval = await service.createExportJob(admin(), {
+        format: "json",
+        filters: { ...filters, approval_state: AttendanceApprovalStates.Approved },
+      });
+
+      expect(daily.row_count).toBe(1);
+      expect(late.row_count).toBe(1);
+      expect(monthly.row_count).toBe(1);
+      expect(wrongSite.row_count).toBe(0);
+      expect(wrongApproval.row_count).toBe(0);
+    });
+
     it("applies report mode filters and monthly summary columns", async () => {
       service.punch(employee(), {
         event_type: "check_in",
@@ -1708,6 +1844,10 @@ describe("AttendanceService.punch", () => {
 
     it("blocks employees from exporting attendance", async () => {
       await expect(service.createExportJob(employee(), {})).rejects.toThrow();
+    });
+
+    it("blocks managers from exporting attendance", async () => {
+      await expect(service.createExportJob(manager(), {})).rejects.toThrow();
     });
   });
 });

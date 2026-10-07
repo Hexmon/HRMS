@@ -4,6 +4,7 @@ import type {
   AttendanceDayRecord,
   AttendanceDayStatus,
   AttendanceGeoFallbackReview,
+  AttendanceApprovalState,
   AttendanceLocationEvidenceInput,
   AttendanceOfflineSyncReasonCode,
   AttendanceOfflineSyncStatus,
@@ -537,6 +538,8 @@ export interface AttendanceExportInput {
     reporting_evidence_category?: AttendanceReportingEvidenceCategory;
     attendance_channel?: string;
     source_category?: AttendanceReportSourceCategory;
+    work_site_id?: UUID;
+    approval_state?: AttendanceApprovalState;
     geo_outcome?: string;
     geo_action?: string;
     review_type?: "manual_fallback" | "geo_decision";
@@ -2964,6 +2967,11 @@ export class AttendanceService {
           !textFilter(filters.date_to) ||
           record.work_date <= textFilter(filters.date_to)!,
       )
+      .filter(
+        (record) =>
+          !textFilter(filters.approval_state) ||
+          record.approval_state === textFilter(filters.approval_state),
+      )
       .filter((record) => {
         const user = this.store.users.find(
           (candidate) => candidate.id === record.employee_user_id,
@@ -3004,6 +3012,7 @@ export class AttendanceService {
         matchesAttendanceReportEvidenceFilters(evidence, {
           attendance_channel: filters.attendance_channel,
           source_category: filters.source_category,
+          work_site_id: filters.work_site_id,
           geo_outcome: filters.geo_outcome,
           geo_action: filters.geo_action,
           review_type: filters.review_type,
@@ -3044,6 +3053,7 @@ export class AttendanceService {
             evidence.reporting_evidence_category ?? "",
           attendance_channels: evidence.attendance_channels,
           source_categories: evidence.source_categories,
+          work_site_id: evidence.work_site_id,
           work_site_name: evidence.work_site_name,
           work_site_type: evidence.work_site_type,
           geo_outcome: evidence.geo_outcome,

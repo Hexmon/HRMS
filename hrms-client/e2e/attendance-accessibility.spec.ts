@@ -211,6 +211,8 @@ test.describe("attendance accessibility", () => {
     await expect(page.getByRole("combobox", { name: "Status" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Evidence state" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Source" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Site" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Approval" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Geo outcome" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Review type" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Reason" })).toBeVisible();
@@ -224,10 +226,17 @@ test.describe("attendance accessibility", () => {
     await page.getByRole("option", { name: "Provisional" }).click();
     await page.getByRole("combobox", { name: "Source" }).click();
     await page.getByRole("option", { name: "Geo evidence" }).click();
+    await page.getByRole("combobox", { name: "Site" }).click();
+    await page.getByRole("option", { name: "Bengaluru Office (Office)" }).click();
+    await page.getByRole("combobox", { name: "Approval" }).click();
+    await page.getByRole("option", { name: "Pending" }).click();
     await expect
       .poll(() => requests.reportRequests.at(-1) ?? "")
       .toContain("evidence_category=provisional");
-    expect(requests.reportRequests.at(-1)).toContain("source_category=geo");
+    const latestReportRequest = requests.reportRequests.at(-1) ?? "";
+    expect(latestReportRequest).toContain("source_category=geo");
+    expect(latestReportRequest).toContain("work_site_id=00000000-0000-4000-8000-000000000a11");
+    expect(latestReportRequest).toContain("approval_state=pending");
     await page.getByRole("button", { name: "Export CSV" }).click();
     await expect.poll(() => requests.exportRequests.length).toBe(1);
     expect(requests.exportRequests[0]).toMatchObject({
@@ -235,15 +244,21 @@ test.describe("attendance accessibility", () => {
       filters: {
         evidence_category: "provisional",
         source_category: "geo",
+        work_site_id: "00000000-0000-4000-8000-000000000a11",
+        approval_state: "pending",
         report_mode: "daily",
       },
     });
+    await expect(page.locator("body")).not.toContainText("12.974");
+    await expect(page.locator("body")).not.toContainText("77.597");
 
     await page.getByRole("button", { name: "Reset" }).click();
     await expect(page.getByRole("combobox", { name: "Evidence state" })).toContainText(
       "All evidence states",
     );
     await expect(page.getByRole("combobox", { name: "Source" })).toContainText("All sources");
+    await expect(page.getByRole("combobox", { name: "Site" })).toContainText("All sites");
+    await expect(page.getByRole("combobox", { name: "Approval" })).toContainText("All approvals");
     await page.getByRole("button", { name: "Export CSV" }).click();
     await expect.poll(() => requests.exportRequests.length).toBe(2);
     expect(requests.exportRequests[1]).toMatchObject({
@@ -252,6 +267,8 @@ test.describe("attendance accessibility", () => {
     });
     expect(requests.exportRequests[1]?.filters).not.toHaveProperty("evidence_category");
     expect(requests.exportRequests[1]?.filters).not.toHaveProperty("source_category");
+    expect(requests.exportRequests[1]?.filters).not.toHaveProperty("work_site_id");
+    expect(requests.exportRequests[1]?.filters).not.toHaveProperty("approval_state");
     await page.getByRole("tab", { name: "Late Arrivals" }).click();
     await page.getByRole("button", { name: "Export CSV" }).click();
     await expect.poll(() => requests.exportRequests.length).toBe(3);
@@ -265,6 +282,16 @@ test.describe("attendance accessibility", () => {
       filters: { report_mode: "monthly_summary" },
     });
     await expectNoDocumentHorizontalOverflow(page, "/reports/attendance accessibility");
+  });
+
+  test("manager attendance reports omit unavailable export action", async ({ page }) => {
+    await prepareAttendanceReportPage(page, { roleKey: "Manager", roleLabel: "Manager" });
+    await page.goto("/reports/attendance", { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByRole("heading", { name: "Daily Attendance" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Site" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Approval" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export CSV" })).toHaveCount(0);
   });
 });
 
@@ -461,10 +488,14 @@ async function prepareExactLocationPage(page: Page): Promise<void> {
 
 async function prepareAttendanceReportPage(
   page: Page,
+  role: { roleKey: string; roleLabel: string } = {
+    roleKey: "Main Admin",
+    roleLabel: "Main Admin",
+  },
 ): Promise<{ reportRequests: string[]; exportRequests: Array<Record<string, unknown>> }> {
   const reportRequests: string[] = [];
   const exportRequests: Array<Record<string, unknown>> = [];
-  await installRole(page, "Main Admin", "Main Admin");
+  await installRole(page, role.roleKey, role.roleLabel);
   await page.route("**/api/v1/reports/attendance/summary**", async (route) => {
     reportRequests.push(route.request().url());
     await route.fulfill({
@@ -482,8 +513,10 @@ async function prepareAttendanceReportPage(
             reporting_evidence_category: "verified",
             attendance_channels: ["Web"],
             source_categories: ["web"],
+            work_site_id: ["00000000-0000-4000-8000-000000000a11"],
             work_site_name: ["Bengaluru Office"],
             work_site_type: ["office"],
+            approval_state: "pending",
             geo_outcome: ["inside_confident"],
             geo_action: ["allow"],
             review_type: ["geo_decision"],
@@ -503,6 +536,13 @@ async function prepareAttendanceReportPage(
           review_required: 0,
           rejected: 0,
         },
+        site_options: [
+          {
+            id: "00000000-0000-4000-8000-000000000a11",
+            label: "Bengaluru Office",
+            type: "office",
+          },
+        ],
         page: 1,
         page_size: 100,
         total: 1,

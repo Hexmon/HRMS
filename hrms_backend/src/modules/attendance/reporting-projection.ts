@@ -32,6 +32,12 @@ export type AttendanceReportSourceCategoryCounts = Record<
   number
 >;
 
+export interface AttendanceReportWorkSiteOption {
+  id: string;
+  label: string;
+  type: string | null;
+}
+
 export const AttendanceReportExportColumnValues = [
   "employee_code",
   "employee",
@@ -138,6 +144,8 @@ export interface AttendanceReportEvidenceSummary {
   reporting_evidence_category: AttendanceReportingEvidenceCategory | null;
   attendance_channels: string[];
   source_categories: AttendanceReportSourceCategory[];
+  work_site_id: string[];
+  work_sites: AttendanceReportWorkSiteOption[];
   work_site_name: string[];
   work_site_type: string[];
   geo_outcome: string[];
@@ -151,6 +159,7 @@ export interface AttendanceReportEvidenceSummary {
 export interface AttendanceReportEvidenceFilters {
   attendance_channel?: string;
   source_category?: AttendanceReportSourceCategory | string;
+  work_site_id?: string;
   geo_outcome?: string;
   geo_action?: string;
   review_type?: string;
@@ -165,6 +174,14 @@ type ReasonSourceGroup =
 
 interface OrderedValue {
   value: string;
+  occurredAt: string;
+  group: ReasonSourceGroup;
+}
+
+interface OrderedWorkSite {
+  id: string;
+  label: string;
+  type: string | null;
   occurredAt: string;
   group: ReasonSourceGroup;
 }
@@ -203,6 +220,8 @@ const EmptySummary: AttendanceReportEvidenceSummary = {
   reporting_evidence_category: null,
   attendance_channels: [],
   source_categories: [],
+  work_site_id: [],
+  work_sites: [],
   work_site_name: [],
   work_site_type: [],
   geo_outcome: [],
@@ -364,6 +383,9 @@ export function matchesAttendanceReportEvidenceFilters(
   ) {
     return false;
   }
+  if (filters.work_site_id && !containsToken(evidence.work_site_id, filters.work_site_id)) {
+    return false;
+  }
   if (filters.geo_outcome && !containsToken(evidence.geo_outcome, filters.geo_outcome)) {
     return false;
   }
@@ -401,6 +423,8 @@ function summarizeDay(
 ): AttendanceReportEvidenceSummary {
   const channels: OrderedValue[] = [];
   const sourceCategories: OrderedValue[] = [];
+  const siteIds: OrderedValue[] = [];
+  const siteRefs: OrderedWorkSite[] = [];
   const sites: OrderedValue[] = [];
   const siteTypes: OrderedValue[] = [];
   const geoOutcomes: OrderedValue[] = [];
@@ -432,6 +456,8 @@ function summarizeDay(
     pushString(reasonCodes, review.reason_code, occurredAt, "geo");
     pushString(geoOutcomes, geoFactualOutcome(policy), occurredAt, "geo");
     pushString(geoActions, geoSelectedAction(policy), occurredAt, "geo");
+    pushString(siteIds, workSiteId(policy), occurredAt, "geo");
+    pushWorkSite(siteRefs, workSiteId(policy), workSiteName(policy), workSiteType(policy), occurredAt, "geo");
     pushString(sites, workSiteName(policy), occurredAt, "geo");
     pushString(siteTypes, workSiteType(policy), occurredAt, "geo");
     pushReviewOutcome(reviewOutcomes, review.status);
@@ -506,6 +532,8 @@ function summarizeDay(
     }),
     attendance_channels: uniqueOrderedValues(channels),
     source_categories: uniqueSourceCategories(sourceCategories),
+    work_site_id: uniqueOrderedValues(siteIds),
+    work_sites: uniqueWorkSites(siteRefs),
     work_site_name: uniqueOrderedValues(sites),
     work_site_type: uniqueOrderedValues(siteTypes),
     geo_outcome: uniqueOrderedValues(geoOutcomes),
@@ -564,6 +592,42 @@ function uniqueOrderedValues(values: OrderedValue[]): string[] {
       return true;
     })
     .map((entry) => entry.value);
+}
+
+function pushWorkSite(
+  values: OrderedWorkSite[],
+  id: string | null,
+  label: string | null,
+  type: string | null,
+  occurredAt: string | null | undefined,
+  group: ReasonSourceGroup,
+): void {
+  if (!id) return;
+  values.push({
+    id,
+    label: label ?? id,
+    type,
+    occurredAt: occurredAt ?? "",
+    group,
+  });
+}
+
+function uniqueWorkSites(values: OrderedWorkSite[]): AttendanceReportWorkSiteOption[] {
+  const seen = new Set<string>();
+  return [...values]
+    .sort((left, right) => {
+      const byTime = left.occurredAt.localeCompare(right.occurredAt);
+      if (byTime !== 0) return byTime;
+      const byGroup = ReasonGroupOrder[left.group] - ReasonGroupOrder[right.group];
+      if (byGroup !== 0) return byGroup;
+      return left.label.localeCompare(right.label) || left.id.localeCompare(right.id);
+    })
+    .filter((entry) => {
+      if (seen.has(entry.id)) return false;
+      seen.add(entry.id);
+      return true;
+    })
+    .map(({ id, label, type }) => ({ id, label, type }));
 }
 
 function uniqueSourceCategories(values: OrderedValue[]): AttendanceReportSourceCategory[] {
@@ -687,6 +751,13 @@ function workSiteName(policy: Record<string, unknown>): string | null {
   return (
     stringValue(policy.work_site_name) ??
     stringValue(recordField(policy, "work_site").name)
+  );
+}
+
+function workSiteId(policy: Record<string, unknown>): string | null {
+  return (
+    stringValue(policy.work_site_id) ??
+    stringValue(recordField(policy, "work_site").id)
   );
 }
 

@@ -1772,14 +1772,17 @@ describe("API contracts", () => {
     for (const field of [
       "attendance_channels",
       "source_categories",
+      "work_site_id",
       "work_site_name",
       "work_site_type",
+      "approval_state",
       "geo_outcome",
       "geo_action",
       "review_type",
       "reason_codes",
       "review_required",
       "review_outcome",
+      "site_options",
     ]) {
       expect(reportSerialized).toContain(field);
     }
@@ -1794,8 +1797,28 @@ describe("API contracts", () => {
       | Record<string, any>
       | undefined;
     const columnEnum = exportBody?.properties?.columns?.items?.enum;
+    const filterProperties = exportBody?.properties?.filters?.properties;
     expect(columnEnum).toEqual([...AttendanceReportExportColumnValues]);
     expect(columnEnum).not.toEqual(expect.arrayContaining(["exact_location"]));
+    expect(exportBody?.properties?.filters?.additionalProperties).toBe(false);
+    expect(Object.keys(filterProperties ?? {})).toEqual(
+      expect.arrayContaining([
+        "date_from",
+        "date_to",
+        "source_category",
+        "work_site_id",
+        "evidence_category",
+        "approval_state",
+        "report_mode",
+      ]),
+    );
+    expect(filterProperties?.source_category?.enum).toEqual(
+      expect.arrayContaining(["web", "geo", "mobile", "manual", "kiosk", "system"]),
+    );
+    expect(filterProperties?.approval_state?.enum).toEqual(
+      expect.arrayContaining(["not_required", "pending", "approved", "returned", "rejected"]),
+    );
+    expect(JSON.stringify(exportBody)).not.toContain("exact_location");
   });
 
   it("omits removed reviewer/director expense surfaces from OpenAPI", async () => {

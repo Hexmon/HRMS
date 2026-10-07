@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ReportShell, type FacetOptions, type ReportFilters } from "@/components/reports/report-shell";
+import {
+  ReportShell,
+  type FacetOptions,
+  type ReportFilters,
+} from "@/components/reports/report-shell";
 import { DataCard, StatusBadge, type Column } from "@/components/ui-kit";
 import { useEmployees } from "@/lib/employees-store";
 import { daysAgo, inDateRange, isoToday } from "@/lib/reports/utils";
@@ -27,8 +31,10 @@ interface AttRow {
   reportingEvidenceCategory: AttendanceReportingEvidenceCategory | null;
   attendanceChannels: string[];
   sourceCategories: string[];
+  workSiteId: string[];
   workSiteName: string[];
   workSiteType: string[];
+  approvalState: string;
   geoOutcome: string[];
   geoAction: string[];
   reviewType: string[];
@@ -85,6 +91,16 @@ const REASON_CODE_OPTIONS = [
   { value: "regularization.rejected", label: "Correction rejected" },
 ];
 
+const APPROVAL_STATE_OPTIONS = [
+  { value: "not_required", label: "Not required" },
+  { value: "pending", label: "Pending" },
+  { value: "approved", label: "Approved" },
+  { value: "returned", label: "Returned" },
+  { value: "rejected", label: "Rejected" },
+  { value: "mixed", label: "Mixed" },
+  { value: "unknown", label: "Unknown" },
+];
+
 // Deterministic synth so values are stable across renders
 function hash(s: string) {
   let h = 0;
@@ -139,8 +155,10 @@ function buildAttendance(employees: { id: string; name: string; department: stri
         reportingEvidenceCategory,
         attendanceChannels: ["Web"],
         sourceCategories: ["web"],
+        workSiteId: [],
         workSiteName: [],
         workSiteType: [],
+        approvalState: "not_required",
         geoOutcome: [],
         geoAction: [],
         reviewType: [],
@@ -169,6 +187,8 @@ function AttendanceReports() {
     status: "all",
     evidenceCategory: "all",
     sourceCategory: "all",
+    siteId: "all",
+    approvalState: "all",
     geoOutcome: "all",
     reviewType: "all",
     reasonCode: "all",
@@ -217,6 +237,8 @@ function AttendanceReports() {
       if (f.sourceCategory !== "all" && !r.sourceCategories.includes(f.sourceCategory)) {
         return false;
       }
+      if (f.siteId !== "all" && !r.workSiteId.includes(f.siteId)) return false;
+      if (f.approvalState !== "all" && r.approvalState !== f.approvalState) return false;
       if (f.geoOutcome !== "all" && !r.geoOutcome.includes(f.geoOutcome)) return false;
       if (f.reviewType !== "all" && !r.reviewType.includes(f.reviewType)) return false;
       if (f.reasonCode !== "all" && !r.reasonCodes.includes(f.reasonCode)) return false;
@@ -310,6 +332,7 @@ function AttendanceReports() {
   }));
   const evidenceCounts = evidenceCategoryCounts(reportQuery.data?.evidence_categories, all);
   const sourceCounts = sourceCategoryCounts(reportQuery.data?.source_categories, all);
+  const siteOptions = siteOptionsFromReport(reportQuery.data?.site_options, all);
   const teamOptions = employees.map((employee) => ({
     value: employee.id,
     label: employee.name,
@@ -319,10 +342,14 @@ function AttendanceReports() {
     showEmployee: true,
     showEvidenceCategory: true,
     showSourceCategory: true,
+    showSite: true,
+    showApprovalState: true,
     showGeoOutcome: true,
     showReviewType: true,
     showReasonCode: true,
     sourceCategoryOptions: ATTENDANCE_SOURCE_CATEGORY_OPTIONS,
+    siteOptions,
+    approvalStateOptions: APPROVAL_STATE_OPTIONS,
     geoOutcomeOptions: GEO_OUTCOME_OPTIONS,
     reviewTypeOptions: REVIEW_TYPE_OPTIONS,
     reasonCodeOptions: REASON_CODE_OPTIONS,
@@ -802,8 +829,10 @@ function attendanceFromApi(value: unknown): AttRow {
     reportingEvidenceCategory: reportingEvidenceCategory(record.reporting_evidence_category),
     attendanceChannels: stringList(record.attendance_channels),
     sourceCategories: stringList(record.source_categories),
+    workSiteId: stringList(record.work_site_id),
     workSiteName: stringList(record.work_site_name),
     workSiteType: stringList(record.work_site_type),
+    approvalState: text(record.approval_state, "not_required"),
     geoOutcome: stringList(record.geo_outcome),
     geoAction: stringList(record.geo_action),
     reviewType: stringList(record.review_type),
@@ -824,13 +853,7 @@ function stringList(value: unknown): string[] {
       : typeof value === "string"
         ? value.split(";")
         : [];
-  return Array.from(
-    new Set(
-      source
-        .map((item) => text(item).trim())
-        .filter(Boolean),
-    ),
-  );
+  return Array.from(new Set(source.map((item) => text(item).trim()).filter(Boolean)));
 }
 
 function reportingEvidenceCategory(value: unknown): AttendanceReportingEvidenceCategory | null {
@@ -1008,8 +1031,11 @@ function reportParamsFromFilters(
   if (filters.status !== "all") params.status = filters.status;
   if (filters.evidenceCategory !== "all") params.evidence_category = filters.evidenceCategory;
   if (filters.sourceCategory !== "all") params.source_category = filters.sourceCategory;
+  if (filters.siteId !== "all") params.work_site_id = filters.siteId;
+  if (filters.approvalState !== "all") params.approval_state = filters.approvalState;
   if (filters.geoOutcome !== "all") params.geo_outcome = filters.geoOutcome;
-  if (filters.reviewType !== "all") params.review_type = filters.reviewType as ReportParams["review_type"];
+  if (filters.reviewType !== "all")
+    params.review_type = filters.reviewType as ReportParams["review_type"];
   if (filters.reasonCode !== "all") params.reason_code = filters.reasonCode;
   if (filters.managerUserId !== "all") params.manager_user_id = filters.managerUserId;
   if (filters.department !== "all") {
@@ -1061,6 +1087,41 @@ function sourceCategoryCounts(value: unknown, rows: AttRow[]) {
       rows.filter((row) => row.sourceCategories.includes(category)).length,
     ]),
   ) as Record<(typeof categories)[number], number>;
+}
+
+function siteOptionsFromReport(
+  value: unknown,
+  rows: AttRow[],
+): Array<{ value: string; label: string }> {
+  const apiOptions = asArray(value)
+    .map(asRecord)
+    .map((record) => {
+      const id = text(record.id).trim();
+      const label = text(record.label, id).trim();
+      const typeLabel = nullableText(record.type);
+      return id
+        ? {
+            value: id,
+            label: typeLabel ? `${label} (${humanize(typeLabel)})` : label,
+          }
+        : null;
+    })
+    .filter((option): option is { value: string; label: string } => Boolean(option));
+  if (apiOptions.length > 0) return apiOptions;
+
+  const options = new Map<string, string>();
+  for (const row of rows) {
+    row.workSiteId.forEach((id, index) => {
+      if (!id || options.has(id)) return;
+      const label = row.workSiteName[index] ?? row.workSiteName[0] ?? id;
+      const typeLabel =
+        row.workSiteType[index] ?? (row.workSiteType.length === 1 ? row.workSiteType[0] : "");
+      options.set(id, typeLabel ? `${label} (${humanize(typeLabel)})` : label);
+    });
+  }
+  return [...options.entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((left, right) => left.label.localeCompare(right.label));
 }
 
 function MonthlySummary({

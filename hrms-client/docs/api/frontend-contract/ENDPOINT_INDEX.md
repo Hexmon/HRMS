@@ -2271,6 +2271,7 @@ Success body highlights:
 | `workforce` | object | required | - |
 | `approvals` | object | required | - |
 | `operations` | object | required | - |
+| `attendance` | object | required | - |
 | `workload` | object | required | - |
 | `attention` | array of object | required | - |
 | `unavailable_features` | array of object | required | - |
@@ -6868,6 +6869,14 @@ Success body highlights:
 | `employee_user_id` | query | no | string<uuid> | - |
 | `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `attendance_channel` | query | no | string | - |
+| `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
+| `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
+| `geo_action` | query | no | string | - |
+| `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
+| `reason_code` | query | no | string | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -6937,6 +6946,14 @@ Success body highlights:
 | `employee_user_id` | query | no | string<uuid> | - |
 | `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `attendance_channel` | query | no | string | - |
+| `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
+| `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
+| `geo_action` | query | no | string | - |
+| `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
+| `reason_code` | query | no | string | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -6978,6 +6995,8 @@ Success body highlights:
 | `totals` | object | required | - |
 | `filters` | object | required | - |
 | `evidence_categories` | object | optional | - |
+| `source_categories` | object | optional | - |
+| `site_options` | array of object | optional | - |
 
 **Frontend behavior notes**
 
@@ -7007,6 +7026,14 @@ Success body highlights:
 | `employee_user_id` | query | no | string<uuid> | - |
 | `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `attendance_channel` | query | no | string | - |
+| `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
+| `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
+| `geo_action` | query | no | string | - |
+| `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
+| `reason_code` | query | no | string | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7076,6 +7103,14 @@ Success body highlights:
 | `employee_user_id` | query | no | string<uuid> | - |
 | `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `attendance_channel` | query | no | string | - |
+| `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
+| `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
+| `geo_action` | query | no | string | - |
+| `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
+| `reason_code` | query | no | string | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7145,6 +7180,14 @@ Success body highlights:
 | `employee_user_id` | query | no | string<uuid> | - |
 | `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `attendance_channel` | query | no | string | - |
+| `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
+| `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
+| `geo_action` | query | no | string | - |
+| `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
+| `reason_code` | query | no | string | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7214,6 +7257,14 @@ Success body highlights:
 | `employee_user_id` | query | no | string<uuid> | - |
 | `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `attendance_channel` | query | no | string | - |
+| `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
+| `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
+| `geo_action` | query | no | string | - |
+| `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
+| `reason_code` | query | no | string | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7283,6 +7334,14 @@ Success body highlights:
 | `employee_user_id` | query | no | string<uuid> | - |
 | `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `attendance_channel` | query | no | string | - |
+| `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
+| `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
+| `geo_action` | query | no | string | - |
+| `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
+| `reason_code` | query | no | string | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7352,6 +7411,14 @@ Success body highlights:
 | `employee_user_id` | query | no | string<uuid> | - |
 | `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `attendance_channel` | query | no | string | - |
+| `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
+| `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
+| `geo_action` | query | no | string | - |
+| `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
+| `reason_code` | query | no | string | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7421,6 +7488,14 @@ Success body highlights:
 | `employee_user_id` | query | no | string<uuid> | - |
 | `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `attendance_channel` | query | no | string | - |
+| `source_category` | query | no | string enum("web", "geo", "mobile", "manual", "kiosk", "system") | - |
+| `work_site_id` | query | no | string<uuid> | - |
+| `approval_state` | query | no | string enum("not_required", "pending", "approved", "returned", "rejected", "mixed", "unknown") | - |
+| `geo_outcome` | query | no | string enum("not_required", "inside_confident", "outside_confident", "boundary_uncertain", "stale_evidence", "accuracy_exceeded", "missing", "permission_denied", "location_unavailable", "fence_not_configured") | - |
+| `geo_action` | query | no | string | - |
+| `review_type` | query | no | string enum("manual_fallback", "geo_decision") | - |
+| `reason_code` | query | no | string | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -11722,7 +11797,7 @@ Required: yes
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `filters` | object | optional | - |
-| `columns` | array of string enum("employee_code", "employee", "department", "date", "status", "work_mode", "in_time", "out_time", "hours", "reporting_evidence_category", "attendance_channels", "work_site_name", "work_site_type", "geo_outcome", "geo_action", "reason_codes", "review_required", "review_outcome") | optional | Explicit registry of safe attendance export columns. Exact coordinates and exact-location flags are not exportable. |
+| `columns` | array of string enum("employee_code", "employee", "department", "date", "status", "work_mode", "in_time", "out_time", "hours", "reporting_evidence_category", "attendance_channels", "source_categories", "work_site_name", "work_site_type", "geo_outcome", "geo_action", "review_type", "reason_codes", "review_required", "review_outcome", "total_days", "present_days", "late_days", "absent_days", "wfh_days", "leave_days", "attendance_percent") | optional | Explicit registry of safe attendance export columns. Exact coordinates and exact-location flags are not exportable. |
 | `format` | string enum("csv", "xlsx", "json") | optional | default "csv" |
 
 **Responses**
@@ -11745,7 +11820,7 @@ Success body highlights:
 | `status` | string enum("queued", "ready") | required | - |
 | `format` | string enum("csv", "xlsx", "json") | required | - |
 | `filters` | object | required | - |
-| `columns` | array of string enum("employee_code", "employee", "department", "date", "status", "work_mode", "in_time", "out_time", "hours", "reporting_evidence_category", "attendance_channels", "work_site_name", "work_site_type", "geo_outcome", "geo_action", "reason_codes", "review_required", "review_outcome") | required | - |
+| `columns` | array of string enum("employee_code", "employee", "department", "date", "status", "work_mode", "in_time", "out_time", "hours", "reporting_evidence_category", "attendance_channels", "source_categories", "work_site_name", "work_site_type", "geo_outcome", "geo_action", "review_type", "reason_codes", "review_required", "review_outcome", "total_days", "present_days", "late_days", "absent_days", "wfh_days", "leave_days", "attendance_percent") | required | - |
 | `column_headers` | array of string | optional | - |
 | `created_at` | string<date-time> | required | Export job creation timestamp |
 | `download_document_id` | string<uuid> | optional, nullable | Generated document UUID |

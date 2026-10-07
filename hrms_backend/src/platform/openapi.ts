@@ -14,6 +14,7 @@ import {
   AttendancePublicPunchSourceChannels,
   AttendanceRegularizationOperations,
   AttendanceRegularizationStatuses,
+  AttendanceApprovalStates,
 } from "#shared";
 import { attendanceOpenApiExamples } from "../modules/attendance/attendance-openapi-examples.js";
 import {
@@ -31,6 +32,7 @@ type SwaggerTransformObjectInput = Parameters<
 const enumValues = (values: readonly string[]): string[] => [...values];
 const lowerHex64Example =
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const AttendanceApprovalStateValues = Object.values(AttendanceApprovalStates);
 
 const uuid = (
   description: string,
@@ -6131,10 +6133,75 @@ const attendanceOfflineSyncResponseSchema = {
   additionalProperties: false,
   example: attendanceOpenApiExamples.responses.offlineSync.value,
 };
+const attendanceExportFiltersSchema = {
+  type: "object",
+  properties: {
+    user_id: uuid("User filter UUID"),
+    employee_user_id: uuid("Employee user filter UUID"),
+    department_id: uuid("Department filter UUID"),
+    manager_user_id: uuid("Manager hierarchy filter UUID"),
+    status: { type: "string", example: "present" },
+    evidence_category: {
+      type: "string",
+      enum: enumValues(AttendanceReportingEvidenceCategoryValues),
+      example: "warning",
+    },
+    reporting_evidence_category: {
+      type: "string",
+      enum: enumValues(AttendanceReportingEvidenceCategoryValues),
+      example: "review_required",
+    },
+    attendance_channel: {
+      type: "string",
+      maxLength: 80,
+      example: "Web + location",
+    },
+    source_category: {
+      type: "string",
+      enum: enumValues(AttendanceReportSourceCategoryValues),
+      example: "geo",
+    },
+    work_site_id: uuid("Privacy-safe work site UUID filter"),
+    approval_state: {
+      type: "string",
+      enum: enumValues(AttendanceApprovalStateValues),
+      example: "pending",
+    },
+    geo_outcome: {
+      type: "string",
+      enum: enumValues(AttendanceGeoFactualOutcomeValues),
+      example: "outside_confident",
+    },
+    geo_action: {
+      type: "string",
+      maxLength: 80,
+      example: "manual_fallback",
+    },
+    review_type: {
+      type: "string",
+      enum: ["manual_fallback", "geo_decision"],
+      example: "manual_fallback",
+    },
+    reason_code: {
+      type: "string",
+      maxLength: 120,
+      example: "geo_outside_fence",
+    },
+    report_mode: {
+      type: "string",
+      enum: ["daily", "late", "early", "absent", "exceptions", "monthly_summary"],
+      default: "daily",
+      example: "daily",
+    },
+    date_from: date("Lower work-date filter"),
+    date_to: date("Upper work-date filter"),
+  },
+  additionalProperties: false,
+};
 const attendanceExportBody = {
   type: "object",
   properties: {
-    filters: { type: "object", additionalProperties: true },
+    filters: attendanceExportFiltersSchema,
     columns: {
       type: "array",
       maxItems: AttendanceReportExportColumnValues.length,
@@ -7424,6 +7491,12 @@ const reportSummaryQuerySchema = {
       enum: enumValues(AttendanceReportSourceCategoryValues),
       example: "geo",
     },
+    work_site_id: uuid("Privacy-safe work site UUID filter"),
+    approval_state: {
+      type: "string",
+      enum: enumValues(AttendanceApprovalStateValues),
+      example: "pending",
+    },
     geo_outcome: {
       type: "string",
       enum: enumValues(AttendanceGeoFactualOutcomeValues),
@@ -7486,6 +7559,7 @@ const attendanceReportSummaryRowSchema = {
     "reporting_evidence_category",
     "attendance_channels",
     "source_categories",
+    "work_site_id",
     "work_site_name",
     "work_site_type",
     "geo_outcome",
@@ -7519,6 +7593,11 @@ const attendanceReportSummaryRowSchema = {
       type: "array",
       items: { type: "string", enum: enumValues(AttendanceReportSourceCategoryValues) },
       example: ["geo", "manual"],
+    },
+    work_site_id: {
+      type: "array",
+      items: { type: "string", format: "uuid" },
+      example: ["018f9f4a-7f9a-7c15-8f25-6f7f96f9103"],
     },
     work_site_name: {
       type: "array",
@@ -7560,6 +7639,11 @@ const attendanceReportSummaryRowSchema = {
     out_time: { type: "string", example: "18:00" },
     hours: { type: "number", example: 8.5 },
     work_mode: { type: "string", nullable: true, example: "office" },
+    approval_state: {
+      type: "string",
+      enum: enumValues(AttendanceApprovalStateValues),
+      example: "not_required",
+    },
   },
   additionalProperties: true,
 };
@@ -7594,6 +7678,19 @@ const attendanceReportSummarySchema = {
         ]),
       ),
       additionalProperties: false,
+    },
+    site_options: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "label", "type"],
+        properties: {
+          id: uuid("Privacy-safe work site UUID"),
+          label: { type: "string", example: "Mumbai HQ" },
+          type: { type: "string", nullable: true, example: "office" },
+        },
+        additionalProperties: false,
+      },
     },
   },
   additionalProperties: true,

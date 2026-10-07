@@ -1,10 +1,20 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { paginationQuerySchema, type AuthUser } from "#shared";
+import {
+  AttendanceApprovalStates,
+  paginationQuerySchema,
+  type AttendanceApprovalState,
+  type AuthUser,
+} from "#shared";
 import { unauthorized } from "../../platform/errors.js";
 import { ReportService } from "./service.js";
 import { AttendanceReportingEvidenceCategoryValues } from "../attendance/reporting-evidence.js";
 import { AttendanceReportSourceCategoryValues } from "../attendance/reporting-projection.js";
+
+const attendanceApprovalStateValues = Object.values(AttendanceApprovalStates) as [
+  AttendanceApprovalState,
+  ...AttendanceApprovalState[],
+];
 
 const reportExpenseQuerySchema = paginationQuerySchema.extend({
   status: z.string().optional(),
@@ -31,6 +41,8 @@ const reportSummaryQuerySchema = paginationQuerySchema.extend({
     .optional(),
   attendance_channel: z.string().trim().max(80).optional(),
   source_category: z.enum(AttendanceReportSourceCategoryValues).optional(),
+  work_site_id: z.uuid().optional(),
+  approval_state: z.enum(attendanceApprovalStateValues).optional(),
   geo_outcome: z.string().trim().max(80).optional(),
   geo_action: z.string().trim().max(80).optional(),
   review_type: z.enum(["manual_fallback", "geo_decision"]).optional(),

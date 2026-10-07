@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { AttendanceDayRecord, AuthUser, CoreUser, ExpensePayment, ExpenseTicket, OutboxEvent, ProjectRecord, UUID } from "#shared";
-import { addMoney, AssetStatuses, AttendanceDayClassifications, AttendancePresenceStates, AttendancePunctualityStates, compareMoney, ExpenseStatuses, HelpdeskTicketStatuses, ProjectMemberStatuses, ProjectStatuses, Roles, RequiredDocumentsByExpenseSubType } from "#shared";
+import type { AttendanceApprovalState, AttendanceDayRecord, AuthUser, CoreUser, ExpensePayment, ExpenseTicket, OutboxEvent, ProjectRecord, UUID } from "#shared";
+import { addMoney, AssetStatuses, AttendanceApprovalStates, AttendanceDayClassifications, AttendancePresenceStates, AttendancePunctualityStates, compareMoney, ExpenseStatuses, HelpdeskTicketStatuses, ProjectMemberStatuses, ProjectStatuses, Roles, RequiredDocumentsByExpenseSubType } from "#shared";
 import type { ExpenseApprovalRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { ReportRepository } from "./repository.js";
 import { assertReportRole } from "./policy.js";
@@ -19,6 +19,7 @@ import {
   buildAttendanceReportEvidenceIndex,
   countAttendanceReportSourceCategories,
   matchesAttendanceReportEvidenceFilters,
+  type AttendanceReportEvidenceSummary,
   type AttendanceReportSourceCategory,
 } from "../attendance/reporting-projection.js";
 
@@ -53,6 +54,8 @@ export interface ReportSummaryQuery {
   reporting_evidence_category?: AttendanceReportingEvidenceCategory;
   attendance_channel?: string;
   source_category?: AttendanceReportSourceCategory;
+  work_site_id?: UUID;
+  approval_state?: AttendanceApprovalState;
   geo_outcome?: string;
   geo_action?: string;
   review_type?: "manual_fallback" | "geo_decision";
@@ -407,13 +410,14 @@ export class ReportService {
       .filter((record) => !query.status || matchesLegacyAttendanceStatus(record, query.status))
       .filter((record) => !query.date_from || record.work_date >= query.date_from)
       .filter((record) => !query.date_to || record.work_date <= query.date_to)
+      .filter((record) => !query.approval_state || record.approval_state === query.approval_state)
       .filter((record) => !query.manager_user_id || this.isInRequestedManagerScope(actor, record.employee_user_id, query.manager_user_id))
       .filter((record) => {
         const user = this.user(record.employee_user_id);
         return !query.department_id || user?.department_id === query.department_id;
       });
     const evidenceIndex = buildAttendanceReportEvidenceIndex(this.store, candidateRecords);
-    const rowContexts = candidateRecords
+    const evidenceFilteredRowContexts = candidateRecords
       .map((record) => ({
         record,
         evidence: evidenceIndex.summaryFor(record)
@@ -422,11 +426,16 @@ export class ReportService {
         (row) =>
           !requestedEvidenceCategory ||
           row.evidence.reporting_evidence_category === requestedEvidenceCategory,
-      )
+      );
+    const siteOptions = attendanceReportSiteOptions(
+      evidenceFilteredRowContexts.map((row) => row.evidence),
+    );
+    const rowContexts = evidenceFilteredRowContexts
       .filter((row) =>
         matchesAttendanceReportEvidenceFilters(row.evidence, {
           attendance_channel: query.attendance_channel,
           source_category: query.source_category,
+          work_site_id: query.work_site_id,
           geo_outcome: query.geo_outcome,
           geo_action: query.geo_action,
           review_type: query.review_type,
@@ -448,6 +457,7 @@ export class ReportService {
           reporting_evidence_category: evidence.reporting_evidence_category,
           attendance_channels: evidence.attendance_channels,
           source_categories: evidence.source_categories,
+          work_site_id: evidence.work_site_id,
           work_site_name: evidence.work_site_name,
           work_site_type: evidence.work_site_type,
           geo_outcome: evidence.geo_outcome,
@@ -498,6 +508,7 @@ export class ReportService {
       source_categories: countAttendanceReportSourceCategories(
         rows.map((row) => row.source_categories),
       ),
+      site_options: siteOptions,
       status_breakdown: groupCount(rows, (row) => row.status),
       evidence_category_breakdown: groupCount(
         rows.filter((row) => row.reporting_evidence_category),
@@ -1135,6 +1146,8 @@ export class ReportService {
       ),
       attendance_channel: textOrUndefined(filters.attendance_channel),
       source_category: sourceCategoryOrUndefined(filters.source_category),
+      work_site_id: textOrUndefined(filters.work_site_id),
+      approval_state: approvalStateOrUndefined(filters.approval_state),
       geo_outcome: textOrUndefined(filters.geo_outcome),
       geo_action: textOrUndefined(filters.geo_action),
       review_type: reviewTypeOrUndefined(filters.review_type),
@@ -1519,6 +1532,8 @@ export class ReportService {
       reporting_evidence_category: query.reporting_evidence_category ?? null,
       attendance_channel: query.attendance_channel ?? null,
       source_category: query.source_category ?? null,
+      work_site_id: query.work_site_id ?? null,
+      approval_state: query.approval_state ?? null,
       geo_outcome: query.geo_outcome ?? null,
       geo_action: query.geo_action ?? null,
       review_type: query.review_type ?? null,
@@ -1548,6 +1563,21 @@ function groupCount<T>(items: readonly T[], getLabel: (item: T) => string): Arra
     grouped.set(label, (grouped.get(label) ?? 0) + 1);
   }
   return [...grouped.entries()].map(([label, count]) => ({ label, count }));
+}
+
+function attendanceReportSiteOptions(
+  evidenceRows: readonly AttendanceReportEvidenceSummary[],
+): Array<{ id: string; label: string; type: string | null }> {
+  const options = new Map<string, { id: string; label: string; type: string | null }>();
+  for (const evidence of evidenceRows) {
+    evidence.work_sites.forEach((site) => {
+      if (!site.id || options.has(site.id)) return;
+      options.set(site.id, site);
+    });
+  }
+  return [...options.values()].sort(
+    (left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
+  );
 }
 
 function groupMoney<T>(
@@ -1759,6 +1789,13 @@ function sourceCategoryOrUndefined(value: unknown): AttendanceReportSourceCatego
 
 function reviewTypeOrUndefined(value: unknown): "manual_fallback" | "geo_decision" | undefined {
   return value === "manual_fallback" || value === "geo_decision" ? value : undefined;
+}
+
+function approvalStateOrUndefined(value: unknown): AttendanceApprovalState | undefined {
+  return typeof value === "string" &&
+    Object.values(AttendanceApprovalStates).includes(value as AttendanceApprovalState)
+    ? value as AttendanceApprovalState
+    : undefined;
 }
 
 function stringOrNull(value: unknown): string | null {

@@ -464,8 +464,29 @@ export interface AttendanceGeoFallbackDecisionBody extends ExpectedVersionBody {
   remarks?: string;
 }
 
+export interface AttendanceExportFilters extends ApiRecord {
+  user_id?: string;
+  employee_user_id?: string;
+  department_id?: string;
+  manager_user_id?: string;
+  status?: string;
+  evidence_category?: string;
+  reporting_evidence_category?: string;
+  attendance_channel?: string;
+  source_category?: string;
+  work_site_id?: string;
+  approval_state?: string;
+  geo_outcome?: string;
+  geo_action?: string;
+  review_type?: "manual_fallback" | "geo_decision";
+  reason_code?: string;
+  report_mode?: "daily" | "late" | "early" | "absent" | "exceptions" | "monthly_summary";
+  date_from?: string;
+  date_to?: string;
+}
+
 export interface AttendanceExportBody extends ApiRecord {
-  filters?: ApiRecord;
+  filters?: AttendanceExportFilters;
   columns?: string[];
   format?: "csv" | "xlsx" | "json";
 }

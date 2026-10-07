@@ -21,6 +21,7 @@ import { useAttendanceExportMutation } from "@/domains/attendance";
 import { useCreateReportExportMutation } from "@/domains/reports";
 import { ATTENDANCE_REPORTING_EVIDENCE_OPTIONS } from "@/domains/attendance/reporting-evidence";
 import { useApiRouteEnabled, userFacingErrorMessage } from "@/shared/api";
+import { useAuth } from "@/lib/auth";
 
 export interface ReportFilters {
   from: string;
@@ -30,6 +31,8 @@ export interface ReportFilters {
   status: string;
   evidenceCategory: string;
   sourceCategory: string;
+  siteId: string;
+  approvalState: string;
   geoOutcome: string;
   reviewType: string;
   reasonCode: string;
@@ -42,12 +45,16 @@ export interface FacetOptions {
   showStatus?: boolean;
   showEvidenceCategory?: boolean;
   showSourceCategory?: boolean;
+  showSite?: boolean;
+  showApprovalState?: boolean;
   showGeoOutcome?: boolean;
   showReviewType?: boolean;
   showReasonCode?: boolean;
   showTeam?: boolean;
   statusOptions?: { value: string; label: string }[];
   sourceCategoryOptions?: { value: string; label: string }[];
+  siteOptions?: { value: string; label: string }[];
+  approvalStateOptions?: { value: string; label: string }[];
   geoOutcomeOptions?: { value: string; label: string }[];
   reviewTypeOptions?: { value: string; label: string }[];
   reasonCodeOptions?: { value: string; label: string }[];
@@ -103,6 +110,7 @@ export function ReportShell<T extends { id: string }>({
   onRowClick,
 }: Props<T>) {
   const { departments, employees } = useEmployees();
+  const { user, activeRole } = useAuth();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const apiMode = useApiRouteEnabled(["/reports"]);
   const filterId = useId();
@@ -116,12 +124,16 @@ export function ReportShell<T extends { id: string }>({
     status: "all",
     evidenceCategory: "all",
     sourceCategory: "all",
+    siteId: "all",
+    approvalState: "all",
     geoOutcome: "all",
     reviewType: "all",
     reasonCode: "all",
     managerUserId: "all",
   });
-  const [internalFilters, setInternalFilters] = useState<ReportFilters>(() => defaultReportFilters());
+  const [internalFilters, setInternalFilters] = useState<ReportFilters>(() =>
+    defaultReportFilters(),
+  );
 
   const f = filters ?? internalFilters;
   const setFilter = (patch: Partial<ReportFilters>) => {
@@ -160,15 +172,23 @@ export function ReportShell<T extends { id: string }>({
   const reviewTypeLabelId = `${reviewTypeId}-label`;
   const reasonCodeId = `${filterId}-report-filter-reason-code`;
   const reasonCodeLabelId = `${reasonCodeId}-label`;
+  const siteId = `${filterId}-report-filter-site`;
+  const siteLabelId = `${siteId}-label`;
+  const approvalStateId = `${filterId}-report-filter-approval`;
+  const approvalStateLabelId = `${approvalStateId}-label`;
   const teamId = `${filterId}-report-filter-team`;
   const teamLabelId = `${teamId}-label`;
   const tableSearchLabel = path.startsWith("/reports/attendance")
     ? "Search attendance records"
     : `Search ${title.toLowerCase()} records`;
+  const reportType = reportTypeForPath(path);
+  const canRenderExport =
+    !apiMode ||
+    reportType !== "attendance/summary" ||
+    canUseAttendanceExport(user?.roles, activeRole);
 
   const handleExport = async () => {
     if (apiMode) {
-      const reportType = reportTypeForPath(path);
       if (!reportType) {
         toast.error("Backend export is not configured for this report.");
         return;
@@ -228,18 +248,20 @@ export function ReportShell<T extends { id: string }>({
           <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
           {description && <p className="text-sm text-muted-foreground">{description}</p>}
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleExport}
-          disabled={apiMode && (exportMutation.isPending || attendanceExportMutation.isPending)}
-          className="min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
-        >
-          <Download className="mr-1 h-3.5 w-3.5" />
-          {apiMode && (exportMutation.isPending || attendanceExportMutation.isPending)
-            ? "Exporting"
-            : "Export CSV"}
-        </Button>
+        {canRenderExport && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExport}
+            disabled={apiMode && (exportMutation.isPending || attendanceExportMutation.isPending)}
+            className="min-h-10 w-full whitespace-normal sm:min-h-8 sm:w-auto"
+          >
+            <Download className="mr-1 h-3.5 w-3.5" />
+            {apiMode && (exportMutation.isPending || attendanceExportMutation.isPending)
+              ? "Exporting"
+              : "Export CSV"}
+          </Button>
+        )}
       </div>
 
       <Card className="rounded-2xl border-border/60 p-4">
@@ -398,6 +420,53 @@ export function ReportShell<T extends { id: string }>({
               </Select>
             </div>
           )}
+          {facets?.showSite && (
+            <div className="min-w-0 space-y-1">
+              <Label id={siteLabelId} htmlFor={siteId} className="text-[11px]">
+                Site
+              </Label>
+              <Select value={f.siteId} onValueChange={(value) => setFilter({ siteId: value })}>
+                <SelectTrigger id={siteId} aria-labelledby={siteLabelId} className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All sites</SelectItem>
+                  {(facets.siteOptions ?? []).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {facets?.showApprovalState && (
+            <div className="min-w-0 space-y-1">
+              <Label id={approvalStateLabelId} htmlFor={approvalStateId} className="text-[11px]">
+                Approval
+              </Label>
+              <Select
+                value={f.approvalState}
+                onValueChange={(value) => setFilter({ approvalState: value })}
+              >
+                <SelectTrigger
+                  id={approvalStateId}
+                  aria-labelledby={approvalStateLabelId}
+                  className="h-9"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all">All approvals</SelectItem>
+                  {(facets.approvalStateOptions ?? []).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {facets?.showGeoOutcome && (
             <div className="min-w-0 space-y-1">
               <Label id={geoOutcomeLabelId} htmlFor={geoOutcomeId} className="text-[11px]">
@@ -407,7 +476,11 @@ export function ReportShell<T extends { id: string }>({
                 value={f.geoOutcome}
                 onValueChange={(value) => setFilter({ geoOutcome: value })}
               >
-                <SelectTrigger id={geoOutcomeId} aria-labelledby={geoOutcomeLabelId} className="h-9">
+                <SelectTrigger
+                  id={geoOutcomeId}
+                  aria-labelledby={geoOutcomeLabelId}
+                  className="h-9"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
@@ -430,7 +503,11 @@ export function ReportShell<T extends { id: string }>({
                 value={f.reviewType}
                 onValueChange={(value) => setFilter({ reviewType: value })}
               >
-                <SelectTrigger id={reviewTypeId} aria-labelledby={reviewTypeLabelId} className="h-9">
+                <SelectTrigger
+                  id={reviewTypeId}
+                  aria-labelledby={reviewTypeLabelId}
+                  className="h-9"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
@@ -453,7 +530,11 @@ export function ReportShell<T extends { id: string }>({
                 value={f.reasonCode}
                 onValueChange={(value) => setFilter({ reasonCode: value })}
               >
-                <SelectTrigger id={reasonCodeId} aria-labelledby={reasonCodeLabelId} className="h-9">
+                <SelectTrigger
+                  id={reasonCodeId}
+                  aria-labelledby={reasonCodeLabelId}
+                  className="h-9"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
@@ -545,6 +626,14 @@ function reportTypeForPath(path: string): string | null {
   return null;
 }
 
+function canUseAttendanceExport(
+  roles: readonly string[] | null | undefined,
+  activeRole: string | null | undefined,
+): boolean {
+  const roleSet = new Set([...(roles ?? []), activeRole].filter(Boolean));
+  return roleSet.has("main_admin") || roleSet.has("hr_admin") || roleSet.has("auditor");
+}
+
 function buildBackendFilters(
   filters: ReportFilters,
   context: {
@@ -593,6 +682,14 @@ function buildBackendFilters(
 
   if (filters.sourceCategory !== "all") {
     payload.source_category = filters.sourceCategory;
+  }
+
+  if (filters.siteId !== "all") {
+    payload.work_site_id = filters.siteId;
+  }
+
+  if (filters.approvalState !== "all") {
+    payload.approval_state = filters.approvalState;
   }
 
   if (filters.geoOutcome !== "all") {
