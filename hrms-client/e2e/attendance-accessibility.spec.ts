@@ -212,6 +212,9 @@ test.describe("attendance accessibility", () => {
     await expect(page.getByRole("combobox", { name: "Evidence state" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Team" })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Search attendance records" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export CSV" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Filters", exact: true })).toHaveCount(0);
     await expectNoDocumentHorizontalOverflow(page, "/reports/attendance accessibility");
   });
 });

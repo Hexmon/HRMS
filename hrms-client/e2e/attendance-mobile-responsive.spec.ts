@@ -336,6 +336,8 @@ test.describe("attendance mobile responsive polish", () => {
         name: /Approve attendance exception for Mobile Exception Employee/u,
       }),
     ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Filters", exact: true })).toHaveCount(0);
     await expectNoHorizontalOverflow(page, "attendance exceptions");
 
     await page.goto("/reports/attendance", { waitUntil: "domcontentloaded" });
@@ -347,11 +349,15 @@ test.describe("attendance mobile responsive polish", () => {
     await expect(page.getByText("Geo", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Review", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Review required", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Mobile - captured offline", { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText("Mobile - captured offline", { exact: true }).first(),
+    ).toBeVisible();
     await expect(page.getByText("Mumbai HQ", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Outside Confident", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Fallback Review", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("offline_sync.sequence_gap", { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText("offline_sync.sequence_gap", { exact: true }).first(),
+    ).toBeVisible();
     await page.getByText("Mobile Report Employee").first().click();
     const managerEvidence = page.getByTestId("manager-offline-evidence");
     await expect(managerEvidence).toBeVisible();

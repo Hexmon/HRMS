@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 280
+Documented operations: 281
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -6863,8 +6863,11 @@ Success body highlights:
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `department_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
 | `user_id` | query | no | string<uuid> | - |
 | `employee_user_id` | query | no | string<uuid> | - |
+| `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -6929,8 +6932,11 @@ Success body highlights:
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `department_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
 | `user_id` | query | no | string<uuid> | - |
 | `employee_user_id` | query | no | string<uuid> | - |
+| `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -6971,6 +6977,7 @@ Success body highlights:
 | `total` | integer | required | minimum 0 |
 | `totals` | object | required | - |
 | `filters` | object | required | - |
+| `evidence_categories` | object | optional | - |
 
 **Frontend behavior notes**
 
@@ -6995,8 +7002,11 @@ Success body highlights:
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `department_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
 | `user_id` | query | no | string<uuid> | - |
 | `employee_user_id` | query | no | string<uuid> | - |
+| `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7061,8 +7071,11 @@ Success body highlights:
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `department_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
 | `user_id` | query | no | string<uuid> | - |
 | `employee_user_id` | query | no | string<uuid> | - |
+| `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7127,8 +7140,11 @@ Success body highlights:
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `department_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
 | `user_id` | query | no | string<uuid> | - |
 | `employee_user_id` | query | no | string<uuid> | - |
+| `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7193,8 +7209,11 @@ Success body highlights:
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `department_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
 | `user_id` | query | no | string<uuid> | - |
 | `employee_user_id` | query | no | string<uuid> | - |
+| `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7259,8 +7278,11 @@ Success body highlights:
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `department_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
 | `user_id` | query | no | string<uuid> | - |
 | `employee_user_id` | query | no | string<uuid> | - |
+| `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7325,8 +7347,11 @@ Success body highlights:
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `department_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
 | `user_id` | query | no | string<uuid> | - |
 | `employee_user_id` | query | no | string<uuid> | - |
+| `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -7391,8 +7416,11 @@ Success body highlights:
 | `page_size` | query | no | integer | default 25; minimum 1 |
 | `sort` | query | no | string | - |
 | `department_id` | query | no | string<uuid> | - |
+| `manager_user_id` | query | no | string<uuid> | - |
 | `user_id` | query | no | string<uuid> | - |
 | `employee_user_id` | query | no | string<uuid> | - |
+| `evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
+| `reporting_evidence_category` | query | no | string enum("verified", "warning", "provisional", "review_required", "rejected") | - |
 | `project_id` | query | no | string<uuid> | - |
 | `assigned_to_user_id` | query | no | string<uuid> | - |
 | `actor_user_id` | query | no | string<uuid> | - |
@@ -9871,6 +9899,55 @@ Success body highlights:
 - Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
+### GET /api/v1/attendance/privacy
+
+| Field | Contract |
+|---|---|
+| Purpose | My attendance privacy summary |
+| Frontend use | My attendance privacy summary |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Backend RBAC/ABAC decides access. |
+
+**Path/query parameters**
+
+No path or query parameters.
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `generated_at` | string<date-time> | required | Privacy summary generation timestamp |
+| `as_of` | string<date-time> | required | Server timestamp used to resolve the currently effective attendance policy. |
+| `effective_policy` | object | required | - |
+| `manual_fallback` | object | required | - |
+| `regularization` | object | required | - |
+| `retention` | object | required | - |
+| `evidence_access` | object | required | - |
+| `offline_mobile` | object | required | - |
+| `employee_controls` | object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
 ### GET /api/v1/attendance/summary/team
 
 | Field | Contract |
@@ -10038,7 +10115,7 @@ Success body highlights:
 | `summary` | object | required | - |
 | `exceptions` | array of object | required | - |
 | `totals` | object | required | - |
-| `self_evidence` | object | optional | Included for authenticated employee self views. Contains safe evidence only: day summary, source labels, events, decisions, safe geo context, and regularization relationships. Exact coordinates and location evidence identifiers are not returned here. |
+| `self_evidence` | object | optional | Included for authenticated employee self views. Contains safe evidence only: day summary, source labels, events, decisions, safe geo context, regularization relationships, and optional offline metadata. Exact coordinates and location evidence identifiers are not returned here. |
 
 **Frontend behavior notes**
 
@@ -11645,7 +11722,7 @@ Required: yes
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `filters` | object | optional | - |
-| `columns` | array of string | optional | - |
+| `columns` | array of string enum("employee_code", "employee", "department", "date", "status", "work_mode", "in_time", "out_time", "hours", "reporting_evidence_category", "attendance_channels", "work_site_name", "work_site_type", "geo_outcome", "geo_action", "reason_codes", "review_required", "review_outcome") | optional | Explicit registry of safe attendance export columns. Exact coordinates and exact-location flags are not exportable. |
 | `format` | string enum("csv", "xlsx", "json") | optional | default "csv" |
 
 **Responses**
@@ -11668,7 +11745,8 @@ Success body highlights:
 | `status` | string enum("queued", "ready") | required | - |
 | `format` | string enum("csv", "xlsx", "json") | required | - |
 | `filters` | object | required | - |
-| `columns` | array of string | required | - |
+| `columns` | array of string enum("employee_code", "employee", "department", "date", "status", "work_mode", "in_time", "out_time", "hours", "reporting_evidence_category", "attendance_channels", "work_site_name", "work_site_type", "geo_outcome", "geo_action", "reason_codes", "review_required", "review_outcome") | required | - |
+| `column_headers` | array of string | optional | - |
 | `created_at` | string<date-time> | required | Export job creation timestamp |
 | `download_document_id` | string<uuid> | optional, nullable | Generated document UUID |
 | `download_url` | string | optional, nullable | - |
