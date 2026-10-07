@@ -460,7 +460,11 @@ test("manager reviews and approves an assigned correction", async ({ page }) => 
   await expect(page.getByText("3. Remove punch", { exact: true })).toBeVisible();
   await expect(page.getByText("Original").first()).toBeVisible();
   await expect(page.getByText("Requested").first()).toBeVisible();
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: /^Approve attendance review for Scoped Employee on .+$/u,
+    })
+    .click();
   await page.getByRole("button", { name: "Approve request", exact: true }).click();
 
   await expect(page.getByText("Approve request completed", { exact: true })).toBeVisible();
@@ -519,9 +523,9 @@ test("manager detail hides decisions when can_decide is false", async ({ page })
   await expect(page.getByRole("heading", { name: "Scoped Employee" })).toBeVisible();
   await expect(page.getByText("Add missing punch", { exact: true })).toBeVisible();
   await expect(page.getByText("Decision actions are unavailable for this request.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Return", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Reject", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Approve attendance review/u })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Return attendance review/u })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Reject attendance review/u })).toHaveCount(0);
 });
 
 test("manager queue exposes a recoverable loading error", async ({ page }) => {

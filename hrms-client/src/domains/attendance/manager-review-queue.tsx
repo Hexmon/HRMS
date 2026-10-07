@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -144,18 +144,20 @@ function EvidenceIcon({ evidence }: { evidence: AttendanceReviewEvidence }) {
 
 function DecisionButton({
   decision,
+  ariaLabel,
   onClick,
   disabled,
   className,
 }: {
   decision: AttendanceReviewDecision;
+  ariaLabel: string;
   onClick: () => void;
   disabled: boolean;
   className?: string;
 }) {
   if (decision === "approve") {
     return (
-      <Button className={className} onClick={onClick} disabled={disabled}>
+      <Button className={className} onClick={onClick} disabled={disabled} aria-label={ariaLabel}>
         <Check className="h-4 w-4" />
         Approve
       </Button>
@@ -163,18 +165,59 @@ function DecisionButton({
   }
   if (decision === "return") {
     return (
-      <Button variant="outline" className={className} onClick={onClick} disabled={disabled}>
+      <Button
+        variant="outline"
+        className={className}
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={ariaLabel}
+      >
         <RotateCcw className="h-4 w-4" />
         Return
       </Button>
     );
   }
   return (
-    <Button variant="destructive" className={className} onClick={onClick} disabled={disabled}>
+    <Button
+      variant="destructive"
+      className={className}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+    >
       <X className="h-4 w-4" />
       Reject
     </Button>
   );
+}
+
+function reviewAccessibleContext(request: AttendanceReviewRequest): string {
+  return `attendance review for ${request.employeeName} on ${formatAttendanceReviewDate(
+    request.workDate,
+  )}`;
+}
+
+function reviewDecisionAccessibleLabel(
+  decision: AttendanceReviewDecision,
+  request: AttendanceReviewRequest,
+): string {
+  const action = decision === "approve" ? "Approve" : decision === "return" ? "Return" : "Reject";
+  return `${action} ${reviewAccessibleContext(request)}`;
+}
+
+function reviewDecisionCompletionMessage(
+  decision: AttendanceReviewDecision,
+  request: AttendanceReviewRequest,
+): string {
+  const outcome =
+    decision === "approve"
+      ? "approved"
+      : decision === "return"
+        ? "returned for changes"
+        : "rejected";
+  return `Attendance review for ${request.employeeName} on ${formatAttendanceReviewDate(
+    request.workDate,
+  )} was ${outcome}.`;
 }
 
 function formatExactCoordinate(value: number): string {
@@ -253,6 +296,7 @@ function ExactLocationAccessSection({
 }
 
 function ExactLocationRows({ evidence }: { evidence: AttendanceExactLocationEvidence }) {
+  const headingId = "attendance-exact-location-result-heading";
   const rows = [
     ["Latitude", formatExactCoordinate(evidence.latitude)],
     ["Longitude", formatExactCoordinate(evidence.longitude)],
@@ -260,16 +304,27 @@ function ExactLocationRows({ evidence }: { evidence: AttendanceExactLocationEvid
     ["Accuracy", formatAccuracy(evidence.accuracy_meters)],
   ];
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {rows.map(([label, value]) => (
-        <div key={label} className="min-w-0 rounded-md border bg-muted/20 p-3">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
-          <p className="mt-1 break-words text-sm font-semibold tabular-nums text-foreground">
-            {value}
-          </p>
-        </div>
-      ))}
-    </div>
+    <section
+      aria-labelledby={headingId}
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className="space-y-3"
+    >
+      <h4 id={headingId} className="text-sm font-semibold">
+        Exact location revealed
+      </h4>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="min-w-0 rounded-md border bg-muted/20 p-3">
+            <p className="text-xs font-medium text-muted-foreground">{label}</p>
+            <p className="mt-1 break-words text-sm font-semibold tabular-nums text-foreground">
+              {value}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -317,6 +372,7 @@ function RegularizationReviewFact({ label, value }: { label: string; value: stri
 }
 
 export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) {
+  const queueHeadingRef = useRef<HTMLHeadingElement>(null);
   const [status, setStatus] = useState<AttendanceReviewStatus>("pending");
   const [month, setMonth] = useState(currentMonth);
   const [search, setSearch] = useState("");
@@ -328,6 +384,8 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
   const [remarks, setRemarks] = useState("");
   const [remarksError, setRemarksError] = useState<string | null>(null);
   const [exactLocationOpen, setExactLocationOpen] = useState(false);
+  const [lastDecisionMessage, setLastDecisionMessage] = useState("");
+  const [shouldFocusQueue, setShouldFocusQueue] = useState(false);
 
   const queueQuery = useManagerAttendanceRegularizationQueue(
     {
@@ -347,6 +405,15 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
   const queue = useMemo(() => parseAttendanceReviewQueue(queueQuery.data), [queueQuery.data]);
   const visibleItems = queue.items;
   const pageCount = Math.max(1, Math.ceil(queue.total / queue.pageSize));
+
+  useEffect(() => {
+    if (!shouldFocusQueue) return;
+    const frame = window.requestAnimationFrame(() => {
+      queueHeadingRef.current?.focus({ preventScroll: false });
+      setShouldFocusQueue(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [shouldFocusQueue, selected, decision]);
 
   const clearExactLocation = () => {
     setExactLocationOpen(false);
@@ -518,8 +585,10 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
       toast.success(`${decisionCopy(decision, selected).submit} completed`, {
         description: `${selected.employeeName}'s request has been updated.`,
       });
+      setLastDecisionMessage(reviewDecisionCompletionMessage(decision, selected));
       setDecision(null);
       closeReviewDetail();
+      setShouldFocusQueue(true);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         toast.error("This request changed before your decision was saved.", {
@@ -561,7 +630,13 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
         <div>
           <div className="flex items-center gap-2">
             <ClipboardCheck className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">Manager review queue</h2>
+            <h2
+              ref={queueHeadingRef}
+              tabIndex={-1}
+              className="text-lg font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              Manager review queue
+            </h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Review attendance corrections and geo decisions assigned to your approval scope.
@@ -628,6 +703,9 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
           </div>
         </div>
       </div>
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {lastDecisionMessage}
+      </div>
 
       <Tabs value={status} onValueChange={changeStatus}>
         <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 sm:w-auto sm:grid-cols-4">
@@ -650,6 +728,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
         emptyTitle={`No ${status} requests`}
         emptyDescription={`There are no ${status} attendance reviews for ${month}.`}
         onRowClick={selectRequest}
+        rowActionLabel={(request) => `Actions for ${reviewAccessibleContext(request)}`}
         rowActions={(request) => [
           {
             label: request.status === "pending" ? "Review request" : "View request",
@@ -814,6 +893,7 @@ export function ManagerAttendanceReviewQueue({ enabled }: { enabled: boolean }) 
                     <DecisionButton
                       key={option}
                       decision={option}
+                      ariaLabel={reviewDecisionAccessibleLabel(option, selected)}
                       className="min-h-10 w-full whitespace-normal sm:min-h-9 sm:w-auto"
                       disabled={decisionMutation.isPending || geoFallbackDecisionMutation.isPending}
                       onClick={() => openDecision(option)}

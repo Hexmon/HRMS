@@ -56,6 +56,90 @@ interface EmployeeRegularizationFormProps {
   initialWorkDate?: string;
 }
 
+interface RegularizationItemFieldErrors {
+  targetPunchEventId?: string;
+  time?: string;
+}
+
+interface RegularizationFieldErrors {
+  workDate?: string;
+  reason?: string;
+  items: Record<string, RegularizationItemFieldErrors>;
+}
+
+function describedBy(...ids: Array<string | false | null | undefined>): string | undefined {
+  const value = ids.filter(Boolean).join(" ");
+  return value || undefined;
+}
+
+function fieldErrorsFor(
+  errors: string[],
+  draftItems: RegularizationDraftItem[],
+): RegularizationFieldErrors {
+  const fieldErrors: RegularizationFieldErrors = { items: {} };
+
+  fieldErrors.workDate = errors.find(
+    (message) => message.includes("attendance date") || message.startsWith("Regularization is"),
+  );
+  fieldErrors.reason = errors.find((message) => message.startsWith("Reason "));
+
+  draftItems.forEach((draft, index) => {
+    const prefix = `Action ${index + 1}:`;
+    const itemMessages = errors.filter((message) => message.startsWith(prefix));
+    const targetPunchEventId = itemMessages.find(
+      (message) =>
+        message.includes("select a punch") ||
+        message.includes("already has") ||
+        message.includes("same punch cannot"),
+    );
+    const time = itemMessages.find(
+      (message) =>
+        message.includes("requested punch time") ||
+        message.includes("valid time") ||
+        message.includes("missing punch is already included"),
+    );
+
+    if (targetPunchEventId || time) {
+      fieldErrors.items[draft.key] = { targetPunchEventId, time };
+    }
+  });
+
+  return fieldErrors;
+}
+
+function firstInvalidRegularizationFieldId(
+  fieldErrors: RegularizationFieldErrors,
+  draftItems: RegularizationDraftItem[],
+): string | null {
+  if (fieldErrors.workDate) return "regularization-work-date";
+
+  for (const draft of draftItems) {
+    const itemErrors = fieldErrors.items[draft.key];
+    if (!itemErrors) continue;
+    if (
+      (draft.operation === "replace" || draft.operation === "void") &&
+      itemErrors.targetPunchEventId
+    ) {
+      return `${draft.key}-target`;
+    }
+    if (draft.operation !== "void" && itemErrors.time) {
+      return `${draft.key}-time`;
+    }
+  }
+
+  if (fieldErrors.reason) return "regularization-reason";
+  return null;
+}
+
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="mt-1.5 text-xs font-medium text-destructive">
+      {message}
+    </p>
+  );
+}
+
 export function EmployeeRegularizationForm({ initialWorkDate }: EmployeeRegularizationFormProps) {
   const mutation = useAttendanceRegularizationMutation();
   const itemSequence = useRef(1);
@@ -140,6 +224,10 @@ export function EmployeeRegularizationForm({ initialWorkDate }: EmployeeRegulari
   const punchesBusy = Boolean(workDate) && punchesQuery.isFetching;
   const hasTargetOperation = draftItems.some(
     (item) => item.operation === "replace" || item.operation === "void",
+  );
+  const validationFieldErrors = useMemo(
+    () => fieldErrorsFor(validationErrors, draftItems),
+    [draftItems, validationErrors],
   );
 
   const selectedTargetIds = useMemo(
@@ -228,7 +316,14 @@ export function EmployeeRegularizationForm({ initialWorkDate }: EmployeeRegulari
     event.preventDefault();
     const result = buildRequest();
     if (!result.body) {
+      const nextFieldErrors = fieldErrorsFor(result.errors, draftItems);
       setValidationErrors(result.errors);
+      const firstInvalidFieldId = firstInvalidRegularizationFieldId(nextFieldErrors, draftItems);
+      if (firstInvalidFieldId) {
+        window.requestAnimationFrame(() => {
+          document.getElementById(firstInvalidFieldId)?.focus();
+        });
+      }
       return;
     }
 
@@ -296,9 +391,18 @@ export function EmployeeRegularizationForm({ initialWorkDate }: EmployeeRegulari
                   }
                   className="mt-1.5"
                   required
+                  aria-invalid={Boolean(validationFieldErrors.workDate)}
+                  aria-describedby={describedBy(
+                    workDate && "regularization-work-date-status",
+                    "regularization-work-date-help",
+                    validationFieldErrors.workDate && "regularization-work-date-error",
+                  )}
                 />
                 {workDate && (
-                  <p className="mt-1.5 text-xs text-muted-foreground">
+                  <p
+                    id="regularization-work-date-status"
+                    className="mt-1.5 text-xs text-muted-foreground"
+                  >
                     {punchesBusy
                       ? "Loading correctable punches..."
                       : punchesQuery.isError
@@ -311,9 +415,16 @@ export function EmployeeRegularizationForm({ initialWorkDate }: EmployeeRegulari
                           } found.`}
                   </p>
                 )}
-                <p className="mt-1 text-[11px] text-muted-foreground">
+                <p
+                  id="regularization-work-date-help"
+                  className="mt-1 text-[11px] text-muted-foreground"
+                >
                   Requested times are interpreted in your current device timezone.
                 </p>
+                <FieldError
+                  id="regularization-work-date-error"
+                  message={validationFieldErrors.workDate}
+                />
               </div>
 
               <div className="md:col-span-2">
@@ -338,6 +449,14 @@ export function EmployeeRegularizationForm({ initialWorkDate }: EmployeeRegulari
                   }
                   className="mt-1.5"
                   required
+                  aria-invalid={Boolean(validationFieldErrors.reason)}
+                  aria-describedby={describedBy(
+                    validationFieldErrors.reason && "regularization-reason-error",
+                  )}
+                />
+                <FieldError
+                  id="regularization-reason-error"
+                  message={validationFieldErrors.reason}
                 />
               </div>
             </div>
@@ -362,142 +481,165 @@ export function EmployeeRegularizationForm({ initialWorkDate }: EmployeeRegulari
                 </Button>
               </div>
 
-              {draftItems.map((draft, index) => (
-                <div
-                  key={draft.key}
-                  data-testid={`regularization-action-${index + 1}`}
-                  className="rounded-2xl border border-border/70 bg-muted/20 p-4"
-                >
-                  <div className="mb-3 flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold">Action {index + 1}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {REGULARIZATION_OPERATION_DESCRIPTION[draft.operation]}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Remove action ${index + 1}`}
-                      onClick={() => removeRegularizationDraftItem(draft.key)}
-                      disabled={draftItems.length === 1}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div className="md:col-span-2">
-                      <Label htmlFor={`${draft.key}-operation`}>Correction type</Label>
-                      <Select
-                        value={draft.operation}
-                        onValueChange={(value: string) =>
-                          changeOperation(draft.key, value as AttendanceRegularizationOperation)
-                        }
+              {draftItems.map((draft, index) => {
+                const itemErrors = validationFieldErrors.items[draft.key] ?? {};
+                const targetHelpId = `${draft.key}-target-help`;
+                const targetErrorId = `${draft.key}-target-error`;
+                const timeErrorId = `${draft.key}-time-error`;
+                return (
+                  <div
+                    key={draft.key}
+                    data-testid={`regularization-action-${index + 1}`}
+                    className="rounded-2xl border border-border/70 bg-muted/20 p-4"
+                  >
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold">Action {index + 1}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {REGULARIZATION_OPERATION_DESCRIPTION[draft.operation]}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove action ${index + 1}`}
+                        onClick={() => removeRegularizationDraftItem(draft.key)}
+                        disabled={draftItems.length === 1}
                       >
-                        <SelectTrigger
-                          id={`${draft.key}-operation`}
-                          data-testid={`regularization-operation-${index + 1}`}
-                          className="mt-1.5"
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="add">Add missing punch</SelectItem>
-                          <SelectItem value="replace">Replace punch</SelectItem>
-                          <SelectItem value="void">Remove punch</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
 
-                    {(draft.operation === "replace" || draft.operation === "void") && (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <div className="md:col-span-2">
-                        <Label htmlFor={`${draft.key}-target`}>Existing punch</Label>
+                        <Label htmlFor={`${draft.key}-operation`}>Correction type</Label>
                         <Select
-                          value={draft.targetPunchEventId}
-                          onValueChange={(value: string) => changeTargetPunch(draft.key, value)}
-                          disabled={punchesBusy || punchOptions.length === 0}
+                          value={draft.operation}
+                          onValueChange={(value: string) =>
+                            changeOperation(draft.key, value as AttendanceRegularizationOperation)
+                          }
                         >
                           <SelectTrigger
-                            id={`${draft.key}-target`}
-                            data-testid={`regularization-target-${index + 1}`}
+                            id={`${draft.key}-operation`}
+                            data-testid={`regularization-operation-${index + 1}`}
                             className="mt-1.5"
+                            aria-required="true"
                           >
-                            <SelectValue placeholder="Select the punch to correct" />
+                            <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {punchOptions.map((punch) => {
-                              const selectedElsewhere =
-                                selectedTargetIds.has(punch.id) &&
-                                punch.id !== draft.targetPunchEventId;
-                              const unavailable = unavailableTargetIds.has(punch.id);
-                              return (
-                                <SelectItem
-                                  key={punch.id}
-                                  value={punch.id}
-                                  disabled={selectedElsewhere || unavailable}
-                                >
-                                  {regularizationPunchLabel(punch)}
-                                </SelectItem>
-                              );
-                            })}
+                            <SelectItem value="add">Add missing punch</SelectItem>
+                            <SelectItem value="replace">Replace punch</SelectItem>
+                            <SelectItem value="void">Remove punch</SelectItem>
                           </SelectContent>
                         </Select>
-                        {!punchesBusy && workDate && punchOptions.length === 0 && (
-                          <p className="mt-1.5 text-xs text-muted-foreground">
-                            No correctable check-in/check-out punches exist on this date. Use “Add
-                            missing punch” instead.
-                          </p>
-                        )}
                       </div>
-                    )}
 
-                    {draft.operation !== "void" && (
-                      <>
-                        <div>
-                          <Label htmlFor={`${draft.key}-event-type`}>Requested punch</Label>
+                      {(draft.operation === "replace" || draft.operation === "void") && (
+                        <div className="md:col-span-2">
+                          <Label htmlFor={`${draft.key}-target`}>Existing punch</Label>
                           <Select
-                            value={draft.eventType}
-                            onValueChange={(value: string) =>
-                              updateRegularizationDraftItem(draft.key, {
-                                eventType: value as AttendanceRegularizationEventType,
-                              })
-                            }
+                            value={draft.targetPunchEventId}
+                            onValueChange={(value: string) => changeTargetPunch(draft.key, value)}
+                            disabled={punchesBusy || punchOptions.length === 0}
                           >
                             <SelectTrigger
-                              id={`${draft.key}-event-type`}
-                              data-testid={`regularization-event-type-${index + 1}`}
+                              id={`${draft.key}-target`}
+                              data-testid={`regularization-target-${index + 1}`}
                               className="mt-1.5"
+                              aria-required="true"
+                              aria-invalid={Boolean(itemErrors.targetPunchEventId)}
+                              aria-describedby={describedBy(
+                                !punchesBusy &&
+                                  workDate &&
+                                  punchOptions.length === 0 &&
+                                  targetHelpId,
+                                itemErrors.targetPunchEventId && targetErrorId,
+                              )}
                             >
-                              <SelectValue />
+                              <SelectValue placeholder="Select the punch to correct" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="check_in">Check-in</SelectItem>
-                              <SelectItem value="check_out">Check-out</SelectItem>
+                              {punchOptions.map((punch) => {
+                                const selectedElsewhere =
+                                  selectedTargetIds.has(punch.id) &&
+                                  punch.id !== draft.targetPunchEventId;
+                                const unavailable = unavailableTargetIds.has(punch.id);
+                                return (
+                                  <SelectItem
+                                    key={punch.id}
+                                    value={punch.id}
+                                    disabled={selectedElsewhere || unavailable}
+                                  >
+                                    {regularizationPunchLabel(punch)}
+                                  </SelectItem>
+                                );
+                              })}
                             </SelectContent>
                           </Select>
+                          {!punchesBusy && workDate && punchOptions.length === 0 && (
+                            <p id={targetHelpId} className="mt-1.5 text-xs text-muted-foreground">
+                              No correctable check-in/check-out punches exist on this date. Use “Add
+                              missing punch” instead.
+                            </p>
+                          )}
+                          <FieldError id={targetErrorId} message={itemErrors.targetPunchEventId} />
                         </div>
-                        <div>
-                          <Label htmlFor={`${draft.key}-time`}>Requested time</Label>
-                          <Input
-                            id={`${draft.key}-time`}
-                            data-testid={`regularization-time-${index + 1}`}
-                            type="time"
-                            step={60}
-                            value={draft.time}
-                            onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                              updateRegularizationDraftItem(draft.key, { time: event.target.value })
-                            }
-                            className="mt-1.5"
-                            required
-                          />
-                        </div>
-                      </>
-                    )}
+                      )}
+
+                      {draft.operation !== "void" && (
+                        <>
+                          <div>
+                            <Label htmlFor={`${draft.key}-event-type`}>Requested punch</Label>
+                            <Select
+                              value={draft.eventType}
+                              onValueChange={(value: string) =>
+                                updateRegularizationDraftItem(draft.key, {
+                                  eventType: value as AttendanceRegularizationEventType,
+                                })
+                              }
+                            >
+                              <SelectTrigger
+                                id={`${draft.key}-event-type`}
+                                data-testid={`regularization-event-type-${index + 1}`}
+                                className="mt-1.5"
+                                aria-required="true"
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="check_in">Check-in</SelectItem>
+                                <SelectItem value="check_out">Check-out</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label htmlFor={`${draft.key}-time`}>Requested time</Label>
+                            <Input
+                              id={`${draft.key}-time`}
+                              data-testid={`regularization-time-${index + 1}`}
+                              type="time"
+                              step={60}
+                              value={draft.time}
+                              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                updateRegularizationDraftItem(draft.key, {
+                                  time: event.target.value,
+                                })
+                              }
+                              className="mt-1.5"
+                              required
+                              aria-invalid={Boolean(itemErrors.time)}
+                              aria-describedby={describedBy(itemErrors.time && timeErrorId)}
+                            />
+                            <FieldError id={timeErrorId} message={itemErrors.time} />
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {validationErrors.length > 0 && (

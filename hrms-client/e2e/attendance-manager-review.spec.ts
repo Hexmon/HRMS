@@ -25,7 +25,11 @@ test("manager reviews and returns an assigned attendance correction", async ({ p
   await expect(page.getByText("Add missing punch", { exact: true })).toBeVisible();
   await expect(page.getByText(/latitude|longitude|coordinates/i)).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Return", exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: new RegExp(`^Return attendance review for ${regularization.employeeName} on .+$`, "u"),
+    })
+    .click();
   const remarks = "Please confirm the requested time and submit the supporting context.";
   await page.getByLabel("Remarks (required)").fill(remarks);
 

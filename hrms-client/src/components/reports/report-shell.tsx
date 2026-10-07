@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useId, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -91,6 +91,7 @@ export function ReportShell<T extends { id: string }>({
   const { departments, employees } = useEmployees();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const apiMode = useApiRouteEnabled(["/reports"]);
+  const filterId = useId();
   const exportMutation = useCreateReportExportMutation();
   const attendanceExportMutation = useAttendanceExportMutation();
   const [internalFilters, setInternalFilters] = useState<ReportFilters>({
@@ -115,6 +116,23 @@ export function ReportShell<T extends { id: string }>({
   const rows = build(f);
 
   const employeePool = facets?.employeePool ?? employees.map((e) => e.name);
+  const fromId = `${filterId}-report-filter-from`;
+  const fromLabelId = `${fromId}-label`;
+  const toId = `${filterId}-report-filter-to`;
+  const toLabelId = `${toId}-label`;
+  const departmentId = `${filterId}-report-filter-department`;
+  const departmentLabelId = `${departmentId}-label`;
+  const employeeId = `${filterId}-report-filter-employee`;
+  const employeeLabelId = `${employeeId}-label`;
+  const statusId = `${filterId}-report-filter-status`;
+  const statusLabelId = `${statusId}-label`;
+  const evidenceCategoryId = `${filterId}-report-filter-evidence-category`;
+  const evidenceCategoryLabelId = `${evidenceCategoryId}-label`;
+  const teamId = `${filterId}-report-filter-team`;
+  const teamLabelId = `${teamId}-label`;
+  const tableSearchLabel = path.startsWith("/reports/attendance")
+    ? "Search attendance records"
+    : `Search ${title.toLowerCase()} records`;
 
   const handleExport = async () => {
     if (apiMode) {
@@ -197,31 +215,45 @@ export function ReportShell<T extends { id: string }>({
         </div>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
           <div className="min-w-0 space-y-1">
-            <Label className="text-[11px]">From</Label>
+            <Label id={fromLabelId} htmlFor={fromId} className="text-[11px]">
+              From
+            </Label>
             <Input
+              id={fromId}
               type="date"
               value={f.from}
               onChange={(e) => setFilter({ from: e.target.value })}
+              aria-labelledby={fromLabelId}
               className="h-9"
             />
           </div>
           <div className="min-w-0 space-y-1">
-            <Label className="text-[11px]">To</Label>
+            <Label id={toLabelId} htmlFor={toId} className="text-[11px]">
+              To
+            </Label>
             <Input
+              id={toId}
               type="date"
               value={f.to}
               onChange={(e) => setFilter({ to: e.target.value })}
+              aria-labelledby={toLabelId}
               className="h-9"
             />
           </div>
           {facets?.showDepartment && (
             <div className="min-w-0 space-y-1">
-              <Label className="text-[11px]">Department</Label>
+              <Label id={departmentLabelId} htmlFor={departmentId} className="text-[11px]">
+                Department
+              </Label>
               <Select
                 value={f.department}
                 onValueChange={(value) => setFilter({ department: value })}
               >
-                <SelectTrigger className="h-9">
+                <SelectTrigger
+                  id={departmentId}
+                  aria-labelledby={departmentLabelId}
+                  className="h-9"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
@@ -237,9 +269,11 @@ export function ReportShell<T extends { id: string }>({
           )}
           {facets?.showEmployee && (
             <div className="min-w-0 space-y-1">
-              <Label className="text-[11px]">Employee</Label>
+              <Label id={employeeLabelId} htmlFor={employeeId} className="text-[11px]">
+                Employee
+              </Label>
               <Select value={f.employee} onValueChange={(value) => setFilter({ employee: value })}>
-                <SelectTrigger className="h-9">
+                <SelectTrigger id={employeeId} aria-labelledby={employeeLabelId} className="h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
@@ -255,9 +289,11 @@ export function ReportShell<T extends { id: string }>({
           )}
           {facets?.showStatus && (
             <div className="min-w-0 space-y-1">
-              <Label className="text-[11px]">Status</Label>
+              <Label id={statusLabelId} htmlFor={statusId} className="text-[11px]">
+                Status
+              </Label>
               <Select value={f.status} onValueChange={(value) => setFilter({ status: value })}>
-                <SelectTrigger className="h-9">
+                <SelectTrigger id={statusId} aria-labelledby={statusLabelId} className="h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
@@ -273,12 +309,22 @@ export function ReportShell<T extends { id: string }>({
           )}
           {facets?.showEvidenceCategory && (
             <div className="min-w-0 space-y-1">
-              <Label className="text-[11px]">Evidence state</Label>
+              <Label
+                id={evidenceCategoryLabelId}
+                htmlFor={evidenceCategoryId}
+                className="text-[11px]"
+              >
+                Evidence state
+              </Label>
               <Select
                 value={f.evidenceCategory}
                 onValueChange={(value) => setFilter({ evidenceCategory: value })}
               >
-                <SelectTrigger className="h-9">
+                <SelectTrigger
+                  id={evidenceCategoryId}
+                  aria-labelledby={evidenceCategoryLabelId}
+                  className="h-9"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
@@ -294,12 +340,14 @@ export function ReportShell<T extends { id: string }>({
           )}
           {facets?.showTeam && (
             <div className="min-w-0 space-y-1">
-              <Label className="text-[11px]">Team</Label>
+              <Label id={teamLabelId} htmlFor={teamId} className="text-[11px]">
+                Team
+              </Label>
               <Select
                 value={f.managerUserId}
                 onValueChange={(value) => setFilter({ managerUserId: value })}
               >
-                <SelectTrigger className="h-9">
+                <SelectTrigger id={teamId} aria-labelledby={teamLabelId} className="h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
@@ -336,6 +384,7 @@ export function ReportShell<T extends { id: string }>({
         emptyTitle={emptyTitle ?? "No matching rows"}
         emptyDescription="Try adjusting filters or expanding the date range."
         onRowClick={onRowClick}
+        searchLabel={tableSearchLabel}
       />
     </div>
   );
