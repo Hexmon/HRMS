@@ -1,11 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/lib/auth";
 import { StatCard, DataCard, StatusBadge, EmptyState } from "@/components/ui-kit";
-import { toast } from "sonner";
 import {
   Users,
   UserCheck,
@@ -15,20 +12,21 @@ import {
   Home,
   CalendarDays,
   ClipboardX,
-  Play,
-  Pause,
-  Square,
   Clock,
   Building2,
 } from "lucide-react";
 import type { Role } from "@/lib/mock/roles";
 import {
-  useAttendancePunchMutation,
+  EmployeeManualAttendanceWidget,
+  EmployeeRegularizationForm,
   useMyAttendanceSummary,
   useTeamAttendanceSummary,
-  type AttendancePunchEventType,
 } from "@/domains/attendance";
-import { currentLocalMonth, localIsoDate, liveAttendanceToday } from "@/domains/attendance/live";
+import {
+  ATTENDANCE_REPORTING_EVIDENCE_OPTIONS,
+  attendanceReportingEvidenceLabel,
+} from "@/domains/attendance/reporting-evidence";
+import { currentLocalMonth, localIsoDate } from "@/domains/attendance/live";
 import {
   asArray,
   asRecord,
@@ -39,15 +37,23 @@ import {
 } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/attendance/")({
+  validateSearch: (search: Record<string, unknown>): AttendanceOverviewSearch => ({
+    regularizeDate: canonicalIsoDate(search.regularizeDate),
+  }),
   component: AttendanceOverview,
 });
 
 const ADMIN_ROLES: Role[] = ["hr_admin", "main_admin", "manager"];
 
+interface AttendanceOverviewSearch {
+  regularizeDate?: string;
+}
+
 function AttendanceOverview() {
   const { activeRole } = useAuth();
+  const { regularizeDate } = Route.useSearch();
   const isAdmin = activeRole && ADMIN_ROLES.includes(activeRole);
-  return isAdmin ? <AdminView /> : <EmployeeView />;
+  return isAdmin ? <AdminView /> : <EmployeeView initialRegularizeDate={regularizeDate} />;
 }
 
 function records(value: unknown): ApiRecord[] {
@@ -60,6 +66,22 @@ function todayIsoDate(): string {
 
 function currentMonth(): string {
   return currentLocalMonth();
+}
+
+function canonicalIsoDate(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) return undefined;
+
+  const [yearValue, monthValue, dayValue] = value.split("-").map(Number);
+  const parsed = new Date(yearValue, monthValue - 1, dayValue);
+  if (
+    parsed.getFullYear() !== yearValue ||
+    parsed.getMonth() !== monthValue - 1 ||
+    parsed.getDate() !== dayValue
+  ) {
+    return undefined;
+  }
+
+  return value;
 }
 
 function formatMinutes(minutes: number): string {
@@ -83,6 +105,7 @@ function AdminView() {
   const query = useTeamAttendanceSummary({ date_from: todayIsoDate(), page: 1, page_size: 8 });
   const data = asRecord(query.data);
   const totals = asRecord(data.totals);
+  const evidenceCategories = asRecord(data.evidence_categories);
   const departments = records(data.department_summary);
   const exceptions = records(data.exceptions);
   const total = numberValue(totals.total);
@@ -185,6 +208,30 @@ function AdminView() {
           )}
         </DataCard>
 
+        <DataCard title="Evidence state" description="Today">
+          {query.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading evidence states...</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {ATTENDANCE_REPORTING_EVIDENCE_OPTIONS.map((option) => (
+                <li
+                  key={option.value}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-sm"
+                >
+                  <StatusBadge
+                    status={option.value}
+                    label={attendanceReportingEvidenceLabel(option.value)}
+                    className="max-w-full whitespace-normal break-words"
+                  />
+                  <span className="shrink-0 font-semibold">
+                    {numberValue(evidenceCategories[option.value])}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DataCard>
+
         <DataCard title="Attendance exceptions" description="Needs attention">
           {query.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading exceptions...</p>
@@ -198,13 +245,20 @@ function AdminView() {
               {exceptions.map((exception) => (
                 <li
                   key={text(exception.id)}
-                  className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5 text-sm"
+                  className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-sm"
                 >
-                  <div>
-                    <p className="font-medium">{text(exception.employee, "Employee")}</p>
-                    <p className="text-xs text-muted-foreground">{text(exception.detail)}</p>
+                  <div className="min-w-0">
+                    <p className="break-words font-medium">
+                      {text(exception.employee, "Employee")}
+                    </p>
+                    <p className="break-words text-xs text-muted-foreground">
+                      {text(exception.detail)}
+                    </p>
                   </div>
-                  <StatusBadge status={text(exception.status, "pending")} />
+                  <StatusBadge
+                    status={text(exception.status, "pending")}
+                    className="max-w-full whitespace-normal break-words sm:shrink-0"
+                  />
                 </li>
               ))}
             </ul>
@@ -215,174 +269,25 @@ function AdminView() {
   );
 }
 
-function EmployeeView() {
-  const [now, setNow] = useState(new Date());
+function EmployeeView({ initialRegularizeDate }: { initialRegularizeDate?: string }) {
   const query = useMyAttendanceSummary({ month: currentMonth(), page: 1, page_size: 50 });
-  const punchMutation = useAttendancePunchMutation();
   const data = asRecord(query.data);
-  const today = asRecord(data.today);
   const summary = asRecord(data.summary);
-  const liveToday = liveAttendanceToday(today, data.generated_at, now);
-  const weekRecords = records(data.week_records).map((record) =>
-    text(record.work_date) === text(today.work_date)
-      ? {
-          ...record,
-          hours: liveToday.hours,
-          break_hours: liveToday.breakHours,
-          work_minutes: liveToday.workMinutes,
-          break_minutes: liveToday.breakMinutes,
-        }
-      : record,
-  );
+  const weekRecords = records(data.week_records);
   const exceptionHistory = records(data.exception_history);
-  const nextAllowedActions = liveToday.nextAllowedActions;
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const punch = async (eventType: AttendancePunchEventType, successMessage: string) => {
-    try {
-      await punchMutation.mutateAsync({
-        event_type: eventType,
-        occurred_at: new Date().toISOString(),
-        work_mode: "office",
-        source: "web",
-        metadata: {},
-      });
-      toast.success(successMessage);
-    } catch (error) {
-      toast.error(errorMessage(error));
-    }
-  };
-
-  const canPunch = (eventType: AttendancePunchEventType) => nextAllowedActions.includes(eventType);
-  const status = text(today.status, query.isLoading ? "loading" : "absent");
-  const statusLabel =
-    nextAllowedActions.length === 0 &&
-    status !== "absent" &&
-    status !== "future" &&
-    status !== "weekend"
-      ? "Completed"
-      : text(today.detail, status.replaceAll("_", " "));
-  const disableActions = query.isLoading || punchMutation.isPending;
-
-  if (query.isError) {
-    return (
-      <div className="pt-2">
-        <DataCard title="My attendance" description="Today">
-          <EmptyState title="Could not load attendance" description={errorMessage(query.error)} />
-        </DataCard>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-4 pt-2">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="rounded-2xl border-border/60 lg:col-span-2">
-          <div className="p-6" style={{ background: "var(--gradient-hero)" }}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-                  {now.toLocaleDateString(undefined, { weekday: "long" })}
-                </p>
-                <p className="text-2xl font-semibold">
-                  {now.toLocaleDateString(undefined, {
-                    day: "2-digit",
-                    month: "long",
-                    year: "numeric",
-                  })}
-                </p>
-              </div>
-              <StatusBadge status={status} label={statusLabel} />
-            </div>
-            <p className="mt-4 text-5xl font-bold tabular-nums tracking-tight">
-              {now.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              })}
-            </p>
-            {text(today.in_time) && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Punched in at {text(today.in_time)}
-              </p>
-            )}
-          </div>
-          <div className="grid grid-cols-3 divide-x border-t text-center">
-            <div className="p-4">
-              <p className="text-xs text-muted-foreground">Total today</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums">
-                {query.isLoading ? "..." : liveToday.hours}
-              </p>
-            </div>
-            <div className="p-4">
-              <p className="text-xs text-muted-foreground">Break</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums">
-                {query.isLoading ? "..." : liveToday.breakHours}
-              </p>
-            </div>
-            <div className="p-4">
-              <p className="text-xs text-muted-foreground">Target</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums">
-                {query.isLoading
-                  ? "..."
-                  : text(today.target_hours, text(summary.target_hours, "0h 00m"))}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 border-t p-4">
-            {canPunch("check_in") && (
-              <Button
-                className="rounded-full"
-                disabled={disableActions}
-                onClick={() => punch("check_in", "Punched in")}
-              >
-                <Play className="mr-1.5 h-4 w-4" /> Punch in
-              </Button>
-            )}
-            {canPunch("break_start") && (
-              <Button
-                variant="outline"
-                className="rounded-full"
-                disabled={disableActions}
-                onClick={() => punch("break_start", "Break started")}
-              >
-                <Pause className="mr-1.5 h-4 w-4" /> Start break
-              </Button>
-            )}
-            {canPunch("break_end") && (
-              <Button
-                className="rounded-full"
-                disabled={disableActions}
-                onClick={() => punch("break_end", "Resumed work")}
-              >
-                <Play className="mr-1.5 h-4 w-4" /> Resume
-              </Button>
-            )}
-            {canPunch("check_out") && (
-              <Button
-                className="rounded-full"
-                disabled={disableActions}
-                onClick={() => punch("check_out", "Punched out")}
-              >
-                <Square className="mr-1.5 h-4 w-4" /> Punch out
-              </Button>
-            )}
-            {!query.isLoading && nextAllowedActions.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                {status === "future" || status === "weekend"
-                  ? "No attendance action is available for this day."
-                  : "Day completed. See you tomorrow."}
-              </p>
-            )}
-          </div>
-        </Card>
+        <EmployeeManualAttendanceWidget sourceView="attendance_page" className="lg:col-span-2" />
 
         <DataCard title="This week" description="Mon to Sun">
-          {query.isLoading ? (
+          {query.isError ? (
+            <EmptyState
+              title="Could not load weekly attendance"
+              description={errorMessage(query.error)}
+            />
+          ) : query.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading week records...</p>
           ) : weekRecords.length === 0 ? (
             <EmptyState
@@ -394,17 +299,20 @@ function EmployeeView() {
               {weekRecords.map((record) => (
                 <li
                   key={text(record.work_date)}
-                  className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2"
+                  className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3 py-2"
                 >
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium">{displayDate(record.work_date)}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="break-words text-xs text-muted-foreground">
                       {text(record.in_time, "-")} - {text(record.out_time, "-")}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="min-w-0 text-right">
                     <p className="text-xs font-semibold">{text(record.hours, "0h 00m")}</p>
-                    <StatusBadge status={text(record.status, "pending")} />
+                    <StatusBadge
+                      status={text(record.status, "pending")}
+                      className="max-w-full whitespace-normal break-words"
+                    />
                   </div>
                 </li>
               ))}
@@ -416,14 +324,7 @@ function EmployeeView() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <StatCard
           label="MTD work hours"
-          value={
-            query.isLoading
-              ? "..."
-              : formatMinutes(
-                  numberValue(summary.work_minutes) +
-                    (liveToday.workMinutes - numberValue(today.work_minutes)),
-                )
-          }
+          value={query.isLoading ? "..." : formatMinutes(numberValue(summary.work_minutes))}
           hint="current month"
           icon={Clock}
           tone="primary"
@@ -443,8 +344,15 @@ function EmployeeView() {
         />
       </div>
 
+      <EmployeeRegularizationForm initialWorkDate={initialRegularizeDate} />
+
       <DataCard title="Late & absent history" description="Last 30 days">
-        {query.isLoading ? (
+        {query.isError ? (
+          <EmptyState
+            title="Could not load exception history"
+            description={errorMessage(query.error)}
+          />
+        ) : query.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading exception history...</p>
         ) : exceptionHistory.length === 0 ? (
           <EmptyState
@@ -456,13 +364,16 @@ function EmployeeView() {
             {exceptionHistory.map((record) => (
               <li
                 key={`${text(record.date)}-${text(record.reason)}`}
-                className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0"
+                className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
               >
-                <div>
+                <div className="min-w-0">
                   <p className="font-medium">{displayDate(record.date)}</p>
-                  <p className="text-xs text-muted-foreground">{text(record.reason)}</p>
+                  <p className="break-words text-xs text-muted-foreground">{text(record.reason)}</p>
                 </div>
-                <StatusBadge status={text(record.status, "pending")} />
+                <StatusBadge
+                  status={text(record.status, "pending")}
+                  className="max-w-full whitespace-normal break-words sm:shrink-0"
+                />
               </li>
             ))}
           </ul>
