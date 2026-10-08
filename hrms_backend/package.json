@@ -66,6 +66,7 @@
     "restore:db": "tsx scripts/restore-db.ts",
     "seed:dev": "tsx src/platform/seed-dev.ts",
     "release:seed": "tsx scripts/seed-release-data.ts",
+    "release:seed:attendance-demo": "tsx scripts/seed-s15-attendance-demo.ts",
     "release:verify:db": "tsx scripts/verify-release-db.ts",
     "release:verify:services": "tsx scripts/verify-release-services.ts",
     "release:verify:adapters": "tsx scripts/verify-release-adapters.ts",
