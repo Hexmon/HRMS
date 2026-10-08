@@ -16,6 +16,13 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { DataCard, EmptyState, PhoneInput, StatusBadge, UserAvatar } from "@/components/ui-kit";
 import { Modal } from "@/components/ui-kit";
+import { DeviceRevokeDialog } from "@/components/platform/device-revoke-dialog";
+import {
+  DeviceStatusBadge,
+  formatDeviceDate,
+  maskDeviceId,
+  platformLabel,
+} from "@/components/platform/device-status";
 import { coreApi } from "@/domains/core/api";
 import {
   type EmsProfileView,
@@ -25,6 +32,14 @@ import {
   useEmsProfileChangeMutation,
   useMyProfileChanges,
 } from "@/domains/ems";
+import type {
+  PlatformDeviceLifecycleReason,
+  PlatformRegisteredDevice,
+} from "@/domains/platform/api";
+import {
+  useMyRegisteredDevices,
+  useRevokeRegisteredDeviceMutation,
+} from "@/domains/platform/queries";
 import { asRecord, pageItems, text, toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { queryKeys } from "@/shared/query";
 import {
@@ -47,6 +62,7 @@ import {
   Building2,
   ShieldCheck,
   ClipboardList,
+  Smartphone,
   type LucideIcon,
 } from "lucide-react";
 
@@ -121,12 +137,14 @@ function MyProfile() {
   const queryClient = useQueryClient();
   const profileQuery = useEmsProfile(apiEnabled);
   const changesQuery = useMyProfileChanges({ page: 1, page_size: 10 }, apiEnabled);
+  const devicesQuery = useMyRegisteredDevices(apiEnabled);
   const profilePhotoPolicyQuery = useQuery({
     queryKey: queryKeys.action("core", "users", "profile-photo-policy"),
     queryFn: () => coreApi.profilePhotoPolicy(),
     enabled: apiEnabled && Boolean(user),
   });
   const changeMutation = useEmsProfileChangeMutation();
+  const revokeDeviceMutation = useRevokeRegisteredDeviceMutation();
   const uploadPhotoMutation = useMutation({
     mutationFn: ({ userId, formData }: { userId: string; formData: FormData }) =>
       coreApi.uploadProfilePhoto(userId, formData),
@@ -150,6 +168,7 @@ function MyProfile() {
   });
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [deviceToRevoke, setDeviceToRevoke] = useState<PlatformRegisteredDevice | null>(null);
   const [field, setField] = useState<(typeof PROFILE_FIELDS)[number]["key"]>("current_address");
   const [val, setVal] = useState("");
   const [reason, setReason] = useState("");
@@ -287,6 +306,20 @@ function MyProfile() {
     }
   };
 
+  const handleRevokeDevice = async (reason?: PlatformDeviceLifecycleReason) => {
+    if (!deviceToRevoke) return;
+    try {
+      await revokeDeviceMutation.mutateAsync({
+        deviceId: deviceToRevoke.registered_device_id,
+        input: reason ? { reason } : {},
+      });
+      toast.success("Device revoked");
+      setDeviceToRevoke(null);
+    } catch (error) {
+      toastApiError(error, "Device could not be revoked.");
+    }
+  };
+
   const photoHelpText = `${photoPolicy.allowed_mime_types
     .map((type) => type.replace("image/", "").toUpperCase())
     .join(", ")} up to ${formatBytes(photoPolicy.max_bytes)}. Images are compressed before upload.`;
@@ -379,6 +412,14 @@ function MyProfile() {
       <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-muted-foreground">
         Profile changes require HR approval before they go live.
       </div>
+
+      <MyDevicesSection
+        devices={devicesQuery.data?.items ?? []}
+        loading={devicesQuery.isLoading}
+        error={devicesQuery.error}
+        apiEnabled={apiEnabled}
+        onRevoke={setDeviceToRevoke}
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Section
@@ -503,6 +544,16 @@ function MyProfile() {
         </DataCard>
       ) : null}
 
+      <DeviceRevokeDialog
+        open={Boolean(deviceToRevoke)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setDeviceToRevoke(null);
+        }}
+        device={deviceToRevoke}
+        isPending={revokeDeviceMutation.isPending}
+        onConfirm={handleRevokeDevice}
+      />
+
       <Modal
         open={open}
         onOpenChange={setOpen}
@@ -563,5 +614,105 @@ function MyProfile() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+function MyDevicesSection({
+  devices,
+  loading,
+  error,
+  apiEnabled,
+  onRevoke,
+}: {
+  devices: PlatformRegisteredDevice[];
+  loading: boolean;
+  error: unknown;
+  apiEnabled: boolean;
+  onRevoke: (device: PlatformRegisteredDevice) => void;
+}) {
+  if (!apiEnabled) return null;
+
+  return (
+    <DataCard
+      title="My devices"
+      description="Registered mobile devices used for personal mobile attendance and offline sync"
+      className="glass-panel ems-profile-card"
+      padded={false}
+      actions={
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+          <Smartphone className="h-4 w-4" />
+        </span>
+      }
+    >
+      {loading ? (
+        <p className="p-5 text-sm text-muted-foreground">Loading registered devices...</p>
+      ) : error ? (
+        <div className="p-5">
+          <EmptyState
+            icon={Smartphone}
+            title="Devices could not be loaded"
+            description="The backend device API returned an error."
+          />
+        </div>
+      ) : devices.length === 0 ? (
+        <div className="p-5">
+          <EmptyState
+            icon={Smartphone}
+            title="No registered devices"
+            description="Mobile app registrations will appear here."
+          />
+        </div>
+      ) : (
+        <div className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
+          {devices.map((device) => {
+            const canRevoke = device.status !== "revoked";
+            return (
+              <div
+                key={device.registered_device_id}
+                className="rounded-2xl border border-border/70 bg-background/45 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">
+                      {platformLabel(device.platform)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {maskDeviceId(device.registered_device_id)}
+                    </p>
+                  </div>
+                  <DeviceStatusBadge status={device.status} />
+                </div>
+                <div className="mt-4 grid gap-3 text-xs text-muted-foreground">
+                  <div>
+                    <p className="font-semibold uppercase tracking-wide text-muted-foreground/80">
+                      Registered
+                    </p>
+                    <p className="mt-1 text-foreground">{formatDeviceDate(device.created_at)}</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold uppercase tracking-wide text-muted-foreground/80">
+                      Status changed
+                    </p>
+                    <p className="mt-1 text-foreground">
+                      {formatDeviceDate(device.status_changed_at)}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-4 w-full rounded-full text-destructive hover:text-destructive"
+                  disabled={!canRevoke}
+                  onClick={() => onRevoke(device)}
+                >
+                  Revoke
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </DataCard>
   );
 }

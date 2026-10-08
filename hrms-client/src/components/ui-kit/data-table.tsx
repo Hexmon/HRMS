@@ -41,7 +41,9 @@ interface Props<T extends { id: string }> {
     tone?: "default" | "destructive";
     disabled?: boolean;
   }[];
+  rowActionLabel?: (row: T) => string;
   toolbarRight?: ReactNode;
+  searchLabel?: string;
   /** Show a skeleton loading state instead of rows. */
   loading?: boolean;
   /** Row click handler. Adds keyboard support. */
@@ -65,7 +67,9 @@ export function DataTable<T extends { id: string }>({
   emptyTitle = "Nothing to show yet",
   emptyDescription = "Once data arrives, it'll appear here.",
   rowActions,
+  rowActionLabel,
   toolbarRight,
+  searchLabel,
   loading = false,
   onRowClick,
   hideToolbar = false,
@@ -88,7 +92,12 @@ export function DataTable<T extends { id: string }>({
     <Card className="overflow-hidden p-0">
       {!hideToolbar && (
         <div className="flex flex-col gap-2 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
-          <SearchFilterBar value={q} onValueChange={setQ} rightSlot={toolbarRight} />
+          <SearchFilterBar
+            value={q}
+            onValueChange={setQ}
+            rightSlot={toolbarRight}
+            searchLabel={searchLabel}
+          />
           {showCount && !loading && (
             <p className="hidden text-xs text-muted-foreground sm:block">
               <span className="font-semibold text-foreground">{filtered.length}</span>
@@ -177,7 +186,7 @@ export function DataTable<T extends { id: string }>({
                           variant="outline"
                           size="sm"
                           className="rounded-full"
-                          aria-label="Row actions"
+                          aria-label={rowActionLabel?.(row) ?? "Row actions"}
                           onClick={(e) => e.stopPropagation()}
                         >
                           Actions
@@ -271,7 +280,7 @@ export function DataTable<T extends { id: string }>({
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 rounded-full"
-                              aria-label="Row actions"
+                              aria-label={rowActionLabel?.(row) ?? "Row actions"}
                             >
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>

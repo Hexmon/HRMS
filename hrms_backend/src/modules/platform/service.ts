@@ -1,9 +1,27 @@
-import { Roles, type AuthUser, type FinanceGovernanceConfig, type UUID } from "#shared";
+import {
+  Roles,
+  type AuthUser,
+  type FinanceGovernanceConfig,
+  type PaginatedResult,
+  type UUID,
+} from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { badRequest, notFound } from "../../platform/errors.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { CoreService } from "../core/service.js";
-import { PlatformRepository } from "./repository.js";
-import { assertCanReadFinanceGovernance, assertCanWriteFinanceGovernance } from "./policy.js";
+import {
+  PlatformRepository,
+  type AdminRegisteredDeviceReadModel,
+  type RegisteredDeviceReadModel,
+} from "./repository.js";
+import {
+  assertCanManageDeviceLifecycle,
+  assertCanReadFinanceGovernance,
+  assertCanWriteFinanceGovernance,
+  canManageDeviceLifecycle,
+} from "./policy.js";
+import type { PlatformDeviceLifecycleReason } from "./events.js";
+import type { DeviceAdminListQuery } from "./schemas.js";
 
 export interface FinanceGovernanceReadModel {
   config: FinanceGovernanceConfig | null;
@@ -29,6 +47,125 @@ export class PlatformService {
   getFinanceGovernance(actor: AuthUser): FinanceGovernanceReadModel {
     assertCanReadFinanceGovernance(actor);
     return this.presentFinanceGovernance(this.repository.getFinanceGovernanceConfig());
+  }
+
+  async registerDevice(
+    actor: AuthUser,
+    input: {
+      installation_id_hash: string;
+      platform: "ios" | "android";
+    }
+  ): Promise<{ device: RegisteredDeviceReadModel; created: boolean }> {
+    const context = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: "platform.devices.register",
+      requireActiveEmployment: true
+    });
+    return this.repository.registerDevice({
+      companyId: context.companyId,
+      userId: context.userId,
+      installationIdHash: input.installation_id_hash,
+      platform: input.platform
+    });
+  }
+
+  async listDevices(actor: AuthUser): Promise<{ items: RegisteredDeviceReadModel[] }> {
+    const context = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: "platform.devices.list",
+      requireActiveEmployment: true
+    });
+    return {
+      items: await this.repository.listDevices({
+        companyId: context.companyId,
+        userId: context.userId
+      })
+    };
+  }
+
+  async listAdminDevices(
+    actor: AuthUser,
+    input: DeviceAdminListQuery,
+  ): Promise<PaginatedResult<AdminRegisteredDeviceReadModel>> {
+    assertCanManageDeviceLifecycle(actor);
+    const context = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: "platform.devices.admin.list",
+      requireActiveEmployment: true
+    });
+    return this.repository.listAdminDevices({
+      companyId: context.companyId,
+      page: input.page,
+      page_size: input.page_size,
+      q: input.q,
+      status: input.status,
+      platform: input.platform,
+      sort: input.sort
+    });
+  }
+
+  async revokeDevice(
+    actor: AuthUser,
+    deviceId: UUID,
+    input: { reason?: PlatformDeviceLifecycleReason },
+  ): Promise<RegisteredDeviceReadModel> {
+    const context = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: "platform.devices.revoke",
+      requireActiveEmployment: true
+    });
+    return this.repository.transitionDeviceLifecycle({
+      companyId: context.companyId,
+      actorUserId: context.userId,
+      actorCanManageCompanyDevices: canManageDeviceLifecycle(actor),
+      deviceId,
+      targetStatus: "revoked",
+      reason: input.reason ?? (
+        canManageDeviceLifecycle(actor) ? "administrative" : "user_requested"
+      ),
+    });
+  }
+
+  async suspendDevice(
+    actor: AuthUser,
+    deviceId: UUID,
+    input: { reason?: PlatformDeviceLifecycleReason },
+  ): Promise<RegisteredDeviceReadModel> {
+    assertCanManageDeviceLifecycle(actor);
+    const context = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: "platform.devices.suspend",
+      requireActiveEmployment: true
+    });
+    return this.repository.transitionDeviceLifecycle({
+      companyId: context.companyId,
+      actorUserId: context.userId,
+      actorCanManageCompanyDevices: true,
+      deviceId,
+      targetStatus: "suspended",
+      reason: input.reason ?? "administrative",
+    });
+  }
+
+  async restoreDevice(
+    actor: AuthUser,
+    deviceId: UUID,
+    input: { reason?: PlatformDeviceLifecycleReason },
+  ): Promise<RegisteredDeviceReadModel> {
+    assertCanManageDeviceLifecycle(actor);
+    const context = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: "platform.devices.restore",
+      requireActiveEmployment: true
+    });
+    return this.repository.transitionDeviceLifecycle({
+      companyId: context.companyId,
+      actorUserId: context.userId,
+      actorCanManageCompanyDevices: true,
+      deviceId,
+      targetStatus: "registered",
+      reason: input.reason ?? "administrative",
+    });
   }
 
   updateFinanceGovernance(
