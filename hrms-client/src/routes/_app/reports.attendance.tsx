@@ -1124,6 +1124,28 @@ function siteOptionsFromReport(
     .sort((left, right) => left.label.localeCompare(right.label));
 }
 
+function AttendancePercentage({ value }: { value: number }) {
+  const isLowAttendance = value < 80;
+
+  return (
+    <span
+      aria-label={`${value}% attendance`}
+      className="inline-flex items-center gap-1.5 font-mono font-semibold text-foreground"
+      data-testid={
+        isLowAttendance
+          ? "attendance-monthly-percentage-destructive"
+          : "attendance-monthly-percentage-success"
+      }
+    >
+      <span
+        aria-hidden="true"
+        className={`h-1.5 w-1.5 rounded-full ${isLowAttendance ? "bg-destructive" : "bg-success"}`}
+      />
+      {value}%
+    </span>
+  );
+}
+
 function MonthlySummary({
   all,
   filters,
@@ -1199,13 +1221,7 @@ function MonthlySummary({
         {
           key: "attendance",
           header: "Attendance %",
-          render: (r) => (
-            <span
-              className={`font-mono ${r.attendance < 80 ? "text-destructive" : "text-success"}`}
-            >
-              {r.attendance}%
-            </span>
-          ),
+          render: (r) => <AttendancePercentage value={r.attendance} />,
         },
       ]}
       searchKeys={["employee"]}

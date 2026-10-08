@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   attendanceSummary,
   expectCanonicalPunchRequest,
@@ -22,6 +22,225 @@ const GEO_POLICY = {
   max_location_age_ms: 60_000,
   max_accuracy_meters: 50,
 };
+
+async function installTheme(page: Page, theme: "light" | "dark"): Promise<void> {
+  await page.addInitScript((nextTheme) => {
+    window.localStorage.setItem("hawkaii-theme", nextTheme);
+    document.documentElement.classList.toggle("dark", nextTheme === "dark");
+    document.documentElement.dataset.theme = nextTheme;
+    document.documentElement.dataset.resolvedTheme = nextTheme;
+    document.documentElement.style.colorScheme = nextTheme;
+  }, theme);
+}
+
+async function applyTheme(page: Page, theme: "light" | "dark"): Promise<void> {
+  await page.evaluate((nextTheme) => {
+    window.localStorage.setItem("hawkaii-theme", nextTheme);
+    document.documentElement.classList.toggle("dark", nextTheme === "dark");
+    document.documentElement.dataset.theme = nextTheme;
+    document.documentElement.dataset.resolvedTheme = nextTheme;
+    document.documentElement.style.colorScheme = nextTheme;
+  }, theme);
+}
+
+async function expectContrastAtLeast(
+  locator: Locator,
+  label: string,
+  minimumRatio = 4.5,
+): Promise<number> {
+  await expect(locator).toBeVisible();
+  const result = await locator.evaluate((element) => {
+    type Rgba = { r: number; g: number; b: number; a: number };
+
+    const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+    const parseAlpha = (value: string | undefined): number => {
+      if (!value) return 1;
+      const trimmed = value.trim();
+      if (trimmed.endsWith("%")) return clamp(Number(trimmed.slice(0, -1)) / 100, 0, 1);
+      return clamp(Number(trimmed), 0, 1);
+    };
+
+    const parseChannel = (value: string, scale: number): number => {
+      const trimmed = value.trim();
+      if (trimmed.endsWith("%"))
+        return clamp((Number(trimmed.slice(0, -1)) / 100) * scale, 0, scale);
+      return clamp(Number(trimmed), 0, scale);
+    };
+
+    const parseSignedChannel = (value: string, scale: number): number => {
+      const trimmed = value.trim();
+      if (trimmed.endsWith("%")) return (Number(trimmed.slice(0, -1)) / 100) * scale;
+      return Number(trimmed);
+    };
+
+    const parseHue = (value: string): number => {
+      const trimmed = value.trim();
+      if (trimmed.endsWith("deg")) return Number(trimmed.slice(0, -3));
+      if (trimmed.endsWith("rad")) return (Number(trimmed.slice(0, -3)) * 180) / Math.PI;
+      if (trimmed.endsWith("turn")) return Number(trimmed.slice(0, -4)) * 360;
+      return Number(trimmed);
+    };
+
+    const splitColorParts = (value: string): { channels: string[]; alpha?: string } => {
+      const slashParts = value
+        .replace(/\s*\/\s*/u, " / ")
+        .trim()
+        .split(/\s+/u);
+      const slashIndex = slashParts.indexOf("/");
+      if (slashIndex >= 0) {
+        return {
+          channels: slashParts.slice(0, slashIndex),
+          alpha: slashParts[slashIndex + 1],
+        };
+      }
+      return { channels: slashParts };
+    };
+
+    const linearToSrgb = (value: number): number => {
+      const clamped = clamp(value, 0, 1);
+      return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+    };
+
+    const oklabToRgb = (lightness: number, a: number, b: number, alpha: number): Rgba => {
+      const lPrime = lightness + 0.3963377774 * a + 0.2158037573 * b;
+      const mPrime = lightness - 0.1055613458 * a - 0.0638541728 * b;
+      const sPrime = lightness - 0.0894841775 * a - 1.291485548 * b;
+      const l = lPrime ** 3;
+      const m = mPrime ** 3;
+      const s = sPrime ** 3;
+      return {
+        r: linearToSrgb(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s) * 255,
+        g: linearToSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s) * 255,
+        b: linearToSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s) * 255,
+        a: alpha,
+      };
+    };
+
+    const oklchToRgb = (lightness: number, chroma: number, hue: number, alpha: number): Rgba => {
+      const hueRadians = (hue * Math.PI) / 180;
+      return oklabToRgb(
+        lightness,
+        chroma * Math.cos(hueRadians),
+        chroma * Math.sin(hueRadians),
+        alpha,
+      );
+    };
+
+    const parseCssColor = (value: string): Rgba => {
+      const trimmed = value.trim().toLowerCase();
+      if (trimmed === "transparent") return { r: 0, g: 0, b: 0, a: 0 };
+
+      const rgbMatch = /^rgba?\((.*)\)$/u.exec(trimmed);
+      if (rgbMatch) {
+        const body = rgbMatch[1];
+        const parts = body.includes(",")
+          ? body.split(",").map((part) => part.trim())
+          : splitColorParts(body).channels;
+        const alpha = body.includes(",")
+          ? parseAlpha(parts[3])
+          : parseAlpha(splitColorParts(body).alpha);
+        return {
+          r: parseChannel(parts[0], 255),
+          g: parseChannel(parts[1], 255),
+          b: parseChannel(parts[2], 255),
+          a: alpha,
+        };
+      }
+
+      const srgbMatch = /^color\(\s*srgb\s+(.*)\)$/u.exec(trimmed);
+      if (srgbMatch) {
+        const parts = splitColorParts(srgbMatch[1]);
+        return {
+          r: parseChannel(parts.channels[0], 1) * 255,
+          g: parseChannel(parts.channels[1], 1) * 255,
+          b: parseChannel(parts.channels[2], 1) * 255,
+          a: parseAlpha(parts.alpha),
+        };
+      }
+
+      const oklchMatch = /^oklch\((.*)\)$/u.exec(trimmed);
+      if (oklchMatch) {
+        const parts = splitColorParts(oklchMatch[1]);
+        const lightness = parseChannel(parts.channels[0], 1);
+        const chroma = parseChannel(parts.channels[1], 1);
+        const hue = parseHue(parts.channels[2] ?? "0");
+        return oklchToRgb(lightness, chroma, hue, parseAlpha(parts.alpha));
+      }
+
+      const oklabMatch = /^oklab\((.*)\)$/u.exec(trimmed);
+      if (oklabMatch) {
+        const parts = splitColorParts(oklabMatch[1]);
+        return oklabToRgb(
+          parseChannel(parts.channels[0], 1),
+          parseSignedChannel(parts.channels[1], 1),
+          parseSignedChannel(parts.channels[2], 1),
+          parseAlpha(parts.alpha),
+        );
+      }
+
+      throw new Error(`Unsupported computed color: ${value}`);
+    };
+
+    const composite = (foreground: Rgba, background: Rgba): Rgba => {
+      const alpha = foreground.a + background.a * (1 - foreground.a);
+      if (alpha === 0) return { r: 0, g: 0, b: 0, a: 0 };
+      return {
+        r: (foreground.r * foreground.a + background.r * background.a * (1 - foreground.a)) / alpha,
+        g: (foreground.g * foreground.a + background.g * background.a * (1 - foreground.a)) / alpha,
+        b: (foreground.b * foreground.a + background.b * background.a * (1 - foreground.a)) / alpha,
+        a: alpha,
+      };
+    };
+
+    const effectiveBackground = (target: Element): Rgba => {
+      const chain: Element[] = [];
+      for (let current: Element | null = target; current; current = current.parentElement) {
+        chain.unshift(current);
+      }
+
+      let background: Rgba = { r: 255, g: 255, b: 255, a: 1 };
+      for (const item of chain) {
+        const color = parseCssColor(window.getComputedStyle(item).backgroundColor);
+        if (color.a > 0) background = composite(color, background);
+      }
+      return background;
+    };
+
+    const srgbToLinear = (value: number): number => {
+      const normalized = value / 255;
+      return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    };
+
+    const luminance = (color: Rgba): number =>
+      0.2126 * srgbToLinear(color.r) +
+      0.7152 * srgbToLinear(color.g) +
+      0.0722 * srgbToLinear(color.b);
+
+    const contrastRatio = (foreground: Rgba, background: Rgba): number => {
+      const foregroundLuminance = luminance(foreground);
+      const backgroundLuminance = luminance(background);
+      const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+      const darker = Math.min(foregroundLuminance, backgroundLuminance);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+
+    const style = window.getComputedStyle(element);
+    const background = effectiveBackground(element);
+    const foreground = composite(parseCssColor(style.color), background);
+    return {
+      background: style.backgroundColor,
+      color: style.color,
+      ratio: contrastRatio(foreground, background),
+    };
+  });
+
+  expect(
+    result.ratio,
+    `${label} contrast (${result.color} on ${result.background})`,
+  ).toBeGreaterThanOrEqual(minimumRatio);
+  return result.ratio;
+}
 
 test.describe("attendance accessibility", () => {
   test("geo permission fallback can be completed with keyboard focus", async ({ page }) => {
@@ -94,6 +313,34 @@ test.describe("attendance accessibility", () => {
       page.getByText("Manual fallback submitted for review", { exact: true }),
     ).toBeVisible();
     expect(fallbackRequests).toHaveLength(1);
+  });
+
+  test("employee attendance result contrast meets AA in light and dark themes", async ({
+    page,
+  }) => {
+    await installTheme(page, "light");
+    await prepareAttendancePage(page);
+    await routeEmployeeAttendanceSummary(page);
+    await page.route("**/api/v1/attendance/punches", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+    });
+
+    await openAttendance(page);
+    await page.getByRole("button", { name: "Clock in", exact: true }).click();
+    await expectContrastAtLeast(
+      page.getByRole("status").filter({ hasText: "Clock-in recorded" }),
+      "light accepted attendance result",
+    );
+
+    await applyTheme(page, "dark");
+    await expectContrastAtLeast(
+      page.getByRole("status").filter({ hasText: "Clock-in recorded" }),
+      "dark accepted attendance result",
+    );
   });
 
   test("regularization controls are labeled and invalid fields receive focus", async ({ page }) => {
@@ -284,6 +531,73 @@ test.describe("attendance accessibility", () => {
       filters: { report_mode: "monthly_summary" },
     });
     await expectNoDocumentHorizontalOverflow(page, "/reports/attendance accessibility");
+  });
+
+  test("attendance report status contrast meets AA in light and dark themes", async ({ page }) => {
+    await installTheme(page, "light");
+    await prepareAttendanceReportPage(page);
+
+    await page.goto("/reports/attendance", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Daily Attendance" })).toBeVisible();
+    await expectContrastAtLeast(
+      page
+        .locator("span:visible")
+        .filter({ hasText: /^Present$/u })
+        .first(),
+      "light success status badge",
+    );
+    await expectContrastAtLeast(
+      page.locator("span:visible").filter({ hasText: /^WFH$/u }).first(),
+      "light info status badge",
+    );
+    await expectContrastAtLeast(
+      page
+        .locator("span:visible")
+        .filter({ hasText: /^Absent$/u })
+        .first(),
+      "light destructive status badge",
+    );
+
+    await page.getByRole("tab", { name: "Monthly Summary" }).click();
+    await expectContrastAtLeast(
+      page.locator('[data-testid="attendance-monthly-percentage-success"]:visible').first(),
+      "light monthly success percentage",
+    );
+    await expectContrastAtLeast(
+      page.locator('[data-testid="attendance-monthly-percentage-destructive"]:visible').first(),
+      "light monthly destructive percentage",
+    );
+
+    await applyTheme(page, "dark");
+    await page.getByRole("tab", { name: "Daily Attendance" }).click();
+    await expectContrastAtLeast(
+      page
+        .locator("span:visible")
+        .filter({ hasText: /^Present$/u })
+        .first(),
+      "dark success status badge",
+    );
+    await expectContrastAtLeast(
+      page.locator("span:visible").filter({ hasText: /^WFH$/u }).first(),
+      "dark info status badge",
+    );
+    await expectContrastAtLeast(
+      page
+        .locator("span:visible")
+        .filter({ hasText: /^Absent$/u })
+        .first(),
+      "dark destructive status badge",
+    );
+
+    await page.getByRole("tab", { name: "Monthly Summary" }).click();
+    await expectContrastAtLeast(
+      page.locator('[data-testid="attendance-monthly-percentage-success"]:visible').first(),
+      "dark monthly success percentage",
+    );
+    await expectContrastAtLeast(
+      page.locator('[data-testid="attendance-monthly-percentage-destructive"]:visible').first(),
+      "dark monthly destructive percentage",
+    );
   });
 
   test("manager attendance reports omit unavailable export action", async ({ page }) => {
@@ -497,6 +811,7 @@ async function prepareAttendanceReportPage(
 ): Promise<{ reportRequests: string[]; exportRequests: Array<Record<string, unknown>> }> {
   const reportRequests: string[] = [];
   const exportRequests: Array<Record<string, unknown>> = [];
+  const fixtureDate = previousLocalDate();
   await installRole(page, role.roleKey, role.roleLabel);
   await page.route("**/api/v1/reports/attendance/summary**", async (route) => {
     reportRequests.push(route.request().url());
@@ -508,7 +823,7 @@ async function prepareAttendanceReportPage(
           {
             id: "attendance-report-a11y-1",
             employee_user_id: "employee-a11y-1",
-            date: "2026-01-15",
+            date: fixtureDate,
             employee: "Aarav Sharma",
             department: "Engineering",
             status: "present",
@@ -530,13 +845,63 @@ async function prepareAttendanceReportPage(
             hours: 9,
             note: "Accessible filter fixture",
           },
+          {
+            id: "attendance-report-a11y-2",
+            employee_user_id: "employee-a11y-2",
+            date: fixtureDate,
+            employee: "Info Contrast Employee",
+            department: "Engineering",
+            status: "wfh",
+            reporting_evidence_category: "provisional",
+            attendance_channels: ["Geo"],
+            source_categories: ["geo"],
+            work_site_id: ["00000000-0000-4000-8000-000000000a11"],
+            work_site_name: ["Bengaluru Office"],
+            work_site_type: ["office"],
+            approval_state: "pending",
+            geo_outcome: ["inside_confident"],
+            geo_action: ["allow"],
+            review_type: ["geo_decision"],
+            reason_codes: ["geo_accuracy_exceeded"],
+            review_required: true,
+            review_outcome: [],
+            in_time: "09:15",
+            out_time: "18:10",
+            hours: 8.9,
+            note: "Info contrast fixture",
+          },
+          {
+            id: "attendance-report-a11y-3",
+            employee_user_id: "employee-a11y-3",
+            date: fixtureDate,
+            employee: "Destructive Contrast Employee",
+            department: "Engineering",
+            status: "absent",
+            reporting_evidence_category: "rejected",
+            attendance_channels: ["Geo"],
+            source_categories: ["geo"],
+            work_site_id: ["00000000-0000-4000-8000-000000000a11"],
+            work_site_name: ["Bengaluru Office"],
+            work_site_type: ["office"],
+            approval_state: "rejected",
+            geo_outcome: ["permission_denied"],
+            geo_action: ["deny"],
+            review_type: ["geo_decision"],
+            reason_codes: ["geo_permission_denied"],
+            review_required: false,
+            review_outcome: ["rejected"],
+            in_time: "",
+            out_time: "",
+            hours: 0,
+            note: "Destructive contrast fixture",
+          },
         ],
         evidence_categories: {
           verified: 1,
           warning: 0,
-          provisional: 0,
+          provisional: 1,
           review_required: 0,
-          rejected: 0,
+          rejected: 1,
         },
         site_options: [
           {
@@ -547,7 +912,7 @@ async function prepareAttendanceReportPage(
         ],
         page: 1,
         page_size: 100,
-        total: 1,
+        total: 3,
         total_pages: 1,
       }),
     });

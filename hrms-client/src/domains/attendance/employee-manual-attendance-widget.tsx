@@ -81,9 +81,15 @@ function attendanceResultTone(result: ManualAttendanceResult): AttendanceResultT
 }
 
 function attendanceResultClassName(tone: AttendanceResultTone): string {
-  if (tone === "accepted") return "border-success/30 bg-success/10 text-success";
-  if (tone === "rejected") return "border-destructive/30 bg-destructive/10 text-destructive";
+  if (tone === "accepted") return "border-success/30 bg-success/10 text-foreground";
+  if (tone === "rejected") return "border-destructive/30 bg-destructive/10 text-foreground";
   return "border-warning/40 bg-warning/10 text-warning-foreground";
+}
+
+function attendanceResultIconClassName(tone: AttendanceResultTone): string {
+  if (tone === "accepted") return "text-success";
+  if (tone === "rejected") return "text-destructive";
+  return "text-warning";
 }
 
 function policyOffersManualFallback(policy: EmployeeAttendanceGeoPolicy): boolean {
@@ -305,9 +311,9 @@ export function EmployeeManualAttendanceWidget({
           </dl>
         )}
 
-        <div className="rounded-lg border border-info/25 bg-info/10 p-3 text-sm text-info">
+        <div className="rounded-lg border border-info/25 bg-info/10 p-3 text-sm text-foreground">
           <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden="true" />
             <div className="min-w-0">
               <p className="font-semibold">{policyHelp.title}</p>
               <p className="mt-0.5">{policyHelp.description}</p>
@@ -330,9 +336,9 @@ export function EmployeeManualAttendanceWidget({
           {action.geoStatus === "requesting" ? (
             <div
               role="status"
-              className="flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 p-3 text-sm text-info"
+              className="flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 p-3 text-sm text-foreground"
             >
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden="true" />
               <div>
                 <p className="font-semibold">Getting browser location</p>
                 <p className="mt-0.5">
@@ -351,9 +357,21 @@ export function EmployeeManualAttendanceWidget({
               )}
             >
               {resultTone === "accepted" ? (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <CheckCircle2
+                  className={cn(
+                    "mt-0.5 h-4 w-4 shrink-0",
+                    resultTone && attendanceResultIconClassName(resultTone),
+                  )}
+                  aria-hidden="true"
+                />
               ) : (
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <AlertCircle
+                  className={cn(
+                    "mt-0.5 h-4 w-4 shrink-0",
+                    resultTone && attendanceResultIconClassName(resultTone),
+                  )}
+                  aria-hidden="true"
+                />
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">

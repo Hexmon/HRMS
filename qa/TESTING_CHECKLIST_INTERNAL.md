@@ -43,6 +43,10 @@ Until the future domains and isolated services are live, treat Vercel plus Rende
 - Day 4: projects, assets, helpdesk, and notifications.
 - Day 5: reports, admin policies, and business rules.
 - Day 6: full regression, cross-browser, CI/CD, and future-domain readiness.
+- GEO-S15-015 attendance accessibility/responsive gate: verify keyboard navigation,
+  permission-denied fallback focus, manager review dialog/action labels and post-action focus,
+  status/result contrast, mobile attendance/report responsiveness, exact-location privacy controls,
+  and any environment limitations.
 - Day 7: defect retest, risk confirmation, and final QA submission.
 
 ## Defect SLA

@@ -1,33 +1,60 @@
 import { cn } from "@/lib/utils";
 
+type BadgeTone = {
+  label: string;
+  cls: string;
+  dotCls?: string;
+};
+
+const SUCCESS_SOFT = "bg-success/15 text-foreground border-success/20";
+const INFO_SOFT = "bg-info/15 text-foreground border-info/30";
+const DESTRUCTIVE_SOFT = "bg-destructive/15 text-foreground border-destructive/30";
 const WARNING_SOFT =
   "bg-warning/20 text-warning-foreground border-warning/40 dark:bg-warning/15 dark:text-warning dark:border-warning/30";
 
-const MAP: Record<string, { label: string; cls: string }> = {
-  approved: { label: "Approved", cls: "bg-success/15 text-success border-success/20" },
-  active: { label: "Active", cls: "bg-success/15 text-success border-success/20" },
-  paid: { label: "Paid", cls: "bg-success/15 text-success border-success/20" },
-  completed: { label: "Completed", cls: "bg-success/15 text-success border-success/20" },
-  present: { label: "Present", cls: "bg-success/15 text-success border-success/20" },
-  verified: { label: "Verified", cls: "bg-success/15 text-success border-success/20" },
-  confirmed: { label: "Confirmed", cls: "bg-success/15 text-success border-success/20" },
-  accepted: { label: "Accepted", cls: "bg-success/15 text-success border-success/20" },
+const success = (label: string): BadgeTone => ({
+  label,
+  cls: SUCCESS_SOFT,
+  dotCls: "bg-success",
+});
+
+const info = (label: string): BadgeTone => ({
+  label,
+  cls: INFO_SOFT,
+  dotCls: "bg-info",
+});
+
+const destructive = (label: string): BadgeTone => ({
+  label,
+  cls: DESTRUCTIVE_SOFT,
+  dotCls: "bg-destructive",
+});
+
+const MAP: Record<string, BadgeTone> = {
+  approved: success("Approved"),
+  active: success("Active"),
+  paid: success("Paid"),
+  completed: success("Completed"),
+  present: success("Present"),
+  verified: success("Verified"),
+  confirmed: success("Confirmed"),
+  accepted: success("Accepted"),
   closed: { label: "Closed", cls: "bg-muted text-muted-foreground border-border" },
   inactive: { label: "Inactive", cls: "bg-muted text-muted-foreground border-border" },
   draft: { label: "Draft", cls: "bg-muted text-muted-foreground border-border" },
   exited: { label: "Exited", cls: "bg-muted text-muted-foreground border-border" },
   in_stock: { label: "In Stock", cls: "bg-muted text-muted-foreground border-border" },
   cancelled: { label: "Cancelled", cls: "bg-muted text-muted-foreground border-border" },
-  planned: { label: "Planned", cls: "bg-info/15 text-info border-info/30" },
-  green: { label: "On track", cls: "bg-success/15 text-success border-success/20" },
+  planned: info("Planned"),
+  green: success("On track"),
   amber: { label: "At risk", cls: WARNING_SOFT },
-  red: { label: "Critical", cls: "bg-destructive/15 text-destructive border-destructive/30" },
-  fixed: { label: "Fixed", cls: "bg-info/15 text-info border-info/30" },
-  hourly: { label: "Hourly", cls: "bg-info/15 text-info border-info/30" },
-  retainer: { label: "Retainer", cls: "bg-info/15 text-info border-info/30" },
+  red: destructive("Critical"),
+  fixed: info("Fixed"),
+  hourly: info("Hourly"),
+  retainer: info("Retainer"),
   internal: { label: "Internal", cls: "bg-muted text-muted-foreground border-border" },
-  client: { label: "Client", cls: "bg-info/15 text-info border-info/30" },
-  billable: { label: "Billable", cls: "bg-success/15 text-success border-success/20" },
+  client: info("Client"),
+  billable: success("Billable"),
   non_billable: { label: "Non-billable", cls: "bg-muted text-muted-foreground border-border" },
   pending: { label: "Pending", cls: WARNING_SOFT },
   warning: { label: "Warning", cls: WARNING_SOFT },
@@ -42,17 +69,17 @@ const MAP: Record<string, { label: string; cls: string }> = {
     label: "Notice period",
     cls: WARNING_SOFT,
   },
-  onboarding: { label: "Onboarding", cls: "bg-info/15 text-info border-info/30" },
-  invited: { label: "Invited", cls: "bg-info/15 text-info border-info/30" },
-  open: { label: "Open", cls: "bg-info/15 text-info border-info/30" },
-  in_progress: { label: "In Progress", cls: "bg-info/15 text-info border-info/30" },
-  wfh: { label: "WFH", cls: "bg-info/15 text-info border-info/30" },
-  assigned: { label: "Assigned", cls: "bg-info/15 text-info border-info/30" },
-  rejected: { label: "Rejected", cls: "bg-destructive/15 text-destructive border-destructive/30" },
-  absent: { label: "Absent", cls: "bg-destructive/15 text-destructive border-destructive/30" },
-  overdue: { label: "Overdue", cls: "bg-destructive/15 text-destructive border-destructive/30" },
+  onboarding: info("Onboarding"),
+  invited: info("Invited"),
+  open: info("Open"),
+  in_progress: info("In Progress"),
+  wfh: info("WFH"),
+  assigned: info("Assigned"),
+  rejected: destructive("Rejected"),
+  absent: destructive("Absent"),
+  overdue: destructive("Overdue"),
   // Expense workflow
-  submitted: { label: "Submitted", cls: "bg-info/15 text-info border-info/30" },
+  submitted: info("Submitted"),
   pending_manager: {
     label: "Pending Manager",
     cls: WARNING_SOFT,
@@ -67,25 +94,17 @@ const MAP: Record<string, { label: string; cls: string }> = {
   },
   manager_rejected: {
     label: "Manager Rejected",
-    cls: "bg-destructive/15 text-destructive border-destructive/30",
+    cls: DESTRUCTIVE_SOFT,
+    dotCls: "bg-destructive",
   },
-  finance_verification: {
-    label: "Finance Verification",
-    cls: "bg-info/15 text-info border-info/30",
-  },
+  finance_verification: info("Finance Verification"),
   finance_hold: {
     label: "Finance Hold",
     cls: WARNING_SOFT,
   },
-  finance_verified: {
-    label: "Finance Verified",
-    cls: "bg-success/15 text-success border-success/20",
-  },
-  payment_released: {
-    label: "Payment Released",
-    cls: "bg-success/15 text-success border-success/20",
-  },
-  bills_submitted: { label: "Bills Submitted", cls: "bg-info/15 text-info border-info/30" },
+  finance_verified: success("Finance Verified"),
+  payment_released: success("Payment Released"),
+  bills_submitted: info("Bills Submitted"),
   settlement_review: {
     label: "Settlement Review",
     cls: WARNING_SOFT,
@@ -115,7 +134,12 @@ export function StatusBadge({
         className,
       )}
     >
-      <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current opacity-80" />
+      <span
+        className={cn(
+          "mr-1.5 inline-block h-1.5 w-1.5 rounded-full opacity-80",
+          m.dotCls ?? "bg-current",
+        )}
+      />
       {label ?? m.label}
     </span>
   );
