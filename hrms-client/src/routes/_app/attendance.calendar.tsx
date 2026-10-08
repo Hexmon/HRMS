@@ -1,4 +1,4 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,9 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
-import { useAttendanceMonthlyCalendar } from "@/domains/attendance";
+import { useAttendanceDailyCalendar, useAttendanceMonthlyCalendar } from "@/domains/attendance";
+import { employeeDayEvidenceView } from "@/domains/attendance/employee-day-evidence-model";
+import type { RegularizationItemDisplay } from "@/domains/attendance/regularization-form-model";
 import {
   asArray,
   asRecord,
@@ -90,17 +92,28 @@ function AttendanceCalendar() {
 }
 
 function EmployeeAttendanceCalendar() {
+  const navigate = useNavigate();
   const today = new Date();
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [selected, setSelected] = useState<number>(today.getDate());
-  const query = useAttendanceMonthlyCalendar({
+  const selectedDate = `${monthValue(cursor.y, cursor.m)}-${String(selected).padStart(2, "0")}`;
+  const todayDate = `${monthValue(today.getFullYear(), today.getMonth())}-${String(
+    today.getDate(),
+  ).padStart(2, "0")}`;
+  const monthlyQuery = useAttendanceMonthlyCalendar({
     month: monthValue(cursor.y, cursor.m),
     page: 1,
     page_size: 40,
   });
-  const payload = asRecord(query.data);
+  const dailyQuery = useAttendanceDailyCalendar({
+    date: selectedDate,
+    page: 1,
+    page_size: 1,
+  });
+  const payload = asRecord(monthlyQuery.data);
   const calendarDays = records(payload.calendar_days);
   const summary = asRecord(payload.summary);
+  const evidence = employeeDayEvidenceView(dailyQuery.data?.self_evidence);
   const data = useMemo(() => {
     const map = new Map<number, ApiRecord>();
     for (const record of calendarDays) map.set(dayNumber(record), record);
@@ -118,56 +131,98 @@ function EmployeeAttendanceCalendar() {
   const next = () => setCursor((c) => (c.m === 11 ? { y: c.y + 1, m: 0 } : { y: c.y, m: c.m + 1 }));
   const selectedRecord = data.get(selected);
   const selectedStatus = dayStatus(selectedRecord);
+  const canRegularizeSelectedDate = selectedDate < todayDate;
+  const regularizeSelectedDay = () => {
+    void navigate({
+      to: "/attendance",
+      search: { regularizeDate: selectedDate },
+    });
+  };
 
   return (
     <div className="grid grid-cols-1 gap-4 pt-2 lg:grid-cols-3">
-      <Card className="rounded-2xl border-border/60 p-5 lg:col-span-2">
-        <div className="mb-4 flex items-center justify-between">
+      <Card className="rounded-2xl border-border/60 p-3 sm:p-5 lg:col-span-2">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <h3 className="text-base font-semibold">{monthName}</h3>
           <div className="flex gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={prev}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 rounded-full md:h-8 md:w-8"
+              onClick={prev}
+              aria-label="Previous month"
+            >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={next}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 rounded-full md:h-8 md:w-8"
+              onClick={next}
+              aria-label="Next month"
+            >
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
-        {query.isError ? (
-          <EmptyState title="Could not load calendar" description={errorMessage(query.error)} />
+        {monthlyQuery.isError ? (
+          <EmptyState
+            title="Could not load calendar"
+            description={errorMessage(monthlyQuery.error)}
+          />
         ) : (
           <>
-            <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                <div key={d}>{d}</div>
-              ))}
+            <div
+              data-testid="attendance-calendar-scroll"
+              className="-mx-1 overflow-x-auto overscroll-x-contain px-1"
+            >
+              <div className="min-w-[21rem] sm:min-w-0">
+                <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:gap-1.5">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                    <div key={d}>{d}</div>
+                  ))}
+                </div>
+                <div className="mt-2 grid grid-cols-7 gap-1 sm:gap-1.5">
+                  {Array.from({ length: firstDow }).map((_, i) => (
+                    <div key={"e" + i} />
+                  ))}
+                  {Array.from({ length: days }).map((_, i) => {
+                    const day = i + 1;
+                    const record = data.get(day);
+                    const status = dayStatus(record);
+                    const isSelected = day === selected;
+                    const dayDate = new Date(cursor.y, cursor.m, day);
+                    const isToday = dayDate.toDateString() === today.toDateString();
+                    const dayLabel = dayDate.toLocaleDateString(undefined, {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    });
+                    return (
+                      <button
+                        key={day}
+                        onClick={() => setSelected(day)}
+                        aria-current={isToday ? "date" : undefined}
+                        aria-pressed={isSelected}
+                        aria-label={`${STATUS_LABELS[status]} attendance for ${dayLabel}${
+                          isSelected ? ", selected" : ""
+                        }`}
+                        className={cn(
+                          "relative aspect-square min-h-11 rounded-xl border p-1.5 text-left text-xs transition hover:-translate-y-0.5 hover:shadow-sm sm:min-h-0",
+                          STATUS_CLS[status],
+                          isSelected && "ring-2 ring-primary ring-offset-1",
+                          monthlyQuery.isLoading && "animate-pulse",
+                        )}
+                      >
+                        <span className="font-semibold">{day}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-            <div className="mt-2 grid grid-cols-7 gap-1.5">
-              {Array.from({ length: firstDow }).map((_, i) => (
-                <div key={"e" + i} />
-              ))}
-              {Array.from({ length: days }).map((_, i) => {
-                const day = i + 1;
-                const record = data.get(day);
-                const status = dayStatus(record);
-                const isSelected = day === selected;
-                return (
-                  <button
-                    key={day}
-                    onClick={() => setSelected(day)}
-                    className={cn(
-                      "relative aspect-square rounded-xl border p-1.5 text-left text-xs transition hover:-translate-y-0.5 hover:shadow-sm",
-                      STATUS_CLS[status],
-                      isSelected && "ring-2 ring-primary ring-offset-1",
-                      query.isLoading && "animate-pulse",
-                    )}
-                  >
-                    <span className="font-semibold">{day}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-xs">
+            <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 text-xs">
               {(
                 ["present", "wfh", "late", "absent", "leave", "holiday", "weekend"] as DayStatus[]
               ).map((status) => (
@@ -191,31 +246,32 @@ function EmployeeAttendanceCalendar() {
           title={`Day ${selected}`}
           description={new Date(cursor.y, cursor.m, selected).toDateString()}
         >
-          {query.isLoading ? (
+          {monthlyQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading day attendance...</p>
           ) : selectedRecord ? (
             <div className="space-y-3 text-sm">
               <StatusBadge
                 status={selectedStatus === "leave" ? "approved" : selectedStatus}
                 label={STATUS_LABELS[selectedStatus]}
+                className="max-w-full whitespace-normal break-words"
               />
               {(text(selectedRecord.in_time) ||
                 text(selectedRecord.out_time) ||
                 numberValue(selectedRecord.work_minutes) > 0) && (
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-xl bg-muted/40 p-2">
+                <div className="grid grid-cols-3 gap-2 text-center max-[360px]:grid-cols-1">
+                  <div className="rounded-xl bg-muted/40 p-2 max-[360px]:flex max-[360px]:items-center max-[360px]:justify-between max-[360px]:gap-3">
                     <p className="text-[11px] text-muted-foreground">In</p>
                     <p className="font-semibold tabular-nums">
                       {text(selectedRecord.in_time, "-")}
                     </p>
                   </div>
-                  <div className="rounded-xl bg-muted/40 p-2">
+                  <div className="rounded-xl bg-muted/40 p-2 max-[360px]:flex max-[360px]:items-center max-[360px]:justify-between max-[360px]:gap-3">
                     <p className="text-[11px] text-muted-foreground">Out</p>
                     <p className="font-semibold tabular-nums">
                       {text(selectedRecord.out_time, "-")}
                     </p>
                   </div>
-                  <div className="rounded-xl bg-muted/40 p-2">
+                  <div className="rounded-xl bg-muted/40 p-2 max-[360px]:flex max-[360px]:items-center max-[360px]:justify-between max-[360px]:gap-3">
                     <p className="text-[11px] text-muted-foreground">Hours</p>
                     <p className="font-semibold tabular-nums">
                       {text(selectedRecord.hours, "0h 00m")}
@@ -226,6 +282,25 @@ function EmployeeAttendanceCalendar() {
               <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
                 {selectedDayDetail(selectedRecord, selectedStatus)}
               </p>
+              {dailyQuery.isLoading ? (
+                <p className="text-xs text-muted-foreground">Loading day evidence...</p>
+              ) : dailyQuery.isError ? (
+                <p className="rounded-md bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive">
+                  {errorMessage(dailyQuery.error)}
+                </p>
+              ) : (
+                <EmployeeDayEvidencePanel evidence={evidence} />
+              )}
+              {canRegularizeSelectedDate && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-10 w-full whitespace-normal sm:w-auto"
+                  onClick={regularizeSelectedDay}
+                >
+                  Regularize this day
+                </Button>
+              )}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No attendance for this day.</p>
@@ -247,7 +322,7 @@ function EmployeeAttendanceCalendar() {
               <li key={key} className="flex items-center justify-between">
                 <span className="text-muted-foreground">{label}</span>
                 <span className="font-semibold tabular-nums">
-                  {query.isLoading ? "..." : numberValue(summary[key])}
+                  {monthlyQuery.isLoading ? "..." : numberValue(summary[key])}
                 </span>
               </li>
             ))}
@@ -256,4 +331,191 @@ function EmployeeAttendanceCalendar() {
       </div>
     </div>
   );
+}
+
+function EmployeeDayEvidencePanel({
+  evidence,
+}: {
+  evidence: ReturnType<typeof employeeDayEvidenceView>;
+}) {
+  return (
+    <div className="space-y-4" data-testid="employee-day-evidence">
+      <section aria-labelledby="attendance-summary-sources" className="space-y-2">
+        <h4
+          id="attendance-summary-sources"
+          className="text-xs font-semibold uppercase text-muted-foreground"
+        >
+          Summary based on
+        </h4>
+        {evidence && evidence.summarySources.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {evidence.summarySources.map((source) => (
+              <span
+                key={source.type}
+                className="max-w-full break-words rounded-full border border-border bg-background px-2 py-0.5 text-xs"
+              >
+                {source.label}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No summary source details available.</p>
+        )}
+      </section>
+
+      <section aria-labelledby="attendance-event-trail" className="space-y-2">
+        <h4
+          id="attendance-event-trail"
+          className="text-xs font-semibold uppercase text-muted-foreground"
+        >
+          Attendance trail
+        </h4>
+        {evidence && evidence.events.length > 0 ? (
+          <ol className="space-y-2">
+            {evidence.events.map((event) => (
+              <li key={event.key} className="rounded-md border border-border/70 p-2.5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="break-words font-medium">{event.eventLabel}</p>
+                    <p className="text-xs text-muted-foreground">{event.timeLabel}</p>
+                  </div>
+                  <StatusBadge
+                    status={event.badgeStatus}
+                    label={event.decisionLabel}
+                    className="w-fit max-w-full whitespace-normal break-words sm:shrink-0"
+                  />
+                </div>
+                <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  {event.sourceLabel && <p className="break-words">Source: {event.sourceLabel}</p>}
+                  {event.workModeLabel && (
+                    <p className="break-words">Work mode: {event.workModeLabel}</p>
+                  )}
+                  {event.offline && (
+                    <div className="grid gap-1 rounded-md bg-muted/50 p-2 sm:grid-cols-2">
+                      <EvidenceFact
+                        label="Captured offline"
+                        value={formatEvidenceDateTime(event.occurredAt)}
+                      />
+                      <EvidenceFact
+                        label="Received by server"
+                        value={event.offline.serverReceivedAtLabel}
+                      />
+                      <EvidenceFact label="Sync state" value={event.offline.syncLabel} />
+                      <p className="break-words sm:col-span-2">
+                        This offline evidence is not payroll-final.
+                      </p>
+                    </div>
+                  )}
+                  <p className="break-words">{event.reasonText || event.decisionDescription}</p>
+                  {event.reasonCode && (
+                    <p className="break-words font-mono text-[11px]">
+                      Reason code: {event.reasonCode}
+                    </p>
+                  )}
+                  {event.geoLabel && (
+                    <p className="break-words">Location check: {event.geoLabel}</p>
+                  )}
+                  {event.regularizationLabel && (
+                    <p className="break-words">{event.regularizationLabel}</p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No attendance events recorded for this day.
+          </p>
+        )}
+      </section>
+
+      {evidence && evidence.regularizations.length > 0 && (
+        <section aria-labelledby="attendance-regularization-evidence" className="space-y-2">
+          <h4
+            id="attendance-regularization-evidence"
+            className="text-xs font-semibold uppercase text-muted-foreground"
+          >
+            Regularization
+          </h4>
+          <div className="space-y-2">
+            {evidence.regularizations.map((request) => (
+              <div key={request.key} className="rounded-md bg-muted/50 p-2.5 text-xs">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="break-words font-medium">{request.operationsLabel}</span>
+                  <span className="w-fit max-w-full break-words rounded-full bg-background px-2 py-0.5">
+                    {request.statusLabel}
+                  </span>
+                </div>
+                <p className="mt-1 break-words text-muted-foreground">{request.reason}</p>
+                {request.decidedAtLabel && (
+                  <p className="mt-1 break-words text-muted-foreground">
+                    Decided: {request.decidedAtLabel}
+                  </p>
+                )}
+                <RegularizationEvidenceItems items={request.items} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function RegularizationEvidenceItems({ items }: { items: RegularizationItemDisplay[] }) {
+  if (items.length === 0) return null;
+
+  return (
+    <ol className="mt-2 space-y-1.5">
+      {items.map((item, index) => (
+        <li key={item.key} className="rounded-md border border-border/60 bg-background p-2">
+          <p className="break-words font-medium">
+            {items.length > 1 ? `${index + 1}. ` : ""}
+            {item.operationLabel}
+          </p>
+          <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
+            {item.targetPunchLabel && (
+              <RegularizationEvidenceFact label="Original" value={item.targetPunchLabel} />
+            )}
+            {item.requestedPunchLabel && (
+              <RegularizationEvidenceFact label="Requested" value={item.requestedPunchLabel} />
+            )}
+          </div>
+          {item.helperText && (
+            <p className="mt-1.5 break-words text-muted-foreground">{item.helperText}</p>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function RegularizationEvidenceFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md bg-muted/50 px-2 py-1.5">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-0.5 break-words font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function EvidenceFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-0.5 break-words font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function formatEvidenceDateTime(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value || "Time unavailable";
+  return parsed.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
