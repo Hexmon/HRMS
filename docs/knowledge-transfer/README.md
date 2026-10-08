@@ -13,10 +13,11 @@ This pack is for onboarding developers to the whole Hawkaii HRMS project. It exp
 5. `backend-guide.md`
 6. `database-and-data.md`
 7. `api-contract-and-integrations.md`
-8. `modules-and-roles.md`
-9. `testing-release-qa.md`
-10. `operations-runbooks.md`
-11. `new-developer-checklist.md`
+8. `mobile-api-handoff.md`
+9. `modules-and-roles.md`
+10. `testing-release-qa.md`
+11. `operations-runbooks.md`
+12. `new-developer-checklist.md`
 
 ## Repository Shape
 
@@ -39,6 +40,7 @@ There is no root package manager workspace. The frontend and backend each have t
 | Hosted deployment setup | `../deployment/README.md` |
 | Current implementation status | `../implementation/implementation-status-index.md` |
 | Documentation completeness audit | `../implementation/documentation-coverage-audit.md` |
+| Employee mobile API integration | `mobile-api-handoff.md` |
 | Delivery and QA process | `../process/README.md` |
 | Operational procedures | `../runbooks/README.md` |
 
