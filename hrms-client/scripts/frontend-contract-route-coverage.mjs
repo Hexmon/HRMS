@@ -54,7 +54,7 @@ function walk(dir) {
 }
 
 function routePath(file) {
-  let name = relative(routesDir, file).replace(/\.tsx$/, "");
+  let name = relative(routesDir, file).replace(/\\/g, "/").replace(/\.tsx$/, "");
   if (name === "__root" || name === "_app") return null;
   name = name.replace(/^_app[/.]?/, "");
   if (!name || name === "index") return "/";
@@ -67,7 +67,7 @@ function routePath(file) {
 
 const routeFiles = walk(routesDir).filter((file) => file.endsWith(".tsx"));
 const routes = routeFiles
-  .map((file) => ({ file: relative(root, file), route: routePath(file) }))
+  .map((file) => ({ file: relative(root, file).replace(/\\/g, "/"), route: routePath(file) }))
   .filter((item) => item.route);
 
 const missing = routes.filter(({ route }) => {
@@ -80,7 +80,7 @@ const missing = routes.filter(({ route }) => {
 
 const forbiddenFiles = routes.filter(({ file }) => forbiddenExpenseRoutes.has(file));
 const activeExpenseFiles = routeFiles
-  .filter((file) => relative(root, file).startsWith("src/routes/_app/expenses"))
+  .filter((file) => relative(root, file).replace(/\\/g, "/").startsWith("src/routes/_app/expenses"))
   .concat([join(root, "src/lib/expenses-store.tsx")])
   .filter(existsSync);
 
@@ -88,7 +88,7 @@ const forbiddenTerms = activeExpenseFiles.flatMap((file) => {
   const text = readFileSync(file, "utf8");
   return forbiddenExpenseTerms
     .filter((term) => text.includes(term))
-    .map((term) => `${relative(root, file)} contains ${term}`);
+    .map((term) => `${relative(root, file).replace(/\\/g, "/")} contains ${term}`);
 });
 
 const errors = [];
