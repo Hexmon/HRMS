@@ -43,6 +43,19 @@ Until the future domains and isolated services are live, treat Vercel plus Rende
 - Day 4: projects, assets, helpdesk, and notifications.
 - Day 5: reports, admin policies, and business rules.
 - Day 6: full regression, cross-browser, CI/CD, and future-domain readiness.
+- GEO-S15-015 attendance accessibility/responsive gate: verify keyboard navigation,
+  permission-denied fallback focus, manager review dialog/action labels and post-action focus,
+  status/result contrast, mobile attendance/report responsiveness, exact-location privacy controls,
+  and any environment limitations.
+- GEO-S15-016 attendance release/demo gate: confirm GEO-S15-016-R01 release notes,
+  GEO-S15-016-R02 walkthrough, GEO-S15-016-R03 persistent synthetic seed,
+  GEO-S15-016-R04 demo coordinate/site sanitization, and GEO-S15-016-R05 consolidated
+  Sprint 15 QA/release evidence mapping; seed only approved non-production targets with
+  `pnpm release:seed:attendance-demo`; for successful seed runs, verify the printed `date_range`
+  across manual/geo/fallback/review/report views; distinguish seed implementation/static validation
+  from seed execution/database mutation validation; confirm no credentials or exact coordinate
+  values are included in release docs; and record any environment/demo blockers in the task QA
+  summary. The internal checklist is required but is not a replacement Rxx item.
 - Day 7: defect retest, risk confirmation, and final QA submission.
 
 ## Defect SLA
