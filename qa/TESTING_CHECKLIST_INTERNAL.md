@@ -56,6 +56,13 @@ Until the future domains and isolated services are live, treat Vercel plus Rende
   from seed execution/database mutation validation; confirm no credentials or exact coordinate
   values are included in release docs; and record any environment/demo blockers in the task QA
   summary. The internal checklist is required but is not a replacement Rxx item.
+- GEO-S15-017 attendance browser compatibility gate: verify the focused compatibility config
+  against bundled Chromium, installed Chrome, installed Edge, and Playwright WebKit; cover
+  manual-only attendance, synthetic geo success, permission-denied manual fallback, unsupported
+  geolocation, narrow responsive attendance, date/time regularization controls, and manager
+  sheet/dialog smoke; confirm one-shot geolocation remains intact with no `watchPosition` or
+  polling; document native Safari/macOS/iOS permission-prompt validation as not directly tested
+  unless it is run on Apple hardware; and do not mark blocked or unrun browsers as PASS.
 - Day 7: defect retest, risk confirmation, and final QA submission.
 
 ## Defect SLA

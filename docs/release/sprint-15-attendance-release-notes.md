@@ -41,6 +41,14 @@ The internal release checklist is a required release artifact, but it is not a r
 - Manual fallback remains policy-controlled and reviewable. Routine queues and reports show safe evidence summaries, not exact coordinates.
 - Exact-location reveal remains separately permissioned, confirmation-gated, and audited.
 
+## Browser Compatibility
+
+- GEO-S15-017 adds focused browser compatibility verification for Sprint 15 attendance flows without changing production attendance behavior.
+- Verified browser targets are the current Playwright Chromium runtime, the installed Chrome channel, the installed Edge channel, and Playwright WebKit.
+- Safari-compatible engine coverage was verified with Playwright WebKit. Native Safari permission prompts, iOS/macOS OS-level location authorization, and device-specific Safari browser chrome behavior were not directly validated in this Windows environment.
+- Compatibility checks cover manual-only attendance, synthetic geo success, permission-denied fallback, unsupported geolocation, narrow responsive attendance, date/time regularization controls, and manager sheet/dialog smoke.
+- Browser geolocation still requires a secure browser context; localhost may work as a development exception. The compatibility tests validate application behavior for standard API outcomes, not native operating-system permission UI.
+
 ## Manager Review
 
 - Primary route: `/attendance/approvals`
@@ -80,6 +88,7 @@ The internal release checklist is a required release artifact, but it is not a r
 
 - GEO-S15-010 through GEO-S15-015 summaries remain under `hrms-client/docs/qa/runs/`.
 - GEO-S15-016 evidence is recorded in `hrms-client/docs/qa/runs/geo-s15-016/summary.md`.
+- GEO-S15-017 browser compatibility evidence is recorded in `hrms-client/docs/qa/runs/geo-s15-017/summary.md`.
 - The release demo seed command is `pnpm release:seed:attendance-demo` from `hrms_backend`.
 - Local GEO-S15-016 validation confirms seed implementation/static checks only; seed execution/database mutation validation is blocked by local runtime/package-manager issues and is not claimed as passed.
 
@@ -87,6 +96,7 @@ The internal release checklist is a required release artifact, but it is not a r
 
 - GEO-S15-014 remains documentation-only until stakeholder/UAT feedback is available.
 - Native mobile application delivery is not part of this release.
+- Real macOS/iOS Safari validation remains a separate manual/UAT activity if native Safari certification is required.
 - Exact-location reveal depends on role/permission configuration and may show restricted/unavailable states for manager personas without that permission.
 - Hosted environment seeding requires explicit approval for a non-production remote database target.
 
