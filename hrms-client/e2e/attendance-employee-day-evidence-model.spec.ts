@@ -177,7 +177,7 @@ test.describe("employee day evidence model", () => {
     expect(view?.events[2]).toMatchObject({
       sourceLabel: "Web attendance with location",
       reasonCode: "geo_inside_fence",
-      reasonText: "Your location was verified within an allowed work area.",
+      reasonText: "Your location was within an allowed work area.",
       geoLabel: "Inside work area - Bhubaneswar Office",
     });
     expect(view?.regularizations[0]).toMatchObject({

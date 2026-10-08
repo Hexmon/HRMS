@@ -57,27 +57,27 @@ const FACTUAL_REASON_CODES: Record<AttendanceGeoFactualOutcome, AttendanceGeoRea
 };
 
 const REASON_DESCRIPTIONS: Record<AttendanceGeoReasonCode, string> = {
-  geo_not_required: "Location verification is not required for this punch.",
-  geo_inside_fence: "Your location was verified within an allowed work area.",
-  geo_evidence_missing: "Location evidence could not be obtained for this punch.",
+  geo_not_required: "A browser location check is not required for this attendance action.",
+  geo_inside_fence: "Your location was within an allowed work area.",
+  geo_evidence_missing: "Location could not be checked for this attendance action.",
   geo_permission_denied:
-    "Location access is blocked. Allow location permission in your browser and try again.",
-  geo_location_unavailable:
-    "Your location could not be determined. Check location services and try again.",
+    "Location permission was not granted. You can use manual fallback if your attendance policy allows it.",
+  geo_location_unavailable: "Your location could not be checked for this attendance action.",
   geo_fence_not_configured: "Your attendance work location is not currently configured.",
-  geo_outside_fence: "Your location appears to be outside the allowed work area.",
+  geo_outside_fence: "This attendance action is outside the configured work area.",
   geo_boundary_uncertain:
-    "Your location is near the work-area boundary and could not be verified confidently.",
-  geo_stale_evidence: "The captured location was too old to verify this punch.",
-  geo_accuracy_exceeded: "Location accuracy was too low to verify this punch.",
+    "The location result is near the work-area boundary and could not be verified confidently.",
+  geo_stale_evidence: "The available location result is too old to use for this attendance action.",
+  geo_accuracy_exceeded:
+    "The available location result is not accurate enough for the current attendance policy.",
   geo_manual_fallback_allowed:
-    "Your punch was recorded and requires review because location could not be verified.",
+    "Manual fallback is submitted for review because location could not be checked.",
   geo_manual_fallback_disallowed:
-    "Location could not be verified and fallback punching is not available.",
+    "Location could not be checked and manual fallback is not available.",
   geo_policy_mode_unknown:
-    "Location verification is not configured correctly for this punch. Contact HR if this continues.",
+    "Location checking is not configured correctly for this attendance action. Contact HR if this continues.",
   geo_action_unknown:
-    "Location verification is not configured correctly for this punch. Contact HR if this continues.",
+    "Location checking is not configured correctly for this attendance action. Contact HR if this continues.",
 };
 
 const DECISION_COPY: Record<EmployeeGeoDecision, { title: string; description: string }> = {
@@ -135,7 +135,7 @@ export function employeeGeoReasonDescription(reasonCode: string | undefined): st
   if (reasonCode in REASON_DESCRIPTIONS) {
     return REASON_DESCRIPTIONS[reasonCode as AttendanceGeoReasonCode];
   }
-  return "Location verification could not be completed for this punch.";
+  return "Location checking could not be completed for this attendance action.";
 }
 
 export function employeeGeoDecisionDisplay(

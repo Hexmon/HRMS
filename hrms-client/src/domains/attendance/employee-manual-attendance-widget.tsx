@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   AlertCircle,
@@ -9,6 +10,7 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
   Square,
   X,
 } from "lucide-react";
@@ -19,7 +21,7 @@ import { StatusBadge } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
 import { userFacingErrorMessage } from "@/shared/api";
 import type { AttendancePunchEventType } from "./api";
-import { liveAttendanceContext } from "./context";
+import { liveAttendanceContext, type EmployeeAttendanceGeoPolicy } from "./context";
 import { formatAttendanceMinutes } from "./live";
 import { useEmployeeAttendanceContext } from "./queries";
 import {
@@ -66,6 +68,12 @@ function stateBadgeStatus(state: string, fallback: string): string {
 
 type AttendanceResultTone = ManualAttendanceResult["kind"] | "provisional" | "review";
 
+interface AttendancePolicyHelpCopy {
+  title: string;
+  description: string;
+  workflowDescription: string;
+}
+
 function attendanceResultTone(result: ManualAttendanceResult): AttendanceResultTone {
   if (result.kind === "uncertain") return "uncertain";
   if (result.manualFallback) return "review";
@@ -76,6 +84,62 @@ function attendanceResultClassName(tone: AttendanceResultTone): string {
   if (tone === "accepted") return "border-success/30 bg-success/10 text-success";
   if (tone === "rejected") return "border-destructive/30 bg-destructive/10 text-destructive";
   return "border-warning/40 bg-warning/10 text-warning-foreground";
+}
+
+function policyOffersManualFallback(policy: EmployeeAttendanceGeoPolicy): boolean {
+  return (
+    policy.fallbackApprovalMode === "approval_required" &&
+    [
+      policy.locationUnavailableAction,
+      policy.permissionDeniedAction,
+      policy.outsideFenceAction,
+      policy.boundaryUncertainAction,
+      policy.staleEvidenceAction,
+      policy.accuracyExceededAction,
+    ].includes("manual_fallback")
+  );
+}
+
+function attendancePolicyHelpCopy(policy: EmployeeAttendanceGeoPolicy): AttendancePolicyHelpCopy {
+  const fallbackCopy = policyOffersManualFallback(policy)
+    ? "If the location check cannot be completed, your policy may offer manual fallback that is submitted for review."
+    : "Manual fallback is offered only when your attendance policy permits it.";
+  const regularizationCopy =
+    "Regularization is a separate request for correcting an earlier attendance record.";
+
+  switch (policy.attendanceMode) {
+    case "manual_only":
+      return {
+        title: "Manual attendance policy",
+        description:
+          "Your current attendance policy uses manual attendance for this action. No browser location check is required.",
+        workflowDescription:
+          "Manual fallback is for policy-controlled location-check problems. " + regularizationCopy,
+      };
+    case "geo_optional":
+      return {
+        title: "Location optional for attendance",
+        description:
+          "Your current attendance policy may use a one-time browser location check when available; it is not mandatory for every action.",
+        workflowDescription: `${fallbackCopy} ${regularizationCopy}`,
+      };
+    case "geo_preferred":
+      return {
+        title: "Location preferred for attendance",
+        description:
+          "Your current attendance policy prefers a one-time browser location check when you submit attendance.",
+        workflowDescription:
+          `${fallbackCopy} Policy decides what happens when location cannot be checked. ` +
+          regularizationCopy,
+      };
+    case "geo_required":
+      return {
+        title: "Location required for attendance",
+        description:
+          "Your current attendance policy requires a one-time location check when you submit attendance.",
+        workflowDescription: `${fallbackCopy} ${regularizationCopy}`,
+      };
+  }
 }
 
 export function EmployeeManualAttendanceWidget({
@@ -169,6 +233,7 @@ export function EmployeeManualAttendanceWidget({
 
   const disabled = action.isPending || action.geoStatus === "requesting" || contextQuery.isFetching;
   const resultTone = action.result ? attendanceResultTone(action.result) : null;
+  const policyHelp = attendancePolicyHelpCopy(context.geoPolicy);
 
   return (
     <Card className={cn("overflow-hidden rounded-lg", className)}>
@@ -239,6 +304,27 @@ export function EmployeeManualAttendanceWidget({
             </div>
           </dl>
         )}
+
+        <div className="rounded-lg border border-info/25 bg-info/10 p-3 text-sm text-info">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="font-semibold">{policyHelp.title}</p>
+              <p className="mt-0.5">{policyHelp.description}</p>
+              <p className="mt-1">{policyHelp.workflowDescription}</p>
+              <p className="mt-1">
+                This page does not start continuous background tracking; routine attendance views
+                use privacy-safe evidence.
+              </p>
+              <Link
+                to="/attendance/privacy"
+                className="mt-2 inline-flex font-medium underline underline-offset-4"
+              >
+                Learn about attendance privacy
+              </Link>
+            </div>
+          </div>
+        </div>
 
         <div className="min-h-10">
           {action.geoStatus === "requesting" ? (
@@ -318,7 +404,7 @@ export function EmployeeManualAttendanceWidget({
                       onClick={() => void action.submitManualFallback()}
                       disabled={disabled}
                     >
-                      Continue manually
+                      Use manual fallback
                     </Button>
                   </div>
                 )}

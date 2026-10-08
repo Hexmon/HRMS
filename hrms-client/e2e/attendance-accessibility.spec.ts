@@ -84,13 +84,15 @@ test.describe("attendance accessibility", () => {
     await expect(clockIn).toBeFocused();
     await page.keyboard.press("Enter");
 
-    await expect(page.getByText("Location access is blocked")).toBeVisible();
+    await expect(page.getByText(/Location permission was not granted/u)).toBeVisible();
     await page.keyboard.press("Tab");
-    const fallbackButton = page.getByRole("button", { name: "Continue manually" });
+    const fallbackButton = page.getByRole("button", { name: "Use manual fallback" });
     await expect(fallbackButton).toBeFocused();
     await page.keyboard.press("Enter");
 
-    await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Manual fallback submitted for review", { exact: true }),
+    ).toBeVisible();
     expect(fallbackRequests).toHaveLength(1);
   });
 
@@ -347,7 +349,7 @@ function geoDenialResponse(input: {
 }): Record<string, unknown> {
   return {
     code: "ATTENDANCE_PUNCH_DENIED",
-    message: "Location verification requires manual fallback confirmation.",
+    message: "Location check requires manual fallback review.",
     details: {
       reason_code: input.reasonCode,
       geo_policy: {

@@ -138,6 +138,12 @@ function AdminGeoScreen() {
                 Manage company work sites, geofences, draft geometry, and effective-dated
                 publishing.
               </p>
+              <p className="mt-2 max-w-4xl text-sm text-muted-foreground">
+                Geo attendance policies use a one-time location result when an employee submits
+                attendance. Published work-site settings help evaluate that action; routine reports
+                use privacy-safe site and evidence labels, and exact-location access remains
+                separately restricted.
+              </p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <Badge

@@ -98,17 +98,17 @@ function shouldRequestBrowserLocation(
 function browserLocationMessage(kind: BrowserGeolocationErrorKind): string {
   switch (kind) {
     case "permission_denied":
-      return "Location permission was denied. The request was sent with denial evidence for policy evaluation.";
+      return "Location permission was not granted. The attendance policy evaluated this action without a browser location result.";
     case "timeout":
-      return "Location request timed out. The request was sent with unavailable-location evidence for policy evaluation.";
+      return "The location check took too long to complete. The attendance policy evaluated this action without a browser location result.";
     case "position_unavailable":
-      return "Your browser could not determine location. The request was sent with unavailable-location evidence for policy evaluation.";
+      return "Your location could not be checked for this attendance action. The attendance policy evaluated it without a browser location result.";
     case "unsupported":
-      return "This browser does not support geolocation. The request was sent with unavailable-location evidence for policy evaluation.";
+      return "Location is not available in this browser or device for this attendance action. The attendance policy evaluated it without a browser location result.";
     case "insecure_context":
-      return "Browser location requires a secure HTTPS context. The request was sent with unavailable-location evidence for policy evaluation.";
+      return "Location is not available in this browser context for this attendance action. The attendance policy evaluated it without a browser location result.";
     case "permissions_policy_blocked":
-      return "Browser location is blocked by the page permissions policy. The request was sent with unavailable-location evidence for policy evaluation.";
+      return "Location is blocked for this page. The attendance policy evaluated this action without a browser location result.";
   }
 }
 
@@ -118,32 +118,32 @@ function unavailableRejectedCopy(
   switch (kind) {
     case "timeout":
       return {
-        title: "Location request timed out",
-        message: "Attendance was not recorded because the browser location request timed out.",
+        title: "Location check took too long",
+        message:
+          "Attendance was not recorded because the location check took too long to complete.",
       };
     case "position_unavailable":
       return {
-        title: "Location unavailable",
+        title: "Location could not be checked",
         message:
-          "Attendance was not recorded because the browser or device could not determine location.",
+          "Attendance was not recorded because location is not available in this browser or device for this action.",
       };
     case "unsupported":
       return {
-        title: "Browser location unsupported",
+        title: "Location unavailable in this browser",
         message:
-          "Attendance was not recorded because browser geolocation is unsupported or unavailable.",
+          "Attendance was not recorded because location is not available in this browser or device for this action.",
       };
     case "insecure_context":
       return {
-        title: "Secure context required",
-        message:
-          "Attendance was not recorded because browser location requires a secure HTTPS context.",
+        title: "Location unavailable in this browser context",
+        message: "Attendance was not recorded because location requires a secure HTTPS context.",
       };
     case "permissions_policy_blocked":
       return {
-        title: "Location blocked by page policy",
+        title: "Location blocked for this page",
         message:
-          "Attendance was not recorded because browser location is blocked by the page permissions policy.",
+          "Attendance was not recorded because location is blocked by the page permissions policy.",
       };
     case "permission_denied":
       return null;
@@ -165,7 +165,7 @@ function acceptedResultFor(
     return {
       kind: "accepted",
       action,
-      title: "Manual fallback recorded",
+      title: "Manual fallback submitted for review",
       message: geoDecisionDisplay.description,
       browserLocationKind,
       backendReasonCode,
@@ -407,11 +407,11 @@ export function useManualAttendanceAction({
       setResult({
         ...acceptedResultFor(current.action, response, current.browserLocationKind),
         title: current.manualFallback.reviewRequired
-          ? "Submitted for review"
+          ? "Manual fallback submitted for review"
           : "Manual fallback recorded",
         message: current.manualFallback.reviewRequired
-          ? "Your punch was recorded and sent to your manager for review."
-          : "Your punch was recorded manually.",
+          ? "Your punch was recorded as manual fallback and sent to your manager for review."
+          : "Your punch was recorded using manual fallback.",
       });
     } catch (error) {
       setResult({

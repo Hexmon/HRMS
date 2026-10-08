@@ -92,7 +92,7 @@ test("02 geo attendance accepted mobile", async ({ page }) => {
 
   await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
   await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
-  await expect(page.getByText(/verified within an allowed work area/u)).toBeVisible();
+  await expect(page.getByText(/within an allowed work area/u)).toBeVisible();
   expect(await getGeolocationCallCount(page)).toBe(1);
   expect(await getWatchPositionCallCount(page)).toBe(0);
   await expectNoDocumentHorizontalOverflow(page, "/attendance");
@@ -110,8 +110,8 @@ test("03 geo manual fallback mobile", async ({ page }) => {
   await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
   await expect(page.getByText("Review", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue manually" })).toBeVisible();
-  await expect(page.getByText(/Location access is blocked/u)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use manual fallback" })).toBeVisible();
+  await expect(page.getByText(/Location permission was not granted/u)).toBeVisible();
   await expect(page.getByText("Clock-in recorded", { exact: true })).toHaveCount(0);
   await expectNoDocumentHorizontalOverflow(page, "/attendance");
   await expectEmployeeScreenshotSafe(page);
@@ -233,13 +233,27 @@ async function installStableBrowserState(page: Page, role: DocsRole): Promise<vo
     ({ fixedIso, localRole, employee }) => {
       const fixedNow = Date.parse(fixedIso);
       const RealDate = Date;
+      type FixedDateArgs =
+        | []
+        | [value: number | string | Date]
+        | [
+            year: number,
+            monthIndex: number,
+            date?: number,
+            hours?: number,
+            minutes?: number,
+            seconds?: number,
+            ms?: number,
+          ];
 
       class FixedDate extends RealDate {
-        constructor(...args: any[]) {
+        constructor(...args: FixedDateArgs) {
           if (args.length === 0) {
             super(fixedNow);
+          } else if (args.length === 1) {
+            super(args[0]);
           } else {
-            super(...args);
+            super(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
           }
         }
 
@@ -453,7 +467,7 @@ async function handlePunch(route: Route, scenario: AttendanceScenario): Promise<
       geoDenialResponse({
         reasonCode: "geo_permission_denied",
         factualOutcome: "permission_denied",
-        message: "Location verification requires manual fallback confirmation.",
+        message: "Location check requires manual fallback review.",
       }),
       409,
     );

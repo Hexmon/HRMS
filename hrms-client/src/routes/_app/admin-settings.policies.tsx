@@ -121,6 +121,12 @@ function PoliciesScreen() {
           saving={updatePolicy.isPending}
           onSave={() => savePolicy("attendance")}
         >
+          <div className="md:col-span-2 rounded-xl border border-info/25 bg-info/10 p-3 text-sm text-info">
+            Attendance policy determines whether an action uses manual attendance or a one-time
+            location check. Manual fallback, when configured, submits the current action for review
+            and does not guarantee approval; regularization remains a separate historical correction
+            path.
+          </div>
           <SwitchField
             label="Allow punching any time (24-hour window)"
             value={policies.attendance.fullDayPunchWindow}
@@ -410,7 +416,8 @@ const MOBILE_POLICY_FACTS = [
   {
     label: "Offline Attendance",
     state: "Available with registered device",
-    description: "Requires a registered device and remains provisional until sync completes.",
+    description:
+      "Accepted offline attendance remains Provisional after sync and is not payroll-final by itself until verified or reviewed according to policy.",
   },
   {
     label: "Device Attestation",
@@ -441,8 +448,8 @@ function MobileAttendancePolicyFacts() {
             </Badge>
           </div>
           <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
-            Mobile device behavior is shown as read-only runtime state. These facts are not saved
-            as editable Admin policy fields.
+            Mobile device behavior is shown as read-only runtime state. These facts are not saved as
+            editable Admin policy fields.
           </p>
         </div>
       </div>

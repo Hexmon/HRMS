@@ -185,9 +185,7 @@ async function setupFallbackScenario(
           reasonCode: scenario.reasonCode,
           factualOutcome: scenario.outcome,
           selectedAction: "manual_fallback",
-          message:
-            scenario.responseMessage ??
-            "Location verification requires manual fallback confirmation.",
+          message: scenario.responseMessage ?? "Location check requires manual fallback review.",
           manualFallback: {
             reference: scenario.reference,
             reviewRequired: true,
@@ -229,12 +227,15 @@ async function setupFallbackScenario(
   return { punches, fallbackRequests };
 }
 
-async function expectContinueManuallyFor(page: Page, expectedReason: RegExp): Promise<void> {
+async function expectManualFallbackFor(page: Page, expectedReason: RegExp): Promise<void> {
   await openAttendance(page);
+  await expect(
+    page.getByText(/policy may offer manual fallback that is submitted for review/u),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
   await expect(page.getByText("Review", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue manually" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use manual fallback" })).toBeVisible();
   await expect(page.getByText(expectedReason)).toBeVisible();
 }
 
@@ -255,6 +256,15 @@ test.describe("manual-only regression", () => {
     });
 
     await openAttendance(page);
+    await expect(page.getByText("Manual attendance policy", { exact: true })).toBeVisible();
+    await expect(page.getByText(/No browser location check is required/u)).toBeVisible();
+    await expect(
+      page.getByText(/Regularization is a separate request for correcting an earlier attendance/u),
+    ).toBeVisible();
+    await expect(page.getByText(/does not start continuous background tracking/u)).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Learn about attendance privacy" }),
+    ).toHaveAttribute("href", "/attendance/privacy");
     await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
     await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
@@ -265,7 +275,7 @@ test.describe("manual-only regression", () => {
       source: "web",
       metadata: { source_view: "attendance_page" },
     });
-    await expect(page.getByRole("button", { name: "Continue manually" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Use manual fallback" })).toHaveCount(0);
   });
 });
 
@@ -292,13 +302,15 @@ test.describe("browser geolocation capture", () => {
     });
 
     await openAttendance(page);
+    await expect(page.getByText("Location required for attendance", { exact: true })).toBeVisible();
+    await expect(page.getByText(/requires a one-time location check/u)).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(0);
     await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
     await expect(page.getByText("Getting browser location", { exact: true })).toBeVisible();
     await expect(page.getByText("Clock-in recorded", { exact: true })).toBeVisible();
     await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
-    await expect(page.getByText(/verified within an allowed work area/u)).toBeVisible();
+    await expect(page.getByText(/within an allowed work area/u)).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(1);
     expect(await getWatchPositionCallCount(page)).toBe(0);
     expect(await getLastGeolocationOptions(page)).toEqual({
@@ -402,7 +414,7 @@ test.describe("browser geolocation failures", () => {
 
     await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
     await expect(page.getByText("Clock-in recorded provisionally", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Location access is blocked/u)).toBeVisible();
+    await expect(page.getByText(/Location permission was not granted/u)).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(1);
     expectCanonicalPunchBody(submittedBody ?? {}, {
       event_type: "check_in",
@@ -440,9 +452,11 @@ test.describe("browser geolocation failures", () => {
     await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
     await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
-    await expect(page.getByText("Location request timed out", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Attendance was not recorded.*timed out/u)).toBeVisible();
-    await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
+    await expect(page.getByText("Location check took too long", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Attendance was not recorded.*too long/u)).toBeVisible();
+    await expect(
+      page.getByText(/Your location could not be checked for this attendance action/u),
+    ).toBeVisible();
     await expect(page.getByText("Location unavailable", { exact: true })).toBeHidden();
     expect(await getLastGeolocationOptions(page)).toMatchObject({ timeout: 10_000 });
     expectCanonicalPunchBody(submittedBody ?? {}, {
@@ -483,7 +497,9 @@ test.describe("browser geolocation failures", () => {
     await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
     await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
+    await expect(
+      page.getByText(/Your location could not be checked for this attendance action/u),
+    ).toBeVisible();
     expectCanonicalPunchBody(submittedBody ?? {}, {
       event_type: "check_in",
       source: "web_geo",
@@ -557,7 +573,9 @@ test.describe("browser geolocation failures", () => {
     await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
     await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
+    await expect(
+      page.getByText(/Your location could not be checked for this attendance action/u),
+    ).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(0);
     expectCanonicalPunchBody(submittedBody ?? {}, {
       event_type: "check_in",
@@ -596,7 +614,9 @@ test.describe("browser geolocation failures", () => {
     await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
     await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Your location could not be determined/u)).toBeVisible();
+    await expect(
+      page.getByText(/Your location could not be checked for this attendance action/u),
+    ).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(0);
     expectCanonicalPunchBody(submittedBody ?? {}, {
       event_type: "check_in",
@@ -641,7 +661,7 @@ test.describe("evidence quality", () => {
 
     await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
     await expect(page.getByText("Clock-in was not recorded", { exact: true })).toBeVisible();
-    await expect(page.getByText(/captured location was too old/u)).toBeVisible();
+    await expect(page.getByText(/location result is too old/u)).toBeVisible();
     expectCanonicalPunchBody(submittedBody ?? {}, {
       event_type: "check_in",
       source: "web_geo",
@@ -691,7 +711,9 @@ test.describe("evidence quality", () => {
 
     await expect(page.getByText("Provisional", { exact: true })).toBeVisible();
     await expect(page.getByText("Clock-in recorded provisionally", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Location accuracy was too low/u)).toBeVisible();
+    await expect(
+      page.getByText(/not accurate enough for the current attendance policy/u),
+    ).toBeVisible();
     expectCanonicalPunchBody(submittedBody ?? {}, {
       event_type: "check_in",
       source: "web_geo",
@@ -720,10 +742,12 @@ test.describe("manual fallback", () => {
       policyPatch: { permission_denied_action: "manual_fallback" },
     });
 
-    await expectContinueManuallyFor(page, /Location access is blocked/u);
-    await page.getByRole("button", { name: "Continue manually" }).click();
+    await expectManualFallbackFor(page, /Location permission was not granted/u);
+    await page.getByRole("button", { name: "Use manual fallback" }).click();
 
-    await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Manual fallback submitted for review", { exact: true }),
+    ).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(1);
     expect(punches).toHaveLength(1);
     expect(fallbackRequests).toHaveLength(1);
@@ -746,10 +770,15 @@ test.describe("manual fallback", () => {
       policyPatch: { location_unavailable_action: "manual_fallback" },
     });
 
-    await expectContinueManuallyFor(page, /Your location could not be determined/u);
-    await page.getByRole("button", { name: "Continue manually" }).click();
+    await expectManualFallbackFor(
+      page,
+      /Your location could not be checked for this attendance action/u,
+    );
+    await page.getByRole("button", { name: "Use manual fallback" }).click();
 
-    await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Manual fallback submitted for review", { exact: true }),
+    ).toBeVisible();
     expect(await getGeolocationCallCount(page)).toBe(1);
     expect(fallbackRequests).toHaveLength(1);
     expect(fallbackRequests[0].idempotencyKey).toBeTruthy();
@@ -772,7 +801,7 @@ test.describe("manual fallback", () => {
       policyPatch: { stale_evidence_action: "manual_fallback" },
     });
 
-    await expectContinueManuallyFor(page, /captured location was too old/u);
+    await expectManualFallbackFor(page, /location result is too old/u);
     expect(locationEvidence(punches[0].body)).toMatchObject({
       captured_at: new Date(OLD_LOCATION_TIMESTAMP).toISOString(),
     });
@@ -791,7 +820,7 @@ test.describe("manual fallback", () => {
       policyPatch: { accuracy_exceeded_action: "manual_fallback" },
     });
 
-    await expectContinueManuallyFor(page, /Location accuracy was too low/u);
+    await expectManualFallbackFor(page, /not accurate enough for the current attendance policy/u);
     expect(locationEvidence(punches[0].body)).toMatchObject({
       accuracy_meters: LOW_ACCURACY_METERS,
     });
@@ -826,8 +855,8 @@ test.describe("manual fallback", () => {
     await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
     await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Location access is blocked/u)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Continue manually" })).toHaveCount(0);
+    await expect(page.getByText(/Location permission was not granted/u)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Use manual fallback" })).toHaveCount(0);
     expect(fallbackRequests).toBe(0);
   });
 
@@ -841,13 +870,15 @@ test.describe("manual fallback", () => {
       policyPatch: { permission_denied_action: "manual_fallback" },
     });
 
-    await expectContinueManuallyFor(page, /Location access is blocked/u);
-    await page.getByRole("button", { name: "Continue manually" }).evaluate((button) => {
+    await expectManualFallbackFor(page, /Location permission was not granted/u);
+    await page.getByRole("button", { name: "Use manual fallback" }).evaluate((button) => {
       button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Manual fallback submitted for review", { exact: true }),
+    ).toBeVisible();
     expect(fallbackRequests).toHaveLength(1);
     expect(await getGeolocationCallCount(page)).toBe(1);
   });
@@ -886,7 +917,7 @@ test.describe("network uncertainty", () => {
     await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
     await expect(page.getByText("Outcome not confirmed", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Continue manually" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Use manual fallback" })).toHaveCount(0);
     expect(await getGeolocationCallCount(page)).toBe(1);
 
     await page.getByRole("button", { name: "Retry same action" }).click();

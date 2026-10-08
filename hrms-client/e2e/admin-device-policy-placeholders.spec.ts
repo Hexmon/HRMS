@@ -28,6 +28,17 @@ test("admin attendance policies show read-only mobile device runtime facts witho
       { exact: true },
     ),
   ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Attendance policy determines whether an action uses manual attendance or a one-time location check.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Manual fallback.*submits the current action for review/u),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/regularization remains a separate historical correction path/u),
+  ).toBeVisible();
 
   await expect(page.getByText("Registered Device Enforcement", { exact: true })).toBeVisible();
   await expect(page.getByText("Enforced", { exact: true })).toBeVisible();
@@ -44,9 +55,10 @@ test("admin attendance policies show read-only mobile device runtime facts witho
   await expect(page.getByText("Offline Attendance", { exact: true })).toBeVisible();
   await expect(page.getByText("Available with registered device", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("Requires a registered device and remains provisional until sync completes.", {
-      exact: true,
-    }),
+    page.getByText(/Accepted offline attendance remains Provisional after sync/u),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/not payroll-final by itself until verified or reviewed/u),
   ).toBeVisible();
   await expect(page.getByText("Device Attestation", { exact: true })).toBeVisible();
   await expect(page.getByText("Not enforced", { exact: true })).toBeVisible();

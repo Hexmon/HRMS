@@ -121,7 +121,7 @@ test.describe("attendance mobile responsive polish", () => {
     await openAttendance(page);
     await expectNoHorizontalOverflow(page, "employee attendance initial");
     await page.getByRole("button", { name: "Clock in" }).click();
-    await expect(page.getByRole("button", { name: "Continue manually" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Use manual fallback" })).toBeVisible();
     await expectNoHorizontalOverflow(page, "employee permission denied fallback");
 
     expect(punchBody).toBeDefined();
@@ -133,8 +133,10 @@ test.describe("attendance mobile responsive polish", () => {
     expect(location).not.toHaveProperty("latitude");
     expect(location).not.toHaveProperty("longitude");
 
-    await page.getByRole("button", { name: "Continue manually" }).click();
-    await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Use manual fallback" }).click();
+    await expect(
+      page.getByText("Manual fallback submitted for review", { exact: true }),
+    ).toBeVisible();
     expect(fallbackCalls).toBe(1);
     await expectNoHorizontalOverflow(page, "employee manual fallback submitted");
 
@@ -488,16 +490,18 @@ test.describe("attendance narrow phone fallback", () => {
     await page.getByRole("button", { name: "Clock in" }).click();
     await expect(
       page.getByText(
-        /Location access is blocked|Location permission requires manual fallback review|Location permission was denied/u,
+        /Location permission was not granted|Location permission requires manual fallback review|Location permission was denied/u,
       ),
     ).toBeVisible();
-    const fallbackButton = page.getByRole("button", { name: "Continue manually" });
+    const fallbackButton = page.getByRole("button", { name: "Use manual fallback" });
     await expect(fallbackButton).toBeVisible();
     await expectNoHorizontalOverflow(page, "narrow permission denied fallback");
     expect(await getGeolocationCallCount(page)).toBe(1);
 
     await fallbackButton.click();
-    await expect(page.getByText("Submitted for review", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Manual fallback submitted for review", { exact: true }),
+    ).toBeVisible();
     expect(fallbackCalls).toBe(1);
     expect(await getGeolocationCallCount(page)).toBe(1);
     await expectNoHorizontalOverflow(page, "narrow manual fallback submitted");

@@ -14,6 +14,15 @@ test("admin geo route manages persisted work sites, geofences, draft shapes and 
   ).toBeVisible();
   await expect(page.getByRole("tab", { name: "Geo" })).toBeVisible();
   await expect(page.getByTestId("admin-geo-map-missing")).toBeVisible();
+  await expect(
+    page.getByText(/Geo attendance policies use a one-time location result/u),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/routine reports use privacy-safe site and evidence labels/u),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/exact-location access remains separately restricted/u),
+  ).toBeVisible();
   await expect(page.getByText("Work Sites", { exact: true })).toBeVisible();
   await expect(page.getByText("Bengaluru HQ", { exact: true })).toBeVisible();
   await expect(page.getByText("Main office perimeter", { exact: true })).toBeVisible();
@@ -172,10 +181,7 @@ async function prepareAdminGeoPage(page: Page): Promise<{
       return;
     }
 
-    if (
-      path === "/api/v1/attendance/geofences/gf-1/versions/ver-1/publish" &&
-      method === "POST"
-    ) {
+    if (path === "/api/v1/attendance/geofences/gf-1/versions/ver-1/publish" && method === "POST") {
       publishes.push(request.postDataJSON());
       await route.fulfill({
         status: 200,
