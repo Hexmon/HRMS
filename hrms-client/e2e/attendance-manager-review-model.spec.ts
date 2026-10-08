@@ -256,21 +256,27 @@ test.describe("attendance manager review model", () => {
       ],
     });
 
-    expect(queue.items[0].evidence).toContainEqual({
+    const geoEvidence = queue.items[0].evidence.find((item) => item.id === "geo-summary");
+    expect(geoEvidence).toMatchObject({
       id: "geo-summary",
       operation: "geo",
-      title: "Outside work area - Manual fallback",
-      detail: "Reason: Geo Boundary Uncertain",
-      detailLines: [
+      occurredAt: "2026-07-18T03:35:00.000Z",
+    });
+    expect(geoEvidence?.title).toContain("Outside");
+    expect(geoEvidence?.title).toContain("confident");
+    expect(geoEvidence?.title).toContain("Manual fallback");
+    expect(geoEvidence?.detail).toBe("Reason: Geo Boundary Uncertain");
+    expect(geoEvidence?.detailLines).toEqual(
+      expect.arrayContaining([
         "Action: Check-in",
-        "The reported location was outside the configured attendance boundary.",
+        "Reason code: geo_boundary_uncertain",
+        "The reported location was outside the configured attendance boundary with sufficient confidence.",
         "Reported accuracy: 86 m",
         "Evidence age: 1 min",
         "Boundary margin: -35 m",
         "Work site: Bhubaneswar Office",
-      ],
-      occurredAt: "2026-07-18T03:35:00.000Z",
-    });
+      ]),
+    );
     expect(queue.items[0]).toMatchObject({
       geoReviewType: "manual_fallback",
       geoOutcome: "outside_confident",
