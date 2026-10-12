@@ -69,8 +69,7 @@ function AdminDevicesScreen() {
   const [sort, setSort] =
     useState<NonNullable<PlatformAdminRegisteredDeviceListQuery["sort"]>>("updated_at_desc");
   const [page, setPage] = useState(1);
-  const [deviceToRevoke, setDeviceToRevoke] =
-    useState<PlatformAdminRegisteredDevice | null>(null);
+  const [deviceToRevoke, setDeviceToRevoke] = useState<PlatformAdminRegisteredDevice | null>(null);
   const revokeDevice = useRevokeRegisteredDeviceMutation();
 
   const query = useMemo<PlatformAdminRegisteredDeviceListQuery>(
@@ -125,7 +124,9 @@ function AdminDevicesScreen() {
     {
       key: "created_at",
       header: "Registered",
-      render: (row) => <span className="whitespace-nowrap">{formatDeviceDate(row.created_at)}</span>,
+      render: (row) => (
+        <span className="whitespace-nowrap">{formatDeviceDate(row.created_at)}</span>
+      ),
     },
     {
       key: "status_changed_at",
@@ -137,7 +138,9 @@ function AdminDevicesScreen() {
     {
       key: "registered_device_id",
       header: "Device",
-      render: (row) => <span className="whitespace-nowrap">{maskDeviceId(row.registered_device_id)}</span>,
+      render: (row) => (
+        <span className="whitespace-nowrap">{maskDeviceId(row.registered_device_id)}</span>
+      ),
     },
     {
       key: "actions",
@@ -218,7 +221,10 @@ function AdminDevicesScreen() {
               className="pl-9"
             />
           </div>
-          <Select value={status} onValueChange={(value) => resetPageAnd(setStatus, value as StatusFilter)}>
+          <Select
+            value={status}
+            onValueChange={(value) => resetPageAnd(setStatus, value as StatusFilter)}
+          >
             <SelectTrigger aria-label="Status filter">
               <SelectValue />
             </SelectTrigger>

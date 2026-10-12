@@ -5,18 +5,14 @@ import type {
   PlatformRegisteredDeviceStatus,
 } from "@/domains/platform/api";
 
-const STATUS_META: Record<
-  PlatformRegisteredDeviceStatus,
-  { label: string; className: string }
-> = {
+const STATUS_META: Record<PlatformRegisteredDeviceStatus, { label: string; className: string }> = {
   registered: {
     label: "Registered",
     className: "border-success/30 bg-success/10 text-success",
   },
   suspended: {
     label: "Suspended",
-    className:
-      "border-warning/40 bg-warning/10 text-warning-foreground dark:text-warning",
+    className: "border-warning/40 bg-warning/10 text-warning-foreground dark:text-warning",
   },
   revoked: {
     label: "Revoked",

@@ -20,13 +20,17 @@ test("main admin can inspect, filter, and revoke registered mobile devices", asy
   await expect(page.locator("body")).not.toContainText("installation_id_hash");
 
   await page.getByPlaceholder("Search employee code or name").fill("E1");
-  await expect.poll(() => state.adminDeviceRequests.some((url) => url.searchParams.get("q") === "E1")).toBe(true);
+  await expect
+    .poll(() => state.adminDeviceRequests.some((url) => url.searchParams.get("q") === "E1"))
+    .toBe(true);
 
   await page.getByRole("combobox", { name: "Status filter" }).click();
   await page.getByRole("option", { name: "Suspended" }).click();
-  await expect.poll(() =>
-    state.adminDeviceRequests.some((url) => url.searchParams.get("status") === "suspended"),
-  ).toBe(true);
+  await expect
+    .poll(() =>
+      state.adminDeviceRequests.some((url) => url.searchParams.get("status") === "suspended"),
+    )
+    .toBe(true);
   await expect(table.getByText("Device 2200BB", { exact: true })).toBeVisible();
 
   await page.getByRole("combobox", { name: "Status filter" }).click();
@@ -225,9 +229,10 @@ function adminDeviceListResponse(url: URL) {
       owner: { employee_code: "E2", full_name: "Employee Two" },
     },
   ];
-  const items = status && status !== "registered"
-    ? allItems.filter((item) => item.status === status)
-    : allItems;
+  const items =
+    status && status !== "registered"
+      ? allItems.filter((item) => item.status === status)
+      : allItems;
   return {
     items,
     page: Number(url.searchParams.get("page") ?? 1),

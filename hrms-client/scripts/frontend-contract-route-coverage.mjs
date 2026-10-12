@@ -54,7 +54,9 @@ function walk(dir) {
 }
 
 function routePath(file) {
-  let name = relative(routesDir, file).replace(/\\/g, "/").replace(/\.tsx$/, "");
+  let name = relative(routesDir, file)
+    .replace(/\\/g, "/")
+    .replace(/\.tsx$/, "");
   if (name === "__root" || name === "_app") return null;
   name = name.replace(/^_app[/.]?/, "");
   if (!name || name === "index") return "/";

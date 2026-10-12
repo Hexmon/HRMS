@@ -1,9 +1,7 @@
 import { ApiError, formatUserFacingError, type ApiRecord } from "@/shared/api";
 
 function record(value: unknown): ApiRecord {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as ApiRecord)
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as ApiRecord) : {};
 }
 
 function firstText(value: unknown): string | null {

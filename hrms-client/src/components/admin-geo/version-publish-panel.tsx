@@ -76,7 +76,8 @@ export function VersionPublishPanel({
   const [effectiveUntil, setEffectiveUntil] = useState("");
   const [creatingNew, setCreatingNew] = useState(false);
   const readOnly = selected?.versionStatus === "published";
-  const ready = shapeType === "circle" ? isCircleReady(circleDraft) : isPolygonReady(polygonDraft.vertices);
+  const ready =
+    shapeType === "circle" ? isCircleReady(circleDraft) : isPolygonReady(polygonDraft.vertices);
   const actionError =
     metadataError ??
     adminGeoFormError(
@@ -131,7 +132,9 @@ export function VersionPublishPanel({
         id: selected?.versionStatus === "draft" ? selected.id : undefined,
         input: buildVersionInput(shapeType, circleDraft, polygonDraft, shapeMetadata.value),
       });
-      toast.success(selected?.versionStatus === "draft" ? "Draft version updated" : "Draft version created");
+      toast.success(
+        selected?.versionStatus === "draft" ? "Draft version updated" : "Draft version created",
+      );
       setCreatingNew(false);
       onSelectedIdChange(response.version.id);
     } catch {
@@ -208,14 +211,20 @@ export function VersionPublishPanel({
                 }}
                 className={cn(
                   "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition",
-                  selectedId === version.id ? "border-primary bg-primary-soft" : "hover:bg-muted/60",
+                  selectedId === version.id
+                    ? "border-primary bg-primary-soft"
+                    : "hover:bg-muted/60",
                 )}
               >
                 <span className="min-w-0">
-                  <span className="block truncate font-medium">Version {version.versionNumber}</span>
+                  <span className="block truncate font-medium">
+                    Version {version.versionNumber}
+                  </span>
                   <span className="block truncate text-xs text-muted-foreground">
                     {version.shapeType}
-                    {version.effectiveFrom ? ` · from ${formatDateTime(version.effectiveFrom)}` : ""}
+                    {version.effectiveFrom
+                      ? ` · from ${formatDateTime(version.effectiveFrom)}`
+                      : ""}
                   </span>
                 </span>
                 <Badge variant={version.versionStatus === "published" ? "default" : "outline"}>
@@ -292,7 +301,11 @@ export function VersionPublishPanel({
                 }
               />
             ) : null}
-            <Button type="button" onClick={() => void saveDraft()} disabled={!geofenceId || readOnly || !ready}>
+            <Button
+              type="button"
+              onClick={() => void saveDraft()}
+              disabled={!geofenceId || readOnly || !ready}
+            >
               <GitCommit className="h-4 w-4" />
               {selected?.versionStatus === "draft" ? "Update draft" : "Create draft"}
             </Button>
@@ -362,9 +375,9 @@ function buildVersionInput(
   };
 }
 
-function parseJsonObject(value: string):
-  | { ok: true; value: Record<string, unknown> }
-  | { ok: false; message: string } {
+function parseJsonObject(
+  value: string,
+): { ok: true; value: Record<string, unknown> } | { ok: false; message: string } {
   try {
     const parsed = JSON.parse(value || "{}");
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {

@@ -13,10 +13,7 @@ import {
   type WorkSiteInput,
   type WorkSiteUpdateInput,
 } from "@/domains/admin-geo/api";
-import {
-  useDeleteWorkSiteMutation,
-  useWorkSiteMutation,
-} from "@/domains/admin-geo/queries";
+import { useDeleteWorkSiteMutation, useWorkSiteMutation } from "@/domains/admin-geo/queries";
 import { adminGeoFieldError, adminGeoFormError } from "@/domains/admin-geo/errors";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +79,12 @@ export function WorkSitePanel({
   }
 
   async function save() {
-    if (!form.siteCode.trim() || !form.name.trim() || !form.siteType.trim() || !form.timezone.trim()) {
+    if (
+      !form.siteCode.trim() ||
+      !form.name.trim() ||
+      !form.siteType.trim() ||
+      !form.timezone.trim()
+    ) {
       toast.error("Site code, name, type and timezone are required.");
       return;
     }

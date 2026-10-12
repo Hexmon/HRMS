@@ -39,13 +39,8 @@ export function useAdminRegisteredDevices(
 export function useRevokeRegisteredDeviceMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      deviceId,
-      input,
-    }: {
-      deviceId: string;
-      input?: PlatformDeviceLifecycleInput;
-    }) => platformApi.revokeDevice(deviceId, input),
+    mutationFn: ({ deviceId, input }: { deviceId: string; input?: PlatformDeviceLifecycleInput }) =>
+      platformApi.revokeDevice(deviceId, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("platform") }),
   });
 }

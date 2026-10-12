@@ -9,7 +9,7 @@ export type AttestationVerificationStatus =
   | "rejected"
   | "indeterminate"
   | "error";
-  
+
 export type AttestationSha256Hex = string;
 
 export type AttestationJsonValue =

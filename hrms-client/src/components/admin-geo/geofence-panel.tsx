@@ -7,15 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/ui-kit";
-import type {
-  AdminGeoGeofence,
-  GeofenceInput,
-  GeofenceUpdateInput,
-} from "@/domains/admin-geo/api";
-import {
-  useDeleteGeofenceMutation,
-  useGeofenceMutation,
-} from "@/domains/admin-geo/queries";
+import type { AdminGeoGeofence, GeofenceInput, GeofenceUpdateInput } from "@/domains/admin-geo/api";
+import { useDeleteGeofenceMutation, useGeofenceMutation } from "@/domains/admin-geo/queries";
 import { adminGeoFieldError, adminGeoFormError } from "@/domains/admin-geo/errors";
 import { cn } from "@/lib/utils";
 
@@ -144,14 +137,18 @@ export function GeofencePanel({
                 onClick={() => onSelectedIdChange(geofence.id)}
                 className={cn(
                   "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition",
-                  selectedId === geofence.id ? "border-primary bg-primary-soft" : "hover:bg-muted/60",
+                  selectedId === geofence.id
+                    ? "border-primary bg-primary-soft"
+                    : "hover:bg-muted/60",
                 )}
               >
                 <span className="min-w-0">
                   <span className="block truncate font-medium">{geofence.name}</span>
                   <span className="block truncate text-xs text-muted-foreground">
                     {geofence.geofenceCode}
-                    {geofence.currentPublishedVersionId ? " · published" : " · no published version"}
+                    {geofence.currentPublishedVersionId
+                      ? " · published"
+                      : " · no published version"}
                   </span>
                 </span>
                 <Badge variant={geofence.isActive ? "default" : "outline"}>
@@ -186,7 +183,10 @@ export function GeofencePanel({
         {activeForm ? (
           <div className="space-y-3 rounded-md border p-3">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Geofence code" error={adminGeoFieldError(mutation.error, "geofenceCode")}>
+              <Field
+                label="Geofence code"
+                error={adminGeoFieldError(mutation.error, "geofenceCode")}
+              >
                 <Input
                   value={form.geofenceCode}
                   onChange={(event) => setForm({ ...form, geofenceCode: event.target.value })}

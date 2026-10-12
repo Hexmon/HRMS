@@ -93,7 +93,9 @@ const expectedOperations = [
   "GET /api/v1/attendance/calendar/daily",
   "GET /api/v1/attendance/calendar/monthly",
   "GET /api/v1/attendance/exceptions",
+  "GET /api/v1/attendance/geo-fallbacks/queue/manager",
   "GET /api/v1/attendance/payroll-periods/{id}/summary",
+  "GET /api/v1/attendance/privacy",
   "GET /api/v1/attendance/punches/my",
   "GET /api/v1/attendance/regularizations/my",
   "GET /api/v1/attendance/regularizations/queue/manager",
@@ -162,6 +164,7 @@ const expectedOperations = [
   "GET /api/v1/notifications/unread-count",
   "GET /api/v1/openapi.json",
   "GET /api/v1/platform/devices",
+  "GET /api/v1/platform/admin/devices",
   "POST /api/v1/platform/devices/{deviceId}/restore",
   "POST /api/v1/platform/devices/{deviceId}/revoke",
   "POST /api/v1/platform/devices/{deviceId}/suspend",
@@ -236,6 +239,10 @@ const expectedOperations = [
   "POST /api/v1/attendance/employees/{employeeUserId}/assisted-current-punches",
   "POST /api/v1/attendance/employees/{employeeUserId}/historical-corrections",
   "POST /api/v1/attendance/exports",
+  "POST /api/v1/attendance/geo-fallbacks/{id}/decision",
+  "POST /api/v1/attendance/geo-fallbacks/{id}/exact-location",
+  "POST /api/v1/attendance/geo-fallbacks/{id}/submit",
+  "POST /api/v1/attendance/geo/simulate",
   "POST /api/v1/attendance/work-sites",
   "POST /api/v1/attendance/work-sites/{workSiteId}/geofences",
   "POST /api/v1/attendance/geofences/{geofenceId}/versions",
@@ -1536,7 +1543,7 @@ describe("API contracts", () => {
     expect(rows.map((row) => row.key).sort()).toEqual(
       [...expectedOperations].sort(),
     );
-    expect(rows.length).toBe(274);
+    expect(rows.length).toBe(281);
 
     const attendancePunch = spec.paths?.["/api/v1/attendance/punches"]?.post as
       | Record<string, any>

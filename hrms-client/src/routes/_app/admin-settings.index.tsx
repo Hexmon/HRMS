@@ -66,10 +66,7 @@ function AdminSettingsIndex() {
   const templatesQuery = useAdminEmailTemplates(apiEnabled);
   const notificationsQuery = useAdminNotificationChannels(apiEnabled);
   const auditQuery = useAdminAuditLog(apiEnabled && isMain);
-  const devicesQuery = useAdminRegisteredDevices(
-    { page: 1, page_size: 1 },
-    apiEnabled && isMain,
-  );
+  const devicesQuery = useAdminRegisteredDevices({ page: 1, page_size: 1 }, apiEnabled && isMain);
 
   const cards: CardDef[] = [
     {
