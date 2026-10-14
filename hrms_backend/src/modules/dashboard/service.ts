@@ -1,7 +1,18 @@
-import type { AuthUser, CoreUser, ExpenseTicket, LeaveRequest, TimesheetSubmission, UUID, WfhRequest } from "#shared";
-import { AssetStatuses, AttendanceDayStatuses, EmploymentStatuses, ExpenseStatuses, LeaveRequestStatuses, Roles, TimesheetStatuses } from "#shared";
+import type { AttendanceDayRecord, AuthUser, CoreUser, ExpenseTicket, LeaveRequest, TimesheetSubmission, UUID, WfhRequest } from "#shared";
+import { AssetStatuses, AttendanceEvidenceStates, AttendancePresenceStates, AttendancePunctualityStates, EmploymentStatuses, ExpenseStatuses, LeaveRequestStatuses, Roles, TimesheetStatuses } from "#shared";
 import type { MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
+import {
+  countAttendanceReportingEvidenceCategories,
+  emptyAttendanceReportingEvidenceCounts,
+  type AttendanceReportingEvidenceCounts,
+} from "../attendance/reporting-evidence.js";
+import {
+  buildAttendanceReportEvidenceIndex,
+  countAttendanceReportSourceCategories,
+  emptyAttendanceReportSourceCategoryCounts,
+  type AttendanceReportSourceCategoryCounts,
+} from "../attendance/reporting-projection.js";
 
 export interface DashboardMetric {
   key: string;
@@ -54,6 +65,10 @@ export interface DashboardSummary {
     notifications_pending: number;
     outbox_pending: number;
   };
+  attendance: {
+    evidence_categories: AttendanceReportingEvidenceCounts;
+    source_categories: AttendanceReportSourceCategoryCounts;
+  };
   workload: {
     work_segments_total: number;
     submitted_hours_total: string;
@@ -85,6 +100,10 @@ export class DashboardService {
     const visibleSubmissions = this.visibleTimesheetSubmissions(actor, visibleUserIds);
     const visibleSegments = this.visibleWorkSegments(actor, visibleUserIds);
     const visibleAttendance = this.visibleAttendanceDays(actor, visibleUserIds);
+    const canSeeAttendance = this.canSeeAttendanceReporting(actor, visibleUsers);
+    const attendanceEvidence = canSeeAttendance
+      ? this.attendanceEvidenceSummaries(visibleAttendance)
+      : [];
     const visibleLeaveRequests = this.visibleLeaveRequests(actor, visibleUserIds);
     const visibleWfhRequests = this.visibleWfhRequests(actor, visibleUserIds);
     const visibleAssets = this.visibleAssets(actor, visibleUserIds);
@@ -148,6 +167,18 @@ export class DashboardService {
         document_verification_pending: pendingDocuments
       },
       operations,
+      attendance: {
+        evidence_categories: canSeeAttendance
+          ? countAttendanceReportingEvidenceCategories(
+              attendanceEvidence.map((evidence) => evidence.reporting_evidence_category),
+            )
+          : emptyAttendanceReportingEvidenceCounts(),
+        source_categories: canSeeAttendance
+          ? countAttendanceReportSourceCategories(
+              attendanceEvidence.map((evidence) => evidence.source_categories),
+            )
+          : emptyAttendanceReportSourceCategoryCounts()
+      },
       workload,
       attention: [
         metric("pending_expense_approvals", "Expense approvals waiting", expensePending, "count", "expenses"),
@@ -182,6 +213,10 @@ export class DashboardService {
   private canSeeFinance(actor: AuthUser): boolean {
     const financeRoles: readonly string[] = [Roles.Admin, Roles.Auditor, Roles.FinanceManager];
     return actor.roles.some((role) => financeRoles.includes(role));
+  }
+
+  private canSeeAttendanceReporting(actor: AuthUser, visibleUsers: CoreUser[]): boolean {
+    return this.canSeeSystemWide(actor) || visibleUsers.some((user) => user.id !== actor.id);
   }
 
   private visibleUsers(actor: AuthUser): CoreUser[] {
@@ -281,13 +316,24 @@ export class DashboardService {
     return requests.filter((request) => visibleUserIds.has(request.employee_user_id) || request.current_approver_user_id === actor.id);
   }
 
-  private attendanceExceptionCount(records: Array<{ exception_type: string | null; status: string }>): number {
+  private attendanceExceptionCount(
+    records: Array<Pick<AttendanceDayRecord, "exception_type" | "evidence_state" | "presence_state" | "punctuality_state">>,
+  ): number {
     return records.filter(
       (record) =>
         record.exception_type ||
-        record.status === AttendanceDayStatuses.Absent ||
-        record.status === AttendanceDayStatuses.Late
+        record.evidence_state === AttendanceEvidenceStates.Missing ||
+        record.evidence_state === AttendanceEvidenceStates.Partial ||
+        record.evidence_state === AttendanceEvidenceStates.Disputed ||
+        record.presence_state === AttendancePresenceStates.Absent ||
+        record.punctuality_state === AttendancePunctualityStates.Late ||
+        record.punctuality_state === AttendancePunctualityStates.LateAndEarlyDeparture
     ).length;
+  }
+
+  private attendanceEvidenceSummaries(records: AttendanceDayRecord[]) {
+    const evidenceIndex = buildAttendanceReportEvidenceIndex(this.store, records);
+    return records.map((record) => evidenceIndex.summaryFor(record));
   }
 
   private visibleAssets(actor: AuthUser, visibleUserIds: Set<UUID>) {
