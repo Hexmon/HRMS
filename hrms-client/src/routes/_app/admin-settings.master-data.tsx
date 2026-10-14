@@ -85,7 +85,7 @@ function MasterDataScreen() {
   const { masters, addMaster, updateMaster, toggleMasterActive, deleteMaster } = useAdminSettings();
   const navigate = useNavigate();
   const search = Route.useSearch();
-  const activeKey = search.tab ?? "departments";
+  const activeKey: MasterKey = toMasterKey(search.tab) ?? "departments";
   const apiEnabled = useApiRouteEnabled(["/admin-settings"]);
   const departmentsQuery = useDepartmentMasters(apiEnabled);
   const designationsQuery = useDesignationMasters(apiEnabled);
