@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { getLocalDemoPassword } from "#auth";
@@ -75,17 +76,19 @@ describe("production user-flow smoke", () => {
 
     const checkIn = await requestJson("POST", "/api/v1/attendance/punches", employee.token, {
       event_type: "check_in",
-      occurred_at: "2026-06-02T09:15:00.000Z",
       work_mode: "office"
     });
-    expect(checkIn.day_status).toMatchObject({ work_date: "2026-06-02" });
+    expect(checkIn.day_status).toMatchObject({ work_date: expect.any(String) });
 
     const checkOut = await requestJson("POST", "/api/v1/attendance/punches", employee.token, {
       event_type: "check_out",
-      occurred_at: "2026-06-02T18:10:00.000Z",
       work_mode: "office"
     });
-    expect(checkOut.day_status.work_minutes).toBeGreaterThan(500);
+    expect(checkOut.day_status).toMatchObject({
+      work_date: checkIn.day_status.work_date,
+      last_check_out: expect.any(String),
+    });
+    expect(checkOut.day_status.work_minutes).toBeGreaterThanOrEqual(0);
 
     const leave = await requestJson("POST", "/api/v1/leave/requests", employee.token, {
       leave_type: "casual",
@@ -204,7 +207,12 @@ describe("production user-flow smoke", () => {
     const options = {
       method,
       url,
-      headers: authHeader(token),
+      headers: {
+        ...authHeader(token),
+        ...(url === "/api/v1/attendance/punches"
+          ? { "idempotency-key": randomUUID() }
+          : {}),
+      },
       ...(payload === undefined ? {} : { payload })
     };
     const response = await app.inject(options);

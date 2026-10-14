@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { Search, SlidersHorizontal, Download } from "lucide-react";
+import { Search, Download } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
@@ -8,6 +8,7 @@ interface Props {
   value: string;
   onValueChange: (v: string) => void;
   placeholder?: string;
+  searchLabel?: string;
   filtersSlot?: ReactNode;
   rightSlot?: ReactNode;
   showExport?: boolean;
@@ -18,6 +19,7 @@ export function SearchFilterBar({
   value,
   onValueChange,
   placeholder = "Search…",
+  searchLabel,
   filtersSlot,
   rightSlot,
   showExport = true,
@@ -34,6 +36,8 @@ export function SearchFilterBar({
     if (debouncedDraft !== value) onValueChange(debouncedDraft);
   }, [debouncedDraft, onValueChange, value]);
 
+  const canExport = showExport && typeof onExport === "function";
+
   return (
     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="relative w-full min-w-0 sm:max-w-sm">
@@ -42,16 +46,13 @@ export function SearchFilterBar({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={placeholder}
+          aria-label={searchLabel ?? placeholder ?? "Search"}
           className="h-9 rounded-full pl-9"
         />
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {filtersSlot ?? (
-          <Button variant="outline" size="sm" className="rounded-full">
-            <SlidersHorizontal className="mr-1.5 h-4 w-4" /> Filters
-          </Button>
-        )}
-        {showExport && (
+        {filtersSlot}
+        {canExport && (
           <Button variant="outline" size="sm" className="rounded-full" onClick={onExport}>
             <Download className="mr-1.5 h-4 w-4" /> Export
           </Button>

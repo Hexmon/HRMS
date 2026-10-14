@@ -9,121 +9,104 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as VerifyEmailRouteImport } from './routes/verify-email'
-import { Route as SignupRouteImport } from './routes/signup'
-import { Route as SetPasswordRouteImport } from './routes/set-password'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
-import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppTimesheetRouteImport } from './routes/_app/timesheet'
-import { Route as AppTeamUtilizationRouteImport } from './routes/_app/team-utilization'
-import { Route as AppReportsRouteImport } from './routes/_app/reports'
-import { Route as AppProjectsRouteImport } from './routes/_app/projects'
-import { Route as AppLeaveWfhRouteImport } from './routes/_app/leave-wfh'
-import { Route as AppHelpdeskRouteImport } from './routes/_app/helpdesk'
-import { Route as AppExpensesRouteImport } from './routes/_app/expenses'
-import { Route as AppEmsRouteImport } from './routes/_app/ems'
-import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
-import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
-import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
-import { Route as AppAssetsRouteImport } from './routes/_app/assets'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SetPasswordRouteImport } from './routes/set-password'
+import { Route as SignupRouteImport } from './routes/signup'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin-settings'
-import { Route as AppTimesheetIndexRouteImport } from './routes/_app/timesheet.index'
-import { Route as AppReportsIndexRouteImport } from './routes/_app/reports.index'
-import { Route as AppLeaveWfhIndexRouteImport } from './routes/_app/leave-wfh.index'
-import { Route as AppHelpdeskIndexRouteImport } from './routes/_app/helpdesk.index'
-import { Route as AppExpensesIndexRouteImport } from './routes/_app/expenses.index'
-import { Route as AppEmsIndexRouteImport } from './routes/_app/ems.index'
-import { Route as AppAttendanceIndexRouteImport } from './routes/_app/attendance.index'
-import { Route as AppAssetsIndexRouteImport } from './routes/_app/assets.index'
+import { Route as AppAssetsRouteImport } from './routes/_app/assets'
+import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
+import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
+import { Route as AppEmsRouteImport } from './routes/_app/ems'
+import { Route as AppExpensesRouteImport } from './routes/_app/expenses'
+import { Route as AppHelpdeskRouteImport } from './routes/_app/helpdesk'
+import { Route as AppLeaveWfhRouteImport } from './routes/_app/leave-wfh'
+import { Route as AppProjectsRouteImport } from './routes/_app/projects'
+import { Route as AppReportsRouteImport } from './routes/_app/reports'
+import { Route as AppTeamUtilizationRouteImport } from './routes/_app/team-utilization'
+import { Route as AppTimesheetRouteImport } from './routes/_app/timesheet'
 import { Route as AppAdminSettingsIndexRouteImport } from './routes/_app/admin-settings.index'
-import { Route as AppTimesheetProjectsRouteImport } from './routes/_app/timesheet.projects'
-import { Route as AppTimesheetApprovalsRouteImport } from './routes/_app/timesheet.approvals'
-import { Route as AppReportsTimesheetRouteImport } from './routes/_app/reports.timesheet'
-import { Route as AppReportsProjectsRouteImport } from './routes/_app/reports.projects'
-import { Route as AppReportsLeaveRouteImport } from './routes/_app/reports.leave'
-import { Route as AppReportsHrRouteImport } from './routes/_app/reports.hr'
-import { Route as AppReportsHelpdeskRouteImport } from './routes/_app/reports.helpdesk'
-import { Route as AppReportsExpensesRouteImport } from './routes/_app/reports.expenses'
-import { Route as AppReportsAuditRouteImport } from './routes/_app/reports.audit'
-import { Route as AppReportsAttendanceRouteImport } from './routes/_app/reports.attendance'
-import { Route as AppReportsAssetsRouteImport } from './routes/_app/reports.assets'
-import { Route as AppProjectsIdRouteImport } from './routes/_app/projects.$id'
-import { Route as AppLeaveWfhMonitorRouteImport } from './routes/_app/leave-wfh.monitor'
-import { Route as AppLeaveWfhHolidaysRouteImport } from './routes/_app/leave-wfh.holidays'
-import { Route as AppLeaveWfhApprovalsRouteImport } from './routes/_app/leave-wfh.approvals'
-import { Route as AppLeaveWfhApplyWfhRouteImport } from './routes/_app/leave-wfh.apply-wfh'
-import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-wfh.apply-leave'
-import { Route as AppHelpdeskSlaRouteImport } from './routes/_app/helpdesk.sla'
-import { Route as AppHelpdeskReportsRouteImport } from './routes/_app/helpdesk.reports'
-import { Route as AppHelpdeskQueueRouteImport } from './routes/_app/helpdesk.queue'
-import { Route as AppHelpdeskMyRouteImport } from './routes/_app/helpdesk.my'
-import { Route as AppHelpdeskCategoriesRouteImport } from './routes/_app/helpdesk.categories'
-import { Route as AppHelpdeskIdRouteImport } from './routes/_app/helpdesk.$id'
-import { Route as AppExpensesReviewRouteImport } from './routes/_app/expenses.review'
-import { Route as AppExpensesReportsRouteImport } from './routes/_app/expenses.reports'
-import { Route as AppExpensesRegisterRouteImport } from './routes/_app/expenses.register'
-import { Route as AppExpensesMyRouteImport } from './routes/_app/expenses.my'
-import { Route as AppExpensesFinanceRouteImport } from './routes/_app/expenses.finance'
-import { Route as AppExpensesCreateRouteImport } from './routes/_app/expenses.create'
-import { Route as AppExpensesIdRouteImport } from './routes/_app/expenses.$id'
-import { Route as AppEmsRequestsRouteImport } from './routes/_app/ems.requests'
-import { Route as AppEmsProfileRouteImport } from './routes/_app/ems.profile'
-import { Route as AppEmsPoliciesRouteImport } from './routes/_app/ems.policies'
-import { Route as AppEmsLettersRouteImport } from './routes/_app/ems.letters'
-import { Route as AppEmsDocumentsRouteImport } from './routes/_app/ems.documents'
-import { Route as AppEmsApprovalsRouteImport } from './routes/_app/ems.approvals'
-import { Route as AppEmsAdminRouteImport } from './routes/_app/ems.admin'
-import { Route as AppEmployeesIdRouteImport } from './routes/_app/employees.$id'
-import { Route as AppAttendanceExceptionsRouteImport } from './routes/_app/attendance.exceptions'
-import { Route as AppAttendanceCalendarRouteImport } from './routes/_app/attendance.calendar'
-import { Route as AppAssetsWarrantyRouteImport } from './routes/_app/assets.warranty'
-import { Route as AppAssetsReturnsRouteImport } from './routes/_app/assets.returns'
-import { Route as AppAssetsRequestsRouteImport } from './routes/_app/assets.requests'
-import { Route as AppAssetsMyRouteImport } from './routes/_app/assets.my'
-import { Route as AppAssetsInventoryRouteImport } from './routes/_app/assets.inventory'
-import { Route as AppAssetsIdRouteImport } from './routes/_app/assets.$id'
-import { Route as AppAdminSettingsWorkflowsRouteImport } from './routes/_app/admin-settings.workflows'
-import { Route as AppAdminSettingsSecurityRouteImport } from './routes/_app/admin-settings.security'
-import { Route as AppAdminSettingsRolesRouteImport } from './routes/_app/admin-settings.roles'
-import { Route as AppAdminSettingsPoliciesRouteImport } from './routes/_app/admin-settings.policies'
-import { Route as AppAdminSettingsNotificationsRouteImport } from './routes/_app/admin-settings.notifications'
-import { Route as AppAdminSettingsMasterDataRouteImport } from './routes/_app/admin-settings.master-data'
-import { Route as AppAdminSettingsEmailTemplatesRouteImport } from './routes/_app/admin-settings.email-templates'
-import { Route as AppAdminSettingsCompanyRouteImport } from './routes/_app/admin-settings.company'
 import { Route as AppAdminSettingsAuditRouteImport } from './routes/_app/admin-settings.audit'
+import { Route as AppAdminSettingsCompanyRouteImport } from './routes/_app/admin-settings.company'
+import { Route as AppAdminSettingsDevicesRouteImport } from './routes/_app/admin-settings.devices'
+import { Route as AppAdminSettingsEmailTemplatesRouteImport } from './routes/_app/admin-settings.email-templates'
+import { Route as AppAdminSettingsGeoRouteImport } from './routes/_app/admin-settings.geo'
+import { Route as AppAdminSettingsMasterDataRouteImport } from './routes/_app/admin-settings.master-data'
+import { Route as AppAdminSettingsNotificationsRouteImport } from './routes/_app/admin-settings.notifications'
+import { Route as AppAdminSettingsPoliciesRouteImport } from './routes/_app/admin-settings.policies'
+import { Route as AppAdminSettingsRolesRouteImport } from './routes/_app/admin-settings.roles'
+import { Route as AppAdminSettingsSecurityRouteImport } from './routes/_app/admin-settings.security'
+import { Route as AppAdminSettingsWorkflowsRouteImport } from './routes/_app/admin-settings.workflows'
+import { Route as AppAssetsIndexRouteImport } from './routes/_app/assets.index'
+import { Route as AppAssetsIdRouteImport } from './routes/_app/assets.$id'
+import { Route as AppAssetsInventoryRouteImport } from './routes/_app/assets.inventory'
+import { Route as AppAssetsMyRouteImport } from './routes/_app/assets.my'
+import { Route as AppAssetsRequestsRouteImport } from './routes/_app/assets.requests'
+import { Route as AppAssetsReturnsRouteImport } from './routes/_app/assets.returns'
+import { Route as AppAssetsWarrantyRouteImport } from './routes/_app/assets.warranty'
+import { Route as AppAttendanceIndexRouteImport } from './routes/_app/attendance.index'
+import { Route as AppAttendanceApprovalsRouteImport } from './routes/_app/attendance.approvals'
+import { Route as AppAttendanceCalendarRouteImport } from './routes/_app/attendance.calendar'
+import { Route as AppAttendanceExceptionsRouteImport } from './routes/_app/attendance.exceptions'
+import { Route as AppAttendancePrivacyRouteImport } from './routes/_app/attendance.privacy'
+import { Route as AppEmployeesIdRouteImport } from './routes/_app/employees.$id'
+import { Route as AppEmsIndexRouteImport } from './routes/_app/ems.index'
+import { Route as AppEmsAdminRouteImport } from './routes/_app/ems.admin'
+import { Route as AppEmsApprovalsRouteImport } from './routes/_app/ems.approvals'
+import { Route as AppEmsDocumentsRouteImport } from './routes/_app/ems.documents'
+import { Route as AppEmsLettersRouteImport } from './routes/_app/ems.letters'
+import { Route as AppEmsPoliciesRouteImport } from './routes/_app/ems.policies'
+import { Route as AppEmsProfileRouteImport } from './routes/_app/ems.profile'
+import { Route as AppEmsRequestsRouteImport } from './routes/_app/ems.requests'
+import { Route as AppExpensesIndexRouteImport } from './routes/_app/expenses.index'
+import { Route as AppExpensesIdRouteImport } from './routes/_app/expenses.$id'
+import { Route as AppExpensesCreateRouteImport } from './routes/_app/expenses.create'
+import { Route as AppExpensesFinanceRouteImport } from './routes/_app/expenses.finance'
+import { Route as AppExpensesMyRouteImport } from './routes/_app/expenses.my'
+import { Route as AppExpensesRegisterRouteImport } from './routes/_app/expenses.register'
+import { Route as AppExpensesReportsRouteImport } from './routes/_app/expenses.reports'
+import { Route as AppExpensesReviewRouteImport } from './routes/_app/expenses.review'
+import { Route as AppHelpdeskIndexRouteImport } from './routes/_app/helpdesk.index'
+import { Route as AppHelpdeskIdRouteImport } from './routes/_app/helpdesk.$id'
+import { Route as AppHelpdeskCategoriesRouteImport } from './routes/_app/helpdesk.categories'
+import { Route as AppHelpdeskMyRouteImport } from './routes/_app/helpdesk.my'
+import { Route as AppHelpdeskQueueRouteImport } from './routes/_app/helpdesk.queue'
+import { Route as AppHelpdeskReportsRouteImport } from './routes/_app/helpdesk.reports'
+import { Route as AppHelpdeskSlaRouteImport } from './routes/_app/helpdesk.sla'
+import { Route as AppLeaveWfhIndexRouteImport } from './routes/_app/leave-wfh.index'
+import { Route as AppLeaveWfhApplyLeaveRouteImport } from './routes/_app/leave-wfh.apply-leave'
+import { Route as AppLeaveWfhApplyWfhRouteImport } from './routes/_app/leave-wfh.apply-wfh'
+import { Route as AppLeaveWfhApprovalsRouteImport } from './routes/_app/leave-wfh.approvals'
+import { Route as AppLeaveWfhHolidaysRouteImport } from './routes/_app/leave-wfh.holidays'
+import { Route as AppLeaveWfhMonitorRouteImport } from './routes/_app/leave-wfh.monitor'
+import { Route as AppProjectsIdRouteImport } from './routes/_app/projects.$id'
+import { Route as AppReportsIndexRouteImport } from './routes/_app/reports.index'
+import { Route as AppReportsAssetsRouteImport } from './routes/_app/reports.assets'
+import { Route as AppReportsAttendanceRouteImport } from './routes/_app/reports.attendance'
+import { Route as AppReportsAuditRouteImport } from './routes/_app/reports.audit'
+import { Route as AppReportsExpensesRouteImport } from './routes/_app/reports.expenses'
+import { Route as AppReportsHelpdeskRouteImport } from './routes/_app/reports.helpdesk'
+import { Route as AppReportsHrRouteImport } from './routes/_app/reports.hr'
+import { Route as AppReportsLeaveRouteImport } from './routes/_app/reports.leave'
+import { Route as AppReportsProjectsRouteImport } from './routes/_app/reports.projects'
+import { Route as AppReportsTimesheetRouteImport } from './routes/_app/reports.timesheet'
+import { Route as AppTimesheetIndexRouteImport } from './routes/_app/timesheet.index'
+import { Route as AppTimesheetApprovalsRouteImport } from './routes/_app/timesheet.approvals'
+import { Route as AppTimesheetProjectsRouteImport } from './routes/_app/timesheet.projects'
 
-const VerifyEmailRoute = VerifyEmailRouteImport.update({
-  id: '/verify-email',
-  path: '/verify-email',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SignupRoute = SignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SetPasswordRoute = SetPasswordRouteImport.update({
-  id: '/set-password',
-  path: '/set-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OnboardingRoute = OnboardingRouteImport.update({
-  id: '/onboarding',
-  path: '/onboarding',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
@@ -131,68 +114,39 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppRoute = AppRouteImport.update({
-  id: '/_app',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppTimesheetRoute = AppTimesheetRouteImport.update({
-  id: '/timesheet',
-  path: '/timesheet',
-  getParentRoute: () => AppRoute,
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AppTeamUtilizationRoute = AppTeamUtilizationRouteImport.update({
-  id: '/team-utilization',
-  path: '/team-utilization',
-  getParentRoute: () => AppRoute,
+const SetPasswordRoute = SetPasswordRouteImport.update({
+  id: '/set-password',
+  path: '/set-password',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AppReportsRoute = AppReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => AppRoute,
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AppProjectsRoute = AppProjectsRouteImport.update({
-  id: '/projects',
-  path: '/projects',
-  getParentRoute: () => AppRoute,
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AppLeaveWfhRoute = AppLeaveWfhRouteImport.update({
-  id: '/leave-wfh',
-  path: '/leave-wfh',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppHelpdeskRoute = AppHelpdeskRouteImport.update({
-  id: '/helpdesk',
-  path: '/helpdesk',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppExpensesRoute = AppExpensesRouteImport.update({
-  id: '/expenses',
-  path: '/expenses',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppEmsRoute = AppEmsRouteImport.update({
-  id: '/ems',
-  path: '/ems',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppEmployeesRoute = AppEmployeesRouteImport.update({
-  id: '/employees',
-  path: '/employees',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppDashboardRoute = AppDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppAttendanceRoute = AppAttendanceRouteImport.update({
-  id: '/attendance',
-  path: '/attendance',
+const AppAdminSettingsRoute = AppAdminSettingsRouteImport.update({
+  id: '/admin-settings',
+  path: '/admin-settings',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAssetsRoute = AppAssetsRouteImport.update({
@@ -200,307 +154,96 @@ const AppAssetsRoute = AppAssetsRouteImport.update({
   path: '/assets',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAdminSettingsRoute = AppAdminSettingsRouteImport.update({
-  id: '/admin-settings',
-  path: '/admin-settings',
+const AppAttendanceRoute = AppAttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
   getParentRoute: () => AppRoute,
 } as any)
-const AppTimesheetIndexRoute = AppTimesheetIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppTimesheetRoute,
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AppRoute,
 } as any)
-const AppReportsIndexRoute = AppReportsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppReportsRoute,
+const AppEmployeesRoute = AppEmployeesRouteImport.update({
+  id: '/employees',
+  path: '/employees',
+  getParentRoute: () => AppRoute,
 } as any)
-const AppLeaveWfhIndexRoute = AppLeaveWfhIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppLeaveWfhRoute,
+const AppEmsRoute = AppEmsRouteImport.update({
+  id: '/ems',
+  path: '/ems',
+  getParentRoute: () => AppRoute,
 } as any)
-const AppHelpdeskIndexRoute = AppHelpdeskIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppHelpdeskRoute,
+const AppExpensesRoute = AppExpensesRouteImport.update({
+  id: '/expenses',
+  path: '/expenses',
+  getParentRoute: () => AppRoute,
 } as any)
-const AppExpensesIndexRoute = AppExpensesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppExpensesRoute,
+const AppHelpdeskRoute = AppHelpdeskRouteImport.update({
+  id: '/helpdesk',
+  path: '/helpdesk',
+  getParentRoute: () => AppRoute,
 } as any)
-const AppEmsIndexRoute = AppEmsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppEmsRoute,
+const AppLeaveWfhRoute = AppLeaveWfhRouteImport.update({
+  id: '/leave-wfh',
+  path: '/leave-wfh',
+  getParentRoute: () => AppRoute,
 } as any)
-const AppAttendanceIndexRoute = AppAttendanceIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppAttendanceRoute,
+const AppProjectsRoute = AppProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AppRoute,
 } as any)
-const AppAssetsIndexRoute = AppAssetsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppAssetsRoute,
+const AppReportsRoute = AppReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTeamUtilizationRoute = AppTeamUtilizationRouteImport.update({
+  id: '/team-utilization',
+  path: '/team-utilization',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTimesheetRoute = AppTimesheetRouteImport.update({
+  id: '/timesheet',
+  path: '/timesheet',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppAdminSettingsIndexRoute = AppAdminSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppAdminSettingsRoute,
 } as any)
-const AppTimesheetProjectsRoute = AppTimesheetProjectsRouteImport.update({
-  id: '/projects',
-  path: '/projects',
-  getParentRoute: () => AppTimesheetRoute,
-} as any)
-const AppTimesheetApprovalsRoute = AppTimesheetApprovalsRouteImport.update({
-  id: '/approvals',
-  path: '/approvals',
-  getParentRoute: () => AppTimesheetRoute,
-} as any)
-const AppReportsTimesheetRoute = AppReportsTimesheetRouteImport.update({
-  id: '/timesheet',
-  path: '/timesheet',
-  getParentRoute: () => AppReportsRoute,
-} as any)
-const AppReportsProjectsRoute = AppReportsProjectsRouteImport.update({
-  id: '/projects',
-  path: '/projects',
-  getParentRoute: () => AppReportsRoute,
-} as any)
-const AppReportsLeaveRoute = AppReportsLeaveRouteImport.update({
-  id: '/leave',
-  path: '/leave',
-  getParentRoute: () => AppReportsRoute,
-} as any)
-const AppReportsHrRoute = AppReportsHrRouteImport.update({
-  id: '/hr',
-  path: '/hr',
-  getParentRoute: () => AppReportsRoute,
-} as any)
-const AppReportsHelpdeskRoute = AppReportsHelpdeskRouteImport.update({
-  id: '/helpdesk',
-  path: '/helpdesk',
-  getParentRoute: () => AppReportsRoute,
-} as any)
-const AppReportsExpensesRoute = AppReportsExpensesRouteImport.update({
-  id: '/expenses',
-  path: '/expenses',
-  getParentRoute: () => AppReportsRoute,
-} as any)
-const AppReportsAuditRoute = AppReportsAuditRouteImport.update({
+const AppAdminSettingsAuditRoute = AppAdminSettingsAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
-  getParentRoute: () => AppReportsRoute,
-} as any)
-const AppReportsAttendanceRoute = AppReportsAttendanceRouteImport.update({
-  id: '/attendance',
-  path: '/attendance',
-  getParentRoute: () => AppReportsRoute,
-} as any)
-const AppReportsAssetsRoute = AppReportsAssetsRouteImport.update({
-  id: '/assets',
-  path: '/assets',
-  getParentRoute: () => AppReportsRoute,
-} as any)
-const AppProjectsIdRoute = AppProjectsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppProjectsRoute,
-} as any)
-const AppLeaveWfhMonitorRoute = AppLeaveWfhMonitorRouteImport.update({
-  id: '/monitor',
-  path: '/monitor',
-  getParentRoute: () => AppLeaveWfhRoute,
-} as any)
-const AppLeaveWfhHolidaysRoute = AppLeaveWfhHolidaysRouteImport.update({
-  id: '/holidays',
-  path: '/holidays',
-  getParentRoute: () => AppLeaveWfhRoute,
-} as any)
-const AppLeaveWfhApprovalsRoute = AppLeaveWfhApprovalsRouteImport.update({
-  id: '/approvals',
-  path: '/approvals',
-  getParentRoute: () => AppLeaveWfhRoute,
-} as any)
-const AppLeaveWfhApplyWfhRoute = AppLeaveWfhApplyWfhRouteImport.update({
-  id: '/apply-wfh',
-  path: '/apply-wfh',
-  getParentRoute: () => AppLeaveWfhRoute,
-} as any)
-const AppLeaveWfhApplyLeaveRoute = AppLeaveWfhApplyLeaveRouteImport.update({
-  id: '/apply-leave',
-  path: '/apply-leave',
-  getParentRoute: () => AppLeaveWfhRoute,
-} as any)
-const AppHelpdeskSlaRoute = AppHelpdeskSlaRouteImport.update({
-  id: '/sla',
-  path: '/sla',
-  getParentRoute: () => AppHelpdeskRoute,
-} as any)
-const AppHelpdeskReportsRoute = AppHelpdeskReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => AppHelpdeskRoute,
-} as any)
-const AppHelpdeskQueueRoute = AppHelpdeskQueueRouteImport.update({
-  id: '/queue',
-  path: '/queue',
-  getParentRoute: () => AppHelpdeskRoute,
-} as any)
-const AppHelpdeskMyRoute = AppHelpdeskMyRouteImport.update({
-  id: '/my',
-  path: '/my',
-  getParentRoute: () => AppHelpdeskRoute,
-} as any)
-const AppHelpdeskCategoriesRoute = AppHelpdeskCategoriesRouteImport.update({
-  id: '/categories',
-  path: '/categories',
-  getParentRoute: () => AppHelpdeskRoute,
-} as any)
-const AppHelpdeskIdRoute = AppHelpdeskIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppHelpdeskRoute,
-} as any)
-const AppExpensesReviewRoute = AppExpensesReviewRouteImport.update({
-  id: '/review',
-  path: '/review',
-  getParentRoute: () => AppExpensesRoute,
-} as any)
-const AppExpensesReportsRoute = AppExpensesReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => AppExpensesRoute,
-} as any)
-const AppExpensesRegisterRoute = AppExpensesRegisterRouteImport.update({
-  id: '/register',
-  path: '/register',
-  getParentRoute: () => AppExpensesRoute,
-} as any)
-const AppExpensesMyRoute = AppExpensesMyRouteImport.update({
-  id: '/my',
-  path: '/my',
-  getParentRoute: () => AppExpensesRoute,
-} as any)
-const AppExpensesFinanceRoute = AppExpensesFinanceRouteImport.update({
-  id: '/finance',
-  path: '/finance',
-  getParentRoute: () => AppExpensesRoute,
-} as any)
-const AppExpensesCreateRoute = AppExpensesCreateRouteImport.update({
-  id: '/create',
-  path: '/create',
-  getParentRoute: () => AppExpensesRoute,
-} as any)
-const AppExpensesIdRoute = AppExpensesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppExpensesRoute,
-} as any)
-const AppEmsRequestsRoute = AppEmsRequestsRouteImport.update({
-  id: '/requests',
-  path: '/requests',
-  getParentRoute: () => AppEmsRoute,
-} as any)
-const AppEmsProfileRoute = AppEmsProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => AppEmsRoute,
-} as any)
-const AppEmsPoliciesRoute = AppEmsPoliciesRouteImport.update({
-  id: '/policies',
-  path: '/policies',
-  getParentRoute: () => AppEmsRoute,
-} as any)
-const AppEmsLettersRoute = AppEmsLettersRouteImport.update({
-  id: '/letters',
-  path: '/letters',
-  getParentRoute: () => AppEmsRoute,
-} as any)
-const AppEmsDocumentsRoute = AppEmsDocumentsRouteImport.update({
-  id: '/documents',
-  path: '/documents',
-  getParentRoute: () => AppEmsRoute,
-} as any)
-const AppEmsApprovalsRoute = AppEmsApprovalsRouteImport.update({
-  id: '/approvals',
-  path: '/approvals',
-  getParentRoute: () => AppEmsRoute,
-} as any)
-const AppEmsAdminRoute = AppEmsAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => AppEmsRoute,
-} as any)
-const AppEmployeesIdRoute = AppEmployeesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppEmployeesRoute,
-} as any)
-const AppAttendanceExceptionsRoute = AppAttendanceExceptionsRouteImport.update({
-  id: '/exceptions',
-  path: '/exceptions',
-  getParentRoute: () => AppAttendanceRoute,
-} as any)
-const AppAttendanceCalendarRoute = AppAttendanceCalendarRouteImport.update({
-  id: '/calendar',
-  path: '/calendar',
-  getParentRoute: () => AppAttendanceRoute,
-} as any)
-const AppAssetsWarrantyRoute = AppAssetsWarrantyRouteImport.update({
-  id: '/warranty',
-  path: '/warranty',
-  getParentRoute: () => AppAssetsRoute,
-} as any)
-const AppAssetsReturnsRoute = AppAssetsReturnsRouteImport.update({
-  id: '/returns',
-  path: '/returns',
-  getParentRoute: () => AppAssetsRoute,
-} as any)
-const AppAssetsRequestsRoute = AppAssetsRequestsRouteImport.update({
-  id: '/requests',
-  path: '/requests',
-  getParentRoute: () => AppAssetsRoute,
-} as any)
-const AppAssetsMyRoute = AppAssetsMyRouteImport.update({
-  id: '/my',
-  path: '/my',
-  getParentRoute: () => AppAssetsRoute,
-} as any)
-const AppAssetsInventoryRoute = AppAssetsInventoryRouteImport.update({
-  id: '/inventory',
-  path: '/inventory',
-  getParentRoute: () => AppAssetsRoute,
-} as any)
-const AppAssetsIdRoute = AppAssetsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppAssetsRoute,
-} as any)
-const AppAdminSettingsWorkflowsRoute =
-  AppAdminSettingsWorkflowsRouteImport.update({
-    id: '/workflows',
-    path: '/workflows',
-    getParentRoute: () => AppAdminSettingsRoute,
-  } as any)
-const AppAdminSettingsSecurityRoute =
-  AppAdminSettingsSecurityRouteImport.update({
-    id: '/security',
-    path: '/security',
-    getParentRoute: () => AppAdminSettingsRoute,
-  } as any)
-const AppAdminSettingsRolesRoute = AppAdminSettingsRolesRouteImport.update({
-  id: '/roles',
-  path: '/roles',
   getParentRoute: () => AppAdminSettingsRoute,
 } as any)
-const AppAdminSettingsPoliciesRoute =
-  AppAdminSettingsPoliciesRouteImport.update({
-    id: '/policies',
-    path: '/policies',
+const AppAdminSettingsCompanyRoute = AppAdminSettingsCompanyRouteImport.update({
+  id: '/company',
+  path: '/company',
+  getParentRoute: () => AppAdminSettingsRoute,
+} as any)
+const AppAdminSettingsDevicesRoute = AppAdminSettingsDevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
+  getParentRoute: () => AppAdminSettingsRoute,
+} as any)
+const AppAdminSettingsEmailTemplatesRoute =
+  AppAdminSettingsEmailTemplatesRouteImport.update({
+    id: '/email-templates',
+    path: '/email-templates',
+    getParentRoute: () => AppAdminSettingsRoute,
+  } as any)
+const AppAdminSettingsGeoRoute = AppAdminSettingsGeoRouteImport.update({
+  id: '/geo',
+  path: '/geo',
+  getParentRoute: () => AppAdminSettingsRoute,
+} as any)
+const AppAdminSettingsMasterDataRoute =
+  AppAdminSettingsMasterDataRouteImport.update({
+    id: '/master-data',
+    path: '/master-data',
     getParentRoute: () => AppAdminSettingsRoute,
   } as any)
 const AppAdminSettingsNotificationsRoute =
@@ -509,27 +252,308 @@ const AppAdminSettingsNotificationsRoute =
     path: '/notifications',
     getParentRoute: () => AppAdminSettingsRoute,
   } as any)
-const AppAdminSettingsMasterDataRoute =
-  AppAdminSettingsMasterDataRouteImport.update({
-    id: '/master-data',
-    path: '/master-data',
+const AppAdminSettingsPoliciesRoute =
+  AppAdminSettingsPoliciesRouteImport.update({
+    id: '/policies',
+    path: '/policies',
     getParentRoute: () => AppAdminSettingsRoute,
   } as any)
-const AppAdminSettingsEmailTemplatesRoute =
-  AppAdminSettingsEmailTemplatesRouteImport.update({
-    id: '/email-templates',
-    path: '/email-templates',
-    getParentRoute: () => AppAdminSettingsRoute,
-  } as any)
-const AppAdminSettingsCompanyRoute = AppAdminSettingsCompanyRouteImport.update({
-  id: '/company',
-  path: '/company',
+const AppAdminSettingsRolesRoute = AppAdminSettingsRolesRouteImport.update({
+  id: '/roles',
+  path: '/roles',
   getParentRoute: () => AppAdminSettingsRoute,
 } as any)
-const AppAdminSettingsAuditRoute = AppAdminSettingsAuditRouteImport.update({
+const AppAdminSettingsSecurityRoute =
+  AppAdminSettingsSecurityRouteImport.update({
+    id: '/security',
+    path: '/security',
+    getParentRoute: () => AppAdminSettingsRoute,
+  } as any)
+const AppAdminSettingsWorkflowsRoute =
+  AppAdminSettingsWorkflowsRouteImport.update({
+    id: '/workflows',
+    path: '/workflows',
+    getParentRoute: () => AppAdminSettingsRoute,
+  } as any)
+const AppAssetsIndexRoute = AppAssetsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsIdRoute = AppAssetsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsInventoryRoute = AppAssetsInventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsMyRoute = AppAssetsMyRouteImport.update({
+  id: '/my',
+  path: '/my',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsRequestsRoute = AppAssetsRequestsRouteImport.update({
+  id: '/requests',
+  path: '/requests',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsReturnsRoute = AppAssetsReturnsRouteImport.update({
+  id: '/returns',
+  path: '/returns',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAssetsWarrantyRoute = AppAssetsWarrantyRouteImport.update({
+  id: '/warranty',
+  path: '/warranty',
+  getParentRoute: () => AppAssetsRoute,
+} as any)
+const AppAttendanceIndexRoute = AppAttendanceIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppAttendanceRoute,
+} as any)
+const AppAttendanceApprovalsRoute = AppAttendanceApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => AppAttendanceRoute,
+} as any)
+const AppAttendanceCalendarRoute = AppAttendanceCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => AppAttendanceRoute,
+} as any)
+const AppAttendanceExceptionsRoute = AppAttendanceExceptionsRouteImport.update({
+  id: '/exceptions',
+  path: '/exceptions',
+  getParentRoute: () => AppAttendanceRoute,
+} as any)
+const AppAttendancePrivacyRoute = AppAttendancePrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => AppAttendanceRoute,
+} as any)
+const AppEmployeesIdRoute = AppEmployeesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppEmployeesRoute,
+} as any)
+const AppEmsIndexRoute = AppEmsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsAdminRoute = AppEmsAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsApprovalsRoute = AppEmsApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsDocumentsRoute = AppEmsDocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsLettersRoute = AppEmsLettersRouteImport.update({
+  id: '/letters',
+  path: '/letters',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsPoliciesRoute = AppEmsPoliciesRouteImport.update({
+  id: '/policies',
+  path: '/policies',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsProfileRoute = AppEmsProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppEmsRequestsRoute = AppEmsRequestsRouteImport.update({
+  id: '/requests',
+  path: '/requests',
+  getParentRoute: () => AppEmsRoute,
+} as any)
+const AppExpensesIndexRoute = AppExpensesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesIdRoute = AppExpensesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesCreateRoute = AppExpensesCreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesFinanceRoute = AppExpensesFinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesMyRoute = AppExpensesMyRouteImport.update({
+  id: '/my',
+  path: '/my',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesRegisterRoute = AppExpensesRegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesReportsRoute = AppExpensesReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppExpensesReviewRoute = AppExpensesReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => AppExpensesRoute,
+} as any)
+const AppHelpdeskIndexRoute = AppHelpdeskIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
+const AppHelpdeskIdRoute = AppHelpdeskIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
+const AppHelpdeskCategoriesRoute = AppHelpdeskCategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
+const AppHelpdeskMyRoute = AppHelpdeskMyRouteImport.update({
+  id: '/my',
+  path: '/my',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
+const AppHelpdeskQueueRoute = AppHelpdeskQueueRouteImport.update({
+  id: '/queue',
+  path: '/queue',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
+const AppHelpdeskReportsRoute = AppHelpdeskReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
+const AppHelpdeskSlaRoute = AppHelpdeskSlaRouteImport.update({
+  id: '/sla',
+  path: '/sla',
+  getParentRoute: () => AppHelpdeskRoute,
+} as any)
+const AppLeaveWfhIndexRoute = AppLeaveWfhIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppLeaveWfhApplyLeaveRoute = AppLeaveWfhApplyLeaveRouteImport.update({
+  id: '/apply-leave',
+  path: '/apply-leave',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppLeaveWfhApplyWfhRoute = AppLeaveWfhApplyWfhRouteImport.update({
+  id: '/apply-wfh',
+  path: '/apply-wfh',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppLeaveWfhApprovalsRoute = AppLeaveWfhApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppLeaveWfhHolidaysRoute = AppLeaveWfhHolidaysRouteImport.update({
+  id: '/holidays',
+  path: '/holidays',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppLeaveWfhMonitorRoute = AppLeaveWfhMonitorRouteImport.update({
+  id: '/monitor',
+  path: '/monitor',
+  getParentRoute: () => AppLeaveWfhRoute,
+} as any)
+const AppProjectsIdRoute = AppProjectsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppProjectsRoute,
+} as any)
+const AppReportsIndexRoute = AppReportsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppReportsAssetsRoute = AppReportsAssetsRouteImport.update({
+  id: '/assets',
+  path: '/assets',
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppReportsAttendanceRoute = AppReportsAttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppReportsAuditRoute = AppReportsAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
-  getParentRoute: () => AppAdminSettingsRoute,
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppReportsExpensesRoute = AppReportsExpensesRouteImport.update({
+  id: '/expenses',
+  path: '/expenses',
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppReportsHelpdeskRoute = AppReportsHelpdeskRouteImport.update({
+  id: '/helpdesk',
+  path: '/helpdesk',
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppReportsHrRoute = AppReportsHrRouteImport.update({
+  id: '/hr',
+  path: '/hr',
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppReportsLeaveRoute = AppReportsLeaveRouteImport.update({
+  id: '/leave',
+  path: '/leave',
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppReportsProjectsRoute = AppReportsProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppReportsTimesheetRoute = AppReportsTimesheetRouteImport.update({
+  id: '/timesheet',
+  path: '/timesheet',
+  getParentRoute: () => AppReportsRoute,
+} as any)
+const AppTimesheetIndexRoute = AppTimesheetIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppTimesheetRoute,
+} as any)
+const AppTimesheetApprovalsRoute = AppTimesheetApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => AppTimesheetRoute,
+} as any)
+const AppTimesheetProjectsRoute = AppTimesheetProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AppTimesheetRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -556,7 +580,9 @@ export interface FileRoutesByFullPath {
   '/timesheet': typeof AppTimesheetRouteWithChildren
   '/admin-settings/audit': typeof AppAdminSettingsAuditRoute
   '/admin-settings/company': typeof AppAdminSettingsCompanyRoute
+  '/admin-settings/devices': typeof AppAdminSettingsDevicesRoute
   '/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
+  '/admin-settings/geo': typeof AppAdminSettingsGeoRoute
   '/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
   '/admin-settings/notifications': typeof AppAdminSettingsNotificationsRoute
   '/admin-settings/policies': typeof AppAdminSettingsPoliciesRoute
@@ -569,8 +595,10 @@ export interface FileRoutesByFullPath {
   '/assets/requests': typeof AppAssetsRequestsRoute
   '/assets/returns': typeof AppAssetsReturnsRoute
   '/assets/warranty': typeof AppAssetsWarrantyRoute
+  '/attendance/approvals': typeof AppAttendanceApprovalsRoute
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
+  '/attendance/privacy': typeof AppAttendancePrivacyRoute
   '/employees/$id': typeof AppEmployeesIdRoute
   '/ems/admin': typeof AppEmsAdminRoute
   '/ems/approvals': typeof AppEmsApprovalsRoute
@@ -634,7 +662,9 @@ export interface FileRoutesByTo {
   '/team-utilization': typeof AppTeamUtilizationRoute
   '/admin-settings/audit': typeof AppAdminSettingsAuditRoute
   '/admin-settings/company': typeof AppAdminSettingsCompanyRoute
+  '/admin-settings/devices': typeof AppAdminSettingsDevicesRoute
   '/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
+  '/admin-settings/geo': typeof AppAdminSettingsGeoRoute
   '/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
   '/admin-settings/notifications': typeof AppAdminSettingsNotificationsRoute
   '/admin-settings/policies': typeof AppAdminSettingsPoliciesRoute
@@ -647,8 +677,10 @@ export interface FileRoutesByTo {
   '/assets/requests': typeof AppAssetsRequestsRoute
   '/assets/returns': typeof AppAssetsReturnsRoute
   '/assets/warranty': typeof AppAssetsWarrantyRoute
+  '/attendance/approvals': typeof AppAttendanceApprovalsRoute
   '/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/attendance/exceptions': typeof AppAttendanceExceptionsRoute
+  '/attendance/privacy': typeof AppAttendancePrivacyRoute
   '/employees/$id': typeof AppEmployeesIdRoute
   '/ems/admin': typeof AppEmsAdminRoute
   '/ems/approvals': typeof AppEmsApprovalsRoute
@@ -723,7 +755,9 @@ export interface FileRoutesById {
   '/_app/timesheet': typeof AppTimesheetRouteWithChildren
   '/_app/admin-settings/audit': typeof AppAdminSettingsAuditRoute
   '/_app/admin-settings/company': typeof AppAdminSettingsCompanyRoute
+  '/_app/admin-settings/devices': typeof AppAdminSettingsDevicesRoute
   '/_app/admin-settings/email-templates': typeof AppAdminSettingsEmailTemplatesRoute
+  '/_app/admin-settings/geo': typeof AppAdminSettingsGeoRoute
   '/_app/admin-settings/master-data': typeof AppAdminSettingsMasterDataRoute
   '/_app/admin-settings/notifications': typeof AppAdminSettingsNotificationsRoute
   '/_app/admin-settings/policies': typeof AppAdminSettingsPoliciesRoute
@@ -736,8 +770,10 @@ export interface FileRoutesById {
   '/_app/assets/requests': typeof AppAssetsRequestsRoute
   '/_app/assets/returns': typeof AppAssetsReturnsRoute
   '/_app/assets/warranty': typeof AppAssetsWarrantyRoute
+  '/_app/attendance/approvals': typeof AppAttendanceApprovalsRoute
   '/_app/attendance/calendar': typeof AppAttendanceCalendarRoute
   '/_app/attendance/exceptions': typeof AppAttendanceExceptionsRoute
+  '/_app/attendance/privacy': typeof AppAttendancePrivacyRoute
   '/_app/employees/$id': typeof AppEmployeesIdRoute
   '/_app/ems/admin': typeof AppEmsAdminRoute
   '/_app/ems/approvals': typeof AppEmsApprovalsRoute
@@ -812,7 +848,9 @@ export interface FileRouteTypes {
     | '/timesheet'
     | '/admin-settings/audit'
     | '/admin-settings/company'
+    | '/admin-settings/devices'
     | '/admin-settings/email-templates'
+    | '/admin-settings/geo'
     | '/admin-settings/master-data'
     | '/admin-settings/notifications'
     | '/admin-settings/policies'
@@ -825,8 +863,10 @@ export interface FileRouteTypes {
     | '/assets/requests'
     | '/assets/returns'
     | '/assets/warranty'
+    | '/attendance/approvals'
     | '/attendance/calendar'
     | '/attendance/exceptions'
+    | '/attendance/privacy'
     | '/employees/$id'
     | '/ems/admin'
     | '/ems/approvals'
@@ -890,7 +930,9 @@ export interface FileRouteTypes {
     | '/team-utilization'
     | '/admin-settings/audit'
     | '/admin-settings/company'
+    | '/admin-settings/devices'
     | '/admin-settings/email-templates'
+    | '/admin-settings/geo'
     | '/admin-settings/master-data'
     | '/admin-settings/notifications'
     | '/admin-settings/policies'
@@ -903,8 +945,10 @@ export interface FileRouteTypes {
     | '/assets/requests'
     | '/assets/returns'
     | '/assets/warranty'
+    | '/attendance/approvals'
     | '/attendance/calendar'
     | '/attendance/exceptions'
+    | '/attendance/privacy'
     | '/employees/$id'
     | '/ems/admin'
     | '/ems/approvals'
@@ -978,7 +1022,9 @@ export interface FileRouteTypes {
     | '/_app/timesheet'
     | '/_app/admin-settings/audit'
     | '/_app/admin-settings/company'
+    | '/_app/admin-settings/devices'
     | '/_app/admin-settings/email-templates'
+    | '/_app/admin-settings/geo'
     | '/_app/admin-settings/master-data'
     | '/_app/admin-settings/notifications'
     | '/_app/admin-settings/policies'
@@ -991,8 +1037,10 @@ export interface FileRouteTypes {
     | '/_app/assets/requests'
     | '/_app/assets/returns'
     | '/_app/assets/warranty'
+    | '/_app/attendance/approvals'
     | '/_app/attendance/calendar'
     | '/_app/attendance/exceptions'
+    | '/_app/attendance/privacy'
     | '/_app/employees/$id'
     | '/_app/ems/admin'
     | '/_app/ems/approvals'
@@ -1056,53 +1104,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/verify-email': {
-      id: '/verify-email'
-      path: '/verify-email'
-      fullPath: '/verify-email'
-      preLoaderRoute: typeof VerifyEmailRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/signup': {
-      id: '/signup'
-      path: '/signup'
-      fullPath: '/signup'
-      preLoaderRoute: typeof SignupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/set-password': {
-      id: '/set-password'
-      path: '/set-password'
-      fullPath: '/set-password'
-      preLoaderRoute: typeof SetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/onboarding': {
-      id: '/onboarding'
-      path: '/onboarding'
-      fullPath: '/onboarding'
-      preLoaderRoute: typeof OnboardingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/forgot-password': {
-      id: '/forgot-password'
-      path: '/forgot-password'
-      fullPath: '/forgot-password'
-      preLoaderRoute: typeof ForgotPasswordRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -1112,88 +1118,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/timesheet': {
-      id: '/_app/timesheet'
-      path: '/timesheet'
-      fullPath: '/timesheet'
-      preLoaderRoute: typeof AppTimesheetRouteImport
-      parentRoute: typeof AppRoute
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_app/team-utilization': {
-      id: '/_app/team-utilization'
-      path: '/team-utilization'
-      fullPath: '/team-utilization'
-      preLoaderRoute: typeof AppTeamUtilizationRouteImport
-      parentRoute: typeof AppRoute
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_app/reports': {
-      id: '/_app/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof AppReportsRouteImport
-      parentRoute: typeof AppRoute
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_app/projects': {
-      id: '/_app/projects'
-      path: '/projects'
-      fullPath: '/projects'
-      preLoaderRoute: typeof AppProjectsRouteImport
-      parentRoute: typeof AppRoute
+    '/set-password': {
+      id: '/set-password'
+      path: '/set-password'
+      fullPath: '/set-password'
+      preLoaderRoute: typeof SetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_app/leave-wfh': {
-      id: '/_app/leave-wfh'
-      path: '/leave-wfh'
-      fullPath: '/leave-wfh'
-      preLoaderRoute: typeof AppLeaveWfhRouteImport
-      parentRoute: typeof AppRoute
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_app/helpdesk': {
-      id: '/_app/helpdesk'
-      path: '/helpdesk'
-      fullPath: '/helpdesk'
-      preLoaderRoute: typeof AppHelpdeskRouteImport
-      parentRoute: typeof AppRoute
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_app/expenses': {
-      id: '/_app/expenses'
-      path: '/expenses'
-      fullPath: '/expenses'
-      preLoaderRoute: typeof AppExpensesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/ems': {
-      id: '/_app/ems'
-      path: '/ems'
-      fullPath: '/ems'
-      preLoaderRoute: typeof AppEmsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/employees': {
-      id: '/_app/employees'
-      path: '/employees'
-      fullPath: '/employees'
-      preLoaderRoute: typeof AppEmployeesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/dashboard': {
-      id: '/_app/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AppDashboardRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/attendance': {
-      id: '/_app/attendance'
-      path: '/attendance'
-      fullPath: '/attendance'
-      preLoaderRoute: typeof AppAttendanceRouteImport
+    '/_app/admin-settings': {
+      id: '/_app/admin-settings'
+      path: '/admin-settings'
+      fullPath: '/admin-settings'
+      preLoaderRoute: typeof AppAdminSettingsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/assets': {
@@ -1203,452 +1181,88 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAssetsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/admin-settings': {
-      id: '/_app/admin-settings'
-      path: '/admin-settings'
-      fullPath: '/admin-settings'
-      preLoaderRoute: typeof AppAdminSettingsRouteImport
+    '/_app/attendance': {
+      id: '/_app/attendance'
+      path: '/attendance'
+      fullPath: '/attendance'
+      preLoaderRoute: typeof AppAttendanceRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/timesheet/': {
-      id: '/_app/timesheet/'
-      path: '/'
-      fullPath: '/timesheet/'
-      preLoaderRoute: typeof AppTimesheetIndexRouteImport
-      parentRoute: typeof AppTimesheetRoute
+    '/_app/dashboard': {
+      id: '/_app/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_app/reports/': {
-      id: '/_app/reports/'
-      path: '/'
-      fullPath: '/reports/'
-      preLoaderRoute: typeof AppReportsIndexRouteImport
-      parentRoute: typeof AppReportsRoute
+    '/_app/employees': {
+      id: '/_app/employees'
+      path: '/employees'
+      fullPath: '/employees'
+      preLoaderRoute: typeof AppEmployeesRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_app/leave-wfh/': {
-      id: '/_app/leave-wfh/'
-      path: '/'
-      fullPath: '/leave-wfh/'
-      preLoaderRoute: typeof AppLeaveWfhIndexRouteImport
-      parentRoute: typeof AppLeaveWfhRoute
+    '/_app/ems': {
+      id: '/_app/ems'
+      path: '/ems'
+      fullPath: '/ems'
+      preLoaderRoute: typeof AppEmsRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_app/helpdesk/': {
-      id: '/_app/helpdesk/'
-      path: '/'
-      fullPath: '/helpdesk/'
-      preLoaderRoute: typeof AppHelpdeskIndexRouteImport
-      parentRoute: typeof AppHelpdeskRoute
+    '/_app/expenses': {
+      id: '/_app/expenses'
+      path: '/expenses'
+      fullPath: '/expenses'
+      preLoaderRoute: typeof AppExpensesRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_app/expenses/': {
-      id: '/_app/expenses/'
-      path: '/'
-      fullPath: '/expenses/'
-      preLoaderRoute: typeof AppExpensesIndexRouteImport
-      parentRoute: typeof AppExpensesRoute
+    '/_app/helpdesk': {
+      id: '/_app/helpdesk'
+      path: '/helpdesk'
+      fullPath: '/helpdesk'
+      preLoaderRoute: typeof AppHelpdeskRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_app/ems/': {
-      id: '/_app/ems/'
-      path: '/'
-      fullPath: '/ems/'
-      preLoaderRoute: typeof AppEmsIndexRouteImport
-      parentRoute: typeof AppEmsRoute
+    '/_app/leave-wfh': {
+      id: '/_app/leave-wfh'
+      path: '/leave-wfh'
+      fullPath: '/leave-wfh'
+      preLoaderRoute: typeof AppLeaveWfhRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_app/attendance/': {
-      id: '/_app/attendance/'
-      path: '/'
-      fullPath: '/attendance/'
-      preLoaderRoute: typeof AppAttendanceIndexRouteImport
-      parentRoute: typeof AppAttendanceRoute
+    '/_app/projects': {
+      id: '/_app/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof AppProjectsRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_app/assets/': {
-      id: '/_app/assets/'
-      path: '/'
-      fullPath: '/assets/'
-      preLoaderRoute: typeof AppAssetsIndexRouteImport
-      parentRoute: typeof AppAssetsRoute
+    '/_app/reports': {
+      id: '/_app/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof AppReportsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/team-utilization': {
+      id: '/_app/team-utilization'
+      path: '/team-utilization'
+      fullPath: '/team-utilization'
+      preLoaderRoute: typeof AppTeamUtilizationRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/timesheet': {
+      id: '/_app/timesheet'
+      path: '/timesheet'
+      fullPath: '/timesheet'
+      preLoaderRoute: typeof AppTimesheetRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/admin-settings/': {
       id: '/_app/admin-settings/'
       path: '/'
       fullPath: '/admin-settings/'
       preLoaderRoute: typeof AppAdminSettingsIndexRouteImport
-      parentRoute: typeof AppAdminSettingsRoute
-    }
-    '/_app/timesheet/projects': {
-      id: '/_app/timesheet/projects'
-      path: '/projects'
-      fullPath: '/timesheet/projects'
-      preLoaderRoute: typeof AppTimesheetProjectsRouteImport
-      parentRoute: typeof AppTimesheetRoute
-    }
-    '/_app/timesheet/approvals': {
-      id: '/_app/timesheet/approvals'
-      path: '/approvals'
-      fullPath: '/timesheet/approvals'
-      preLoaderRoute: typeof AppTimesheetApprovalsRouteImport
-      parentRoute: typeof AppTimesheetRoute
-    }
-    '/_app/reports/timesheet': {
-      id: '/_app/reports/timesheet'
-      path: '/timesheet'
-      fullPath: '/reports/timesheet'
-      preLoaderRoute: typeof AppReportsTimesheetRouteImport
-      parentRoute: typeof AppReportsRoute
-    }
-    '/_app/reports/projects': {
-      id: '/_app/reports/projects'
-      path: '/projects'
-      fullPath: '/reports/projects'
-      preLoaderRoute: typeof AppReportsProjectsRouteImport
-      parentRoute: typeof AppReportsRoute
-    }
-    '/_app/reports/leave': {
-      id: '/_app/reports/leave'
-      path: '/leave'
-      fullPath: '/reports/leave'
-      preLoaderRoute: typeof AppReportsLeaveRouteImport
-      parentRoute: typeof AppReportsRoute
-    }
-    '/_app/reports/hr': {
-      id: '/_app/reports/hr'
-      path: '/hr'
-      fullPath: '/reports/hr'
-      preLoaderRoute: typeof AppReportsHrRouteImport
-      parentRoute: typeof AppReportsRoute
-    }
-    '/_app/reports/helpdesk': {
-      id: '/_app/reports/helpdesk'
-      path: '/helpdesk'
-      fullPath: '/reports/helpdesk'
-      preLoaderRoute: typeof AppReportsHelpdeskRouteImport
-      parentRoute: typeof AppReportsRoute
-    }
-    '/_app/reports/expenses': {
-      id: '/_app/reports/expenses'
-      path: '/expenses'
-      fullPath: '/reports/expenses'
-      preLoaderRoute: typeof AppReportsExpensesRouteImport
-      parentRoute: typeof AppReportsRoute
-    }
-    '/_app/reports/audit': {
-      id: '/_app/reports/audit'
-      path: '/audit'
-      fullPath: '/reports/audit'
-      preLoaderRoute: typeof AppReportsAuditRouteImport
-      parentRoute: typeof AppReportsRoute
-    }
-    '/_app/reports/attendance': {
-      id: '/_app/reports/attendance'
-      path: '/attendance'
-      fullPath: '/reports/attendance'
-      preLoaderRoute: typeof AppReportsAttendanceRouteImport
-      parentRoute: typeof AppReportsRoute
-    }
-    '/_app/reports/assets': {
-      id: '/_app/reports/assets'
-      path: '/assets'
-      fullPath: '/reports/assets'
-      preLoaderRoute: typeof AppReportsAssetsRouteImport
-      parentRoute: typeof AppReportsRoute
-    }
-    '/_app/projects/$id': {
-      id: '/_app/projects/$id'
-      path: '/$id'
-      fullPath: '/projects/$id'
-      preLoaderRoute: typeof AppProjectsIdRouteImport
-      parentRoute: typeof AppProjectsRoute
-    }
-    '/_app/leave-wfh/monitor': {
-      id: '/_app/leave-wfh/monitor'
-      path: '/monitor'
-      fullPath: '/leave-wfh/monitor'
-      preLoaderRoute: typeof AppLeaveWfhMonitorRouteImport
-      parentRoute: typeof AppLeaveWfhRoute
-    }
-    '/_app/leave-wfh/holidays': {
-      id: '/_app/leave-wfh/holidays'
-      path: '/holidays'
-      fullPath: '/leave-wfh/holidays'
-      preLoaderRoute: typeof AppLeaveWfhHolidaysRouteImport
-      parentRoute: typeof AppLeaveWfhRoute
-    }
-    '/_app/leave-wfh/approvals': {
-      id: '/_app/leave-wfh/approvals'
-      path: '/approvals'
-      fullPath: '/leave-wfh/approvals'
-      preLoaderRoute: typeof AppLeaveWfhApprovalsRouteImport
-      parentRoute: typeof AppLeaveWfhRoute
-    }
-    '/_app/leave-wfh/apply-wfh': {
-      id: '/_app/leave-wfh/apply-wfh'
-      path: '/apply-wfh'
-      fullPath: '/leave-wfh/apply-wfh'
-      preLoaderRoute: typeof AppLeaveWfhApplyWfhRouteImport
-      parentRoute: typeof AppLeaveWfhRoute
-    }
-    '/_app/leave-wfh/apply-leave': {
-      id: '/_app/leave-wfh/apply-leave'
-      path: '/apply-leave'
-      fullPath: '/leave-wfh/apply-leave'
-      preLoaderRoute: typeof AppLeaveWfhApplyLeaveRouteImport
-      parentRoute: typeof AppLeaveWfhRoute
-    }
-    '/_app/helpdesk/sla': {
-      id: '/_app/helpdesk/sla'
-      path: '/sla'
-      fullPath: '/helpdesk/sla'
-      preLoaderRoute: typeof AppHelpdeskSlaRouteImport
-      parentRoute: typeof AppHelpdeskRoute
-    }
-    '/_app/helpdesk/reports': {
-      id: '/_app/helpdesk/reports'
-      path: '/reports'
-      fullPath: '/helpdesk/reports'
-      preLoaderRoute: typeof AppHelpdeskReportsRouteImport
-      parentRoute: typeof AppHelpdeskRoute
-    }
-    '/_app/helpdesk/queue': {
-      id: '/_app/helpdesk/queue'
-      path: '/queue'
-      fullPath: '/helpdesk/queue'
-      preLoaderRoute: typeof AppHelpdeskQueueRouteImport
-      parentRoute: typeof AppHelpdeskRoute
-    }
-    '/_app/helpdesk/my': {
-      id: '/_app/helpdesk/my'
-      path: '/my'
-      fullPath: '/helpdesk/my'
-      preLoaderRoute: typeof AppHelpdeskMyRouteImport
-      parentRoute: typeof AppHelpdeskRoute
-    }
-    '/_app/helpdesk/categories': {
-      id: '/_app/helpdesk/categories'
-      path: '/categories'
-      fullPath: '/helpdesk/categories'
-      preLoaderRoute: typeof AppHelpdeskCategoriesRouteImport
-      parentRoute: typeof AppHelpdeskRoute
-    }
-    '/_app/helpdesk/$id': {
-      id: '/_app/helpdesk/$id'
-      path: '/$id'
-      fullPath: '/helpdesk/$id'
-      preLoaderRoute: typeof AppHelpdeskIdRouteImport
-      parentRoute: typeof AppHelpdeskRoute
-    }
-    '/_app/expenses/review': {
-      id: '/_app/expenses/review'
-      path: '/review'
-      fullPath: '/expenses/review'
-      preLoaderRoute: typeof AppExpensesReviewRouteImport
-      parentRoute: typeof AppExpensesRoute
-    }
-    '/_app/expenses/reports': {
-      id: '/_app/expenses/reports'
-      path: '/reports'
-      fullPath: '/expenses/reports'
-      preLoaderRoute: typeof AppExpensesReportsRouteImport
-      parentRoute: typeof AppExpensesRoute
-    }
-    '/_app/expenses/register': {
-      id: '/_app/expenses/register'
-      path: '/register'
-      fullPath: '/expenses/register'
-      preLoaderRoute: typeof AppExpensesRegisterRouteImport
-      parentRoute: typeof AppExpensesRoute
-    }
-    '/_app/expenses/my': {
-      id: '/_app/expenses/my'
-      path: '/my'
-      fullPath: '/expenses/my'
-      preLoaderRoute: typeof AppExpensesMyRouteImport
-      parentRoute: typeof AppExpensesRoute
-    }
-    '/_app/expenses/finance': {
-      id: '/_app/expenses/finance'
-      path: '/finance'
-      fullPath: '/expenses/finance'
-      preLoaderRoute: typeof AppExpensesFinanceRouteImport
-      parentRoute: typeof AppExpensesRoute
-    }
-    '/_app/expenses/create': {
-      id: '/_app/expenses/create'
-      path: '/create'
-      fullPath: '/expenses/create'
-      preLoaderRoute: typeof AppExpensesCreateRouteImport
-      parentRoute: typeof AppExpensesRoute
-    }
-    '/_app/expenses/$id': {
-      id: '/_app/expenses/$id'
-      path: '/$id'
-      fullPath: '/expenses/$id'
-      preLoaderRoute: typeof AppExpensesIdRouteImport
-      parentRoute: typeof AppExpensesRoute
-    }
-    '/_app/ems/requests': {
-      id: '/_app/ems/requests'
-      path: '/requests'
-      fullPath: '/ems/requests'
-      preLoaderRoute: typeof AppEmsRequestsRouteImport
-      parentRoute: typeof AppEmsRoute
-    }
-    '/_app/ems/profile': {
-      id: '/_app/ems/profile'
-      path: '/profile'
-      fullPath: '/ems/profile'
-      preLoaderRoute: typeof AppEmsProfileRouteImport
-      parentRoute: typeof AppEmsRoute
-    }
-    '/_app/ems/policies': {
-      id: '/_app/ems/policies'
-      path: '/policies'
-      fullPath: '/ems/policies'
-      preLoaderRoute: typeof AppEmsPoliciesRouteImport
-      parentRoute: typeof AppEmsRoute
-    }
-    '/_app/ems/letters': {
-      id: '/_app/ems/letters'
-      path: '/letters'
-      fullPath: '/ems/letters'
-      preLoaderRoute: typeof AppEmsLettersRouteImport
-      parentRoute: typeof AppEmsRoute
-    }
-    '/_app/ems/documents': {
-      id: '/_app/ems/documents'
-      path: '/documents'
-      fullPath: '/ems/documents'
-      preLoaderRoute: typeof AppEmsDocumentsRouteImport
-      parentRoute: typeof AppEmsRoute
-    }
-    '/_app/ems/approvals': {
-      id: '/_app/ems/approvals'
-      path: '/approvals'
-      fullPath: '/ems/approvals'
-      preLoaderRoute: typeof AppEmsApprovalsRouteImport
-      parentRoute: typeof AppEmsRoute
-    }
-    '/_app/ems/admin': {
-      id: '/_app/ems/admin'
-      path: '/admin'
-      fullPath: '/ems/admin'
-      preLoaderRoute: typeof AppEmsAdminRouteImport
-      parentRoute: typeof AppEmsRoute
-    }
-    '/_app/employees/$id': {
-      id: '/_app/employees/$id'
-      path: '/$id'
-      fullPath: '/employees/$id'
-      preLoaderRoute: typeof AppEmployeesIdRouteImport
-      parentRoute: typeof AppEmployeesRoute
-    }
-    '/_app/attendance/exceptions': {
-      id: '/_app/attendance/exceptions'
-      path: '/exceptions'
-      fullPath: '/attendance/exceptions'
-      preLoaderRoute: typeof AppAttendanceExceptionsRouteImport
-      parentRoute: typeof AppAttendanceRoute
-    }
-    '/_app/attendance/calendar': {
-      id: '/_app/attendance/calendar'
-      path: '/calendar'
-      fullPath: '/attendance/calendar'
-      preLoaderRoute: typeof AppAttendanceCalendarRouteImport
-      parentRoute: typeof AppAttendanceRoute
-    }
-    '/_app/assets/warranty': {
-      id: '/_app/assets/warranty'
-      path: '/warranty'
-      fullPath: '/assets/warranty'
-      preLoaderRoute: typeof AppAssetsWarrantyRouteImport
-      parentRoute: typeof AppAssetsRoute
-    }
-    '/_app/assets/returns': {
-      id: '/_app/assets/returns'
-      path: '/returns'
-      fullPath: '/assets/returns'
-      preLoaderRoute: typeof AppAssetsReturnsRouteImport
-      parentRoute: typeof AppAssetsRoute
-    }
-    '/_app/assets/requests': {
-      id: '/_app/assets/requests'
-      path: '/requests'
-      fullPath: '/assets/requests'
-      preLoaderRoute: typeof AppAssetsRequestsRouteImport
-      parentRoute: typeof AppAssetsRoute
-    }
-    '/_app/assets/my': {
-      id: '/_app/assets/my'
-      path: '/my'
-      fullPath: '/assets/my'
-      preLoaderRoute: typeof AppAssetsMyRouteImport
-      parentRoute: typeof AppAssetsRoute
-    }
-    '/_app/assets/inventory': {
-      id: '/_app/assets/inventory'
-      path: '/inventory'
-      fullPath: '/assets/inventory'
-      preLoaderRoute: typeof AppAssetsInventoryRouteImport
-      parentRoute: typeof AppAssetsRoute
-    }
-    '/_app/assets/$id': {
-      id: '/_app/assets/$id'
-      path: '/$id'
-      fullPath: '/assets/$id'
-      preLoaderRoute: typeof AppAssetsIdRouteImport
-      parentRoute: typeof AppAssetsRoute
-    }
-    '/_app/admin-settings/workflows': {
-      id: '/_app/admin-settings/workflows'
-      path: '/workflows'
-      fullPath: '/admin-settings/workflows'
-      preLoaderRoute: typeof AppAdminSettingsWorkflowsRouteImport
-      parentRoute: typeof AppAdminSettingsRoute
-    }
-    '/_app/admin-settings/security': {
-      id: '/_app/admin-settings/security'
-      path: '/security'
-      fullPath: '/admin-settings/security'
-      preLoaderRoute: typeof AppAdminSettingsSecurityRouteImport
-      parentRoute: typeof AppAdminSettingsRoute
-    }
-    '/_app/admin-settings/roles': {
-      id: '/_app/admin-settings/roles'
-      path: '/roles'
-      fullPath: '/admin-settings/roles'
-      preLoaderRoute: typeof AppAdminSettingsRolesRouteImport
-      parentRoute: typeof AppAdminSettingsRoute
-    }
-    '/_app/admin-settings/policies': {
-      id: '/_app/admin-settings/policies'
-      path: '/policies'
-      fullPath: '/admin-settings/policies'
-      preLoaderRoute: typeof AppAdminSettingsPoliciesRouteImport
-      parentRoute: typeof AppAdminSettingsRoute
-    }
-    '/_app/admin-settings/notifications': {
-      id: '/_app/admin-settings/notifications'
-      path: '/notifications'
-      fullPath: '/admin-settings/notifications'
-      preLoaderRoute: typeof AppAdminSettingsNotificationsRouteImport
-      parentRoute: typeof AppAdminSettingsRoute
-    }
-    '/_app/admin-settings/master-data': {
-      id: '/_app/admin-settings/master-data'
-      path: '/master-data'
-      fullPath: '/admin-settings/master-data'
-      preLoaderRoute: typeof AppAdminSettingsMasterDataRouteImport
-      parentRoute: typeof AppAdminSettingsRoute
-    }
-    '/_app/admin-settings/email-templates': {
-      id: '/_app/admin-settings/email-templates'
-      path: '/email-templates'
-      fullPath: '/admin-settings/email-templates'
-      preLoaderRoute: typeof AppAdminSettingsEmailTemplatesRouteImport
-      parentRoute: typeof AppAdminSettingsRoute
-    }
-    '/_app/admin-settings/company': {
-      id: '/_app/admin-settings/company'
-      path: '/company'
-      fullPath: '/admin-settings/company'
-      preLoaderRoute: typeof AppAdminSettingsCompanyRouteImport
       parentRoute: typeof AppAdminSettingsRoute
     }
     '/_app/admin-settings/audit': {
@@ -1658,13 +1272,477 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminSettingsAuditRouteImport
       parentRoute: typeof AppAdminSettingsRoute
     }
+    '/_app/admin-settings/company': {
+      id: '/_app/admin-settings/company'
+      path: '/company'
+      fullPath: '/admin-settings/company'
+      preLoaderRoute: typeof AppAdminSettingsCompanyRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/devices': {
+      id: '/_app/admin-settings/devices'
+      path: '/devices'
+      fullPath: '/admin-settings/devices'
+      preLoaderRoute: typeof AppAdminSettingsDevicesRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/email-templates': {
+      id: '/_app/admin-settings/email-templates'
+      path: '/email-templates'
+      fullPath: '/admin-settings/email-templates'
+      preLoaderRoute: typeof AppAdminSettingsEmailTemplatesRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/geo': {
+      id: '/_app/admin-settings/geo'
+      path: '/geo'
+      fullPath: '/admin-settings/geo'
+      preLoaderRoute: typeof AppAdminSettingsGeoRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/master-data': {
+      id: '/_app/admin-settings/master-data'
+      path: '/master-data'
+      fullPath: '/admin-settings/master-data'
+      preLoaderRoute: typeof AppAdminSettingsMasterDataRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/notifications': {
+      id: '/_app/admin-settings/notifications'
+      path: '/notifications'
+      fullPath: '/admin-settings/notifications'
+      preLoaderRoute: typeof AppAdminSettingsNotificationsRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/policies': {
+      id: '/_app/admin-settings/policies'
+      path: '/policies'
+      fullPath: '/admin-settings/policies'
+      preLoaderRoute: typeof AppAdminSettingsPoliciesRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/roles': {
+      id: '/_app/admin-settings/roles'
+      path: '/roles'
+      fullPath: '/admin-settings/roles'
+      preLoaderRoute: typeof AppAdminSettingsRolesRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/security': {
+      id: '/_app/admin-settings/security'
+      path: '/security'
+      fullPath: '/admin-settings/security'
+      preLoaderRoute: typeof AppAdminSettingsSecurityRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/admin-settings/workflows': {
+      id: '/_app/admin-settings/workflows'
+      path: '/workflows'
+      fullPath: '/admin-settings/workflows'
+      preLoaderRoute: typeof AppAdminSettingsWorkflowsRouteImport
+      parentRoute: typeof AppAdminSettingsRoute
+    }
+    '/_app/assets/': {
+      id: '/_app/assets/'
+      path: '/'
+      fullPath: '/assets/'
+      preLoaderRoute: typeof AppAssetsIndexRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/$id': {
+      id: '/_app/assets/$id'
+      path: '/$id'
+      fullPath: '/assets/$id'
+      preLoaderRoute: typeof AppAssetsIdRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/inventory': {
+      id: '/_app/assets/inventory'
+      path: '/inventory'
+      fullPath: '/assets/inventory'
+      preLoaderRoute: typeof AppAssetsInventoryRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/my': {
+      id: '/_app/assets/my'
+      path: '/my'
+      fullPath: '/assets/my'
+      preLoaderRoute: typeof AppAssetsMyRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/requests': {
+      id: '/_app/assets/requests'
+      path: '/requests'
+      fullPath: '/assets/requests'
+      preLoaderRoute: typeof AppAssetsRequestsRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/returns': {
+      id: '/_app/assets/returns'
+      path: '/returns'
+      fullPath: '/assets/returns'
+      preLoaderRoute: typeof AppAssetsReturnsRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/assets/warranty': {
+      id: '/_app/assets/warranty'
+      path: '/warranty'
+      fullPath: '/assets/warranty'
+      preLoaderRoute: typeof AppAssetsWarrantyRouteImport
+      parentRoute: typeof AppAssetsRoute
+    }
+    '/_app/attendance/': {
+      id: '/_app/attendance/'
+      path: '/'
+      fullPath: '/attendance/'
+      preLoaderRoute: typeof AppAttendanceIndexRouteImport
+      parentRoute: typeof AppAttendanceRoute
+    }
+    '/_app/attendance/approvals': {
+      id: '/_app/attendance/approvals'
+      path: '/approvals'
+      fullPath: '/attendance/approvals'
+      preLoaderRoute: typeof AppAttendanceApprovalsRouteImport
+      parentRoute: typeof AppAttendanceRoute
+    }
+    '/_app/attendance/calendar': {
+      id: '/_app/attendance/calendar'
+      path: '/calendar'
+      fullPath: '/attendance/calendar'
+      preLoaderRoute: typeof AppAttendanceCalendarRouteImport
+      parentRoute: typeof AppAttendanceRoute
+    }
+    '/_app/attendance/exceptions': {
+      id: '/_app/attendance/exceptions'
+      path: '/exceptions'
+      fullPath: '/attendance/exceptions'
+      preLoaderRoute: typeof AppAttendanceExceptionsRouteImport
+      parentRoute: typeof AppAttendanceRoute
+    }
+    '/_app/attendance/privacy': {
+      id: '/_app/attendance/privacy'
+      path: '/privacy'
+      fullPath: '/attendance/privacy'
+      preLoaderRoute: typeof AppAttendancePrivacyRouteImport
+      parentRoute: typeof AppAttendanceRoute
+    }
+    '/_app/employees/$id': {
+      id: '/_app/employees/$id'
+      path: '/$id'
+      fullPath: '/employees/$id'
+      preLoaderRoute: typeof AppEmployeesIdRouteImport
+      parentRoute: typeof AppEmployeesRoute
+    }
+    '/_app/ems/': {
+      id: '/_app/ems/'
+      path: '/'
+      fullPath: '/ems/'
+      preLoaderRoute: typeof AppEmsIndexRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/admin': {
+      id: '/_app/ems/admin'
+      path: '/admin'
+      fullPath: '/ems/admin'
+      preLoaderRoute: typeof AppEmsAdminRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/approvals': {
+      id: '/_app/ems/approvals'
+      path: '/approvals'
+      fullPath: '/ems/approvals'
+      preLoaderRoute: typeof AppEmsApprovalsRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/documents': {
+      id: '/_app/ems/documents'
+      path: '/documents'
+      fullPath: '/ems/documents'
+      preLoaderRoute: typeof AppEmsDocumentsRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/letters': {
+      id: '/_app/ems/letters'
+      path: '/letters'
+      fullPath: '/ems/letters'
+      preLoaderRoute: typeof AppEmsLettersRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/policies': {
+      id: '/_app/ems/policies'
+      path: '/policies'
+      fullPath: '/ems/policies'
+      preLoaderRoute: typeof AppEmsPoliciesRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/profile': {
+      id: '/_app/ems/profile'
+      path: '/profile'
+      fullPath: '/ems/profile'
+      preLoaderRoute: typeof AppEmsProfileRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/ems/requests': {
+      id: '/_app/ems/requests'
+      path: '/requests'
+      fullPath: '/ems/requests'
+      preLoaderRoute: typeof AppEmsRequestsRouteImport
+      parentRoute: typeof AppEmsRoute
+    }
+    '/_app/expenses/': {
+      id: '/_app/expenses/'
+      path: '/'
+      fullPath: '/expenses/'
+      preLoaderRoute: typeof AppExpensesIndexRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/$id': {
+      id: '/_app/expenses/$id'
+      path: '/$id'
+      fullPath: '/expenses/$id'
+      preLoaderRoute: typeof AppExpensesIdRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/create': {
+      id: '/_app/expenses/create'
+      path: '/create'
+      fullPath: '/expenses/create'
+      preLoaderRoute: typeof AppExpensesCreateRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/finance': {
+      id: '/_app/expenses/finance'
+      path: '/finance'
+      fullPath: '/expenses/finance'
+      preLoaderRoute: typeof AppExpensesFinanceRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/my': {
+      id: '/_app/expenses/my'
+      path: '/my'
+      fullPath: '/expenses/my'
+      preLoaderRoute: typeof AppExpensesMyRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/register': {
+      id: '/_app/expenses/register'
+      path: '/register'
+      fullPath: '/expenses/register'
+      preLoaderRoute: typeof AppExpensesRegisterRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/reports': {
+      id: '/_app/expenses/reports'
+      path: '/reports'
+      fullPath: '/expenses/reports'
+      preLoaderRoute: typeof AppExpensesReportsRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/expenses/review': {
+      id: '/_app/expenses/review'
+      path: '/review'
+      fullPath: '/expenses/review'
+      preLoaderRoute: typeof AppExpensesReviewRouteImport
+      parentRoute: typeof AppExpensesRoute
+    }
+    '/_app/helpdesk/': {
+      id: '/_app/helpdesk/'
+      path: '/'
+      fullPath: '/helpdesk/'
+      preLoaderRoute: typeof AppHelpdeskIndexRouteImport
+      parentRoute: typeof AppHelpdeskRoute
+    }
+    '/_app/helpdesk/$id': {
+      id: '/_app/helpdesk/$id'
+      path: '/$id'
+      fullPath: '/helpdesk/$id'
+      preLoaderRoute: typeof AppHelpdeskIdRouteImport
+      parentRoute: typeof AppHelpdeskRoute
+    }
+    '/_app/helpdesk/categories': {
+      id: '/_app/helpdesk/categories'
+      path: '/categories'
+      fullPath: '/helpdesk/categories'
+      preLoaderRoute: typeof AppHelpdeskCategoriesRouteImport
+      parentRoute: typeof AppHelpdeskRoute
+    }
+    '/_app/helpdesk/my': {
+      id: '/_app/helpdesk/my'
+      path: '/my'
+      fullPath: '/helpdesk/my'
+      preLoaderRoute: typeof AppHelpdeskMyRouteImport
+      parentRoute: typeof AppHelpdeskRoute
+    }
+    '/_app/helpdesk/queue': {
+      id: '/_app/helpdesk/queue'
+      path: '/queue'
+      fullPath: '/helpdesk/queue'
+      preLoaderRoute: typeof AppHelpdeskQueueRouteImport
+      parentRoute: typeof AppHelpdeskRoute
+    }
+    '/_app/helpdesk/reports': {
+      id: '/_app/helpdesk/reports'
+      path: '/reports'
+      fullPath: '/helpdesk/reports'
+      preLoaderRoute: typeof AppHelpdeskReportsRouteImport
+      parentRoute: typeof AppHelpdeskRoute
+    }
+    '/_app/helpdesk/sla': {
+      id: '/_app/helpdesk/sla'
+      path: '/sla'
+      fullPath: '/helpdesk/sla'
+      preLoaderRoute: typeof AppHelpdeskSlaRouteImport
+      parentRoute: typeof AppHelpdeskRoute
+    }
+    '/_app/leave-wfh/': {
+      id: '/_app/leave-wfh/'
+      path: '/'
+      fullPath: '/leave-wfh/'
+      preLoaderRoute: typeof AppLeaveWfhIndexRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/leave-wfh/apply-leave': {
+      id: '/_app/leave-wfh/apply-leave'
+      path: '/apply-leave'
+      fullPath: '/leave-wfh/apply-leave'
+      preLoaderRoute: typeof AppLeaveWfhApplyLeaveRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/leave-wfh/apply-wfh': {
+      id: '/_app/leave-wfh/apply-wfh'
+      path: '/apply-wfh'
+      fullPath: '/leave-wfh/apply-wfh'
+      preLoaderRoute: typeof AppLeaveWfhApplyWfhRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/leave-wfh/approvals': {
+      id: '/_app/leave-wfh/approvals'
+      path: '/approvals'
+      fullPath: '/leave-wfh/approvals'
+      preLoaderRoute: typeof AppLeaveWfhApprovalsRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/leave-wfh/holidays': {
+      id: '/_app/leave-wfh/holidays'
+      path: '/holidays'
+      fullPath: '/leave-wfh/holidays'
+      preLoaderRoute: typeof AppLeaveWfhHolidaysRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/leave-wfh/monitor': {
+      id: '/_app/leave-wfh/monitor'
+      path: '/monitor'
+      fullPath: '/leave-wfh/monitor'
+      preLoaderRoute: typeof AppLeaveWfhMonitorRouteImport
+      parentRoute: typeof AppLeaveWfhRoute
+    }
+    '/_app/projects/$id': {
+      id: '/_app/projects/$id'
+      path: '/$id'
+      fullPath: '/projects/$id'
+      preLoaderRoute: typeof AppProjectsIdRouteImport
+      parentRoute: typeof AppProjectsRoute
+    }
+    '/_app/reports/': {
+      id: '/_app/reports/'
+      path: '/'
+      fullPath: '/reports/'
+      preLoaderRoute: typeof AppReportsIndexRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/reports/assets': {
+      id: '/_app/reports/assets'
+      path: '/assets'
+      fullPath: '/reports/assets'
+      preLoaderRoute: typeof AppReportsAssetsRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/reports/attendance': {
+      id: '/_app/reports/attendance'
+      path: '/attendance'
+      fullPath: '/reports/attendance'
+      preLoaderRoute: typeof AppReportsAttendanceRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/reports/audit': {
+      id: '/_app/reports/audit'
+      path: '/audit'
+      fullPath: '/reports/audit'
+      preLoaderRoute: typeof AppReportsAuditRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/reports/expenses': {
+      id: '/_app/reports/expenses'
+      path: '/expenses'
+      fullPath: '/reports/expenses'
+      preLoaderRoute: typeof AppReportsExpensesRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/reports/helpdesk': {
+      id: '/_app/reports/helpdesk'
+      path: '/helpdesk'
+      fullPath: '/reports/helpdesk'
+      preLoaderRoute: typeof AppReportsHelpdeskRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/reports/hr': {
+      id: '/_app/reports/hr'
+      path: '/hr'
+      fullPath: '/reports/hr'
+      preLoaderRoute: typeof AppReportsHrRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/reports/leave': {
+      id: '/_app/reports/leave'
+      path: '/leave'
+      fullPath: '/reports/leave'
+      preLoaderRoute: typeof AppReportsLeaveRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/reports/projects': {
+      id: '/_app/reports/projects'
+      path: '/projects'
+      fullPath: '/reports/projects'
+      preLoaderRoute: typeof AppReportsProjectsRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/reports/timesheet': {
+      id: '/_app/reports/timesheet'
+      path: '/timesheet'
+      fullPath: '/reports/timesheet'
+      preLoaderRoute: typeof AppReportsTimesheetRouteImport
+      parentRoute: typeof AppReportsRoute
+    }
+    '/_app/timesheet/': {
+      id: '/_app/timesheet/'
+      path: '/'
+      fullPath: '/timesheet/'
+      preLoaderRoute: typeof AppTimesheetIndexRouteImport
+      parentRoute: typeof AppTimesheetRoute
+    }
+    '/_app/timesheet/approvals': {
+      id: '/_app/timesheet/approvals'
+      path: '/approvals'
+      fullPath: '/timesheet/approvals'
+      preLoaderRoute: typeof AppTimesheetApprovalsRouteImport
+      parentRoute: typeof AppTimesheetRoute
+    }
+    '/_app/timesheet/projects': {
+      id: '/_app/timesheet/projects'
+      path: '/projects'
+      fullPath: '/timesheet/projects'
+      preLoaderRoute: typeof AppTimesheetProjectsRouteImport
+      parentRoute: typeof AppTimesheetRoute
+    }
   }
 }
 
 interface AppAdminSettingsRouteChildren {
   AppAdminSettingsAuditRoute: typeof AppAdminSettingsAuditRoute
   AppAdminSettingsCompanyRoute: typeof AppAdminSettingsCompanyRoute
+  AppAdminSettingsDevicesRoute: typeof AppAdminSettingsDevicesRoute
   AppAdminSettingsEmailTemplatesRoute: typeof AppAdminSettingsEmailTemplatesRoute
+  AppAdminSettingsGeoRoute: typeof AppAdminSettingsGeoRoute
   AppAdminSettingsMasterDataRoute: typeof AppAdminSettingsMasterDataRoute
   AppAdminSettingsNotificationsRoute: typeof AppAdminSettingsNotificationsRoute
   AppAdminSettingsPoliciesRoute: typeof AppAdminSettingsPoliciesRoute
@@ -1677,7 +1755,9 @@ interface AppAdminSettingsRouteChildren {
 const AppAdminSettingsRouteChildren: AppAdminSettingsRouteChildren = {
   AppAdminSettingsAuditRoute: AppAdminSettingsAuditRoute,
   AppAdminSettingsCompanyRoute: AppAdminSettingsCompanyRoute,
+  AppAdminSettingsDevicesRoute: AppAdminSettingsDevicesRoute,
   AppAdminSettingsEmailTemplatesRoute: AppAdminSettingsEmailTemplatesRoute,
+  AppAdminSettingsGeoRoute: AppAdminSettingsGeoRoute,
   AppAdminSettingsMasterDataRoute: AppAdminSettingsMasterDataRoute,
   AppAdminSettingsNotificationsRoute: AppAdminSettingsNotificationsRoute,
   AppAdminSettingsPoliciesRoute: AppAdminSettingsPoliciesRoute,
@@ -1715,14 +1795,18 @@ const AppAssetsRouteWithChildren = AppAssetsRoute._addFileChildren(
 )
 
 interface AppAttendanceRouteChildren {
+  AppAttendanceApprovalsRoute: typeof AppAttendanceApprovalsRoute
   AppAttendanceCalendarRoute: typeof AppAttendanceCalendarRoute
   AppAttendanceExceptionsRoute: typeof AppAttendanceExceptionsRoute
+  AppAttendancePrivacyRoute: typeof AppAttendancePrivacyRoute
   AppAttendanceIndexRoute: typeof AppAttendanceIndexRoute
 }
 
 const AppAttendanceRouteChildren: AppAttendanceRouteChildren = {
+  AppAttendanceApprovalsRoute: AppAttendanceApprovalsRoute,
   AppAttendanceCalendarRoute: AppAttendanceCalendarRoute,
   AppAttendanceExceptionsRoute: AppAttendanceExceptionsRoute,
+  AppAttendancePrivacyRoute: AppAttendancePrivacyRoute,
   AppAttendanceIndexRoute: AppAttendanceIndexRoute,
 }
 

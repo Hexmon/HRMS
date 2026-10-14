@@ -4,8 +4,7 @@ import {
   ProjectHealthStatuses,
   ProjectPriorities,
   ProjectStatuses,
-  ProjectTypes,
-  Roles
+  ProjectTypes
 } from "#shared";
 import { createMemoryDataStore, seedIds } from "../../../platform/data-store.js";
 import { ProjectsService } from "../service.js";
@@ -15,18 +14,8 @@ describe("project company visibility", () => {
     const store = createMemoryDataStore();
     const service = new ProjectsService(store);
     const admin = store.users.find((user) => user.id === seedIds.admin)!;
-    store.userSessionPreferences.push({
-      id: "pref-admin-company-a",
-      user_id: admin.id,
-      active_role: Roles.Admin,
-      company_id: "company-a",
-      landing_page: "/dashboard",
-      locale: "en-IN",
-      timezone: "Asia/Kolkata",
-      created_at: "2026-01-01T00:00:00.000Z",
-      updated_at: "2026-01-01T00:00:00.000Z",
-      version: 1
-    });
+    const adminPreference = store.userSessionPreferences.find((preference) => preference.user_id === admin.id)!;
+    adminPreference.company_id = "company-a";
 
     const emptyList = service.listProjects(admin, {
       page: 1,

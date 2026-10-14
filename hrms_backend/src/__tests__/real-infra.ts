@@ -4,6 +4,7 @@ import { resetPostgresDatabase } from "../platform/postgres-data-store.js";
 
 export async function buildRealApp(options: { reset?: boolean } = {}): Promise<FastifyInstance> {
   const databaseUrl = process.env.TEST_DATABASE_URL;
+  const originalDatabaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("TEST_DATABASE_URL is required for real integration tests.");
   }
@@ -16,5 +17,22 @@ export async function buildRealApp(options: { reset?: boolean } = {}): Promise<F
     await resetPostgresDatabase(databaseUrl);
   }
   process.env.DATABASE_URL = databaseUrl;
-  return buildApp({ dataStoreMode: "postgres", seedIfEmpty: true, rateLimit: false });
+  try {
+    const app = await buildApp({ dataStoreMode: "postgres", seedIfEmpty: true, rateLimit: false });
+    app.addHook("onClose", async () => {
+      if (originalDatabaseUrl === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = originalDatabaseUrl;
+      }
+    });
+    return app;
+  } catch (error) {
+    if (originalDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = originalDatabaseUrl;
+    }
+    throw error;
+  }
 }

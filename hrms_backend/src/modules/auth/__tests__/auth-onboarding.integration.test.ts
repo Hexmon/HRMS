@@ -165,8 +165,11 @@ describe("auth onboarding and password APIs", () => {
       "timesheet"
     ]);
     expect(bootstrap.json().admin_user.roles).toContain("Admin");
-    expect(bootstrap.json().admin_user.department_id).toBe(bootstrappedDepartments[0]?.id);
-    expect(bootstrap.json().admin_user.designation_id).toBe(bootstrappedDesignations[0]?.id);
+    const bootstrappedAdmin = app.store.users.find(
+      (user) => user.id === bootstrap.json().admin_user.id,
+    );
+    expect(bootstrappedAdmin?.department_id).toBe(bootstrappedDepartments[0]?.id);
+    expect(bootstrappedAdmin?.designation_id).toBe(bootstrappedDesignations[0]?.id);
     expect(bootstrap.json().setup_progress).toMatchObject({ company_profile: "completed", first_admin: "completed" });
 
     const duplicateBootstrap = await app.inject({
