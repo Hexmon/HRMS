@@ -1629,9 +1629,11 @@ export class AttendanceService {
     query: AttendancePageQuery,
     response: ReturnType<AttendanceService["dailyCalendar"]>,
   ): Promise<ReturnType<AttendanceService["dailyCalendar"]>> {
-    if (!this.store.pgPool || !query.user_id || query.user_id === actor.id) {
+    if (!this.store.pgPool) {
       return response;
     }
+
+    const targetEmployeeUserId = query.user_id ?? actor.id;
 
     const companyId = this.resolveAttendanceCompanyContext(
       actor,
@@ -1642,17 +1644,17 @@ export class AttendanceService {
       query.date ??
       query.date_from ??
       todayDate(this.timezoneForUser(actor.id, companyId));
-    const targetTimeZone = this.timezoneForUser(query.user_id, companyId);
+    const targetTimeZone = this.timezoneForUser(targetEmployeeUserId, companyId);
     const offlineEvidence = await this.offlineEvidenceForSelectedDayPostgres(
       companyId,
-      query.user_id,
+      targetEmployeeUserId,
       date,
       targetTimeZone,
     );
     const mobileEvidenceWarnings =
       await this.mobileEvidenceWarningsForSelectedDayPostgres(
         companyId,
-        query.user_id,
+        targetEmployeeUserId,
         date,
       );
     if (offlineEvidence.length === 0 && mobileEvidenceWarnings.length === 0) {
@@ -1662,7 +1664,7 @@ export class AttendanceService {
     return {
       ...response,
       items: response.items.map((item) =>
-        item.employee_user_id === query.user_id
+        item.employee_user_id === targetEmployeeUserId
           ? {
               ...item,
               ...(offlineEvidence.length > 0
@@ -1799,7 +1801,9 @@ export class AttendanceService {
           .filter(
             (request) =>
               canSeeAllAttendance(actor) ||
-              request.current_approver_user_id === actor.id,
+              request.current_approver_user_id === actor.id ||
+              (request.status !== AttendanceRegularizationStatuses.Pending &&
+                request.decided_by_user_id === actor.id),
           );
     const status = query.status ?? AttendanceRegularizationStatuses.Pending;
     const filtered = scoped.filter(
@@ -5798,7 +5802,10 @@ export class AttendanceService {
         : bundle.items[0];
       const operation = application?.operation ?? item?.operation ?? null;
       const relationship =
+        operation === "add" &&
         application?.replacement_punch_event_id === punchEventId
+          ? "added"
+          : application?.replacement_punch_event_id === punchEventId
           ? "replacement"
           : application?.target_punch_event_id === punchEventId &&
               operation === "void"

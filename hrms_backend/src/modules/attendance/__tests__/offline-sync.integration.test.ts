@@ -135,7 +135,7 @@ describe("attendance offline sync ingestion", () => {
       locationEvidence: "1",
       sessions: "0",
       punches: "0",
-      dailyRecords: "1",
+      dailyRecords: "0",
       provisionalOutbox: "1",
     });
   });

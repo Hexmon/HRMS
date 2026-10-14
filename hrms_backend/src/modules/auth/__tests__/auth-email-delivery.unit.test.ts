@@ -185,6 +185,7 @@ describe("auth transactional email delivery", () => {
     process.env.CLOUDINARY_CLOUD_NAME = "prodtestcloud";
     process.env.CLOUDINARY_API_KEY = "prodtestapikey";
     process.env.CLOUDINARY_API_SECRET = "prodtestapisecret";
+    process.env.LOCAL_DEMO_PASSWORD = "ProdFixture@123";
     store = createMemoryDataStore();
     provider = new FakeEmailProvider();
     app = await buildApp({ dataStore: store, rateLimit: false, emailProvider: provider });

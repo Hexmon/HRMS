@@ -74,7 +74,7 @@ describe("attendance employee privacy summary", () => {
 
   it("uses resolver precedence for employee, department, company, and built-in policies", async () => {
     const employee = await loginAs(app, "E1");
-    const fixture = employeeFixture(employee.user.id);
+    const fixture = await employeeFixture(employee.user.id);
     await clearPolicyAssignments(fixture.companyId);
 
     const companyPolicy = await createAttendancePolicy({
@@ -188,7 +188,7 @@ describe("attendance employee privacy summary", () => {
 
   it("does not silently replace invalid policy actions with hardcoded values", async () => {
     const employee = await loginAs(app, "E1");
-    const fixture = employeeFixture(employee.user.id);
+    const fixture = await employeeFixture(employee.user.id);
     await clearPolicyAssignments(fixture.companyId);
     const policyId = await createAttendancePolicy({
       companyId: fixture.companyId,
@@ -269,19 +269,31 @@ describe("attendance employee privacy summary", () => {
     return response.json() as Record<string, any>;
   }
 
-  function employeeFixture(employeeUserId: string): {
+  async function employeeFixture(employeeUserId: string): Promise<{
     employeeUserId: string;
     companyId: string;
     departmentId: string;
-  } {
+  }> {
     const user = app.store.users.find((candidate) => candidate.id === employeeUserId);
     const companyId = app.store.userSessionPreferences.find(
       (preference) => preference.user_id === employeeUserId,
     )?.company_id;
-    if (!user?.department_id || !companyId) {
+    if (!user || !companyId) {
       throw new Error("Expected employee fixture with company and department.");
     }
-    return { employeeUserId, companyId, departmentId: user.department_id };
+    const departmentId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO core.departments (
+        id, company_id, department_code, name, status, created_at, updated_at, deleted_at, version
+      ) VALUES ($1, $2, $3, 'Privacy Test', 'active', now(), now(), NULL, 1)`,
+      [departmentId, companyId, `PRIVACY_${departmentId.slice(0, 8)}`],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET department_id = $1 WHERE id = $2",
+      [departmentId, employeeUserId],
+    );
+    user.department_id = departmentId;
+    return { employeeUserId, companyId, departmentId };
   }
 
   async function clearPolicyAssignments(companyId: string): Promise<void> {

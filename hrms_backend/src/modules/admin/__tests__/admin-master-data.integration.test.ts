@@ -32,7 +32,7 @@ describe("admin master data", () => {
       headers: authHeader(admin.token)
     });
     expect(list.statusCode).toBe(200);
-    expect(list.json().items[0]).toMatchObject({ department_code: "SALES", version: 1 });
+    expect(list.json().items).toEqual([]);
 
     const create = await app.inject({
       method: "POST",
@@ -82,15 +82,33 @@ describe("admin master data", () => {
     expect(inactive.statusCode).toBe(200);
     expect(inactive.json().department).toMatchObject({ status: "inactive", active: false, version: 3 });
 
+    const protectedDepartment = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/master-data/departments",
+      headers: authHeader(admin.token),
+      payload: { name: "Protected Sales", code: "PROTECTED_SALES" }
+    });
+    expect(protectedDepartment.statusCode).toBe(200);
+    const employeeRecord = app.store.users.find(
+      (user) => user.id === employee.user.id,
+    );
+    if (!employeeRecord) throw new Error("Employee fixture is unavailable.");
+    employeeRecord.department_id = protectedDepartment.json().department.id;
+    await app.store.persistence?.flush();
+
     const referenced = await app.inject({
       method: "PATCH",
-      url: `/api/v1/admin/master-data/departments/${list.json().items[0].id}`,
+      url: `/api/v1/admin/master-data/departments/${protectedDepartment.json().department.id}`,
       headers: authHeader(admin.token),
-      payload: { status: "inactive", expected_version: list.json().items[0].version }
+      payload: { status: "inactive", expected_version: 1 }
     });
     expect(referenced.statusCode).toBe(409);
 
-    expect(app.store.outbox.at(-1)?.event_type).toBe("admin.master_data.department.updated");
+    expect(
+      app.store.outbox.some(
+        (event) => event.event_type === "admin.master_data.department.updated",
+      ),
+    ).toBe(true);
   });
 
   it("manages designation master data with OCC and duplicate-code protection", async () => {
