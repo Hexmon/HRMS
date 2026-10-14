@@ -1,4 +1,3 @@
-import { Redis as Valkey } from "iovalkey";
 import type { FastifyInstance } from "fastify";
 
 type HealthStatus = "ready" | "missing" | "unreachable" | "unmigrated" | "not_applicable";
@@ -86,30 +85,17 @@ async function checkValkey(fastify: FastifyInstance): Promise<HealthCheckResult>
   if (fastify.store.kind !== "postgres") {
     return { status: "not_applicable" };
   }
-  if (!fastify.config.VALKEY_URL) {
+  if (!fastify.config.VALKEY_URL || !fastify.store.valkey) {
     return { status: "missing" };
   }
   const start = Date.now();
-  const valkey = new Valkey(fastify.config.VALKEY_URL, {
-    lazyConnect: true,
-    maxRetriesPerRequest: 1,
-    connectTimeout: 3000
-  });
   try {
-    await valkey.connect().catch((error: unknown) => {
-      if (error instanceof Error && /already connecting|already connected/iu.test(error.message)) {
-        return;
-      }
-      throw error;
-    });
-    const pong = await valkey.ping();
+    const pong = await fastify.store.valkey.ping();
     return pong === "PONG"
       ? { status: "ready", latency_ms: Date.now() - start }
       : { status: "unreachable", latency_ms: Date.now() - start, detail: "ping did not return PONG" };
   } catch (error) {
     return { status: "unreachable", latency_ms: Date.now() - start, detail: safeError(error) };
-  } finally {
-    valkey.disconnect();
   }
 }
 

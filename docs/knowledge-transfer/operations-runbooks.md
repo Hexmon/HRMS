@@ -12,7 +12,7 @@ This document points new developers to the operational model and the most import
 | Backend API | Render Docker web service. |
 | Background worker | Render Docker worker. |
 | Database | Neon PostgreSQL. |
-| Session/rate/outbox state | Render Key Value / Valkey. |
+| Session/rate/outbox state | Upstash Redis over the TLS Valkey/Redis protocol. |
 | Media storage | Cloudinary. |
 | Transactional email | Resend. |
 

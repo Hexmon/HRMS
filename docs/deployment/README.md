@@ -30,7 +30,7 @@ This folder contains hosted deployment references for Hawkaii HRMS.
 | File | Purpose |
 | --- | --- |
 | `.github/workflows/branch-ci-cd.yml` | Branch checks and Render deploy hooks. |
-| `render.yaml` | Production Render API/worker/Valkey blueprint. |
+| `render.yaml` | Production Render API/worker blueprint with an external Upstash Redis secret. |
 | `infra/render/render.dev.yaml` | Hosted dev Render blueprint. |
 | `infra/render/render.qa.yaml` | QA Render blueprint. |
 | `hrms-client/vercel.json` | Vercel frontend build settings. |

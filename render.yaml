@@ -1,16 +1,10 @@
 # Render blueprint for the Hawkaii HRMS backend.
 #
-# This blueprint intentionally provisions only the backend API, outbox worker,
-# and Render Key Value. PostgreSQL is expected to be hosted in Neon, so set
-# DATABASE_URL manually in Render from your Neon pooled connection string.
+# This blueprint provisions the backend API and outbox worker. PostgreSQL is
+# hosted in Neon and Redis/Valkey is hosted in Upstash, so set DATABASE_URL and
+# the Upstash TCP connection string (VALKEY_URL) as Render secrets.
 
 services:
-  - type: keyvalue
-    name: hawkaii-hrms-valkey
-    plan: starter
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []
-
   - type: web
     runtime: docker
     name: hawkaii-hrms-api
@@ -46,10 +40,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: VALKEY_URL
-        fromService:
-          type: keyvalue
-          name: hawkaii-hrms-valkey
-          property: connectionString
+        sync: false
       - key: JWT_ACCESS_SECRET
         sync: false
       - key: JWT_REFRESH_SECRET
@@ -129,10 +120,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: VALKEY_URL
-        fromService:
-          type: keyvalue
-          name: hawkaii-hrms-valkey
-          property: connectionString
+        sync: false
       - key: CLOUDINARY_MOCK_UPLOADS
         value: "false"
       - key: CLOUDINARY_CLOUD_NAME

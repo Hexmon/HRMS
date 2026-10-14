@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import type { Pool } from "pg";
+import type { Redis as Valkey } from "iovalkey";
 import type {
   AssetRecord,
   AttendanceDayRecord,
@@ -588,6 +589,7 @@ export interface DataStore {
   documentProcessing: DocumentProcessingConfig;
   persistence: DataStorePersistence | null;
   pgPool: Pool | null;
+  valkey: Valkey | null;
   nextOutboxId: number;
   nextTicketNo: number;
 }
@@ -2500,6 +2502,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     persistence: null,
     pgPool: null,
+    valkey: null,
     nextOutboxId: 1,
     nextTicketNo: 1,
   };

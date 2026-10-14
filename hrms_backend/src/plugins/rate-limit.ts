@@ -21,12 +21,9 @@ export const rateLimitPlugin = fp(async (fastify) => {
     return;
   }
 
-  const valkey = fastify.store.kind === "postgres" && fastify.config.VALKEY_URL
-    ? new Valkey(fastify.config.VALKEY_URL, { lazyConnect: true, maxRetriesPerRequest: 2 })
-    : null;
+  const valkey = fastify.store.kind === "postgres" ? fastify.store.valkey : null;
 
   fastify.addHook("onClose", async () => {
-    valkey?.disconnect();
     if (!valkey) {
       memoryBuckets.clear();
     }
@@ -126,12 +123,6 @@ async function hitRateLimitBucket({
 }
 
 async function hitValkeyBucket(valkey: Valkey, key: string, limit: number, windowSeconds: number): Promise<RateLimitResult> {
-  await valkey.connect().catch((error: unknown) => {
-    if (error instanceof Error && /already connecting|already connected/iu.test(error.message)) {
-      return;
-    }
-    throw error;
-  });
   const count = await valkey.incr(key);
   let ttl = await valkey.ttl(key);
   if (count === 1 || ttl < 0) {
