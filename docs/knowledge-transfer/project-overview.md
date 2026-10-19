@@ -51,7 +51,7 @@ Hawkaii HRMS is a workforce operations platform covering HR, attendance, leave/W
 | Frontend | TanStack Start, React 19, Vite 7, TanStack Router, TanStack Query, Tailwind CSS 4, Radix/shadcn UI, lucide-react, Playwright. |
 | Backend | Node.js, TypeScript, Fastify 5, Zod, Drizzle schema definitions, PostgreSQL, Valkey, Pino, Vitest. |
 | Storage and integrations | PostgreSQL, Valkey, Cloudinary-compatible object storage, Resend transactional email. |
-| Deployment | Vercel for frontend, Render Docker API service, Render Docker worker, Neon Postgres, Render Key Value/Valkey. |
+| Deployment | Vercel for frontend, Render Docker API service, Render Docker worker, Neon Postgres, Upstash Redis/Valkey. |
 | CI/CD | GitHub Actions checks for backend/frontend and Render deploy hooks for backend and worker. |
 
 ## Branch And Environment Model

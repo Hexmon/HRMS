@@ -75,6 +75,7 @@ import {
   buildDefaultAdminSecuritySettings,
   createMemoryDataStore,
 } from "./data-store.js";
+import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
@@ -410,11 +411,13 @@ export async function createPostgresDataStore(
   const objectStorage = new CloudinaryObjectStorage(options.objectStorage);
   await objectStorage.ensureReady();
   const documentProcessing = options.documentProcessing;
+  const valkey = createValkeyClient(options.valkeyUrl);
 
   const store = createMemoryDataStore();
   store.kind = "postgres";
   store.pgPool = pool;
-  store.sessionStore = new ValkeySessionStore(options.valkeyUrl);
+  store.valkey = valkey;
+  store.sessionStore = new ValkeySessionStore(valkey);
   store.objectStorage = objectStorage;
   if (documentProcessing) {
     store.documentProcessing = documentProcessing;
@@ -427,7 +430,8 @@ export async function createPostgresDataStore(
     copyData(store, seed);
     store.kind = "postgres";
     store.pgPool = pool;
-    store.sessionStore = new ValkeySessionStore(options.valkeyUrl);
+    store.valkey = valkey;
+    store.sessionStore = new ValkeySessionStore(valkey);
     store.objectStorage = objectStorage;
     if (documentProcessing) {
       store.documentProcessing = documentProcessing;
@@ -699,12 +703,7 @@ class PostgresPersistence {
   }
 
   async close(): Promise<void> {
-    if (
-      "close" in this.store.sessionStore &&
-      typeof this.store.sessionStore.close === "function"
-    ) {
-      await this.store.sessionStore.close();
-    }
+    this.store.valkey?.disconnect();
     await this.pool.end();
   }
 

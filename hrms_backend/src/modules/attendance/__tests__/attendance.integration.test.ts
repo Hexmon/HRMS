@@ -42,6 +42,16 @@ function localTime(offsetMinutes = 0, timeZone = "Asia/Kolkata"): string {
   return `${map.get("hour")}:${map.get("minute")}`;
 }
 
+function timeZoneSafelyPastMidnight(minimumMinutes = 120): string {
+  for (const timeZone of ["UTC", "Asia/Kolkata"]) {
+    const [hour, minute] = localTime(0, timeZone).split(":").map(Number);
+    if (hour! * 60 + minute! >= minimumMinutes) {
+      return timeZone;
+    }
+  }
+  throw new Error("No test timezone is safely past local midnight.");
+}
+
 function scheduleExcluding(date: string): string {
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const currentDay = new Date(`${date}T00:00:00.000Z`).getUTCDay();
@@ -82,14 +92,14 @@ function isWeekend(date: string): boolean {
   return day === 0 || day === 6;
 }
 
-function previousWorkday(): string {
+function previousWorkday(timeZone = "Asia/Kolkata"): string {
   for (let offset = -1; offset >= -7; offset -= 1) {
-    const date = localDate(offset);
+    const date = localDate(offset, timeZone);
     if (!isWeekend(date)) {
       return date;
     }
   }
-  return localDate(-1);
+  return localDate(-1, timeZone);
 }
 
 function ensureActiveCompany(app: TestApp) {
@@ -1043,9 +1053,16 @@ describe("attendance", () => {
   it("refreshes stale day statuses and returns live work minutes for open punches", async () => {
     const employee = await loginAs(app, "E1");
     const admin = await loginAs(app, "ADM");
-    ensureActiveCompany(app).working_week = "Mon-Sun";
+    const testTimeZone = timeZoneSafelyPastMidnight();
+    const company = ensureActiveCompany(app);
+    const employeeRecord = app.store.users.find(
+      (candidate) => candidate.id === employee.user.id,
+    )!;
+    company.working_week = "Mon-Sun";
+    company.timezone = testTimeZone;
+    employeeRecord.timezone = testTimeZone;
     await app.store.persistence?.flush();
-    const staleDate = previousWorkday();
+    const staleDate = previousWorkday(testTimeZone);
     const staleExisting = app.store.attendanceDayRecords.find(
       (record) =>
         record.employee_user_id === employee.user.id &&
@@ -1121,7 +1138,7 @@ describe("attendance", () => {
       method: "GET",
       url:
         "/api/v1/attendance/summary/my?month=" +
-        localDate().slice(0, 7) +
+        localDate(0, testTimeZone).slice(0, 7) +
         "&page=1&page_size=50",
       headers: authHeader(employee.token),
     });

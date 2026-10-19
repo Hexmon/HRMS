@@ -1,15 +1,10 @@
 # Render blueprint for the hosted Hawkaii HRMS dev environment.
 #
 # Local development should still use local Docker/env files. This hosted dev
-# stack is for shared integration checks at https://dev.hawkaii.in.
+# stack is for shared integration checks at https://dev.hawkaii.in. Set the
+# Upstash TCP connection string as the VALKEY_URL secret on both services.
 
 services:
-  - type: keyvalue
-    name: hawkaii-hrms-dev-valkey
-    plan: starter
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []
-
   - type: web
     runtime: docker
     name: hawkaii-hrms-dev-api
@@ -45,10 +40,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: VALKEY_URL
-        fromService:
-          type: keyvalue
-          name: hawkaii-hrms-dev-valkey
-          property: connectionString
+        sync: false
       - key: JWT_ACCESS_SECRET
         sync: false
       - key: JWT_REFRESH_SECRET
@@ -126,10 +118,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: VALKEY_URL
-        fromService:
-          type: keyvalue
-          name: hawkaii-hrms-dev-valkey
-          property: connectionString
+        sync: false
       - key: CLOUDINARY_MOCK_UPLOADS
         value: "false"
       - key: CLOUDINARY_CLOUD_NAME

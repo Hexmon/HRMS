@@ -1,15 +1,10 @@
 # Render blueprint for the hosted Hawkaii HRMS QA/UAT environment.
 #
 # This stack is intentionally isolated from production and uses
-# https://qa.hawkaii.in with https://qa-api.hawkaii.in.
+# https://qa.hawkaii.in with https://qa-api.hawkaii.in. Set the Upstash TCP
+# connection string as the VALKEY_URL secret on both services.
 
 services:
-  - type: keyvalue
-    name: hawkaii-hrms-qa-valkey
-    plan: starter
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []
-
   - type: web
     runtime: docker
     name: hawkaii-hrms-qa-api
@@ -45,10 +40,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: VALKEY_URL
-        fromService:
-          type: keyvalue
-          name: hawkaii-hrms-qa-valkey
-          property: connectionString
+        sync: false
       - key: JWT_ACCESS_SECRET
         sync: false
       - key: JWT_REFRESH_SECRET
@@ -128,10 +120,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: VALKEY_URL
-        fromService:
-          type: keyvalue
-          name: hawkaii-hrms-qa-valkey
-          property: connectionString
+        sync: false
       - key: CLOUDINARY_MOCK_UPLOADS
         value: "false"
       - key: CLOUDINARY_CLOUD_NAME

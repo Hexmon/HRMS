@@ -6,7 +6,7 @@ This guide describes the recommended hosted deployment shape for Hawkaii HRMS us
 - Backend: Render Docker web service.
 - Worker: Render Docker background worker.
 - Database: Neon Postgres.
-- Session/rate/outbox state: Render Key Value / Valkey.
+- Session/rate/outbox state: Upstash Redis (Valkey/Redis TCP protocol).
 - Media storage: Cloudinary.
 - Transactional email: Resend.
 
@@ -33,7 +33,9 @@ Use the root `render.yaml` blueprint for production. It creates:
 
 - `hawkaii-hrms-api`: Docker web service for Fastify.
 - `hawkaii-hrms-outbox-worker`: Docker worker for outbox publishing.
-- `hawkaii-hrms-valkey`: Render Key Value service.
+
+Redis is external to the blueprint. Create it in Upstash and provide its TCP
+connection string to both Render services as the secret `VALKEY_URL`.
 
 The backend uses Docker because the app supports server-side PDF compression through Ghostscript, and the checked-in Dockerfile installs `ghostscript`.
 
@@ -109,7 +111,7 @@ Frontend setup requirement:
 | `RESEND_FROM_EMAIL` | Verified sender, for example `Hawkaii HRMS <verify@hawkaii.in>` |
 | `RESEND_REPLY_TO_EMAIL` | Support mailbox |
 
-Render prompts for all `sync: false` values during setup. Use the same `DATABASE_URL`, Cloudinary credentials, and JWT secrets for the API and worker where applicable.
+Render prompts for all `sync: false` values during setup. Use the same `DATABASE_URL`, `VALKEY_URL`, Cloudinary credentials, and JWT secrets for the API and worker where applicable.
 
 ## Environment Isolation Decision
 
@@ -119,7 +121,7 @@ Use isolated hosted resources for dev, QA, and production. The recommended defau
 | --- | --- | --- |
 | PostgreSQL / Neon | One Neon project with long-lived `main`/production, `qa`, and `dev` branches. Use separate connection strings per branch. | Neon branches are isolated copy-on-write clones. Neon documents that branch changes are independent and do not affect the parent branch, and that branches are intended for development and testing. This gives three database endpoints without manually maintaining three unrelated schemas. |
 | Cloudinary | Separate Cloudinary product environments for prod/QA/dev if the plan supports it. Fallback: one product environment with strict folders `hawkaii-hrms/prod`, `hawkaii-hrms/qa`, `hawkaii-hrms/dev`. | Cloudinary states API credentials are product-environment-specific and paid accounts can have multiple product environments for production/staging or similar separation. The repo already supports different Cloudinary credentials and folders per env. |
-| Valkey / Render Key Value | Separate Render Key Value instance per environment. | Render Key Value is used for caches/job queues. It does not have a branch model like Neon, so use separate instances to prevent session/rate/outbox collisions. |
+| Redis / Valkey | Separate Upstash Redis database per environment. | Redis stores sessions, rate-limit counters, and outbox streams. Separate databases prevent state collisions and make per-environment usage visible. |
 | Render API/worker | Separate API and worker services per environment. | Render Blueprints can define web services, workers, and Key Value services. Separate services keep deploys, logs, scaling, and env vars isolated. |
 
 Use separate Neon projects instead of branches only if compliance, billing ownership, region isolation, or stricter production access boundaries require it. Otherwise, long-lived branches are the fastest safe option for this team.
@@ -128,7 +130,8 @@ Evidence:
 
 - Neon branching docs: https://neon.com/docs/introduction/branching
 - Cloudinary product environment docs: https://cloudinary.com/documentation/solution_overview
-- Render Key Value docs: https://render.com/docs/key-value
+- Upstash Redis connection docs: https://upstash.com/docs/redis/howto/connect-client
+- Upstash Redis pricing and limits: https://upstash.com/pricing/redis
 - Render Blueprint docs: https://render.com/docs/blueprint-spec
 
 ## Neon Postgres
@@ -185,17 +188,47 @@ CLOUDINARY_MOCK_UPLOADS=false
 
 Local development may still use mock uploads if the developer is not testing media persistence.
 
-## Valkey / Render Key Value
+## Upstash Redis / Valkey
 
-Use one Render Key Value instance per hosted environment:
+Use one Upstash Redis database per hosted environment:
 
-| Environment | Render Key Value service |
+| Environment | Upstash database |
 | --- | --- |
-| Production | `hawkaii-hrms-valkey` |
-| QA/UAT | `hawkaii-hrms-qa-valkey` |
-| Hosted dev | `hawkaii-hrms-dev-valkey` |
+| Production | `hawkaii-hrms-prod` |
+| QA/UAT | `hawkaii-hrms-qa` |
+| Hosted dev | `hawkaii-hrms-dev` |
 
-Do not share Valkey across environments. It stores session, rate-limit, and outbox stream state, so sharing it can cross-contaminate login sessions, throttling, or worker processing.
+The backend is a long-running Render process and uses the TCP client because it
+needs ordinary Redis commands and Streams (`XADD`). In the Upstash Console,
+open the database's **Connect > TCP** section and copy the TLS connection string:
+
+```env
+VALKEY_URL=rediss://default:<token>@<endpoint>:<port>
+```
+
+- Use `rediss://`; Upstash enables TLS and does not allow it to be disabled.
+- The Upstash token is the password. Keep the complete URL in Render's secret
+  environment settings and set the same value on the API and worker.
+- Do not use `UPSTASH_REDIS_REST_URL` or `UPSTASH_REDIS_REST_TOKEN` here. Those
+  values belong to the HTTP SDK and are not accepted by this TCP client.
+- Percent-encode reserved URL characters if a provider password contains them.
+- Redeploy both services, then confirm `/api/v1/health/ready` reports
+  `checks.valkey.status` as `ready`.
+
+The application reuses one lazy TCP connection per process across sessions,
+rate limiting, readiness checks, and outbox publishing. This avoids needless
+connection churn on the free tier. Local Docker remains supported through a
+plain `redis://127.0.0.1:6379` URL.
+
+Do not share Redis across environments. It stores session, rate-limit, and
+outbox stream state, so sharing it can cross-contaminate login sessions,
+throttling, or worker processing.
+
+The Upstash free tier is suitable for development and low-volume deployments,
+but it has usage/storage limits and no SLA. Monitor command and bandwidth usage
+in the Upstash Console. Move production to an appropriate paid plan before the
+free limits or reliability requirements are exceeded; do not work around limits
+by dropping session, rate-limit, or outbox integrity.
 
 ## Backend Env Templates
 
