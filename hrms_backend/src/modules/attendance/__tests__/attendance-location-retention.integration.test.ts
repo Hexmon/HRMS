@@ -5,6 +5,7 @@ import { AttendanceCoordinateRetentionDefaults } from "#shared";
 import { authHeader, loginAs } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
 import { AttendanceCoordinatePurgeWorker } from "../../../workers/attendance-coordinate-purge-worker.js";
+import { purgeCoordinates, type JobMessage, type JobQueue } from "../../../workers/cloudflare-jobs.js";
 import {
   ATTENDANCE_OFFLINE_SYNC_CONTRACT_VERSION,
   attendanceOfflineEventEnvelopeSchema,
@@ -1531,5 +1532,34 @@ describe("PostgreSQL attendance exact-coordinate retention", () => {
     );
     expect(actionRows.rows).toHaveLength(2);
     expect(actionRows.rows.every((row) => row.count === "1")).toBe(true);
+  });
+
+  it("queues a continuation only when a bounded coordinate purge batch is full", async () => {
+    const currentApp = requireApp(app);
+    const pool = currentApp.store.pgPool!;
+    await Promise.all([
+      createRetentionFixture(pool, { expired: true, suffix: "continuation-a" }),
+      createRetentionFixture(pool, { expired: true, suffix: "continuation-b" }),
+      createRetentionFixture(pool, { expired: true, suffix: "continuation-c" }),
+    ]);
+    const queued: JobMessage[] = [];
+    const jobs: JobQueue = {
+      send: async (message) => {
+        if (message.kind !== "event") queued.push(message);
+      },
+    };
+
+    await expect(purgeCoordinates(pool, jobs, 2)).resolves.toEqual({ purged: 2 });
+    expect(queued).toEqual([{ kind: "purge" }]);
+    await expect(purgeCoordinates(pool, jobs, 2)).resolves.toEqual({ purged: 1 });
+    expect(queued).toEqual([{ kind: "purge" }]);
+
+    const state = await pool.query<{ purged: string; actions: string }>(
+      `SELECT
+         (SELECT count(*)::text FROM attendance.location_evidence
+           WHERE coordinates_purged_at IS NOT NULL) AS purged,
+         (SELECT count(*)::text FROM attendance.location_retention_actions) AS actions`,
+    );
+    expect(state.rows[0]).toEqual({ purged: "3", actions: "3" });
   });
 });

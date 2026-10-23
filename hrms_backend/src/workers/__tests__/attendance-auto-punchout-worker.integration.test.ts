@@ -169,6 +169,7 @@ async function createOpenSession(
 async function createSecondCompanyForEmployee(
   app: TestApp,
   employeeUserId: string,
+  timezone = "Asia/Kolkata",
 ): Promise<string> {
   const companyId = randomUUID();
   await app.store.pgPool!.query(
@@ -176,9 +177,9 @@ async function createSecondCompanyForEmployee(
        id, company_name, company_slug, timezone, locale,
        fiscal_year_start_month, status, bootstrap_completed_at,
        currency, working_week, work_hours_per_day, logo_label
-     ) VALUES ($1, 'Tenant B', $2, 'Asia/Kolkata', 'en-IN',
+     ) VALUES ($1, 'Tenant B', $2, $3, 'en-IN',
        4, 'active', now(), 'INR', 'Mon-Sun', 8, 'TB')`,
-    [companyId, `tenant-b-${companyId}`],
+    [companyId, `tenant-b-${companyId}`, timezone],
   );
   await app.store.pgPool!.query(
     `UPDATE platform.user_session_preferences
@@ -594,6 +595,68 @@ describe("AttendanceAutoPunchoutWorker PostgreSQL DB-first flow", () => {
         closed_at: null,
       },
     );
+  }, 30_000);
+
+  it("honors each company's local-midnight cutoff at the exact UTC boundary", async () => {
+    const employeeA = await loginAs(app, "E1");
+    const employeeB = await loginAs(app, "E2");
+    const companyAId = employeeCompanyId(app, employeeA.user.id);
+    await app.store.pgPool!.query(
+      "UPDATE platform.company_profiles SET timezone = 'Asia/Kolkata' WHERE id = $1",
+      [companyAId],
+    );
+    const companyBId = await createSecondCompanyForEmployee(
+      app,
+      employeeB.user.id,
+      "America/New_York",
+    );
+    for (const [companyId, employeeUserId, name] of [
+      [companyAId, employeeA.user.id, "kolkata_midnight_boundary"],
+      [companyBId, employeeB.user.id, "new_york_midnight_boundary"],
+    ] as const) {
+      await createAttendancePolicy(app, {
+        companyId,
+        employeeUserId,
+        name,
+        autoPunchOutEnabled: true,
+        autoPunchOutTime: "00:15",
+      });
+    }
+    const kolkataSessionId = await createOpenSession(app, {
+      companyId: companyAId,
+      employeeUserId: employeeA.user.id,
+      checkedInAt: "2026-05-20T04:00:00.000Z",
+    });
+    const newYorkSessionId = await createOpenSession(app, {
+      companyId: companyBId,
+      employeeUserId: employeeB.user.id,
+      checkedInAt: "2026-05-20T04:00:00.000Z",
+    });
+    const jobs: JobQueue = { send: async () => undefined };
+
+    expect(await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance",
+      referenceIso: "2026-05-20T18:44:59.000Z",
+    })).toMatchObject({ closed: 1, failed: 0 });
+    const beforeKolkataBoundary = await app.store.pgPool!.query<{
+      id: string;
+      closed_at: Date | null;
+    }>(
+      "SELECT id, closed_at FROM attendance.sessions WHERE id = ANY($1::uuid[])",
+      [[kolkataSessionId, newYorkSessionId]],
+    );
+    expect(beforeKolkataBoundary.rows.find((row) => row.id === kolkataSessionId)?.closed_at).toBeNull();
+    expect(beforeKolkataBoundary.rows.find((row) => row.id === newYorkSessionId)?.closed_at).toBeInstanceOf(Date);
+
+    expect(await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance",
+      referenceIso: "2026-05-20T18:45:00.000Z",
+    })).toMatchObject({ closed: 1, failed: 0 });
+    const atKolkataBoundary = await app.store.pgPool!.query<{ closed_at: Date | null }>(
+      "SELECT closed_at FROM attendance.sessions WHERE id = $1",
+      [kolkataSessionId],
+    );
+    expect(atKolkataBoundary.rows[0]?.closed_at?.toISOString()).toBe("2026-05-20T18:45:00.000Z");
   }, 30_000);
 
   it("uses the policy effective when the attendance session started", async () => {
