@@ -380,27 +380,15 @@ test("HR deactivates an open-shift employee and admin sees the worker-closed day
     await loginInBrowser(adminPage, "admin@example.test");
     await adminPage.goto("/reports/attendance", { waitUntil: "networkidle" });
     await expect(adminPage.getByRole("heading", { name: "Daily Attendance" })).toBeVisible();
-    await expect
-      .poll(
-        async () => {
-          const reportPromise = adminPage.waitForResponse(
-            (response) =>
-              response.url().includes("/api/v1/reports/attendance/summary") && response.ok(),
-            { timeout: 15_000 },
-          );
-          await adminPage.reload();
-          const reportResponse = await reportPromise;
-          const body = await reportResponse.json();
-          return Boolean(
-            body.items?.some(
-              (row: { employee?: string; out_time?: string }) =>
-                row.employee === "Worker Exit Employee" && row.out_time,
-            ),
-          );
-        },
-        { timeout: 45_000, intervals: [1000, 2000, 3000] },
-      )
-      .toBe(true);
+    const historicalRow = adminPage
+      .getByRole("row")
+      .filter({ has: adminPage.getByRole("cell", { name: "Worker Exit Employee" }) });
+    await expect(historicalRow).toBeVisible({ timeout: 45_000 });
+    // Assert the rendered Out column. During SSR hydration the page can issue a
+    // server-date request followed by the company-local-date request; waiting
+    // for the first matching response can therefore observe the stale range
+    // even though the browser renders the correct company-local result.
+    await expect(historicalRow.getByRole("cell").nth(10)).toHaveText(/^\d{2}:\d{2}$/);
     await testInfo.attach("admin-historical-checkout-report", {
       body: await adminPage.screenshot({ fullPage: true }),
       contentType: "image/png",
