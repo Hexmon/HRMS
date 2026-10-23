@@ -6,6 +6,7 @@ import { ReportRepository } from "./repository.js";
 import { assertReportRole } from "./policy.js";
 import { forbidden, notFound } from "../../platform/errors.js";
 import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { canSeeProject } from "../projects/policy.js";
 import { matchesLegacyAttendanceStatus } from "../attendance/daily-projection.js";
@@ -794,47 +795,42 @@ export class ReportService {
 
   auditReport(actor: AuthUser, query: ReportSummaryQuery) {
     assertReportRole(actor, [Roles.Auditor, Roles.Admin]);
-    const expenseRows = this.store.auditLogs.map((log) => ({
-      id: log.id,
-      at: log.created_at,
-      actor_user_id: log.actor_user_id,
-      actor: this.userLabel(log.actor_user_id) ?? log.actor_user_id,
-      action: log.event_type,
-      module: "Expenses",
-      target: log.ticket_id,
-      remarks: log.remarks
-    }));
-    const outboxRows = this.store.outbox.map((event) => ({
-      id: event.event_id,
-      at: event.created_at,
-      actor_user_id: typeof event.payload.actor_user_id === "string" ? event.payload.actor_user_id : null,
-      actor: typeof event.payload.actor_user_id === "string" ? this.userLabel(event.payload.actor_user_id) ?? event.payload.actor_user_id : "System",
-      action: event.event_type,
-      module: reportModuleForEvent(event),
-      target: event.aggregate_id,
-      remarks: typeof event.payload.remarks === "string" ? event.payload.remarks : null
-    }));
-    const assetRows = this.store.assetStateEvents.map((event) => ({
-      id: event.id,
-      at: event.created_at,
-      actor_user_id: event.actor_user_id,
-      actor: event.actor_user_id ? this.userLabel(event.actor_user_id) ?? event.actor_user_id : "System",
-      action: event.event_type,
-      module: "Assets",
-      target: event.asset_id,
-      remarks: typeof event.payload.remarks === "string" ? event.payload.remarks : null
-    }));
-    const helpdeskRows = this.store.helpdeskEvents.map((event) => ({
-      id: event.id,
-      at: event.created_at,
-      actor_user_id: event.actor_user_id,
-      actor: event.actor_name,
-      action: event.action,
-      module: "Helpdesk",
-      target: event.ticket_id,
-      remarks: event.detail
-    }));
-    const rows = [...expenseRows, ...outboxRows, ...assetRows, ...helpdeskRows]
+    const { companyId } = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: "reports.audit",
+      requireActiveEmployment: true,
+    });
+    const expenseCompanyByTicket = new Map(this.store.tickets.map((ticket) => [
+      ticket.id,
+      ticket.context_payload.company_id,
+    ]));
+    const expenseRows = this.store.auditLogs
+      .filter((log) => expenseCompanyByTicket.get(log.ticket_id) === companyId)
+      .map((log) => ({
+        id: log.id,
+        at: log.created_at,
+        actor_user_id: log.actor_user_id,
+        actor: this.userLabel(log.actor_user_id) ?? log.actor_user_id,
+        action: log.event_type,
+        module: "Expenses",
+        target: log.ticket_id,
+        remarks: log.remarks,
+      }));
+    const outboxRows = this.store.outbox
+      .filter((event) => event.payload.company_id === companyId)
+      .map((event) => ({
+        id: event.event_id,
+        at: event.created_at,
+        actor_user_id: typeof event.payload.actor_user_id === "string" ? event.payload.actor_user_id : null,
+        actor: typeof event.payload.actor_user_id === "string" ? this.userLabel(event.payload.actor_user_id) ?? event.payload.actor_user_id : "System",
+        action: event.event_type,
+        module: reportModuleForEvent(event),
+        target: event.aggregate_id,
+        remarks: typeof event.payload.remarks === "string" ? event.payload.remarks : null,
+      }));
+    // Asset and helpdesk events have no immutable, server-owned company marker.
+    // Exclude them until their historical company can be captured and backfilled.
+    const rows = [...expenseRows, ...outboxRows]
       .filter((row) => !query.actor_user_id || row.actor_user_id === query.actor_user_id)
       .filter((row) => !query.module || row.module.toLowerCase().includes(query.module.toLowerCase()))
       .filter((row) => !query.action || row.action.toLowerCase().includes(query.action.toLowerCase()))

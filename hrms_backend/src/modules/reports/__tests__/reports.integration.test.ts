@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs, projectTravelPayload } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
+import { appendOutboxEvent } from "../../expenses/events.js";
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
 
@@ -161,6 +162,101 @@ describe("non-expense reports", () => {
     } finally {
       restoreDatabaseUrl();
     }
+  });
+
+  it("keeps audit rows in their original company and fails closed without company context", async () => {
+    const admin = await loginAs(app, "ADM");
+    const employee = await loginAs(app, "E1");
+    const adminPreference = app.store.userSessionPreferences.find((row) => row.user_id === admin.user.id)!;
+    const employeePreference = app.store.userSessionPreferences.find((row) => row.user_id === employee.user.id)!;
+    const originalCompanyId = adminPreference.company_id!;
+    const otherCompanyId = randomUUID();
+    app.store.companyProfiles.push({
+      ...app.store.companyProfiles.find((row) => row.id === originalCompanyId)!,
+      id: otherCompanyId,
+      company_slug: `audit-test-${otherCompanyId}`,
+    });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/expenses",
+      headers: authHeader(employee.token),
+      payload: projectTravelPayload,
+    });
+    expect(created.statusCode).toBe(200);
+    const ticketId = created.json().id as string;
+    expect(app.store.tickets.find((ticket) => ticket.id === ticketId)?.context_payload.company_id).toBe(originalCompanyId);
+
+    const foreignEvent = appendOutboxEvent(app.store, {
+      aggregateType: "report_export",
+      aggregateId: randomUUID(),
+      eventType: "reports.export.requested",
+      payload: { company_id: otherCompanyId, actor_user_id: admin.user.id },
+      idempotencyKey: `audit-foreign-${randomUUID()}`,
+    });
+    const unscopedEvent = appendOutboxEvent(app.store, {
+      aggregateType: "report_export",
+      aggregateId: randomUUID(),
+      eventType: "reports.export.requested",
+      payload: { actor_user_id: admin.user.id },
+      idempotencyKey: `audit-unscoped-${randomUUID()}`,
+    });
+    const unscopedAssetEventId = randomUUID();
+    const unscopedHelpdeskEventId = randomUUID();
+    app.store.assetStateEvents.push({
+      id: unscopedAssetEventId,
+      asset_id: randomUUID(),
+      actor_user_id: admin.user.id,
+      event_type: "asset.test_unscoped",
+      payload: {},
+      created_at: new Date().toISOString(),
+    });
+    app.store.helpdeskEvents.push({
+      id: unscopedHelpdeskEventId,
+      ticket_id: randomUUID(),
+      actor_user_id: admin.user.id,
+      actor_name: admin.user.full_name,
+      action: "helpdesk.test_unscoped",
+      detail: null,
+      created_at: new Date().toISOString(),
+    });
+    const readAudit = () => app.inject({
+      method: "GET",
+      url: "/api/v1/reports/audit?page=1&page_size=100",
+      headers: authHeader(admin.token),
+    });
+
+    employeePreference.company_id = otherCompanyId;
+    const originalCompanyAudit = await readAudit();
+    expect(originalCompanyAudit.statusCode).toBe(200);
+    expect(originalCompanyAudit.json().items.some((row: { target: string }) => row.target === ticketId)).toBe(true);
+    expect(originalCompanyAudit.json().items.some((row: { id: string }) => [
+      foreignEvent.event_id,
+      unscopedEvent.event_id,
+      unscopedAssetEventId,
+      unscopedHelpdeskEventId,
+    ].includes(row.id))).toBe(false);
+
+    adminPreference.company_id = otherCompanyId;
+    const otherCompanyAudit = await readAudit();
+    expect(otherCompanyAudit.statusCode).toBe(200);
+    expect(otherCompanyAudit.json().items.some((row: { id: string }) => row.id === foreignEvent.event_id)).toBe(true);
+    expect(otherCompanyAudit.json().items.some((row: { target: string }) => row.target === ticketId)).toBe(false);
+
+    adminPreference.company_id = null;
+    const noCompanyAudit = await readAudit();
+    expect(noCompanyAudit.statusCode).toBe(400);
+    expect(noCompanyAudit.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+
+    employeePreference.company_id = null;
+    const noCompanyExpense = await app.inject({
+      method: "POST",
+      url: "/api/v1/expenses",
+      headers: authHeader(employee.token),
+      payload: projectTravelPayload,
+    });
+    expect(noCompanyExpense.statusCode).toBe(400);
+    expect(noCompanyExpense.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
   });
 
   it("requires active company context before attendance reporting or export creation", async () => {

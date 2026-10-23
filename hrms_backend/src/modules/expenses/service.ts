@@ -31,6 +31,7 @@ import {
 } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { getRequiredDocuments, nowIso } from "../../platform/data-store.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import {
   badRequest,
   conflict,
@@ -146,6 +147,11 @@ export class ExpenseService {
 
   createTicket(actor: AuthUser, input: ExpenseCreateInput): ExpenseTicket {
     this.validateCreateInput(input);
+    const { companyId } = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: "expenses.create",
+      requireActiveEmployment: true,
+    });
     const requester = this.core.getUser(actor.id);
     const route = input.submit
       ? this.resolveRoute(
@@ -184,7 +190,9 @@ export class ExpenseService {
       variance_amount: null,
       payment_reference_no: null,
       closure_remarks: null,
-      context_payload: {},
+      // Capture the company at creation; the requester's later transfer must
+      // not reassign this ticket's historical audit trail.
+      context_payload: { company_id: companyId },
       route_snapshot: route?.routeSnapshot ?? { reason: "draft_not_routed" },
       policy_snapshot: {
         required_documents:
