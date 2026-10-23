@@ -262,6 +262,67 @@ describe("AttendanceAutoPunchoutWorker PostgreSQL DB-first flow", () => {
     expect(Number(checkouts.rows[0]?.count)).toBe(2);
   }, 30_000);
 
+  it("continues another tenant after one policy fails and closes the failed session on the next sweep", async () => {
+    const employeeA = await loginAs(app, "E1");
+    const employeeB = await loginAs(app, "E2");
+    const companyAId = employeeCompanyId(app, employeeA.user.id);
+    const companyBId = await createSecondCompanyForEmployee(app, employeeB.user.id);
+    const brokenPolicyId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.policies (id, company_id, policy_key, name, label, status)
+       VALUES ($1, $2, 'attendance', 'tenant_a_broken_policy', 'tenant_a_broken_policy', 'active')`,
+      [brokenPolicyId, companyAId],
+    );
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.policy_assignments
+         (company_id, policy_id, scope_type, scope_id, effective_from, status)
+       VALUES ($1, $2, 'employee', $3, '2026-01-01T00:00:00.000Z', 'active')`,
+      [companyAId, brokenPolicyId, employeeA.user.id],
+    );
+    await createAttendancePolicy(app, {
+      companyId: companyBId,
+      employeeUserId: employeeB.user.id,
+      name: "tenant_b_due_after_a_fails",
+      autoPunchOutEnabled: true,
+      autoPunchOutTime: "18:30",
+    });
+    const sessionAId = await createOpenSession(app, {
+      companyId: companyAId,
+      employeeUserId: employeeA.user.id,
+    });
+    const sessionBId = await createOpenSession(app, {
+      companyId: companyBId,
+      employeeUserId: employeeB.user.id,
+    });
+    const jobs: JobQueue = { send: async () => undefined };
+    expect(await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance", referenceIso: "2026-05-20T14:00:00.000Z",
+    })).toEqual({ scanned: 2, closed: 1, failed: 1 });
+    const firstPass = await app.store.pgPool!.query<{ id: string; closed_at: Date | null }>(
+      "SELECT id, closed_at FROM attendance.sessions WHERE id = ANY($1::uuid[])",
+      [[sessionAId, sessionBId]],
+    );
+    expect(firstPass.rows.find((session) => session.id === sessionAId)?.closed_at).toBeNull();
+    expect(firstPass.rows.find((session) => session.id === sessionBId)?.closed_at).toBeInstanceOf(Date);
+
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.policy_versions
+         (company_id, policy_id, version_number, effective_from, config)
+       VALUES ($1, $2, 1, '2026-01-01T00:00:00.000Z',
+         '{"autoPunchOutEnabled":true,"autoPunchOutTime":"18:30","fullDayPunchWindow":true}'::jsonb)`,
+      [companyAId, brokenPolicyId],
+    );
+    expect(await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance", referenceIso: "2026-05-21T12:00:00.000Z",
+    })).toEqual({ scanned: 1, closed: 1, failed: 0 });
+    const checkout = await app.store.pgPool!.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM attendance.punch_events
+       WHERE session_id = $1 AND event_type = 'check_out' AND origin = 'system'`,
+      [sessionAId],
+    );
+    expect(Number(checkout.rows[0]?.count)).toBe(1);
+  }, 30_000);
+
   it("closes a legacy open session under its original company after transfer and soft deletion", async () => {
     const employee = await loginAs(app, "E1");
     const originalCompanyId = employeeCompanyId(app, employee.user.id);

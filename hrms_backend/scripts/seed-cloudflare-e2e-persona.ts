@@ -35,43 +35,83 @@ try {
   const context = source.rows[0];
   if (!context) throw new Error("Seed E2 and its company context before the Cloudflare E2E persona.");
 
-  const userId = idFor("race-employee");
+  const personas = [
+    { key: "race", code: "E4", email: "worker-race@example.test", name: "Worker Race Employee", role: Roles.Employee, path: "CEO.SALES.S1.D1.E4", managerId: context.manager_user_id },
+    { key: "exit", code: "E5", email: "worker-exit@example.test", name: "Worker Exit Employee", role: Roles.Employee, path: "CEO.SALES.S1.D1.E5", managerId: context.manager_user_id },
+    { key: "geo", code: "E6", email: "worker-geo@example.test", name: "Worker Geo Employee", role: Roles.Employee, path: "CEO.SALES.S1.D1.E6", managerId: context.manager_user_id },
+    { key: "hr", code: "H1", email: "worker-hr@example.test", name: "Worker HR Manager", role: Roles.HRManager, path: "CEO.H1", managerId: null },
+  ] as const;
+  for (const persona of personas) {
+    const userId = idFor(`${persona.key}-employee`);
+    await client.query(
+      `INSERT INTO core.users (
+         id, employee_code, email, full_name, department_id, designation_id,
+         manager_user_id, hierarchy_path, employment_status, timezone, joined_on
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::ltree, 'active', 'Asia/Kolkata', '2026-01-01')
+       ON CONFLICT (employee_code) DO UPDATE SET
+         email = EXCLUDED.email, full_name = EXCLUDED.full_name,
+         department_id = EXCLUDED.department_id, designation_id = EXCLUDED.designation_id,
+         manager_user_id = EXCLUDED.manager_user_id, employment_status = EXCLUDED.employment_status,
+         deleted_at = NULL`,
+      [userId, persona.code, persona.email, persona.name, context.department_id,
+        context.designation_id, persona.managerId, persona.path],
+    );
+    await client.query(
+      `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
+       VALUES ($1, $2, $3, 'active', '2026-01-01')
+       ON CONFLICT (id) DO UPDATE SET role_key = EXCLUDED.role_key, status = EXCLUDED.status`,
+      [idFor(`${persona.key}-role`), userId, persona.role],
+    );
+    await client.query(
+      `INSERT INTO platform.user_credentials (id, user_id, password_hash, status)
+       VALUES ($1, $2, $3, 'active')
+       ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash,
+         status = EXCLUDED.status, deleted_at = NULL`,
+      [idFor(`${persona.key}-credential`), userId,
+        hashPasswordSync(getLocalDemoPassword(), `hrms-cloudflare-e2e-${persona.key}`)],
+    );
+    await client.query(
+      `INSERT INTO platform.user_session_preferences (
+         id, user_id, active_role, company_id, landing_page, locale, timezone, version
+       ) VALUES ($1, $2, $3, $4, '/dashboard', 'en-IN', 'Asia/Kolkata', 1)
+       ON CONFLICT (user_id) DO UPDATE SET company_id = EXCLUDED.company_id,
+         active_role = EXCLUDED.active_role`,
+      [idFor(`${persona.key}-preference`), userId, persona.role, context.company_id],
+    );
+  }
+
+  // Only E6 uses geolocation. One-minute retention lets the browser exercise
+  // real capture and the hourly purge without touching any other persona.
+  const geoPolicyId = idFor("geo-policy");
   await client.query(
-    `INSERT INTO core.users (
-       id, employee_code, email, full_name, department_id, designation_id,
-       manager_user_id, hierarchy_path, employment_status, timezone, joined_on
-     ) VALUES ($1, 'E4', 'worker-race@example.test', 'Worker Race Employee',
-       $2, $3, $4, 'CEO.SALES.S1.D1.E4'::ltree, 'active', 'Asia/Kolkata', '2026-01-01')
-     ON CONFLICT (employee_code) DO UPDATE SET
-       email = EXCLUDED.email, full_name = EXCLUDED.full_name,
-       department_id = EXCLUDED.department_id, designation_id = EXCLUDED.designation_id,
-       manager_user_id = EXCLUDED.manager_user_id, employment_status = EXCLUDED.employment_status,
-       deleted_at = NULL`,
-    [userId, context.department_id, context.designation_id, context.manager_user_id],
+    `INSERT INTO attendance.policies
+       (id, company_id, policy_key, name, label, status, created_at, updated_at, version)
+     VALUES ($1, $2, 'attendance', 'Cloudflare E2E geo', 'Cloudflare E2E geo',
+       'active', now(), now(), 1)
+     ON CONFLICT (id) DO UPDATE SET status = 'active', deleted_at = NULL`,
+    [geoPolicyId, context.company_id],
   );
   await client.query(
-    `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
-     VALUES ($1, $2, $3, 'active', '2026-01-01')
-     ON CONFLICT (id) DO UPDATE SET role_key = EXCLUDED.role_key, status = EXCLUDED.status`,
-    [idFor("race-role"), userId, Roles.Employee],
+    `INSERT INTO attendance.policy_versions
+       (id, company_id, policy_id, version_number, effective_from, config, created_at)
+     VALUES ($1, $2, $3, 1, '2026-01-01T00:00:00Z', $4::jsonb, now())
+     ON CONFLICT (id) DO NOTHING`,
+    [idFor("geo-policy-version"), context.company_id, geoPolicyId,
+      JSON.stringify({ attendanceMode: "geo_optional", coordinateRetentionClasses: { short: 60 },
+        defaultCoordinateRetentionClass: "short", fullDayPunchWindow: true,
+        allowOffDayPunches: true })],
   );
   await client.query(
-    `INSERT INTO platform.user_credentials (id, user_id, password_hash, status)
-     VALUES ($1, $2, $3, 'active')
-     ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash,
-       status = EXCLUDED.status, deleted_at = NULL`,
-    [idFor("race-credential"), userId, hashPasswordSync(getLocalDemoPassword(), "hrms-cloudflare-e2e-race")],
-  );
-  await client.query(
-    `INSERT INTO platform.user_session_preferences (
-       id, user_id, active_role, company_id, landing_page, locale, timezone, version
-     ) VALUES ($1, $2, $3, $4, '/dashboard', 'en-IN', 'Asia/Kolkata', 1)
-     ON CONFLICT (user_id) DO UPDATE SET company_id = EXCLUDED.company_id,
-       active_role = EXCLUDED.active_role`,
-    [idFor("race-preference"), userId, Roles.Employee, context.company_id],
+    `INSERT INTO attendance.policy_assignments
+       (id, company_id, policy_id, scope_type, scope_id, effective_from,
+        status, created_at, updated_at, version)
+     VALUES ($1, $2, $3, 'employee', $4, '2026-01-01T00:00:00Z',
+       'active', now(), now(), 1)
+     ON CONFLICT (id) DO UPDATE SET status = 'active', deleted_at = NULL`,
+    [idFor("geo-policy-assignment"), context.company_id, geoPolicyId, idFor("geo-employee")],
   );
   await client.query("COMMIT");
-  console.log("Seeded idempotent local E4 employee for the checkout race browser test.");
+  console.log("Seeded idempotent local E4/E5/E6 employees, H1 HR manager, and E6 geo policy.");
 } catch (error) {
   await client.query("ROLLBACK");
   throw error;

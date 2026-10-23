@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { expect, test, type Page } from "@playwright/test";
 
 const workerBaseUrl = process.env.E2E_WORKER_BASE_URL;
@@ -15,6 +16,63 @@ async function waitForLoginHydration(page: Page) {
     undefined,
     { timeout: 120_000 },
   );
+}
+
+async function loginInBrowser(page: Page, email: string): Promise<void> {
+  await page.goto("/login", { waitUntil: "networkidle" });
+  await waitForLoginHydration(page);
+  await page.getByLabel("Company email").fill(email);
+  await page.locator("#password").fill(process.env.E2E_LOCAL_DEMO_PASSWORD ?? "LocalDev@123");
+  const loginResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/v1/auth/login") && response.request().method() === "POST",
+    { timeout: 90_000 },
+  );
+  await page.getByRole("button", { name: /sign in/i }).click();
+  expect((await loginResponse).ok()).toBe(true);
+  await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible({ timeout: 60_000 });
+}
+
+function scheduledUrl(cronExpression: string, scheduledTime = Date.now()): string {
+  const url = new URL(`${workerBaseUrl}/cdn-cgi/local/scheduled`);
+  url.searchParams.set("cron", cronExpression);
+  url.searchParams.set("time", String(scheduledTime));
+  return url.toString();
+}
+
+interface LocalPgClient {
+  connect(): Promise<void>;
+  query<T extends Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>;
+  end(): Promise<void>;
+}
+
+async function withLocalWorkerDatabase<T>(
+  action: (client: LocalPgClient) => Promise<T>,
+): Promise<T> {
+  const connectionString = process.env.E2E_DATABASE_URL;
+  if (!connectionString)
+    throw new Error("E2E_DATABASE_URL is required for the local retention journey.");
+  const target = new URL(connectionString);
+  if (target.hostname !== "postgres" || target.pathname !== "/hrms_platform") {
+    throw new Error(
+      "The browser retention test accepts only its isolated Docker PostgreSQL database.",
+    );
+  }
+  // Test harness only: the application browser still uses Fastify APIs. Load
+  // the backend's existing pg installation without adding a frontend runtime dependency.
+  const backendRequire = createRequire(new URL("../../hrms_backend/package.json", import.meta.url));
+  const PgClient = (
+    backendRequire("pg") as {
+      Client: new (config: { connectionString: string }) => LocalPgClient;
+    }
+  ).Client;
+  const client = new PgClient({ connectionString });
+  await client.connect();
+  try {
+    return await action(client);
+  } finally {
+    await client.end();
+  }
 }
 
 test("employee clocks in and sees the scheduled auto checkout in the browser", async ({
@@ -248,4 +306,185 @@ test("manager verifies a submitted expense and sees it in history", async ({
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",
   });
+});
+
+test("HR deactivates an open-shift employee and admin sees the worker-closed day", async ({
+  browser,
+  request,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const employeeContext = await browser.newContext();
+  const hrContext = await browser.newContext();
+  const adminContext = await browser.newContext();
+  try {
+    const employeePage = await employeeContext.newPage();
+    await loginInBrowser(employeePage, "worker-exit@example.test");
+    await employeePage.goto("/attendance", { waitUntil: "networkidle" });
+    const clockIn = employeePage.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/attendance/punches") &&
+        response.request().method() === "POST",
+    );
+    await employeePage.getByRole("button", { name: "Clock in" }).click();
+    expect((await clockIn).ok()).toBe(true);
+    await expect(employeePage.getByRole("button", { name: "Start break" })).toBeVisible();
+
+    const hrPage = await hrContext.newPage();
+    await loginInBrowser(hrPage, "worker-hr@example.test");
+    await hrPage.goto("/employees", { waitUntil: "networkidle" });
+    const employeeRow = hrPage.getByRole("row").filter({ hasText: "Worker Exit Employee" });
+    await expect(employeeRow).toBeVisible();
+    await employeeRow.getByRole("button", { name: "Row actions" }).click();
+    const deactivated = hrPage.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/core/users/") &&
+        response.request().method() !== "GET" &&
+        response.ok(),
+    );
+    await hrPage.getByRole("menuitem", { name: "Deactivate" }).click();
+    expect((await deactivated).ok()).toBe(true);
+    await expect(hrPage.getByText("Employee deactivated")).toBeVisible();
+    await testInfo.attach("hr-deactivated-open-shift", {
+      body: await hrPage.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
+
+    expect(
+      (await request.get(scheduledUrl("*/5 * * * *", Date.now() + 48 * 60 * 60_000))).ok(),
+    ).toBe(true);
+
+    const adminPage = await adminContext.newPage();
+    await loginInBrowser(adminPage, "admin@example.test");
+    await adminPage.goto("/reports/attendance", { waitUntil: "networkidle" });
+    await expect(adminPage.getByRole("heading", { name: "Daily Attendance" })).toBeVisible();
+    await expect
+      .poll(
+        async () => {
+          const reportPromise = adminPage.waitForResponse(
+            (response) =>
+              response.url().includes("/api/v1/reports/attendance/summary") && response.ok(),
+            { timeout: 15_000 },
+          );
+          await adminPage.reload();
+          const reportResponse = await reportPromise;
+          const body = await reportResponse.json();
+          return Boolean(
+            body.items?.some(
+              (row: { employee?: string; out_time?: string }) =>
+                row.employee === "Worker Exit Employee" && row.out_time,
+            ),
+          );
+        },
+        { timeout: 45_000, intervals: [1000, 2000, 3000] },
+      )
+      .toBe(true);
+    await testInfo.attach("admin-historical-checkout-report", {
+      body: await adminPage.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
+  } finally {
+    await Promise.all([employeeContext.close(), hrContext.close(), adminContext.close()]);
+  }
+});
+
+test("browser location evidence is redacted by the hourly Worker while privacy details remain visible", async ({
+  browser,
+  request,
+}, testInfo) => {
+  test.skip(!process.env.E2E_DATABASE_URL, "Requires the isolated local PostgreSQL test database");
+  test.setTimeout(240_000);
+  const context = await browser.newContext({
+    geolocation: { latitude: 0.001, longitude: 0.001, accuracy: 18 },
+    permissions: ["geolocation"],
+  });
+  try {
+    const page = await context.newPage();
+    await loginInBrowser(page, "worker-geo@example.test");
+    await page.goto("/attendance/privacy", { waitUntil: "networkidle" });
+    await expect(page.getByText("1 minute", { exact: true })).toBeVisible();
+    await page.goto("/attendance", { waitUntil: "networkidle" });
+    const clockIn = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/attendance/punches") &&
+        response.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Clock in" }).click();
+    const response = await clockIn;
+    expect(response.ok(), await response.text()).toBe(true);
+    const submitted = response.request().postDataJSON() as {
+      command?: { source?: string; location?: { latitude?: number; longitude?: number } };
+      source?: string;
+      location?: { latitude?: number; longitude?: number };
+    };
+    const command = submitted.command ?? submitted;
+    expect(command.source).toBe("web_geo");
+    expect(command.location).toMatchObject({ latitude: 0.001, longitude: 0.001 });
+
+    const captured = await withLocalWorkerDatabase(async (db) => {
+      const rows = await db.query<{
+        id: string;
+        latitude: string | null;
+        longitude: string | null;
+        coordinates_expire_at: Date;
+        coordinates_purged_at: Date | null;
+      }>(
+        `SELECT evidence.id, evidence.latitude::text, evidence.longitude::text,
+                evidence.coordinates_expire_at, evidence.coordinates_purged_at
+         FROM attendance.location_evidence evidence
+         JOIN core.users employee ON employee.id = evidence.employee_user_id
+         WHERE employee.email = $1
+         ORDER BY evidence.received_at DESC LIMIT 1`,
+        ["worker-geo@example.test"],
+      );
+      return rows.rows[0];
+    });
+    expect(captured).toBeTruthy();
+    expect(captured!.latitude).not.toBeNull();
+    expect(captured!.longitude).not.toBeNull();
+    expect(captured!.coordinates_purged_at).toBeNull();
+    const expiresAt = new Date(captured!.coordinates_expire_at).getTime();
+    const waitMs = Math.max(0, expiresAt - Date.now() + 250);
+    if (waitMs > 75_000)
+      throw new Error("The synthetic geo policy exceeded its one-minute retention window.");
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    expect((await request.get(scheduledUrl("0 * * * *"))).ok()).toBe(true);
+
+    await expect
+      .poll(
+        async () =>
+          withLocalWorkerDatabase(async (db) => {
+            const result = await db.query<{
+              latitude: string | null;
+              longitude: string | null;
+              coordinates_purged_at: Date | null;
+              action_count: number;
+            }>(
+              `SELECT evidence.latitude::text, evidence.longitude::text,
+                evidence.coordinates_purged_at,
+                (SELECT count(*)::integer FROM attendance.location_retention_actions action
+                 WHERE action.location_evidence_id = evidence.id) AS action_count
+         FROM attendance.location_evidence evidence WHERE evidence.id = $1`,
+              [captured!.id],
+            );
+            const row = result.rows[0];
+            return Boolean(
+              row &&
+              row.latitude === null &&
+              row.longitude === null &&
+              row.coordinates_purged_at &&
+              row.action_count === 1,
+            );
+          }),
+        { timeout: 30_000, intervals: [500, 1000, 2000] },
+      )
+      .toBe(true);
+    await page.goto("/attendance/privacy", { waitUntil: "networkidle" });
+    await expect(page.getByText(/After precise coordinates are purged/)).toBeVisible();
+    await testInfo.attach("employee-location-retention-after-purge", {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
+  } finally {
+    await context.close();
+  }
 });

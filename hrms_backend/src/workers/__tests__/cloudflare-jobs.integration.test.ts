@@ -122,6 +122,45 @@ describe("Cloudflare outbox drain against PostgreSQL", () => {
     expect(delivered).toEqual([eventId, eventId]);
   });
 
+  it("replays the same event ID when the process crashes after Queue acceptance but before status commit", async () => {
+    const eventId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+       VALUES ($1, 'expenses', $2, 'expenses.approved', '{}'::jsonb, $3)`,
+      [eventId, randomUUID(), `cloudflare-post-acceptance-crash:${eventId}`],
+    );
+    const accepted: string[] = [];
+    const events: JobQueue = { send: async (value) => {
+      if (value.kind === "event") accepted.push(value.eventId);
+    } };
+    const jobs: JobQueue = { send: async () => undefined };
+    const interruptedPool = {
+      connect: async () => {
+        const client = await app.store.pgPool!.connect();
+        return {
+          query: async (sql: string, values?: unknown[]) => {
+            if (sql === "COMMIT") {
+              throw new Error("synthetic process loss before published status commit");
+            }
+            return client.query(sql, values);
+          },
+          release: () => client.release(),
+        };
+      },
+      query: app.store.pgPool!.query.bind(app.store.pgPool!),
+    } as unknown as Parameters<typeof drainOutbox>[0];
+    await expect(drainOutbox(interruptedPool, events, jobs)).rejects.toThrow(
+      "synthetic process loss before published status commit",
+    );
+    expect(accepted).toEqual([eventId]);
+    const afterRollback = await app.store.pgPool!.query<{ status: string }>(
+      "SELECT status FROM platform.outbox_events WHERE event_id = $1", [eventId],
+    );
+    expect(afterRollback.rows[0]?.status).toBe("pending");
+    expect((await drainOutbox(app.store.pgPool!, events, jobs)).published).toBe(1);
+    expect(accepted).toEqual([eventId, eventId]);
+  });
+
   it("dead-letters an exhausted row without stopping another tenant's event", async () => {
     const exhaustedId = randomUUID();
     const healthyId = randomUUID();

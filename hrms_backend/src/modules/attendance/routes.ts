@@ -509,7 +509,7 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const query = attendanceQuerySchema.parse(request.query);
     return (await readService(request.actor, query, "attendance.my_summary", [request.actor.id]))
-      .mySummary(request.actor, query);
+      .mySummaryWithResolvedPolicy(request.actor, query);
   });
 
   fastify.get("/privacy", async (request) => {

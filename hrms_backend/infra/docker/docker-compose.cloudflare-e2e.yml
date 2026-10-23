@@ -130,6 +130,7 @@ services:
     working_dir: /workspace/hrms-client
     environment:
       E2E_WORKER_UPSTREAM_PORT: "8787"
+      E2E_DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform
     depends_on:
       frontend:
         condition: service_healthy

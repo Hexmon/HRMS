@@ -128,6 +128,19 @@ describe("attendance employee privacy summary", () => {
     });
 
     const employeeScoped = await privacyJson(employee.token);
+    const summaryPolicy = async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/attendance/summary/my",
+        headers: authHeader(employee.token),
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json().today.punch_policy as { attendance_mode: string; permission_denied_action: string };
+    };
+    expect(await summaryPolicy()).toMatchObject({
+      attendance_mode: "geo_required",
+      permission_denied_action: "manual_fallback",
+    });
     expect(employeeScoped).toMatchObject({
       effective_policy: {
         attendance_mode: "geo_required",
@@ -163,6 +176,7 @@ describe("attendance employee privacy summary", () => {
     );
     const departmentScoped = await privacyJson(employee.token);
     expect(departmentScoped.effective_policy.attendance_mode).toBe("geo_preferred");
+    expect((await summaryPolicy()).attendance_mode).toBe("geo_preferred");
     expect(departmentScoped.effective_policy.location_requirement).toBe(
       "requested_policy_controlled",
     );
@@ -173,12 +187,14 @@ describe("attendance employee privacy summary", () => {
     );
     const companyScoped = await privacyJson(employee.token);
     expect(companyScoped.effective_policy.attendance_mode).toBe("geo_optional");
+    expect((await summaryPolicy()).attendance_mode).toBe("geo_optional");
     expect(companyScoped.effective_policy.location_requirement).toBe(
       "requested_optional",
     );
 
     await clearPolicyAssignments(fixture.companyId);
     const builtIn = await privacyJson(employee.token);
+    expect((await summaryPolicy()).attendance_mode).toBe("manual_only");
     expect(builtIn.effective_policy).toMatchObject({
       attendance_mode: "manual_only",
       policy_source: "built_in",

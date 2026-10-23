@@ -1233,7 +1233,22 @@ export class AttendanceService {
     );
   }
 
-  mySummary(actor: AuthUser, query: AttendancePageQuery) {
+  async mySummaryWithResolvedPolicy(actor: AuthUser, query: AttendancePageQuery) {
+    const context = this.resolveAttendanceCompanyContext(actor, "attendance.my_summary", query.company_id);
+    assertCanUseSelfAttendance(actor);
+    if (!this.store.pgPool) return this.mySummary(actor, query);
+    const asOf = nowIso();
+    const policy = await new PostgresAttendanceCommandRepository(this.store.pgPool).transaction((tx) =>
+      resolveEffectiveAttendancePolicy(tx, {
+        companyId: context.companyId,
+        subjectEmployeeUserId: actor.id,
+        asOf,
+      }),
+    );
+    return this.mySummary(actor, query, policy);
+  }
+
+  mySummary(actor: AuthUser, query: AttendancePageQuery, effectivePolicy?: AttendancePunchPolicy) {
     const context = this.resolveAttendanceCompanyContext(
       actor,
       "attendance.my_summary",
@@ -1257,6 +1272,8 @@ export class AttendanceService {
       actor.id,
       availabilityWorkDate,
       timeZone,
+      nowIso(),
+      effectivePolicy,
     );
     const records = this.recordsForUsers(
       companyId,
@@ -3187,6 +3204,7 @@ export class AttendanceService {
     workDate: string,
     timeZone = this.timezoneForUser(employeeUserId, companyId),
     occurredAt = nowIso(),
+    effectivePolicy?: AttendancePunchPolicy,
   ): PunchAvailability {
     const punches = this.punchesForWorkDate(
       companyId,
@@ -3195,7 +3213,7 @@ export class AttendanceService {
       timeZone,
     );
     const sequenceAllowedActions = this.nextAllowedActions(punches);
-    const policy = this.attendancePolicy(companyId);
+    const policy = effectivePolicy ?? this.attendancePolicy(companyId);
     const activePunches = punches.filter((punch) => !punch.deleted_at);
     const localTime =
       timeText(occurredAt, timeZone) ?? occurredAt.slice(11, 16);
