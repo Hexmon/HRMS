@@ -35,6 +35,13 @@ try {
   const context = source.rows[0];
   if (!context) throw new Error("Seed E2 and its company context before the Cloudflare E2E persona.");
 
+  // The synthetic browser journey must be runnable on weekends as well as
+  // weekdays. This local-only seed changes no production company policy.
+  await client.query(
+    "UPDATE platform.company_profiles SET working_week = 'Mon-Sun' WHERE id = $1",
+    [context.company_id],
+  );
+
   const personas = [
     { key: "race", code: "E4", email: "worker-race@example.test", name: "Worker Race Employee", role: Roles.Employee, path: "CEO.SALES.S1.D1.E4", managerId: context.manager_user_id },
     { key: "exit", code: "E5", email: "worker-exit@example.test", name: "Worker Exit Employee", role: Roles.Employee, path: "CEO.SALES.S1.D1.E5", managerId: context.manager_user_id },
