@@ -1,6 +1,6 @@
 # Background Worker Operations
 
-Last reviewed from repository commit `8594bc3` on 2026-10-23. Hosted Cloudflare cutover has **not** been executed. For provisioning, activation, reconciliation, replay, and rollback, use the [Cloudflare cutover runbook](../deployment/cloudflare-worker-cutover.md); this page is the day-to-day index, not authority to activate a Worker.
+Last reviewed on 2026-10-23. Hosted Cloudflare cutover has **not** been executed. For provisioning, activation, reconciliation, replay, and rollback, use the [Cloudflare cutover runbook](../deployment/cloudflare-worker-cutover.md); this page is the day-to-day index, not authority to activate a Worker.
 
 ## Current topology and transition
 
@@ -16,7 +16,7 @@ The Cloudflare Worker defaults to inactive until the cutover gate is completed. 
 
 1. Identify the target environment, deployed API and Worker revisions, and whether its Render legacy worker or Cloudflare Worker is active. Do not infer deployed state from repository configuration.
 2. Check API readiness and the Worker's `/health` response. Query authenticated `/internal/lag` for pending outbox count/age, database `dead_letter` rows, open sessions, and expired unpurged coordinates. Monitor source Queue/DLQ backlog and Worker errors separately; a `published` outbox row means Queue acceptance, not downstream business completion.
-3. If a job is delayed, compare the last successful natural one-, five-, or sixty-minute Cron run with PostgreSQL state and Queue attempts. Check Hyperdrive/Neon connectivity, Queue delivery pause state, and Render post-commit signal warnings. Do not reset rows or replay messages before identifying the affected event IDs and cause.
+3. If a job is delayed, compare the last successful natural one-, five-, or sixty-minute Cron run with PostgreSQL state and Queue attempts. Business-event Queue failure logs include a validated `event_id` when one is available; use it to correlate the durable outbox row and later successful delivery. The logged error is deliberately redacted and may not establish the cause. Check Hyperdrive/Neon connectivity, Queue delivery pause state, and Render post-commit signal warnings. Do not reset rows or replay messages before identifying the affected event IDs and cause.
 4. Confirm user-visible results: one closed attendance session and checkout punch under its original company; no duplicate payroll punch after retry; expired precise coordinates redacted with one retention action; expense approval visible to the authorized manager. Keep tenant and payroll/location data out of ordinary logs.
 
 The `platform.outbox_events` states are `pending`, `retry`, `published`, and `dead_letter`. Database dead-letter rows and Cloudflare DLQ messages are different recovery surfaces. Follow the exact-ID replay procedures in the cutover runbook; never bulk-reset dead-letter rows.

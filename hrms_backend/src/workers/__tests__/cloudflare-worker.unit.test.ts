@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import worker from "../cloudflare-worker.js";
 
 type WorkerEnv = Parameters<typeof worker.fetch>[1];
@@ -62,5 +62,36 @@ describe("Cloudflare Worker cutover gate and schedules", () => {
       { kind: "attendance", referenceIso: "2026-05-20T14:00:00.000Z" },
       { kind: "purge" },
     ]);
+  });
+
+  it("logs only a validated event ID when a business Queue delivery fails", async () => {
+    const { env } = environment(true);
+    const eventId = "678fed23-5690-47d5-8764-ce4b0c04aeb0";
+    const unsafeEventId = "secret=do-not-log";
+    const decisions: string[] = [];
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await worker.queue({ queue: "hrms-business-events", messages: [
+        {
+          body: { kind: "invalid", eventId },
+          ack: () => decisions.push("ack"),
+          retry: () => decisions.push("retry"),
+        },
+        {
+          body: { kind: "invalid", eventId: unsafeEventId },
+          ack: () => decisions.push("ack"),
+          retry: () => decisions.push("retry"),
+        },
+      ] }, env);
+
+      expect(decisions).toEqual(["retry", "retry"]);
+      const entries = errorLog.mock.calls.map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>);
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toMatchObject({ job: "queue", queue: "hrms-business-events", event_id: eventId });
+      expect(entries[1]).not.toHaveProperty("event_id");
+      expect(errorLog.mock.calls.flat().join(" ")).not.toContain(unsafeEventId);
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 });

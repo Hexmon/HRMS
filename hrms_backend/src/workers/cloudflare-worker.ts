@@ -51,6 +51,15 @@ function isEvent(value: unknown): value is { kind: "event"; eventId: string } {
     typeof (value as Record<string, unknown>).eventId === "string");
 }
 
+function safeQueueEventId(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const eventId = (value as Record<string, unknown>).eventId;
+  return typeof eventId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(eventId)
+    ? eventId.toLowerCase()
+    : undefined;
+}
+
 async function withPool<T>(env: Env, action: (pool: Pool) => Promise<T>): Promise<T> {
   const pool = new Pool({ connectionString: env.HYPERDRIVE.connectionString, max: 2 });
   try {
@@ -125,7 +134,15 @@ export default {
           }
           message.ack();
         } catch (error) {
-          console.error(JSON.stringify({ job: "queue", queue: batch.queue, error: safeOutboxLastError(error) }));
+          const eventId = batch.queue === (env.EVENTS_QUEUE_NAME ?? "hrms-business-events")
+            ? safeQueueEventId(message.body)
+            : undefined;
+          console.error(JSON.stringify({
+            job: "queue",
+            queue: batch.queue,
+            ...(eventId ? { event_id: eventId } : {}),
+            error: safeOutboxLastError(error),
+          }));
           message.retry();
         }
       }
