@@ -488,10 +488,11 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AttendanceService(fastify.store).mySummary(
-      request.actor,
-      attendanceQuerySchema.parse(request.query),
-    );
+    const service = new AttendanceService(fastify.store);
+    const query = attendanceQuerySchema.parse(request.query);
+    return fastify.store.kind === "postgres"
+      ? service.mySummaryPostgres(request.actor, query)
+      : service.mySummary(request.actor, query);
   });
 
   fastify.get("/privacy", async (request) => {

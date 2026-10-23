@@ -434,6 +434,7 @@ export class AttendanceCommandService {
     employeeUserId: UUID;
     sessionId: UUID;
     referenceIso: string;
+    trigger?: "api" | "worker";
   }): Promise<AttendanceAutoPunchOutClosure | null> {
     const pool = this.store.pgPool;
     if (!pool) {
@@ -513,7 +514,30 @@ export class AttendanceCommandService {
       if (Date.parse(cutoffIso) > Date.parse(input.referenceIso)) {
         return null;
       }
-      const closeAt = maxIso([
+      // Older read-time auto-checkouts wrote a punch without closing the durable
+      // session. Reuse that evidence when repairing the session, without another punch.
+      const existingCheckout = (
+        await tx.query<{ id: UUID; occurred_at: Date; created_at: Date }>(
+          `SELECT punch.id, punch.occurred_at, punch.created_at
+           FROM attendance.punch_events punch
+           WHERE punch.company_id = $1 AND punch.employee_user_id = $2
+             AND punch.event_type = 'check_out' AND punch.deleted_at IS NULL
+             AND punch.origin = 'system' AND punch.metadata->>'auto_punch_out' = 'true'
+             AND punch.occurred_at >= $4::timestamptz
+             AND punch.occurred_at <= $5::timestamptz
+             AND (punch.session_id = $3 OR (punch.session_id IS NULL AND NOT EXISTS (
+               SELECT 1 FROM attendance.punch_events later_checkin
+               WHERE later_checkin.company_id = $1 AND later_checkin.employee_user_id = $2
+                 AND later_checkin.event_type = 'check_in' AND later_checkin.deleted_at IS NULL
+                 AND later_checkin.occurred_at > $6::timestamptz
+                 AND later_checkin.occurred_at <= punch.occurred_at
+             )))
+           ORDER BY punch.occurred_at, punch.id LIMIT 1`,
+          [input.companyId, input.employeeUserId, session.id,
+            session.last_transition_at, input.referenceIso, session.checked_in_at],
+        )
+      ).rows[0];
+      const closeAt = existingCheckout?.occurred_at.toISOString() ?? maxIso([
         cutoffIso,
         session.last_transition_at,
         activeBreak?.started_at ?? null,
@@ -526,7 +550,7 @@ export class AttendanceCommandService {
         auto_punch_out: true,
         auto_punch_out_time: policy.autoPunchOutTime,
         auto_punch_out_reason: "Configured attendance day-end cutoff",
-        auto_punch_out_trigger: "worker",
+        auto_punch_out_trigger: input.trigger ?? "worker",
       };
       const closableSession = activeBreak
         ? await tx.endBreak({
@@ -550,7 +574,7 @@ export class AttendanceCommandService {
         state: "completed",
         currentSessionId: closed.id,
       });
-      const punchRow = (
+      const punchRow = existingCheckout ?? (
         await tx.insertPunchEvent({
           companyId: input.companyId,
           employeeUserId: input.employeeUserId,
@@ -602,7 +626,7 @@ export class AttendanceCommandService {
           occurredAt: closeAt,
         }),
       );
-      await tx.insertOutboxEvent(
+      if (!existingCheckout) await tx.insertOutboxEvent(
         buildPunchRecordedEvent({
           companyId: input.companyId,
           actorUserId: input.employeeUserId,
@@ -626,7 +650,7 @@ export class AttendanceCommandService {
         first_check_in_at: punchFacts.firstCheckIn.occurred_at,
         last_open_punch_id: punchFacts.lastOpenPunch.id,
         closed_at: closeAt,
-        created_punches: [punch],
+        created_punches: existingCheckout ? [] : [punch],
         day_record:
           day as unknown as AttendanceAutoPunchOutClosure["day_record"],
       };
