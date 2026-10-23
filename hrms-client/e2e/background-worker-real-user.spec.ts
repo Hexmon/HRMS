@@ -236,6 +236,7 @@ test("manual checkout racing the scheduled job leaves one completed session", as
 });
 
 test("manager verifies a submitted expense and sees it in history", async ({
+  browser,
   page,
   request,
 }, testInfo) => {
@@ -306,6 +307,28 @@ test("manager verifies a submitted expense and sees it in history", async ({
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",
   });
+
+  const adminContext = await browser.newContext();
+  try {
+    const adminPage = await adminContext.newPage();
+    await loginInBrowser(adminPage, "admin@example.test");
+    const auditResponse = adminPage.waitForResponse(
+      (response) => response.url().includes("/api/v1/reports/audit") && response.ok(),
+      { timeout: 30_000 },
+    );
+    await adminPage.goto("/reports/audit", { waitUntil: "networkidle" });
+    const audit = await (await auditResponse).json();
+    expect(audit.items?.some((row: { target: string }) => row.target === ticket.id)).toBe(true);
+    await adminPage.getByRole("tab", { name: "Expense Audit" }).click();
+    const expenseAuditPanel = adminPage.getByRole("tabpanel", { name: "Expense Audit" });
+    await expect(expenseAuditPanel.getByRole("cell", { name: ticket.id }).first()).toBeVisible();
+    await testInfo.attach("admin-expense-audit", {
+      body: await adminPage.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
+  } finally {
+    await adminContext.close();
+  }
 });
 
 test("HR deactivates an open-shift employee and admin sees the worker-closed day", async ({
