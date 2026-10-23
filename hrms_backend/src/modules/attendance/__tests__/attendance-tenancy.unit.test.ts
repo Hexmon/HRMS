@@ -23,7 +23,8 @@ describe("AttendanceService company tenancy", () => {
 
   it("passes the resolved company into the PostgreSQL punch command", async () => {
     const { service, employeeA, store } = tenancyStore();
-    store.pgPool = {} as NonNullable<MemoryDataStore["pgPool"]>;
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    store.pgPool = { query } as unknown as NonNullable<MemoryDataStore["pgPool"]>;
     const execute = vi
       .spyOn(AttendanceCommandService.prototype, "execute")
       .mockResolvedValue({ command_id: "command-a" });
@@ -33,6 +34,7 @@ describe("AttendanceService company tenancy", () => {
       idempotency_key: "punch-command-a",
     });
 
+    expect(query).toHaveBeenCalledWith(expect.any(String), [companyAId, employeeA.id]);
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ companyId: companyAId }),
     );

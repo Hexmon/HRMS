@@ -1248,6 +1248,21 @@ export class AttendanceService {
     return this.mySummary(actor, query, policy);
   }
 
+  async mySummaryPostgres(actor: AuthUser, query: AttendancePageQuery) {
+    const context = this.resolveAttendanceCompanyContext(actor, "attendance.my_summary", query.company_id);
+    assertCanUseSelfAttendance(actor);
+    const punches = await this.repository.loadEmployeePunches(context.companyId, actor.id);
+    // Project from committed facts in a request-local snapshot. In particular,
+    // a preview of a due auto-checkout must never create a shared/persisted punch.
+    const snapshot: MemoryDataStore = {
+      ...this.store,
+      kind: "memory",
+      attendancePunches: punches,
+      attendanceDayRecords: this.store.attendanceDayRecords.map((day) => ({ ...day })),
+    };
+    return new AttendanceService(snapshot).mySummaryWithResolvedPolicy(actor, query);
+  }
+
   mySummary(actor: AuthUser, query: AttendancePageQuery, effectivePolicy?: AttendancePunchPolicy) {
     const context = this.resolveAttendanceCompanyContext(
       actor,
@@ -3493,7 +3508,8 @@ export class AttendanceService {
     trigger: "api" | "worker" = "api",
   ): AttendanceAutoPunchOutClosure[] {
     // PostgreSQL attendance is authoritative and closed transactionally by
-    // the scheduled job. A read must never synthesize an uncommitted checkout.
+    // the command path or scheduled job. A read-time punch would be
+    // uncommitted and leave employee_command_states open.
     if (this.store.kind === "postgres") return [];
     const punches = this.store.attendancePunches
       .filter(
@@ -4138,7 +4154,25 @@ export class AttendanceService {
     if (!this.store.pgPool)
       throw conflict("Attendance command service is unavailable.");
     const timeZone = this.timezoneForUser(actor.id, companyId);
-    return new AttendanceCommandService(this.store).execute({
+    const commands = new AttendanceCommandService(this.store);
+    if (input.event_type === AttendancePunchEventTypes.CheckIn) {
+      const open = await this.store.pgPool.query<{ id: UUID }>(
+        `SELECT id FROM attendance.sessions
+         WHERE company_id = $1 AND employee_user_id = $2
+           AND closed_at IS NULL AND deleted_at IS NULL`,
+        [companyId, actor.id],
+      );
+      if (open.rows[0]) {
+        await commands.autoCheckoutOpenSession({
+          companyId,
+          employeeUserId: actor.id,
+          sessionId: open.rows[0].id,
+          referenceIso: input.occurred_at ?? nowIso(),
+          trigger: "api",
+        });
+      }
+    }
+    return commands.execute({
       actor,
       companyId,
       timeZone,

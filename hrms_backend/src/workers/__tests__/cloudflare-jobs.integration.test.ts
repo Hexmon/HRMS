@@ -370,6 +370,10 @@ describe("Cloudflare outbox drain against PostgreSQL", () => {
     const employee = await loginAs(app, "E1");
     const companyId = app.store.userSessionPreferences.find((item) => item.user_id === employee.user.id)?.company_id;
     expect(companyId).toBeTruthy();
+    const company = app.store.companyProfiles.find((item) => item.id === companyId);
+    expect(company).toBeTruthy();
+    company!.working_week = "Mon-Sun";
+    await app.store.persistence!.flushDomain!("platform");
     const before = await app.inject({
       method: "GET", url: "/api/v1/attendance/summary/my", headers: authHeader(employee.token),
     });

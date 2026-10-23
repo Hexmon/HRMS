@@ -153,7 +153,8 @@ export function employeeGeoDecisionDisplay(
     (outcome ? FACTUAL_REASON_CODES[outcome] : "");
   let decision = fallbackDecision;
 
-  if (allowed === false) {
+  // A successful location evaluation cannot override a rejected attendance command.
+  if (fallbackDecision === "rejected" || allowed === false) {
     decision = "rejected";
   } else if (geoPolicy.fallback_used === true || selectedAction === "manual_fallback") {
     decision = "review";

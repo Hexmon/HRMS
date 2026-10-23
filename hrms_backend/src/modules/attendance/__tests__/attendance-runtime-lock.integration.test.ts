@@ -103,6 +103,85 @@ describe("PostgreSQL attendance runtime lock", () => {
     }
   });
 
+  it.each([false, true])("starts a new cycle after an overdue session (legacy checkout: %s)", async (legacyCheckout) => {
+    const employee = await loginAs(app, "E1");
+    const companyId = companyIdFor(app, employee.user.id);
+    const pool = app.store.pgPool!;
+    const session = await pool.query<{ id: string }>(
+      `INSERT INTO attendance.sessions (
+         company_id, employee_user_id, work_date, status, checked_in_at,
+         last_transition_at, work_mode, source, metadata
+       ) VALUES ($1, $2, '2026-05-20', 'working', '2026-05-20T04:00:00Z',
+         '2026-05-20T04:00:00Z', 'office', 'web', '{}'::jsonb) RETURNING id`,
+      [companyId, employee.user.id],
+    );
+    const sessionId = session.rows[0]!.id;
+    await pool.query(
+      `INSERT INTO attendance.employee_command_states
+         (company_id, employee_user_id, state, current_session_id)
+       VALUES ($1, $2, 'working', $3)`,
+      [companyId, employee.user.id, sessionId],
+    );
+    await pool.query(
+      `INSERT INTO attendance.punch_events (
+         company_id, employee_user_id, actor_user_id, event_type, occurred_at,
+         work_mode, source, origin, metadata, session_id
+       ) VALUES ($1, $2, $2, 'check_in', '2026-05-20T04:00:00Z',
+         'office', 'web', 'employee_manual_now', '{}'::jsonb, $3)`,
+      [companyId, employee.user.id, sessionId],
+    );
+    if (legacyCheckout) await pool.query(
+      `INSERT INTO attendance.punch_events (
+         company_id, employee_user_id, actor_user_id, event_type, occurred_at,
+         work_mode, source, origin, metadata
+       ) VALUES ($1, $2, $2, 'check_out', '2026-05-20T18:29:00Z',
+         'office', 'admin', 'system', '{"auto_punch_out":true}'::jsonb)`,
+      [companyId, employee.user.id],
+    );
+    const sharedPunches = structuredClone(app.store.attendancePunches);
+    const summaryBefore = await app.inject({
+      method: "GET", url: "/api/v1/attendance/summary/my", headers: authHeader(employee.token),
+    });
+    expect(summaryBefore.statusCode, summaryBefore.body).toBe(200);
+    expect(summaryBefore.json().today.next_allowed_actions).toEqual(["check_in"]);
+    expect(app.store.attendancePunches).toEqual(sharedPunches);
+    const before = await pool.query<{ count: string }>(
+      "SELECT count(*) FROM attendance.punch_events WHERE company_id=$1 AND employee_user_id=$2",
+      [companyId, employee.user.id],
+    );
+    expect(Number(before.rows[0]!.count)).toBe(legacyCheckout ? 2 : 1);
+
+    const result = await app.inject({
+      method: "POST", url: "/api/v1/attendance/punches",
+      headers: { ...authHeader(employee.token), "idempotency-key": "attendance-overdue-cycle-check-in" },
+      payload: punchPayload,
+    });
+    expect(result.statusCode, result.body).toBe(200);
+    const oldSession = await pool.query<{ status: string; closed_at: Date }>(
+      "SELECT status, closed_at FROM attendance.sessions WHERE id=$1", [sessionId],
+    );
+    expect(oldSession.rows[0]).toEqual({ status: "closed", closed_at: new Date("2026-05-20T18:29:00Z") });
+    const after = await pool.query<{ count: string }>(
+      "SELECT count(*) FROM attendance.punch_events WHERE company_id=$1 AND employee_user_id=$2",
+      [companyId, employee.user.id],
+    );
+    expect(Number(after.rows[0]!.count)).toBe(3);
+    const summaryAfter = await app.inject({
+      method: "GET", url: "/api/v1/attendance/summary/my", headers: authHeader(employee.token),
+    });
+    expect(summaryAfter.statusCode, summaryAfter.body).toBe(200);
+    expect(summaryAfter.json().today.next_allowed_actions).toEqual(["break_start", "check_out"]);
+    expect(summaryAfter.json().today.first_check_in).toBe(result.json().punch.occurred_at);
+    expect(app.store.attendancePunches).toEqual(sharedPunches);
+    const replay = await app.inject({
+      method: "POST", url: "/api/v1/attendance/punches",
+      headers: { ...authHeader(employee.token), "idempotency-key": "attendance-overdue-cycle-check-in" },
+      payload: punchPayload,
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(result.json());
+  });
+
   it("serializes distinct-key concurrent check-ins for one employee", async () => {
     const employee = await loginAs(app, "E1");
     const companyId = companyIdFor(app, employee.user.id);

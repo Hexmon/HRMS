@@ -36,6 +36,31 @@ function dateInTimeZone(value: string, timeZone: string): string {
 export class AttendanceRepository {
   constructor(private readonly store: MemoryDataStore) {}
 
+  async loadEmployeePunches(companyId: UUID, employeeUserId: UUID): Promise<AttendancePunch[]> {
+    if (!this.store.pgPool) throw new Error("PostgreSQL attendance pool is unavailable.");
+    const { rows } = await this.store.pgPool.query<
+      Omit<AttendancePunch, "occurred_at" | "created_at" | "deleted_at"> & {
+        occurred_at: Date;
+        created_at: Date;
+        deleted_at: Date | null;
+      }
+    >(
+      `SELECT id, company_id, employee_user_id, actor_user_id, event_type,
+         occurred_at, work_mode, source, origin, regularization_request_id,
+         metadata, created_at, deleted_at
+       FROM attendance.punch_events
+       WHERE company_id = $1 AND employee_user_id = $2 AND deleted_at IS NULL
+       ORDER BY occurred_at, id`,
+      [companyId, employeeUserId],
+    );
+    return rows.map((row) => ({
+      ...row,
+      occurred_at: row.occurred_at.toISOString(),
+      created_at: row.created_at.toISOString(),
+      deleted_at: row.deleted_at?.toISOString() ?? null,
+    }));
+  }
+
   addPunch(
     input: Omit<AttendancePunch, "id" | "created_at" | "deleted_at" | "regularization_request_id"> & {
       regularization_request_id?: UUID | null;

@@ -508,8 +508,15 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const query = attendanceQuerySchema.parse(request.query);
-    return (await readService(request.actor, query, "attendance.my_summary", [request.actor.id]))
-      .mySummaryWithResolvedPolicy(request.actor, query);
+    const service = await readService(
+      request.actor,
+      query,
+      "attendance.my_summary",
+      [request.actor.id],
+    );
+    return fastify.store.kind === "postgres"
+      ? service.mySummaryPostgres(request.actor, query)
+      : service.mySummaryWithResolvedPolicy(request.actor, query);
   });
 
   fastify.get("/privacy", async (request) => {
