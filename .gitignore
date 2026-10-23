@@ -61,6 +61,7 @@ hrms_backend/backups/
 # Frontend hosting local state
 .vercel/
 hrms-client/.vercel/
+.wrangler/
 .dev.vars
 hrms-client/.dev.vars
 

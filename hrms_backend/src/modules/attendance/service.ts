@@ -3474,6 +3474,9 @@ export class AttendanceService {
     referenceIso = nowIso(),
     trigger: "api" | "worker" = "api",
   ): AttendanceAutoPunchOutClosure[] {
+    // PostgreSQL attendance is authoritative and closed transactionally by
+    // the scheduled job. A read must never synthesize an uncommitted checkout.
+    if (this.store.kind === "postgres") return [];
     const punches = this.store.attendancePunches
       .filter(
         (punch) =>

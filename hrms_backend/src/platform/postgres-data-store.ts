@@ -450,6 +450,22 @@ class PostgresPersistence {
     private readonly store: DataStore,
   ) {}
 
+  async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[] }): Promise<DataStore> {
+    const client = await this.pool.connect();
+    try {
+      // Request-local data prevents an external Worker commit from being hidden
+      // by this API process's hydrated startup snapshot. Never mutate the
+      // shared store (or reload another request's unflushed changes).
+      return {
+        ...this.store,
+        attendancePunches: await this.loadAttendancePunches(client, scope),
+        attendanceDayRecords: await this.loadAttendanceDayRecords(client, scope),
+      };
+    } finally {
+      client.release();
+    }
+  }
+
   async reload(): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -2113,10 +2129,16 @@ class PostgresPersistence {
 
   private async loadAttendancePunches(
     client: PoolClient,
+    scope?: { companyId: UUID; employeeUserIds?: UUID[] },
   ): Promise<AttendancePunch[]> {
-    const { rows } = await client.query(
-      "SELECT * FROM attendance.punch_events ORDER BY occurred_at, id",
-    );
+    const { rows } = scope
+      ? await client.query(
+          `SELECT * FROM attendance.punch_events WHERE company_id = $1
+           AND ($2::uuid[] IS NULL OR employee_user_id = ANY($2::uuid[]))
+           ORDER BY occurred_at, id`,
+          [scope.companyId, scope.employeeUserIds ?? null],
+        )
+      : await client.query("SELECT * FROM attendance.punch_events ORDER BY occurred_at, id");
     return rows.map((row) => ({
       id: row.id,
       company_id: row.company_id,
@@ -2136,10 +2158,16 @@ class PostgresPersistence {
 
   private async loadAttendanceDayRecords(
     client: PoolClient,
+    scope?: { companyId: UUID; employeeUserIds?: UUID[] },
   ): Promise<AttendanceDayRecord[]> {
-    const { rows } = await client.query(
-      "SELECT * FROM attendance.daily_records ORDER BY work_date, employee_user_id",
-    );
+    const { rows } = scope
+      ? await client.query(
+          `SELECT * FROM attendance.daily_records WHERE company_id = $1
+           AND ($2::uuid[] IS NULL OR employee_user_id = ANY($2::uuid[]))
+           ORDER BY work_date, employee_user_id`,
+          [scope.companyId, scope.employeeUserIds ?? null],
+        )
+      : await client.query("SELECT * FROM attendance.daily_records ORDER BY work_date, employee_user_id");
     return rows.map((row) => ({
       id: row.id,
       company_id: row.company_id,
@@ -3286,19 +3314,19 @@ class PostgresPersistence {
   ): Promise<void> {
     for (const event of this.store.outbox) {
       if (aggregateIds && !aggregateIds.has(event.aggregate_id)) continue;
-      await client.query(
+      const inserted = await client.query<{ id: string }>(
         `INSERT INTO platform.outbox_events (
-          id, event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key,
+          event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key,
           status, retry_count, available_at, created_at, published_at, failed_at, last_error
         )
-        OVERRIDING SYSTEM VALUE
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14)
-        ON CONFLICT (id) DO UPDATE
-        SET status = EXCLUDED.status, retry_count = EXCLUDED.retry_count,
-            available_at = EXCLUDED.available_at, published_at = EXCLUDED.published_at,
-            failed_at = EXCLUDED.failed_at, last_error = EXCLUDED.last_error`,
+        SELECT $1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13
+        WHERE NOT EXISTS (SELECT 1 FROM platform.outbox_events WHERE event_id = $1)
+        -- The API's hydrated outbox snapshot can be older than a separately
+        -- running publisher. Only insert new events here; delivery state is
+        -- owned by the publisher's direct PostgreSQL transaction.
+        ON CONFLICT (event_id) DO NOTHING
+        RETURNING id`,
         [
-          event.id,
           event.event_id,
           event.aggregate_type,
           event.aggregate_id,
@@ -3314,14 +3342,18 @@ class PostgresPersistence {
           event.last_error,
         ],
       );
+      const persistedId = inserted.rows[0]?.id ?? (
+        await client.query<{ id: string }>(
+          "SELECT id FROM platform.outbox_events WHERE event_id = $1",
+          [event.event_id],
+        )
+      ).rows[0]?.id;
+      if (!persistedId) {
+        throw new Error("Outbox event was not persisted.");
+      }
+      event.id = Number(persistedId);
+      this.store.nextOutboxId = Math.max(this.store.nextOutboxId, event.id + 1);
     }
-    await client.query(
-      `SELECT setval(
-         pg_get_serial_sequence('platform.outbox_events', 'id'),
-         COALESCE((SELECT max(id) FROM platform.outbox_events), 1),
-         EXISTS (SELECT 1 FROM platform.outbox_events)
-       )`,
-    );
   }
 
   private async flushExpenses(client: PoolClient): Promise<void> {
@@ -4333,16 +4365,10 @@ class PostgresPersistence {
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
         ON CONFLICT (id) DO UPDATE
-        SET company_id = EXCLUDED.company_id,
-            event_type = EXCLUDED.event_type,
-            occurred_at = EXCLUDED.occurred_at,
-            work_mode = EXCLUDED.work_mode,
-             source = EXCLUDED.source,
-             actor_user_id = EXCLUDED.actor_user_id,
-             origin = EXCLUDED.origin,
-             regularization_request_id = EXCLUDED.regularization_request_id,
-            metadata = EXCLUDED.metadata,
-            deleted_at = EXCLUDED.deleted_at`,
+        -- Punch facts are immutable. A stale API snapshot must not replace
+        -- a direct-SQL command or worker result. Preserve soft deletion only.
+        SET deleted_at = EXCLUDED.deleted_at
+        WHERE attendance.punch_events.deleted_at IS NULL AND EXCLUDED.deleted_at IS NOT NULL`,
         [
           punch.id,
           punch.company_id,
@@ -4400,7 +4426,8 @@ class PostgresPersistence {
             regularization_status = EXCLUDED.regularization_status,
             version = EXCLUDED.version,
             updated_at = EXCLUDED.updated_at,
-            deleted_at = EXCLUDED.deleted_at`,
+            deleted_at = EXCLUDED.deleted_at
+        WHERE attendance.daily_records.version < EXCLUDED.version`,
         [
           day.id,
           day.company_id,

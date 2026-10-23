@@ -6,6 +6,7 @@ import { PostgresAttendanceCommandRepository } from "../../modules/attendance/co
 import { setAttendanceObservabilityTestSink } from "../../modules/attendance/observability.js";
 import { resolveEffectiveAttendancePolicy } from "../../modules/attendance/policy-resolver.js";
 import { AttendanceAutoPunchoutWorker } from "../attendance-auto-punchout-worker.js";
+import { sweepAttendance, type JobMessage, type JobQueue } from "../cloudflare-jobs.js";
 
 type TestApp = Awaited<ReturnType<typeof buildRealApp>>;
 
@@ -222,6 +223,43 @@ describe("AttendanceAutoPunchoutWorker PostgreSQL DB-first flow", () => {
       else process.env.DATABASE_URL = originalDatabaseUrl;
     }
   });
+
+  it("Cloudflare sweep closes one bounded batch and resumes without duplicate checkout", async () => {
+    const first = await loginAs(app, "E1");
+    const second = await loginAs(app, "E2");
+    const companyId = employeeCompanyId(app, first.user.id);
+    expect(employeeCompanyId(app, second.user.id)).toBe(companyId);
+    for (const employee of [first, second]) {
+      await createAttendancePolicy(app, {
+        companyId,
+        employeeUserId: employee.user.id,
+        name: `cloudflare_due_${employee.user.id}`,
+        autoPunchOutEnabled: true,
+        autoPunchOutTime: "18:30",
+      });
+      await createOpenSession(app, { companyId, employeeUserId: employee.user.id });
+    }
+    const queued: JobMessage[] = [];
+    const jobs: JobQueue = { send: async (message) => { if (message.kind !== "event") queued.push(message); } };
+    const firstBatch = await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance", referenceIso: "2026-05-20T14:00:00.000Z",
+    }, 1);
+    expect(firstBatch).toEqual({ scanned: 1, closed: 1, failed: 0 });
+    expect(queued).toContainEqual({ kind: "outbox" });
+    const continuation = queued.find((item) => item.kind === "attendance");
+    expect(continuation?.kind).toBe("attendance");
+    if (!continuation || continuation.kind !== "attendance") throw new Error("continuation missing");
+    const secondBatch = await sweepAttendance(app.store.pgPool!, jobs, continuation, 1);
+    expect(secondBatch).toEqual({ scanned: 1, closed: 1, failed: 0 });
+    const duplicate = await sweepAttendance(app.store.pgPool!, jobs, continuation, 1);
+    expect(duplicate.closed).toBe(0);
+    const checkouts = await app.store.pgPool!.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM attendance.punch_events
+       WHERE company_id = $1 AND event_type = 'check_out' AND origin = 'system'`,
+      [companyId],
+    );
+    expect(Number(checkouts.rows[0]?.count)).toBe(2);
+  }, 30_000);
 
   it("closes an eligible authoritative session and writes projection and outbox in one command transaction", async () => {
     const decisions: unknown[] = [];

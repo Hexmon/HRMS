@@ -330,6 +330,26 @@ function requireAdminGeoContext(
 }
 
 export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
+  const readService = async (
+    actor: AuthUser,
+    query: z.infer<typeof attendanceQuerySchema>,
+    operation: string,
+    employeeUserIds?: string[],
+  ): Promise<AttendanceService> => {
+    if (!fastify.store.persistence?.attendanceReadStore) {
+      return new AttendanceService(fastify.store);
+    }
+    const context = resolveActiveCompanyMembershipContext(fastify.store, {
+      userId: actor.id,
+      requestedCompanyId: query.company_id,
+      operation,
+      requireActiveEmployment: true,
+    });
+    return new AttendanceService(await fastify.store.persistence.attendanceReadStore({
+      companyId: context.companyId,
+      employeeUserIds,
+    }));
+  };
   const withReplayHeader = (
     reply: { header: (name: string, value: string) => unknown },
     response: Record<string, unknown>,
@@ -478,20 +498,18 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AttendanceService(fastify.store).listMyPunches(
-      request.actor,
-      attendanceQuerySchema.parse(request.query),
-    );
+    const query = attendanceQuerySchema.parse(request.query);
+    return (await readService(request.actor, query, "attendance.list_my_punches", [request.actor.id]))
+      .listMyPunches(request.actor, query);
   });
 
   fastify.get("/summary/my", async (request) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AttendanceService(fastify.store).mySummary(
-      request.actor,
-      attendanceQuerySchema.parse(request.query),
-    );
+    const query = attendanceQuerySchema.parse(request.query);
+    return (await readService(request.actor, query, "attendance.my_summary", [request.actor.id]))
+      .mySummary(request.actor, query);
   });
 
   fastify.get("/privacy", async (request) => {
@@ -505,30 +523,27 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AttendanceService(fastify.store).teamSummary(
-      request.actor,
-      attendanceQuerySchema.parse(request.query),
-    );
+    const query = attendanceQuerySchema.parse(request.query);
+    return (await readService(request.actor, query, "attendance.team_summary"))
+      .teamSummary(request.actor, query);
   });
 
   fastify.get("/calendar/monthly", async (request) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AttendanceService(fastify.store).monthlyCalendar(
-      request.actor,
-      attendanceQuerySchema.parse(request.query),
-    );
+    const query = attendanceQuerySchema.parse(request.query);
+    return (await readService(request.actor, query, "attendance.monthly_calendar", [query.user_id ?? request.actor.id]))
+      .monthlyCalendar(request.actor, query);
   });
 
   fastify.get("/calendar/daily", async (request) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AttendanceService(fastify.store).dailyCalendarWithSelfEvidence(
-      request.actor,
-      attendanceQuerySchema.parse(request.query),
-    );
+    const query = attendanceQuerySchema.parse(request.query);
+    return (await readService(request.actor, query, "attendance.daily_calendar"))
+      .dailyCalendarWithSelfEvidence(request.actor, query);
   });
 
   fastify.post("/regularizations", async (request) => {

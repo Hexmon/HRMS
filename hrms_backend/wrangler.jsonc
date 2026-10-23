@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hawkaii-hrms-background",
+  "main": "src/workers/cloudflare-worker.ts",
+  "compatibility_date": "2026-10-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "triggers": {
+    "crons": ["* * * * *", "*/5 * * * *", "0 * * * *"]
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "JOBS", "queue": "hrms-background-jobs" },
+      { "binding": "EVENTS", "queue": "hrms-business-events" }
+    ],
+    "consumers": [
+      { "queue": "hrms-background-jobs", "max_batch_size": 5, "max_retries": 5, "dead_letter_queue": "hrms-background-jobs-dlq" },
+      { "queue": "hrms-business-events", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "hrms-business-events-dlq" }
+    ]
+  },
+  "observability": { "enabled": true }
+}
