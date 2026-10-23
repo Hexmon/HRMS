@@ -7,6 +7,7 @@ import {
   type AuthUser,
 } from "#shared";
 import { unauthorized } from "../../platform/errors.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { ReportService } from "./service.js";
 import { AttendanceReportingEvidenceCategoryValues } from "../attendance/reporting-evidence.js";
 import { AttendanceReportSourceCategoryValues } from "../attendance/reporting-projection.js";
@@ -138,7 +139,16 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/attendance/summary", async (request) => {
     const actor = withActor(request);
-    return new ReportService(fastify.store).attendanceSummary(actor, reportSummaryQuerySchema.parse(request.query));
+    const query = reportSummaryQuerySchema.parse(request.query);
+    const company = resolveActiveCompanyMembershipContext(fastify.store, {
+      userId: actor.id,
+      operation: "reports.attendance.summary",
+      requireActiveEmployment: true,
+    });
+    const store = fastify.store.persistence?.attendanceReadStore
+      ? await fastify.store.persistence.attendanceReadStore({ companyId: company.companyId })
+      : fastify.store;
+    return new ReportService(store).attendanceSummary(actor, query);
   });
 
   fastify.get("/leave-wfh/summary", async (request) => {
@@ -173,17 +183,31 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/exports", async (request) => {
     const actor = withActor(request);
-    return new ReportService(fastify.store).listExports(actor, reportSummaryQuerySchema.parse(request.query));
+    const companyId = fastify.store.userSessionPreferences.find(
+      (preference) => preference.user_id === actor.id,
+    )?.company_id;
+    const store = fastify.store.persistence?.reportExportReadStore
+      ? await fastify.store.persistence.reportExportReadStore({ companyId: companyId ?? undefined })
+      : fastify.store;
+    return new ReportService(store).listExports(actor, reportSummaryQuerySchema.parse(request.query));
   });
 
   fastify.get("/exports/:id", async (request) => {
     const actor = withActor(request);
     const params = idParamSchema.parse(request.params);
-    return new ReportService(fastify.store).getExport(actor, params.id);
+    const store = fastify.store.persistence?.reportExportReadStore
+      ? await fastify.store.persistence.reportExportReadStore({ exportId: params.id })
+      : fastify.store;
+    return new ReportService(store).getExport(actor, params.id);
   });
 
   fastify.post("/exports", async (request) => {
     const actor = withActor(request);
+    const company = resolveActiveCompanyMembershipContext(fastify.store, {
+      userId: actor.id,
+      operation: "reports.exports.create",
+      requireActiveEmployment: true,
+    });
     const body = z
       .object({
         format: z.enum(["csv", "xlsx"]).default("csv"),
@@ -191,6 +215,10 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
         filters: z.record(z.string(), z.unknown()).default({})
       })
       .parse(request.body ?? {});
-    return new ReportService(fastify.store).createExport(actor, body);
+    const attendanceExport = ["attendance", "attendance/summary"].includes(body.report_type.trim().toLowerCase());
+    const store = attendanceExport && fastify.store.persistence?.attendanceReadStore
+      ? await fastify.store.persistence.attendanceReadStore({ companyId: company.companyId })
+      : fastify.store;
+    return new ReportService(store).createExport(actor, body);
   });
 };

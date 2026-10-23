@@ -1,5 +1,7 @@
 # Rollback Runbook
 
+For the background-worker migration, use [Cloudflare worker cutover and rollback](cloudflare-worker-cutover.md). Restoring the old Render worker is safe only while Redis Streams remain available; do not run both publishers indefinitely.
+
 ## Backend
 
 1. Identify the failed environment: hosted dev, QA, or production.

@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { drainOutbox, purgeCoordinates, readPublishedEvent, sweepAttendance, type JobMessage, type JobQueue } from "./cloudflare-jobs.js";
+import { drainOutbox, purgeCoordinates, readOperationalLag, readPublishedEvent, sweepAttendance, type JobMessage, type JobQueue } from "./cloudflare-jobs.js";
 import { safeOutboxLastError } from "./safe-error.js";
 
 interface Env {
@@ -7,12 +7,15 @@ interface Env {
   JOBS: JobQueue;
   EVENTS: JobQueue;
   OUTBOX_SIGNAL_TOKEN: string;
+  JOBS_QUEUE_NAME?: string;
+  EVENTS_QUEUE_NAME?: string;
+  WORKER_ACTIVE?: string;
 }
 
 interface QueueMessage {
   body: unknown;
   ack(): void;
-  retry(): void;
+  retry(options?: { delaySeconds?: number }): void;
 }
 
 interface QueueBatch {
@@ -23,6 +26,10 @@ interface QueueBatch {
 interface ScheduledController {
   cron: string;
   scheduledTime: number;
+}
+
+function isActive(env: Env): boolean {
+  return env.WORKER_ACTIVE === "true";
 }
 
 function isJob(value: unknown): value is JobMessage {
@@ -57,20 +64,29 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
-      return Response.json({ status: "ok" });
+      return Response.json({ status: "ok", active: isActive(env) });
     }
-    if (request.method !== "POST" || url.pathname !== "/internal/outbox-signal") {
+    const isSignal = request.method === "POST" && url.pathname === "/internal/outbox-signal";
+    const isLag = request.method === "GET" && url.pathname === "/internal/lag";
+    if (!isSignal && !isLag) {
       return new Response("Not found", { status: 404 });
     }
     const supplied = request.headers.get("authorization");
     if (!env.OUTBOX_SIGNAL_TOKEN || supplied !== `Bearer ${env.OUTBOX_SIGNAL_TOKEN}`) {
       return new Response("Unauthorized", { status: 401 });
     }
+    if (isLag) {
+      return Response.json(await withPool(env, readOperationalLag));
+    }
+    if (!isActive(env)) {
+      return new Response("Worker inactive during staged cutover", { status: 503 });
+    }
     await env.JOBS.send({ kind: "outbox" });
     return new Response(null, { status: 202 });
   },
 
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    if (!isActive(env)) return;
     const time = new Date(controller.scheduledTime).toISOString();
     if (controller.cron === "* * * * *") await env.JOBS.send({ kind: "outbox" });
     if (controller.cron === "*/5 * * * *") await env.JOBS.send({ kind: "attendance", referenceIso: time });
@@ -78,10 +94,17 @@ export default {
   },
 
   async queue(batch: QueueBatch, env: Env): Promise<void> {
+    if (!isActive(env)) {
+      // Inactive deployments should normally have paused Queue delivery. If
+      // one arrives during a rollback race, defer it instead of rapidly
+      // exhausting its retry budget and moving it to the DLQ.
+      for (const message of batch.messages) message.retry({ delaySeconds: 3600 });
+      return;
+    }
     await withPool(env, async (pool) => {
       for (const message of batch.messages) {
         try {
-          if (batch.queue === "hrms-background-jobs") {
+          if (batch.queue === (env.JOBS_QUEUE_NAME ?? "hrms-background-jobs")) {
             if (!isJob(message.body)) throw new Error("invalid job message");
             const job = message.body;
             const result = job.kind === "outbox"
@@ -90,7 +113,7 @@ export default {
                 ? await sweepAttendance(pool, env.JOBS, job)
                 : await purgeCoordinates(pool, env.JOBS);
             console.log(JSON.stringify({ job: job.kind, result }));
-          } else if (batch.queue === "hrms-business-events") {
+          } else if (batch.queue === (env.EVENTS_QUEUE_NAME ?? "hrms-business-events")) {
             if (!isEvent(message.body)) throw new Error("invalid event message");
             const event = await readPublishedEvent(pool, message.body.eventId);
             if (!event) throw new Error("published event not yet visible");

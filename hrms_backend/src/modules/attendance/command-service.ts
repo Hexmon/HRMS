@@ -35,6 +35,7 @@ import {
   buildRegularizationDecisionEvent,
 } from "./events.js";
 import {
+  normalizeAttendancePolicyConfig,
   resolveCoordinateRetention,
   type EffectiveAttendancePolicy,
 } from "./policy-config.js";
@@ -478,22 +479,25 @@ export class AttendanceCommandService {
       ) {
         return null;
       }
+      // Historical open work must still be settled after deactivation; the
+      // company timezone and check-in-time policy remain the source of truth.
       const company = (
         await tx.query<{
           timezone: string | null;
         }>(
           `SELECT timezone
          FROM platform.company_profiles
-         WHERE id = $1 AND status = 'active'`,
+         WHERE id = $1`,
           [input.companyId],
         )
       ).rows[0];
       if (!company) return null;
       const timeZone = company.timezone ?? "Asia/Kolkata";
-      const policy = await resolveEffectiveAttendancePolicy(tx, {
+      const { policy, source: policySource } = await resolveAutoCheckoutPolicy(tx, {
         companyId: input.companyId,
-        subjectEmployeeUserId: input.employeeUserId,
-        asOf: session.checked_in_at,
+        employeeUserId: input.employeeUserId,
+        sessionId: session.id,
+        checkedInAt: session.checked_in_at,
       });
       if (!policy.autoPunchOutEnabled) return null;
       const punchFacts = await autoCheckoutClosurePunchFacts(tx, {
@@ -527,6 +531,7 @@ export class AttendanceCommandService {
         auto_punch_out_time: policy.autoPunchOutTime,
         auto_punch_out_reason: "Configured attendance day-end cutoff",
         auto_punch_out_trigger: "worker",
+        auto_punch_out_policy_source: policySource,
       };
       const closableSession = activeBreak
         ? await tx.endBreak({
@@ -590,6 +595,7 @@ export class AttendanceCommandService {
         policy.graceMinutes,
         timeZone,
         closeAt,
+        true,
       );
       await tx.insertOutboxEvent(
         buildMissingCheckoutDetectedEvent({
@@ -3362,6 +3368,58 @@ function dateInTimeZone(value: string, timeZone: string): string {
   return `${data.year}-${data.month}-${data.day}`;
 }
 
+async function resolveAutoCheckoutPolicy(
+  tx: AttendanceCommandTransactionRepository,
+  input: { companyId: UUID; employeeUserId: UUID; sessionId: UUID; checkedInAt: string },
+): Promise<{
+  policy: Pick<EffectiveAttendancePolicy, "autoPunchOutEnabled" | "autoPunchOutTime" | "graceMinutes">;
+  source: "check_in_snapshot" | "historical_fallback";
+}> {
+  // The check-in decision is the authoritative policy for this shift. It
+  // survives later policy edits, department changes and company transfers.
+  const decision = (await tx.query<{ policy_snapshot: Record<string, unknown> }>(
+    `SELECT decision.policy_snapshot
+     FROM attendance.punch_events punch
+     JOIN attendance.command_decisions decision ON decision.id = punch.decision_id
+     WHERE punch.company_id = $1 AND punch.employee_user_id = $2
+       AND punch.session_id = $3 AND punch.event_type = 'check_in'
+       AND punch.deleted_at IS NULL AND decision.outcome = 'allowed'
+     ORDER BY punch.occurred_at, punch.id LIMIT 1`,
+    [input.companyId, input.employeeUserId, input.sessionId],
+  )).rows[0];
+  if (decision) {
+    const snapshot = decision.policy_snapshot;
+    const config = snapshot?.config;
+    if (
+      snapshot?.schemaVersion !== 1 || snapshot.policyKey !== "attendance" ||
+      !config || typeof config !== "object" || Array.isArray(config) ||
+      typeof (config as Record<string, unknown>).autoPunchOutEnabled !== "boolean" ||
+      typeof (config as Record<string, unknown>).autoPunchOutTime !== "string" ||
+      typeof (config as Record<string, unknown>).graceMinutes !== "number"
+    ) {
+      throw new Error("Historical attendance check-in policy snapshot is invalid.");
+    }
+    return {
+      policy: normalizeAttendancePolicyConfig(config as Record<string, unknown>),
+      source: "check_in_snapshot",
+    };
+  }
+
+  // Imported/pre-command sessions may have no check-in decision. Resolve the
+  // original company's as-of policy even after transfer or soft deletion;
+  // the locked open session is the authority, not today's membership. The
+  // punch metadata marks this lower-fidelity path for an HR audit.
+  return {
+    policy: await resolveEffectiveAttendancePolicy(tx, {
+      companyId: input.companyId,
+      subjectEmployeeUserId: input.employeeUserId,
+      asOf: input.checkedInAt,
+      allowHistoricalSubject: true,
+    }),
+    source: "historical_fallback",
+  };
+}
+
 function autoCheckoutCutoffIso(
   workDate: string,
   checkedInAt: string,
@@ -3530,6 +3588,7 @@ export async function projectDay(
   graceMinutes: number,
   timeZone: string,
   asOf: string,
+  allowHistoricalSubject = false,
 ): Promise<Record<string, unknown>> {
   const sessions = (
     await tx.query<{
@@ -3616,6 +3675,7 @@ export async function projectDay(
     timeZone,
     asOf,
     workMode,
+    allowHistoricalSubject,
   );
   const projection = projectAttendanceDay({
     companyId,
@@ -3759,6 +3819,7 @@ async function attendanceProjectionContext(
   timeZone: string,
   asOf: string,
   workMode: AttendanceDayRecord["work_mode"],
+  allowHistoricalSubject = false,
 ): Promise<{
   dayClassification: AttendanceDayRecord["day_classification"];
   shift: ResolvedEmployeeShift;
@@ -3774,14 +3835,14 @@ async function attendanceProjectionContext(
       ShiftCompanyInput & { working_week: string } & Record<string, unknown>
     >(
       `SELECT id, timezone, work_hours_per_day, working_week
-     FROM platform.company_profiles WHERE id = $1 AND status = 'active'`,
-      [companyId],
+     FROM platform.company_profiles WHERE id = $1 AND ($2::boolean OR status = 'active')`,
+      [companyId, allowHistoricalSubject],
     )
   ).rows[0];
   const employee = (
     await tx.query<ShiftEmployeeInput & Record<string, unknown>>(
-      `SELECT id, timezone FROM core.users WHERE id = $1 AND deleted_at IS NULL`,
-      [employeeUserId],
+      `SELECT id, timezone FROM core.users WHERE id = $1 AND ($2::boolean OR deleted_at IS NULL)`,
+      [employeeUserId, allowHistoricalSubject],
     )
   ).rows[0];
   if (!company || !employee)

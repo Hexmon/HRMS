@@ -868,6 +868,7 @@ export class ReportService {
       eventType: "reports.export.requested",
       payload: {
         actor_user_id: actor.id,
+        company_id: this.store.userSessionPreferences.find((preference) => preference.user_id === actor.id)?.company_id ?? null,
         report_type: input.report_type,
         format: input.format,
         filters: input.filters,
@@ -1055,6 +1056,12 @@ export class ReportService {
   }
 
   private canSeeExport(actor: AuthUser, event: OutboxEvent): boolean {
+    const actorCompanyId = this.store.userSessionPreferences.find((preference) => preference.user_id === actor.id)?.company_id;
+    // Never infer a legacy export's historical company from its creator's
+    // *current* preference: an employee may have moved between companies.
+    // Old events need a reviewed backfill before their metadata can be read.
+    const eventCompanyId = typeof event.payload.company_id === "string" ? event.payload.company_id : null;
+    if (!actorCompanyId || !eventCompanyId || actorCompanyId !== eventCompanyId) return false;
     if (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor)) return true;
     return event.payload.actor_user_id === actor.id;
   }

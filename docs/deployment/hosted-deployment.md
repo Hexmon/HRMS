@@ -4,9 +4,9 @@ This guide describes the recommended hosted deployment shape for Hawkaii HRMS us
 
 - Frontend: Vercel for the TanStack Start frontend, using Nitro build output.
 - Backend: Render Docker web service.
-- Worker: Render Docker background worker.
+- Worker: transitional Render polling worker, to be replaced by Cloudflare Queues/Cron after the gated cutover in [cloudflare-worker-cutover.md](cloudflare-worker-cutover.md).
 - Database: Neon Postgres.
-- Session/rate/outbox state: Upstash Redis (Valkey/Redis TCP protocol).
+- Session/rate state: Upstash Redis (Valkey/Redis TCP protocol); legacy outbox Streams are retained only until the Cloudflare cutover.
 - Media storage: Cloudinary.
 - Transactional email: Resend.
 

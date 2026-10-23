@@ -247,7 +247,10 @@ function asIsoOrNull(value: unknown): string | null {
 
 function asDate(value: unknown): string {
   if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
+    // node-postgres parses SQL DATE as midnight in the process timezone.
+    // Converting that instant to UTC shifts the calendar date backwards in
+    // positive-offset zones such as Asia/Kolkata.
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
   }
   return String(value).slice(0, 10);
 }
@@ -450,7 +453,7 @@ class PostgresPersistence {
     private readonly store: DataStore,
   ) {}
 
-  async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[] }): Promise<DataStore> {
+  async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore> {
     const client = await this.pool.connect();
     try {
       // Request-local data prevents an external Worker commit from being hidden
@@ -460,7 +463,29 @@ class PostgresPersistence {
         ...this.store,
         attendancePunches: await this.loadAttendancePunches(client, scope),
         attendanceDayRecords: await this.loadAttendanceDayRecords(client, scope),
+        outbox: scope.includePendingOutbox ? await this.loadOutbox(client, "pending") : this.store.outbox,
       };
+    } finally {
+      client.release();
+    }
+  }
+
+  async reportExportReadStore(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore> {
+    const client = await this.pool.connect();
+    try {
+      if (!scope.companyId && !scope.exportId) return { ...this.store, outbox: [] };
+      const { rows } = scope.exportId
+        ? await client.query(
+            `SELECT * FROM platform.outbox_events WHERE event_type = 'reports.export.requested'
+             AND (aggregate_id = $1 OR event_id = $1)`,
+            [scope.exportId],
+          )
+        : await client.query(
+            `SELECT * FROM platform.outbox_events WHERE event_type = 'reports.export.requested'
+             AND payload->>'company_id' = $1 ORDER BY id`,
+            [scope.companyId],
+          );
+      return { ...this.store, outbox: rows.map((row) => this.mapOutboxRow(row)) };
     } finally {
       client.release();
     }
@@ -1592,11 +1617,18 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadOutbox(client: PoolClient): Promise<OutboxEvent[]> {
+  private async loadOutbox(client: PoolClient, filter: "all" | "pending" = "all"): Promise<OutboxEvent[]> {
+    const condition = filter === "pending"
+      ? "WHERE status IN ('pending', 'retry')"
+      : "";
     const { rows } = await client.query(
-      "SELECT * FROM platform.outbox_events ORDER BY id",
+      `SELECT * FROM platform.outbox_events ${condition} ORDER BY id`,
     );
-    return rows.map((row) => ({
+    return rows.map((row) => this.mapOutboxRow(row));
+  }
+
+  private mapOutboxRow(row: OutboxEvent & Record<string, unknown>): OutboxEvent {
+    return {
       id: Number(row.id),
       event_id: row.event_id,
       aggregate_type: row.aggregate_type,
@@ -1611,7 +1643,7 @@ class PostgresPersistence {
       published_at: asIsoOrNull(row.published_at),
       failed_at: asIsoOrNull(row.failed_at),
       last_error: row.last_error,
-    }));
+    };
   }
 
   private async loadAssets(client: PoolClient): Promise<AssetRecord[]> {
@@ -2162,12 +2194,12 @@ class PostgresPersistence {
   ): Promise<AttendanceDayRecord[]> {
     const { rows } = scope
       ? await client.query(
-          `SELECT * FROM attendance.daily_records WHERE company_id = $1
-           AND ($2::uuid[] IS NULL OR employee_user_id = ANY($2::uuid[]))
-           ORDER BY work_date, employee_user_id`,
+          `SELECT day.*, day.work_date::text AS work_date FROM attendance.daily_records day WHERE day.company_id = $1
+           AND ($2::uuid[] IS NULL OR day.employee_user_id = ANY($2::uuid[]))
+           ORDER BY day.work_date, day.employee_user_id`,
           [scope.companyId, scope.employeeUserIds ?? null],
         )
-      : await client.query("SELECT * FROM attendance.daily_records ORDER BY work_date, employee_user_id");
+      : await client.query("SELECT day.*, day.work_date::text AS work_date FROM attendance.daily_records day ORDER BY day.work_date, day.employee_user_id");
     return rows.map((row) => ({
       id: row.id,
       company_id: row.company_id,

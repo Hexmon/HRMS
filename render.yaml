@@ -1,6 +1,8 @@
 # Render blueprint for the Hawkaii HRMS backend.
 #
-# This blueprint provisions the backend API and outbox worker. PostgreSQL is
+# This blueprint provisions the backend API and legacy polling worker. Do not
+# remove/disable the worker until docs/deployment/cloudflare-worker-cutover.md
+# has been executed and reconciled for the target environment. PostgreSQL is
 # hosted in Neon and Redis/Valkey is hosted in Upstash, so set DATABASE_URL and
 # the Upstash TCP connection string (VALKEY_URL) as Render secrets.
 

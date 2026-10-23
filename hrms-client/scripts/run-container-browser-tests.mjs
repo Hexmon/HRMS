@@ -9,16 +9,19 @@ const upstreamPort = Number(process.env.E2E_FRONTEND_PORT ?? 5173);
 const localPort = Number(process.env.E2E_LOCAL_PROXY_PORT ?? 5173);
 function proxyServer(remotePort, hostHeader) {
   return http.createServer((request, response) => {
-    const upstream = http.request({
-      hostname: upstreamHost,
-      port: remotePort,
-      path: request.url,
-      method: request.method,
-      headers: { ...request.headers, host: hostHeader },
-    }, (received) => {
-      response.writeHead(received.statusCode ?? 502, received.headers);
-      received.pipe(response);
-    });
+    const upstream = http.request(
+      {
+        hostname: upstreamHost,
+        port: remotePort,
+        path: request.url,
+        method: request.method,
+        headers: { ...request.headers, host: hostHeader },
+      },
+      (received) => {
+        response.writeHead(received.statusCode ?? 502, received.headers);
+        received.pipe(response);
+      },
+    );
     upstream.on("error", (error) => {
       response.writeHead(502);
       response.end(`Local proxy failed: ${error.message}`);
@@ -28,7 +31,9 @@ function proxyServer(remotePort, hostHeader) {
 }
 
 const server = proxyServer(upstreamPort, `${upstreamHost}:${upstreamPort}`);
-const workerPort = process.env.E2E_WORKER_UPSTREAM_PORT ? Number(process.env.E2E_WORKER_UPSTREAM_PORT) : null;
+const workerPort = process.env.E2E_WORKER_UPSTREAM_PORT
+  ? Number(process.env.E2E_WORKER_UPSTREAM_PORT)
+  : null;
 const workerServer = workerPort ? proxyServer(workerPort, `127.0.0.1:${workerPort}`) : null;
 
 await new Promise((resolve, reject) => {
@@ -42,16 +47,20 @@ if (workerServer && workerPort) {
   });
 }
 
-const child = spawn(process.execPath, ["node_modules/@playwright/test/cli.js", "test", ...process.argv.slice(2)], {
-  stdio: "inherit",
-  env: {
-    ...process.env,
-    E2E_SKIP_WEB_SERVER: "1",
-    E2E_BASE_URL: `http://localhost:${localPort}`,
-    E2E_API_BASE_URL: process.env.E2E_API_BASE_URL ?? `http://${upstreamHost}:3001`,
-    ...(workerPort ? { E2E_WORKER_BASE_URL: `http://127.0.0.1:${workerPort}` } : {}),
+const child = spawn(
+  process.execPath,
+  ["node_modules/@playwright/test/cli.js", "test", ...process.argv.slice(2)],
+  {
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      E2E_SKIP_WEB_SERVER: "1",
+      E2E_BASE_URL: `http://localhost:${localPort}`,
+      E2E_API_BASE_URL: process.env.E2E_API_BASE_URL ?? `http://${upstreamHost}:3001`,
+      ...(workerPort ? { E2E_WORKER_BASE_URL: `http://127.0.0.1:${workerPort}` } : {}),
+    },
   },
-});
+);
 const status = await new Promise((resolve) => child.once("exit", resolve));
 await new Promise((resolve) => server.close(resolve));
 if (workerServer) await new Promise((resolve) => workerServer.close(resolve));

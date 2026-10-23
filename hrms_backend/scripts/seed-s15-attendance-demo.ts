@@ -491,21 +491,17 @@ async function seedWorkSiteAndGeofence(
     `INSERT INTO attendance.geofence_versions (
        id, company_id, geofence_id, version_number, version_status, shape_type, shape,
        circle_radius_meters, shape_metadata, created_by_user_id, created_at,
-       published_by_user_id, published_at
+       published_by_user_id, published_at, effective_from, canonical_hash
      )
      VALUES (
        $1, $2, $3, 1, 'published', 'circle',
        ST_SetSRID(ST_MakePoint($4, $5), 4326), 250,
-       $6::jsonb, $7, now(), $7, now()
+       $6::jsonb, $7, now(), $7, now(), now() - interval '7 days',
+       attendance.geofence_shape_canonical_hash(
+         'circle', ST_SetSRID(ST_MakePoint($4, $5), 4326), 250
+       )
      )
-     ON CONFLICT (company_id, geofence_id, version_number) DO UPDATE
-     SET version_status = EXCLUDED.version_status,
-         shape_type = EXCLUDED.shape_type,
-         shape = EXCLUDED.shape,
-         circle_radius_meters = EXCLUDED.circle_radius_meters,
-         shape_metadata = EXCLUDED.shape_metadata,
-         published_by_user_id = EXCLUDED.published_by_user_id,
-         published_at = COALESCE(attendance.geofence_versions.published_at, EXCLUDED.published_at)
+     ON CONFLICT (company_id, geofence_id, version_number) DO NOTHING
      RETURNING id`,
     [
       ids.geofenceVersion,
@@ -517,7 +513,12 @@ async function seedWorkSiteAndGeofence(
       adminUserId,
     ],
   );
-  const geofenceVersionId = geofenceVersionResult.rows[0]?.id;
+  const existingGeofenceVersion = geofenceVersionResult.rows[0] ? null : await pg.query<{ id: string }>(
+    `SELECT id FROM attendance.geofence_versions
+     WHERE company_id = $1 AND geofence_id = $2 AND version_number = 1 AND version_status = 'published'`,
+    [companyId, geofenceId],
+  );
+  const geofenceVersionId = geofenceVersionResult.rows[0]?.id ?? existingGeofenceVersion?.rows[0]?.id;
   if (!geofenceVersionId) {
     throw new Error(
       `${seedTag} demo seed could not resolve demo geofence version.`,

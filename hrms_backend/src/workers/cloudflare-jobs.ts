@@ -74,12 +74,13 @@ export async function drainOutbox(pool: PoolLike, events: JobQueue, jobs: JobQue
 /** The existing command service performs the policy/cutoff calculation and obtains
  * employee-state and session row locks inside its transaction. No advisory lock. */
 export async function sweepAttendance(pool: Pool, jobs: JobQueue, input: Extract<JobMessage, { kind: "attendance" }>, limit = ATTENDANCE_BATCH_SIZE): Promise<{ scanned: number; closed: number; failed: number }> {
+  // Closing an already-open shift preserves payroll evidence even if HR has
+  // since deactivated the employee or company. Never create a new shift here.
   const result = await pool.query<{ company_id: string; employee_user_id: string; session_id: string; checked_in_at: Date }>(
     `SELECT session.company_id, session.employee_user_id, session.id AS session_id, session.checked_in_at
      FROM attendance.sessions session
-     JOIN platform.company_profiles company ON company.id = session.company_id AND company.status = 'active'
+     JOIN platform.company_profiles company ON company.id = session.company_id
      JOIN core.users employee ON employee.id = session.employee_user_id
-       AND employee.deleted_at IS NULL AND employee.employment_status = 'active'
      WHERE session.closed_at IS NULL AND session.deleted_at IS NULL
        AND session.checked_in_at <= $1::timestamptz
        AND ($2::timestamptz IS NULL OR (session.checked_in_at, session.id) > ($2::timestamptz, $3::uuid))
@@ -128,4 +129,30 @@ export async function readPublishedEvent(pool: PoolLike, eventId: string): Promi
     [eventId],
   );
   return result.rows[0] ?? null;
+}
+
+export interface OperationalLag {
+  outbox_pending: number;
+  outbox_oldest_pending_seconds: number;
+  outbox_dead_letter: number;
+  attendance_open_sessions: number;
+  coordinate_purge_due: number;
+}
+
+export async function readOperationalLag(pool: PoolLike): Promise<OperationalLag> {
+  const result = await pool.query<OperationalLag>(
+    `SELECT
+       (SELECT count(*)::integer FROM platform.outbox_events WHERE status IN ('pending', 'retry')) AS outbox_pending,
+       (SELECT COALESCE(GREATEST(EXTRACT(EPOCH FROM now() - min(created_at)), 0), 0)::integer
+          FROM platform.outbox_events WHERE status IN ('pending', 'retry')) AS outbox_oldest_pending_seconds,
+       (SELECT count(*)::integer FROM platform.outbox_events WHERE status = 'dead_letter') AS outbox_dead_letter,
+       (SELECT count(*)::integer FROM attendance.sessions WHERE closed_at IS NULL AND deleted_at IS NULL) AS attendance_open_sessions,
+       (SELECT count(*)::integer FROM attendance.location_evidence
+          WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+            AND coordinates_expire_at IS NOT NULL AND coordinates_expire_at <= now()
+            AND coordinates_purged_at IS NULL) AS coordinate_purge_due`,
+  );
+  const lag = result.rows[0];
+  if (!lag) throw new Error("Operational lag query returned no row.");
+  return lag;
 }

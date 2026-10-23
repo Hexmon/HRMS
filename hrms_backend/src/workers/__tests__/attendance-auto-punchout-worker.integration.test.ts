@@ -237,6 +237,7 @@ describe("AttendanceAutoPunchoutWorker PostgreSQL DB-first flow", () => {
         autoPunchOutEnabled: true,
         autoPunchOutTime: "18:30",
       });
+
       await createOpenSession(app, { companyId, employeeUserId: employee.user.id });
     }
     const queued: JobMessage[] = [];
@@ -260,6 +261,45 @@ describe("AttendanceAutoPunchoutWorker PostgreSQL DB-first flow", () => {
     );
     expect(Number(checkouts.rows[0]?.count)).toBe(2);
   }, 30_000);
+
+  it("closes a legacy open session under its original company after transfer and soft deletion", async () => {
+    const employee = await loginAs(app, "E1");
+    const originalCompanyId = employeeCompanyId(app, employee.user.id);
+    const sessionId = await createOpenSession(app, {
+      companyId: originalCompanyId,
+      employeeUserId: employee.user.id,
+    });
+    const destinationCompanyId = await createSecondCompanyForEmployee(app, employee.user.id);
+    expect(destinationCompanyId).not.toBe(originalCompanyId);
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET deleted_at = now() WHERE id = $1",
+      [employee.user.id],
+    );
+
+    const jobs: JobQueue = { send: async () => undefined };
+    expect(await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance",
+      referenceIso: "2026-05-22T00:00:00.000Z",
+    })).toMatchObject({ closed: 1, failed: 0 });
+    const result = await app.store.pgPool!.query<{
+      company_id: string;
+      closed_at: Date | null;
+      policy_source: string | null;
+    }>(
+      `SELECT session.company_id, session.closed_at,
+              punch.metadata->>'auto_punch_out_policy_source' AS policy_source
+       FROM attendance.sessions session
+       JOIN attendance.punch_events punch ON punch.session_id = session.id
+         AND punch.event_type = 'check_out'
+       WHERE session.id = $1`,
+      [sessionId],
+    );
+    expect(result.rows).toEqual([expect.objectContaining({
+      company_id: originalCompanyId,
+      closed_at: expect.any(Date),
+      policy_source: "historical_fallback",
+    })]);
+  });
 
   it("closes an eligible authoritative session and writes projection and outbox in one command transaction", async () => {
     const decisions: unknown[] = [];

@@ -443,7 +443,8 @@ export interface DataStorePersistence {
     options?: DomainPersistenceFlushOptions,
   ): Promise<void>;
   reload(): Promise<void>;
-  attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[] }): Promise<DataStore>;
+  attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
+  reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   close(): Promise<void>;
 }
 

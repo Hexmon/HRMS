@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs, projectTravelPayload } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
@@ -162,6 +163,30 @@ describe("non-expense reports", () => {
     }
   });
 
+  it("requires active company context before attendance reporting or export creation", async () => {
+    const admin = await loginAs(app, "ADM");
+    const preference = app.store.userSessionPreferences.find((candidate) => candidate.user_id === admin.user.id);
+    expect(preference).toBeDefined();
+    preference!.company_id = null;
+
+    const summary = await app.inject({
+      method: "GET",
+      url: "/api/v1/reports/attendance/summary?page=1&page_size=10",
+      headers: authHeader(admin.token),
+    });
+    expect(summary.statusCode).toBe(400);
+    expect(summary.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+
+    const exportRequest = await app.inject({
+      method: "POST",
+      url: "/api/v1/reports/exports",
+      headers: authHeader(admin.token),
+      payload: { report_type: "attendance", format: "csv", filters: {} },
+    });
+    expect(exportRequest.statusCode).toBe(400);
+    expect(exportRequest.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+  });
+
   it("returns non-expense summary reports and document-backed export jobs", async () => {
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
@@ -263,6 +288,43 @@ describe("non-expense reports", () => {
     expect(detail.statusCode).toBe(200);
     expect(detail.json().event_id).toBe(createExport.json().event_id);
     expect(detail.json().download_document_id).toBe(createExport.json().download_document_id);
+
+    // Fresh PostgreSQL export reads must not make an admin's export visible
+    // after the actor switches to a different company context.
+    const adminPreference = app.store.userSessionPreferences.find((preference) => preference.user_id === admin.user.id)!;
+    const originalCompanyId = adminPreference.company_id;
+    adminPreference.company_id = randomUUID();
+    try {
+      const otherCompanyList = await app.inject({
+        method: "GET", url: "/api/v1/reports/exports?page=1&page_size=10",
+        headers: authHeader(admin.token)
+      });
+      expect(otherCompanyList.statusCode).toBe(200);
+      expect(otherCompanyList.json().items).toEqual([]);
+      const otherCompanyDetail = await app.inject({
+        method: "GET", url: `/api/v1/reports/exports/${createExport.json().id}`,
+        headers: authHeader(admin.token)
+      });
+      expect(otherCompanyDetail.statusCode).toBe(403);
+    } finally {
+      adminPreference.company_id = originalCompanyId;
+    }
+
+    await app.store.pgPool!.query(
+      "UPDATE platform.outbox_events SET payload = payload - 'company_id' WHERE event_id = $1",
+      [createExport.json().event_id],
+    );
+    const legacyList = await app.inject({
+      method: "GET", url: "/api/v1/reports/exports?page=1&page_size=10",
+      headers: authHeader(admin.token)
+    });
+    expect(legacyList.statusCode).toBe(200);
+    expect(legacyList.json().items.some((item: { id: string }) => item.id === createExport.json().id)).toBe(false);
+    const legacyDetail = await app.inject({
+      method: "GET", url: `/api/v1/reports/exports/${createExport.json().id}`,
+      headers: authHeader(admin.token)
+    });
+    expect(legacyDetail.statusCode).toBe(403);
 
     const audit = await app.inject({
       method: "GET",

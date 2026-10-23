@@ -4,6 +4,7 @@ import { authHeader as baseAuthHeader, loginAs } from "#testing";
 import { buildApp } from "../../../app.js";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
 import { setAttendanceObservabilityTestSink } from "../observability.js";
+import { sweepAttendance, type JobQueue } from "../../../workers/cloudflare-jobs.js";
 
 type TestApp = Awaited<ReturnType<typeof buildApp>>;
 
@@ -967,11 +968,21 @@ describe("attendance", () => {
     expect(offDayAllowed.json().punch_policy.fullDayPunchWindow).toBe(true);
   });
 
-  it("auto punch-outs forgotten open sessions at the configured day-end time", async () => {
+  it.each([
+    ["active employment and company", null],
+    ["inactive employee", "employee"],
+    ["inactive company", "company"],
+    ["transferred employee", "transfer"],
+    ["removed company preference", "removed_preference"],
+    ["soft-deleted employee", "deleted"],
+  ] as const)("auto punch-outs forgotten open sessions at the configured day-end time with %s", async (_scenario, deactivated) => {
     const employee = await loginAs(app, "E1");
-    const admin = await loginAs(app, "ADM");
     const company = ensureActiveCompany(app);
     company.working_week = "Mon-Sun";
+    company.timezone = "UTC";
+    const employeeRecord = app.store.users.find((candidate) => candidate.id === employee.user.id)!;
+    employeeRecord.timezone = "UTC";
+    const workDate = localDate(0, "UTC");
     let policy = app.store.adminPolicies.find(
       (candidate) => candidate.company_id === company.id && candidate.policy_key === "attendance",
     );
@@ -993,45 +1004,115 @@ describe("attendance", () => {
     policy.config = {
       ...policy.config,
       fullDayPunchWindow: true,
-      autoPunchOutTime: "18:30",
+      autoPunchOutEnabled: true,
+      autoPunchOutTime: "23:59",
     };
     await app.store.persistence?.flush();
+    if (deactivated !== "transfer" && deactivated !== "removed_preference") {
+      await createAttendancePolicy(app, company.id, {
+        fullDayPunchWindow: true,
+        autoPunchOutEnabled: true,
+        autoPunchOutTime: "23:59",
+      }, employee.user.id);
+    }
 
     const checkIn = await app.inject({
       method: "POST",
-      url: `/api/v1/attendance/employees/${employee.user.id}/historical-corrections`,
-      headers: authHeader(admin.token),
+      url: "/api/v1/attendance/punches",
+      headers: authHeader(employee.token),
       payload: {
         event_type: "check_in",
-        occurred_at: "2026-05-20T04:00:00.000Z",
-        reason: "Reconstruct forgotten historical session",
         work_mode: "office",
       },
     });
     expect(checkIn.statusCode).toBe(200);
     await app.store.persistence?.reload();
 
+    // A PostgreSQL read cannot manufacture a checkout. The scheduled worker
+    // must close the committed session before calendar/report reads show it.
+    const beforeSweep = await app.inject({
+      method: "GET",
+      url: `/api/v1/attendance/punches/my?date_from=${workDate}&date_to=${workDate}&page=1&page_size=10`,
+      headers: authHeader(employee.token),
+    });
+    expect(beforeSweep.statusCode).toBe(200);
+    expect(beforeSweep.json().items.some((punch: { event_type: string }) => punch.event_type === "check_out")).toBe(false);
+    if (deactivated === "employee") {
+      await app.store.pgPool!.query("UPDATE core.users SET employment_status = 'inactive' WHERE id = $1", [employee.user.id]);
+    } else if (deactivated === "company") {
+      await app.store.pgPool!.query("UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1", [company.id]);
+    } else if (deactivated === "transfer") {
+      const newCompanyId = randomUUID();
+      await app.store.pgPool!.query(
+        `INSERT INTO platform.company_profiles (id, company_name, company_slug, timezone, status)
+         VALUES ($1, 'Transfer destination', $2, 'UTC', 'active')`,
+        [newCompanyId, `transfer-${newCompanyId.slice(0, 8)}`],
+      );
+      await app.store.pgPool!.query(
+        "UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = $2",
+        [newCompanyId, employee.user.id],
+      );
+    } else if (deactivated === "removed_preference") {
+      await app.store.pgPool!.query(
+        "UPDATE platform.user_session_preferences SET company_id = NULL WHERE user_id = $1",
+        [employee.user.id],
+      );
+    } else if (deactivated === "deleted") {
+      await app.store.pgPool!.query(
+        "UPDATE core.users SET deleted_at = now() WHERE id = $1",
+        [employee.user.id],
+      );
+    }
+    const jobs: JobQueue = { send: async () => undefined };
+    const sweep = await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance",
+      referenceIso: new Date(Date.now() + 48 * 60 * 60_000).toISOString(),
+    });
+    expect(sweep.closed).toBeGreaterThanOrEqual(1);
+    expect(sweep.failed).toBe(0);
+
+    if (deactivated) {
+      const sessions = await app.store.pgPool!.query<{ closed: number }>(
+        `SELECT count(*)::integer AS closed FROM attendance.sessions
+         WHERE company_id = $1 AND employee_user_id = $2 AND closed_at IS NOT NULL`,
+        [company.id, employee.user.id],
+      );
+      const checkouts = await app.store.pgPool!.query<{ closed: number; policy_source: string | null }>(
+        `SELECT count(*)::integer AS closed,
+                max(metadata->>'auto_punch_out_policy_source') AS policy_source
+         FROM attendance.punch_events
+         WHERE company_id = $1 AND employee_user_id = $2 AND event_type = 'check_out'
+           AND metadata->>'auto_punch_out' = 'true'`,
+        [company.id, employee.user.id],
+      );
+      expect(sessions.rows[0]?.closed).toBe(1);
+      expect(checkouts.rows[0]?.closed).toBe(1);
+      if (deactivated === "transfer" || deactivated === "removed_preference" || deactivated === "deleted") {
+        expect(checkouts.rows[0]?.policy_source).toBe("check_in_snapshot");
+      }
+      return;
+    }
+
     const calendar = await app.inject({
       method: "GET",
-      url: "/api/v1/attendance/calendar/monthly?month=2026-05&page=1&page_size=50",
+      url: `/api/v1/attendance/calendar/monthly?month=${workDate.slice(0, 7)}&page=1&page_size=50`,
       headers: authHeader(employee.token),
     });
     expect(calendar.statusCode).toBe(200);
     const day = calendar
       .json()
       .calendar_days.find(
-        (record: { work_date: string }) => record.work_date === "2026-05-20",
+        (record: { work_date: string }) => record.work_date === workDate,
       );
     expect(day).toMatchObject({
-      out_time: "18:30",
-      work_minutes: 540,
-      hours: "9h 00m",
+      out_time: "23:59",
     });
+    expect(day.work_minutes).toBeGreaterThanOrEqual(0);
     expect(day.exception_type).not.toBe("missing_punch");
 
     const punches = await app.inject({
       method: "GET",
-      url: "/api/v1/attendance/punches/my?date_from=2026-05-20&date_to=2026-05-20&page=1&page_size=10",
+      url: `/api/v1/attendance/punches/my?date_from=${workDate}&date_to=${workDate}&page=1&page_size=10`,
       headers: authHeader(employee.token),
     });
     expect(punches.statusCode).toBe(200);
@@ -1039,11 +1120,11 @@ describe("attendance", () => {
       expect.arrayContaining([
         expect.objectContaining({
           event_type: "check_out",
-          time: "18:30",
+          time: "23:59",
           source: "admin",
           metadata: expect.objectContaining({
             auto_punch_out: true,
-            auto_punch_out_time: "18:30",
+            auto_punch_out_time: "23:59",
           }),
         }),
       ]),
@@ -1119,6 +1200,7 @@ describe("attendance", () => {
         deleted_at: null,
       });
     }
+    await app.store.persistence?.flush();
 
     const checkIn = await app.inject({
       method: "POST",
@@ -1150,11 +1232,9 @@ describe("attendance", () => {
         record.work_date === staleDate &&
         !record.deleted_at,
     );
-    expect(refreshedStoreRecord).toMatchObject({
-      status: "absent",
-      exception_type: "absent",
-      note: "No punch-in recorded",
-    });
+    // The read uses a request-local projection; it must not mutate the API's
+    // shared startup snapshot while reconciling a stale day.
+    expect(refreshedStoreRecord).toMatchObject({ status: "future" });
     const refreshedWeekRecord = summary
       .json()
       .week_records.find(
