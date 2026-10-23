@@ -1,0 +1,64 @@
+# Master candidate coverage checklist
+
+## Status and use
+
+This is a Stage 1 coverage inventory, not an executable or approved test plan. Items describe what future assurance should cover; they do not define final expected results where Product, Engineering, HR/Payroll, Finance, Security/Privacy, Platform/SRE, or QA decisions remain pending. No test was run, and no execution result is assigned to any item.
+
+Status vocabulary:
+
+- **Automated source exists** — a test file/assertion was inspected; execution result is unknown.
+- **Historical manual evidence exists** — a prior document mentions coverage; it is not current execution proof.
+- **Candidate gap** — relevant automated/manual evidence was not located.
+- **Unknown** — environment, third-party, or owner evidence is required.
+- **Decision required** — a business/architecture oracle is pending.
+
+## Candidate coverage inventory
+
+| Candidate ID | Risk / requirement area | Existing automated source | Historical manual evidence | Missing or unknown coverage | Required decision | Priority |
+|---|---|---|---|---|---|---|
+| COV-TEN-001 | Multi-company row isolation across every module and role | Strong Attendance/device company tests; limited Projects scoping assertions; membership-context unit tests | Older QA sheets mention RBAC/tenant checks but no attributable current execution | Two populated companies plus empty company; list/detail/object-ID/mutation/side-effect/export matrix for Admin, Auditor, HR, Manager, Finance, Employee, Helpdesk, Asset roles | DEC-PO-01: strict tenant versus explicit super-tenant roles | P0 |
+| COV-AUTH-001 | Signup, verification, password setup/reset, login/logout | Auth integration/unit and contract source covers token/session basics | Historical auth checklist exists | Real email provider delivery, scanner-safe verification, expiry/replay/wrong-purpose, bounced mail, concurrent resets, hosted cookie flags | DEC-SRE-01 effective delivery; BLQ-016 interaction | P0 |
+| COV-AUTH-002 | Deactivation, termination, login disable, role change and privilege revocation | Logout/session contracts and some admin security tests | No current offboarding execution evidence | Existing cookie/bearer after each lifecycle action; route-by-route active-employment enforcement; cross-instance stale role; Valkey outage | DEC-SEC-01 immediate revocation semantics | P0 |
+| COV-AUTH-003 | Session expiry and Valkey failure/reconnect | Session-store and auth contracts; Valkey client source | No current environment evidence | TTL, eviction, restart, failover, fail-closed UX, `KEYS` behavior at realistic volume, revoke-all consistency | DEC-SRE-01 Valkey topology/SLO | P1 |
+| COV-DOC-001 | Document RBAC, tenant/object ownership, Auditor mutation | One document integration source; auth/policy source | Historical document workflow notes | Complete role-action matrix; another-company ID; deleted/verified/legal/finance class; attach document to foreign expense; audit access | DEC-PO-01 and DEC-SEC-01 | P0 |
+| COV-DOC-002 | Storage/SQL partial writes and deletion ordering | Storage and document service tests cover ordinary validation paths | No fault-injection evidence | Provider success + DB failure; provider failure + DB success; retry; orphan reconciliation; duplicate delete; export partial failure | Retention/legal hold and recovery ownership | P1 |
+| COV-ASSET-001 | Public QR scan and asset recovery | Assets integration source covers standard scan/recovery flow | Historical asset checklist exists | Anonymous rate/guessability/data-minimization, revoked/lost asset, cross-company hash collision, cache, settlement authorization, deduction integration | DEC-SEC-01 QR contract; BLQ-022 future integrations | P1 |
+| COV-EMS-001 | Employee create/onboard/profile change/probation/offboard | One EMS integration source plus core/admin tests | Historical EMS checklist exists | Two-company lifecycle, duplicate identity, manager/department reassignment, effective dates, field-level profile approval, offboarding rollback and session consequences | BLQ-021 field matrix; DEC-SEC-01 revocation | P0 |
+| COV-EXP-001 | Manager and Finance separation, backups, Admin/combined roles | Expense integration source covers standard transitions and some backup/missing configuration | Historical finance/expense cases exist | Minimum-staff invariant, all combined-role permutations, routing exception, cross-company ticket, direct IDs, attachment access | DEC-FIN-01 | P0 |
+| COV-EXP-002 | Financial integrity, idempotency and concurrency | State/version checks and money helpers inspected | No current concurrent payment evidence | Double click/replay, manager/finance simultaneous actions, stale version, rejection/resubmit, amount/currency precision, payment versus approved amount, settlement audit | DEC-FIN-01 amount/settlement authority | P0 |
+| COV-LEAVE-001 | Leave lifecycle, balances, company/region holidays | One Leave integration source covers standard flow | Historical leave checklist exists | Two companies, regional and optional holidays, half day, weekend, leap year/year boundary, overlapping request, cancel/reject balance restoration, concurrent approval | DEC-HR-01 and BLQ-008/009 formulas | P0 |
+| COV-ATT-001 | Online attendance idempotency, geo, device and policy | Extensive Attendance unit/integration sources; contract tests | Historical attendance docs and ADRs | Release-environment geolocation/device matrix, clock skew, provider age/accuracy, revoked device during open session, duplicate changed body | Support/privacy policy and environment matrix | P0 |
+| COV-ATT-002 | Offline queue synchronization and replay | Offline-sync integration/unit sources inspect sequence, duplicate and ownership paths | Mobile KT and historical checklist | Real browser/mobile storage, restart and multi-tab queue; out-of-order large backlog; policy/role/device change while offline; midnight replay; network flapping | BLQ-025 supported mobile scope | P1 |
+| COV-ATT-003 | Cross-midnight, DST, regularization and auto-punchout | Shift resolver and auto-punchout sources cover selected midnight/idempotency paths | ADR describes PostgreSQL-first model | Full session/project-day/outbox/report reconciliation across zones/DST; next-day correction; break; holiday boundary | DEC-HR-01 canonical work date | P0 |
+| COV-PAY-001 | Payroll lock, immutable snapshot and post-lock correction | Payroll service test/source covers locking/snapshots in parts | Historical payroll lock notes | Concurrent lock/correction; adjustment approval/rejection/application; unlock authorization; reports after adjustment; next-cycle accounting | DEC-HR-01 correction policy | P0 |
+| COV-REP-001 | Reports/export authorization and tenant scope | Two report test files and contract source; formula-sanitization code | Historical report checklist | Every report/format by role/company; direct generated-document access; filter tamper; revoked role; field parity; empty tenant | DEC-PO-01; BLQ-020 scope | P0 |
+| COV-REP-002 | Export size, lifecycle and privacy | Generated-export source exists | No current provider/retention evidence | Large data, timeout/memory, object expiry/delete, download ACL, duplicate generation, PII minimization, legal hold | DEC-SEC-01 retention | P1 |
+| COV-OUT-001 | Outbox duplicate delivery, reconnect, retry/dead letter | Worker unit/integration source; Attendance ADR defines at-least-once | No downstream consumer or operations proof | Crash after stream publish; stable event replay; consumer dedupe; Valkey restart; stream trim; retry exhaustion; DLQ alert/replay | DEC-SRE-01 operations contract | P0 |
+| COV-WRK-001 | Shared-worker failure, starvation and catch-up | Strong auto-punchout worker sources; outbox safe-error sources | No current process supervision evidence | One task hangs/slows, process kill, backlog, resource pressure, fairness, clock jump, overlapping instances, retention SLA | DEC-SRE-01 worker topology/SLO | P1 |
+| COV-SSR-001 | Authenticated Vercel SSR deep links | Playwright/local E2E source and build smoke for `/login` | No deployed Vercel evidence | Direct protected URL, refresh, expired cookie, role redirect, API-origin/CORS/cookie domain, hydration mismatch, 404 rewrite, back/forward | DEC-SRE-01 hosted architecture | P0 |
+| COV-CON-001 | Concurrent hydrated-repository writes and stale snapshots | OCC exists in selected domain tests; Attendance transaction tests | No multi-instance evidence | Two API writers mutate same/different records; restart; flush error; stale role/company config; lost update; post-response persistence error | DEC-ARCH-01 supported topology | P0 |
+| COV-SQL-001 | Cross-schema reference integrity | Migration triggers and selected integration sources; device RLS tests | Architecture docs describe intentional no-FK policy | Orphan insert/update/delete for every logical reference; migration ordering; trigger coverage; restore; concurrent parent deletion | Architect-approved integrity ownership | P1 |
+| COV-NOT-001 | Notification event/channel matrix | Admin channel and notification repository/test source exists | Historical checklist exists | Required event inventory, email/push delivery, duplicate suppression, user preferences, retry, sensitive payload, read/unread race | BLQ-019 owner matrix | P2 |
+| COV-PRJ-001 | Allocation, warning/acknowledgement and cost center | Project test source; schema caps at 200 and captures acknowledgement | Historical project checklist exists | Approval authority, concurrent allocation, cross-company staff, aggregate utilization, department cost-center auto-fill | BLQ-011/012 | P1 |
+| COV-TIM-001 | Timesheet under/over hours and approval | Timesheet integration source | Historical timesheet checklist exists | Shift/policy conflict, concurrent approval, late submission, period lock, project authorization, variance reporting | BLQ-006/010 | P1 |
+| COV-HLP-001 | Helpdesk SLA/escalation/closure/reopen | Helpdesk integration source | Historical helpdesk checklist exists | SLA clock/timezone/business days, reassignment, category rule, reopen limit, notification, tenant/attachment scope | BLQ-018/019 | P2 |
+| COV-ACC-001 | Accessibility | No dedicated accessibility automation was located | No current WCAG audit evidence | Keyboard, focus, landmarks, labels/errors, contrast, zoom/reflow, screen reader on critical ten journeys | QA support target / Product acceptance level | P1 |
+| COV-BRW-001 | Browser/device/responsive compatibility | Playwright specs and responsive code exist | No current support certification | Named desktop/mobile browsers, viewport/orientation, touch, permissions, offline storage, download/upload behaviors | BLQ-025 and DEC-QA-01 | P1 |
+| COV-PRV-001 | Privacy, retention, audit and logging | Coordinate purge and logger-redaction source; audit records in modules | No approved retention schedule or current audit | Per-class expiry, legal hold, DSAR/erasure, backup copies, exports, Cloudinary versions, audit immutability, negative redaction | DEC-SEC-01 | P0 |
+| COV-DEP-001 | Deployment, migration, promotion and rollback | CI/render/vercel source definitions and migration files | Historical QA schedule/signoff documents; not execution proof | Commit identity, environment config, migration rehearsal, compatibility, failed deploy, rollback/restore, secret rotation, health smoke | DEC-SRE-01 and DEC-QA-01 | P0 |
+
+## Cross-cutting candidate dimensions
+
+Apply these dimensions when Stage 2 converts an approved inventory item into executable cases:
+
+- Persona/role: Employee, Manager/Reviewer, HR Manager, Finance Manager, Admin, Auditor, Director, Helpdesk Agent, Asset Manager, disabled/deleted/role-changed user.
+- Tenant: selected company A, selected company B, no preference, inactive company, inactive membership, empty company, attempted foreign object ID.
+- State: initial, valid transition, rejected transition, terminal, reopened/resubmitted, stale version, concurrent action.
+- Time: company/user timezone, month/year boundary, leap day, DST where supported, cross-midnight, expired session/token, locked period.
+- Delivery: online, offline queued, retry/replay, duplicate payload, same key/different payload, provider/Valkey/database interruption.
+- Surface: UI navigation, direct deep link, API, generated download, worker/event side effect, report projection.
+- Data: ordinary, boundary, Unicode, large-but-approved, spreadsheet formula prefix, sensitive field, missing optional, logically foreign reference.
+
+## Evidence caution
+
+The repository contains 98 backend test files and 20 Playwright spec files at this baseline, but those counts are inventory only. Historical workbook-validation and older release labels are not treated here as proof that release-01 product behavior was executed successfully.
