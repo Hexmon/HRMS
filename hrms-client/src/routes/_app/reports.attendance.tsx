@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   ReportShell,
@@ -11,7 +12,9 @@ import { useEmployees } from "@/lib/employees-store";
 import { daysAgo, inDateRange, isoToday } from "@/lib/reports/utils";
 import { useAttendanceReport } from "@/domains/reports/queries";
 import { useAttendanceDailyCalendar } from "@/domains/attendance";
+import { authApi } from "@/domains/auth";
 import type { ReportParams } from "@/domains/reports/api";
+import { queryKeys, queryTimings } from "@/shared/query";
 import {
   ATTENDANCE_REPORTING_EVIDENCE_OPTIONS,
   attendanceReportingEvidenceLabel,
@@ -175,13 +178,40 @@ function buildAttendance(employees: { id: string; name: string; department: stri
   return out;
 }
 
+function dateInTimeZone(timeZone: string): string | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const value = (kind: Intl.DateTimeFormatPartTypes) =>
+      parts.find((part) => part.type === kind)?.value;
+    const year = value("year");
+    const month = value("month");
+    const day = value("day");
+    return year && month && day ? `${year}-${month}-${day}` : null;
+  } catch {
+    return null;
+  }
+}
+
 function AttendanceReports() {
   const { departments, employees } = useEmployees();
   const apiMode = useApiRouteEnabled(["/reports"]);
+  const sessionQuery = useQuery({
+    queryKey: queryKeys.detail("auth", "session", "me"),
+    queryFn: () => authApi.getSession(),
+    enabled: apiMode,
+    staleTime: queryTimings.realtimeStaleMs,
+  });
+  const companyToday = dateInTimeZone(text(asRecord(sessionQuery.data?.company).timezone));
+  const initialDates = useMemo(() => ({ from: daysAgo(90), to: isoToday() }), []);
   const [selectedAttendanceRow, setSelectedAttendanceRow] = useState<AttRow | null>(null);
   const [filters, setFilters] = useState<ReportFilters>({
-    from: daysAgo(90),
-    to: isoToday(),
+    from: initialDates.from,
+    to: initialDates.to,
     department: "all",
     employee: "all",
     status: "all",
@@ -194,6 +224,16 @@ function AttendanceReports() {
     reasonCode: "all",
     managerUserId: "all",
   });
+  useEffect(() => {
+    if (!companyToday) return;
+    const [year, month, day] = companyToday.split("-").map(Number);
+    const from = new Date(Date.UTC(year, month - 1, day - 90)).toISOString().slice(0, 10);
+    setFilters((current) => ({
+      ...current,
+      from: current.from === initialDates.from ? from : current.from,
+      to: current.to === initialDates.to ? companyToday : current.to,
+    }));
+  }, [companyToday, initialDates]);
   const reportParams = useMemo(
     () => reportParamsFromFilters(filters, { departments, employees }),
     [departments, employees, filters],
