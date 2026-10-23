@@ -104,6 +104,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Verify local Cloudflare Queue DLQ and replay
+        run: pnpm verify:cloudflare-queue-dlq
+
       - name: Build
         run: pnpm build
 
