@@ -220,6 +220,7 @@ describe("non-expense reports", () => {
       detail: null,
       created_at: new Date().toISOString(),
     });
+    await app.store.persistence!.flush();
     const readAudit = () => app.inject({
       method: "GET",
       url: "/api/v1/reports/audit?page=1&page_size=100",
@@ -238,12 +239,20 @@ describe("non-expense reports", () => {
     ].includes(row.id))).toBe(false);
 
     adminPreference.company_id = otherCompanyId;
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = $2",
+      [otherCompanyId, admin.user.id],
+    );
     const otherCompanyAudit = await readAudit();
     expect(otherCompanyAudit.statusCode).toBe(200);
     expect(otherCompanyAudit.json().items.some((row: { id: string }) => row.id === foreignEvent.event_id)).toBe(true);
     expect(otherCompanyAudit.json().items.some((row: { target: string }) => row.target === ticketId)).toBe(false);
 
     adminPreference.company_id = null;
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id = NULL WHERE user_id = $1",
+      [admin.user.id],
+    );
     const noCompanyAudit = await readAudit();
     expect(noCompanyAudit.statusCode).toBe(400);
     expect(noCompanyAudit.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
@@ -257,6 +266,74 @@ describe("non-expense reports", () => {
     });
     expect(noCompanyExpense.statusCode).toBe(400);
     expect(noCompanyExpense.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+  });
+
+  it("uses committed audit events and current company and role after another process changes them", async () => {
+    const auditor = await loginAs(app, "AUD");
+    const preference = app.store.userSessionPreferences.find((row) => row.user_id === auditor.user.id)!;
+    const originalCompanyId = preference.company_id!;
+    const otherCompanyId = randomUUID();
+    const originalEventId = randomUUID();
+    const otherEventId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO platform.company_profiles (id, company_name, company_slug, status)
+       VALUES ($1, 'Audit transfer company', $2, 'active')`,
+      [otherCompanyId, `audit-transfer-${otherCompanyId}`],
+    );
+    for (const [eventId, companyId] of [[originalEventId, originalCompanyId], [otherEventId, otherCompanyId]]) {
+      await app.store.pgPool!.query(
+        `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+         VALUES ($1, 'report_export', $2, 'reports.export.requested', $3::jsonb, $4)`,
+        [eventId, randomUUID(), JSON.stringify({ company_id: companyId, actor_user_id: auditor.user.id }), `audit-fresh-${eventId}`],
+      );
+    }
+    const readAudit = () => app.inject({
+      method: "GET", url: "/api/v1/reports/audit?page=1&page_size=100", headers: authHeader(auditor.token),
+    });
+
+    const original = await readAudit();
+    expect(original.statusCode).toBe(200);
+    expect(original.json().items.some((row: { id: string }) => row.id === originalEventId)).toBe(true);
+    expect(original.json().items.some((row: { id: string }) => row.id === otherEventId)).toBe(false);
+
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = $2",
+      [otherCompanyId, auditor.user.id],
+    );
+    const transferred = await readAudit();
+    expect(transferred.statusCode).toBe(200);
+    expect(transferred.json().items.some((row: { id: string }) => row.id === otherEventId)).toBe(true);
+    expect(transferred.json().items.some((row: { id: string }) => row.id === originalEventId)).toBe(false);
+
+    await app.store.pgPool!.query(
+      "UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = 'Auditor'",
+      [auditor.user.id],
+    );
+    const revoked = await readAudit();
+    expect(revoked.statusCode).toBe(403);
+
+    await app.store.pgPool!.query(
+      "UPDATE core.user_roles SET status = 'active' WHERE user_id = $1 AND role_key = 'Auditor'",
+      [auditor.user.id],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1",
+      [otherCompanyId],
+    );
+    const inactiveCompany = await readAudit();
+    expect(inactiveCompany.statusCode).toBe(400);
+    expect(inactiveCompany.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+
+    await app.store.pgPool!.query(
+      "UPDATE platform.company_profiles SET status = 'active' WHERE id = $1",
+      [otherCompanyId],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET employment_status = 'inactive' WHERE id = $1",
+      [auditor.user.id],
+    );
+    const inactiveUser = await readAudit();
+    expect(inactiveUser.statusCode).toBe(401);
   });
 
   it("requires active company context before attendance reporting or export creation", async () => {

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { Pool, type PoolClient } from "pg";
 import { ValkeySessionStore } from "#auth";
-import type { RoleKey } from "#shared";
+import { EmploymentStatuses, type AuthUser, type RoleKey } from "#shared";
 import type {
   AssetRecord,
   AttendanceDayRecord,
@@ -79,6 +79,7 @@ import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
+import { companyContextRequired, forbidden, unauthorized } from "./errors.js";
 
 function optionalSet(
   values: readonly string[] | undefined,
@@ -486,6 +487,63 @@ class PostgresPersistence {
             [scope.companyId],
           );
       return { ...this.store, outbox: rows.map((row) => this.mapOutboxRow(row)) };
+    } finally {
+      client.release();
+    }
+  }
+
+  async auditReportReadContext(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
+    const client = await this.pool.connect();
+    try {
+      // One consistent, request-local snapshot. Never reload the shared store:
+      // another request may have unflushed mutations in progress.
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const actorRow = await client.query<{
+        employment_status: AuthUser["employment_status"];
+        deleted_at: Date | null;
+        roles: RoleKey[];
+      }>(
+        `SELECT u.employment_status, u.deleted_at,
+                COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
+                  WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL
+                ), '{}') AS roles
+         FROM core.users u
+         LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+         WHERE u.id = $1 GROUP BY u.id`,
+        [userId],
+      );
+      const current = actorRow.rows[0];
+      const cachedActor = this.store.users.find((user) => user.id === userId);
+      if (!current || current.deleted_at || !cachedActor) throw unauthorized("User no longer exists");
+      if (current.employment_status !== EmploymentStatuses.Active) {
+        throw unauthorized("User account is inactive or blocked");
+      }
+      const actor: AuthUser = { ...cachedActor, roles: current.roles, employment_status: current.employment_status };
+      const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
+        "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
+        [userId],
+      );
+      const assignment = preference.rows[0];
+      if (!assignment?.company_id) throw companyContextRequired({ user_id: userId, operation: "reports.audit" });
+      if (!actor.roles.includes(assignment.active_role)) {
+        throw forbidden("Selected role is not assigned to this user.");
+      }
+      const company = await client.query<{ status: string }>(
+        "SELECT status FROM platform.company_profiles WHERE id = $1",
+        [assignment.company_id],
+      );
+      if (company.rows[0]?.status !== "active") {
+        throw companyContextRequired({ user_id: userId, company_id: assignment.company_id, operation: "reports.audit" });
+      }
+      const companyId = assignment.company_id;
+      const tickets = await this.loadTickets(client, companyId);
+      const auditLogs = await this.loadAuditLogs(client, companyId);
+      const outbox = await this.loadOutbox(client, "all", companyId);
+      await client.query("COMMIT");
+      return { actor, companyId, store: { ...this.store, tickets, auditLogs, outbox } };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
     } finally {
       client.release();
     }
@@ -1348,9 +1406,12 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadTickets(client: PoolClient): Promise<ExpenseTicket[]> {
+  private async loadTickets(client: PoolClient, companyId?: UUID): Promise<ExpenseTicket[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_tickets ORDER BY created_at, ticket_no",
+      `SELECT * FROM expenses.expense_tickets
+       ${companyId ? "WHERE context_payload->>'company_id' = $1" : ""}
+       ORDER BY created_at, ticket_no`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1432,9 +1493,12 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadAuditLogs(client: PoolClient): Promise<ExpenseAuditLog[]> {
+  private async loadAuditLogs(client: PoolClient, companyId?: UUID): Promise<ExpenseAuditLog[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_audit_logs ORDER BY created_at, id",
+      `SELECT log.* FROM expenses.expense_audit_logs log
+       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = log.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ORDER BY log.created_at, log.id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1617,12 +1681,15 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadOutbox(client: PoolClient, filter: "all" | "pending" = "all"): Promise<OutboxEvent[]> {
-    const condition = filter === "pending"
-      ? "WHERE status IN ('pending', 'retry')"
-      : "";
+  private async loadOutbox(client: PoolClient, filter: "all" | "pending" = "all", companyId?: UUID): Promise<OutboxEvent[]> {
+    const conditions = [
+      ...(filter === "pending" ? ["status IN ('pending', 'retry')"] : []),
+      ...(companyId ? ["payload->>'company_id' = $1"] : []),
+    ];
+    const condition = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const { rows } = await client.query(
       `SELECT * FROM platform.outbox_events ${condition} ORDER BY id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => this.mapOutboxRow(row));
   }

@@ -178,7 +178,14 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/audit", async (request) => {
     const actor = withActor(request);
-    return new ReportService(fastify.store).auditReport(actor, reportSummaryQuerySchema.parse(request.query));
+    const context = fastify.store.persistence?.auditReportReadContext
+      ? await fastify.store.persistence.auditReportReadContext(actor.id)
+      : { actor, store: fastify.store, companyId: undefined };
+    return new ReportService(context.store).auditReport(
+      context.actor,
+      reportSummaryQuerySchema.parse(request.query),
+      context.companyId,
+    );
   });
 
   fastify.get("/exports", async (request) => {

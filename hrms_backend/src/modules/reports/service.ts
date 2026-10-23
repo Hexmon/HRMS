@@ -793,13 +793,13 @@ export class ReportService {
     });
   }
 
-  auditReport(actor: AuthUser, query: ReportSummaryQuery) {
+  auditReport(actor: AuthUser, query: ReportSummaryQuery, authoritativeCompanyId?: UUID) {
     assertReportRole(actor, [Roles.Auditor, Roles.Admin]);
-    const { companyId } = resolveActiveCompanyMembershipContext(this.store, {
+    const companyId = authoritativeCompanyId ?? resolveActiveCompanyMembershipContext(this.store, {
       userId: actor.id,
       operation: "reports.audit",
       requireActiveEmployment: true,
-    });
+    }).companyId;
     const expenseCompanyByTicket = new Map(this.store.tickets.map((ticket) => [
       ticket.id,
       ticket.context_payload.company_id,
