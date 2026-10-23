@@ -311,6 +311,61 @@ describe("Cloudflare outbox drain against PostgreSQL", () => {
     expect(published).toEqual([eventId]);
   });
 
+  it("retries an outbox job on database connection loss and acknowledges it after recovery", async () => {
+    const eventId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+       VALUES ($1, 'expenses', $2, 'expenses.approved', '{}'::jsonb, $3)`,
+      [eventId, randomUUID(), `cloudflare-job-outage:${eventId}`],
+    );
+    const databaseUrl = process.env.TEST_DATABASE_URL;
+    if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required for the Queue outage test.");
+    const published: string[] = [];
+    const events: JobQueue = { send: async (value) => {
+      if (value.kind === "event") published.push(value.eventId);
+    } };
+    const jobs: JobQueue = { send: async () => undefined };
+    const env: Parameters<typeof worker.queue>[1] = {
+      HYPERDRIVE: { connectionString: "postgres://postgres:postgres@127.0.0.1:1/unavailable" },
+      JOBS: jobs,
+      EVENTS: events,
+      OUTBOX_SIGNAL_TOKEN: "integration-test-token",
+      WORKER_ACTIVE: "true",
+    };
+    const actions: string[] = [];
+    const message = (name: string, body: unknown) => ({
+      body,
+      ack: () => { actions.push(`${name}:ack`); },
+      retry: () => { actions.push(`${name}:retry`); },
+    });
+
+    await worker.queue({
+      queue: "hrms-background-jobs",
+      messages: [message("outage", { kind: "outbox" })],
+    }, env);
+    expect(actions).toEqual(["outage:retry"]);
+    expect(published).toEqual([]);
+    const pending = await app.store.pgPool!.query<{ status: string }>(
+      "SELECT status FROM platform.outbox_events WHERE event_id = $1", [eventId],
+    );
+    expect(pending.rows[0]?.status).toBe("pending");
+
+    env.HYPERDRIVE.connectionString = databaseUrl;
+    await worker.queue({
+      queue: "hrms-background-jobs",
+      messages: [
+        message("malformed", { kind: "unknown" }),
+        message("recovered", { kind: "outbox" }),
+      ],
+    }, env);
+    expect(actions).toEqual(["outage:retry", "malformed:retry", "recovered:ack"]);
+    expect(published).toEqual([eventId]);
+    const recovered = await app.store.pgPool!.query<{ status: string; retry_count: number }>(
+      "SELECT status, retry_count FROM platform.outbox_events WHERE event_id = $1", [eventId],
+    );
+    expect(recovered.rows[0]).toMatchObject({ status: "published", retry_count: 0 });
+  });
+
   it("serves a fresh attendance summary after another process writes a punch", async () => {
     const employee = await loginAs(app, "E1");
     const companyId = app.store.userSessionPreferences.find((item) => item.user_id === employee.user.id)?.company_id;
