@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { buildRealApp } from "../../__tests__/real-infra.js";
 import { authHeader, loginAs } from "#testing";
 import { drainOutbox, readOperationalLag, type JobMessage, type JobQueue } from "../cloudflare-jobs.js";
+import worker from "../cloudflare-worker.js";
 
 describe("Cloudflare outbox drain against PostgreSQL", () => {
   let app: FastifyInstance;
@@ -159,6 +160,59 @@ describe("Cloudflare outbox drain against PostgreSQL", () => {
     expect(afterRollback.rows[0]?.status).toBe("pending");
     expect((await drainOutbox(app.store.pgPool!, events, jobs)).published).toBe(1);
     expect(accepted).toEqual([eventId, eventId]);
+  });
+
+  it("acknowledges durable event deliveries only after publication and isolates a malformed batch peer", async () => {
+    const eventId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+       VALUES ($1, 'expenses', $2, 'expenses.approved', '{}'::jsonb, $3)`,
+      [eventId, randomUUID(), `cloudflare-consumer:${eventId}`],
+    );
+    const accepted: string[] = [];
+    const events: JobQueue = { send: async (value) => {
+      if (value.kind === "event") accepted.push(value.eventId);
+    } };
+    const jobs: JobQueue = { send: async () => undefined };
+    const databaseUrl = process.env.TEST_DATABASE_URL;
+    if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required for the Queue consumer test.");
+    const env: Parameters<typeof worker.queue>[1] = {
+      HYPERDRIVE: { connectionString: databaseUrl },
+      JOBS: jobs,
+      EVENTS: events,
+      OUTBOX_SIGNAL_TOKEN: "integration-test-token",
+      WORKER_ACTIVE: "true",
+    };
+    const actions: string[] = [];
+    const message = (name: string, body: unknown) => ({
+      body,
+      ack: () => { actions.push(`${name}:ack`); },
+      retry: () => { actions.push(`${name}:retry`); },
+    });
+
+    await worker.queue({
+      queue: "hrms-business-events",
+      messages: [message("early", { kind: "event", eventId })],
+    }, env);
+    expect(actions).toEqual(["early:retry"]);
+    expect((await drainOutbox(app.store.pgPool!, events, jobs)).published).toBe(1);
+    expect(accepted).toEqual([eventId]);
+
+    await worker.queue({
+      queue: "hrms-business-events",
+      messages: [
+        message("published", { kind: "event", eventId }),
+        message("malformed", { kind: "event", eventId: 42 }),
+        message("duplicate", { kind: "event", eventId }),
+      ],
+    }, env);
+    expect(actions).toEqual([
+      "early:retry", "published:ack", "malformed:retry", "duplicate:ack",
+    ]);
+    const state = await app.store.pgPool!.query<{ status: string; retry_count: number }>(
+      "SELECT status, retry_count FROM platform.outbox_events WHERE event_id = $1", [eventId],
+    );
+    expect(state.rows[0]).toMatchObject({ status: "published", retry_count: 0 });
   });
 
   it("dead-letters an exhausted row without stopping another tenant's event", async () => {
