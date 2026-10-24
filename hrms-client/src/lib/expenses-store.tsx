@@ -913,6 +913,35 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     staleTime: queryTimings.realtimeStaleMs,
   });
 
+  const managerHistoryQuery = useQuery({
+    queryKey: queryKeys.list("expenses", "manager-history", { page_size: 100 }),
+    queryFn: async () => {
+      const response = await expensesApi.managerHistory({ page_size: 100 });
+      const history = pageItems(response);
+      return mapApiExpenseTickets(
+        history.map((row) => row.ticket),
+        tickets,
+      ).map((ticket, index) => ({
+        ...ticket,
+        approvals: [
+          ...ticket.approvals,
+          {
+            by: String(history[index]?.decided_by_label ?? "Manager"),
+            role: "Manager",
+            action: String(history[index]?.decision ?? ""),
+            status:
+              history[index]?.decision === "approve"
+                ? ("approved" as const)
+                : ("rejected" as const),
+            at: String(history[index]?.acted_at ?? ""),
+          },
+        ],
+      }));
+    },
+    enabled: apiEnabled && canUseManagerQueue,
+    staleTime: queryTimings.realtimeStaleMs,
+  });
+
   const financeQueueQuery = useQuery({
     queryKey: queryKeys.list("expenses", "finance-queue", { page_size: 100 }),
     queryFn: async () => {
@@ -1060,6 +1089,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
   const hasAnyApiResult =
     myExpensesQuery.data !== undefined ||
     (canUseManagerQueue && managerQueueQuery.data !== undefined) ||
+    (canUseManagerQueue && managerHistoryQuery.data !== undefined) ||
     (canUseFinanceQueue && financeQueueQuery.data !== undefined);
 
   const visibleTickets = React.useMemo(() => {
@@ -1068,6 +1098,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     const combined = [
       ...(myExpensesQuery.data ?? []),
       ...(canUseManagerQueue ? (managerQueueQuery.data ?? []) : []),
+      ...(canUseManagerQueue ? (managerHistoryQuery.data ?? []) : []),
       ...(canUseFinanceQueue ? (financeQueueQuery.data ?? []) : []),
     ];
     if (!combined.length) return [];
@@ -1081,6 +1112,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     financeQueueQuery.data,
     hasAnyApiResult,
     managerQueueQuery.data,
+    managerHistoryQuery.data,
     myExpensesQuery.data,
     tickets,
   ]);
@@ -1088,6 +1120,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
   const queryError = [
     myExpensesQuery.error,
     canUseManagerQueue ? managerQueueQuery.error : null,
+    canUseManagerQueue ? managerHistoryQuery.error : null,
     canUseFinanceQueue ? financeQueueQuery.error : null,
   ].find((error): error is Error => error instanceof Error);
   const apiError = apiEnabled && !hasAnyApiResult ? (queryError ?? null) : null;
@@ -1096,6 +1129,7 @@ export function ExpensesProvider({ children }: { children: React.ReactNode }) {
     !hasAnyApiResult &&
     (myExpensesQuery.isLoading ||
       (canUseManagerQueue && managerQueueQuery.isLoading) ||
+      (canUseManagerQueue && managerHistoryQuery.isLoading) ||
       (canUseFinanceQueue && financeQueueQuery.isLoading));
 
   const byId: Ctx["byId"] = (id) => visibleTickets.find((t) => t.id === id);

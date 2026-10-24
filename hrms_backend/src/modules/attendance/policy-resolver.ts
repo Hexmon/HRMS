@@ -32,6 +32,8 @@ export async function resolveEffectiveAttendancePolicy(
     companyId: UUID;
     subjectEmployeeUserId: UUID;
     asOf: string;
+    /** Only for settling an already-open historical session, never a new punch. */
+    allowHistoricalSubject?: boolean;
   },
 ): Promise<EffectiveAttendancePolicy> {
   const employee = (await tx.query<{
@@ -49,11 +51,11 @@ export async function resolveEffectiveAttendancePolicy(
       LEFT JOIN core.departments department
         ON department.id = employee.department_id
       WHERE employee.id = $1
-        AND employee.deleted_at IS NULL`,
-    [input.subjectEmployeeUserId],
+        AND ($2::boolean OR employee.deleted_at IS NULL)`,
+    [input.subjectEmployeeUserId, input.allowHistoricalSubject === true],
   )).rows[0];
 
-  if (!employee || employee.preference_company_id !== input.companyId) {
+  if (!employee || (!input.allowHistoricalSubject && employee.preference_company_id !== input.companyId)) {
     throw conflict("Attendance policy subject is not assigned to the requested company.", {
       code: "attendance_policy_invalid_cross_company_subject",
       company_id: input.companyId,

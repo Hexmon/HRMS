@@ -24,6 +24,20 @@ describe("production user-flow smoke", () => {
   beforeEach(async () => {
     app = await buildRealApp();
     await app.ready();
+    // This smoke uses the wall clock for punch-in. Keep its isolated company
+    // eligible every day so a midnight/weekend run tests the journey,
+    // while dedicated attendance tests continue to cover off-day rejection.
+    const employee = app.store.users.find((user) => user.employee_code === "E1");
+    const companyId = app.store.userSessionPreferences.find(
+      (preference) => preference.user_id === employee?.id,
+    )?.company_id;
+    const company = app.store.companyProfiles.find((candidate) => candidate.id === companyId);
+    if (!company) throw new Error("E2E employee company is missing.");
+    company.working_week = "Mon-Sun";
+    await app.store.pgPool!.query(
+      "UPDATE platform.company_profiles SET working_week = $1 WHERE id = $2",
+      [company.working_week, company.id],
+    );
   });
 
   afterEach(async () => {

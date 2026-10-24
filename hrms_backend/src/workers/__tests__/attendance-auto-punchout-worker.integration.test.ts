@@ -6,6 +6,7 @@ import { PostgresAttendanceCommandRepository } from "../../modules/attendance/co
 import { setAttendanceObservabilityTestSink } from "../../modules/attendance/observability.js";
 import { resolveEffectiveAttendancePolicy } from "../../modules/attendance/policy-resolver.js";
 import { AttendanceAutoPunchoutWorker } from "../attendance-auto-punchout-worker.js";
+import { sweepAttendance, type JobMessage, type JobQueue } from "../cloudflare-jobs.js";
 
 type TestApp = Awaited<ReturnType<typeof buildRealApp>>;
 
@@ -168,6 +169,7 @@ async function createOpenSession(
 async function createSecondCompanyForEmployee(
   app: TestApp,
   employeeUserId: string,
+  timezone = "Asia/Kolkata",
 ): Promise<string> {
   const companyId = randomUUID();
   await app.store.pgPool!.query(
@@ -175,9 +177,9 @@ async function createSecondCompanyForEmployee(
        id, company_name, company_slug, timezone, locale,
        fiscal_year_start_month, status, bootstrap_completed_at,
        currency, working_week, work_hours_per_day, logo_label
-     ) VALUES ($1, 'Tenant B', $2, 'Asia/Kolkata', 'en-IN',
+     ) VALUES ($1, 'Tenant B', $2, $3, 'en-IN',
        4, 'active', now(), 'INR', 'Mon-Sun', 8, 'TB')`,
-    [companyId, `tenant-b-${companyId}`],
+    [companyId, `tenant-b-${companyId}`, timezone],
   );
   await app.store.pgPool!.query(
     `UPDATE platform.user_session_preferences
@@ -221,6 +223,144 @@ describe("AttendanceAutoPunchoutWorker PostgreSQL DB-first flow", () => {
       if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
       else process.env.DATABASE_URL = originalDatabaseUrl;
     }
+  });
+
+  it("Cloudflare sweep closes one bounded batch and resumes without duplicate checkout", async () => {
+    const first = await loginAs(app, "E1");
+    const second = await loginAs(app, "E2");
+    const companyId = employeeCompanyId(app, first.user.id);
+    expect(employeeCompanyId(app, second.user.id)).toBe(companyId);
+    for (const employee of [first, second]) {
+      await createAttendancePolicy(app, {
+        companyId,
+        employeeUserId: employee.user.id,
+        name: `cloudflare_due_${employee.user.id}`,
+        autoPunchOutEnabled: true,
+        autoPunchOutTime: "18:30",
+      });
+
+      await createOpenSession(app, { companyId, employeeUserId: employee.user.id });
+    }
+    const queued: JobMessage[] = [];
+    const jobs: JobQueue = { send: async (message) => { if (message.kind !== "event") queued.push(message); } };
+    const firstBatch = await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance", referenceIso: "2026-05-20T14:00:00.000Z",
+    }, 1);
+    expect(firstBatch).toEqual({ scanned: 1, closed: 1, failed: 0 });
+    expect(queued).toContainEqual({ kind: "outbox" });
+    const continuation = queued.find((item) => item.kind === "attendance");
+    expect(continuation?.kind).toBe("attendance");
+    if (!continuation || continuation.kind !== "attendance") throw new Error("continuation missing");
+    const secondBatch = await sweepAttendance(app.store.pgPool!, jobs, continuation, 1);
+    expect(secondBatch).toEqual({ scanned: 1, closed: 1, failed: 0 });
+    const duplicate = await sweepAttendance(app.store.pgPool!, jobs, continuation, 1);
+    expect(duplicate.closed).toBe(0);
+    const checkouts = await app.store.pgPool!.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM attendance.punch_events
+       WHERE company_id = $1 AND event_type = 'check_out' AND origin = 'system'`,
+      [companyId],
+    );
+    expect(Number(checkouts.rows[0]?.count)).toBe(2);
+  }, 30_000);
+
+  it("continues another tenant after one policy fails and closes the failed session on the next sweep", async () => {
+    const employeeA = await loginAs(app, "E1");
+    const employeeB = await loginAs(app, "E2");
+    const companyAId = employeeCompanyId(app, employeeA.user.id);
+    const companyBId = await createSecondCompanyForEmployee(app, employeeB.user.id);
+    const brokenPolicyId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.policies (id, company_id, policy_key, name, label, status)
+       VALUES ($1, $2, 'attendance', 'tenant_a_broken_policy', 'tenant_a_broken_policy', 'active')`,
+      [brokenPolicyId, companyAId],
+    );
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.policy_assignments
+         (company_id, policy_id, scope_type, scope_id, effective_from, status)
+       VALUES ($1, $2, 'employee', $3, '2026-01-01T00:00:00.000Z', 'active')`,
+      [companyAId, brokenPolicyId, employeeA.user.id],
+    );
+    await createAttendancePolicy(app, {
+      companyId: companyBId,
+      employeeUserId: employeeB.user.id,
+      name: "tenant_b_due_after_a_fails",
+      autoPunchOutEnabled: true,
+      autoPunchOutTime: "18:30",
+    });
+    const sessionAId = await createOpenSession(app, {
+      companyId: companyAId,
+      employeeUserId: employeeA.user.id,
+    });
+    const sessionBId = await createOpenSession(app, {
+      companyId: companyBId,
+      employeeUserId: employeeB.user.id,
+    });
+    const jobs: JobQueue = { send: async () => undefined };
+    expect(await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance", referenceIso: "2026-05-20T14:00:00.000Z",
+    })).toEqual({ scanned: 2, closed: 1, failed: 1 });
+    const firstPass = await app.store.pgPool!.query<{ id: string; closed_at: Date | null }>(
+      "SELECT id, closed_at FROM attendance.sessions WHERE id = ANY($1::uuid[])",
+      [[sessionAId, sessionBId]],
+    );
+    expect(firstPass.rows.find((session) => session.id === sessionAId)?.closed_at).toBeNull();
+    expect(firstPass.rows.find((session) => session.id === sessionBId)?.closed_at).toBeInstanceOf(Date);
+
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.policy_versions
+         (company_id, policy_id, version_number, effective_from, config)
+       VALUES ($1, $2, 1, '2026-01-01T00:00:00.000Z',
+         '{"autoPunchOutEnabled":true,"autoPunchOutTime":"18:30","fullDayPunchWindow":true}'::jsonb)`,
+      [companyAId, brokenPolicyId],
+    );
+    expect(await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance", referenceIso: "2026-05-21T12:00:00.000Z",
+    })).toEqual({ scanned: 1, closed: 1, failed: 0 });
+    const checkout = await app.store.pgPool!.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM attendance.punch_events
+       WHERE session_id = $1 AND event_type = 'check_out' AND origin = 'system'`,
+      [sessionAId],
+    );
+    expect(Number(checkout.rows[0]?.count)).toBe(1);
+  }, 30_000);
+
+  it("closes a legacy open session under its original company after transfer and soft deletion", async () => {
+    const employee = await loginAs(app, "E1");
+    const originalCompanyId = employeeCompanyId(app, employee.user.id);
+    const sessionId = await createOpenSession(app, {
+      companyId: originalCompanyId,
+      employeeUserId: employee.user.id,
+    });
+    const destinationCompanyId = await createSecondCompanyForEmployee(app, employee.user.id);
+    expect(destinationCompanyId).not.toBe(originalCompanyId);
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET deleted_at = now() WHERE id = $1",
+      [employee.user.id],
+    );
+
+    const jobs: JobQueue = { send: async () => undefined };
+    expect(await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance",
+      referenceIso: "2026-05-22T00:00:00.000Z",
+    })).toMatchObject({ closed: 1, failed: 0 });
+    const result = await app.store.pgPool!.query<{
+      company_id: string;
+      closed_at: Date | null;
+      policy_source: string | null;
+    }>(
+      `SELECT session.company_id, session.closed_at,
+              punch.metadata->>'auto_punch_out_policy_source' AS policy_source
+       FROM attendance.sessions session
+       JOIN attendance.punch_events punch ON punch.session_id = session.id
+         AND punch.event_type = 'check_out'
+       WHERE session.id = $1`,
+      [sessionId],
+    );
+    expect(result.rows).toEqual([expect.objectContaining({
+      company_id: originalCompanyId,
+      closed_at: expect.any(Date),
+      policy_source: "historical_fallback",
+    })]);
   });
 
   it("closes an eligible authoritative session and writes projection and outbox in one command transaction", async () => {
@@ -455,6 +595,68 @@ describe("AttendanceAutoPunchoutWorker PostgreSQL DB-first flow", () => {
         closed_at: null,
       },
     );
+  }, 30_000);
+
+  it("honors each company's local-midnight cutoff at the exact UTC boundary", async () => {
+    const employeeA = await loginAs(app, "E1");
+    const employeeB = await loginAs(app, "E2");
+    const companyAId = employeeCompanyId(app, employeeA.user.id);
+    await app.store.pgPool!.query(
+      "UPDATE platform.company_profiles SET timezone = 'Asia/Kolkata' WHERE id = $1",
+      [companyAId],
+    );
+    const companyBId = await createSecondCompanyForEmployee(
+      app,
+      employeeB.user.id,
+      "America/New_York",
+    );
+    for (const [companyId, employeeUserId, name] of [
+      [companyAId, employeeA.user.id, "kolkata_midnight_boundary"],
+      [companyBId, employeeB.user.id, "new_york_midnight_boundary"],
+    ] as const) {
+      await createAttendancePolicy(app, {
+        companyId,
+        employeeUserId,
+        name,
+        autoPunchOutEnabled: true,
+        autoPunchOutTime: "00:15",
+      });
+    }
+    const kolkataSessionId = await createOpenSession(app, {
+      companyId: companyAId,
+      employeeUserId: employeeA.user.id,
+      checkedInAt: "2026-05-20T04:00:00.000Z",
+    });
+    const newYorkSessionId = await createOpenSession(app, {
+      companyId: companyBId,
+      employeeUserId: employeeB.user.id,
+      checkedInAt: "2026-05-20T04:00:00.000Z",
+    });
+    const jobs: JobQueue = { send: async () => undefined };
+
+    expect(await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance",
+      referenceIso: "2026-05-20T18:44:59.000Z",
+    })).toMatchObject({ closed: 1, failed: 0 });
+    const beforeKolkataBoundary = await app.store.pgPool!.query<{
+      id: string;
+      closed_at: Date | null;
+    }>(
+      "SELECT id, closed_at FROM attendance.sessions WHERE id = ANY($1::uuid[])",
+      [[kolkataSessionId, newYorkSessionId]],
+    );
+    expect(beforeKolkataBoundary.rows.find((row) => row.id === kolkataSessionId)?.closed_at).toBeNull();
+    expect(beforeKolkataBoundary.rows.find((row) => row.id === newYorkSessionId)?.closed_at).toBeInstanceOf(Date);
+
+    expect(await sweepAttendance(app.store.pgPool!, jobs, {
+      kind: "attendance",
+      referenceIso: "2026-05-20T18:45:00.000Z",
+    })).toMatchObject({ closed: 1, failed: 0 });
+    const atKolkataBoundary = await app.store.pgPool!.query<{ closed_at: Date | null }>(
+      "SELECT closed_at FROM attendance.sessions WHERE id = $1",
+      [kolkataSessionId],
+    );
+    expect(atKolkataBoundary.rows[0]?.closed_at?.toISOString()).toBe("2026-05-20T18:45:00.000Z");
   }, 30_000);
 
   it("uses the policy effective when the attendance session started", async () => {

@@ -1,0 +1,50 @@
+project: Hawkaii HRMS
+repository: https://github.com/Hexmon/HRMS
+snapshot_source: user_upload_HRMS.zip
+snapshot_branch: release-01
+snapshot_sha: 18fdc1bfd9144e98628d96411942918470a593f1
+snapshot_commit_date: '2026-10-15T01:37:15+05:30'
+live_remote_freshness_verified: false
+project_kind: B2B_HRMS_modular_monolith_with_workers
+code_topology:
+  frontend: hrms-client
+  backend: hrms_backend
+  frontend_stack: TanStack Start / React / TypeScript
+  backend_stack: Fastify / TypeScript / Drizzle / PostgreSQL
+  background_processing: separate worker processes / Valkey streams
+  hosted_design: Vercel frontend / Render backend and worker / PostgreSQL / Valkey / Cloudinary / Resend
+  live_deployment_status: TBD_REQUIRES_OPERATOR_CONFIRMATION
+multi_tenancy:
+  intended: company-scoped per README and membership code
+  end_to_end_enforcement_verified: false
+personas:
+  - Employee
+  - Manager_or_Reviewer
+  - HR_Manager
+  - Admin
+  - Director
+  - Finance_Manager
+  - Asset_Manager
+  - Auditor
+  - Helpdesk_Agent
+  - Project_Manager
+channels:
+  web_desktop: present
+  responsive_mobile_web: present
+  mobile_native_shipped: not_claimed_in_release_notes
+release_scope: TBD_BUSINESS_APPROVAL
+estimated_employee_population: TBD
+peak_concurrency: TBD
+availability_slo: TBD
+latency_slo: TBD
+rpo: TBD
+rto: TBD
+data_retention_policy: TBD
+regulatory_scope: TBD_LEGAL_REVIEW
+security_owner: TBD
+qa_lead: TBD
+engineering_owner: TBD
+product_owner: TBD
+release_approver: TBD
+planning_only: true
+artifact_output: qa-artifacts/hrms/release-01/<timestamp>-<sha>

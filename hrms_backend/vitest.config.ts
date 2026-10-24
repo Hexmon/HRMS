@@ -47,6 +47,7 @@ export default defineConfig({
           name: "contracts",
           setupFiles,
           testTimeout: 30000,
+          hookTimeout: 60000,
           include: [
             "src/**/*.contract.test.ts"
           ]
@@ -57,6 +58,7 @@ export default defineConfig({
           name: "e2e",
           setupFiles,
           testTimeout: 30000,
+          hookTimeout: 60000,
           include: [
             "src/**/*.e2e.test.ts"
           ]

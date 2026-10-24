@@ -1456,6 +1456,9 @@ function nextSignupEmployeeCode(store: MemoryDataStore): string {
 }
 
 function devOnly(value: Record<string, unknown>): Record<string, unknown> {
+  // A production runtime must never reveal raw verification/reset tokens,
+  // even if APP_ENV was accidentally left at a local-development value.
+  if (process.env.NODE_ENV === "production") return {};
   const appEnv =
     process.env.APP_ENV ??
     (process.env.NODE_ENV === "production" ? "production" : "local");

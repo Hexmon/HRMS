@@ -24,6 +24,22 @@ describe("dashboard summary API", () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it("fails closed when an authenticated administrator has no active company context", async () => {
+    const admin = await loginAs(app, "ADM");
+    const preference = app.store.userSessionPreferences.find((candidate) => candidate.user_id === admin.user.id);
+    expect(preference).toBeDefined();
+    preference!.company_id = null;
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard/summary",
+      headers: authHeader(admin.token),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+  });
+
   it("returns role-scoped operational metrics from implemented modules only", async () => {
     const employee = await loginAs(app, "E1");
     const manager = await loginAs(app, "D1");

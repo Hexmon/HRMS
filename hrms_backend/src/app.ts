@@ -130,6 +130,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         appendServerTiming(reply, "persistence.full", startedAt);
       }
     }
+    if (
+      app.store.kind === "postgres" &&
+      reply.statusCode >= 200 && reply.statusCode < 400 &&
+      !["GET", "HEAD", "OPTIONS"].includes(request.method)
+    ) {
+      // All persistence hooks above have completed, and direct-SQL commands
+      // commit before returning. Cron still recovers a failed best-effort send.
+      await signalOutboxDrain(request.log);
+    }
     return payload;
   });
   app.addHook("onClose", async () => {
@@ -632,4 +641,22 @@ function loggerOptions(enabled: boolean): false | {
     level: process.env.LOG_LEVEL ?? (process.env.NODE_ENV === "production" ? "info" : "debug"),
     redact: loggerRedactionOptions()
   };
+}
+
+async function signalOutboxDrain(log: FastifyInstance["log"]): Promise<void> {
+  const url = process.env.OUTBOX_DRAIN_URL;
+  const token = process.env.OUTBOX_DRAIN_TOKEN;
+  if (!url || !token) return;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!response.ok) {
+      log.warn({ status: response.status }, "Outbox drain signal rejected; Cron recovery remains active");
+    }
+  } catch {
+    log.warn("Outbox drain signal failed; Cron recovery remains active");
+  }
 }

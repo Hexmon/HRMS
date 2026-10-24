@@ -1,0 +1,59 @@
+# Enterprise QA Project Profile v2.0 — copy to qa-artifacts/00_PROJECT_PROFILE.yaml
+# Use TBD for unknown details. All authoritative claims require a source/owner.
+project:
+  name: TBD
+  business_domain: TBD
+  primary_product_goal: TBD
+  lifecycle: TBD # prototype | beta | production | sunset | TBD
+  repository_path_or_url: TBD
+  inspected_commit_sha: TBD
+  target_release_or_tag: TBD
+  scope: TBD # product | release | module | feature | change-set
+  excluded_areas: []
+product_people:
+  product_approver: TBD
+  engineering_approver: TBD
+  qa_lead: TBD
+  security_privacy_owner: TBD
+  sre_operations_owner: TBD
+  primary_user_personas: []
+  user_regions_locales: []
+  accessibility_expectations: TBD
+  customer_criticality_and_harm: TBD
+architecture:
+  pattern: UNCONFIRMED # monolith | modular-monolith | services | hybrid | offline-edge | other
+  deployment_units: []
+  topology: TBD # cloud | on-prem | air-gapped | hybrid | device | other
+  why_architecture_was_selected: TBD # Ask engineering; don't infer rationale
+  data_owners_and_sources_of_truth: []
+  transactional_and_consistency_guarantees: TBD
+  components_and_integrations: []
+  client_channels_and_version_support: []
+  tenant_and_permission_model: TBD
+  offline_and_sync_policy: TBD
+  flag_migration_and_rollback_strategy: TBD
+user_and_business:
+  business_process_source_docs: []
+  important_journeys: []
+  irreversible_actions: []
+  exception_override_policies: TBD
+  workflow_timezones_and_cutoffs: TBD
+  account_provisioning_offboarding: TBD
+security_and_regulatory:
+  classified_data_categories: [] # labels only; NO real personal data
+  jurisdictions_and_contractual_constraints: []
+  mandatory_security_baseline: TBD
+  allowed_nonprod_security_test_boundary: TBD
+quality_and_operations:
+  known_incidents_and_workarounds: []
+  peak_usage_patterns: TBD
+  approved_slo_and_sli_sources: []
+  approved_latency_capacity_targets: TBD
+  approved_rpo_rto: TBD
+  recovery_environment_and_approval: TBD
+  test_data_and_nonproduction_environments: []
+workflow:
+  mode: discover
+  output_directory: qa-artifacts
+  approval_status: PENDING
+  unresolved_decision_ids: []

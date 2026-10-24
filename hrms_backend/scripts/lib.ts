@@ -12,7 +12,7 @@ export function walkFiles(dir: string, predicate: (path: string) => boolean = ()
   const files: string[] = [];
   for (const entry of entries) {
     const full = join(dir, entry);
-    if (entry === "node_modules" || entry === ".next" || entry === "dist") {
+    if (entry === "node_modules" || entry === ".next" || entry === "dist" || entry === ".wrangler") {
       continue;
     }
     const stats = statSync(full);

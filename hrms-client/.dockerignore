@@ -1,0 +1,9 @@
+node_modules
+.vinxi
+.vercel
+dist
+test-results
+playwright-report
+.env
+.env.*
+*.log

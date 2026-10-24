@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { Pool, type PoolClient } from "pg";
 import { ValkeySessionStore } from "#auth";
-import type { RoleKey } from "#shared";
+import { EmploymentStatuses, type AuthUser, type RoleKey } from "#shared";
 import type {
   AssetRecord,
   AttendanceDayRecord,
@@ -79,6 +79,7 @@ import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
+import { companyContextRequired, forbidden, unauthorized } from "./errors.js";
 
 function optionalSet(
   values: readonly string[] | undefined,
@@ -247,7 +248,10 @@ function asIsoOrNull(value: unknown): string | null {
 
 function asDate(value: unknown): string {
   if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
+    // node-postgres parses SQL DATE as midnight in the process timezone.
+    // Converting that instant to UTC shifts the calendar date backwards in
+    // positive-offset zones such as Asia/Kolkata.
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
   }
   return String(value).slice(0, 10);
 }
@@ -449,6 +453,101 @@ class PostgresPersistence {
     private readonly pool: Pool,
     private readonly store: DataStore,
   ) {}
+
+  async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore> {
+    const client = await this.pool.connect();
+    try {
+      // Request-local data prevents an external Worker commit from being hidden
+      // by this API process's hydrated startup snapshot. Never mutate the
+      // shared store (or reload another request's unflushed changes).
+      return {
+        ...this.store,
+        attendancePunches: await this.loadAttendancePunches(client, scope),
+        attendanceDayRecords: await this.loadAttendanceDayRecords(client, scope),
+        outbox: scope.includePendingOutbox ? await this.loadOutbox(client, "pending") : this.store.outbox,
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async reportExportReadStore(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore> {
+    const client = await this.pool.connect();
+    try {
+      if (!scope.companyId && !scope.exportId) return { ...this.store, outbox: [] };
+      const { rows } = scope.exportId
+        ? await client.query(
+            `SELECT * FROM platform.outbox_events WHERE event_type = 'reports.export.requested'
+             AND (aggregate_id = $1 OR event_id = $1)`,
+            [scope.exportId],
+          )
+        : await client.query(
+            `SELECT * FROM platform.outbox_events WHERE event_type = 'reports.export.requested'
+             AND payload->>'company_id' = $1 ORDER BY id`,
+            [scope.companyId],
+          );
+      return { ...this.store, outbox: rows.map((row) => this.mapOutboxRow(row)) };
+    } finally {
+      client.release();
+    }
+  }
+
+  async auditReportReadContext(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
+    const client = await this.pool.connect();
+    try {
+      // One consistent, request-local snapshot. Never reload the shared store:
+      // another request may have unflushed mutations in progress.
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const actorRow = await client.query<{
+        employment_status: AuthUser["employment_status"];
+        deleted_at: Date | null;
+        roles: RoleKey[];
+      }>(
+        `SELECT u.employment_status, u.deleted_at,
+                COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
+                  WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL
+                ), '{}') AS roles
+         FROM core.users u
+         LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+         WHERE u.id = $1 GROUP BY u.id`,
+        [userId],
+      );
+      const current = actorRow.rows[0];
+      const cachedActor = this.store.users.find((user) => user.id === userId);
+      if (!current || current.deleted_at || !cachedActor) throw unauthorized("User no longer exists");
+      if (current.employment_status !== EmploymentStatuses.Active) {
+        throw unauthorized("User account is inactive or blocked");
+      }
+      const actor: AuthUser = { ...cachedActor, roles: current.roles, employment_status: current.employment_status };
+      const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
+        "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
+        [userId],
+      );
+      const assignment = preference.rows[0];
+      if (!assignment?.company_id) throw companyContextRequired({ user_id: userId, operation: "reports.audit" });
+      if (!actor.roles.includes(assignment.active_role)) {
+        throw forbidden("Selected role is not assigned to this user.");
+      }
+      const company = await client.query<{ status: string }>(
+        "SELECT status FROM platform.company_profiles WHERE id = $1",
+        [assignment.company_id],
+      );
+      if (company.rows[0]?.status !== "active") {
+        throw companyContextRequired({ user_id: userId, company_id: assignment.company_id, operation: "reports.audit" });
+      }
+      const companyId = assignment.company_id;
+      const tickets = await this.loadTickets(client, companyId);
+      const auditLogs = await this.loadAuditLogs(client, companyId);
+      const outbox = await this.loadOutbox(client, "all", companyId);
+      await client.query("COMMIT");
+      return { actor, companyId, store: { ...this.store, tickets, auditLogs, outbox } };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
   async reload(): Promise<void> {
     const client = await this.pool.connect();
@@ -1307,9 +1406,12 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadTickets(client: PoolClient): Promise<ExpenseTicket[]> {
+  private async loadTickets(client: PoolClient, companyId?: UUID): Promise<ExpenseTicket[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_tickets ORDER BY created_at, ticket_no",
+      `SELECT * FROM expenses.expense_tickets
+       ${companyId ? "WHERE context_payload->>'company_id' = $1" : ""}
+       ORDER BY created_at, ticket_no`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1391,9 +1493,12 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadAuditLogs(client: PoolClient): Promise<ExpenseAuditLog[]> {
+  private async loadAuditLogs(client: PoolClient, companyId?: UUID): Promise<ExpenseAuditLog[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_audit_logs ORDER BY created_at, id",
+      `SELECT log.* FROM expenses.expense_audit_logs log
+       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = log.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ORDER BY log.created_at, log.id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1576,11 +1681,21 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadOutbox(client: PoolClient): Promise<OutboxEvent[]> {
+  private async loadOutbox(client: PoolClient, filter: "all" | "pending" = "all", companyId?: UUID): Promise<OutboxEvent[]> {
+    const conditions = [
+      ...(filter === "pending" ? ["status IN ('pending', 'retry')"] : []),
+      ...(companyId ? ["payload->>'company_id' = $1"] : []),
+    ];
+    const condition = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const { rows } = await client.query(
-      "SELECT * FROM platform.outbox_events ORDER BY id",
+      `SELECT * FROM platform.outbox_events ${condition} ORDER BY id`,
+      companyId ? [companyId] : [],
     );
-    return rows.map((row) => ({
+    return rows.map((row) => this.mapOutboxRow(row));
+  }
+
+  private mapOutboxRow(row: OutboxEvent & Record<string, unknown>): OutboxEvent {
+    return {
       id: Number(row.id),
       event_id: row.event_id,
       aggregate_type: row.aggregate_type,
@@ -1595,7 +1710,7 @@ class PostgresPersistence {
       published_at: asIsoOrNull(row.published_at),
       failed_at: asIsoOrNull(row.failed_at),
       last_error: row.last_error,
-    }));
+    };
   }
 
   private async loadAssets(client: PoolClient): Promise<AssetRecord[]> {
@@ -2113,10 +2228,16 @@ class PostgresPersistence {
 
   private async loadAttendancePunches(
     client: PoolClient,
+    scope?: { companyId: UUID; employeeUserIds?: UUID[] },
   ): Promise<AttendancePunch[]> {
-    const { rows } = await client.query(
-      "SELECT * FROM attendance.punch_events ORDER BY occurred_at, id",
-    );
+    const { rows } = scope
+      ? await client.query(
+          `SELECT * FROM attendance.punch_events WHERE company_id = $1
+           AND ($2::uuid[] IS NULL OR employee_user_id = ANY($2::uuid[]))
+           ORDER BY occurred_at, id`,
+          [scope.companyId, scope.employeeUserIds ?? null],
+        )
+      : await client.query("SELECT * FROM attendance.punch_events ORDER BY occurred_at, id");
     return rows.map((row) => ({
       id: row.id,
       company_id: row.company_id,
@@ -2136,10 +2257,16 @@ class PostgresPersistence {
 
   private async loadAttendanceDayRecords(
     client: PoolClient,
+    scope?: { companyId: UUID; employeeUserIds?: UUID[] },
   ): Promise<AttendanceDayRecord[]> {
-    const { rows } = await client.query(
-      "SELECT * FROM attendance.daily_records ORDER BY work_date, employee_user_id",
-    );
+    const { rows } = scope
+      ? await client.query(
+          `SELECT day.*, day.work_date::text AS work_date FROM attendance.daily_records day WHERE day.company_id = $1
+           AND ($2::uuid[] IS NULL OR day.employee_user_id = ANY($2::uuid[]))
+           ORDER BY day.work_date, day.employee_user_id`,
+          [scope.companyId, scope.employeeUserIds ?? null],
+        )
+      : await client.query("SELECT day.*, day.work_date::text AS work_date FROM attendance.daily_records day ORDER BY day.work_date, day.employee_user_id");
     return rows.map((row) => ({
       id: row.id,
       company_id: row.company_id,
@@ -3286,19 +3413,19 @@ class PostgresPersistence {
   ): Promise<void> {
     for (const event of this.store.outbox) {
       if (aggregateIds && !aggregateIds.has(event.aggregate_id)) continue;
-      await client.query(
+      const inserted = await client.query<{ id: string }>(
         `INSERT INTO platform.outbox_events (
-          id, event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key,
+          event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key,
           status, retry_count, available_at, created_at, published_at, failed_at, last_error
         )
-        OVERRIDING SYSTEM VALUE
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14)
-        ON CONFLICT (id) DO UPDATE
-        SET status = EXCLUDED.status, retry_count = EXCLUDED.retry_count,
-            available_at = EXCLUDED.available_at, published_at = EXCLUDED.published_at,
-            failed_at = EXCLUDED.failed_at, last_error = EXCLUDED.last_error`,
+        SELECT $1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13
+        WHERE NOT EXISTS (SELECT 1 FROM platform.outbox_events WHERE event_id = $1)
+        -- The API's hydrated outbox snapshot can be older than a separately
+        -- running publisher. Only insert new events here; delivery state is
+        -- owned by the publisher's direct PostgreSQL transaction.
+        ON CONFLICT (event_id) DO NOTHING
+        RETURNING id`,
         [
-          event.id,
           event.event_id,
           event.aggregate_type,
           event.aggregate_id,
@@ -3314,14 +3441,18 @@ class PostgresPersistence {
           event.last_error,
         ],
       );
+      const persistedId = inserted.rows[0]?.id ?? (
+        await client.query<{ id: string }>(
+          "SELECT id FROM platform.outbox_events WHERE event_id = $1",
+          [event.event_id],
+        )
+      ).rows[0]?.id;
+      if (!persistedId) {
+        throw new Error("Outbox event was not persisted.");
+      }
+      event.id = Number(persistedId);
+      this.store.nextOutboxId = Math.max(this.store.nextOutboxId, event.id + 1);
     }
-    await client.query(
-      `SELECT setval(
-         pg_get_serial_sequence('platform.outbox_events', 'id'),
-         COALESCE((SELECT max(id) FROM platform.outbox_events), 1),
-         EXISTS (SELECT 1 FROM platform.outbox_events)
-       )`,
-    );
   }
 
   private async flushExpenses(client: PoolClient): Promise<void> {
@@ -4333,16 +4464,10 @@ class PostgresPersistence {
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
         ON CONFLICT (id) DO UPDATE
-        SET company_id = EXCLUDED.company_id,
-            event_type = EXCLUDED.event_type,
-            occurred_at = EXCLUDED.occurred_at,
-            work_mode = EXCLUDED.work_mode,
-             source = EXCLUDED.source,
-             actor_user_id = EXCLUDED.actor_user_id,
-             origin = EXCLUDED.origin,
-             regularization_request_id = EXCLUDED.regularization_request_id,
-            metadata = EXCLUDED.metadata,
-            deleted_at = EXCLUDED.deleted_at`,
+        -- Punch facts are immutable. A stale API snapshot must not replace
+        -- a direct-SQL command or worker result. Preserve soft deletion only.
+        SET deleted_at = EXCLUDED.deleted_at
+        WHERE attendance.punch_events.deleted_at IS NULL AND EXCLUDED.deleted_at IS NOT NULL`,
         [
           punch.id,
           punch.company_id,
@@ -4400,7 +4525,8 @@ class PostgresPersistence {
             regularization_status = EXCLUDED.regularization_status,
             version = EXCLUDED.version,
             updated_at = EXCLUDED.updated_at,
-            deleted_at = EXCLUDED.deleted_at`,
+            deleted_at = EXCLUDED.deleted_at
+        WHERE attendance.daily_records.version < EXCLUDED.version`,
         [
           day.id,
           day.company_id,

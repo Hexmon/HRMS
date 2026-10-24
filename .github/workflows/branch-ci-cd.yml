@@ -26,7 +26,9 @@ jobs:
   backend-checks:
     name: Backend checks
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The serial PostgreSQL integration suite took ~44 minutes locally on
+    # 2026-10-23; install, migration, build and slower CI runners need margin.
+    timeout-minutes: 90
     env:
       NODE_ENV: test
       BUILD_SHA: ${{ github.sha }}
@@ -102,8 +104,17 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Verify local Cloudflare Queue DLQ and replay
+        run: pnpm verify:cloudflare-queue-dlq
+
       - name: Build
         run: pnpm build
+
+      - name: Bundle Cloudflare Worker environments
+        run: |
+          for target in dev qa production; do
+            pnpm exec wrangler deploy --env "$target" --dry-run --outdir "/tmp/hrms-worker-$target"
+          done
 
   frontend-checks:
     name: Frontend checks
@@ -184,14 +195,20 @@ jobs:
             dev)
               echo "api_hook_secret=DEV_RENDER_API_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
               echo "worker_hook_secret=DEV_RENDER_WORKER_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
+              echo "cutover_var=DEV_HRMS_CLOUDFLARE_CUTOVER_ACTIVE" >> "$GITHUB_OUTPUT"
+              echo "legacy_present_var=DEV_RENDER_LEGACY_WORKER_PRESENT" >> "$GITHUB_OUTPUT"
               ;;
             qa)
               echo "api_hook_secret=QA_RENDER_API_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
               echo "worker_hook_secret=QA_RENDER_WORKER_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
+              echo "cutover_var=QA_HRMS_CLOUDFLARE_CUTOVER_ACTIVE" >> "$GITHUB_OUTPUT"
+              echo "legacy_present_var=QA_RENDER_LEGACY_WORKER_PRESENT" >> "$GITHUB_OUTPUT"
               ;;
             production)
               echo "api_hook_secret=PROD_RENDER_API_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
               echo "worker_hook_secret=PROD_RENDER_WORKER_DEPLOY_HOOK_URL" >> "$GITHUB_OUTPUT"
+              echo "cutover_var=PROD_HRMS_CLOUDFLARE_CUTOVER_ACTIVE" >> "$GITHUB_OUTPUT"
+              echo "legacy_present_var=PROD_RENDER_LEGACY_WORKER_PRESENT" >> "$GITHUB_OUTPUT"
               ;;
             *) echo "Unsupported target $target" >&2; exit 1 ;;
           esac
@@ -200,6 +217,12 @@ jobs:
       - name: Trigger Render deploy hooks
         shell: bash
         env:
+          DEV_HRMS_CLOUDFLARE_CUTOVER_ACTIVE: ${{ vars.DEV_HRMS_CLOUDFLARE_CUTOVER_ACTIVE }}
+          QA_HRMS_CLOUDFLARE_CUTOVER_ACTIVE: ${{ vars.QA_HRMS_CLOUDFLARE_CUTOVER_ACTIVE }}
+          PROD_HRMS_CLOUDFLARE_CUTOVER_ACTIVE: ${{ vars.PROD_HRMS_CLOUDFLARE_CUTOVER_ACTIVE }}
+          DEV_RENDER_LEGACY_WORKER_PRESENT: ${{ vars.DEV_RENDER_LEGACY_WORKER_PRESENT }}
+          QA_RENDER_LEGACY_WORKER_PRESENT: ${{ vars.QA_RENDER_LEGACY_WORKER_PRESENT }}
+          PROD_RENDER_LEGACY_WORKER_PRESENT: ${{ vars.PROD_RENDER_LEGACY_WORKER_PRESENT }}
           DEV_RENDER_API_DEPLOY_HOOK_URL: ${{ secrets.DEV_RENDER_API_DEPLOY_HOOK_URL }}
           DEV_RENDER_WORKER_DEPLOY_HOOK_URL: ${{ secrets.DEV_RENDER_WORKER_DEPLOY_HOOK_URL }}
           QA_RENDER_API_DEPLOY_HOOK_URL: ${{ secrets.QA_RENDER_API_DEPLOY_HOOK_URL }}
@@ -209,15 +232,29 @@ jobs:
         run: |
           api_var="${{ steps.target.outputs.api_hook_secret }}"
           worker_var="${{ steps.target.outputs.worker_hook_secret }}"
+          cutover_var="${{ steps.target.outputs.cutover_var }}"
+          legacy_present_var="${{ steps.target.outputs.legacy_present_var }}"
           api_hook="${!api_var:-}"
           worker_hook="${!worker_var:-}"
+          cutover_active="${!cutover_var:-}"
+          legacy_present="${!legacy_present_var:-}"
 
-          if [[ -z "$api_hook" || -z "$worker_hook" ]]; then
-            echo "Missing Render deploy hook secret(s) for ${{ steps.target.outputs.target }}." >&2
-            echo "Required secrets: $api_var and $worker_var" >&2
+          if [[ -z "$api_hook" ]]; then
+            echo "Missing Render API deploy hook secret: $api_var" >&2
+            exit 1
+          fi
+
+          if [[ "$cutover_active" != "true" && "$legacy_present" != "false" && -z "$worker_hook" ]]; then
+            echo "Missing legacy Render worker deploy hook secret: $worker_var" >&2
             exit 1
           fi
 
           curl -fsS -X POST "$api_hook"
-          curl -fsS -X POST "$worker_hook"
-          echo "Triggered Render API and worker deploys for ${{ steps.target.outputs.target }}."
+          if [[ "$cutover_active" == "true" ]]; then
+            echo "Triggered Render API only; Cloudflare worker cutover is active."
+          elif [[ "$legacy_present" == "false" ]]; then
+            echo "Triggered Render API only; legacy Render worker is explicitly marked absent."
+          else
+            curl -fsS -X POST "$worker_hook"
+            echo "Triggered Render API and legacy worker deploys for ${{ steps.target.outputs.target }}."
+          fi

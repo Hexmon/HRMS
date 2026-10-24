@@ -1,0 +1,91 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hawkaii-hrms-background",
+  "main": "src/workers/cloudflare-worker.ts",
+  "compatibility_date": "2026-10-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "JOBS_QUEUE_NAME": "hrms-background-jobs",
+    "EVENTS_QUEUE_NAME": "hrms-business-events",
+    "WORKER_ACTIVE": "false"
+  },
+  "triggers": {
+    "crons": ["* * * * *", "*/5 * * * *", "0 * * * *"]
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "JOBS", "queue": "hrms-background-jobs" },
+      { "binding": "EVENTS", "queue": "hrms-business-events" }
+    ],
+    "consumers": [
+      { "queue": "hrms-background-jobs", "max_batch_size": 5, "max_retries": 5, "max_concurrency": 3, "retry_delay": 60, "dead_letter_queue": "hrms-background-jobs-dlq" },
+      { "queue": "hrms-business-events", "max_batch_size": 10, "max_retries": 5, "max_concurrency": 3, "retry_delay": 60, "dead_letter_queue": "hrms-business-events-dlq" }
+    ]
+  },
+  "observability": { "enabled": true },
+  "env": {
+    "dev": {
+      "vars": {
+        "JOBS_QUEUE_NAME": "hrms-background-jobs-dev",
+        "EVENTS_QUEUE_NAME": "hrms-business-events-dev",
+        "WORKER_ACTIVE": "false"
+      },
+      "triggers": { "crons": ["* * * * *", "*/5 * * * *", "0 * * * *"] },
+      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "00000000-0000-0000-0000-000000000000" }],
+      "queues": {
+        "producers": [
+          { "binding": "JOBS", "queue": "hrms-background-jobs-dev" },
+          { "binding": "EVENTS", "queue": "hrms-business-events-dev" }
+        ],
+        "consumers": [
+          { "queue": "hrms-background-jobs-dev", "max_batch_size": 5, "max_retries": 5, "max_concurrency": 3, "retry_delay": 60, "dead_letter_queue": "hrms-background-jobs-dlq-dev" },
+          { "queue": "hrms-business-events-dev", "max_batch_size": 10, "max_retries": 5, "max_concurrency": 3, "retry_delay": 60, "dead_letter_queue": "hrms-business-events-dlq-dev" }
+        ]
+      }
+    },
+    "qa": {
+      "vars": {
+        "JOBS_QUEUE_NAME": "hrms-background-jobs-qa",
+        "EVENTS_QUEUE_NAME": "hrms-business-events-qa",
+        "WORKER_ACTIVE": "false"
+      },
+      "triggers": { "crons": ["* * * * *", "*/5 * * * *", "0 * * * *"] },
+      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "00000000-0000-0000-0000-000000000000" }],
+      "queues": {
+        "producers": [
+          { "binding": "JOBS", "queue": "hrms-background-jobs-qa" },
+          { "binding": "EVENTS", "queue": "hrms-business-events-qa" }
+        ],
+        "consumers": [
+          { "queue": "hrms-background-jobs-qa", "max_batch_size": 5, "max_retries": 5, "max_concurrency": 3, "retry_delay": 60, "dead_letter_queue": "hrms-background-jobs-dlq-qa" },
+          { "queue": "hrms-business-events-qa", "max_batch_size": 10, "max_retries": 5, "max_concurrency": 3, "retry_delay": 60, "dead_letter_queue": "hrms-business-events-dlq-qa" }
+        ]
+      }
+    },
+    "production": {
+      "vars": {
+        "JOBS_QUEUE_NAME": "hrms-background-jobs-production",
+        "EVENTS_QUEUE_NAME": "hrms-business-events-production",
+        "WORKER_ACTIVE": "false"
+      },
+      "triggers": { "crons": ["* * * * *", "*/5 * * * *", "0 * * * *"] },
+      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "00000000-0000-0000-0000-000000000000" }],
+      "queues": {
+        "producers": [
+          { "binding": "JOBS", "queue": "hrms-background-jobs-production" },
+          { "binding": "EVENTS", "queue": "hrms-business-events-production" }
+        ],
+        "consumers": [
+          { "queue": "hrms-background-jobs-production", "max_batch_size": 5, "max_retries": 5, "max_concurrency": 3, "retry_delay": 60, "dead_letter_queue": "hrms-background-jobs-dlq-production" },
+          { "queue": "hrms-business-events-production", "max_batch_size": 10, "max_retries": 5, "max_concurrency": 3, "retry_delay": 60, "dead_letter_queue": "hrms-business-events-dlq-production" }
+        ]
+      }
+    }
+  }
+}
