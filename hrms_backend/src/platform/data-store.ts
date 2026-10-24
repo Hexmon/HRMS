@@ -253,6 +253,7 @@ export interface UserSessionPreferenceRecord {
 
 export interface AssetStateEventRecord {
   id: UUID;
+  company_id: UUID | null;
   asset_id: UUID;
   actor_user_id: UUID | null;
   event_type: string;
@@ -2126,6 +2127,7 @@ export function createMemoryDataStore(): MemoryDataStore {
   const helpdeskTickets: HelpdeskTicket[] = [
     {
       id: uuidFromName("helpdesk-ticket-12001"),
+      company_id: defaultCompanyId,
       ticket_no: "TKT-12001",
       subject: "VPN not connecting from office",
       description:
@@ -2157,6 +2159,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: uuidFromName("helpdesk-ticket-12002"),
+      company_id: defaultCompanyId,
       ticket_no: "TKT-12002",
       subject: "Update payroll bank account",
       description: "Please update payroll bank details for the next cycle.",
@@ -2204,6 +2207,7 @@ export function createMemoryDataStore(): MemoryDataStore {
   const helpdeskEvents: HelpdeskTicketEvent[] = [
     {
       id: uuidFromName("helpdesk-event-12001-created"),
+      company_id: defaultCompanyId,
       ticket_id: helpdeskTickets[0]!.id,
       actor_user_id: seedIds.employee1,
       actor_name: "Employee E1",
@@ -2213,6 +2217,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: uuidFromName("helpdesk-event-12001-assigned"),
+      company_id: defaultCompanyId,
       ticket_id: helpdeskTickets[0]!.id,
       actor_user_id: null,
       actor_name: "System",
@@ -2222,6 +2227,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     {
       id: uuidFromName("helpdesk-event-12002-created"),
+      company_id: defaultCompanyId,
       ticket_id: helpdeskTickets[1]!.id,
       actor_user_id: seedIds.employee2,
       actor_name: "Employee E2",
@@ -2356,6 +2362,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     assets: [
       {
         id: firstAssetId,
+        company_id: defaultCompanyId,
         asset_code: "LAP-001",
         qr_hash: createQrHash("LAP-001"),
         asset_type: "Laptop",

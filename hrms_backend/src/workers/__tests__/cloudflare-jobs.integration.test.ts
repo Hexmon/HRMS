@@ -16,6 +16,7 @@ describe("Cloudflare outbox drain against PostgreSQL", () => {
     const eventId = randomUUID();
     app.store.outbox.push({
       id: app.store.nextOutboxId++,
+      company_id: null,
       event_id: eventId,
       aggregate_type: "expenses",
       aggregate_id: randomUUID(),

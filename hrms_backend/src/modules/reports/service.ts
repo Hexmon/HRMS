@@ -817,7 +817,7 @@ export class ReportService {
         remarks: log.remarks,
       }));
     const outboxRows = this.store.outbox
-      .filter((event) => event.payload.company_id === companyId)
+      .filter((event) => event.company_id === companyId)
       .map((event) => ({
         id: event.event_id,
         at: event.created_at,
@@ -828,9 +828,31 @@ export class ReportService {
         target: event.aggregate_id,
         remarks: typeof event.payload.remarks === "string" ? event.payload.remarks : null,
       }));
-    // Asset and helpdesk events have no immutable, server-owned company marker.
-    // Exclude them until their historical company can be captured and backfilled.
-    const rows = [...expenseRows, ...outboxRows]
+    const assetRows = this.store.assetStateEvents
+      .filter((event) => event.company_id === companyId)
+      .map((event) => ({
+        id: event.id,
+        at: event.created_at,
+        actor_user_id: event.actor_user_id,
+        actor: event.actor_user_id ? this.userLabel(event.actor_user_id) ?? event.actor_user_id : "System",
+        action: event.event_type,
+        module: "Assets",
+        target: event.asset_id,
+        remarks: typeof event.payload.remarks === "string" ? event.payload.remarks : null,
+      }));
+    const helpdeskRows = this.store.helpdeskEvents
+      .filter((event) => event.company_id === companyId)
+      .map((event) => ({
+        id: event.id,
+        at: event.created_at,
+        actor_user_id: event.actor_user_id,
+        actor: event.actor_name,
+        action: event.action,
+        module: "Helpdesk",
+        target: event.ticket_id,
+        remarks: event.detail,
+      }));
+    const rows = [...expenseRows, ...outboxRows, ...assetRows, ...helpdeskRows]
       .filter((row) => !query.actor_user_id || row.actor_user_id === query.actor_user_id)
       .filter((row) => !query.module || row.module.toLowerCase().includes(query.module.toLowerCase()))
       .filter((row) => !query.action || row.action.toLowerCase().includes(query.action.toLowerCase()))
@@ -1054,9 +1076,8 @@ export class ReportService {
   private canSeeExport(actor: AuthUser, event: OutboxEvent): boolean {
     const actorCompanyId = this.store.userSessionPreferences.find((preference) => preference.user_id === actor.id)?.company_id;
     // Never infer a legacy export's historical company from its creator's
-    // *current* preference: an employee may have moved between companies.
-    // Old events need a reviewed backfill before their metadata can be read.
-    const eventCompanyId = typeof event.payload.company_id === "string" ? event.payload.company_id : null;
+    // current preference. Only the immutable, server-owned marker is trusted.
+    const eventCompanyId = event.company_id;
     if (!actorCompanyId || !eventCompanyId || actorCompanyId !== eventCompanyId) return false;
     if (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor)) return true;
     return event.payload.actor_user_id === actor.id;

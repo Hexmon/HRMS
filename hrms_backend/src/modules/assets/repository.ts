@@ -14,10 +14,11 @@ import { conflict, notFound } from "../../platform/errors.js";
 export class AssetRepository {
   constructor(private readonly store: MemoryDataStore) {}
 
-  create(input: { asset_code: string; asset_type: string; name: string; serial_no?: string }): AssetRecord {
+  create(input: { companyId: UUID; asset_code: string; asset_type: string; name: string; serial_no?: string }): AssetRecord {
     const now = nowIso();
     const asset: AssetRecord = {
       id: randomUUID(),
+      company_id: input.companyId,
       asset_code: input.asset_code,
       qr_hash: createQrHash(input.asset_code),
       asset_type: input.asset_type,

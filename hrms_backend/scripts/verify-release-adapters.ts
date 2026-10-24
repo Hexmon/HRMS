@@ -36,6 +36,7 @@ try {
   const eventId = randomUUID();
   store.outbox.push({
     id: store.nextOutboxId++,
+    company_id: null,
     event_id: eventId,
     aggregate_type: "release_acceptance",
     aggregate_id: seedIds.employee1,

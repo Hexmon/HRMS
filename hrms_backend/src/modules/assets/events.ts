@@ -26,6 +26,7 @@ export function createRecoveryTicketsForTerminatedEmployee(store: MemoryDataStor
     });
     store.assetStateEvents.push({
       id: randomUUID(),
+      company_id: asset.company_id,
       asset_id: asset.id,
       actor_user_id: null,
       event_type: "asset.recovery_requested",

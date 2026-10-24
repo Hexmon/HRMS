@@ -464,7 +464,9 @@ class PostgresPersistence {
         ...this.store,
         attendancePunches: await this.loadAttendancePunches(client, scope),
         attendanceDayRecords: await this.loadAttendanceDayRecords(client, scope),
-        outbox: scope.includePendingOutbox ? await this.loadOutbox(client, "pending") : this.store.outbox,
+        outbox: scope.includePendingOutbox
+          ? await this.loadOutbox(client, "pending", scope.companyId)
+          : this.store.outbox,
       };
     } finally {
       client.release();
@@ -483,7 +485,7 @@ class PostgresPersistence {
           )
         : await client.query(
             `SELECT * FROM platform.outbox_events WHERE event_type = 'reports.export.requested'
-             AND payload->>'company_id' = $1 ORDER BY id`,
+             AND company_id = $1 ORDER BY id`,
             [scope.companyId],
           );
       return { ...this.store, outbox: rows.map((row) => this.mapOutboxRow(row)) };
@@ -539,8 +541,14 @@ class PostgresPersistence {
       const tickets = await this.loadTickets(client, companyId);
       const auditLogs = await this.loadAuditLogs(client, companyId);
       const outbox = await this.loadOutbox(client, "all", companyId);
+      const assetStateEvents = await this.loadAssetStateEvents(client, companyId);
+      const helpdeskEvents = await this.loadHelpdeskEvents(client, companyId);
       await client.query("COMMIT");
-      return { actor, companyId, store: { ...this.store, tickets, auditLogs, outbox } };
+      return {
+        actor,
+        companyId,
+        store: { ...this.store, tickets, auditLogs, outbox, assetStateEvents, helpdeskEvents },
+      };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
@@ -1684,7 +1692,7 @@ class PostgresPersistence {
   private async loadOutbox(client: PoolClient, filter: "all" | "pending" = "all", companyId?: UUID): Promise<OutboxEvent[]> {
     const conditions = [
       ...(filter === "pending" ? ["status IN ('pending', 'retry')"] : []),
-      ...(companyId ? ["payload->>'company_id' = $1"] : []),
+      ...(companyId ? ["company_id = $1"] : []),
     ];
     const condition = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const { rows } = await client.query(
@@ -1697,6 +1705,7 @@ class PostgresPersistence {
   private mapOutboxRow(row: OutboxEvent & Record<string, unknown>): OutboxEvent {
     return {
       id: Number(row.id),
+      company_id: row.company_id ?? null,
       event_id: row.event_id,
       aggregate_type: row.aggregate_type,
       aggregate_id: row.aggregate_id,
@@ -1719,6 +1728,7 @@ class PostgresPersistence {
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id ?? null,
       asset_code: row.asset_code,
       qr_hash: row.qr_hash,
       asset_type: row.asset_type,
@@ -1755,12 +1765,17 @@ class PostgresPersistence {
 
   private async loadAssetStateEvents(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<AssetStateEventRecord[]> {
     const { rows } = await client.query(
-      "SELECT * FROM assets.asset_state_events ORDER BY created_at, id",
+      `SELECT * FROM assets.asset_state_events
+       ${companyId ? "WHERE company_id = $1" : ""}
+       ORDER BY created_at, id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id ?? null,
       asset_id: row.asset_id,
       actor_user_id: row.actor_user_id,
       event_type: row.event_type,
@@ -2139,6 +2154,7 @@ class PostgresPersistence {
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id ?? null,
       ticket_no: row.ticket_no,
       subject: row.subject,
       description: row.description,
@@ -2211,12 +2227,17 @@ class PostgresPersistence {
 
   private async loadHelpdeskEvents(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<HelpdeskTicketEvent[]> {
     const { rows } = await client.query(
-      "SELECT * FROM helpdesk.ticket_events ORDER BY created_at, id",
+      `SELECT * FROM helpdesk.ticket_events
+       ${companyId ? "WHERE company_id = $1" : ""}
+       ORDER BY created_at, id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id ?? null,
       ticket_id: row.ticket_id,
       actor_user_id: row.actor_user_id,
       actor_name: row.actor_name,
@@ -3415,10 +3436,10 @@ class PostgresPersistence {
       if (aggregateIds && !aggregateIds.has(event.aggregate_id)) continue;
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO platform.outbox_events (
-          event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key,
+          event_id, company_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key,
           status, retry_count, available_at, created_at, published_at, failed_at, last_error
         )
-        SELECT $1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13
+        SELECT $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14
         WHERE NOT EXISTS (SELECT 1 FROM platform.outbox_events WHERE event_id = $1)
         -- The API's hydrated outbox snapshot can be older than a separately
         -- running publisher. Only insert new events here; delivery state is
@@ -3427,6 +3448,7 @@ class PostgresPersistence {
         RETURNING id`,
         [
           event.event_id,
+          event.company_id,
           event.aggregate_type,
           event.aggregate_id,
           event.event_type,
@@ -3751,10 +3773,10 @@ class PostgresPersistence {
     for (const asset of this.store.assets) {
       await client.query(
         `INSERT INTO assets.assets (
-          id, asset_code, qr_hash, asset_type, name, serial_no, status,
+          id, company_id, asset_code, qr_hash, asset_type, name, serial_no, status,
           current_assigned_user_id, metadata, created_at, updated_at, deleted_at, version
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14)
         ON CONFLICT (id) DO UPDATE
         SET asset_code = EXCLUDED.asset_code, qr_hash = EXCLUDED.qr_hash,
             asset_type = EXCLUDED.asset_type, name = EXCLUDED.name, serial_no = EXCLUDED.serial_no,
@@ -3763,6 +3785,7 @@ class PostgresPersistence {
             deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version`,
         [
           asset.id,
+          asset.company_id,
           asset.asset_code,
           asset.qr_hash,
           asset.asset_type,
@@ -3802,11 +3825,12 @@ class PostgresPersistence {
     }
     for (const event of this.store.assetStateEvents) {
       await client.query(
-        `INSERT INTO assets.asset_state_events (id, asset_id, actor_user_id, event_type, payload, created_at)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+        `INSERT INTO assets.asset_state_events (id, company_id, asset_id, actor_user_id, event_type, payload, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
          ON CONFLICT (id) DO NOTHING`,
         [
           event.id,
+          event.company_id,
           event.asset_id,
           event.actor_user_id,
           event.event_type,
@@ -4307,13 +4331,13 @@ class PostgresPersistence {
     for (const ticket of this.store.helpdeskTickets) {
       await client.query(
         `INSERT INTO helpdesk.tickets (
-          id, ticket_no, subject, description, category_id, category_key, sub_category,
+          id, company_id, ticket_no, subject, description, category_id, category_key, sub_category,
           priority, status, requester_user_id, requester_name, requester_email,
           requester_department, assignee_user_id, assignee_name, assignee_role,
           related_asset_id, related_project_id, first_response_at, resolved_at, closed_at,
           resolution, reopen_count, escalated, version, created_at, updated_at, deleted_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
         ON CONFLICT (id) DO UPDATE
         SET ticket_no = EXCLUDED.ticket_no,
             subject = EXCLUDED.subject,
@@ -4343,6 +4367,7 @@ class PostgresPersistence {
             deleted_at = EXCLUDED.deleted_at`,
         [
           ticket.id,
+          ticket.company_id,
           ticket.ticket_no,
           ticket.subject,
           ticket.description,
@@ -4434,16 +4459,13 @@ class PostgresPersistence {
     for (const event of this.store.helpdeskEvents) {
       await client.query(
         `INSERT INTO helpdesk.ticket_events (
-          id, ticket_id, actor_user_id, actor_name, action, detail, created_at
+          id, company_id, ticket_id, actor_user_id, actor_name, action, detail, created_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (id) DO UPDATE
-        SET actor_user_id = EXCLUDED.actor_user_id,
-            actor_name = EXCLUDED.actor_name,
-            action = EXCLUDED.action,
-            detail = EXCLUDED.detail`,
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (id) DO NOTHING`,
         [
           event.id,
+          event.company_id,
           event.ticket_id,
           event.actor_user_id,
           event.actor_name,

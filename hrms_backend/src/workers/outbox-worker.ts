@@ -164,6 +164,7 @@ export class OutboxWorker {
 function rowToEvent(row: Record<string, unknown>): OutboxEvent {
   return {
     id: Number(row.id),
+    company_id: row.company_id === null || row.company_id === undefined ? null : String(row.company_id),
     event_id: String(row.event_id),
     aggregate_type: String(row.aggregate_type),
     aggregate_id: String(row.aggregate_id),

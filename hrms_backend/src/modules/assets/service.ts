@@ -3,6 +3,7 @@ import type { AssetRecord, AuthUser, UUID } from "#shared";
 import { AssetStatuses, LicenseStatuses, Roles } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { badRequest, conflict, forbidden, notFound } from "../../platform/errors.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { assertAssetManager } from "./policy.js";
@@ -19,7 +20,13 @@ export class AssetService {
 
   create(actor: AuthUser, input: { asset_code: string; asset_type: string; name: string; serial_no?: string }): AssetRecord {
     assertAssetManager(actor);
-    return this.repository.create(input);
+    const companyId = this.companyForActor(actor, "assets.create");
+    const asset = this.repository.create({ ...input, companyId });
+    this.appendAssetEvent(asset.id, actor.id, "asset.created", {
+      asset_code: asset.asset_code,
+      asset_type: asset.asset_type,
+    });
+    return asset;
   }
 
   list(actor: AuthUser, page: number, pageSize: number) {
@@ -103,6 +110,7 @@ export class AssetService {
     });
     this.store.assetStateEvents.push({
       id: randomUUID(),
+      company_id: asset.company_id,
       asset_id: id,
       actor_user_id: actor.id,
       event_type: "asset.assigned",
@@ -327,7 +335,8 @@ export class AssetService {
       aggregateId: vendor.id,
       eventType: "asset.vendor_created",
       payload: { name: vendor.name, actor_user_id: actor.id },
-      idempotencyKey: `asset.vendor_created:${vendor.id}`
+      idempotencyKey: `asset.vendor_created:${vendor.id}`,
+      companyId: this.companyForActor(actor, "assets.vendor.create")
     });
     return { vendor, version: vendor.version };
   }
@@ -357,7 +366,8 @@ export class AssetService {
       aggregateId: vendor.id,
       eventType: "asset.vendor_updated",
       payload: { name: vendor.name, status: vendor.status, actor_user_id: actor.id },
-      idempotencyKey: `asset.vendor_updated:${vendor.id}:${vendor.version}`
+      idempotencyKey: `asset.vendor_updated:${vendor.id}:${vendor.version}`,
+      companyId: this.companyForActor(actor, "assets.vendor.update")
     });
     return { vendor, version: vendor.version };
   }
@@ -464,6 +474,7 @@ export class AssetService {
     }
     this.store.assetStateEvents.push({
       id: randomUUID(),
+      company_id: asset.company_id,
       asset_id: id,
       actor_user_id: actor.id,
       event_type: "asset.returned",
@@ -550,12 +561,16 @@ export class AssetService {
   }
 
   consumeEmployeeTerminated(employeeUserId: UUID): { recovery_tickets_created: number } {
+    const companyId = this.store.userSessionPreferences.find(
+      (preference) => preference.user_id === employeeUserId,
+    )?.company_id ?? null;
     appendOutboxEvent(this.store, {
       aggregateType: "employee",
       aggregateId: employeeUserId,
       eventType: "employee.terminated",
       payload: { employee_user_id: employeeUserId },
-      idempotencyKey: `employee.terminated:${employeeUserId}`
+      idempotencyKey: `employee.terminated:${employeeUserId}`,
+      companyId,
     });
     return { recovery_tickets_created: createRecoveryTicketsForTerminatedEmployee(this.store, employeeUserId) };
   }
@@ -570,14 +585,24 @@ export class AssetService {
 
   private appendAssetEvent(assetId: UUID | null, actorId: UUID | null, eventType: string, payload: Record<string, unknown>) {
     if (!assetId) return;
+    const asset = this.repository.find(assetId);
     this.store.assetStateEvents.push({
       id: randomUUID(),
+      company_id: asset.company_id,
       asset_id: assetId,
       actor_user_id: actorId,
       event_type: eventType,
       payload,
       created_at: nowIso()
     });
+  }
+
+  private companyForActor(actor: AuthUser, operation: string): UUID {
+    return resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation,
+      requireActiveEmployment: true,
+    }).companyId;
   }
 
   private presentRequest(request: MemoryDataStore["assetRequests"][number]) {

@@ -21,6 +21,7 @@ import type {
 import { EmploymentStatuses, HelpdeskTicketPriorities, HelpdeskTicketStatuses, Roles } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { badRequest, conflict, forbidden } from "../../platform/errors.js";
 import { canCloseOrReopenTicket, canManageHelpdesk, canManageTicket, canSeeTicket } from "./policy.js";
 import { HelpdeskRepository } from "./repository.js";
@@ -103,12 +104,18 @@ export class HelpdeskService {
 
   createTicket(actor: AuthUser, input: HelpdeskTicketCreateInput) {
     const requester = this.requireActiveUser(actor.id);
+    const companyId = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: "helpdesk.ticket.create",
+      requireActiveEmployment: true,
+    }).companyId;
     const category = this.repository.findCategory(input.category_id ?? input.category_key!);
     if (!category.active) {
       throw badRequest("Helpdesk category is inactive.", { category_key: category.category_key });
     }
     const department = this.store.departments.find((candidate) => candidate.id === requester.department_id);
     const ticket = this.repository.addTicket({
+      company_id: companyId,
       subject: input.subject,
       description: input.description,
       category_id: category.id,
@@ -472,6 +479,7 @@ export class HelpdeskService {
 
   private addEvent(ticket: HelpdeskTicket, actor: AuthUser | null, action: string, detail?: string | null) {
     this.repository.addEvent({
+      company_id: ticket.company_id,
       ticket_id: ticket.id,
       actor_user_id: actor?.id ?? null,
       actor_name: actor?.full_name ?? "System",

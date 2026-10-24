@@ -360,6 +360,7 @@ export interface DocumentMetadata {
 
 export interface AssetRecord {
   id: UUID;
+  company_id: UUID | null;
   asset_code: string;
   qr_hash: string;
   asset_type: string;
@@ -707,6 +708,7 @@ export interface HelpdeskCategory {
 
 export interface HelpdeskTicket {
   id: UUID;
+  company_id: UUID | null;
   ticket_no: string;
   subject: string;
   description: string;
@@ -764,6 +766,7 @@ export interface HelpdeskTicketAttachment {
 
 export interface HelpdeskTicketEvent {
   id: UUID;
+  company_id: UUID | null;
   ticket_id: UUID;
   actor_user_id: UUID | null;
   actor_name: string;
@@ -906,6 +909,7 @@ export interface EmsProbationReview {
 
 export interface OutboxEvent {
   id: number;
+  company_id: UUID | null;
   event_id: UUID;
   aggregate_type: string;
   aggregate_id: UUID;

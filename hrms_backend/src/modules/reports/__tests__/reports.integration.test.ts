@@ -167,6 +167,7 @@ describe("non-expense reports", () => {
   it("keeps audit rows in their original company and fails closed without company context", async () => {
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
+    const assetManager = await loginAs(app, "AST");
     const adminPreference = app.store.userSessionPreferences.find((row) => row.user_id === admin.user.id)!;
     const employeePreference = app.store.userSessionPreferences.find((row) => row.user_id === employee.user.id)!;
     const originalCompanyId = adminPreference.company_id!;
@@ -187,6 +188,48 @@ describe("non-expense reports", () => {
     const ticketId = created.json().id as string;
     expect(app.store.tickets.find((ticket) => ticket.id === ticketId)?.context_payload.company_id).toBe(originalCompanyId);
 
+    const createdAsset = await app.inject({
+      method: "POST",
+      url: "/api/v1/assets",
+      headers: authHeader(assetManager.token),
+      payload: {
+        asset_code: `AUD-${randomUUID()}`,
+        asset_type: "Laptop",
+        name: "Audit attribution laptop",
+      },
+    });
+    expect(createdAsset.statusCode).toBe(200);
+    const assetId = createdAsset.json().id as string;
+    const assignedAsset = await app.inject({
+      method: "POST",
+      url: `/api/v1/assets/${assetId}/assign`,
+      headers: authHeader(assetManager.token),
+      payload: { assigned_to_user_id: employee.user.id, expected_version: 1 },
+    });
+    expect(assignedAsset.statusCode).toBe(200);
+    const assetAuditEvent = app.store.assetStateEvents.find(
+      (event) => event.asset_id === assetId && event.event_type === "asset.assigned",
+    )!;
+    expect(assetAuditEvent.company_id).toBe(originalCompanyId);
+
+    const createdHelpdesk = await app.inject({
+      method: "POST",
+      url: "/api/v1/helpdesk/tickets",
+      headers: authHeader(employee.token),
+      payload: {
+        category_key: "IT",
+        subject: "Audit attribution ticket",
+        description: "Verify immutable company ownership in the audit report.",
+        priority: "Medium",
+      },
+    });
+    expect(createdHelpdesk.statusCode).toBe(200);
+    const helpdeskTicketId = createdHelpdesk.json().ticket.id as string;
+    const helpdeskAuditEvent = app.store.helpdeskEvents.find(
+      (event) => event.ticket_id === helpdeskTicketId && event.action === "Ticket created",
+    )!;
+    expect(helpdeskAuditEvent.company_id).toBe(originalCompanyId);
+
     const foreignEvent = appendOutboxEvent(app.store, {
       aggregateType: "report_export",
       aggregateId: randomUUID(),
@@ -203,9 +246,25 @@ describe("non-expense reports", () => {
     });
     const unscopedAssetEventId = randomUUID();
     const unscopedHelpdeskEventId = randomUUID();
+    const unscopedAssetId = randomUUID();
+    const unscopedHelpdeskTicketId = randomUUID();
+    app.store.assets.push({
+      ...app.store.assets[0]!,
+      id: unscopedAssetId,
+      company_id: null,
+      asset_code: `LEGACY-${unscopedAssetId}`,
+      qr_hash: `legacy-${unscopedAssetId}`,
+    });
+    app.store.helpdeskTickets.push({
+      ...app.store.helpdeskTickets[0]!,
+      id: unscopedHelpdeskTicketId,
+      company_id: null,
+      ticket_no: `LEGACY-${unscopedHelpdeskTicketId}`,
+    });
     app.store.assetStateEvents.push({
       id: unscopedAssetEventId,
-      asset_id: randomUUID(),
+      company_id: null,
+      asset_id: unscopedAssetId,
       actor_user_id: admin.user.id,
       event_type: "asset.test_unscoped",
       payload: {},
@@ -213,7 +272,8 @@ describe("non-expense reports", () => {
     });
     app.store.helpdeskEvents.push({
       id: unscopedHelpdeskEventId,
-      ticket_id: randomUUID(),
+      company_id: null,
+      ticket_id: unscopedHelpdeskTicketId,
       actor_user_id: admin.user.id,
       actor_name: admin.user.full_name,
       action: "helpdesk.test_unscoped",
@@ -221,6 +281,16 @@ describe("non-expense reports", () => {
       created_at: new Date().toISOString(),
     });
     await app.store.persistence!.flush();
+    await expect(app.store.pgPool!.query(
+      `INSERT INTO assets.asset_state_events (
+         id, company_id, asset_id, actor_user_id, event_type, payload
+       ) VALUES ($1, $2, $3, $4, 'asset.invalid_company', '{}'::jsonb)`,
+      [randomUUID(), otherCompanyId, assetId, admin.user.id],
+    )).rejects.toMatchObject({ constraint: "assets_state_event_company_match" });
+    await expect(app.store.pgPool!.query(
+      "UPDATE helpdesk.ticket_events SET action = 'Tampered' WHERE id = $1",
+      [helpdeskAuditEvent.id],
+    )).rejects.toThrow("immutable audit/log rows cannot be updated or deleted");
     const readAudit = () => app.inject({
       method: "GET",
       url: "/api/v1/reports/audit?page=1&page_size=100",
@@ -231,6 +301,8 @@ describe("non-expense reports", () => {
     const originalCompanyAudit = await readAudit();
     expect(originalCompanyAudit.statusCode).toBe(200);
     expect(originalCompanyAudit.json().items.some((row: { target: string }) => row.target === ticketId)).toBe(true);
+    expect(originalCompanyAudit.json().items.some((row: { id: string }) => row.id === assetAuditEvent.id)).toBe(true);
+    expect(originalCompanyAudit.json().items.some((row: { id: string }) => row.id === helpdeskAuditEvent.id)).toBe(true);
     expect(originalCompanyAudit.json().items.some((row: { id: string }) => [
       foreignEvent.event_id,
       unscopedEvent.event_id,
@@ -247,6 +319,8 @@ describe("non-expense reports", () => {
     expect(otherCompanyAudit.statusCode).toBe(200);
     expect(otherCompanyAudit.json().items.some((row: { id: string }) => row.id === foreignEvent.event_id)).toBe(true);
     expect(otherCompanyAudit.json().items.some((row: { target: string }) => row.target === ticketId)).toBe(false);
+    expect(otherCompanyAudit.json().items.some((row: { id: string }) => row.id === assetAuditEvent.id)).toBe(false);
+    expect(otherCompanyAudit.json().items.some((row: { id: string }) => row.id === helpdeskAuditEvent.id)).toBe(false);
 
     adminPreference.company_id = null;
     await app.store.pgPool!.query(
@@ -483,18 +557,27 @@ describe("non-expense reports", () => {
       adminPreference.company_id = originalCompanyId;
     }
 
-    await app.store.pgPool!.query(
+    await expect(app.store.pgPool!.query(
       "UPDATE platform.outbox_events SET payload = payload - 'company_id' WHERE event_id = $1",
       [createExport.json().event_id],
+    )).rejects.toMatchObject({ constraint: "platform_outbox_event_identity_immutable" });
+    const legacyExportId = randomUUID();
+    const legacyEventId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO platform.outbox_events (
+         event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key
+       ) VALUES ($1, 'report_export', $2, 'reports.export.requested', $3::jsonb, $4)`,
+      [legacyEventId, legacyExportId, JSON.stringify({ actor_user_id: admin.user.id }), `legacy-export-${legacyEventId}`],
     );
     const legacyList = await app.inject({
       method: "GET", url: "/api/v1/reports/exports?page=1&page_size=10",
       headers: authHeader(admin.token)
     });
     expect(legacyList.statusCode).toBe(200);
-    expect(legacyList.json().items.some((item: { id: string }) => item.id === createExport.json().id)).toBe(false);
+    expect(legacyList.json().items.some((item: { id: string }) => item.id === createExport.json().id)).toBe(true);
+    expect(legacyList.json().items.some((item: { id: string }) => item.id === legacyExportId)).toBe(false);
     const legacyDetail = await app.inject({
-      method: "GET", url: `/api/v1/reports/exports/${createExport.json().id}`,
+      method: "GET", url: `/api/v1/reports/exports/${legacyExportId}`,
       headers: authHeader(admin.token)
     });
     expect(legacyDetail.statusCode).toBe(403);

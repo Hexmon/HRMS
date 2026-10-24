@@ -168,6 +168,7 @@ describe("attendance report evidence categories", () => {
     store.attendanceDayRecords.push(attendanceDay(seedIds.employee1));
     store.outbox.push({
       id: 15,
+      company_id: companyId,
       event_id: randomUUID(),
       aggregate_type: "attendance",
       aggregate_id: attendanceEventId,

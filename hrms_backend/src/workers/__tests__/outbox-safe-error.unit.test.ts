@@ -219,6 +219,7 @@ async function capturePostgresLastErrorUpdateParams(error: Error): Promise<unkno
 function outboxEvent(): OutboxEvent {
   return {
     id: 1,
+    company_id: null,
     event_id: randomUUID(),
     aggregate_type: "attendance",
     aggregate_id: randomUUID(),
