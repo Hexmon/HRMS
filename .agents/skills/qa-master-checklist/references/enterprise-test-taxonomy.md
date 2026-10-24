@@ -3,6 +3,8 @@
 ## Trace system to tests
 For each material capability, enumerate `Persona × Goal × Channel × Permission/Ownership × State × Data Variant × Time/Device/Network × Dependency Failure × Recovery`. Do not test the Cartesian product. Use equivalence partitioning and risk-aware pairwise to sample benign combinations, and *explicit* mandatory tests for all known high-impact intersections (e.g. privileged role + cross-tenant export + revoked session).
 
+Before sampling, complete the `ARU-01`–`ARU-19` applicability register from `adversarial-and-real-user-assurance.md`. Use those IDs as coverage tags in risks, tests and traceability. Pairwise reduction must not eliminate known hazardous intersections or turn an untested assurance family into implicit coverage.
+
 ## Techniques and when to use
 - **Use-case and journey tests:** business outcomes across layers with persona and preconditions.
 - **Decision table:** complex Boolean/multi-condition rules; infeasible conditions excluded with rationale.
@@ -17,6 +19,7 @@ For each material capability, enumerate `Persona × Goal × Channel × Permissio
 - **Exploratory charters:** uncertain use patterns and usability exceptions; charter, risk hypothesis, evidence goals and timebox.
 - **Fault/recovery:** planned non-prod process/network/storage failures, evidence before/after and no lost/doubled side effect.
 - **Accessibility/compatibility:** WCAG-level and supported client matrix confirmed by organization.
+- **Adversarial and real-user assurance:** cross-object/role/session/auth abuse; hostile files, exports and input sinks; mass assignment and resource abuse; concurrency/offline/browser interruption; public resources; production-scale recovery; hosted controls; independent penetration and human UAT. Apply only evidenced surfaces and preserve separate evidence types.
 
 ## Coverage dimensions by architecture
 - Pure backend/API: contracts, auth, state, concurrency, data integrity, service QoS and event delivery.

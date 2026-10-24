@@ -19,12 +19,17 @@ CORE = [
     '11_RELEASE_READINESS_CHECKLIST.md',
 ]
 TEMPLATE_HEADERS = {
-    '03_RISK_REGISTER.csv': ['Risk ID', 'Risk Description', 'Priority P0-P3'],
+    '03_RISK_REGISTER.csv': ['Risk ID', 'Risk Description', 'Priority P0-P3',
+                             'Assurance Family IDs'],
     '05_TEST_CASES.csv': ['Test ID', 'Expected Result', 'Related Business Rules',
-                           'Status', 'Priority', 'Evidence', 'Business Question IDs'],
+                           'Status', 'Priority', 'Evidence', 'Business Question IDs',
+                           'Assurance Family IDs', 'Coverage Evidence Type'],
     '06_TRACEABILITY_MATRIX.csv': ['Test Case ID', 'Business Rule', 'Risk ID',
-                                   'Coverage Status'],
+                                   'Coverage Status', 'Assurance Family IDs',
+                                   'Coverage Evidence Type'],
 }
+ASSURANCE_FILE = '14_COVERAGE_GAPS_AND_ASSURANCE.md'
+ASSURANCE_IDS = [f'ARU-{number:02d}' for number in range(1, 20)]
 
 
 def read_csv(path, errors):
@@ -96,6 +101,21 @@ def check_plan(root, warnings, errors):
         warnings.append('05_TEST_CASES.csv: no test cases — probably discovery-only or unfilled plan')
 
 
+def check_assurance_register(root, errors):
+    path = root / ASSURANCE_FILE
+    if not path.is_file():
+        errors.append(f'missing artifact: {ASSURANCE_FILE}')
+        return
+    try:
+        content = path.read_text(encoding='utf-8')
+    except (OSError, UnicodeError) as error:
+        errors.append(f'{ASSURANCE_FILE}: cannot read: {error}')
+        return
+    missing = [assurance_id for assurance_id in ASSURANCE_IDS if assurance_id not in content]
+    if missing:
+        errors.append(f'{ASSURANCE_FILE}: missing assurance IDs: {missing}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('artifact_dir', nargs='?', default='qa-artifacts', type=Path)
@@ -110,6 +130,7 @@ def main():
         for item in required:
             if not (root / item).is_file():
                 errors.append(f'missing artifact: {item}')
+        check_assurance_register(root, errors)
         if args.mode == 'plan':
             check_plan(root, warnings, errors)
     print(f'QA artifact static lint [{args.mode}] for {root}')

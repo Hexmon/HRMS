@@ -24,8 +24,9 @@ Define **planned** (scenarios specified), **covered by existing code tests** (te
 8. Release change × consumers × schema/feature flag compatibility × migration rollback.
 9. User base × accessibility need × locale/timezone × device/network × customer tier.
 10. Requirement/rule × code reference × risk × planned cases × owner approval × coverage gap.
+11. `ARU-01`–`ARU-19` assurance family × applicable surface × architecture/rule/risk × planned or existing evidence × execution type × owner × gap status.
 
-For each matrix enumerate applicable cells and explicitly justify `NOT_APPLICABLE` entries. Do not claim 100% coverage where an inventory is incomplete. P0/P1 items without an accepted oracle remain **blocked/provisional**, even if a proposed test case exists.
+For each matrix enumerate applicable cells and explicitly justify `NOT_APPLICABLE_WITH_EVIDENCE` and `OUT_OF_SCOPE_WITH_OWNER` entries. Do not claim 100% coverage where an inventory is incomplete. P0/P1 items without an accepted oracle remain **blocked/provisional**, even if a proposed test case exists. Automated tests, independent penetration evidence and human UAT are separate coverage columns and cannot substitute for one another.
 
 ## Incremental updates
 Diff base/head revisions of application code, schemas, contracts, flags and operations. Revisit upstream and downstream dependencies of changed domain code, including all client surfaces and exports; roll forward stable rule/test IDs and preserve previous results. Highlight new/changed/retired cases, newly untestable paths, and decisions newly invalidated by code changes.

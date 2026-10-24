@@ -11,6 +11,8 @@ Capture `SLO/SLA/SLI owner | approved target | measurement window | traffic mix 
 
 Include stateful characteristics: saturated connections, hot tenants, heavily contended records, high-cardinality filters, large exports, unbounded queues, cold cache, long-lived sessions, schedule overlap, spike during failover, last-day-of-period batch processing. Distinguish planned stress from approved production capacity expectations.
 
+Reconcile the workload with `ARU-08`, `ARU-10`, `ARU-11`, `ARU-13`, `ARU-15`, `ARU-16` and `ARU-17`: distributed rate-limit behavior, excessive pagination/export requests, contested workflow records, retries after browser/network ambiguity, constrained clients, production-sized normal/peak/burst/stress/soak/recovery, and actual hosted-provider quotas/failure controls. Security abuse load and legitimate capacity load may use different models and authorization; do not conflate them.
+
 ## Reliability drill planning (no execution)
 For each real dependency: normal operation -> degraded/slow -> unavailable -> retry/recover -> reconcile -> final user state. Select failure type by topology: app restart, DB primary switch, cache restart, queue pause, worker crash after commit, object-store outage, partial network partition, proxy TLS handshake problem, external provider timeout, botched deployment, expired cert, disk full, clock drift, backup/key failure. Capture blast radius, tenant impact, safety conditions, observability and operator response.
 

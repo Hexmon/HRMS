@@ -44,6 +44,7 @@ security_and_regulatory:
   jurisdictions_and_contractual_constraints: []
   mandatory_security_baseline: TBD
   allowed_nonprod_security_test_boundary: TBD
+  independent_penetration_owner_and_scope: TBD
 quality_and_operations:
   known_incidents_and_workarounds: []
   peak_usage_patterns: TBD
@@ -52,6 +53,11 @@ quality_and_operations:
   approved_rpo_rto: TBD
   recovery_environment_and_approval: TBD
   test_data_and_nonproduction_environments: []
+  production_scale_workload_source: TBD
+  supported_browser_device_accessibility_matrix: TBD
+  hosted_provider_test_authorizations: []
+  human_uat_roles_and_approvers: []
+  adversarial_real_user_assurance_status: TBD # link ARU-01 through ARU-19 applicability register
 workflow:
   mode: discover
   output_directory: qa-artifacts

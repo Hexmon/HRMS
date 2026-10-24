@@ -14,9 +14,11 @@ For every P0/P1 journey: roles/resources known; vertical code path traced or mar
 - Applicable architecture failure, auth/tenant, concurrency, recovery, migration and privacy cases included without generic filler.
 - Unknown target load/latency/SLO/RPO/RTO and regulatory obligations never populated with made-up values.
 - User experience, support/operational consequences and rollback/recovery are part of critical journeys.
+- All `ARU-01`–`ARU-19` families have an evidence-backed applicability status and every applicable P0/P1 family is traced to a case or explicit owned gap.
+- Automated checks, manual exploratory testing, hosted-environment verification, independent penetration assessment and human role-based UAT remain separately reported evidence types.
 
 ## G3 — Handoff and release review
-QA Lead: scenario relevance and execution feasibility. Product Owner: intended outcomes and UAT. Engineering Lead: accurate call chains and topology. Security/Privacy: applicable controls and jurisdiction. Performance/SRE: load model, recovery and instrumentation. Every owner must be identified even when review is pending.
+QA Lead: scenario relevance and execution feasibility. Product Owner: intended outcomes and human UAT. Engineering Lead: accurate call chains and topology. Security/Privacy: applicable controls, jurisdiction and independent penetration scope. Performance/SRE: production-sized load model, hosted controls, recovery and instrumentation. Accessibility/UX: supported assistive technology, viewport, browser and constrained-network expectations. Every owner must be identified even when review is pending.
 
 A planning result can say `Required evidence missing`, `Needs decision`, `Release blocker pending testing`, `Planned check not executed`. It **cannot** say product is secure, certifiable, compliant, production-ready, or all tests passed.
 

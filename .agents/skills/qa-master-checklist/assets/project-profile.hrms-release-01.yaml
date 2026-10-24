@@ -42,9 +42,15 @@ rto: TBD
 data_retention_policy: TBD
 regulatory_scope: TBD_LEGAL_REVIEW
 security_owner: TBD
+independent_penetration_owner_and_scope: TBD
 qa_lead: TBD
 engineering_owner: TBD
 product_owner: TBD
 release_approver: TBD
+production_scale_workload_source: TBD
+supported_browser_device_accessibility_matrix: TBD
+hosted_provider_test_authorizations: []
+human_uat_roles_and_approvers: []
+adversarial_real_user_assurance_status: TBD
 planning_only: true
 artifact_output: qa-artifacts/hrms/release-01/<timestamp>-<sha>

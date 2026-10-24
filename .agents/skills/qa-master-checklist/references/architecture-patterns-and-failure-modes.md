@@ -22,6 +22,8 @@ A monorepo is not automatically a monolith; multiple containers are not automati
 ## Boundary and failure graph
 For each critical journey create nodes = actor/channel, ingress, identity, service, data owner, cache, broker, worker, third party, output/alert. Edges = sync call/event/batch/file, auth boundary and state transition; annotate timeout, retry, consistency, idempotency, deploy version, availability and privacy class. Record chain: `failure injection planned -> observable symptom -> invariant threatened -> recovery/compensation -> telemetry -> safe test prerequisite -> approved acceptance or TBD`.
 
+Annotate the graph with applicable `ARU-01`–`ARU-19` surfaces from `adversarial-and-real-user-assurance.md`: tenant/object identifiers, role and session invalidation points, authentication/recovery endpoints, file/parser boundaries, export/rendering sinks, rate/resource controls, concurrent/offline inputs, browser/network transitions, public/tokenized resources and hosted-provider control planes. Record where enforcement is authoritative and where state is cached or eventually refreshed. Independent penetration assessment and human UAT are external assurance activities, not architecture components or inferred pass evidence.
+
 ## Partition the lifecycle into crash points
 - Before validation / after authorization / before transaction commit.
 - After DB commit but before event publish, after publish but before acknowledgement.
@@ -34,6 +36,8 @@ Ask about physical/financial irreversibility before proposing replay/compensatio
 
 ## Safe fault scenarios
 Design but **do not execute** network partitions, process crashes, deliberate slowdowns, role revocation, queue pause, read-model lag, storage-full events and dependency errors. Identify isolated/synthetic test environment, test doubles, observability and emergency stop. Never plan production disruption as a default acceptance method; specialized operators approve any potentially destructive execution separately.
+
+Production-sized stress/soak/recovery (`ARU-16`) and hosted control-plane testing (`ARU-17`) require an owner-approved model, isolated or explicitly authorized target, safe abort condition and recovery proof. An independent penetration test (`ARU-18`) requires separate rules of engagement; repository review cannot substitute for it.
 
 ## References and design patterns
 Microsoft Azure Architecture Center Saga pattern: https://learn.microsoft.com/en-us/azure/architecture/patterns/saga

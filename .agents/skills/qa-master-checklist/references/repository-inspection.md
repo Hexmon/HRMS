@@ -16,6 +16,8 @@ Find: application manifests, workspaces, entrypoints, deploy targets, runtime pr
 - Data: schemas, constraints, views/projections, migrations, backups, audit, retention, partitioning.
 - Platform: secrets references (never values), flags, feature toggles, migrations, config defaults, health checks, metrics, tracing, dashboards/runbooks, CI/CD.
 
+Tag the inventory with the mandatory `ARU-01`–`ARU-19` families from `adversarial-and-real-user-assurance.md`. In particular, enumerate protected object identifiers and role boundaries; session invalidation and auth/recovery endpoints; file/import/parser and export/rendering sinks; user-controlled fields; rate/resource limits; stateful/concurrent and offline/event entrypoints; browser/network-sensitive mutations; unauthenticated/tokenized resources; supported clients; production-scale dependencies; and hosted-provider control planes. Record independent penetration and human UAT as evidence sources to be obtained, not code entrypoints.
+
 ## Stage 4: Trace an actual business flow (vertical slice)
 For a high-risk journey, start from a user action or API call, and find:
 1. What can the actor see or request? Differentiate hiding a button from enforcing server permission.
@@ -28,6 +30,8 @@ For a high-risk journey, start from a user action or API call, and find:
 8. Can two actors/requests race across the code path? Can retry cause repetition or loss?
 9. What does the UI/API say on success, failure, network drop and ambiguous response?
 10. Can a privileged actor reverse/override/correct the action? Is it audited and tenant-scoped?
+11. Which legitimate-but-unexpected or adversarial `ARU` variants reach this path, and where are they rejected or bounded?
+12. After rejection, timeout or interruption, are persistence, files, messages, notifications, exports, audit and user-visible state unchanged or safely reconcilable?
 
 Record explicit path/symbol, traced signal and missing link. Verify multiple channels (web/mobile/batch/admin/API) for business-rule drift; watch for tests stubbing away the critical path.
 

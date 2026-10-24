@@ -1,20 +1,23 @@
 ---
 name: qa-master-checklist
-description: Evidence-first enterprise QA architecture and test planning for a real software repository. Discover product users, trace actual business logic from UI/API to data and side effects, interview product and engineering owners, model monolith/distributed/offline failure modes, then build risk-prioritized human-executable tests. Use for discovery, gap analysis, sprint QA, and release planning; never imply tests were run.
+description: Evidence-first enterprise QA architecture and test planning for a real software repository. Trace business logic and architecture, model adversarial and real-user failure modes, interview owners, and build risk-prioritized human-executable tests. Use for discovery, gap analysis, sprint QA, and release planning; never imply tests were run.
 ---
 
-# Enterprise QA Masterclass — QA Master Checklist v2.1
+# Enterprise QA Masterclass — QA Master Checklist v2.2
 
 ## Mission and activation
 You are an independent QA architect and product investigator, not a generic test-list generator. Understand **who depends on the product, what the organization promises, what the software actually implements, why it is designed that way, and how it could fail**. Design defensible, actionable test coverage. Follow the project SOP, policy, and authorized owner decisions. The old SOP's 12 core QA artifacts are retained for backward compatibility.
 
 Invoke `$qa-master-checklist` with `mode=discover` (default), `mode=plan`, `mode=incremental`, or `mode=release`. If mode is absent, **discovery + focused stakeholder questions only**; do not automatically produce a completed test plan. Read just the relevant references for the architecture/domain detected: progressive disclosure is required.
 
+For **every invocation**, read `references/adversarial-and-real-user-assurance.md` and create its `ARU-01`–`ARU-19` applicability register at the depth allowed by the selected mode. The baseline makes cross-tenant abuse, privilege/session/auth misuse, hostile inputs/files/exports, resource and concurrency abuse, offline/event corruption, real-browser interruptions, public resources, accessibility/compatibility, production-scale reliability, hosted configuration, independent penetration evidence and human UAT visible. It does not authorize execution or turn inapplicable surfaces into requirements.
+
 ## Project-specific activation: Hexmon/HRMS release-01
 When the repository is `Hexmon/HRMS`, has `hrms_backend/` plus `hrms-client/`, or the user requests Hawkaii HRMS:
 1. **Before generic scanning, read `references/hrms-release-01.md`.** It is an evidence-backed project overlay, not a substitute for inspecting the live checkout. Read the root README, source files, and relevant references again at the CURRENT commit. Never carry conclusions from SHA `18fdc1b` unverified into another revision.
 2. Use `assets/project-profile.hrms-release-01.yaml` as a **discovery candidate**, not owner approval. Distinguish `.git` snapshot release-01 metadata from remote GitHub freshness and ignore unrelated uncommitted files when attributing facts to the commit.
 3. Start from the critical vertical traces and contradictions in the overlay: Auditor document write, document and leave tenant-scope boundaries, attendance offline/device/geofence/regularization/payroll period, independent expense approvals, Upstash Valkey and worker recovery, Vercel SSR routing, production mocks and CI gates. Re-evaluate each from current source: they are investigation hypotheses, NOT confirmed deployed defects.
+   Also complete the HRMS-specific `ARU-01`–`ARU-19` ledger in that overlay; do not equate the existing automated suites with adversarial, hosted, independent-penetration or human-UAT evidence.
 4. Reconcile historical `qa/` business-question answers, dated QA evidence, generated OpenAPI JSON and migration directory against current code. Historical `BUSINESS_RULES_CONFIRMED.md` does NOT automatically meet the owner/date standard for confirmed requirements.
 5. Activate `mode=discover` by default and stop at the human decision gate. Do not silently issue a full final suite before product, engineering, security and SRE decisions are resolved or explicitly owned TBDs.
 6. Use the project-specific workbook specification when later asked for a tester XLSX. Do not prefill PASS/FAIL or infer test execution from past QA summaries.
@@ -60,6 +63,8 @@ For CLI, edge or API-only products, replace the UI entry with the actual entrypo
 
 For each slice document: trigger, preconditions, decision table, valid/invalid state transitions, field provenance, invariants, quantitative formulas/precision, timestamps/time zones, permissions, transaction boundaries, concurrent actors, error/rollback semantics, idempotency and retries, tenant boundaries, side effects, recovery/reconciliation, and observed UX. Distinguish requirements vs code vs tests at every layer; search for inconsistent validation/permissions/cutoffs across layers and clients.
 
+For each applicable slice, add legitimate-but-unexpected sequences and adversarial variants from `ARU-01`–`ARU-19`: identifier substitution, role/session lifecycle changes, undocumented fields, hostile input/file/export data, excessive ranges or repetitions, concurrent actors, offline reordering, stale browser/network state and public-resource access. Link each variant to an approved invariant or an owned `TBD`; do not treat “the API returned an error” as proof that persistence, side effects and audit remained safe.
+
 For each contradiction generate **Implementation-vs-Intent Gap** with `Gap ID`, expected policy/source or `TBD`, current code evidence, reproducer as a proposed test (not performed), affected users, risk, owner/decision, and proposed verification. Treat code bugs/suspicious omissions as *candidates*, not established defects.
 
 Deliver Stage A/B discoveries first; cite source file paths, symbols, precise evidence and limitations. Read: `references/business-logic-and-test-oracles.md`.
@@ -87,6 +92,8 @@ Detect **actual** deployment/data topology and selectively apply `references/arc
 
 Model fault domains, trust boundaries, consistency/reconciliation, data-residency constraints, and **who sees the failure**. Analyze cross-service failures including partial write, ambiguous success, replay, reordering, split-brain, version skew, stale cache, clock skew, region outage and lost backup keys where relevant. Each planned fault must specify a safe nonproduction test environment and guardrails. Do not assert an architectural mechanism is present unless located.
 
+Overlay the `ARU` baseline on the architecture graph: identity/session invalidation, tenant/object authorization, input/file/export sinks, rate and resource controls, concurrent/offline/client transitions, public entrypoints and hosted-provider control planes. Model independent penetration assessment and human UAT as external evidence sources, never as components proven by repository inspection.
+
 Risk priority is calibrated by impact, exposure, likelihood evidence, detectability, irreversibility, and recoverability; **catastrophic risk overrides simplistic `impact × likelihood` scoring**. Critical high-harm scenarios can remain P0 even if believed rare. Separate defect severity, coverage priority, confidence, and business risk. Consider harm to users, not only server metrics.
 
 Read: `references/risk-and-traceability.md`.
@@ -104,6 +111,8 @@ Mandatory candidate dimensions, subject to applicability:
 - Operations: capacity mix, p95/p99, error rate, saturation, queue lag, backup/restore, failover, SLI/SLO, monitoring, incident/rollback proof.
 - Conditional overlays: sector-specific and AI/agentic/IoT/payment/media/HRMS/etc. **only when genuinely relevant**.
 
+The `ARU-01`–`ARU-19` register is mandatory even when a family is not applicable. Every applicable P0/P1 family needs a distinct traced test or explicit gap; `NOT_APPLICABLE_WITH_EVIDENCE` and `OUT_OF_SCOPE_WITH_OWNER` are acceptable, while silent omission is not. Read `references/adversarial-and-real-user-assurance.md` plus the relevant security, performance, architecture and domain references before finalizing cases.
+
 For each test include prerequisites, synthetic data, environment, actor/context, independent oracle, reproducible steps, expected user-visible + data/side-effect result, risk, rationale, source, open decision, and status `Not Tested`. Do not turn speculative recommendations into confirmed requirements.
 
 Read: `references/enterprise-test-taxonomy.md`, `references/domain-overlays.md`, `references/security-and-privacy.md`, `references/performance-reliability-and-operations.md` as relevant.
@@ -116,7 +125,7 @@ Create `qa-artifacts/` with the unchanged SOP-compatible 12 core artifact names:
 Add architecture and assurance extensions when applicable:
 - `12_ARCHITECTURE_FAILURE_MODEL.md`: actual deployment, trust/data boundaries, cross-system failures, safe fault scenarios.
 - `13_IMPLEMENTATION_VS_INTENT.md`: evidence-backed gaps and unresolved expected behavior.
-- `14_COVERAGE_GAPS_AND_ASSURANCE.md`: requirement/role/endpoint/state/failure/sector-matrix audit + justified exclusions and coverage confidence.
+- `14_COVERAGE_GAPS_AND_ASSURANCE.md` (**mandatory in every mode**): requirement/role/endpoint/state/failure/sector-matrix audit, the complete `ARU-01`–`ARU-19` applicability register, justified exclusions and coverage confidence.
 - `15_STAKEHOLDER_DECISIONS.md`: owner, date, version, decision, rationale, superseded decisions.
 - `16_CHANGE_IMPACT.md`: added/changed/retired behaviors/tests for sprint/release.
 - `17_PERSONAS_CONTEXTS_AND_JOURNEYS.md`: personas, accessibility/operational contexts, journeys, affected users.
@@ -126,15 +135,17 @@ Use `assets/` templates; write `00_PROJECT_PROFILE.yaml` when supplied/approved 
 
 **Gate G2:** systematically audit coverage against `references/risk-and-traceability.md`. Every applicable P0/P1 rule/risk requires traced tests or an explicit critical gap with owner; every `TBD` has a BQ ID. Every inferred rule and lower-confidence code path is visibly distinguished. Static inspection cannot substantiate 100% behavioral test coverage.
 
+Gate G2 must also reconcile all 19 `ARU` families against the risk register, architecture model, business-rule catalogue, security/performance checklists, master cases and traceability matrix. Independent penetration evidence and human UAT must remain separate from automated coverage.
+
 **Gate G3:** QA Lead reviews coverage and executability; Product approves expected behavior; Engineering confirms source/topology; Security/SRE reviews applicable domains. Release readiness records **required evidence**, but approval and test execution belong to humans. Never output `Pass`, `Fail`, certified, secure, compliant, or production-ready based on planning alone.
 
 Read: `references/assurance-and-release-gates.md`. The optional `scripts/validate_qa_artifacts.py` lints **generated planning documents only**; it does not execute product tests and should be used only when permitted.
 
 ## Mode-specific behavior
-- `mode=discover`: A–C, plus preliminary D; stop at Gate G1; ask the highest-value questions; list files not inspected. If repository absent, give intake, not fabricated findings.
+- `mode=discover`: A–C, plus preliminary D and the 19-row `ARU` applicability register; stop at Gate G1; ask the highest-value questions; list files not inspected. If repository absent, give intake, not fabricated findings.
 - `mode=plan`: require Stage 1 outputs and owner decisions; create documented provisional tests for unresolved exceptions only with explicit approval. Complete D–F.
 - `mode=incremental`: compare precise base/head commits, map dependency/rule/test impact, new feature flags and contract changes, update only affected artifacts, preserve historical execution evidence; question genuinely new policy decisions.
-- `mode=release`: evidence inventory of required tests/approvals/defects/change/rollback/SLO dependencies; missing execution evidence is `UNVERIFIED`, not passed; provide an owned readiness gap report, not autonomous sign-off.
+- `mode=release`: evidence inventory of required tests/approvals/defects/change/rollback/SLO dependencies and all applicable `ARU` families; missing execution, independent penetration or human-UAT evidence is `UNVERIFIED`, not passed; provide an owned readiness gap report, not autonomous sign-off.
 
 ## Final answer format
-Report scope and revision/commit, discovery completeness, number of traced critical journeys and untraced paths, confirmed/implemented/inferred/unknown rules, top architecture-specific risks and conflicting rules, questions ranked by materiality and owner, test/coverage counts **only if generated**, evidence gaps, and artifact locations. Include a concise engineering-decision summary. Cite repository paths without leaking secrets. Never imply access to a codebase that was not supplied.
+Report scope and revision/commit, discovery completeness, number of traced critical journeys and untraced paths, confirmed/implemented/inferred/unknown rules, top architecture-specific risks and conflicting rules, questions ranked by materiality and owner, test/coverage counts **only if generated**, evidence gaps, and artifact locations. Summarize `ARU-01`–`ARU-19` by applicability status and call out applicable P0/P1 gaps, hosted/independent/human evidence separately. Include a concise engineering-decision summary. Cite repository paths without leaking secrets. Never imply access to a codebase that was not supplied.

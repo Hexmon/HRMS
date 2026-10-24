@@ -16,3 +16,4 @@
 - Test approach: <nonproduction simulator/test double/isolated environment; no automatic execution>
 - Measurement and safety stop: <logs/traces/metrics/timeout/abort, approved/TBD>
 - Related risk/BR/TC/BQ: <...>
+- Related adversarial/real-user assurance IDs: <ARU-01–ARU-19 or evidence-backed N/A>

@@ -24,6 +24,10 @@ Identify actors, assets, entrypoints, trust boundaries, tenant partitions, privi
 - **Webhooks/messages:** signatures and timestamp windows when provider supports them; duplicate and replay handling; forwarded trust headers; non-idempotent consequences.
 - **Operational abuse:** request/resource exhaustion, account enumeration, quota enforcement, fraud/business-logic abuse, unsafe administrative actions; plan boundaries without attacking production.
 
+Explicitly reconcile security planning with `ARU-01`–`ARU-14`, `ARU-17` and `ARU-18`. This includes full protected-endpoint BOLA/IDOR inventory; role/module escalation; stale-session revocation; login/reset/invite/verification replay and enumeration; hostile or oversized files and decompression expansion; spreadsheet formula injection; evidenced injection sinks; distributed rate-limit evasion; mass assignment; pagination/export exhaustion; concurrent authorization/state races; corrupt offline inputs; interrupted browser requests; public QR/document/download access; hosted-provider IAM/exposure; and the need for a separately scoped independent penetration assessment. A generic “OWASP covered” row is not sufficient traceability.
+
+Use safe inert fixtures and bounded synthetic accounts in an approved nonproduction environment. Do not provide exploit payloads in client-facing artifacts when a symbolic fixture description is sufficient. Active scans, credential attacks, provider control-plane attacks and penetration testing require explicit rules of engagement and cannot be inferred from ordinary QA authorization.
+
 ## Evidence-based security checklist format
 `SEC-ID | asset / attack surface | trust boundary | rule + control reference | code evidence | intended guarantee (approved/TBD) | human-executable verification | preconditions & non-prod environment | evidence to capture | risk, owner, status Not Tested`.
 

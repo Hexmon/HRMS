@@ -49,6 +49,30 @@ Trace all layers, including actual source file and symbol with current line numb
 
 Actor × tenant × employee hierarchy × device/channel × network quality × timezone × lifecycle status × target environment × concurrency × source of truth. Prioritize: employees on mobile web in intermittent networks, managers approving at peak, Finance on close, HR on joins/exits, admins creating second company, auditors with read-only expectations, users with disabilities/shared devices, helpdesk owners. Do not infer exact accessibility support or legally mandated obligations; ask owners and use applicable WCAG planning.
 
+## Mandatory HRMS adversarial and real-user ledger
+
+Every invocation must classify all 19 families from `adversarial-and-real-user-assurance.md`, then trace applicable items to current source and owned gaps. For this repository, begin with these concrete investigation surfaces; they remain hypotheses until inspected at the current SHA:
+
+1. `ARU-01`: substitute another company's/user's IDs across all API paths, queries, bodies, bulk operations, attachments, exports and jobs.
+2. `ARU-02`: attempt horizontal and vertical privilege changes across Employee, Manager/Reviewer, HR, Finance, Auditor, Admin, Asset and Helpdesk roles and every module.
+3. `ARU-03`: inspect existing sessions after role removal, password change, logout-all, employee/company deactivation, transfer and soft deletion.
+4. `ARU-04`: plan bounded login, reset, invitation, verification/resend expiry, replay, enumeration and throttling cases.
+5. `ARU-05`: trace document, expense, EMS, project, helpdesk and import upload paths for size, type/signature, parser, archive/decompression, active content and incomplete upload handling.
+6. `ARU-06`: inventory every CSV/XLSX export and user-controlled cell for spreadsheet-formula neutralization.
+7. `ARU-07`: trace free text, filters, templates, filenames, audit/log fields and rendered/downloaded content to their final SQL/HTML/script/header/log contexts.
+8. `ARU-08`: inspect Redis/Valkey and application rate-limit keying, proxy headers, multi-instance consistency, fail-open behavior and expensive-route abuse.
+9. `ARU-09`: compare every create/update/import/bulk schema with persistence for undocumented ownership, tenant, role, status, audit and calculated fields.
+10. `ARU-10`: test approved page, date, include, sort, bulk-ID, export-volume, repeated-job and retained-download boundaries.
+11. `ARU-11`: model concurrent approvals, edits, deletes, assignments, attendance events, payroll locks, exports and terminal status changes across modules.
+12. `ARU-12`: cover corrupted, duplicate, changed-body, missing, late and out-of-order offline attendance/device events plus revoked credentials and partial batches.
+13. `ARU-13`: plan back/forward, stale or multiple tabs, double-click, refresh during mutation, ambiguous timeout retry and offline/online recovery across critical UI journeys.
+14. `ARU-14`: inspect unauthenticated asset QR scans and every tokenized/public document, media, download and webhook surface for minimal disclosure, binding, expiry and revocation.
+15. `ARU-15`: obtain the supported accessibility/browser/device matrix and cover keyboard/focus/error feedback, mobile viewports, locale/timezone and slow/intermittent networks.
+16. `ARU-16`: obtain owner-approved tenant/user/data/traffic volumes and plan normal, peak, payroll-period, burst, stress, soak, failover and recovery checks with abort criteria.
+17. `ARU-17`: inspect actual Render, Vercel, Neon, Upstash, Cloudflare, Cloudinary, Resend and preview-environment isolation/IAM/secrets/exposure/backups only within authorized boundaries.
+18. `ARU-18`: record independent penetration-test scope, rules of engagement, assessor, environment, retest and remediation evidence, or mark it missing.
+19. `ARU-19`: identify actual Employee, Manager, HR, Finance, Auditor and Admin UAT representatives; automation and QA staff role-play do not count as their signoff.
+
 ## Human decision gate — first 7 questions
 
 1. **Product/Security:** Is Auditor STRICTLY read-only everywhere, especially Documents? Can auditors see sensitive docs; is anyone authorized to delete/verify? (README vs policy mismatch). Proposed options: read-only scoped / scoped verify / existing broad access intentionally approved / Other/TBD.

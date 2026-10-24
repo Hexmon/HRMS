@@ -13,4 +13,5 @@ Do not ask questions already answered in approved requirements. Batches should p
 - **Answer/decision:** PENDING
 - **Decision date/effective release:** TBD
 - **Affected BR/gap/test/risk IDs:** <...>
+- **Affected adversarial/real-user assurance IDs:** <ARU-01–ARU-19>
 - **Follow-up/check for unintended effects:** <...>

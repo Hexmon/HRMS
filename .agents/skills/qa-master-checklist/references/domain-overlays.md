@@ -7,6 +7,7 @@ Do NOT activate a domain just because it is mentioned here; require feature evid
 - Punch, corrections, geolocation evidence, roster, leave, overtime, attendance cutoffs, timezone/DST, permissions and retention.
 - Approval hierarchy, self-service vs manager override, audit, regularization, locked pay period, payroll exports and reconciliation.
 - Mobile/offline punch sync; duplicate local event, device revocation, spoofed/synthetic location signals, geo precision versus privacy obligations.
+- Apply the full `ARU` baseline to HRMS surfaces: employee/manager/HR/Finance/Auditor/Admin cross-company IDs and privilege changes; offboarding/session invalidation; onboarding/reset/invite abuse; employee/document/expense uploads; payroll/report CSV/XLSX injection; free-text and template rendering; bulk/report limits; approval/status races; corrupt offline punches; stale browser/network behavior; public asset/document links; accessibility/mobile/low-network contexts; production-scale payroll/attendance peaks; hosted HR data controls; independent penetration evidence; and named human role-based UAT.
 
 ## Finance, payments, billing and ledgers
 - Money precision, currency/conversion effective date, taxes/fees, partial refunds, reversal, chargebacks, reconciliation, double settlement.

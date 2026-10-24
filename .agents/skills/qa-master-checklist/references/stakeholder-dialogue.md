@@ -17,6 +17,7 @@ Highest first: `Decision impact × uncertainty × potential harm × release prox
 - What user-visible behavior is acceptable during delayed processing or dependency failure?
 - What are the business consequences of corrupted results, information disclosure, blocked workflow, or partial outage?
 - What product policies are inherited from previous systems, and where are they documented?
+- Which surprising but legitimate user behaviors, prohibited actions, role boundaries, public links, accessibility contexts and recovery outcomes must the business explicitly support or reject? Who represents each role in human UAT?
 
 ## Developer/architecture interview
 - Is it a modular monolith, a deployment monolith, separately deployed services, or hybrid? Show the runtime topology and independent deployment units.
@@ -27,6 +28,7 @@ Highest first: `Decision impact × uncertainty × potential harm × release prox
 - What failure behavior is intentional: retry budget, timeout, DLQ, circuit breaking, backups, safe rollback, partial response?
 - How does the system handle mixed client versions and schema evolution? What has broken in production?
 - Which seams can QA use safely for fault simulation, deterministic clocks, synthetic data and tenant isolation?
+- Where are object/tenant authorization, session invalidation, property allowlists, input/file/export encoding, request/resource limits and public-resource access enforced authoritatively? Which controls differ across nodes, workers or offline clients?
 
 ## Actual user/support/SRE interview
 - What tasks happen under real-world poor networks, old devices, peak shift or season, or emergency conditions?
@@ -35,6 +37,9 @@ Highest first: `Decision impact × uncertainty × potential harm × release prox
 - Which SLI expresses **user success** rather than infrastructure uptime? Do accepted targets exist? Who approves them?
 - What is the topology in staging vs production, and what fault types are safe to test without user disruption?
 - What are restore drill frequency, business continuity tolerances, and real operational escalation paths?
+- What production-sized traffic/data model, supported browser/device/assistive-technology matrix, hosted-provider test boundary, independent penetration scope and named role-based UAT approvers are authorized for this release?
+
+Map answers to the relevant `ARU-01`–`ARU-19` IDs. Do not ask all nineteen topics as a single questionnaire; prioritize the highest-risk unknowns while keeping the complete applicability register visible.
 
 ## Question template
 `BQ-ID | Intended decision owner | Relevance/risk | Observed behavior + cited evidence | What differs based on the answer | Plausible mutually distinguishable options (incl. Other/TBD) | Answer | Decided on / effective version | Affected BR/Test IDs`.

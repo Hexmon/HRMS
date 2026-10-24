@@ -14,6 +14,7 @@ For each rule include:
 - **Calculation/time rules:** <known/TBD>
 - **Invariants:** <must/must-not/eventually>
 - **Failure/concurrency:** <duplicate/invalid transition/time window/etc>
+- **Unexpected/adversarial variants:** <applicable ARU IDs; legitimate misuse, unauthorized action, interruption, hostile data/resource boundary>
 - **Priority/risk:** <P0-P3, risk ID>
 - **Human authority/confidence:** <owner, decision date, source / High/Medium/Low>
 - **Questions/related tests:** <BQ-IDs and TC IDs>
