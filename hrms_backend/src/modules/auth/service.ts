@@ -140,6 +140,7 @@ export class AuthService {
     private readonly store: MemoryDataStore,
     private readonly jwtSecret: string,
     private readonly emailDelivery?: EmailDeliveryService,
+    private readonly appEnv: "local" | "development" | "qa" | "production" = "local",
   ) {
     this.repository = new AuthRepository(store);
   }
@@ -153,6 +154,10 @@ export class AuthService {
     company_id?: UUID | null;
     dev_only?: Record<string, unknown>;
   }> {
+    const usesEmployeeCode = !(input.email && input.password) && Boolean(input.employee_code);
+    if (usesEmployeeCode && !["local", "development"].includes(this.appEnv)) {
+      throw unauthorized("Invalid email or password");
+    }
     const user =
       input.email && input.password
         ? this.authenticatePassword(input.email, input.password)
@@ -189,6 +194,19 @@ export class AuthService {
       existingCompany.bootstrap_completed_at
     ) {
       throw conflict("Company workspace has already been bootstrapped.", {
+        company_slug: companySlug,
+      });
+    }
+    if (
+      existingCompany &&
+      this.store.authTokens.some(
+        (token) =>
+          token.company_id === existingCompany.id &&
+          token.email !== null &&
+          normalizeEmail(token.email) !== email,
+      )
+    ) {
+      throw conflict("Company workspace is already reserved.", {
         company_slug: companySlug,
       });
     }
@@ -489,9 +507,7 @@ export class AuthService {
     this.setCredential(user.id, hashPasswordSync(input.password), now);
     token.status = "used";
     token.used_at = now;
-    const revoked =
-      (await this.store.sessionStore.revokeUser?.(user.id, "password_reset")) ??
-      0;
+    const revoked = await this.store.sessionStore.revokeUser(user.id, "password_reset");
     return {
       password_reset: true,
       session_revoked_count: revoked,
@@ -766,6 +782,9 @@ export class AuthService {
   private authenticateEmployeeCode(employeeCode: string): AuthUser {
     const user = this.repository.findUserByEmployeeCode(employeeCode);
     if (!user) {
+      throw unauthorized("Invalid email or password");
+    }
+    if (user.employment_status !== EmploymentStatuses.Active) {
       throw unauthorized("Invalid email or password");
     }
     return user;
@@ -1100,12 +1119,10 @@ export class AuthService {
     input: VerificationEmailSendInput,
   ): Promise<VerificationEmailSendResult> {
     if (input.enforceResendLimits) {
-      console.log("sendVerificationEmail called");
       const rateLimit = this.checkEmailSendLimit(
         input.email,
         "email_verification",
       );
-      console.log(rateLimit);
       if (!rateLimit.allowed) {
         return {
           generated: null,

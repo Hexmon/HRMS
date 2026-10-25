@@ -346,6 +346,19 @@ describe("admin policy settings", () => {
       }),
     });
 
+    // Full-flush fallback routes can run after an attendance policy has
+    // already been published. Replaying the same immutable version must be a
+    // no-op rather than tripping the database overlap guard.
+    await expect(app.store.persistence!.flush()).resolves.toBeUndefined();
+    const versionCount = await app.store.pgPool!.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+       FROM attendance.policy_versions
+       WHERE policy_id = $1
+         AND version_number = $2`,
+      [updateBody.policy.id, updateBody.policy.version],
+    );
+    expect(versionCount.rows[0]?.count).toBe("1");
+
     const stale = await app.inject({
       method: "PUT",
       url: "/api/v1/admin/policies/attendance",

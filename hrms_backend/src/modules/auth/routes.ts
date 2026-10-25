@@ -17,37 +17,37 @@ import {
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/signup", async (request) => {
     const body = signupSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).signup(body, requestContext(request));
+    return authService(fastify).signup(body, requestContext(request));
   });
 
   fastify.post("/verify-email", async (request) => {
     const body = verifyEmailSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).verifyEmail(body);
+    return authService(fastify).verifyEmail(body);
   });
 
   fastify.post("/email-verifications/resend", async (request) => {
     const body = resendEmailVerificationSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).resendEmailVerification(body, requestContext(request));
+    return authService(fastify).resendEmailVerification(body, requestContext(request));
   });
 
   fastify.post("/set-password", async (request) => {
     const body = setPasswordSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).setPassword(body);
+    return authService(fastify).setPassword(body);
   });
 
   fastify.post("/password-reset/request", async (request) => {
     const body = passwordResetRequestSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).requestPasswordReset(body, requestContext(request));
+    return authService(fastify).requestPasswordReset(body, requestContext(request));
   });
 
   fastify.post("/password-reset/confirm", async (request) => {
     const body = passwordResetConfirmSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).confirmPasswordReset(body);
+    return authService(fastify).confirmPasswordReset(body);
   });
 
   fastify.post("/login", async (request, reply) => {
     const body = loginSchema.parse(request.body);
-    const service = new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery);
+    const service = authService(fastify);
     const result = await service.login(body);
     reply.setCookie(fastify.config.SESSION_COOKIE_NAME, result.token, {
       httpOnly: true,
@@ -67,7 +67,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.post("/logout", async (request, reply) => {
-    const service = new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery);
+    const service = authService(fastify);
     const revokedJtis = new Set<string>();
     for (const token of logoutTokens(request, fastify.config.SESSION_COOKIE_NAME)) {
       try {
@@ -94,7 +94,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).sessionContext(request.actor);
+    return authService(fastify).sessionContext(request.actor);
   });
 
   fastify.patch("/session/preference", async (request) => {
@@ -102,7 +102,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const body = sessionPreferenceSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).updateSessionPreference(request.actor, body);
+    return authService(fastify).updateSessionPreference(request.actor, body);
   });
 };
 
@@ -112,7 +112,7 @@ export const onboardingRoutes: FastifyPluginAsync = async (fastify) => {
     const upload = await parseCompanyLogoUpload(request);
     appendServerTiming(reply, "multipart", startedAt);
     const uploadStartedAt = process.hrtime.bigint();
-    const result = await new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).uploadCompanyLogo(upload);
+    const result = await authService(fastify).uploadCompanyLogo(upload);
     appendServerTiming(reply, "logo_upload", uploadStartedAt);
     appendServerTiming(reply, "handler", startedAt);
     return result;
@@ -120,9 +120,18 @@ export const onboardingRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/company-bootstrap", async (request) => {
     const body = companyBootstrapSchema.parse(request.body);
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).bootstrapCompany(body);
+    return authService(fastify).bootstrapCompany(body);
   });
 };
+
+function authService(fastify: Parameters<FastifyPluginAsync>[0]): AuthService {
+  return new AuthService(
+    fastify.store,
+    fastify.config.JWT_SECRET,
+    fastify.emailDelivery,
+    fastify.config.APP_ENV,
+  );
+}
 
 async function parseCompanyLogoUpload(request: FastifyRequest) {
   if (!request.isMultipart()) {

@@ -602,7 +602,7 @@ Required: yes
 |---|---|---|---|
 | `email` | string<email> | required | Seeded local QA user email. Example is the Finance Manager persona. |
 | `password` | string<password> | required | Local Docker QA demo password. Never send this in URLs or logs.; minLength 8 |
-| `employee_code` | string | optional | DEV-only fallback for legacy local QA scripts. Primary UI and consumer docs use email/password.; minLength 1 |
+| `employee_code` | string | optional | Local/development-only fallback for legacy scripts. Hosted QA and production reject this credential mode.; minLength 1 |
 
 
 

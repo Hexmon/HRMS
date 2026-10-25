@@ -14,7 +14,7 @@ export interface SessionStore {
   create(session: SessionRecord): Promise<void>;
   get(jti: string): Promise<SessionRecord | null>;
   revoke(jti: string, reason: string): Promise<void>;
-  revokeUser?(userId: UUID, reason: string): Promise<number>;
+  revokeUser(userId: UUID, reason: string): Promise<number>;
 }
 
 export const LOCAL_DEMO_PASSWORD_ENV_KEY = "LOCAL_DEMO_PASSWORD";

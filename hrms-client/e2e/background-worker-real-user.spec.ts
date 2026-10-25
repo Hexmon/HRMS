@@ -218,12 +218,14 @@ test("manual checkout racing the scheduled job leaves one completed session", as
     )
     .toBe(true);
   await expect(page.getByText("Your attendance session is complete.")).toBeVisible();
-  const accessToken = await page.evaluate(() => sessionStorage.getItem("hawkaii_api_access_token"));
-  if (!accessToken) throw new Error("The browser lost its authenticated API session.");
-  const punchesResponse = await page.request.get(
-    `${process.env.E2E_API_BASE_URL ?? "http://hostmachine:3001"}/api/v1/attendance/punches/my`,
-    { headers: { authorization: `Bearer ${accessToken}` } },
+  const apiBaseUrl = process.env.E2E_API_BASE_URL ?? "http://hostmachine:3001";
+  const sessionCookie = (await page.context().cookies(apiBaseUrl)).find(
+    (cookie) => cookie.name === "hrms_session" || cookie.name.endsWith("_session"),
   );
+  if (!sessionCookie) throw new Error("The browser lost its HttpOnly authenticated session.");
+  const punchesResponse = await page.request.get(`${apiBaseUrl}/api/v1/attendance/punches/my`, {
+    headers: { cookie: `${sessionCookie.name}=${sessionCookie.value}` },
+  });
   expect(punchesResponse.ok()).toBe(true);
   const punches = await punchesResponse.json();
   expect(

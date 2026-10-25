@@ -1,31 +1,19 @@
-const ACCESS_TOKEN_STORAGE_KEY = "hawkaii_api_access_token";
+// Browser sessions are restored from the HttpOnly session cookie. Keep an API
+// bearer token in memory only so an XSS cannot recover it from Web Storage.
+let accessToken: string | null = null;
 
-function readStoredAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
+if (typeof window !== "undefined") {
   try {
-    return window.sessionStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+    window.sessionStorage.removeItem("hawkaii_api_access_token");
   } catch {
-    return null;
+    // Storage cleanup must not prevent cookie-based session restoration.
   }
 }
-
-function writeStoredAccessToken(token: string | null): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (token) window.sessionStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
-    else window.sessionStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
-  } catch {
-    // Session restore should never break the app if browser storage is unavailable.
-  }
-}
-
-let accessToken: string | null = readStoredAccessToken();
 
 export const API_UNAUTHORIZED_EVENT = "hawkaii:api-unauthorized";
 
 export function setApiAccessToken(token: string | null | undefined): void {
   accessToken = token || null;
-  writeStoredAccessToken(accessToken);
 }
 
 export function getApiAccessToken(): string | null {
@@ -34,7 +22,6 @@ export function getApiAccessToken(): string | null {
 
 export function clearApiAccessToken(): void {
   accessToken = null;
-  writeStoredAccessToken(null);
 }
 
 export function notifyApiUnauthorized(): void {

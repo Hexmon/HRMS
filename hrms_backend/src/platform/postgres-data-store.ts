@@ -3352,7 +3352,13 @@ class PostgresPersistence {
       `INSERT INTO attendance.policy_versions (
           company_id, policy_id, version_number, effective_from, config, created_at
         )
-        VALUES ($1, $2, $3, $4, $5::jsonb, $4)
+        SELECT $1, $2, $3, $4, $5::jsonb, $4
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM attendance.policy_versions
+          WHERE policy_id = $2
+            AND version_number = $3
+        )
         ON CONFLICT (policy_id, version_number) DO NOTHING`,
       [
         policy.company_id,
@@ -4437,11 +4443,10 @@ class PostgresPersistence {
           id, ticket_id, actor_user_id, actor_name, action, detail, created_at
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (id) DO UPDATE
-        SET actor_user_id = EXCLUDED.actor_user_id,
-            actor_name = EXCLUDED.actor_name,
-            action = EXCLUDED.action,
-            detail = EXCLUDED.detail`,
+        -- Ticket events are immutable audit facts. Re-flushing a hydrated
+        -- snapshot may insert a new event, but must never rewrite an event
+        -- already committed by this or another API/worker process.
+        ON CONFLICT (id) DO NOTHING`,
         [
           event.id,
           event.ticket_id,

@@ -332,23 +332,33 @@ export class CoreService {
     return this.withMutationMetadata(this.toDetail(user), onboarding ? { onboarding } : {});
   }
 
-  updateUser(actor: AuthUser, id: UUID, input: UserUpdateInput): CoreUserMutationResult {
+  async updateUser(actor: AuthUser, id: UUID, input: UserUpdateInput): Promise<CoreUserMutationResult> {
     requirePeopleManager(actor);
     const user = this.requireUserForWrite(actor, id);
     requireExpectedVersion(user, input.expected_version);
     if (input.employment_status !== undefined && input.employment_status !== EmploymentStatuses.Active) {
+      requireNotSelfLifecycleMutation(actor, user);
       this.requireOrgAdminRecoveryPath(user, {
         employmentStatus: input.employment_status
       });
     }
 
+    let emailChanged = false;
     if (input.email !== undefined) {
       const email = normalizeEmail(input.email);
-      const duplicate = this.store.users.find((candidate) => candidate.id !== user.id && normalizeEmail(candidate.email) === email && !candidate.deleted_at);
-      if (duplicate) {
-        throw conflict("Email already exists.", { email });
+      if (email !== normalizeEmail(user.email)) {
+        if (!canCorrectUnverifiedIdentityEmail(this.store, user)) {
+          throw forbidden("Verified account email changes require the identity verification workflow.");
+        }
+        const duplicate = this.store.users.find((candidate) => candidate.id !== user.id && normalizeEmail(candidate.email) === email && !candidate.deleted_at);
+        if (duplicate) {
+          throw conflict("Email already exists.", { email });
+        }
+        user.email = email;
+        user.email_verified_at = null;
+        user.email_verification_status = "unverified";
+        emailChanged = true;
       }
-      user.email = email;
     }
     if (input.full_name !== undefined) {
       user.full_name = normalizeText(input.full_name, "Full name");
@@ -384,10 +394,13 @@ export class CoreService {
       aggregateType: "core.user",
       aggregateId: user.id,
       eventType: "core.user.updated",
-      payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id },
+      payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id, email_changed: emailChanged },
       idempotencyKey: `core.user.updated:${user.id}:${user.version}`
     });
-    return this.toDetail(user);
+    const sessionsRevoked = input.employment_status !== undefined && input.employment_status !== EmploymentStatuses.Active
+      ? await this.store.sessionStore.revokeUser(user.id, "employment_status_changed")
+      : 0;
+    return this.withMutationMetadata(this.toDetail(user), { sessions_revoked: sessionsRevoked });
   }
 
   async uploadProfilePhoto(
@@ -519,7 +532,7 @@ export class CoreService {
     return this.toDetail(user);
   }
 
-  deactivateUser(actor: AuthUser, id: UUID, input: UserStatusInput): CoreUserMutationResult {
+  async deactivateUser(actor: AuthUser, id: UUID, input: UserStatusInput): Promise<CoreUserMutationResult> {
     requirePeopleManager(actor);
     const user = this.requireUserForWrite(actor, id);
     requireNotSelfLifecycleMutation(actor, user);
@@ -554,7 +567,8 @@ export class CoreService {
       },
       idempotencyKey: `core.user.deactivated:${user.id}:${user.version}`
     });
-    return this.toDetail(user);
+    const sessionsRevoked = await this.store.sessionStore.revokeUser(user.id, "employment_deactivated");
+    return this.withMutationMetadata(this.toDetail(user), { sessions_revoked: sessionsRevoked });
   }
 
   async disableLogin(actor: AuthUser, id: UUID, input: UserLoginInput): Promise<CoreUserMutationResult> {
@@ -575,7 +589,7 @@ export class CoreService {
       credential.updated_at = now;
     }
     this.revokeActivePasswordSetupTokens(user.id);
-    const sessionsRevoked = await this.store.sessionStore.revokeUser?.(user.id, "login_disabled") ?? 0;
+    const sessionsRevoked = await this.store.sessionStore.revokeUser(user.id, "login_disabled");
     user.version += 1;
     appendCoreOutboxEvent(this.store, {
       aggregateType: "core.user",
@@ -607,14 +621,12 @@ export class CoreService {
     return this.withMutationMetadata(this.toDetail(user), { onboarding });
   }
 
-  replaceRoles(actor: AuthUser, id: UUID, input: UserRolesInput): CoreUserMutationResult {
+  async replaceRoles(actor: AuthUser, id: UUID, input: UserRolesInput): Promise<CoreUserMutationResult> {
     const user = this.requireUserForWrite(actor, id);
+    requireNotSelfRoleMutation(actor, user);
     requireExpectedVersion(user, input.expected_version);
     const roles = this.normalizeRoles(input.roles);
     requireCanAssignRoles(actor, roles, user);
-    if (actor.id === user.id && user.roles.includes(Roles.Admin) && !roles.includes(Roles.Admin)) {
-      throw forbidden("Admin users cannot remove their own admin role.");
-    }
     this.requireOrgAdminRecoveryPath(user, {
       roles
     });
@@ -634,7 +646,8 @@ export class CoreService {
       payload: { user_id: user.id, employee_code: user.employee_code, actor_user_id: actor.id, previous_roles: previousRoles, roles, remarks: input.remarks ?? null },
       idempotencyKey: `core.user.roles_replaced:${user.id}:${user.version}`
     });
-    return this.toDetail(user);
+    const sessionsRevoked = await this.store.sessionStore.revokeUser(user.id, "roles_changed");
+    return this.withMutationMetadata(this.toDetail(user), { sessions_revoked: sessionsRevoked });
   }
 
   roleHistory(actor: AuthUser, id: UUID, query: UserHistoryQuery) {
@@ -1531,6 +1544,22 @@ function requireNotSelfLifecycleMutation(actor: AuthUser, user: CoreUser): void 
   if (actor.id === user.id) {
     throw forbidden("Use another Admin or HR Manager account to change your own employment or login access.");
   }
+}
+
+function requireNotSelfRoleMutation(actor: AuthUser, user: CoreUser): void {
+  if (actor.id === user.id) {
+    throw forbidden("Use another Admin or HR Manager account to change your role assignments.");
+  }
+}
+
+function canCorrectUnverifiedIdentityEmail(store: MemoryDataStore, user: CoreUser): boolean {
+  if (user.email_verified_at || user.email_verification_status === "verified") {
+    return false;
+  }
+  if (store.userCredentials.some((credential) => credential.user_id === user.id && !credential.deleted_at)) {
+    return false;
+  }
+  return !store.authTokens.some((token) => token.user_id === user.id && token.status === "active");
 }
 
 function requireEmployeeExportAccess(actor: AuthUser): void {

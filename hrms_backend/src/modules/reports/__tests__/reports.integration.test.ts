@@ -201,25 +201,9 @@ describe("non-expense reports", () => {
       payload: { actor_user_id: admin.user.id },
       idempotencyKey: `audit-unscoped-${randomUUID()}`,
     });
-    const unscopedAssetEventId = randomUUID();
-    const unscopedHelpdeskEventId = randomUUID();
-    app.store.assetStateEvents.push({
-      id: unscopedAssetEventId,
-      asset_id: randomUUID(),
-      actor_user_id: admin.user.id,
-      event_type: "asset.test_unscoped",
-      payload: {},
-      created_at: new Date().toISOString(),
-    });
-    app.store.helpdeskEvents.push({
-      id: unscopedHelpdeskEventId,
-      ticket_id: randomUUID(),
-      actor_user_id: admin.user.id,
-      actor_name: admin.user.full_name,
-      action: "helpdesk.test_unscoped",
-      detail: null,
-      created_at: new Date().toISOString(),
-    });
+    // Asset/helpdesk audit events cannot be orphaned: database integrity
+    // triggers reject an unknown asset or ticket. The unscoped outbox event
+    // below remains the valid fail-closed fixture for legacy audit data.
     await app.store.persistence!.flush();
     const readAudit = () => app.inject({
       method: "GET",
@@ -234,8 +218,6 @@ describe("non-expense reports", () => {
     expect(originalCompanyAudit.json().items.some((row: { id: string }) => [
       foreignEvent.event_id,
       unscopedEvent.event_id,
-      unscopedAssetEventId,
-      unscopedHelpdeskEventId,
     ].includes(row.id))).toBe(false);
 
     adminPreference.company_id = otherCompanyId;
@@ -466,7 +448,13 @@ describe("non-expense reports", () => {
     // after the actor switches to a different company context.
     const adminPreference = app.store.userSessionPreferences.find((preference) => preference.user_id === admin.user.id)!;
     const originalCompanyId = adminPreference.company_id;
-    adminPreference.company_id = randomUUID();
+    const otherCompanyId = randomUUID();
+    app.store.companyProfiles.push({
+      ...app.store.companyProfiles.find((company) => company.id === originalCompanyId)!,
+      id: otherCompanyId,
+      company_slug: `export-isolation-${otherCompanyId}`,
+    });
+    adminPreference.company_id = otherCompanyId;
     try {
       const otherCompanyList = await app.inject({
         method: "GET", url: "/api/v1/reports/exports?page=1&page_size=10",
@@ -483,21 +471,21 @@ describe("non-expense reports", () => {
       adminPreference.company_id = originalCompanyId;
     }
 
-    await app.store.pgPool!.query(
+    await expect(app.store.pgPool!.query(
       "UPDATE platform.outbox_events SET payload = payload - 'company_id' WHERE event_id = $1",
       [createExport.json().event_id],
-    );
-    const legacyList = await app.inject({
+    )).rejects.toMatchObject({ constraint: "platform_outbox_event_identity_immutable" });
+    const immutableList = await app.inject({
       method: "GET", url: "/api/v1/reports/exports?page=1&page_size=10",
       headers: authHeader(admin.token)
     });
-    expect(legacyList.statusCode).toBe(200);
-    expect(legacyList.json().items.some((item: { id: string }) => item.id === createExport.json().id)).toBe(false);
-    const legacyDetail = await app.inject({
+    expect(immutableList.statusCode).toBe(200);
+    expect(immutableList.json().items.some((item: { id: string }) => item.id === createExport.json().id)).toBe(true);
+    const immutableDetail = await app.inject({
       method: "GET", url: `/api/v1/reports/exports/${createExport.json().id}`,
       headers: authHeader(admin.token)
     });
-    expect(legacyDetail.statusCode).toBe(403);
+    expect(immutableDetail.statusCode).toBe(200);
 
     const audit = await app.inject({
       method: "GET",

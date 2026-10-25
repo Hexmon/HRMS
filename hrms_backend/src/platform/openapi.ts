@@ -9627,7 +9627,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/auth/login": operation(
     "Auth & Sessions",
     "Login",
-    "Authenticates the platform using email/password and establishes shared session context for all web zones. Successful login returns the current session/access JWT in `access_token` and also sets the configured HttpOnly session cookie with the same session credential for browser transport. Native clients must use the JSON bearer token and must not depend on cookies. No separate refresh token or `/api/v1/auth/refresh` endpoint is currently supported. A DEV-only `employee_code` fallback remains available for local QA scripts, but the primary consumer contract is email/password.",
+    "Authenticates the platform using email/password and establishes shared session context for all web zones. Successful login returns the current session/access JWT in `access_token` and also sets the configured HttpOnly session cookie with the same session credential for browser transport. Native clients must use the JSON bearer token and must not depend on cookies. No separate refresh token or `/api/v1/auth/refresh` endpoint is currently supported. An `employee_code` fallback is accepted only when trusted server configuration is `local` or `development`; hosted QA and production reject it.",
     {
       body: {
         type: "object",
@@ -9653,7 +9653,7 @@ const routeDocs: Record<string, RouteSchema> = {
             type: "string",
             minLength: 1,
             description:
-              "DEV-only fallback for legacy local QA scripts. Primary UI and consumer docs use email/password.",
+              "Local/development-only fallback for legacy scripts. Hosted QA and production reject this credential mode.",
             example: "N1",
           },
         },
@@ -9689,7 +9689,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/auth/logout": operation(
     "Auth & Sessions",
     "Logout",
-    "Revokes the current Valkey-backed session when a valid cookie or explicit bearer token is present and always clears the browser session cookie. Safe to call when no session is present. Native clients should send `Authorization: Bearer <access_token>` to revoke the current server-side session, then remove the credential from OS secure storage.",
+    "Revokes the current Valkey-backed session when a valid cookie or explicit bearer token is present and always clears the browser session cookie. Cookie-authenticated calls must include a trusted browser Origin; native clients should send `Authorization: Bearer <access_token>` and then remove the credential from OS secure storage. Safe to call when no session is present.",
     { response200: statusResponseSchema },
     false,
   ),
@@ -9825,7 +9825,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "PATCH /api/v1/core/users/{id}": operation(
     "Core / Employees & Hierarchy",
     "Update user",
-    "Updates an employee profile, org placement, manager, lifecycle fields, and optimistic concurrency version. Manager changes update descendant hierarchy paths and block hierarchy cycles.",
+    "Updates an employee profile, org placement, manager, lifecycle fields, and optimistic concurrency version. Manager changes update descendant hierarchy paths and block hierarchy cycles. An email may be corrected only before the identity is verified and before any credential or active identity token exists; established-account email changes require a separate verified workflow.",
     {
       params: idParamSchema,
       body: coreUserUpdateBodySchema,
@@ -9861,7 +9861,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/core/users/{id}/deactivate": operation(
     "Core / Employees & Hierarchy",
     "Deactivate user",
-    "Deactivates, suspends, or terminates an employee, revokes active login credentials, and emits a platform event for downstream offboarding workflows such as asset recovery.",
+    "Deactivates, suspends, or terminates an employee, revokes active login credentials and sessions, and emits a platform event for downstream offboarding workflows such as asset recovery.",
     {
       params: idParamSchema,
       body: coreUserStatusBodySchema,
@@ -9881,7 +9881,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/core/users/{id}/login/disable": operation(
     "Core / Employees & Hierarchy",
     "Disable login",
-    "Revokes active user credentials, revokes active sessions where the session store supports it, and marks login disabled with optimistic concurrency protection.",
+    "Revokes active user credentials and sessions, and marks login disabled with optimistic concurrency protection.",
     {
       params: idParamSchema,
       body: coreUserLoginBodySchema,
@@ -9891,7 +9891,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "PUT /api/v1/core/users/{id}/roles": operation(
     "Core / Employees & Hierarchy",
     "Replace roles",
-    "Replaces backend role assignments for an employee. Admin can assign all roles; HR Manager can assign non-admin roles and cannot modify admin users. Active session preference is adjusted if the previous active role is removed.",
+    "Replaces backend role assignments for an employee and revokes the target user's active sessions. Admin can assign all roles; HR Manager can assign non-admin roles and cannot modify admin users. An actor cannot change its own role assignments. Active session preference is adjusted if the previous active role is removed.",
     {
       params: idParamSchema,
       body: coreUserRolesBodySchema,

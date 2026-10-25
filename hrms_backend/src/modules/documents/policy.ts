@@ -7,8 +7,11 @@ const restricted = new Set<DocumentClassification>([
 ]);
 
 export function canAccessDocument(actor: AuthUser, document: DocumentMetadata, permission: "read" | "write" | "verify" | "audit"): boolean {
-  if (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor)) {
+  if (actor.roles.includes(Roles.Admin)) {
     return true;
+  }
+  if (actor.roles.includes(Roles.Auditor)) {
+    return permission === "read" || permission === "audit";
   }
   if (permission === "verify") {
     return actor.roles.includes(Roles.FinanceManager) || actor.roles.includes(Roles.HRManager);

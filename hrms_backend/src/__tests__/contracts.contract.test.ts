@@ -808,6 +808,7 @@ describe("Auth guard", () => {
         url: "/api/v1/auth/logout",
         headers: {
           cookie: cookieHeader(login.headers["set-cookie"]),
+          origin: "http://localhost:5173",
         },
       });
       expect(logout.statusCode).toBe(200);
@@ -1009,6 +1010,7 @@ describe("Auth guard", () => {
         url: "/api/v1/auth/logout",
         headers: {
           cookie: cookieHeader(login.headers["set-cookie"]),
+          origin: "http://localhost:5173",
         },
       });
       expect(logout.statusCode).toBe(200);
@@ -1510,7 +1512,10 @@ describe("API contracts", () => {
     const logout = await app.inject({
       method: "POST",
       url: "/api/v1/auth/logout",
-      headers: { cookie: Array.isArray(cookie) ? cookie[0] : (cookie ?? "") },
+      headers: {
+        cookie: Array.isArray(cookie) ? cookie[0] : (cookie ?? ""),
+        origin: "http://localhost:5173",
+      },
     });
     expect(logout.statusCode).toBe(200);
     expect(logout.json()).toEqual({ status: "ok" });

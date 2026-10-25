@@ -207,7 +207,7 @@ describe("core hierarchy", () => {
     addCompanyAdmin(store, "backup", companyA);
     addCompanyAdmin(store, "other-company", companyB);
 
-    const result = service.deactivateUser(actor, targetAdmin.id, {
+    const result = await service.deactivateUser(actor, targetAdmin.id, {
       expected_version: 1,
       status: "inactive"
     });

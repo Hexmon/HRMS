@@ -782,7 +782,9 @@ describe("attendance", () => {
   it("applies admin company schedule, holidays, and attendance policy to day status", async () => {
     const employee = await loginAs(app, "E1");
     const company = ensureActiveCompany(app);
-    company.working_week = "Mon-Sat";
+    // Keep the wall-clock punch valid when this suite runs on Sunday while
+    // still proving that the configured schedule marks Saturday as a workday.
+    company.working_week = "Mon-Sun";
     company.work_hours_per_day = 7.5;
     const policy = app.store.adminPolicies.find(
       (candidate) => candidate.company_id === company.id && candidate.policy_key === "attendance",

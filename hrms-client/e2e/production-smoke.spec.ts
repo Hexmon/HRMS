@@ -9,6 +9,39 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.describe("production browser smoke", () => {
+  test("browser session is HttpOnly, avoids Web Storage, and survives refresh", async ({
+    page,
+    context,
+  }) => {
+    await login(page, "e1@example.test");
+    await expectPlatformReady(page);
+
+    const persistedBearer = await page.evaluate(() =>
+      window.sessionStorage.getItem("hawkaii_api_access_token"),
+    );
+    expect(persistedBearer).toBeNull();
+
+    // The frontend and API may use equivalent loopback hostnames (localhost
+    // and 127.0.0.1) in local E2E. Inspect the context jar rather than
+    // accidentally excluding the API cookie by asking for only one spelling.
+    const sessionCookie = (await context.cookies()).find(
+      (cookie) =>
+        cookie.httpOnly && (cookie.name === "hrms_session" || cookie.name.endsWith("_session")),
+    );
+    expect(sessionCookie, "login should create a browser session cookie").toBeDefined();
+    expect(sessionCookie?.httpOnly).toBe(true);
+    const scriptVisibleCookies = await page.evaluate(() => document.cookie);
+    expect(scriptVisibleCookies).not.toContain(`${sessionCookie?.name}=`);
+
+    await page.reload({ waitUntil: "networkidle" });
+    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible();
+    await expectPlatformReady(page);
+    expect(
+      await page.evaluate(() => window.sessionStorage.getItem("hawkaii_api_access_token")),
+    ).toBeNull();
+  });
+
   test("employee self-service modules render against the backend API", async ({ page }) => {
     await login(page, "e1@example.test");
     await expectPlatformReady(page);
