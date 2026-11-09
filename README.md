@@ -12,6 +12,17 @@ This repository is the product monorepo. It contains the backend API, frontend a
 | `hrms-client/` | TanStack Start/React frontend, role-based app routes, domain API adapters, UI components, route coverage checks, and Playwright tests. |
 | `docs/` | Root-level product architecture notes, implementation status, email verification architecture, and deployment runbooks. |
 
+## Human And Agent Engineering Workflow
+
+All contributors and coding agents use the root `AGENTS.md` as the repository engineering contract, with package-specific additions in `hrms_backend/AGENTS.md` and `hrms-client/AGENTS.md`. Reusable workflows live under `.agents/skills/`, and evidence/environment/verification guidance is indexed by `docs/agent/README.md`.
+
+Use the change-aware verifier during development and the full automated gate before a release handoff:
+
+```bash
+./scripts/agent/verify-change.sh
+./scripts/agent/verify-full.sh
+```
+
 ## Product Roles
 
 Role access is controlled by the backend session returned from `/api/v1/auth/me`, including active role, available roles, permissions, and navigation.
@@ -151,12 +162,14 @@ Current generated contract documents 245 operations.
 
 ## Product Status And Roadmap
 
-The main implementation status is tracked in:
+Sprint tasks, owners, points, and delivery status are tracked in the [shared Hawkaii HRMS task sheet](https://docs.google.com/spreadsheets/d/1dr5qLKxq5IGIZAyIAdMlcDYDfld-LYxfvSHkKw1jBnA/edit?usp=sharing). Follow `docs/process/task-tracker.md` when updating it.
+
+Historical implementation inventories and technical status notes remain in:
 
 - `docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`
 - `hrms_backend/docs/implementation/HRMS_PRODUCTION_TASK_SHEET.md`
 
-Use the backend versioned task sheet as the source of truth for implementation status, validation notes, assumptions, blockers, and next production hardening work.
+For current implementation claims, verify source, generated contracts, and dated QA evidence. A tracker status or historical task sheet does not establish runtime behavior or deployment.
 
 ## User Manual Index
 

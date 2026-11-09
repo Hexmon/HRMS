@@ -25,7 +25,7 @@ New developers should start with the KT pack:
 
 | Area | Documents |
 | --- | --- |
-| Architecture | `architecture/README.md`, `architecture/system-architecture.md`, `architecture/frontend-architecture.md`, `architecture/backend-architecture.md`, `architecture/data-architecture.md`, `architecture/security-auth-rbac.md`, `architecture/integrations-events.md` |
+| Architecture | `architecture/README.md`, `architecture/current-runtime-source-2026-11-09.md`, `architecture/system-architecture.md`, `architecture/frontend-architecture.md`, `architecture/backend-architecture.md`, `architecture/data-architecture.md`, `architecture/security-auth-rbac.md`, `architecture/integrations-events.md` |
 | Product and implementation status | `implementation/README.md`, `implementation/implementation-status-index.md`, `implementation/HRMS_PRODUCTION_TASK_SHEET.md` |
 | Documentation coverage | `implementation/documentation-coverage-audit.md` |
 | Email verification architecture | `architecture/email-verification.md`, `resend-email-verification-architecture-report.md` |
@@ -33,7 +33,11 @@ New developers should start with the KT pack:
 | Hosted deployment | `deployment/README.md`, `deployment/hosted-deployment.md`, `deployment/environment-matrix.md`, `deployment/deployment-verification-checklist.md`, `deployment/secrets-checklist.md` |
 | CI/CD and rollback | `deployment/ci-cd-runbook.md`, `deployment/rollback-runbook.md`, `deployment/dns-checklist.md` |
 | Delivery process | `process/README.md`, `process/agile-delivery-plan.md`, `process/branching-release-process.md`, `process/release-governance.md`, `process/documentation-maintenance-process.md` |
+| Agent engineering | `agent/README.md`, `agent/evidence-policy.md`, `agent/environment-safety.md`, `agent/verification-matrix.md` |
+| Discovery in progress | `discovery/discovery-handoff-2026-11-09.md`, `discovery/implementation-map.md`, `discovery/identity-company-journey.md`, `discovery/employee-lifecycle-journey.md`, `discovery/attendance-leave-timesheet-journey.md`, `discovery/finance-documents-reports-journey.md`, `discovery/projects-assets-helpdesk-journey.md`, `discovery/admin-platform-dashboard-notifications-journey.md`, `discovery/operations-health-webhooks-journey.md`, `../qa-artifacts/hrms/discovery-2026-11-09/adversarial-qa-coverage.md`, `discovery/identity-verification-options.md`, `discovery/owner-decisions.md`, `discovery/saas-acceptance-matrix.md`, `discovery/implementation-backlog.md`, `../.agents/skill-registry.md` |
+| Execution plans | `plans/README.md`, `plans/TEMPLATE.md` |
 | QA process | `process/qa-handoff-process.md`, `process/definition-of-ready.md`, `process/definition-of-done.md`, `process/sprint-ceremonies.md`, `process/developer-handoff-template.md` |
+| Sprint tracking | `process/task-tracker.md` and the linked shared task sheet |
 | Operations runbooks | `runbooks/README.md`, `runbooks/health-and-smoke-runbook.md`, `runbooks/incident-response-runbook.md`, `runbooks/database-backup-restore-runbook.md`, `runbooks/worker-operations-runbook.md`, `runbooks/media-storage-runbook.md` |
 
 ## Source Of Truth Rules

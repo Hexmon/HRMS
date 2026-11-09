@@ -1,86 +1,53 @@
-# AGENTS.md - Hawkaii HRMS Backend Engineering Directive
+# AGENTS.md - Hawkaii HRMS Backend
 
-This project is the backend-only standalone extraction of Hawkaii HRMS. It is a single Node.js/TypeScript package and must not be converted back into a monorepo.
+This directory is the Fastify/PostgreSQL backend package inside the Hawkaii HRMS product repository. Root `AGENTS.md` applies first; this file adds backend-specific conventions.
 
 ## Architecture
 
-- Backend: Node.js, TypeScript, Fastify.
-- Database: PostgreSQL with schema-per-domain: `core`, `expenses`, `documents`, `assets`, `timesheets`, `platform`.
-- ORM/migrations: Drizzle schema plus SQL migrations under `src/db`.
-- Runtime dependencies: PostgreSQL, Valkey, and S3-compatible object storage.
-- Validation: Zod schemas and typed route contracts.
-- Tests: Vitest unit/integration/contract tests using Fastify inject where practical.
+- Node.js and TypeScript with Fastify.
+- PostgreSQL schemas: `core`, `expenses`, `documents`, `assets`, `timesheets`, and `platform`.
+- Drizzle schema plus ordered SQL migrations under `src/db`.
+- Valkey for session/runtime state and S3-compatible/Cloudinary-backed media integration.
+- Zod validation and typed route contracts.
+- Vitest unit, contract, integration, and E2E projects.
+- Cloudflare Queues and Cron Triggers for bounded background processing; no endless polling loop in Workers.
 
-## Required Layout
+## Code Boundaries
 
-```text
-src/
-  app.ts
-  server.ts
-  modules/<module>/
-    index.ts
-    routes.ts
-    schemas.ts
-    service.ts
-    repository.ts
-    policy.ts
-    state-machine.ts
-    events.ts
-    errors.ts
-  auth/
-  shared/
-  db/
-  testing/
-  workers/
-scripts/
-infra/docker/
-docs/api/
-docs/qa/runs/
-```
+- Keep business logic in services/policies/state machines, not route handlers.
+- Repositories perform persistence; they do not decide authorization or workflow policy.
+- Validate request data before service execution and reject protected undocumented fields.
+- Do not introduce cross-schema SQL foreign keys.
+- Preserve soft deletion and immutable audit history.
+- Use transactions for multi-write invariants and the transactional outbox for business writes that emit events.
+- Event/cron handlers must be idempotent, bounded, retry-safe, concurrency-safe, and observable. Define DLQ/replay and reconciliation behavior.
+- Scope tenant-owned persistence by the authenticated company context inside the trusted backend path. Test mismatched IDs and transferred/deactivated/soft-deleted historical cases where relevant.
+- Keep list endpoints bounded and paginated; use asynchronous jobs for large exports.
 
-## Boundaries
+## Contracts And Migrations
 
-- Do not add `apps/*`, `packages/*`, or `pnpm-workspace.yaml`.
-- Do not add frontend dependencies such as Next.js, React, or React DOM.
-- Frontend clients must consume Fastify APIs only.
-- Business logic belongs in services, not route handlers.
-- No cross-schema SQL foreign keys.
-- Use transactional outbox for business writes that emit events.
-- All workflow-critical mutations must write audit events.
-- Preserve soft delete behavior and immutable audit history.
+- Planned APIs stay out of OpenAPI until route, schema, service behavior, tests, and generated docs are complete.
+- Generate API documents through `pnpm api:docs:generate`; do not hand-edit generated contracts.
+- Migrations are append-only after sharing. Include safe forward behavior, backfill/compatibility reasoning, and rollback or recovery notes.
+- Never run production migration, seed, repair, restore, or worker activation commands without explicit authorization and the applicable runbook.
 
 ## Verification
 
-Run affected checks after every change, then the full loop before handoff:
+Run targeted checks while developing. Before backend handoff, use the root verification scripts or run the relevant package commands:
 
 ```bash
 pnpm lint
 pnpm typecheck
-pnpm test
 pnpm test:unit
-pnpm test:integration
 pnpm test:contracts
+pnpm test:integration
+pnpm test:e2e
+pnpm api:docs:verify
+pnpm api:consumer:verify
+pnpm db:verify:migrations
 pnpm db:verify:no-cross-schema-fks
-pnpm verify:business
-pnpm verify:quality
-pnpm verify:implementation
-pnpm verify:scalability
-pnpm verify:regression
+pnpm verify:cloudflare-queue-dlq
+pnpm build
 ```
 
-Write QA artifacts under `docs/qa/runs/` for completed implementation work.
-
-## Work Tracking
-
-- Maintain the project work tracker at `/Users/anuragkumar/Desktop/Tasks/HRMS.xlsx` after meaningful HRMS-Server work.
-- Use project name `HRMS-Server`, the columns `Task`, `Project`, `Domain`, `Priority`, `Story Points`, `Status`, `Start date`, `End date`, `Deliverable`, `Notes`, `Remarks`, `Commit / QA Artifact`, and the sprint-sheet pattern (`HRMS`, `Sprint N <date-range>`).
-- Record the work date, backend domain, story-point estimate, deliverable, verification notes, and related commit or QA artifact references when available.
-- Story points must use Fibonacci-style values `1`, `2`, `3`, `5`, `8`, or `13`; split work larger than `13` into smaller tracker rows.
-- Keep one workbook per project; add sprint sheets inside the same workbook instead of creating duplicate files.
-
-## Backend API Completion Phases
-
-- For remaining backend API completion phases, update `/Users/anuragkumar/Desktop/Tasks/HRMS.xlsx` before coding, keep pending rows truthful, and move each row through `Pending` -> `In Progress` -> `Completed`.
-- Planned APIs must remain out of OpenAPI until the route, schema, service behavior, tests, and docs generation are complete.
-- Follow `docs/qa/BACKEND_API_COMPLETION_CHECKLIST.md` for per-phase verification, QA artifact, and commit evidence.
-- Keep responses compact for low-network usage: paginated lists, bounded `page_size`, optional `include=`, and async export jobs for large datasets.
+Add `verify:business`, `verify:quality`, `verify:implementation`, `verify:scalability`, and `verify:regression` when the affected area requires those repository gates. Store new backend execution evidence under `docs/qa/runs/` without overwriting accepted historical evidence.

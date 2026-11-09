@@ -4,6 +4,7 @@
 node_modules/
 hrms_backend/node_modules/
 hrms-client/node_modules/
+.pnpm-store/
 
 # Build outputs
 dist/
@@ -77,3 +78,8 @@ hrms-client/.dev.vars
 *.sw?
 
 design-audit
+
+# Agent-local scratch and overrides
+.codex/tmp/
+.claude/settings.local.json
+.gemini/settings.local.json
