@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Hawkaii HRMS runtime boundaries — source design",
+    "quality_profile": "showcase",
+    "viewBox": [1220, 830],
+    "repository": {
+      "url": "https://github.com/Hexmon/HRMS",
+      "provider": "github",
+      "link_mode": "local-only",
+      "revision": "af89c6ac60fc32417ee2fcfea54399e0a0358411"
+    }
+  },
+  "components": [
+    { "id": "browser", "type": "external", "label": "Browser", "sublabel": "Responsive web user", "pos": [45, 330], "size": [150, 70] },
+    { "id": "frontend", "type": "frontend", "label": "TanStack Start", "sublabel": "Routes + domain adapters", "pos": [275, 330], "size": [175, 70], "sources": [{ "path": "hrms-client/src/routes/__root.tsx" }, { "path": "hrms-client/src/shared/api/client.ts" }] },
+    { "id": "api", "type": "backend", "label": "Fastify API", "sublabel": "Auth + domain modules", "pos": [555, 330], "size": [175, 70], "sources": [{ "path": "hrms_backend/src/app.ts" }, { "path": "hrms_backend/src/plugins/auth.ts" }] },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "Business data + outbox", "pos": [895, 330], "size": [190, 70], "sources": [{ "path": "hrms_backend/src/db/schema.ts" }, { "path": "hrms_backend/src/platform/postgres-data-store.ts" }] },
+    { "id": "valkey", "type": "database", "label": "Valkey / Redis", "sublabel": "Sessions + rate limits", "pos": [555, 110], "size": [175, 70], "sources": [{ "path": "hrms_backend/src/platform/valkey-client.ts" }] },
+    { "id": "storage", "type": "cloud", "label": "Object storage", "sublabel": "Document bytes", "pos": [275, 560], "size": [175, 70], "sources": [{ "path": "hrms_backend/src/platform/object-storage.ts" }] },
+    { "id": "email", "type": "external", "label": "Email transport", "sublabel": "Verification + reset", "pos": [555, 560], "size": [175, 70], "sources": [{ "path": "hrms_backend/src/platform/email/email-delivery-service.ts" }] },
+    { "id": "worker", "type": "backend", "label": "Cloudflare Worker", "sublabel": "Configured; activation unverified", "pos": [895, 535], "size": [190, 70], "sources": [{ "path": "hrms_backend/src/workers/cloudflare-worker.ts" }, { "path": "hrms_backend/wrangler.jsonc" }] },
+    { "id": "queues", "type": "messagebus", "label": "Cloudflare Queues", "sublabel": "Jobs + business events", "pos": [895, 715], "size": [190, 70], "sources": [{ "path": "hrms_backend/src/workers/cloudflare-jobs.ts" }, { "path": "hrms_backend/wrangler.jsonc" }] }
+  ],
+  "connections": [
+    { "id": "browser_ui", "from": "browser", "to": "frontend", "label": "HTTPS UI" },
+    { "id": "frontend_api", "from": "frontend", "to": "api", "label": "API requests" },
+    { "id": "api_sql", "from": "api", "to": "postgres", "label": "SQL + outbox" },
+    { "id": "api_valkey", "from": "api", "to": "valkey", "label": "session + rate state", "fromSide": "top", "toSide": "bottom" },
+    { "id": "api_storage", "from": "api", "to": "storage", "label": "file bytes", "fromSide": "bottom", "toSide": "top" },
+    { "id": "api_email", "from": "api", "to": "email", "label": "send mail", "fromSide": "bottom", "toSide": "top", "labelAt": [700, 425] },
+    { "id": "api_worker", "from": "api", "to": "worker", "label": "outbox signal", "variant": "dashed", "fromSide": "right", "toSide": "top" },
+    { "id": "worker_postgres", "from": "worker", "to": "postgres", "label": "Hyperdrive SQL", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "labelDx": 100 },
+    { "id": "worker_queues", "from": "worker", "to": "queues", "label": "enqueue / consume", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelDy": 24 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Request path", "items": ["Frontend calls Fastify; PostgreSQL holds business state and outbox."] },
+    { "dot": "amber", "title": "Configured worker", "items": ["Cron and Queue handlers are bounded; checked-in WORKER_ACTIVE is false.", "Source configuration does not prove hosted activation."] }
+  ]
+}
