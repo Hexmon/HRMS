@@ -87,7 +87,7 @@ fi
 if grep -Eq '^hrms_backend/src/(workers|platform/cloudflare)/|^hrms_backend/scripts/.*cloudflare|^hrms_backend/wrangler\.jsonc$|^\.github/workflows/deploy-cloudflare-worker\.yml$' "$changed_files"; then
   worker_changed=1
 fi
-if grep -Eq '^hrms-client/(src|e2e|scripts)/|^hrms-client/(package.json|pnpm-lock.yaml|vite.config.ts|tsconfig.json|eslint.config.js|playwright.*\.ts|vercel.json)$' "$changed_files"; then
+if grep -Eq '^hrms-client/(src|e2e|scripts)/|^hrms-client/(package.json|pnpm-lock.yaml|vite.config.ts|vitest.config.ts|tsconfig.json|eslint.config.js|playwright.*\.ts|vercel.json)$' "$changed_files"; then
   frontend_changed=1
 fi
 if grep -Eq '^hrms-client/src/(shared/api|domains)/|^hrms-client/scripts/.*(contract|route|api)' "$changed_files"; then
