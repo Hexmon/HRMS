@@ -45,15 +45,11 @@ while IFS= read -r path; do
   esac
 done < "$changed_files"
 
-git -C "$HRMS_REPO_ROOT" diff --no-color --unified=0 -- . \
-  ':(exclude)scripts/agent/protect-sensitive-files.sh' | sed -n 's/^+//p' > "$added_content"
-git -C "$HRMS_REPO_ROOT" diff --cached --no-color --unified=0 -- . \
-  ':(exclude)scripts/agent/protect-sensitive-files.sh' | sed -n 's/^+//p' >> "$added_content"
-git -C "$HRMS_REPO_ROOT" diff --no-color --unified=0 "$merge_base" HEAD -- . \
-  ':(exclude)scripts/agent/protect-sensitive-files.sh' | sed -n 's/^+//p' >> "$added_content"
+git -C "$HRMS_REPO_ROOT" diff --no-color --unified=0 | sed -n 's/^+//p' > "$added_content"
+git -C "$HRMS_REPO_ROOT" diff --cached --no-color --unified=0 | sed -n 's/^+//p' >> "$added_content"
+git -C "$HRMS_REPO_ROOT" diff --no-color --unified=0 "$merge_base" HEAD | sed -n 's/^+//p' >> "$added_content"
 
 while IFS= read -r path; do
-  [[ "$path" == "scripts/agent/protect-sensitive-files.sh" ]] && continue
   absolute_path="$HRMS_REPO_ROOT/$path"
   [[ -f "$absolute_path" ]] || continue
   [[ $(wc -c < "$absolute_path") -le 1048576 ]] || continue

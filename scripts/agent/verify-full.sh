@@ -4,23 +4,17 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-with_frontend_e2e=0
-
 usage() {
   cat <<'USAGE'
-Usage: scripts/agent/verify-full.sh [--with-frontend-e2e]
+Usage: scripts/agent/verify-full.sh
 
-Runs the repository-wide automated release gate. Frontend Playwright is optional
-because it requires the documented isolated, seeded application environment.
+Runs the repository-wide automated release gate. Run frontend Playwright separately
+against a verified isolated, seeded application environment.
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --with-frontend-e2e)
-      with_frontend_e2e=1
-      shift
-      ;;
     -h|--help)
       usage
       exit 0
@@ -43,6 +37,7 @@ run_step "Sensitive-file guard" "$HRMS_REPO_ROOT" "$HRMS_REPO_ROOT/scripts/agent
 run_step "Unstaged patch integrity" "$HRMS_REPO_ROOT" git diff --check
 run_step "Staged patch integrity" "$HRMS_REPO_ROOT" git diff --cached --check
 run_step "Agent setup and documentation references" "$HRMS_REPO_ROOT" bash scripts/agent/validate-agent-setup.sh
+run_step "Agent verifier unit tests" "$HRMS_REPO_ROOT" python3 -m unittest discover -s scripts/agent/tests -v
 
 run_step "Backend lint" "$HRMS_REPO_ROOT/hrms_backend" pnpm lint
 run_step "Backend typecheck" "$HRMS_REPO_ROOT/hrms_backend" pnpm typecheck
@@ -76,9 +71,5 @@ run_step "Frontend implemented-route guard" "$HRMS_REPO_ROOT/hrms-client" pnpm a
 run_step "Frontend contract route coverage" "$HRMS_REPO_ROOT/hrms-client" pnpm api:frontend-contract:route-coverage
 run_step "Frontend production build" "$HRMS_REPO_ROOT/hrms-client" pnpm build:vercel
 
-if [[ "$with_frontend_e2e" -eq 1 ]]; then
-  run_step "Frontend Playwright E2E" "$HRMS_REPO_ROOT/hrms-client" pnpm test:e2e
-fi
-
 echo
-echo "Automated full verification completed. Human UI/UAT, hosted smoke, migration/rollback and approval evidence remain separate release gates."
+echo "Automated full verification completed. Isolated Playwright, human UI/UAT, hosted smoke, migration/rollback and approval evidence remain separate release gates."

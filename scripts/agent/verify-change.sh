@@ -96,14 +96,15 @@ fi
 
 declare -a labels=()
 declare -a directories=()
-declare -a commands=()
 
 add_step() {
+  local command_name="step_command_${#labels[@]}"
   labels+=("$1")
   directories+=("$2")
   shift 2
-  printf -v serialized '%q ' "$@"
-  commands+=("$serialized")
+  declare -g -a "$command_name"
+  local -n command_ref="$command_name"
+  command_ref=("$@")
 }
 
 add_step "Sensitive-file guard" "$HRMS_REPO_ROOT" "$HRMS_REPO_ROOT/scripts/agent/protect-sensitive-files.sh" --base "$base_ref"
@@ -112,6 +113,9 @@ add_step "Unstaged patch integrity" "$HRMS_REPO_ROOT" git diff --check
 add_step "Staged patch integrity" "$HRMS_REPO_ROOT" git diff --cached --check
 if grep -Eq '(^|/)AGENTS\.md$|^\.agents/|^docs/(agent|discovery|plans|README\.md)|^scripts/agent/' "$changed_files"; then
   add_step "Agent setup and documentation references" "$HRMS_REPO_ROOT" bash scripts/agent/validate-agent-setup.sh
+fi
+if grep -Eq '^scripts/agent/' "$changed_files"; then
+  add_step "Agent verifier unit tests" "$HRMS_REPO_ROOT" python3 -m unittest discover -s scripts/agent/tests -v
 fi
 
 if [[ "$backend_changed" -eq 1 ]]; then
@@ -154,14 +158,19 @@ if [[ "$mode" == "plan" ]]; then
   echo "Selected verification plan:"
 fi
 
-for index in "${!labels[@]}"; do
-  read -r -a command <<< "${commands[$index]}"
+execute_step() {
+  local index="$1"
+  local -n command_ref="step_command_$index"
   if [[ "$mode" == "plan" ]]; then
     printf '\n[%s]\n' "${labels[$index]}"
-    print_command "${directories[$index]}" "${command[@]}"
+    print_command "${directories[$index]}" "${command_ref[@]}"
   else
-    run_step "${labels[$index]}" "${directories[$index]}" "${command[@]}"
+    run_step "${labels[$index]}" "${directories[$index]}" "${command_ref[@]}"
   fi
+}
+
+for index in "${!labels[@]}"; do
+  execute_step "$index"
 done
 
 if [[ "$backend_changed" -eq 0 && "$frontend_changed" -eq 0 ]]; then

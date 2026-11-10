@@ -80,6 +80,10 @@ class DisposableDatabaseTests(unittest.TestCase):
             )
             self.assertFalse(MODULE.safe_config(path, {}))
 
+    def test_fragment_and_malformed_urls_are_rejected(self) -> None:
+        self.assertFalse(MODULE.is_disposable_url("postgresql://local:sample@localhost/hrms_test#alternate"))
+        self.assertFalse(MODULE.is_disposable_url("postgresql://local:sample@[::1/hrms_test"))
+
 
 if __name__ == "__main__":
     unittest.main()
