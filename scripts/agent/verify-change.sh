@@ -120,7 +120,7 @@ fi
 
 # Unit and contract suites may open the test database even when the changed
 # path is not under src/db. Refuse unsafe targets before starting either suite.
-if [[ "$backend_changed" -eq 1 || "$database_changed" -eq 1 || "$worker_changed" -eq 1 ]]; then
+if [[ "$backend_changed" -eq 1 || "$backend_api_changed" -eq 1 || "$database_changed" -eq 1 || "$worker_changed" -eq 1 ]]; then
   add_step "Disposable database preflight" "$HRMS_REPO_ROOT" python3 scripts/agent/assert-disposable-test-db.py "$test_env_file"
 fi
 

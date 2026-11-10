@@ -19,6 +19,7 @@ class VerificationScriptTests(unittest.TestCase):
             ("docs/README.md", ("Agent setup and documentation references",), ("Backend unit tests", "Frontend lint", "Disposable database preflight")),
             ("hrms_backend/src/modules/employees/service.ts", ("Backend unit tests", "Disposable database preflight"), ("Backend contract tests", "Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/src/modules/employees/routes.ts", ("Backend contract tests", "Disposable database preflight"), ("Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
+            ("hrms_backend/docs/api/openapi.json", ("Backend contract tests", "Disposable database preflight"), ("Backend unit tests", "Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/src/db/schema.ts", ("Migration history and schema drift", "Disposable database preflight"), ("Backend contract tests", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/src/workers/run.ts", ("Cloudflare Queue DLQ and replay", "Disposable database preflight"), ("Backend contract tests", "Migration history and schema drift", "Frontend lint")),
             ("hrms-client/src/components/example.tsx", ("Frontend lint", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
@@ -119,6 +120,34 @@ class VerificationScriptTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("[Disposable database preflight]", result.stdout)
             self.assertNotIn("[Backend unit tests]", result.stdout)
+            self.assertNotIn("[Backend contract tests]", result.stdout)
+
+    def test_openapi_only_change_preflights_before_contract_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            scripts = repo / "scripts" / "agent"
+            scripts.mkdir(parents=True)
+            for name in ("lib.sh", "verify-change.sh"):
+                shutil.copy2(SOURCE / name, scripts / name)
+            guard = scripts / "protect-sensitive-files.sh"
+            guard.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            guard.chmod(0o755)
+            (scripts / "assert-disposable-test-db.py").write_text("raise SystemExit(1)\n", encoding="utf-8")
+            self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
+            self.assertEqual(run(repo, "git", "add", ".").returncode, 0)
+            self.assertEqual(run(repo, "git", "commit", "-qm", "baseline").returncode, 0)
+            self.assertEqual(run(repo, "git", "update-ref", "refs/remotes/origin/release-01", "HEAD").returncode, 0)
+            target = repo / "hrms_backend/docs/api/openapi.json"
+            target.parent.mkdir(parents=True)
+            target.write_text('{"openapi":"3.1.0"}\n', encoding="utf-8")
+            self.assertEqual(run(repo, "git", "add", ".").returncode, 0)
+            self.assertEqual(run(repo, "git", "commit", "-qm", "openapi only").returncode, 0)
+
+            result = run(repo, "bash", "scripts/agent/verify-change.sh")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("[Disposable database preflight]", result.stdout)
             self.assertNotIn("[Backend contract tests]", result.stdout)
 
     def test_full_gate_runs_selected_steps_and_stops_on_database_preflight_failure(self) -> None:
