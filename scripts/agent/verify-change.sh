@@ -148,6 +148,7 @@ fi
 if [[ "$frontend_changed" -eq 1 ]]; then
   add_step "Frontend lint" "$HRMS_REPO_ROOT/hrms-client" pnpm lint
   add_step "Frontend typecheck" "$HRMS_REPO_ROOT/hrms-client" pnpm typecheck
+  add_step "Frontend unit tests" "$HRMS_REPO_ROOT/hrms-client" pnpm test:unit
   add_step "Frontend production guard" "$HRMS_REPO_ROOT/hrms-client" pnpm api:production-config-guard
   add_step "Frontend production build" "$HRMS_REPO_ROOT/hrms-client" pnpm build:vercel
 fi

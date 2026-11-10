@@ -22,8 +22,8 @@ class VerificationScriptTests(unittest.TestCase):
             ("hrms_backend/docs/api/openapi.json", ("Backend contract tests", "Disposable database preflight"), ("Backend unit tests", "Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/src/db/schema.ts", ("Migration history and schema drift", "Disposable database preflight"), ("Backend contract tests", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/src/workers/run.ts", ("Cloudflare Queue DLQ and replay", "Disposable database preflight"), ("Backend contract tests", "Migration history and schema drift", "Frontend lint")),
-            ("hrms-client/src/components/example.tsx", ("Frontend lint", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
-            ("hrms-client/vitest.config.ts", ("Frontend lint", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
+            ("hrms-client/src/components/example.tsx", ("Frontend lint", "Frontend unit tests", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
+            ("hrms-client/vitest.config.ts", ("Frontend lint", "Frontend unit tests", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
             ("hrms-client/src/domains/example.ts", ("Frontend contract route coverage", "Frontend lint"), ("Backend unit tests", "Disposable database preflight")),
         )
         for changed_path, selected, absent in cases:
