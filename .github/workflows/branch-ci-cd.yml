@@ -167,18 +167,18 @@ jobs:
   changed-coverage:
     name: Changed executable coverage
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     timeout-minutes: 30
     env:
       NODE_ENV: test
       APP_ENV: local
       TEST_DATABASE_URL: postgresql://unused:unused@127.0.0.1:5432/hrms_coverage_unit_only
-      COVERAGE_BASE: ${{ github.event.pull_request.base.sha }}
+      COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
-      - name: Checkout actual PR head with base history
+      - name: Checkout actual PR or push head with base history
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -216,6 +216,7 @@ jobs:
     needs:
       - backend-checks
       - frontend-checks
+      - changed-coverage
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/dev' ||
