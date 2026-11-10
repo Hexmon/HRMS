@@ -12,6 +12,15 @@ require_command() {
   fi
 }
 
+default_release_base() {
+  if git -C "$HRMS_REPO_ROOT" show-ref --verify --quiet refs/remotes/origin/release-01; then
+    printf '%s\n' origin/release-01
+  else
+    echo "origin/release-01 is unavailable. Fetch origin or pass an explicit --base." >&2
+    return 1
+  fi
+}
+
 print_command() {
   local directory="$1"
   shift

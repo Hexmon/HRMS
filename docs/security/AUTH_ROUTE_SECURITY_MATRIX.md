@@ -1,5 +1,7 @@
 # Authentication-Sensitive Route Security Matrix
 
+**Branch provenance:** The enforcement overlay and passing-test counts below belong to the unmerged `sprint-23/auth-s23-019` branch. This documentation bootstrap does not import that branch's auth code into `origin/release-01` (`30783aa5`). The baseline/route evidence must be rechecked after any auth merge; branch-only controls are not release controls yet.
+
 ## Enforcement model at the audited baseline
 
 Unless explicitly listed as public, every `/api/v1/**` route passes `src/plugins/auth.ts`: a JWT is selected from Bearer first and cookie second, its HMAC/expiry are verified, and its `jti` must exist and be unrevoked in the session store. At baseline the hook does **not** require active employment, active company, membership, CSRF proof, or MFA. Those controls exist only where a downstream service explicitly applies them.

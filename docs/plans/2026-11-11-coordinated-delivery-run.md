@@ -9,14 +9,14 @@
 
 - Current checkout: `sprint-25/saas-s25-001` at `87618f88`; many pre-existing modified and untracked planning/QA files. Do not commit this worktree wholesale.
 - Freshly fetched `origin/release-01` at `30783aa5`. The current checkout is six commits ahead, including prior auth code and planning. No open PR targeting `release-01` was returned by `gh pr list` at intake.
-- Live workbook: `Sprint 25 Nov07-Nov13`, 141 task rows, `Sprint 25 Test Cases` with 482 planned cases. It is readable anonymously; this chat cannot write until the owner connects Google Drive or signs in. Existing QA-S25-003 task row 57 and cases 161–164 are Not Tested.
+- Live workbook: `Sprint 25 Nov07-Nov13`, 140 task rows plus one header, `Sprint 25 Test Cases` with 482 planned cases. Existing QA-S25-003 task row 57 and cases 161–164 are Not Tested. The Google Drive plugin is installed but its Sheets tools currently return an unavailable-tool error; tracker writes remain pending.
 - The 35 original TEN findings, later R2, business-rule, auth, mail and supplied-audit refinements overlap. Parent rows are rollups. The static 444-row inventory remains unreviewed; no full API clearance is claimed.
 
 ## Dependency Graph And Queue
 
 | Order | Task / owner | Evidence and outcome | Dependencies and branch/base | Cases, gate and status |
 | --- | --- | --- | --- | --- |
-| 0 | Workflow bootstrap / Anurag Kumar | Copy only approved agent process and current task/case references needed by new worktrees; avoid accumulated product code in the current branch. | Fresh `origin/release-01`; proposed `sprint-25/agt-s25-bootstrap`. | Documentation/link consistency and independent review pending. |
+| 0 | Workflow bootstrap / Anurag Kumar | Copy only approved agent process and current task/case references needed by new worktrees; avoid accumulated product code in the current branch. | Fresh `origin/release-01`; `sprint-25/agt-s25-001`. | Documentation/link consistency and independent review in progress. |
 | 1 | QA-S25-003 / Anurag Kumar | Backend lacks Vitest coverage configuration; frontend lacks unit/component runner; CI has no base/head changed-line gate. | Fresh `origin/release-01`; proposed `sprint-25/qa-s25-003`, may depend on bootstrap only for documented policy. | Refine S25-057-U/P/N/F case bodies in shared sheet; demonstrate fail then pass, new-file and branch handling, independent QA. Planned. |
 | 2 | TEN-S25-001 + TEN-S25-018 first asset transaction slice / Anurag Kumar | `app.ts` onSend whole-domain flush and `postgres-data-store.ts` unconditional asset upsert permit two-instance lost update and post-rollback ghost memory. Historical disposable repro exists; current source mechanism persists. | QA gate first; task branch from current `origin/release-01` or explicit stack. Broader per-domain migration remains separate. | Two-instance CAS, wrong-version and failed-commit cases; real disposable PostgreSQL, browser journey, senior/security/QA review. Planned. |
 | 3 | TEN-S25-016/017 tenant boundary foundation / Anurag Kumar | Resource authorization and RLS gaps must be verified route by route; only registered-device RLS migration found at intake. | Transaction foundation; separate scoped migrations/PRs. | Cross-company, role and related-ID denials plus SQL RLS tests. Planned. |

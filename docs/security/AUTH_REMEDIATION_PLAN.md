@@ -1,5 +1,7 @@
 # Authentication and Authorization Remediation Plan
 
+**Branch provenance:** The Phase 0 implementation and verification statuses below describe the unmerged `sprint-23/auth-s23-019` branch. This documentation bootstrap is based on `origin/release-01` at `30783aa5` and does not include those auth code changes. Release status remains open until the implementation is merged and retested, including the employee-code login gate.
+
 ## Current Planning Refinement — 2026-11-10
 
 Read the [current authentication/Sprint 25 proposal](../discovery/authentication-remediation-2026-11-10.md) before implementing this historical plan. It maps all 36 current findings, eight local synthetic reproductions, database/transaction/session/abuse designs, whole-feature review loops and deduplicated tasks to Anurag Kumar. Runtime fixes remain open; historic passes below are not evidence for the new cases.

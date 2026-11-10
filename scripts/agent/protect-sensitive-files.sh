@@ -7,6 +7,16 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 require_command git
 require_command grep
 
+base_ref=""
+if [[ $# -gt 0 ]]; then
+  [[ $# -eq 2 && "$1" == "--base" ]] || { echo "Usage: protect-sensitive-files.sh [--base REF]" >&2; exit 2; }
+  base_ref="$2"
+fi
+if [[ -z "$base_ref" ]]; then
+  base_ref="$(default_release_base)"
+fi
+merge_base="$(git -C "$HRMS_REPO_ROOT" merge-base "$base_ref" HEAD)"
+
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf "$temporary_directory"' EXIT
 
@@ -17,6 +27,7 @@ added_content="$temporary_directory/added-content.txt"
   git -C "$HRMS_REPO_ROOT" diff --name-only --diff-filter=ACMRTUXB
   git -C "$HRMS_REPO_ROOT" diff --cached --name-only --diff-filter=ACMRTUXB
   git -C "$HRMS_REPO_ROOT" ls-files --others --exclude-standard
+  git -C "$HRMS_REPO_ROOT" diff --name-only --diff-filter=ACMRTUXB "$merge_base" HEAD
 } | awk 'NF' | sort -u > "$changed_files"
 
 blocked=0
@@ -38,6 +49,8 @@ git -C "$HRMS_REPO_ROOT" diff --no-color --unified=0 -- . \
   ':(exclude)scripts/agent/protect-sensitive-files.sh' | sed -n 's/^+//p' > "$added_content"
 git -C "$HRMS_REPO_ROOT" diff --cached --no-color --unified=0 -- . \
   ':(exclude)scripts/agent/protect-sensitive-files.sh' | sed -n 's/^+//p' >> "$added_content"
+git -C "$HRMS_REPO_ROOT" diff --no-color --unified=0 "$merge_base" HEAD -- . \
+  ':(exclude)scripts/agent/protect-sensitive-files.sh' | sed -n 's/^+//p' >> "$added_content"
 
 while IFS= read -r path; do
   [[ "$path" == "scripts/agent/protect-sensitive-files.sh" ]] && continue
@@ -58,4 +71,4 @@ if [[ "$blocked" -ne 0 ]]; then
   exit 1
 fi
 
-echo "Sensitive-file guard passed for the current worktree changes."
+echo "Sensitive-file guard passed for changes against $base_ref and the current worktree."

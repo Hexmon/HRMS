@@ -35,11 +35,9 @@ done
 
 require_command git
 require_command pnpm
+require_command python3
 
 test_env_file="$HRMS_REPO_ROOT/hrms_backend/.env.test"
-if [[ ! -f "$test_env_file" ]]; then
-  test_env_file="$HRMS_REPO_ROOT/hrms_backend/.env.test.example"
-fi
 
 run_step "Sensitive-file guard" "$HRMS_REPO_ROOT" "$HRMS_REPO_ROOT/scripts/agent/protect-sensitive-files.sh"
 run_step "Unstaged patch integrity" "$HRMS_REPO_ROOT" git diff --check
@@ -48,6 +46,7 @@ run_step "Agent setup and documentation references" "$HRMS_REPO_ROOT" bash scrip
 
 run_step "Backend lint" "$HRMS_REPO_ROOT/hrms_backend" pnpm lint
 run_step "Backend typecheck" "$HRMS_REPO_ROOT/hrms_backend" pnpm typecheck
+run_step "Disposable database preflight" "$HRMS_REPO_ROOT" python3 scripts/agent/assert-disposable-test-db.py "$test_env_file"
 run_step "Migration history and schema drift" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm db:verify:migrations
 run_step "Cross-schema foreign keys" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_DB_VERIFY_ENV_FILE="$test_env_file" pnpm db:verify:no-cross-schema-fks
 run_step "OpenAPI drift" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:docs:verify

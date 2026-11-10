@@ -12,7 +12,7 @@ usage() {
 Usage: scripts/agent/verify-change.sh [--plan] [--base <git-ref>]
 
   --plan        Print selected checks without executing package commands.
-  --base REF    Include committed changes since the merge base with REF.
+  --base REF    Compare committed changes with REF (default: origin/release-01).
 USAGE
 }
 
@@ -41,28 +41,28 @@ done
 
 require_command git
 require_command pnpm
+require_command python3
+
+if [[ -z "$base_ref" ]]; then
+  base_ref="$(default_release_base)"
+fi
+merge_base="$(git -C "$HRMS_REPO_ROOT" merge-base "$base_ref" HEAD)"
 
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf "$temporary_directory"' EXIT
 changed_files="$temporary_directory/changed-files.txt"
 test_env_file="$HRMS_REPO_ROOT/hrms_backend/.env.test"
-if [[ ! -f "$test_env_file" ]]; then
-  test_env_file="$HRMS_REPO_ROOT/hrms_backend/.env.test.example"
-fi
 
 {
   git -C "$HRMS_REPO_ROOT" diff --name-only --diff-filter=ACDMRTUXB
   git -C "$HRMS_REPO_ROOT" diff --cached --name-only --diff-filter=ACDMRTUXB
   git -C "$HRMS_REPO_ROOT" ls-files --others --exclude-standard
-  if [[ -n "$base_ref" ]]; then
-    merge_base="$(git -C "$HRMS_REPO_ROOT" merge-base "$base_ref" HEAD)"
-    git -C "$HRMS_REPO_ROOT" diff --name-only --diff-filter=ACDMRTUXB "$merge_base" HEAD
-  fi
+  git -C "$HRMS_REPO_ROOT" diff --name-only --diff-filter=ACDMRTUXB "$merge_base" HEAD
 } | awk 'NF' | sort -u > "$changed_files"
 
 if [[ ! -s "$changed_files" ]]; then
-  echo "No changed files detected."
-  exit 0
+  echo "No changes found against $base_ref. Specify --base for another comparison or run verify-full.sh." >&2
+  exit 2
 fi
 
 echo "Changed files considered:"
@@ -106,7 +106,8 @@ add_step() {
   commands+=("$serialized")
 }
 
-add_step "Sensitive-file guard" "$HRMS_REPO_ROOT" "$HRMS_REPO_ROOT/scripts/agent/protect-sensitive-files.sh"
+add_step "Sensitive-file guard" "$HRMS_REPO_ROOT" "$HRMS_REPO_ROOT/scripts/agent/protect-sensitive-files.sh" --base "$base_ref"
+add_step "Committed patch integrity" "$HRMS_REPO_ROOT" git diff --check "$merge_base" HEAD
 add_step "Unstaged patch integrity" "$HRMS_REPO_ROOT" git diff --check
 add_step "Staged patch integrity" "$HRMS_REPO_ROOT" git diff --cached --check
 if grep -Eq '(^|/)AGENTS\.md$|^\.agents/|^docs/(agent|discovery|plans|README\.md)|^scripts/agent/' "$changed_files"; then
@@ -124,6 +125,7 @@ if [[ "$backend_api_changed" -eq 1 ]]; then
   add_step "API consumer compatibility" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:consumer:verify
 fi
 if [[ "$database_changed" -eq 1 ]]; then
+  add_step "Disposable database preflight" "$HRMS_REPO_ROOT" python3 scripts/agent/assert-disposable-test-db.py "$test_env_file"
   add_step "Migration history and schema drift" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm db:verify:migrations
   add_step "Cross-schema foreign keys" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_DB_VERIFY_ENV_FILE="$test_env_file" pnpm db:verify:no-cross-schema-fks
 fi

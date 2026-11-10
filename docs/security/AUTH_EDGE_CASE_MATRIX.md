@@ -1,5 +1,7 @@
 # Authentication and Authorization Edge-Case Matrix
 
+**Branch provenance:** The executed remediation results below are dated evidence from unmerged `sprint-23/auth-s23-019`, not tests run on this documentation bootstrap or its `origin/release-01` base (`30783aa5`). Do not carry their pass status into release readiness without merging and rerunning the corresponding auth code and cases.
+
 ## Status rules
 
 - **Covered and passing** is used only after a named test is executed successfully during this audit.

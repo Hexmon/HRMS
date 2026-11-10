@@ -1,5 +1,7 @@
 # Hawkaii HRMS Authentication and Authorization Security Audit
 
+**Branch provenance:** The remediation and passing-test statements below are dated evidence from the unmerged `sprint-23/auth-s23-019` branch, not implemented behavior in this documentation bootstrap or its `origin/release-01` base (`30783aa5`). At that release base, employee-code login remains available without the proposed environment gate. Treat AUTH-P0-001 and other branch-only fixes as open for release until their code and tests are merged and reverified.
+
 ## Current Source Follow-up — 2026-11-10
 
 The [36-finding authentication review and Sprint 25 plan](../discovery/authentication-remediation-2026-11-10.md) at source `87618f88` supplements this dated audit. It does not close runtime tasks. Eight distinct synthetic in-memory/Fastify behaviors were reproduced; no hosted exploit, PostgreSQL/Redis race or full browser assurance was established. [Exact evidence boundary](../../qa-artifacts/hrms/auth-review-2026-11-10/verification.md).
@@ -18,7 +20,7 @@ Planning owner: Anurag Kumar, Sprint 25. New AUTH-S25-001–007 and QA-AUTH-S25-
 - Status vocabulary: **Confirmed** means the behavior follows directly from inspected code or a repository test. **Architecture gap** means required capability is absent. **Unverified** means runtime/deployment evidence is still required.
 - Line references in the initial findings point to the baseline above. Remediation status is updated after code changes; symbols are included because later edits can move lines.
 
-## Remediation progress on this branch
+## Historical remediation progress on the auth branch
 
 The baseline findings remain below as the historical exploit evidence. The following status was verified locally on 2026-10-25; no hosted service was changed or tested.
 
