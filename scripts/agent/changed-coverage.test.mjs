@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -160,6 +160,41 @@ test("a source rename remains a deletion plus new file and fails pending regress
   assert.ok(result.totals.uncovered.some((item) => item.includes("deleted source file")));
 });
 
+test("source type changes, new symlinks, mode-only and binary changes fail without reading symlink targets", () => {
+  for (const scenario of ["type change", "added symlink", "mode only", "binary change"]) {
+    const root = mkdtempSync(join(tmpdir(), "hrms-coverage-modes-"));
+    roots.push(root);
+    git(root, "init", "-q");
+    const path = scenario === "added symlink" ? "hrms_backend/src/guard:tenant.ts" : "hrms_backend/src/guard.ts";
+    write(root, "README.md", "base\n");
+    if (scenario !== "added symlink") write(root, path, "export const guard = true;\n");
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "base");
+    const base = git(root, "rev-parse", "HEAD");
+    if (scenario === "type change") {
+      rmSync(join(root, path));
+      symlinkSync("missing-target.ts", join(root, path));
+    } else if (scenario === "added symlink") {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      symlinkSync("missing-target.ts", join(root, path));
+    } else if (scenario === "binary change") {
+      write(root, path, Buffer.from("export const guard = false;\0\n"));
+    } else {
+      chmodSync(join(root, path), 0o755);
+    }
+    git(root, "add", "-A");
+    git(root, "commit", "-qm", scenario);
+    const diff = changedLines(root, base, "HEAD");
+    assert.equal(diff.modeTransitions.length, 1, `${scenario}: ${JSON.stringify(diff)}`);
+    assert.deepEqual(diff.modeTransitions[0].path, path);
+    assert.equal(diff.modeTransitions[0].status, scenario === "type change" ? "T" : scenario === "added symlink" ? "A" : "M");
+    if (scenario === "binary change") assert.equal(diff.modeTransitions[0].noTextHunk, true);
+    const result = verify(root, base, "HEAD");
+    assert.equal(result.pass, false, scenario);
+    assert.ok(result.totals.uncovered.some((item) => item.includes(`unmeasured source mode/type ${path}`)));
+  }
+});
+
 test("missing and stale reports fail closed", () => {
   const { root, base, head } = fixture();
   assert.throws(() => verify(root, base, head), /missing fresh coverage report/);
@@ -281,6 +316,40 @@ test("real Vitest behavior changes the full PR gate and CLI from red to green", 
   assert.equal(green.pass, true, green.lines.join("\n"));
   const greenCli = spawnSync(process.execPath, [executable, "--base", base], { cwd: root, env, encoding: "utf8" });
   assert.equal(greenCli.status, 0, greenCli.stderr || greenCli.stdout);
+});
+
+test("real Vitest coverage passes the full gate for modified source with both decision outcomes", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-real-modified-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  write(root, ".gitignore", "node_modules/\ncoverage/\n");
+  write(root, "hrms-client/package.json", "{\"type\":\"module\"}\n");
+  write(root, "hrms-client/src/decision.ts", "export function label(name: string) {\n  return name.toUpperCase();\n}\n");
+  write(root, "hrms-client/src/decision.unit.test.ts", "import { expect, it } from 'vitest';\nimport { label } from './decision';\nit('labels a name', () => { expect(label('employee')).toBe('EMPLOYEE'); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base implementation");
+  const base = git(root, "rev-parse", "HEAD");
+  symlinkSync(new URL("../../hrms-client/node_modules", import.meta.url).pathname, join(root, "hrms-client/node_modules"), "dir");
+  write(root, "hrms-client/src/decision.ts", "export function label(name: string) {\n  if (name.trim()) return name.trim().toUpperCase();\n  return 'ANONYMOUS';\n}\n");
+  write(root, "hrms-client/src/decision.unit.test.ts", "import { expect, it } from 'vitest';\nimport { label } from './decision';\nit('trims and labels a name', () => { expect(label(' employee ')).toBe('EMPLOYEE'); });\nit('labels a blank name', () => { expect(label('  ')).toBe('ANONYMOUS'); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "handle blank names");
+  const path = "hrms-client/src/decision.ts";
+  assert.deepEqual([...changedLines(root, base, "HEAD").files.get(path)], [2, 3]);
+  const packageRoot = join(root, "hrms-client");
+  const vitest = join(packageRoot, "node_modules/.bin/vitest");
+  const run = spawnSync(vitest, ["run", "--coverage", "--coverage.reporter=json"], { cwd: packageRoot, encoding: "utf8", timeout: 30000 });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  stampReport(root, "frontend");
+  const result = verify(root, base, "HEAD");
+  assert.equal(result.pass, true, result.lines.join("\n"));
+  assert.ok(result.totals.executable > 0);
+  assert.ok(result.totals.branches > 0);
+  const executable = new URL("./changed-coverage.mjs", import.meta.url).pathname;
+  const cli = spawnSync(process.execPath, [executable, "--base", base], {
+    cwd: root, env: { ...process.env, HRMS_COVERAGE_REPO_ROOT: root }, encoding: "utf8",
+  });
+  assert.equal(cli.status, 0, cli.stderr || cli.stdout);
 });
 
 test("documentation-only changes are explicitly N/A without package reports", () => {

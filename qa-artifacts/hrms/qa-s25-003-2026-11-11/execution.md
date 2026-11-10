@@ -1,6 +1,6 @@
 # QA-S25-003 local execution (developer evidence; independent QA pending)
 
-Date: 2026-11-11 IST. Isolated worktree: `/home/hexmon/Desktop/HRMS-qa-s25-003`. The initial implementation evidence below was captured at fork HEAD `74cb28d01750dc0fa4262ce3366ef767867e12d8`, with PR release base `30783aa5ccaef41900195e1902f9dcb9f92d4270`. The first QA implementation was later committed at `d3b386635528dc826620989c0a231c4d359014c4`; the review fixes at the end of this document remain uncommitted. No final submitted-PR coverage percentage is claimed.
+Date: 2026-11-11 IST. Isolated worktree: `/home/hexmon/Desktop/HRMS-qa-s25-003`. The initial implementation evidence below was captured at fork HEAD `74cb28d01750dc0fa4262ce3366ef767867e12d8`, with PR release base `30783aa5ccaef41900195e1902f9dcb9f92d4270`. The first QA implementation was committed at `d3b386635528dc826620989c0a231c4d359014c4`; the PR #117 parser and path review fixes were committed at `9f16df15`. The type/mode follow-up is documented below; its final submitted head and CI result belong in the PR record. No final submitted-PR coverage percentage is claimed.
 
 ## Commands and outcomes
 
@@ -28,15 +28,15 @@ With the second component test enabled, it asserts the accessible label and actu
 
 ## Remaining gates
 
-- Run the checker on the exact committed QA task head versus stack parent and release-01. Parent owns commit/rebase. Full PR gate must include inherited bootstrap verifier changes and cannot be called green from this pre-task fork result.
+- Rerun the checker on the final submitted QA task head versus stack parent and release-01. The full PR gate includes inherited bootstrap verifier changes and cannot be called green from the historical pre-task fork result.
 - The checker now fails closed for changed executable/config files outside backend/frontend `src`, deletion-only source hunks, and runtime replaced with non-executable lines. The current QA task itself changes package manifests, a root `.mjs` checker, backend script and CI workflow, so a final PR source-only coverage pass is insufficient. A PR-authored manual exception JSON cannot clear the gate; owner/branch-protection adjudication is external to CI and must not be described as numerical 100%.
-- Independent QA and senior reviewers have reported findings, which prompted the post-review fixes below. Final independent acceptance and the committed-head PR run remain pending. All shared-sheet case execution statuses remain pending there until accessible and independently reconciled.
+- Independent QA and senior reviewers have reported findings, including a type-change false green at exact head `9f16df15`, which prompted the fixes below. Final independent acceptance and a rerun at the next committed head remain pending. All shared-sheet case execution statuses remain pending there until accessible and independently reconciled.
 
 ## Post-review regression additions
 
 Senior/QA review identified and the developer fixed these false-green paths: package/deployment config outside the original extension matcher; PR-authored JSON impersonating an owner/reviewer; V8 branch spans changed on continuation lines; runtime replaced only by comment/type; coverage stamped from uncommitted source; value-import target changes; and TypeScript scanner tokens spanning template interpolation. The 11-case gate suite above was the run before the additional PR #117 review below. A direct check against the prior backend V8 report for `hrms_backend/src/modules/expenses/service.ts` lines 302–306 marks each executable; line 305 now maps to uncovered decision branch IDs 23 and 24. The earlier `cumulative-gate-pre-commit.log` was generated before these changes and describes only the inherited 74cb28d0 fork. The final task head must be committed, reports regenerated, and the exact PR gate rerun before disposition.
 
-## PR #117 review follow-up (uncommitted)
+## PR #117 review follow-up (committed at `9f16df15`)
 
 The exact-head review found that a TypeScript content line beginning `++ b/` becomes `+++ b/` in a patch, which the old parser mistook for a file header. A synthetic patch now changes a guard after such a template-literal line. The new stateful hunk parser attributes both changed lines to the guard and the full gate fails on its uncovered authorization branch. It also checks hunk lengths and rejects malformed patches.
 
@@ -44,4 +44,12 @@ The follow-up suite adds a covered **modified** source fixture as well as the ex
 
 Command: `node --experimental-test-coverage --test --test-coverage-lines=100 scripts/agent/changed-coverage.test.mjs`. Result: **18/18 passed**, 21.997 s. Node V8 reports gate script 100.00% lines, 91.71% branches, 100.00% functions; test script 100.00% lines/branches/functions. These percentages describe the gate script itself, not the cumulative product or exact PR diff. Tests use isolated temporary git repositories and frontend dependencies; no hosted service or product DB was touched.
 
-Stamp freshness has a trust limit: a person can manually restamp an old report at a newer committed source revision. CI must generate the report and stamp it sequentially in the same clean job. This check establishes revision consistency, not cryptographic provenance. A fresh exact-head PR run and independent QA review remain pending after the parent commits these fixes. All four shared-sheet cases remain **Not Tested** until tracker reconciliation and independent QA disposition.
+Stamp freshness has a trust limit: a person can manually restamp an old report at a newer committed source revision. CI must generate the report and stamp it sequentially in the same clean job. This check establishes revision consistency, not cryptographic provenance. Independent QA reviewed this committed head and identified the type/mode gap below. All four shared-sheet cases remain **Not Tested** until tracker reconciliation and independent QA disposition.
+
+## Exact-`9f16df15` QA finding and type/mode follow-up
+
+The reviewer reproduced a false green when Git changed a tracked TypeScript regular file to a symlink (`T`): the text patch used `--diff-filter=AM`, and the status loop did not classify `T`, so the gate could report 0/0 and pass. The follow-up parses Git's NUL-delimited raw status and modes. It fails closed for a regular-file-to-symlink change (`T`), a new source symlink (`A`, mode `120000`), an executable-bit-only source edit (`M` with no text hunk), and a binary source edit with no text hunk. Dangling symlink fixtures demonstrate that coverage does not read the target before rejection. Regular `.ts`/`.tsx` text changes remain mapped through their patch hunks.
+
+The new positive fixture starts with an existing TypeScript source file in a temporary git repository, then commits a modified decision and behavioral tests for both outcomes. A real frontend Vitest run emits V8 JSON, the report is stamped, and both full `verify()` and the CLI pass with changed executable lines and a decision branch measured. This supplements the earlier handcrafted modified-source report.
+
+Command: `node --experimental-test-coverage --test --test-coverage-lines=100 scripts/agent/changed-coverage.test.mjs`. Result on the final follow-up run: **20/20 passed**, 15.591 s. Node V8 reports gate script 100.00% lines, 91.78% branches, 100.00% functions; test script 100.00% lines/branches/functions. The raw status is held as structured fields so a colon in a source filename cannot confuse path classification. This is gate-tool coverage in isolated fixtures, not product-wide or cumulative PR coverage. A fresh exact-head PR run and independent QA acceptance remain pending; shared-sheet cases stay **Not Tested**.
