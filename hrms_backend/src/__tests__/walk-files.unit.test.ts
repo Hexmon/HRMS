@@ -1,11 +1,10 @@
-import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import test from "node:test";
-import { walkFiles } from "./lib.js";
+import { expect, it } from "vitest";
+import { walkFiles } from "../../scripts/lib.js";
 
-test("walkFiles skips generated root coverage but discovers nested source coverage", () => {
+it("walkFiles skips generated root coverage but discovers nested source coverage", () => {
   const packageRoot = mkdtempSync(join(tmpdir(), "hrms-walk-files-"));
   try {
     const generated = join(packageRoot, "coverage", "coverage-final.json");
@@ -17,8 +16,8 @@ test("walkFiles skips generated root coverage but discovers nested source covera
 
     const files = walkFiles(packageRoot, () => true, packageRoot)
       .map((path) => relative(packageRoot, path));
-    assert.deepEqual(files, [join("src", "modules", "coverage", "policy.ts")]);
-    assert.deepEqual(walkFiles(join(packageRoot, "src"), () => true, packageRoot), [source]);
+    expect(files).toEqual([join("src", "modules", "coverage", "policy.ts")]);
+    expect(walkFiles(join(packageRoot, "src"), () => true, packageRoot)).toEqual([source]);
   } finally {
     rmSync(packageRoot, { recursive: true, force: true });
   }
