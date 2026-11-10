@@ -1,0 +1,38 @@
+[
+  {
+    "path": "docs/process/coordinated-delivery.md",
+    "before_sha256": null
+  },
+  {
+    "path": "docs/agent/credential-register.md",
+    "before_sha256": null
+  },
+  {
+    "path": ".agents/skills/coordinate-delivery/SKILL.md",
+    "before_sha256": null
+  },
+  {
+    "path": "docs/agent/main-chat-delivery-goal-prompt.md",
+    "before_sha256": null
+  },
+  {
+    "path": "AGENTS.md",
+    "before_sha256": "13e5169f437d8123d4e8a4ec69406250c02b093ee23889d34f5fb0acade327e5"
+  },
+  {
+    "path": "docs/process/branching-release-process.md",
+    "before_sha256": "9f1c8b65fffc18a46215d37ef08b453fb3963b832d96b13a0a43e73070decba1"
+  },
+  {
+    "path": "docs/README.md",
+    "before_sha256": "be8245dfb51caedd856dd2f9a1f977e0f22249143e4c73421250e74b73d30143"
+  },
+  {
+    "path": ".agents/skill-registry.md",
+    "before_sha256": "e5ead7b3fe85ab4d50fa07acd007e4187fb3e3bcac57cae5e4b80e057f2688fe"
+  },
+  {
+    "path": "docs/agent/testing-skills-research-2026-11-11.md",
+    "before_sha256": "9302ff658d60e0b3ad76692bbbc8451e0985cb8e52d1b8713bf3356e957790c4"
+  }
+]

@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+mode="run"
+base_ref=""
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/agent/verify-change.sh [--plan] [--base <git-ref>]
+
+  --plan        Print selected checks without executing package commands.
+  --base REF    Include committed changes since the merge base with REF.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --plan)
+      mode="plan"
+      shift
+      ;;
+    --base)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      base_ref="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+require_command git
+require_command pnpm
+
+temporary_directory="$(mktemp -d)"
+trap 'rm -rf "$temporary_directory"' EXIT
+changed_files="$temporary_directory/changed-files.txt"
+test_env_file="$HRMS_REPO_ROOT/hrms_backend/.env.test"
+if [[ ! -f "$test_env_file" ]]; then
+  test_env_file="$HRMS_REPO_ROOT/hrms_backend/.env.test.example"
+fi
+
+{
+  git -C "$HRMS_REPO_ROOT" diff --name-only --diff-filter=ACDMRTUXB
+  git -C "$HRMS_REPO_ROOT" diff --cached --name-only --diff-filter=ACDMRTUXB
+  git -C "$HRMS_REPO_ROOT" ls-files --others --exclude-standard
+  if [[ -n "$base_ref" ]]; then
+    merge_base="$(git -C "$HRMS_REPO_ROOT" merge-base "$base_ref" HEAD)"
+    git -C "$HRMS_REPO_ROOT" diff --name-only --diff-filter=ACDMRTUXB "$merge_base" HEAD
+  fi
+} | awk 'NF' | sort -u > "$changed_files"
+
+if [[ ! -s "$changed_files" ]]; then
+  echo "No changed files detected."
+  exit 0
+fi
+
+echo "Changed files considered:"
+sed 's/^/  - /' "$changed_files"
+
+backend_changed=0
+backend_api_changed=0
+database_changed=0
+worker_changed=0
+frontend_changed=0
+frontend_api_changed=0
+
+if grep -Eq '^hrms_backend/(src|scripts|infra)/|^hrms_backend/(package.json|pnpm-lock.yaml|tsconfig.*|vitest.config.ts|wrangler.jsonc)$|^render.yaml$|^infra/render/' "$changed_files"; then
+  backend_changed=1
+fi
+if grep -Eq '^hrms_backend/src/(app.ts|auth/|modules/.*/(routes|schemas|index)\.ts)|^hrms_backend/docs/api/' "$changed_files"; then
+  backend_api_changed=1
+fi
+if grep -Eq '^hrms_backend/src/db/|^hrms_backend/src/modules/.*/repository\.ts$' "$changed_files"; then
+  database_changed=1
+fi
+if grep -Eq '^hrms_backend/src/(workers|platform/cloudflare)/|^hrms_backend/scripts/.*cloudflare|^hrms_backend/wrangler\.jsonc$|^\.github/workflows/deploy-cloudflare-worker\.yml$' "$changed_files"; then
+  worker_changed=1
+fi
+if grep -Eq '^hrms-client/(src|e2e|scripts)/|^hrms-client/(package.json|pnpm-lock.yaml|vite.config.ts|tsconfig.json|eslint.config.js|playwright.*\.ts|vercel.json)$' "$changed_files"; then
+  frontend_changed=1
+fi
+if grep -Eq '^hrms-client/src/(shared/api|domains)/|^hrms-client/scripts/.*(contract|route|api)' "$changed_files"; then
+  frontend_api_changed=1
+fi
+
+declare -a labels=()
+declare -a directories=()
+declare -a commands=()
+
+add_step() {
+  labels+=("$1")
+  directories+=("$2")
+  shift 2
+  printf -v serialized '%q ' "$@"
+  commands+=("$serialized")
+}
+
+add_step "Sensitive-file guard" "$HRMS_REPO_ROOT" "$HRMS_REPO_ROOT/scripts/agent/protect-sensitive-files.sh"
+add_step "Unstaged patch integrity" "$HRMS_REPO_ROOT" git diff --check
+add_step "Staged patch integrity" "$HRMS_REPO_ROOT" git diff --cached --check
+if grep -Eq '(^|/)AGENTS\.md$|^\.agents/|^docs/(agent|discovery|plans|README\.md)|^scripts/agent/' "$changed_files"; then
+  add_step "Agent setup and documentation references" "$HRMS_REPO_ROOT" bash scripts/agent/validate-agent-setup.sh
+fi
+
+if [[ "$backend_changed" -eq 1 ]]; then
+  add_step "Backend lint" "$HRMS_REPO_ROOT/hrms_backend" pnpm lint
+  add_step "Backend typecheck" "$HRMS_REPO_ROOT/hrms_backend" pnpm typecheck
+  add_step "Backend unit tests" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm test:unit
+fi
+if [[ "$backend_api_changed" -eq 1 ]]; then
+  add_step "Backend contract tests" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm test:contracts
+  add_step "OpenAPI drift" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:docs:verify
+  add_step "API consumer compatibility" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:consumer:verify
+fi
+if [[ "$database_changed" -eq 1 ]]; then
+  add_step "Migration history and schema drift" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm db:verify:migrations
+  add_step "Cross-schema foreign keys" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_DB_VERIFY_ENV_FILE="$test_env_file" pnpm db:verify:no-cross-schema-fks
+fi
+if [[ "$worker_changed" -eq 1 ]]; then
+  add_step "Cloudflare Queue DLQ and replay" "$HRMS_REPO_ROOT/hrms_backend" pnpm verify:cloudflare-queue-dlq
+fi
+if [[ "$frontend_changed" -eq 1 ]]; then
+  add_step "Frontend lint" "$HRMS_REPO_ROOT/hrms-client" pnpm lint
+  add_step "Frontend typecheck" "$HRMS_REPO_ROOT/hrms-client" pnpm typecheck
+  add_step "Frontend production guard" "$HRMS_REPO_ROOT/hrms-client" pnpm api:production-config-guard
+  add_step "Frontend production build" "$HRMS_REPO_ROOT/hrms-client" pnpm build:vercel
+fi
+if [[ "$frontend_api_changed" -eq 1 || "$backend_api_changed" -eq 1 ]]; then
+  add_step "Frontend implemented-route guard" "$HRMS_REPO_ROOT/hrms-client" pnpm api:implemented-route-guard
+  add_step "Frontend contract route coverage" "$HRMS_REPO_ROOT/hrms-client" pnpm api:frontend-contract:route-coverage
+fi
+
+echo
+if [[ "$mode" == "plan" ]]; then
+  echo "Selected verification plan:"
+fi
+
+for index in "${!labels[@]}"; do
+  read -r -a command <<< "${commands[$index]}"
+  if [[ "$mode" == "plan" ]]; then
+    printf '\n[%s]\n' "${labels[$index]}"
+    print_command "${directories[$index]}" "${command[@]}"
+  else
+    run_step "${labels[$index]}" "${directories[$index]}" "${command[@]}"
+  fi
+done
+
+if [[ "$backend_changed" -eq 0 && "$frontend_changed" -eq 0 ]]; then
+  echo
+  echo "No backend or frontend runtime files changed; repository integrity checks are sufficient for the detected paths."
+fi
+
+if [[ "$mode" == "run" ]]; then
+  echo
+  echo "Change-aware automated verification completed. Add targeted browser, integration, security, migration or hosted checks required by docs/agent/verification-matrix.md."
+fi

@@ -1,0 +1,12 @@
+{
+  "environment": "two Fastify instances; disposable local PostgreSQL and Valkey",
+  "first_http_status": 200,
+  "after_first_status": "Assigned",
+  "after_first_version": 2,
+  "after_first_assignee_matches": true,
+  "second_http_status": 200,
+  "after_second_status": "In Stock",
+  "after_second_version": 1,
+  "after_second_assignee_matches": false,
+  "assignment_rows_after_second": 1
+}

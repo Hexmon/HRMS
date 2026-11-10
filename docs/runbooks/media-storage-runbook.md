@@ -4,11 +4,13 @@ Last verified from the repository: 2026-06-30.
 
 This runbook covers document, profile photo, company logo, and generated export storage.
 
+2026-11-10 planning notice: the owner requested complete Cloudinary replacement with Cloudflare R2 before launch. [Source review and proposed replacement architecture](../discovery/r2-document-storage-remediation-2026-11-10.md) records current authorization/persistence/replacement/audit gaps and Sprint 25 tasks. The Cloudinary instructions below describe the existing adapter; they are not R2 provisioning instructions or evidence of safe protected delivery. Update and verify this runbook when the R2 implementation lands; do not enable public R2 delivery for protected documents.
+
 ## Architecture Summary
 
 - Clients upload files to the backend.
 - Backend validates limits and MIME types.
-- Backend compresses images client-side before upload where frontend helpers are used.
+- Frontend helpers may compress images before upload; browser preprocessing does not establish trusted server-side content validation.
 - Backend can compress PDFs server-side through Ghostscript.
 - Backend stores content through Cloudinary-compatible object storage.
 - Backend writes metadata/version/access records in PostgreSQL.

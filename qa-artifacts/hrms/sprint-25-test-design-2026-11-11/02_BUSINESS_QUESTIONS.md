@@ -1,0 +1,51 @@
+# Open Test Oracles
+
+Existing DEC-Q, DEC-BQ, AUTH-Q and MAIL-Q decisions remain canonical. The aliases below map task-level case blockers to those cards; they do not create approved rules. Confirm numerical entitlement, time/retention/limit, first-Admin evidence, provider onboarding/phone recovery, payroll-spreadsheet and offline-licence decisions before affected acceptance.
+
+- **QA-BQ-TEN-S25-002** (TEN-S25-002): DEC-002/003/004/005/006; DEC-Q01/02/04. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-003** (TEN-S25-003): DEC-007/044/046; DEC-Q05; DEC-BQ13. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-004** (TEN-S25-004): DEC-003/005; employee-code format decision pending. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-011** (TEN-S25-011): DEC-016; DEC-Q13. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-020** (TEN-S25-020): DEC-011; protected URL lifetime decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-025** (TEN-S25-025): DEC-008; DEC-Q11. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-026** (TEN-S25-026): DEC-009/021. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-027** (TEN-S25-027): DEC-022; DEC-BQ01. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-028** (TEN-S25-028): AUTH plan; approved budget/outage policy pending. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-029** (TEN-S25-029): AGENTS bounded resources; measurement targets pending. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-031** (TEN-S25-031): DEC-030/032; platform-support policy pending. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-032** (TEN-S25-032): DEC-004; retention/offboarding policy pending. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-033** (TEN-S25-033): DEC-017; DEC-Q01/03. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-034** (TEN-S25-034): DEC-017; DEC-Q04/05. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-TEN-S25-035** (TEN-S25-035): DEC-006; DEC-Q02. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-004** (BIZ-S25-004): DEC-033/034/036/040; DEC-BQ05. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-006** (BIZ-S25-006): DEC-BQ07; AGENTS document authorization. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-007** (BIZ-S25-007): DEC-030/032; DEC-BQ13. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-008** (BIZ-S25-008): DEC-BQ02. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-010** (BIZ-S25-010): DEC-BQ02/08. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-012** (BIZ-S25-012): DEC-023; DEC-BQ03. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-013** (BIZ-S25-013): DEC-022/023; DEC-BQ03. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-015** (BIZ-S25-015): DEC-012/021/028; DEC-BQ04. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-020** (BIZ-S25-020): DEC-BQ11. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-023** (BIZ-S25-023): DEC-008; DEC-BQ08. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-BIZ-S25-024** (BIZ-S25-024): AGENTS validation; probation policy decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-AUTH-S25-006** (AUTH-S25-006): DEC-033/041; AUTH-Q05/07. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-002** (MAIL-S25-002): DEC-030/037; initial sender decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-009** (MAIL-S25-009): DEC-045; phone transport decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-010** (MAIL-S25-010): DEC-033/041. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-011** (MAIL-S25-011): DEC-034; cadence/quiet-hours decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-012** (MAIL-S25-012): DEC-029/033/036; MAIL-S25-023. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-014** (MAIL-S25-014): DEC-028/034/040; cadence decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-016** (MAIL-S25-016): DEC-026/034/040; DEC-BQ11. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-017** (MAIL-S25-017): DEC-025/034; audience/cadence decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-018** (MAIL-S25-018): DEC-004/036; project audience decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-019** (MAIL-S25-019): DEC-011/040; document/export audience decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-MAIL-S25-023** (MAIL-S25-023): DEC-033-047; MAIL-Q04-10. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-PAY-S25-001** (PAY-S25-001): DEC-042/043/047; MAIL-Q02/03/06/08. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-PAY-S25-002** (PAY-S25-002): PAY-S25-001; DEC-047. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-PAY-S25-003** (PAY-S25-003): DEC-047; PAY-S25-001. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-PAY-S25-004** (PAY-S25-004): DEC-042/043/047; PAY-S25-001. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-PAY-S25-005** (PAY-S25-005): DEC-042; PAY-S25-001. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-PAY-S25-006** (PAY-S25-006): DEC-043/044/047; address-repair decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-LIC-S25-003** (LIC-S25-003): Offline licence need/trust-model decision pending. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-FIN-S25-001** (FIN-S25-001): DEC-024; DEC-BQ09; finance sign/bounds decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.
+- **QA-BQ-CORE-S25-003** (CORE-S25-003): DEC-007/044/046; import-format decision. Confirm unresolved rule/values in the linked task card; reuse existing DEC/MAIL question rather than infer behavior.

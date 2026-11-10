@@ -1,0 +1,5 @@
+# Adversarial Coverage Obligations
+
+Consider all 19 owner-requested categories for every relevant feature, recording applicability: tenant ID substitution; role escalation; stale access after role/password/deactivation; login/reset/invitation/verification abuse; malicious/disguised/oversized/decompression uploads; CSV formulas; SQL/HTML/script input; distributed rate evasion; mass assignment; pagination/export range abuse; concurrent transitions; corrupt/out-of-order offline attendance; stale tab/back/refresh/double-click/network failure; public QR/document access; accessibility/mobile/browser/low network; load/stress/soak/recovery; hosted configuration; independent penetration; actual-role human UAT.
+
+The suite plans isolated cases, not live attacks. Specific OWASP references: https://owasp.org/www-project-web-security-testing-guide/ and https://owasp.org/API-Security/ . Read current version/control before attributing a numeric requirement. Never collect real credentials/PII in fixtures or upload repo content to research services.

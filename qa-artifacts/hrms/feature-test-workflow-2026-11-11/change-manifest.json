@@ -1,0 +1,77 @@
+[
+  {
+    "path": "AGENTS.md",
+    "before_sha256": "b9b6d35fedfe2c34b7026119fc34a1e5199054f03bcceb45a242d260890450e0",
+    "after_sha256": "13e5169f437d8123d4e8a4ec69406250c02b093ee23889d34f5fb0acade327e5"
+  },
+  {
+    "path": "hrms_backend/AGENTS.md",
+    "before_sha256": "6462ea717b720e6db2a09b7f6fa364a518422a738b6b2741473f2dc5d4d71d8e",
+    "after_sha256": "cd63cb671ba6b7b9a53b4d7f7a26f6cc874de4433fab25107f2dd932b55e87ca"
+  },
+  {
+    "path": "hrms-client/AGENTS.md",
+    "before_sha256": "56e0d1a25b87f587f89110bd179c12dadb9aac5ce68b3c512e201dcf01f5a927",
+    "after_sha256": "1cd51e3bb59a215c72e1b4ce677d87169862ada2b8887296e9d1372995baafca"
+  },
+  {
+    "path": ".agents/skills/qa-master-checklist/references/feature-case-workflow.md",
+    "before_sha256": "1e328340d834285a2bd382c2753c7364fc9fa0f3cdc42b4505da5ca751e248d8",
+    "after_sha256": "945fe2cbf8530f5549aada2ec4d9e4b0e2f89bb53c4b6ca9b31f7562aeec8d92"
+  },
+  {
+    "path": ".agents/skills/qa-master-checklist/references/feature-case-workflow.md",
+    "before_sha256": "945fe2cbf8530f5549aada2ec4d9e4b0e2f89bb53c4b6ca9b31f7562aeec8d92",
+    "after_sha256": "0f22a78b937663351dddb63cecda382ca5e50b14aec2deb78fea17f45bd33a91"
+  },
+  {
+    "path": "docs/process/task-tracker.md",
+    "before_sha256": "34a40e78e0024ce479cd2f71a23bdce1735e5705f2f6f8401e7b92cde322d0e9",
+    "after_sha256": "49dbf5619a8f0a8d1712a564aa19045ea5071328a37fe31d37557a9d0c95683a"
+  },
+  {
+    "path": "docs/agent/test-and-qa-completion.md",
+    "before_sha256": "9fc312a8d73b5c7fb26f14be148bae53aa22ac6674ac002bdee89e0e3aa78510",
+    "after_sha256": "96025fd3853ad4b6bac88b33d5cd2ac0b0dfc36fcf629135603fdbbf41f06684"
+  },
+  {
+    "path": "docs/process/definition-of-ready.md",
+    "before_sha256": "444afea21d53dcaed1748d06b8e4cd37c4635fbfb3b9db03f1e51ef2541646e1",
+    "after_sha256": "3b1c6387239c8342f83a738585addd6ae7972c50903558adca2535b26c89682f"
+  },
+  {
+    "path": "docs/process/definition-of-ready.md",
+    "before_sha256": "3b1c6387239c8342f83a738585addd6ae7972c50903558adca2535b26c89682f",
+    "after_sha256": "9a770637f07d609a149f2c26f34e93e93856da31dcec1ba5970df2213faa406e"
+  },
+  {
+    "path": "docs/process/qa-handoff-process.md",
+    "before_sha256": "639c905effa655329c8ab7977d244126f37a121c913d0142ebf5cabc6acebc24",
+    "after_sha256": "68c0d5fc1d92739a694051a77e7b75b2bd46656bfbd9e71650dd5804bbcdf424"
+  },
+  {
+    "path": "docs/plans/TEMPLATE.md",
+    "before_sha256": "d3bd1669d7764f2836f589e2473feabe6a4ec654224b7feb2073a7d844b2830c",
+    "after_sha256": "4dfebf8c76d6ac93361b138afa8d03f5d2baf378021b4c1c3a1e3e45300a1e96"
+  },
+  {
+    "path": ".agents/skills/implement-feature/SKILL.md",
+    "before_sha256": "4f73aeffce538b013ff3ea7b737275528de59e2dc43d1063688abe91aac94394",
+    "after_sha256": "8a07642f31359d911afc20ec29c95d6ac139e50211686cdb869edd73561521aa"
+  },
+  {
+    "path": ".agents/skills/fix-bug/SKILL.md",
+    "before_sha256": "6a64041abd5a41d58809e914b83e3112143d54d3838caa239031ec8b8158c706",
+    "after_sha256": "11757e33d351dead205f86d85cb5593410838fec650c513af52c1bded7985f85"
+  },
+  {
+    "path": ".agents/skills/qa-master-checklist/SKILL.md",
+    "before_sha256": "cafa2650cf61f50eaf57359ebc727a21d61acfef8bc3ca286f6c9c2f9b6693ad",
+    "after_sha256": "c6fe514cce8a89c6a4cf83e5714a52d21ae2f7a8e10f581248bb7010d904e696"
+  },
+  {
+    "path": ".agents/skills/commit-and-track/SKILL.md",
+    "before_sha256": "fbc9a4a321fbc8d15848f4dcd27bfbe8c85fdf9729983e1b04b100738a098181",
+    "after_sha256": "ea74240a880e367f37ee15b8f714a65dce647bcd4383deb9f97837c2b115ee18"
+  }
+]

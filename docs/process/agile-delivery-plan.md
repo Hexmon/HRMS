@@ -2,10 +2,9 @@
 
 ## Cadence
 
-- Sprint length: 7 days.
-- Target capacity: 48 story points per sprint.
-- Point scale: 1, 2, 3, 5, 8.
-- Use 8 only for unavoidable platform-wide work; split whenever possible.
+- Use the date range on the current sprint tab of the shared task sheet; the latest tab is seven calendar days.
+- Use the `SP Calculation` tab for sprint and owner capacity. Do not apply a fixed 48-point target to the current sprint.
+- Point scale: 1, 2, 3, 5, 8, 13, as defined in `Story Point Rules` on the task sheet. Split work larger than 13 points.
 
 ## Delivery Model
 
@@ -41,7 +40,9 @@ Each sprint must include:
 - Release impact.
 - Rollback notes.
 
-## Current Release Sprint Model
+## Historical Release Sprint Model
+
+The following three-sprint, 48-point model is an earlier planning example. For current dates, capacity, and assignments, use the shared task sheet linked from `task-tracker.md`.
 
 | Sprint | Scope | Capacity |
 | --- | --- | --- |
