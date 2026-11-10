@@ -24,7 +24,7 @@ export function outsideExecutableOrConfig(path) {
     /^(?:Dockerfile(?:\..+)?|.+\.Dockerfile|(?:docker-)?compose(?:[.-].+)?\.ya?ml)$/.test(name) ||
     /^(?:wrangler\.(?:jsonc?|toml)|tsconfig(?:\..+)?\.json|.+\.config\.(?:jsonc?|ya?ml|toml))$/.test(name) ||
     /^infra\/.*\.(?:jsonc?|ya?ml|toml)$/.test(path) ||
-    /^hrms_(?:backend|client)\/src\/.*\.json$/.test(path);
+    /^(?:hrms_backend|hrms-client)\/src\/.*\.json$/.test(path);
 }
 
 function isTestOrGenerated(path) {
@@ -108,22 +108,44 @@ export function changedLines(root, base, head) {
   const deletionOnly = [];
   const replacementHunks = [];
   let current;
+  let state = "outside";
+  let oldRemaining = 0;
+  let newRemaining = 0;
   for (const line of diff.split("\n")) {
-    if (line.startsWith("+++ b/")) {
+    if (state === "hunk") {
+      if (line.startsWith("\\ No newline at end of file")) continue;
+      if (line.startsWith("+")) newRemaining--;
+      else if (line.startsWith("-")) oldRemaining--;
+      else if (line.startsWith(" ")) { oldRemaining--; newRemaining--; }
+      else throw new Error(`Malformed diff body in ${current}: ${line}`);
+      if (oldRemaining < 0 || newRemaining < 0) throw new Error(`Diff hunk exceeded declared line counts in ${current}`);
+      if (oldRemaining === 0 && newRemaining === 0) state = "between-hunks";
+      continue;
+    }
+    if (line.startsWith("diff --git ")) {
+      state = "header";
+      current = undefined;
+    } else if (state === "header" && line.startsWith("+++ b/")) {
       current = line.slice(6);
-      files.set(current, new Set());
-    } else if (line.startsWith("@@ ")) {
+      files.set(current, files.get(current) ?? new Set());
+    } else if ((state === "header" || state === "between-hunks") && line.startsWith("@@ ")) {
       const match = /@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
       if (!match || !current) throw new Error(`Malformed diff hunk: ${line}`);
       const oldStart = Number(match[1]);
       const oldCount = match[2] === undefined ? 1 : Number(match[2]);
       const start = Number(match[3]);
       const count = match[4] === undefined ? 1 : Number(match[4]);
+      oldRemaining = oldCount;
+      newRemaining = count;
+      state = "hunk";
       if (count === 0 && !isTestOrGenerated(current)) deletionOnly.push(`${current}:${line}`);
       if (oldCount > 0 && count > 0 && !isTestOrGenerated(current)) replacementHunks.push({ path: current, oldStart, oldCount, start, count });
       for (let index = 0; index < count; index++) files.get(current).add(start + index);
     }
   }
+  if (state === "hunk") throw new Error(`Incomplete diff hunk in ${current}`);
+  const statuses = git(root, "diff", "--no-ext-diff", "--no-renames", "--name-status", mergeBase, head, "--")
+    .split("\n").filter(Boolean).map((line) => line.split("\t"));
   const removedRuntime = [];
   for (const hunk of replacementHunks) {
     const oldContent = git(root, "show", `${mergeBase}:${hunk.path}`);
@@ -136,8 +158,6 @@ export function changedLines(root, base, head) {
       removedRuntime.push(`${hunk.path}:${hunk.oldStart}-${hunk.oldStart + hunk.oldCount - 1} replaced by non-executable lines`);
     }
   }
-  const statuses = git(root, "diff", "--no-ext-diff", "--no-renames", "--name-status", mergeBase, head, "--")
-    .split("\n").filter(Boolean).map((line) => line.split("\t"));
   const outside = [];
   const testSource = [];
   for (const [status, path] of statuses) {
@@ -147,10 +167,10 @@ export function changedLines(root, base, head) {
       continue;
     }
     if (isTestOrGenerated(path)) continue;
-    if (status === "D" && /^hrms_(?:backend|client)\/src\/.*\.tsx?$/.test(path)) {
+    if (status === "D" && /^(?:hrms_backend|hrms-client)\/src\/.*\.tsx?$/.test(path)) {
       deletionOnly.push(`${path}:deleted source file`);
     } else if (outsideExecutableOrConfig(path) &&
-               !/^hrms_(?:backend|client)\/src\/.*\.tsx?$/.test(path)) {
+               !/^(?:hrms_backend|hrms-client)\/src\/.*\.tsx?$/.test(path)) {
       outside.push(path);
     }
   }
@@ -277,7 +297,7 @@ export function verify(root, base, head) {
     for (const branch of result.uncoveredBranches) totals.uncovered.push(`${path}:branch ${branch}`);
     lines.push(`${path}: executable ${result.executable.length}, non-executable ${result.nonExecutable.length}, decision branches ${result.branches.length}`);
   }
-  const uncoveredLines = totals.uncovered.filter((item) => /^hrms_(?:backend|client)\/src\/.*:\d+/.test(item) && !item.includes(":branch ")).length;
+  const uncoveredLines = totals.uncovered.filter((item) => /^(?:hrms_backend|hrms-client)\/src\/.*:\d+/.test(item) && !item.includes(":branch ")).length;
   const uncoveredBranches = totals.uncovered.filter((item) => item.includes(":branch ")).length;
   lines.push(`Changed executable lines: ${totals.executable - uncoveredLines}/${totals.executable}; changed decision branches: ${totals.branches - uncoveredBranches}/${totals.branches}; unmeasured paths/deletions: ${deletionOnly.length + removedRuntime.length + outside.length}`);
   lines.push(...totals.uncovered.map((item) => `UNCOVERED ${item}`));

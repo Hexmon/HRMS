@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -79,6 +79,87 @@ test("new files are included and an uncovered reachable outcome fails before pas
   assert.equal(green.totals.uncovered.length, 0);
 });
 
+test("a source line resembling a diff header cannot hide a later authorization change", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-diff-header-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms_backend/src/guard.ts";
+  write(root, path, "const marker = `\n+ b/hrms_backend/src/fake.test.ts\n`;\nexport function canRead(company: string) {\n  return company === 'own';\n}\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "secure guard");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, path, "const marker = `\n++ b/hrms_backend/src/fake.test.ts\n`;\nexport function canRead(company: string) {\n  return true;\n}\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "unsafe guard");
+  const patch = git(root, "diff", "--unified=0", base, "HEAD", "--", path);
+  assert.match(patch, /\n\+\+\+ b\/hrms_backend\/src\/fake\.test\.ts/);
+  const diff = changedLines(root, base, "HEAD");
+  assert.deepEqual([...diff.files.get(path)], [2, 5]);
+  assert.equal(diff.files.has("hrms_backend/src/fake.test.ts"), false);
+  const absolute = join(root, path);
+  write(root, "hrms_backend/coverage/coverage-final.json", JSON.stringify({ [absolute]: {
+    path: absolute,
+    statementMap: {
+      0: { start: { line: 2 }, end: { line: 2 } },
+      1: { start: { line: 5 }, end: { line: 5 } },
+    },
+    s: { 0: 1, 1: 0 },
+    branchMap: {}, b: {}, fnMap: {}, f: {},
+  } }));
+  stampReport(root, "backend");
+  const result = verify(root, base, "HEAD");
+  assert.equal(result.pass, false);
+  assert.ok(result.totals.uncovered.some((item) => item.includes(`${path}:5`)));
+});
+
+test("a modified source line passes only with mapped coverage", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-modified-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  write(root, "hrms_backend/src/existing.ts", "export const result = 'old';\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base source");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, "hrms_backend/src/existing.ts", "export const result = 'new';\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "modify source");
+  let path = "hrms_backend/src/existing.ts";
+  let absolute = join(root, path);
+  write(root, "hrms_backend/coverage/coverage-final.json", JSON.stringify({ [absolute]: {
+    path: absolute, statementMap: { 0: { start: { line: 1 }, end: { line: 1 } } }, s: { 0: 1 },
+    branchMap: {}, b: {}, fnMap: {}, f: {},
+  } }));
+  stampReport(root, "backend");
+  assert.deepEqual([...changedLines(root, base, "HEAD").files.get(path)], [1]);
+  assert.equal(verify(root, base, "HEAD").pass, true);
+});
+
+test("a source rename remains a deletion plus new file and fails pending regression disposition", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-rename-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const oldPath = "hrms_backend/src/old.ts";
+  const newPath = "hrms_backend/src/renamed.ts";
+  write(root, oldPath, "export const result = 'same';\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base source");
+  const base = git(root, "rev-parse", "HEAD");
+  git(root, "mv", oldPath, newPath);
+  git(root, "commit", "-qm", "rename source");
+  const diff = changedLines(root, base, "HEAD");
+  assert.ok(diff.deletionOnly.includes(`${oldPath}:deleted source file`));
+  assert.deepEqual([...diff.files.get(newPath)], [1]);
+  const absolute = join(root, newPath);
+  write(root, "hrms_backend/coverage/coverage-final.json", JSON.stringify({ [absolute]: {
+    path: absolute, statementMap: { 0: { start: { line: 1 }, end: { line: 1 } } }, s: { 0: 1 },
+    branchMap: {}, b: {}, fnMap: {}, f: {},
+  } }));
+  stampReport(root, "backend");
+  const result = verify(root, base, "HEAD");
+  assert.equal(result.pass, false);
+  assert.ok(result.totals.uncovered.some((item) => item.includes("deleted source file")));
+});
+
 test("missing and stale reports fail closed", () => {
   const { root, base, head } = fixture();
   assert.throws(() => verify(root, base, head), /missing fresh coverage report/);
@@ -97,6 +178,109 @@ test("missing and stale reports fail closed", () => {
   assert.throws(() => verify(root, base, head), /uncommitted source exists/);
   assert.throws(() => stampReport(root, "backend"), /uncommitted source exists/);
   assert.throws(() => changedLines(root, "missing-base", head), /Command failed/);
+});
+
+test("a changed frontend source without its frontend report fails closed", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-frontend-missing-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  write(root, "README.md", "base\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, "hrms-client/src/view.tsx", "export const View = () => <span>Ready</span>;\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "frontend source");
+  assert.throws(() => verify(root, base, "HEAD"), /frontend: missing fresh coverage report/);
+  const path = "hrms-client/src/view.tsx";
+  const absolute = join(root, path);
+  const entry = {
+    path: absolute,
+    statementMap: { 0: { start: { line: 1 }, end: { line: 1 } } },
+    s: { 0: 0 }, branchMap: {}, b: {}, fnMap: {}, f: {},
+  };
+  write(root, "hrms-client/coverage/coverage-final.json", JSON.stringify({ [absolute]: entry }));
+  stampReport(root, "frontend");
+  const uncovered = verify(root, base, "HEAD");
+  assert.equal(uncovered.pass, false);
+  assert.equal(uncovered.totals.executable, 1);
+  assert.ok(uncovered.totals.uncovered.some((item) => item.includes(`${path}:1`)));
+  assert.equal(uncovered.totals.uncovered.some((item) => item.includes("unmeasured executable/config")), false);
+  assert.ok(uncovered.lines.some((line) => line.includes("Changed executable lines: 0/1")));
+  entry.s[0] = 1;
+  write(root, "hrms-client/coverage/coverage-final.json", JSON.stringify({ [absolute]: entry }));
+  stampReport(root, "frontend");
+  assert.equal(verify(root, base, "HEAD").pass, true);
+});
+
+test("deleted frontend source is classified as source deletion, not outside code", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-frontend-delete-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms-client/src/old.ts";
+  write(root, path, "export const old = true;\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "old frontend source");
+  const base = git(root, "rev-parse", "HEAD");
+  rmSync(join(root, path));
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "delete frontend source");
+  const diff = changedLines(root, base, "HEAD");
+  assert.ok(diff.deletionOnly.includes(`${path}:deleted source file`));
+  assert.equal(diff.outside.includes(path), false);
+  assert.equal(outsideExecutableOrConfig("hrms-client/src/runtime.json"), true);
+});
+
+test("a report stamped at an earlier head is rejected after a later commit", () => {
+  const { root, base } = fixture();
+  report(root, 1);
+  write(root, "README.md", "later commit\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "later documentation");
+  assert.throws(() => verify(root, base, "HEAD"), /stale or modified coverage report/);
+});
+
+test("real Vitest behavior changes the full PR gate and CLI from red to green", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-real-behavior-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  write(root, ".gitignore", "node_modules/\ncoverage/\n");
+  write(root, "hrms-client/package.json", "{\"type\":\"module\"}\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "fixture package");
+  const base = git(root, "rev-parse", "HEAD");
+  symlinkSync(new URL("../../hrms-client/node_modules", import.meta.url).pathname, join(root, "hrms-client/node_modules"), "dir");
+  const source = "export function decide(requester: string, approver: string) {\n  if (requester === approver) return 'deny';\n  return 'allow';\n}\n";
+  write(root, "hrms-client/src/decision.ts", source);
+  const allowedTest = "import { expect, it } from 'vitest';\nimport { decide } from './decision';\nit('allows an independent approver', () => { expect(decide('employee', 'manager')).toBe('allow'); });\n";
+  write(root, "hrms-client/src/decision.unit.test.ts", allowedTest);
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "new decision with allowed test");
+  const packageRoot = join(root, "hrms-client");
+  const vitest = join(packageRoot, "node_modules/.bin/vitest");
+  const runCoverage = () => spawnSync(vitest, ["run", "--coverage", "--coverage.reporter=json"], { cwd: packageRoot, encoding: "utf8", timeout: 30000 });
+  const redTest = runCoverage();
+  assert.equal(redTest.status, 0, redTest.stderr || redTest.stdout);
+  stampReport(root, "frontend");
+  const red = verify(root, base, "HEAD");
+  assert.equal(red.pass, false);
+  assert.ok(red.totals.uncovered.some((item) => item.includes("decision.ts:branch")));
+  const executable = new URL("./changed-coverage.mjs", import.meta.url).pathname;
+  const env = { ...process.env, HRMS_COVERAGE_REPO_ROOT: root };
+  const redCli = spawnSync(process.execPath, [executable, "--base", base], { cwd: root, env, encoding: "utf8" });
+  assert.equal(redCli.status, 1);
+  assert.match(redCli.stdout, /UNCOVERED/);
+
+  write(root, "hrms-client/src/decision.unit.test.ts", `${allowedTest}it('denies self approval', () => { expect(decide('employee', 'employee')).toBe('deny'); });\n`);
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "assert rejected behavior");
+  const greenTest = runCoverage();
+  assert.equal(greenTest.status, 0, greenTest.stderr || greenTest.stdout);
+  stampReport(root, "frontend");
+  const green = verify(root, base, "HEAD");
+  assert.equal(green.pass, true, green.lines.join("\n"));
+  const greenCli = spawnSync(process.execPath, [executable, "--base", base], { cwd: root, env, encoding: "utf8" });
+  assert.equal(greenCli.status, 0, greenCli.stderr || greenCli.stdout);
 });
 
 test("documentation-only changes are explicitly N/A without package reports", () => {
