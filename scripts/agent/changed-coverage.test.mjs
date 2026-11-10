@@ -329,8 +329,8 @@ test("real Vitest behavior changes the full PR gate and CLI from red to green", 
   symlinkSync(new URL("../../hrms-client/node_modules", import.meta.url).pathname, join(root, "hrms-client/node_modules"), "dir");
   const source = "export function decide(requester: string, approver: string) {\n  if (requester === approver) return 'deny';\n  return 'allow';\n}\n";
   write(root, "hrms-client/src/decision.ts", source);
-  const allowedTest = "import { expect, it } from 'vitest';\nimport { decide } from '../src/decision';\nit('allows an independent approver', () => { expect(decide('employee', 'manager')).toBe('allow'); });\n";
-  write(root, "hrms-client/tests/decision.unit.test.ts", allowedTest);
+  const allowedTest = "import { expect, it } from 'vitest';\nimport { decide } from './decision';\nit('allows an independent approver', () => { expect(decide('employee', 'manager')).toBe('allow'); });\n";
+  write(root, "hrms-client/src/decision.unit.test.ts", allowedTest);
   git(root, "add", ".");
   git(root, "commit", "-qm", "new decision with allowed test");
   const packageRoot = join(root, "hrms-client");
@@ -348,7 +348,7 @@ test("real Vitest behavior changes the full PR gate and CLI from red to green", 
   assert.equal(redCli.status, 1);
   assert.match(redCli.stdout, /UNCOVERED/);
 
-  write(root, "hrms-client/tests/decision.unit.test.ts", `${allowedTest}it('denies self approval', () => { expect(decide('employee', 'employee')).toBe('deny'); });\n`);
+  write(root, "hrms-client/src/decision.unit.test.ts", `${allowedTest}it('denies self approval', () => { expect(decide('employee', 'employee')).toBe('deny'); });\n`);
   git(root, "add", ".");
   git(root, "commit", "-qm", "assert rejected behavior");
   const greenTest = runCoverage();
@@ -367,13 +367,13 @@ test("real Vitest coverage passes the full gate for modified source with both de
   write(root, ".gitignore", "node_modules/\ncoverage/\n");
   write(root, "hrms-client/package.json", "{\"type\":\"module\"}\n");
   write(root, "hrms-client/src/decision.ts", "export function label(name: string) {\n  return name.toUpperCase();\n}\n");
-  write(root, "hrms-client/tests/decision.unit.test.ts", "import { expect, it } from 'vitest';\nimport { label } from '../src/decision';\nit('labels a name', () => { expect(label('employee')).toBe('EMPLOYEE'); });\n");
+  write(root, "hrms-client/src/decision.unit.test.ts", "import { expect, it } from 'vitest';\nimport { label } from './decision';\nit('labels a name', () => { expect(label('employee')).toBe('EMPLOYEE'); });\n");
   git(root, "add", ".");
   git(root, "commit", "-qm", "base implementation");
   const base = git(root, "rev-parse", "HEAD");
   symlinkSync(new URL("../../hrms-client/node_modules", import.meta.url).pathname, join(root, "hrms-client/node_modules"), "dir");
   write(root, "hrms-client/src/decision.ts", "export function label(name: string) {\n  if (name.trim()) return name.trim().toUpperCase();\n  return 'ANONYMOUS';\n}\n");
-  write(root, "hrms-client/tests/decision.unit.test.ts", "import { expect, it } from 'vitest';\nimport { label } from '../src/decision';\nit('trims and labels a name', () => { expect(label(' employee ')).toBe('EMPLOYEE'); });\nit('labels a blank name', () => { expect(label('  ')).toBe('ANONYMOUS'); });\n");
+  write(root, "hrms-client/src/decision.unit.test.ts", "import { expect, it } from 'vitest';\nimport { label } from './decision';\nit('trims and labels a name', () => { expect(label(' employee ')).toBe('EMPLOYEE'); });\nit('labels a blank name', () => { expect(label('  ')).toBe('ANONYMOUS'); });\n");
   git(root, "add", ".");
   git(root, "commit", "-qm", "handle blank names");
   const path = "hrms-client/src/decision.ts";
@@ -428,9 +428,69 @@ test("product imports from test-looking and generated runtime paths cannot hide 
     git(root, "commit", "-qm", "weaken imported policy");
     const diff = changedLines(root, base, "HEAD");
     assert.ok(diff.outside.includes(path), path);
+    if (!path.includes("routeTree")) assert.ok(diff.importRisks.some((risk) => risk.includes("imports test source")), path);
     const result = verify(root, base, "HEAD");
     assert.equal(result.pass, false, path);
     assert.ok(result.totals.uncovered.some((item) => item.includes(`unmeasured executable/config ${path}`)));
+  }
+});
+
+test("in-source test additions pass only when production module loads cannot reach them", () => {
+  const cases = [
+    { name: "alias", route: "import { allow } from '@/test/policy';\nexport const route = allow;\n", config: { "@/*": ["src/*"] } },
+    { name: "exact alias", route: "import { allow } from '#policy';\nexport const route = allow;\n", config: { "#policy": ["src/test/policy.ts"] } },
+    { name: "require", route: "export const route = () => require('./test/policy').allow();\n" },
+    { name: "module require", route: "export const route = () => module.require('./test/policy').allow();\n" },
+    { name: "dynamic literal", route: "export const route = () => import('./test/policy');\n" },
+    { name: "re-export", route: "export { allow as route } from './test/policy';\n" },
+    { name: "import equals", route: "import policy = require('./test/policy');\nexport const route = policy.allow;\n" },
+    { name: "unresolved local", route: "import './test/missing';\nexport const route = true;\n" },
+    { name: "non-literal dynamic", route: "const target = './test/policy';\nexport const route = () => import(target);\n" },
+    { name: "glob", route: "export const route = import.meta.glob('./test/*.ts');\n" },
+    { name: "createRequire", route: "import { createRequire } from 'node:module';\nexport const route = createRequire(import.meta.url);\n" },
+    { name: "safe type import", route: "import type { Policy } from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "safe production import", route: "import { value } from './safe';\nexport const route = value;\n", safe: true },
+    { name: "safe asset import", route: "import './styles.css?url';\nexport const route = true;\n", safe: true },
+  ];
+  for (const scenario of cases) {
+    const root = mkdtempSync(join(tmpdir(), "hrms-coverage-import-graph-"));
+    roots.push(root);
+    git(root, "init", "-q");
+    const testPath = "hrms-client/src/test/policy.ts";
+    write(root, "hrms-client/src/route.ts", scenario.route);
+    write(root, testPath, "export type Policy = boolean;\nexport const allow = () => false;\n");
+    if (scenario.name === "safe production import") write(root, "hrms-client/src/safe.ts", "export const value = true;\n");
+    if (scenario.config) write(root, "hrms-client/tsconfig.json", JSON.stringify({ compilerOptions: { moduleResolution: "Bundler", baseUrl: ".", paths: scenario.config } }));
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "base import graph");
+    const base = git(root, "rev-parse", "HEAD");
+    write(root, testPath, "export type Policy = boolean;\nexport const allow = () => true;\n");
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "change test-looking module");
+    const diff = changedLines(root, base, "HEAD");
+    const result = verify(root, base, "HEAD");
+    assert.equal(result.pass, Boolean(scenario.safe), `${scenario.name}: ${result.lines.join("\n")}`);
+    assert.equal(diff.outside.includes(testPath), !scenario.safe, scenario.name);
+    assert.equal(diff.testSource.includes(testPath), Boolean(scenario.safe), scenario.name);
+    if (!scenario.safe) assert.ok(diff.importRisks.length > 0, scenario.name);
+  }
+});
+
+test("invalid TypeScript import resolution configuration fails closed", () => {
+  for (const config of ["{invalid", '{"compilerOptions":{"moduleResolution":"InvalidValue"}}']) {
+    const root = mkdtempSync(join(tmpdir(), "hrms-coverage-bad-tsconfig-"));
+    roots.push(root);
+    git(root, "init", "-q");
+    write(root, "hrms-client/tsconfig.json", config);
+    write(root, "hrms-client/src/route.ts", "export const route = true;\n");
+    write(root, "hrms-client/src/test/policy.ts", "export const allow = false;\n");
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "bad config base");
+    const base = git(root, "rev-parse", "HEAD");
+    write(root, "hrms-client/src/test/policy.ts", "export const allow = true;\n");
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "change test module");
+    assert.throws(() => verify(root, base, "HEAD"), /TypeScript configuration/);
   }
 });
 

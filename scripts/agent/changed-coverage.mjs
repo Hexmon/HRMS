@@ -31,8 +31,74 @@ function isTestOrGenerated(path) {
   return /(?:\.test\.[cm]?[jt]sx?$|\/tests\/test_[^/]+\.py$|\/src\/test\/|\.d\.ts$|\/routeTree\.gen\.ts$)/.test(path);
 }
 
+function isProductTestPath(path) {
+  return /^(?:hrms_backend|hrms-client)\/src\//.test(path) &&
+    /(?:\.test\.[cm]?[jt]sx?$|\/src\/test\/)/.test(path);
+}
+
 function git(root, ...args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 });
+}
+
+export function productionImportRisks(root) {
+  const tracked = git(root, "ls-files", "-z", "--", "hrms_backend/src", "hrms-client/src").split("\0").filter(Boolean);
+  const risks = new Set();
+  const optionsByPackage = new Map();
+  const optionsFor = (path) => {
+    const packageName = path.split("/")[0];
+    if (!optionsByPackage.has(packageName)) {
+      const packageRoot = join(root, packageName);
+      const configPath = join(packageRoot, "tsconfig.json");
+      let options = { moduleResolution: ts.ModuleResolutionKind.Bundler, baseUrl: packageRoot, paths: { "@/*": ["src/*"] } };
+      if (existsSync(configPath)) {
+        const loaded = ts.readConfigFile(configPath, ts.sys.readFile);
+        if (loaded.error) throw new Error(`${packageName}: unreadable TypeScript configuration`);
+        const parsed = ts.parseJsonConfigFileContent(loaded.config, ts.sys, packageRoot);
+        if (parsed.errors.length) throw new Error(`${packageName}: invalid TypeScript configuration`);
+        options = parsed.options;
+      }
+      optionsByPackage.set(packageName, { ...options, allowJs: true });
+    }
+    return optionsByPackage.get(packageName);
+  };
+  for (const path of tracked) {
+    if (!/\.[cm]?[jt]sx?$/.test(path) || path.endsWith(".d.ts") || isProductTestPath(path)) continue;
+    const fullPath = join(root, path);
+    const source = ts.createSourceFile(fullPath, git(root, "show", `HEAD:${path}`), ts.ScriptTarget.Latest, true);
+    const options = optionsFor(path);
+    const localAlias = (specifier) => Object.keys(options.paths ?? {}).some((pattern) => {
+      const star = pattern.indexOf("*");
+      return star < 0 ? pattern === specifier : specifier.startsWith(pattern.slice(0, star)) && specifier.endsWith(pattern.slice(star + 1));
+    });
+    const inspect = (rawSpecifier) => {
+      const specifier = rawSpecifier.split("?")[0];
+      const resolved = ts.resolveModuleName(specifier, fullPath, options, ts.sys).resolvedModule?.resolvedFileName;
+      if (resolved) {
+        const target = relative(root, resolved).replaceAll("\\", "/");
+        if (isProductTestPath(target)) risks.add(`${path} imports test source ${target}`);
+      } else if ((specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("#") || specifier.startsWith("@/") || localAlias(specifier)) &&
+                 !/\.(?:css|scss|sass|svg|png|jpe?g|gif|webp|woff2?|ico)$/.test(specifier)) {
+        risks.add(`${path} has unresolved local import ${rawSpecifier}`);
+      }
+    };
+    const visit = (node) => {
+      if (ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
+      if (ts.isExportDeclaration(node) && !node.isTypeOnly && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
+      if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference) && node.moduleReference.expression && ts.isStringLiteralLike(node.moduleReference.expression)) inspect(node.moduleReference.expression.text);
+      if (ts.isCallExpression(node)) {
+        const callee = node.expression.getText(source);
+        if (/^(?:import\.meta\.glob(?:Eager)?|require\.context|createRequire)$/.test(callee)) risks.add(`${path} has opaque module loader ${callee}`);
+        if (node.expression.kind === ts.SyntaxKind.ImportKeyword || /^(?:require|[\w$.]+\.require)$/.test(callee)) {
+          const argument = node.arguments[0];
+          if (argument && ts.isStringLiteralLike(argument)) inspect(argument.text);
+          else risks.add(`${path} has non-literal module load ${callee}`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return [...risks];
 }
 
 export function sourceDigest(root, packageName) {
@@ -159,6 +225,7 @@ export function changedLines(root, base, head) {
   const testSource = [];
   const excludedGenerated = [];
   const modeTransitions = [];
+  const changedProductTests = [];
   for (const { status, path, oldMode, newMode } of statuses) {
     if (!path) continue;
     const sourceTreePath = /^(?:hrms_backend|hrms-client)\/src(?:\/|$)/.test(path);
@@ -172,7 +239,11 @@ export function changedLines(root, base, head) {
       modeTransitions.push({ path, status, oldMode, newMode, noTextHunk: (status === "A" || status === "M") && !textHunks.has(path) });
       continue;
     }
-    if (sourceTreePath && (/(?:\.test\.[cm]?[jt]sx?$|\/src\/test\/|\/routeTree\.gen\.ts$)/.test(path))) {
+    if (isProductTestPath(path)) {
+      changedProductTests.push(path);
+      continue;
+    }
+    if (sourceTreePath && /\/routeTree\.gen\.ts$/.test(path)) {
       outside.push(path);
       continue;
     }
@@ -190,6 +261,11 @@ export function changedLines(root, base, head) {
       outside.push(path);
     }
   }
+  const importRisks = changedProductTests.length ? productionImportRisks(root) : [];
+  for (const path of changedProductTests) {
+    if (importRisks.length) outside.push(path);
+    else testSource.push(path);
+  }
   const unsafePaths = new Set(modeTransitions.map((item) => item.path));
   const removedRuntime = [];
   for (const hunk of replacementHunks) {
@@ -204,7 +280,7 @@ export function changedLines(root, base, head) {
       removedRuntime.push(`${hunk.path}:${hunk.oldStart}-${hunk.oldStart + hunk.oldCount - 1} replaced by non-executable lines`);
     }
   }
-  return { mergeBase, files, deletionOnly, removedRuntime, outside, testSource, excludedGenerated, modeTransitions };
+  return { mergeBase, files, deletionOnly, removedRuntime, outside, testSource, excludedGenerated, modeTransitions, importRisks };
 }
 
 function nonExecutableLines(path, content) {
@@ -296,11 +372,12 @@ export function verify(root, base, head) {
   if (actualHead !== resolvedHead) throw new Error("Coverage gate head must equal checked-out HEAD");
   assertCleanSource(root, "backend");
   assertCleanSource(root, "frontend");
-  const { mergeBase, files, deletionOnly, removedRuntime, outside, testSource, excludedGenerated, modeTransitions } = changedLines(root, base, head);
+  const { mergeBase, files, deletionOnly, removedRuntime, outside, testSource, excludedGenerated, modeTransitions, importRisks } = changedLines(root, base, head);
   const reports = {};
   const totals = { executable: 0, nonExecutable: 0, branches: 0, uncovered: [] };
   const lines = [`Coverage diff ${mergeBase}..${resolvedHead}`];
   for (const path of testSource) lines.push(`TEST SOURCE ${path}: excluded from product line denominator; independent assertion-quality review required`);
+  for (const risk of importRisks) lines.push(`IMPORT GRAPH ${risk}: changed in-source test files require review`);
   for (const path of excludedGenerated) lines.push(`EXCLUDED TYPE/GENERATED ${path}: no product line denominator; typecheck/build regeneration evidence required`);
   for (const item of deletionOnly) {
     const message = `deletion-only ${item}: behavior requires explicit regression evidence`;
