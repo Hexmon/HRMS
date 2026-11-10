@@ -30,6 +30,10 @@ def is_disposable_url(value: str | None) -> bool:
         return (
             parsed.scheme in {"postgres", "postgresql"}
             and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+            # node-postgres accepts a query-string host that overrides the URI host.
+            # A disposable target must not carry alternate connection parameters.
+            and not parsed.query
+            and not parsed.fragment
             and "/" not in database
             and re.search(r"(?:^|[_-])test(?:$|[_-])", database, re.IGNORECASE) is not None
         )

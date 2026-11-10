@@ -68,6 +68,18 @@ class DisposableDatabaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertFalse(MODULE.safe_config(Path(directory) / "missing", {}))
 
+    def test_query_string_cannot_override_local_host(self) -> None:
+        local_looking = "postgresql://local:sample@localhost/hrms_test?host=db.example"
+        self.assertFalse(MODULE.is_disposable_url(local_looking))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".env.test"
+            path.write_text(
+                f"DATABASE_URL={local_looking}\n"
+                "TEST_DATABASE_URL=postgresql://local:sample@localhost/hrms_test\n",
+                encoding="utf-8",
+            )
+            self.assertFalse(MODULE.safe_config(path, {}))
+
 
 if __name__ == "__main__":
     unittest.main()
