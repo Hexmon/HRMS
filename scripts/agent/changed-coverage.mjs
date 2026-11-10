@@ -20,7 +20,7 @@ export function outsideExecutableOrConfig(path) {
   const name = path.split("/").at(-1) ?? "";
   return /\.(?:[cm]?[jt]sx?|sh|py|sql)$/.test(path) ||
     /^\.github\/(?:workflows|actions)\/.*\.ya?ml$/.test(path) ||
-    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|vercel\.json|render\.ya?ml|Procfile|Makefile|justfile|\.npmrc)$/.test(name) ||
+    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|vercel\.json|render\.ya?ml|Procfile|Makefile|justfile|\.npmrc|\.gitattributes|\.gitmodules)$/.test(name) ||
     /^(?:Dockerfile(?:\..+)?|.+\.Dockerfile|(?:docker-)?compose(?:[.-].+)?\.ya?ml)$/.test(name) ||
     /^(?:wrangler\.(?:jsonc?|toml)|tsconfig(?:\..+)?\.json|.+\.config\.(?:jsonc?|ya?ml|toml))$/.test(name) ||
     /^infra\/.*\.(?:jsonc?|ya?ml|toml)$/.test(path) ||
@@ -103,8 +103,9 @@ export function changedLines(root, base, head) {
   git(root, "cat-file", "-e", `${head}^{commit}`);
   const mergeBase = git(root, "merge-base", base, head).trim();
   if (!mergeBase) throw new Error(`No merge base for ${base} and ${head}`);
-  const diff = git(root, "diff", "--no-ext-diff", "--no-renames", "--unified=0", "--diff-filter=AM", mergeBase, head, "--", "hrms_backend/src", "hrms-client/src");
+  const diff = git(root, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=0", "--diff-filter=AM", mergeBase, head, "--", "hrms_backend/src", "hrms-client/src");
   const files = new Map();
+  const textHunks = new Set();
   const deletionOnly = [];
   const replacementHunks = [];
   let current;
@@ -138,13 +139,14 @@ export function changedLines(root, base, head) {
       oldRemaining = oldCount;
       newRemaining = count;
       state = "hunk";
+      textHunks.add(current);
       if (count === 0 && !isTestOrGenerated(current)) deletionOnly.push(`${current}:${line}`);
       if (oldCount > 0 && count > 0 && !isTestOrGenerated(current)) replacementHunks.push({ path: current, oldStart, oldCount, start, count });
       for (let index = 0; index < count; index++) files.get(current).add(start + index);
     }
   }
   if (state === "hunk") throw new Error(`Incomplete diff hunk in ${current}`);
-  const raw = git(root, "diff", "--no-ext-diff", "--no-renames", "--raw", "-z", mergeBase, head, "--")
+  const raw = git(root, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--raw", "-z", mergeBase, head, "--")
     .split("\0").filter(Boolean);
   if (raw.length % 2 !== 0) throw new Error("Malformed git raw diff: missing path");
   const statuses = [];
@@ -155,28 +157,36 @@ export function changedLines(root, base, head) {
   }
   const outside = [];
   const testSource = [];
+  const excludedGenerated = [];
   const modeTransitions = [];
   for (const { status, path, oldMode, newMode } of statuses) {
     if (!path) continue;
+    const sourceTreePath = /^(?:hrms_backend|hrms-client)\/src(?:\/|$)/.test(path);
     const instrumentedSource = /^(?:hrms_backend|hrms-client)\/src\/.*\.tsx?$/.test(path);
-    const monitored = instrumentedSource || outsideExecutableOrConfig(path);
+    const monitored = sourceTreePath || outsideExecutableOrConfig(path);
     if (monitored && (!/^[AMD]$/.test(status) ||
         (status === "A" && newMode !== "100644") ||
         (status === "M" && (oldMode !== "100644" || newMode !== "100644")) ||
         (status === "D" && oldMode !== "100644") ||
-        (status === "M" && instrumentedSource && !files.has(path)))) {
-      modeTransitions.push({ path, status, oldMode, newMode, noTextHunk: status === "M" && !files.has(path) });
+        ((status === "A" || status === "M") && instrumentedSource && !textHunks.has(path)))) {
+      modeTransitions.push({ path, status, oldMode, newMode, noTextHunk: (status === "A" || status === "M") && !textHunks.has(path) });
+      continue;
+    }
+    if (sourceTreePath && (/(?:\.test\.[cm]?[jt]sx?$|\/src\/test\/|\/routeTree\.gen\.ts$)/.test(path))) {
+      outside.push(path);
       continue;
     }
     if (/(?:\.test\.[cm]?[jt]sx?$|\/tests\/test_[^/]+\.py$|\/src\/test\/)/.test(path)) {
       testSource.push(path);
       continue;
     }
-    if (isTestOrGenerated(path)) continue;
+    if (isTestOrGenerated(path)) {
+      excludedGenerated.push(path);
+      continue;
+    }
     if (status === "D" && /^(?:hrms_backend|hrms-client)\/src\/.*\.tsx?$/.test(path)) {
       deletionOnly.push(`${path}:deleted source file`);
-    } else if (outsideExecutableOrConfig(path) &&
-               !/^(?:hrms_backend|hrms-client)\/src\/.*\.tsx?$/.test(path)) {
+    } else if ((sourceTreePath || outsideExecutableOrConfig(path)) && !instrumentedSource) {
       outside.push(path);
     }
   }
@@ -194,7 +204,7 @@ export function changedLines(root, base, head) {
       removedRuntime.push(`${hunk.path}:${hunk.oldStart}-${hunk.oldStart + hunk.oldCount - 1} replaced by non-executable lines`);
     }
   }
-  return { mergeBase, files, deletionOnly, removedRuntime, outside, testSource, modeTransitions };
+  return { mergeBase, files, deletionOnly, removedRuntime, outside, testSource, excludedGenerated, modeTransitions };
 }
 
 function nonExecutableLines(path, content) {
@@ -286,11 +296,12 @@ export function verify(root, base, head) {
   if (actualHead !== resolvedHead) throw new Error("Coverage gate head must equal checked-out HEAD");
   assertCleanSource(root, "backend");
   assertCleanSource(root, "frontend");
-  const { mergeBase, files, deletionOnly, removedRuntime, outside, testSource, modeTransitions } = changedLines(root, base, head);
+  const { mergeBase, files, deletionOnly, removedRuntime, outside, testSource, excludedGenerated, modeTransitions } = changedLines(root, base, head);
   const reports = {};
   const totals = { executable: 0, nonExecutable: 0, branches: 0, uncovered: [] };
   const lines = [`Coverage diff ${mergeBase}..${resolvedHead}`];
   for (const path of testSource) lines.push(`TEST SOURCE ${path}: excluded from product line denominator; independent assertion-quality review required`);
+  for (const path of excludedGenerated) lines.push(`EXCLUDED TYPE/GENERATED ${path}: no product line denominator; typecheck/build regeneration evidence required`);
   for (const item of deletionOnly) {
     const message = `deletion-only ${item}: behavior requires explicit regression evidence`;
     totals.uncovered.push(message);
@@ -304,13 +315,11 @@ export function verify(root, base, head) {
     totals.uncovered.push(`unmeasured source mode/type ${item.path}: git status ${item.status}, mode ${item.oldMode}->${item.newMode}${item.noTextHunk ? ", no text hunk" : ""}; explicit regression disposition required`);
   }
   const unsafePaths = new Set(modeTransitions.map((item) => item.path));
+  const excludedPaths = new Set([...testSource, ...excludedGenerated]);
+  const outsidePaths = new Set(outside);
   for (const [path, changed] of files) {
-    if (unsafePaths.has(path)) continue;
+    if (unsafePaths.has(path) || excludedPaths.has(path) || outsidePaths.has(path)) continue;
     if (changed.size === 0) continue;
-    if (!/\.tsx?$/.test(path) || /(?:\.d\.ts$|\.test\.tsx?$|\/routeTree\.gen\.ts$|\/src\/test\/)/.test(path)) {
-      lines.push(`${path}: excluded test/type/generated source (${changed.size} changed lines)`);
-      continue;
-    }
     const packageName = path.startsWith("hrms_backend/") ? "backend" : "frontend";
     reports[packageName] ??= readReport(root, packageName, resolvedHead);
     const entry = reports[packageName].get(path);

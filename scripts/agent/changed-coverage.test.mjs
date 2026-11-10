@@ -160,25 +160,43 @@ test("a source rename remains a deletion plus new file and fails pending regress
   assert.ok(result.totals.uncovered.some((item) => item.includes("deleted source file")));
 });
 
-test("source type changes, new symlinks, mode-only and binary changes fail without reading symlink targets", () => {
-  for (const scenario of ["type change", "added symlink", "mode only", "binary change"]) {
+test("source status, mode and missing-hunk variants fail before excluded paths or symlink reads", () => {
+  const added = new Set(["added symlink", "extensionless symlink", "added binary", "generated binary", "test binary", "empty source"]);
+  const existingSymlink = new Set(["extensionless retarget", "extensionless deletion"]);
+  for (const scenario of ["type change", "added symlink", "extensionless symlink", "extensionless retarget", "extensionless deletion", "mode only", "binary change", "added binary", "generated binary", "test binary", "empty source", "attribute hidden text"]) {
     const root = mkdtempSync(join(tmpdir(), "hrms-coverage-modes-"));
     roots.push(root);
     git(root, "init", "-q");
-    const path = scenario === "added symlink" ? "hrms_backend/src/guard:tenant.ts" : "hrms_backend/src/guard.ts";
+    const path = scenario === "added symlink" ? "hrms_backend/src/guard:tenant.ts" :
+      (scenario === "extensionless symlink" || existingSymlink.has(scenario)) ? "hrms_backend/src/modules/foreign" :
+      scenario === "generated binary" ? "hrms-client/src/routeTree.gen.ts" :
+      scenario === "test binary" ? "hrms_backend/src/test/fake.test.ts" : "hrms_backend/src/guard.ts";
     write(root, "README.md", "base\n");
-    if (scenario !== "added symlink") write(root, path, "export const guard = true;\n");
+    if (scenario === "attribute hidden text") write(root, ".gitattributes", `${path} -diff\n`);
+    if (existingSymlink.has(scenario)) {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      symlinkSync("missing-target.ts", join(root, path));
+    } else if (!added.has(scenario)) write(root, path, "export const guard = true;\n");
     git(root, "add", ".");
     git(root, "commit", "-qm", "base");
     const base = git(root, "rev-parse", "HEAD");
     if (scenario === "type change") {
       rmSync(join(root, path));
       symlinkSync("missing-target.ts", join(root, path));
-    } else if (scenario === "added symlink") {
+    } else if (scenario === "added symlink" || scenario === "extensionless symlink") {
       mkdirSync(dirname(join(root, path)), { recursive: true });
       symlinkSync("missing-target.ts", join(root, path));
-    } else if (scenario === "binary change") {
+    } else if (["binary change", "added binary", "generated binary", "test binary"].includes(scenario)) {
       write(root, path, Buffer.from("export const guard = false;\0\n"));
+    } else if (scenario === "empty source") {
+      write(root, path, "");
+    } else if (scenario === "attribute hidden text") {
+      write(root, path, "export const guard = false;\n");
+    } else if (scenario === "extensionless retarget") {
+      rmSync(join(root, path));
+      symlinkSync("other-missing-target.ts", join(root, path));
+    } else if (scenario === "extensionless deletion") {
+      rmSync(join(root, path));
     } else {
       chmodSync(join(root, path), 0o755);
     }
@@ -187,12 +205,36 @@ test("source type changes, new symlinks, mode-only and binary changes fail witho
     const diff = changedLines(root, base, "HEAD");
     assert.equal(diff.modeTransitions.length, 1, `${scenario}: ${JSON.stringify(diff)}`);
     assert.deepEqual(diff.modeTransitions[0].path, path);
-    assert.equal(diff.modeTransitions[0].status, scenario === "type change" ? "T" : scenario === "added symlink" ? "A" : "M");
-    if (scenario === "binary change") assert.equal(diff.modeTransitions[0].noTextHunk, true);
+    assert.equal(diff.modeTransitions[0].status, scenario === "type change" ? "T" : scenario === "extensionless deletion" ? "D" : added.has(scenario) ? "A" : "M");
+    if (["binary change", "added binary", "generated binary", "test binary", "empty source", "attribute hidden text"].includes(scenario)) {
+      assert.equal(diff.modeTransitions[0].noTextHunk, true, scenario);
+    }
     const result = verify(root, base, "HEAD");
     assert.equal(result.pass, false, scenario);
     assert.ok(result.totals.uncovered.some((item) => item.includes(`unmeasured source mode/type ${path}`)));
   }
+});
+
+test("unknown regular source-tree assets and Git attribute configuration remain unmeasured", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-unknown-src-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  write(root, "README.md", "base\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, "hrms_backend/src/modules/foreign", "#!/bin/sh\nexit 0\n");
+  write(root, "hrms-client/src/asset.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n");
+  write(root, ".gitattributes", "*.ts -diff\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "add unknown source assets");
+  const diff = changedLines(root, base, "HEAD");
+  assert.equal(diff.modeTransitions.length, 0);
+  assert.deepEqual(diff.outside.sort(), [".gitattributes", "hrms-client/src/asset.svg", "hrms_backend/src/modules/foreign"].sort());
+  const result = verify(root, base, "HEAD");
+  assert.equal(result.pass, false);
+  assert.equal(result.totals.executable, 0);
+  assert.equal(result.totals.uncovered.length, 3);
 });
 
 test("missing and stale reports fail closed", () => {
@@ -287,8 +329,8 @@ test("real Vitest behavior changes the full PR gate and CLI from red to green", 
   symlinkSync(new URL("../../hrms-client/node_modules", import.meta.url).pathname, join(root, "hrms-client/node_modules"), "dir");
   const source = "export function decide(requester: string, approver: string) {\n  if (requester === approver) return 'deny';\n  return 'allow';\n}\n";
   write(root, "hrms-client/src/decision.ts", source);
-  const allowedTest = "import { expect, it } from 'vitest';\nimport { decide } from './decision';\nit('allows an independent approver', () => { expect(decide('employee', 'manager')).toBe('allow'); });\n";
-  write(root, "hrms-client/src/decision.unit.test.ts", allowedTest);
+  const allowedTest = "import { expect, it } from 'vitest';\nimport { decide } from '../src/decision';\nit('allows an independent approver', () => { expect(decide('employee', 'manager')).toBe('allow'); });\n";
+  write(root, "hrms-client/tests/decision.unit.test.ts", allowedTest);
   git(root, "add", ".");
   git(root, "commit", "-qm", "new decision with allowed test");
   const packageRoot = join(root, "hrms-client");
@@ -306,7 +348,7 @@ test("real Vitest behavior changes the full PR gate and CLI from red to green", 
   assert.equal(redCli.status, 1);
   assert.match(redCli.stdout, /UNCOVERED/);
 
-  write(root, "hrms-client/src/decision.unit.test.ts", `${allowedTest}it('denies self approval', () => { expect(decide('employee', 'employee')).toBe('deny'); });\n`);
+  write(root, "hrms-client/tests/decision.unit.test.ts", `${allowedTest}it('denies self approval', () => { expect(decide('employee', 'employee')).toBe('deny'); });\n`);
   git(root, "add", ".");
   git(root, "commit", "-qm", "assert rejected behavior");
   const greenTest = runCoverage();
@@ -325,13 +367,13 @@ test("real Vitest coverage passes the full gate for modified source with both de
   write(root, ".gitignore", "node_modules/\ncoverage/\n");
   write(root, "hrms-client/package.json", "{\"type\":\"module\"}\n");
   write(root, "hrms-client/src/decision.ts", "export function label(name: string) {\n  return name.toUpperCase();\n}\n");
-  write(root, "hrms-client/src/decision.unit.test.ts", "import { expect, it } from 'vitest';\nimport { label } from './decision';\nit('labels a name', () => { expect(label('employee')).toBe('EMPLOYEE'); });\n");
+  write(root, "hrms-client/tests/decision.unit.test.ts", "import { expect, it } from 'vitest';\nimport { label } from '../src/decision';\nit('labels a name', () => { expect(label('employee')).toBe('EMPLOYEE'); });\n");
   git(root, "add", ".");
   git(root, "commit", "-qm", "base implementation");
   const base = git(root, "rev-parse", "HEAD");
   symlinkSync(new URL("../../hrms-client/node_modules", import.meta.url).pathname, join(root, "hrms-client/node_modules"), "dir");
   write(root, "hrms-client/src/decision.ts", "export function label(name: string) {\n  if (name.trim()) return name.trim().toUpperCase();\n  return 'ANONYMOUS';\n}\n");
-  write(root, "hrms-client/src/decision.unit.test.ts", "import { expect, it } from 'vitest';\nimport { label } from './decision';\nit('trims and labels a name', () => { expect(label(' employee ')).toBe('EMPLOYEE'); });\nit('labels a blank name', () => { expect(label('  ')).toBe('ANONYMOUS'); });\n");
+  write(root, "hrms-client/tests/decision.unit.test.ts", "import { expect, it } from 'vitest';\nimport { label } from '../src/decision';\nit('trims and labels a name', () => { expect(label(' employee ')).toBe('EMPLOYEE'); });\nit('labels a blank name', () => { expect(label('  ')).toBe('ANONYMOUS'); });\n");
   git(root, "add", ".");
   git(root, "commit", "-qm", "handle blank names");
   const path = "hrms-client/src/decision.ts";
@@ -361,13 +403,54 @@ test("documentation-only changes are explicitly N/A without package reports", ()
   git(root, "commit", "-qm", "base");
   const base = git(root, "rev-parse", "HEAD");
   write(root, "README.md", "changed\n");
-  write(root, "hrms_backend/src/example.unit.test.ts", "// independent test source\n");
   git(root, "add", ".");
   git(root, "commit", "-qm", "docs");
   const result = verify(root, base, "HEAD");
   assert.equal(result.pass, true);
   assert.equal(result.totals.executable, 0);
-  assert.ok(result.lines.some((line) => line.includes("excluded test/type/generated source")));
+  assert.equal(result.totals.uncovered.length, 0);
+});
+
+test("product imports from test-looking and generated runtime paths cannot hide changed behavior", () => {
+  for (const path of ["hrms_backend/src/test/policy.ts", "hrms_backend/src/policy.test.ts", "hrms-client/src/routeTree.gen.ts"]) {
+    const root = mkdtempSync(join(tmpdir(), "hrms-coverage-imported-exclusion-"));
+    roots.push(root);
+    git(root, "init", "-q");
+    const route = path.startsWith("hrms-client/") ? "hrms-client/src/router.tsx" : "hrms_backend/src/route.ts";
+    const importPath = path.includes("/src/test/") ? "./test/policy" : path.includes("routeTree") ? "./routeTree.gen" : "./policy.test";
+    write(root, route, `import { allow } from '${importPath}';\nexport const route = () => allow();\n`);
+    write(root, path, "export const allow = () => false;\n");
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "deny by default");
+    const base = git(root, "rev-parse", "HEAD");
+    write(root, path, "export const allow = () => true;\n");
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "weaken imported policy");
+    const diff = changedLines(root, base, "HEAD");
+    assert.ok(diff.outside.includes(path), path);
+    const result = verify(root, base, "HEAD");
+    assert.equal(result.pass, false, path);
+    assert.ok(result.totals.uncovered.some((item) => item.includes(`unmeasured executable/config ${path}`)));
+  }
+});
+
+test("declaration-only source changes are explicitly classified for typecheck evidence", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-declaration-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms_backend/src/types.d.ts";
+  write(root, path, "export type EmployeeId = string;\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base declaration");
+  const base = git(root, "rev-parse", "HEAD");
+  rmSync(join(root, path));
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "remove declaration");
+  const diff = changedLines(root, base, "HEAD");
+  assert.deepEqual(diff.excludedGenerated, [path]);
+  const result = verify(root, base, "HEAD");
+  assert.equal(result.pass, true);
+  assert.ok(result.lines.some((line) => line.includes(`EXCLUDED TYPE/GENERATED ${path}`)));
 });
 
 test("deletion-only behavior and scripts outside instrumented source fail closed", () => {
