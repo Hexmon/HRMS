@@ -118,6 +118,12 @@ if grep -Eq '^scripts/agent/' "$changed_files"; then
   add_step "Agent verifier unit tests" "$HRMS_REPO_ROOT" python3 -m unittest discover -s scripts/agent/tests -v
 fi
 
+# Unit and contract suites may open the test database even when the changed
+# path is not under src/db. Refuse unsafe targets before starting either suite.
+if [[ "$backend_changed" -eq 1 || "$database_changed" -eq 1 || "$worker_changed" -eq 1 ]]; then
+  add_step "Disposable database preflight" "$HRMS_REPO_ROOT" python3 scripts/agent/assert-disposable-test-db.py "$test_env_file"
+fi
+
 if [[ "$backend_changed" -eq 1 ]]; then
   add_step "Backend lint" "$HRMS_REPO_ROOT/hrms_backend" pnpm lint
   add_step "Backend typecheck" "$HRMS_REPO_ROOT/hrms_backend" pnpm typecheck
@@ -127,9 +133,6 @@ if [[ "$backend_api_changed" -eq 1 ]]; then
   add_step "Backend contract tests" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm test:contracts
   add_step "OpenAPI drift" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:docs:verify
   add_step "API consumer compatibility" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:consumer:verify
-fi
-if [[ "$database_changed" -eq 1 || "$worker_changed" -eq 1 ]]; then
-  add_step "Disposable database preflight" "$HRMS_REPO_ROOT" python3 scripts/agent/assert-disposable-test-db.py "$test_env_file"
 fi
 if [[ "$database_changed" -eq 1 ]]; then
   add_step "Migration history and schema drift" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm db:verify:migrations

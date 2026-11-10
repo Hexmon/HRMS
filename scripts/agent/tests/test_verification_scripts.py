@@ -14,6 +14,41 @@ def run(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 class VerificationScriptTests(unittest.TestCase):
+    def test_change_plan_keeps_unrelated_suites_out_of_each_path_class(self) -> None:
+        cases = (
+            ("docs/README.md", ("Agent setup and documentation references",), ("Backend unit tests", "Frontend lint", "Disposable database preflight")),
+            ("hrms_backend/src/modules/employees/service.ts", ("Backend unit tests", "Disposable database preflight"), ("Backend contract tests", "Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
+            ("hrms_backend/src/modules/employees/routes.ts", ("Backend contract tests", "Disposable database preflight"), ("Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
+            ("hrms_backend/src/db/schema.ts", ("Migration history and schema drift", "Disposable database preflight"), ("Backend contract tests", "Cloudflare Queue DLQ and replay", "Frontend lint")),
+            ("hrms_backend/src/workers/run.ts", ("Cloudflare Queue DLQ and replay", "Disposable database preflight"), ("Backend contract tests", "Migration history and schema drift", "Frontend lint")),
+            ("hrms-client/src/components/example.tsx", ("Frontend lint", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
+            ("hrms-client/src/domains/example.ts", ("Frontend contract route coverage", "Frontend lint"), ("Backend unit tests", "Disposable database preflight")),
+        )
+        for changed_path, selected, absent in cases:
+            with self.subTest(changed_path=changed_path), tempfile.TemporaryDirectory() as directory:
+                repo = Path(directory)
+                scripts = repo / "scripts" / "agent"
+                scripts.mkdir(parents=True)
+                for name in ("lib.sh", "verify-change.sh"):
+                    shutil.copy2(SOURCE / name, scripts / name)
+                self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
+                self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
+                self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
+                self.assertEqual(run(repo, "git", "add", ".").returncode, 0)
+                self.assertEqual(run(repo, "git", "commit", "-qm", "baseline").returncode, 0)
+                self.assertEqual(run(repo, "git", "update-ref", "refs/remotes/origin/release-01", "HEAD").returncode, 0)
+                target = repo / changed_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("Synthetic path fixture.\n", encoding="utf-8")
+                self.assertEqual(run(repo, "git", "add", ".").returncode, 0)
+                self.assertEqual(run(repo, "git", "commit", "-qm", "path class").returncode, 0)
+                planned = run(repo, "bash", "scripts/agent/verify-change.sh", "--plan")
+                self.assertEqual(planned.returncode, 0, planned.stderr)
+                for label in selected:
+                    self.assertIn(f"[{label}]", planned.stdout)
+                for label in absent:
+                    self.assertNotIn(f"[{label}]", planned.stdout)
+
     def test_change_plan_selects_api_database_worker_and_frontend_checks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -55,6 +90,36 @@ class VerificationScriptTests(unittest.TestCase):
             wrapped = run(repo, "bash", "scripts/agent/verify-change.sh", "--plan")
             self.assertEqual(wrapped.returncode, 0, wrapped.stderr)
             self.assertIn("scripts/run-with-env.ts", wrapped.stdout)
+
+    def test_change_gate_refuses_database_before_contract_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            scripts = repo / "scripts" / "agent"
+            scripts.mkdir(parents=True)
+            for name in ("lib.sh", "verify-change.sh"):
+                shutil.copy2(SOURCE / name, scripts / name)
+            guard = scripts / "protect-sensitive-files.sh"
+            guard.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            guard.chmod(0o755)
+            (scripts / "assert-disposable-test-db.py").write_text("raise SystemExit(1)\n", encoding="utf-8")
+            self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
+            self.assertEqual(run(repo, "git", "add", ".").returncode, 0)
+            self.assertEqual(run(repo, "git", "commit", "-qm", "baseline").returncode, 0)
+            self.assertEqual(run(repo, "git", "update-ref", "refs/remotes/origin/release-01", "HEAD").returncode, 0)
+            for path in ("hrms_backend/src/app.ts", "hrms_backend/src/db/schema.ts"):
+                target = repo / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("export const fixture = true;\n", encoding="utf-8")
+            self.assertEqual(run(repo, "git", "add", ".").returncode, 0)
+            self.assertEqual(run(repo, "git", "commit", "-qm", "api and database change").returncode, 0)
+
+            result = run(repo, "bash", "scripts/agent/verify-change.sh")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("[Disposable database preflight]", result.stdout)
+            self.assertNotIn("[Backend unit tests]", result.stdout)
+            self.assertNotIn("[Backend contract tests]", result.stdout)
 
     def test_full_gate_runs_selected_steps_and_stops_on_database_preflight_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
