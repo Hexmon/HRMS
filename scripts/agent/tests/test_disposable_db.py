@@ -47,6 +47,22 @@ class DisposableDatabaseTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertFalse(MODULE.safe_config(path, {"DATABASE_URL": "postgresql://local:sample@db.example/hrms_prod"}))
+            self.assertFalse(MODULE.safe_config(path, {"HRMS_DB_VERIFY_DATABASE_URL": "postgresql://local:sample@db.example/hrms_test"}))
+
+    def test_hidden_file_override_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".env.test"
+            path.write_text(
+                "DATABASE_URL=postgresql://local:sample@db.example/hrms_prod\n"
+                "TEST_DATABASE_URL=postgresql://local:sample@localhost/hrms_test\n",
+                encoding="utf-8",
+            )
+            self.assertFalse(
+                MODULE.safe_config(
+                    path,
+                    {"DATABASE_URL": "postgresql://local:sample@localhost/hrms_test"},
+                )
+            )
 
     def test_missing_target_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -52,7 +52,11 @@ run_step "Cross-schema foreign keys" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_DB_
 run_step "OpenAPI drift" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:docs:verify
 run_step "API consumer compatibility" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:consumer:verify
 run_step "Backend test projects" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm test
-run_step "Cloudflare Queue DLQ and replay" "$HRMS_REPO_ROOT/hrms_backend" pnpm verify:cloudflare-queue-dlq
+if [[ -f "$test_env_file" ]]; then
+  run_step "Cloudflare Queue DLQ and replay" "$HRMS_REPO_ROOT/hrms_backend" pnpm exec tsx scripts/run-with-env.ts "$test_env_file" -- pnpm verify:cloudflare-queue-dlq
+else
+  run_step "Cloudflare Queue DLQ and replay" "$HRMS_REPO_ROOT/hrms_backend" pnpm verify:cloudflare-queue-dlq
+fi
 # verify:business reruns unit and integration tests, while verify:regression
 # reruns the complete backend test matrix plus the four gates below. Keep this
 # release gate single-pass by invoking the underlying unique checks directly.

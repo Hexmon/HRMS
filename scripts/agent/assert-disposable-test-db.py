@@ -39,7 +39,15 @@ def is_disposable_url(value: str | None) -> bool:
 
 def safe_config(path: Path, environment: dict[str, str]) -> bool:
     # The backend env loader gives existing process variables precedence.
-    effective = read_env_file(path) | environment
+    file_values = read_env_file(path)
+    # The cross-schema FK verifier instead overrides process values from its
+    # env file and may select HRMS_DB_VERIFY_DATABASE_URL. Check every URL that
+    # either loader could choose, including a value hidden by precedence.
+    for source in (file_values, environment):
+        for key in ("DATABASE_URL", "TEST_DATABASE_URL", "HRMS_DB_VERIFY_DATABASE_URL"):
+            if source.get(key) and not is_disposable_url(source[key]):
+                return False
+    effective = file_values | environment
     return all(is_disposable_url(effective.get(key)) for key in ("DATABASE_URL", "TEST_DATABASE_URL"))
 
 

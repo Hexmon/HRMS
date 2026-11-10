@@ -124,13 +124,19 @@ if [[ "$backend_api_changed" -eq 1 ]]; then
   add_step "OpenAPI drift" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:docs:verify
   add_step "API consumer compatibility" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:consumer:verify
 fi
-if [[ "$database_changed" -eq 1 ]]; then
+if [[ "$database_changed" -eq 1 || "$worker_changed" -eq 1 ]]; then
   add_step "Disposable database preflight" "$HRMS_REPO_ROOT" python3 scripts/agent/assert-disposable-test-db.py "$test_env_file"
+fi
+if [[ "$database_changed" -eq 1 ]]; then
   add_step "Migration history and schema drift" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm db:verify:migrations
   add_step "Cross-schema foreign keys" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_DB_VERIFY_ENV_FILE="$test_env_file" pnpm db:verify:no-cross-schema-fks
 fi
 if [[ "$worker_changed" -eq 1 ]]; then
-  add_step "Cloudflare Queue DLQ and replay" "$HRMS_REPO_ROOT/hrms_backend" pnpm verify:cloudflare-queue-dlq
+  if [[ -f "$test_env_file" ]]; then
+    add_step "Cloudflare Queue DLQ and replay" "$HRMS_REPO_ROOT/hrms_backend" pnpm exec tsx scripts/run-with-env.ts "$test_env_file" -- pnpm verify:cloudflare-queue-dlq
+  else
+    add_step "Cloudflare Queue DLQ and replay" "$HRMS_REPO_ROOT/hrms_backend" pnpm verify:cloudflare-queue-dlq
+  fi
 fi
 if [[ "$frontend_changed" -eq 1 ]]; then
   add_step "Frontend lint" "$HRMS_REPO_ROOT/hrms-client" pnpm lint

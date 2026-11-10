@@ -158,7 +158,7 @@ Key references:
 - `hrms-client/docs/api/openapi.json`
 - `hrms-client/docs/api/frontend-contract/ENDPOINT_INDEX.md`
 
-Current generated contract documents 245 operations.
+The generated contract documents the implemented API operations. Recompute the count from the checked-in OpenAPI document when it is needed; older counts in handoff notes can be stale.
 
 ## Product Status And Roadmap
 
