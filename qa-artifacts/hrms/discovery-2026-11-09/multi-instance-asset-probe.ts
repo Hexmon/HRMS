@@ -1,30 +1,17 @@
 /**
  * Synthetic disposable PostgreSQL/Valkey current-behavior probe.
  * Run from hrms_backend only after pnpm test:infra:up; always run test:infra:down afterward.
- * This resets TEST_DATABASE_URL. It refuses non-local hosts/ports.
+ * This resets TEST_DATABASE_URL. It refuses non-local targets and URL overrides.
  */
 import "../../../hrms_backend/scripts/test-setup.ts";
 import { buildApp } from "../../../hrms_backend/src/app.ts";
 import { buildRealApp } from "../../../hrms_backend/src/__tests__/real-infra.ts";
 import { seedIds } from "../../../hrms_backend/src/platform/data-store.ts";
 import { authHeader, loginAs } from "../../../hrms_backend/src/testing/index.ts";
-
-function requireLocalTestEnvironment(): void {
-  const database = new URL(process.env.TEST_DATABASE_URL ?? "");
-  const valkey = new URL(process.env.VALKEY_URL ?? "");
-  if (database.hostname !== "127.0.0.1" || database.port !== "55432" || database.pathname !== "/hrms_platform_test") {
-    throw new Error("Refusing non-disposable TEST_DATABASE_URL");
-  }
-  if (valkey.hostname !== "127.0.0.1" || valkey.port !== "56379") {
-    throw new Error("Refusing non-local VALKEY_URL");
-  }
-  if (process.env.APP_ENV !== "local" || process.env.EMAIL_DELIVERY_MODE !== "log" || process.env.CLOUDINARY_MOCK_UPLOADS !== "true") {
-    throw new Error("Refusing non-local application delivery configuration");
-  }
-}
+import { requireLocalTestEnvironment } from "./disposable-probe-guard.ts";
 
 async function main(): Promise<void> {
-  requireLocalTestEnvironment();
+  requireLocalTestEnvironment(process.env);
   const appA = await buildRealApp({ reset: true });
   let appB: Awaited<ReturnType<typeof buildApp>> | undefined;
   try {
