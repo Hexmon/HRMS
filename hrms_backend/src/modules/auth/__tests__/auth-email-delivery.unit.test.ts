@@ -728,7 +728,7 @@ describe("Resend webhook processing", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/webhooks/resend",
-      headers: { ...signedWebhookHeaders("msg_timestamp_future", svixTimestamp(301), payload, "test-webhook-secret"), "content-type": "application/json" },
+      headers: { ...signedWebhookHeaders("msg_timestamp_future", svixTimestamp(600), payload, "test-webhook-secret"), "content-type": "application/json" },
       payload
     });
 

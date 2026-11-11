@@ -78,7 +78,7 @@ frontend_api_changed=0
 if grep -Eq '^hrms_backend/(src|scripts|infra)/|^hrms_backend/(package.json|pnpm-lock.yaml|tsconfig.*|vitest.config.ts|wrangler.jsonc)$|^render.yaml$|^infra/render/' "$changed_files"; then
   backend_changed=1
 fi
-if grep -Eq '^hrms_backend/src/(app.ts|auth/|modules/.*/(routes|schemas|index)\.ts)|^hrms_backend/docs/api/' "$changed_files"; then
+if grep -Eq '^hrms_backend/src/(app\.ts|auth/|modules/.*/(routes|schemas|index)\.ts|platform/openapi\.ts|shared/(schemas|attendance-contract)\.ts|modules/attendance/(attendance-openapi-examples|reporting-projection|reporting-evidence)\.ts)|^hrms_backend/docs/api/' "$changed_files"; then
   backend_api_changed=1
 fi
 if grep -Eq '^hrms_backend/src/db/|^hrms_backend/src/modules/.*/repository\.ts$' "$changed_files"; then
@@ -111,10 +111,10 @@ add_step "Sensitive-file guard" "$HRMS_REPO_ROOT" "$HRMS_REPO_ROOT/scripts/agent
 add_step "Committed patch integrity" "$HRMS_REPO_ROOT" git diff --check "$merge_base" HEAD
 add_step "Unstaged patch integrity" "$HRMS_REPO_ROOT" git diff --check
 add_step "Staged patch integrity" "$HRMS_REPO_ROOT" git diff --cached --check
-if grep -Eq '(^|/)AGENTS\.md$|^\.agents/|^docs/(agent|discovery|plans|README\.md)|^scripts/agent/' "$changed_files"; then
+if grep -Eq '(^|/)AGENTS\.md$|^\.agents/|^\.github/workflows/branch-ci-cd\.yml$|^docs/(agent|discovery|plans|README\.md)|^scripts/agent/' "$changed_files"; then
   add_step "Agent setup and documentation references" "$HRMS_REPO_ROOT" bash scripts/agent/validate-agent-setup.sh
 fi
-if grep -Eq '^scripts/agent/' "$changed_files"; then
+if grep -Eq '^\.github/workflows/branch-ci-cd\.yml$|^scripts/agent/' "$changed_files"; then
   add_step "Agent verifier unit tests" "$HRMS_REPO_ROOT" python3 -m unittest discover -s scripts/agent/tests -v
 fi
 

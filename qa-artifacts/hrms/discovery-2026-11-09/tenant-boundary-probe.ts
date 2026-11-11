@@ -8,25 +8,34 @@ import "../../../hrms_backend/scripts/test-setup.ts";
 import { buildApp } from "../../../hrms_backend/src/app.ts";
 import { createMemoryDataStore, seedIds } from "../../../hrms_backend/src/platform/data-store.ts";
 import { authHeader, loginAs } from "../../../hrms_backend/src/testing/index.ts";
+import { runProbeCli } from "./disposable-probe-guard.ts";
 
-async function main(): Promise<void> {
+export function requireTenantProbeFixture<T>(value: T | undefined, message: string): T {
+  if (!value) throw new Error(message);
+  return value;
+}
+
+export async function runTenantBoundaryProbe(): Promise<Record<string, string | number | boolean>> {
 const store = createMemoryDataStore();
-const companyA = store.companyProfiles[0];
-if (!companyA) throw new Error("Synthetic Company A fixture missing");
-const seededAsset = store.assets[0];
-if (!seededAsset) throw new Error("Synthetic asset fixture missing");
+const companyA = requireTenantProbeFixture(store.companyProfiles[0], "Synthetic Company A fixture missing");
+const seededAsset = requireTenantProbeFixture(store.assets[0], "Synthetic asset fixture missing");
 seededAsset.current_assigned_user_id = seedIds.employee1;
 const companyBId = randomUUID();
 store.companyProfiles.push({ ...companyA, id: companyBId, company_name: "Synthetic Company B", company_slug: "synthetic-company-b" });
 for (const userId of [seedIds.admin, seedIds.assetManager, seedIds.manager]) {
   const preference = store.userSessionPreferences.find((item) => item.user_id === userId);
-  if (!preference) throw new Error("Synthetic role preference missing");
+  requireTenantProbeFixture(preference, "Synthetic role preference missing");
   preference.company_id = companyBId;
 }
 const companyAAsset = seededAsset;
-const companyATicket = store.helpdeskTickets.find((ticket) => ticket.requester_user_id === seedIds.employee1);
-const companyAProject = store.projects.find((project) => project.manager_user_id === seedIds.manager);
-if (!companyAAsset || !companyATicket || !companyAProject) throw new Error("Synthetic Company A object fixture missing");
+const companyATicket = requireTenantProbeFixture(
+  store.helpdeskTickets.find((ticket) => ticket.requester_user_id === seedIds.employee1),
+  "Synthetic Company A object fixture missing",
+);
+const companyAProject = requireTenantProbeFixture(
+  store.projects.find((project) => project.manager_user_id === seedIds.manager),
+  "Synthetic Company A object fixture missing",
+);
 
 const app = await buildApp({ dataStore: store, rateLimit: false });
 try {
@@ -47,13 +56,14 @@ try {
     company_b_company_a_project_detail_status: project.statusCode,
     company_b_shared_security_settings_status: settings.statusCode
   };
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  return result;
 } finally {
   await app.close();
 }
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+export async function main(): Promise<void> {
+  process.stdout.write(`${JSON.stringify(await runTenantBoundaryProbe(), null, 2)}\n`);
+}
+
+void runProbeCli(import.meta.url, process.argv[1], main);
