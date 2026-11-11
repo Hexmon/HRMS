@@ -24,11 +24,13 @@ function git(root, ...args) {
 
 function validateAncestor(root, sha, head, label, strict = false) {
   if (!shaPattern.test(sha)) throw new Error(`Invalid ${label} SHA`);
-  if (strict && sha === head) throw new Error(`${label} SHA must precede push head`);
-  const commit = spawnSync("git", ["cat-file", "-e", `${sha}^{commit}`], { cwd: root, stdio: "ignore" });
+  const normalizedSha = sha.toLowerCase();
+  if (strict && normalizedSha === head) throw new Error(`${label} SHA must precede push head`);
+  const commit = spawnSync("git", ["cat-file", "-e", `${normalizedSha}^{commit}`], { cwd: root, stdio: "ignore" });
   if (commit.status !== 0) throw new Error(`${label} SHA is absent from checkout history`);
-  const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", sha, head], { cwd: root, stdio: "ignore" });
+  const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", normalizedSha, head], { cwd: root, stdio: "ignore" });
   if (ancestor.status !== 0) throw new Error(`${label} SHA is not an ancestor of push head`);
+  return normalizedSha;
 }
 
 export async function resolvePushCoverageBase({ root, repository, branch, head, runId, runNumber, requestJson, bootstrapSha }) {
@@ -37,7 +39,8 @@ export async function resolvePushCoverageBase({ root, repository, branch, head, 
       !Number.isSafeInteger(runNumber) || runNumber <= 0 || typeof requestJson !== "function") {
     throw new Error("Invalid push coverage baseline context");
   }
-  if (git(root, "rev-parse", "HEAD") !== head) throw new Error("Push coverage head does not match checked-out HEAD");
+  const normalizedHead = head.toLowerCase();
+  if (git(root, "rev-parse", "HEAD") !== normalizedHead) throw new Error("Push coverage head does not match checked-out HEAD");
 
   let complete = false;
   let previousPageLast = Infinity;
@@ -67,8 +70,8 @@ export async function resolvePushCoverageBase({ root, repository, branch, head, 
       const matches = jobs.jobs.filter((job) => job.name === coverageJob);
       if (matches.length > 1) throw new Error(`Ambiguous changed-coverage jobs for run ${run.id}`);
       if (matches.length === 0 || matches[0].conclusion !== "success" || matches[0].status !== "completed") continue;
-      validateAncestor(root, run.head_sha, head, `Baseline for run ${run.id}`);
-      return { base: run.head_sha, runId: run.id };
+      const base = validateAncestor(root, run.head_sha, normalizedHead, `Baseline for run ${run.id}`);
+      return { base, runId: run.id };
     }
     if (ordered.length < 100) {
       complete = true;
@@ -77,8 +80,8 @@ export async function resolvePushCoverageBase({ root, repository, branch, head, 
   }
   if (!complete) throw new Error("Push coverage baseline search exceeded 1000 successful runs");
   if (bootstrapSha !== undefined && bootstrapSha !== "") {
-    validateAncestor(root, bootstrapSha, head, `Owner bootstrap for ${branch}`, true);
-    return { base: bootstrapSha, runId: null };
+    const base = validateAncestor(root, bootstrapSha, normalizedHead, `Owner bootstrap for ${branch}`, true);
+    return { base, runId: null };
   }
   throw new Error(`No prior successful ${branch} push run with a successful changed-coverage job`);
 }

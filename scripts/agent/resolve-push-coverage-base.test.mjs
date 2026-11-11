@@ -92,6 +92,8 @@ test("latest successful coverage run becomes baseline, while skipped jobs fall b
   const success = [{ name: "Changed executable coverage", status: "completed", conclusion: "success" }];
   const latest = api(runs, { 101: success, 102: success });
   assert.deepEqual(await resolvePushCoverageBase(context(commits, latest.requestJson)), { base: commits.B, runId: 102 });
+  const upperRun = api([run(102, 2, commits.B.toUpperCase())], { 102: success });
+  assert.deepEqual(await resolvePushCoverageBase(context(commits, upperRun.requestJson)), { base: commits.B, runId: 102 });
   const skipped = api(runs, { 101: success, 102: [{ name: "Changed executable coverage", status: "completed", conclusion: "skipped" }] });
   assert.deepEqual(await resolvePushCoverageBase(context(commits, skipped.requestJson)), { base: commits.A, runId: 101 });
   assert.deepEqual(await resolvePushCoverageBase({ ...context(commits, latest.requestJson), bootstrapSha: commits.A }), { base: commits.B, runId: 102 });
@@ -143,6 +145,7 @@ test("owner bootstrap A covers failed B and docs-only C when no run qualifies", 
   const { requestJson } = api([]);
   const result = await resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: commits.A });
   assert.deepEqual(result, { base: commits.A, runId: null });
+  assert.deepEqual(await resolvePushCoverageBase({ ...context(commits, requestJson), head: commits.C.toUpperCase(), bootstrapSha: commits.A.toUpperCase() }), { base: commits.A, runId: null });
   assert.deepEqual(git(commits.root, "diff", "--name-only", result.base, commits.C).split("\n"), ["README.md", "hrms_backend/src/guard.ts"]);
   const skipped = api([run(102, 2, commits.B)], {
     102: [{ name: "Changed executable coverage", status: "completed", conclusion: "skipped" }],
@@ -169,6 +172,7 @@ test("missing, invalid, equal-head and nonancestor bootstrap values fail closed"
   await assert.rejects(resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: "not-a-sha" }), /Invalid Owner bootstrap/);
   await assert.rejects(resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: "a".repeat(40) }), /absent from checkout history/);
   await assert.rejects(resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: commits.C }), /must precede push head/);
+  await assert.rejects(resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: commits.C.toUpperCase() }), /must precede push head/);
   const branch = git(commits.root, "branch", "--show-current");
   git(commits.root, "switch", "-qc", "diverged", commits.A);
   write(commits.root, "README.md", "alternate\n");
