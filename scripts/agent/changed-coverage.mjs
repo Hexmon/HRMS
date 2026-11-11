@@ -46,7 +46,7 @@ export function outsideExecutableOrConfig(path) {
   const name = path.split("/").at(-1);
   return /\.(?:[cm]?[jt]sx?|sh|py|sql)$/.test(path) ||
     /^\.github\/(?:workflows|actions)\/.*\.ya?ml$/.test(path) ||
-    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|vercel\.json|render\.ya?ml|Procfile|Makefile|justfile|\.npmrc|\.gitattributes|\.gitmodules)$/.test(name) ||
+    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|vercel\.json|render\.ya?ml|Procfile|Makefile|justfile|\.npmrc|\.gitignore|\.gitattributes|\.gitmodules)$/.test(name) ||
     /^(?:Dockerfile(?:\..+)?|.+\.Dockerfile|(?:docker-)?compose(?:[.-].+)?\.ya?ml)$/.test(name) ||
     /^(?:wrangler\.(?:jsonc?|toml)|tsconfig(?:\..+)?\.json|.+\.config\.(?:jsonc?|ya?ml|toml))$/.test(name) ||
     /^infra\/.*\.(?:jsonc?|ya?ml|toml)$/.test(path) ||

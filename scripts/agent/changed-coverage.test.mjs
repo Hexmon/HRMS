@@ -690,6 +690,7 @@ test("package and deployment config changes fail instead of passing a zero-line 
     "hrms_backend/wrangler.jsonc",
     "hrms-client/vercel.json",
     "render.yaml",
+    ".gitignore",
     "hrms_backend/infra/docker/Dockerfile",
     "hrms_backend/infra/docker/docker-compose.qa.yml",
     ".github/workflows/deploy.yml",
