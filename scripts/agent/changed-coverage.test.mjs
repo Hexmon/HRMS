@@ -1830,4 +1830,19 @@ test("CLI builds and stamps an external Istanbul report", () => {
   });
   assert.equal(invalidTools.status, 1);
   assert.match(invalidTools.stderr, /received invalid node executable/);
+
+  const noOpExecutable = resolveTrustedExecutable("true");
+  const workerHead = git(root, "rev-parse", "HEAD");
+  const successfulWorker = spawnSync(process.execPath, [executable, "--full-suite-worker", "--coverage-output", workerOutput,
+    "--expected-head", workerHead, "--node", noOpExecutable, "--pnpm", noOpExecutable,
+    "--python", noOpExecutable, "--bash", noOpExecutable], {
+    cwd: root, env: { ...process.env, HRMS_COVERAGE_REPO_ROOT: root }, encoding: "utf8",
+  });
+  assert.equal(successfulWorker.status, 0, successfulWorker.stderr);
+  assert.equal(git(root, "rev-parse", "HEAD"), workerHead);
+  assert.equal(git(root, "status", "--porcelain=v1", "--untracked-files=all"), "");
+  for (const directory of ["external-input/node-resolver", "external-input/node-gate", "external-input/typescript",
+    "home", "xdg-config", "xdg-cache"]) {
+    assert.equal(lstatSync(join(workerOutput, directory)).isDirectory(), true, `${directory} worker boundary`);
+  }
 });
