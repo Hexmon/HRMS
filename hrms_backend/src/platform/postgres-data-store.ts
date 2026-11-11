@@ -70,6 +70,7 @@ import {
   type LicenseEntitlement,
   type NotificationRecord,
   type PersistenceDomain,
+  type PublicAssetScan,
   type UserSessionPreferenceRecord,
   type WorkSegment,
   type WorkflowDefinitionRecord,
@@ -568,6 +569,34 @@ class PostgresPersistence {
     } finally {
       client.release();
     }
+  }
+
+  async assetPublicScan(qrHash: string): Promise<PublicAssetScan | null> {
+    const result = await this.pool.query<{
+      qr_hash: string;
+      asset_code: string;
+      asset_type: string;
+      name: string;
+      status: string;
+      current_assigned_user_id: UUID | null;
+    }>(
+      `SELECT qr_hash, asset_code, asset_type, name, status, current_assigned_user_id
+         FROM assets.assets
+        WHERE qr_hash = $1
+          AND deleted_at IS NULL
+        LIMIT 1`,
+      [qrHash],
+    );
+    const asset = result.rows[0];
+    if (!asset) return null;
+    return {
+      qr_hash: asset.qr_hash,
+      asset_code: asset.asset_code,
+      asset_type: asset.asset_type,
+      name: asset.name,
+      status: asset.status,
+      assigned: asset.current_assigned_user_id ? "assigned" : "unassigned",
+    };
   }
 
   async assetAssignees(actorUserId: UUID, companyId: UUID, search = ""): Promise<{ items: Array<{ id: UUID; full_name: string }>; has_more: boolean }> {

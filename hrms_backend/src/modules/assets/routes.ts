@@ -85,7 +85,7 @@ function authorizeTermination(_store: DataStore, actor: AuthUser): void {
 }
 
 const idParamSchema = z.object({ id: z.uuid() });
-const qrParamSchema = z.object({ qr_hash: z.string().min(1) });
+const qrParamSchema = z.object({ qr_hash: z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/u) });
 const assetRequestSchema = z.object({
   request_type: z.enum(["new", "replacement", "repair", "return"]),
   asset_type: z.string().min(1).max(80),
@@ -222,6 +222,11 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/scan/:qr_hash", async (request) => {
     const params = qrParamSchema.parse(request.params);
+    if (fastify.store.persistence?.assetPublicScan) {
+      const asset = await fastify.store.persistence.assetPublicScan(params.qr_hash);
+      if (!asset) throw notFound("Asset not found", { qr_hash: params.qr_hash });
+      return asset;
+    }
     return new AssetService(await readStore(fastify.store)).scan(params.qr_hash);
   });
 

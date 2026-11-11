@@ -8103,7 +8103,7 @@ Success body highlights:
 **Path/query parameters**
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
-| `qr_hash` | path | yes | string | minLength 1 |
+| `qr_hash` | path | yes | string | minLength 1; pattern ^[A-Za-z0-9_-]+$ |
 
 **Request body**
 
