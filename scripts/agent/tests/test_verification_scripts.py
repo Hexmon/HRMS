@@ -38,6 +38,8 @@ class VerificationScriptTests(unittest.TestCase):
             self.assertIn("--frozen-lockfile", command)
             self.assertIn("--ignore-scripts", command)
             self.assertIn("--ignore-pnpmfile", command)
+        self.assertIn('python3 -m venv --copies "$RUNNER_TEMP/hrms-coverage-python"', workflow)
+        self.assertIn('export PATH="$RUNNER_TEMP/hrms-coverage-python/bin:$PATH"', workflow)
 
     def test_change_plan_keeps_unrelated_suites_out_of_each_path_class(self) -> None:
         cases = (
