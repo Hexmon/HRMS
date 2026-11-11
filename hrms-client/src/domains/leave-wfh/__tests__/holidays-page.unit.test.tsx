@@ -6,6 +6,7 @@ const mock = vi.hoisted(() => ({
   refetch: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
+  holidays: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ activeRole: "main_admin" }) }));
@@ -17,7 +18,7 @@ vi.mock("@/domains/leave-wfh", () => ({
     isError: false,
     refetch: mock.refetch,
   }),
-  holidaysFromResponse: () => [],
+  holidaysFromResponse: () => mock.holidays,
 }));
 vi.mock("sonner", () => ({ toast: { error: mock.toastError, success: mock.toastSuccess } }));
 
@@ -38,6 +39,8 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+  mock.holidays = [];
 });
 
 function fillHoliday(name = "Founders Day") {
@@ -56,6 +59,26 @@ describe("holiday create form retry", () => {
     expect(isHolidayInMonth(date, 2026, 11)).toBe(true);
     expect(isHolidayInMonth(date, 2026, 10)).toBe(false);
     expect(formatHolidayDate(date, "en-US")).toBe("Tue, Dec 01, 2026");
+  });
+
+  it("renders a December 1 holiday in the December list and calendar", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-12-15T12:00:00.000Z"));
+    mock.holidays = [
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        name: "December Founding",
+        date: "2026-12-01",
+        region: "All",
+        optional: false,
+        expectedVersion: 1,
+      },
+    ];
+    render(<HolidaysPage />);
+    expect(screen.getByText("December Founding")).toBeInTheDocument();
+    expect(screen.getByText(/Dec 01, 2026/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Calendar" }));
+    expect(screen.getByText("December Founding")).toBeInTheDocument();
   });
 
   it("keeps the same ID and draft after a network error, refetches, and resets only after confirmed success", async () => {
