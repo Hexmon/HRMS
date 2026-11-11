@@ -431,8 +431,7 @@ export const attendanceHistoricalCorrectionSchema = z.object({
   occurred_at: isoDateTimeSchema,
   reason: z.string().trim().min(3).max(1000),
   work_mode: z.enum(["office", "remote", "wfh", "field"]).default("office"),
-  metadata: z.record(z.string(), z.unknown()).default({}),
-  linked_regularization_request_id: z.uuid().optional()
+  metadata: z.record(z.string(), z.unknown()).default({})
 }).strict();
 
 const regularizationEventTypeSchema = z.enum(AttendanceHistoricalCorrectionEventTypeValues);

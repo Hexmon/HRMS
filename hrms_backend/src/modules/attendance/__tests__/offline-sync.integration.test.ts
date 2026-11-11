@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 import { authHeader, loginAs } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
-import { ATTENDANCE_OFFLINE_SYNC_CONTRACT_VERSION } from "../offline-sync-contract.js";
+import {
+  ATTENDANCE_OFFLINE_SYNC_CONTRACT_VERSION,
+  attendanceOfflineEventEnvelopeSchema,
+  canonicalOfflineAttendanceEventHash,
+} from "../offline-sync-contract.js";
 import { OFFLINE_LOCATION_EVIDENCE_MAX_AGE_MS } from "../offline-sync-service.js";
 import { setAttendanceObservabilityTestSink } from "../observability.js";
 import { canonicalJsonHash } from "../canonical-json.js";
@@ -103,7 +107,9 @@ describe("attendance offline sync ingestion", () => {
     );
     expect(ledger.rows[0]?.payload).toMatchObject({
       work_date: workDateForOfflineEvent(offlineEvent),
-      source_event_hash: expect.stringMatching(/^[0-9a-f]{64}$/u),
+      source_event_hash: canonicalOfflineAttendanceEventHash(
+        attendanceOfflineEventEnvelopeSchema.parse(offlineEvent),
+      ),
     });
     const originalWorkDate = workDateForOfflineEvent(offlineEvent);
     const originalUserTimeZone = (await app.store.pgPool!.query<{ timezone: string | null }>(
@@ -190,55 +196,71 @@ describe("attendance offline sync ingestion", () => {
     });
   });
 
-  it("uses the captured client timezone for legacy deferred evidence without a persisted work date", async () => {
+  it("uses immutable captured timestamps when legacy deferred timezone metadata is absent or invalid", async () => {
     const employee = await loginAs(app, "E1");
     const companyId = employeeCompanyId(app, employee.user.id);
     const registeredDeviceId = await insertRegisteredDevice(app, {
       companyId,
       userId: employee.user.id,
     });
-    const attendanceEventId = randomUUID();
-    const capturedAt = "2026-05-20T20:30:00.000Z";
-    const originalWorkDate = workDateInTimeZone(capturedAt, "Asia/Calcutta");
-    const shiftedTimeZone = "Pacific/Honolulu";
-    const shiftedWorkDate = workDateInTimeZone(capturedAt, shiftedTimeZone);
+    const legacyEvents = [
+      {
+        attendanceEventId: randomUUID(),
+        capturedAt: "2026-05-20T20:30:00.000Z",
+        metadata: {},
+      },
+      {
+        attendanceEventId: randomUUID(),
+        capturedAt: "2026-05-20T20:45:00.000Z",
+        metadata: { client_timezone: "Asia/Kolkatta" },
+      },
+    ];
+    const originalWorkDate = "2026-05-20";
+    const shiftedTimeZone = "Pacific/Kiritimati";
+    const shiftedWorkDate = workDateInTimeZone(
+      legacyEvents[0]!.capturedAt,
+      shiftedTimeZone,
+    );
     expect(shiftedWorkDate).not.toBe(originalWorkDate);
 
-    await app.store.pgPool!.query(
-      `INSERT INTO attendance.attendance_events (
-         id, company_id, employee_user_id, actor_user_id, event_type,
-         source, occurred_at, received_at, schema_version, payload, payload_hash
-       ) VALUES (
-         $1,$2,$3,$3,'check_in','mobile_offline',$4,now(),1,'{}'::jsonb,NULL
-       )`,
-      [attendanceEventId, companyId, employee.user.id, capturedAt],
-    );
-    await app.store.pgPool!.query(
-      `INSERT INTO attendance.offline_event_inbox (
-         company_id, actor_user_id, employee_user_id, batch_id,
-         registered_device_id, device_snapshot, client_event_id, sequence,
-         event_hash, event_payload, attendance_event_id, sync_status,
-         verification_status, reason_code, server_received_at,
-         processed_at, response_snapshot, payroll_eligible
-       ) VALUES (
-         $1,$2,$2,$3,$4,'{}'::jsonb,$5,1,$6,$7::jsonb,$8,
-         'deferred','review_required','offline_sync.processing_deferred',
-         now(),NULL,'{}'::jsonb,false
-       )`,
-      [
-        companyId,
-        employee.user.id,
-        randomUUID(),
-        registeredDeviceId,
-        randomUUID(),
-        "a".repeat(64),
-        JSON.stringify({
-          captured_at: capturedAt,
-          metadata: { client_timezone: "Asia/Calcutta" },
-        }),
-        attendanceEventId,
-      ],
-    );
+    for (const [index, legacyEvent] of legacyEvents.entries()) {
+      await app.store.pgPool!.query(
+        `INSERT INTO attendance.attendance_events (
+           id, company_id, employee_user_id, actor_user_id, event_type,
+           source, occurred_at, received_at, schema_version, payload, payload_hash
+         ) VALUES (
+           $1,$2,$3,$3,'check_in','mobile_offline',$4,now(),1,'{}'::jsonb,NULL
+         )`,
+        [legacyEvent.attendanceEventId, companyId, employee.user.id, legacyEvent.capturedAt],
+      );
+      await app.store.pgPool!.query(
+        `INSERT INTO attendance.offline_event_inbox (
+           company_id, actor_user_id, employee_user_id, batch_id,
+           registered_device_id, device_snapshot, client_event_id, sequence,
+           event_hash, event_payload, attendance_event_id, sync_status,
+           verification_status, reason_code, server_received_at,
+           processed_at, response_snapshot, payroll_eligible
+         ) VALUES (
+           $1,$2,$2,$3,$4,'{}'::jsonb,$5,$6,$7,$8::jsonb,$9,
+           'deferred','review_required','offline_sync.processing_deferred',
+           now(),NULL,'{}'::jsonb,false
+         )`,
+        [
+          companyId,
+          employee.user.id,
+          randomUUID(),
+          registeredDeviceId,
+          randomUUID(),
+          index + 1,
+          (index === 0 ? "a" : "b").repeat(64),
+          JSON.stringify({
+            captured_at: legacyEvent.capturedAt,
+            metadata: legacyEvent.metadata,
+          }),
+          legacyEvent.attendanceEventId,
+        ],
+      );
+    }
 
     const storedEmployee = app.store.users.find((user) => user.id === employee.user.id)!;
     const memoryTimeZone = storedEmployee.timezone;
@@ -262,24 +284,25 @@ describe("attendance offline sync ingestion", () => {
     );
     expect(originalDay.statusCode, originalDay.body).toBe(200);
     expect(shiftedDay.statusCode, shiftedDay.body).toBe(200);
-    expect(originalDay.json().self_evidence.events).toContainEqual(
-      expect.objectContaining({
-        event_type: "check_in",
-        occurred_at: capturedAt,
-        source: "mobile_offline",
-        offline: expect.objectContaining({
-          sync_status: "deferred",
-          reason_code: "offline_sync.processing_deferred",
-        }),
-      }),
+    expect(originalDay.json().self_evidence.events).toEqual(
+      expect.arrayContaining(legacyEvents.map((legacyEvent) => expect.objectContaining({
+          event_type: "check_in",
+          occurred_at: legacyEvent.capturedAt,
+          source: "mobile_offline",
+          offline: expect.objectContaining({
+            sync_status: "deferred",
+            reason_code: "offline_sync.processing_deferred",
+          }),
+        }))),
     );
     expect(shiftedDay.json().self_evidence.events.filter(
       (item: { source: string }) => item.source === "mobile_offline",
     )).toHaveLength(0);
     expect((await app.store.pgPool!.query<{ count: string }>(
       `SELECT count(*)::text AS count FROM platform.outbox_events
-        WHERE aggregate_id=$1 AND event_type='attendance.provisional.recorded'`,
-      [attendanceEventId],
+        WHERE aggregate_id=ANY($1::uuid[])
+          AND event_type='attendance.provisional.recorded'`,
+      [legacyEvents.map((legacyEvent) => legacyEvent.attendanceEventId)],
     )).rows[0]?.count).toBe("0");
   });
 

@@ -4102,9 +4102,6 @@ const attendanceHistoricalCorrectionBody = {
       default: "office",
     },
     metadata: { type: "object", additionalProperties: true },
-    linked_regularization_request_id: uuid(
-      "Linked regularization request UUID",
-    ),
   },
   additionalProperties: false,
 };
@@ -4122,7 +4119,6 @@ const attendanceEmployeeParamSchema = {
     metadata: {
       correction_source: "manager_review",
     },
-    linked_regularization_request_id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9401",
   },
 };
 

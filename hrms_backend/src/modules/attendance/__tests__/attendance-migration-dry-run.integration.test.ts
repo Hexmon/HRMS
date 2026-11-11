@@ -133,6 +133,27 @@ describe("PostgreSQL attendance migration dry-run service", () => {
     });
   });
 
+  it("falls back to UTC when employee and company timezones are both invalid", async () => {
+    await insertCompleteCandidateFixture(app, companyId);
+    await insertMatchingProjection(app, companyId);
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET timezone='Asia/Kolkatta' WHERE id=$1",
+      [seedIds.employee1],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE platform.company_profiles SET timezone='Invalid/Company' WHERE id=$1",
+      [companyId],
+    );
+
+    const result = await service().run(baseInput());
+
+    expect(result.summary.status).toBe("match");
+    expect(result.per_day[0]).toMatchObject({
+      work_date: day,
+      status: "match",
+    });
+  });
+
   it("reports blockers from existing replay validation when historical shift context is missing", async () => {
     await insertCompleteCandidateFixture(app, companyId);
     await insertMatchingProjection(app, companyId);

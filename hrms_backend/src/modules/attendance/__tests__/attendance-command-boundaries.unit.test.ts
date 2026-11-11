@@ -166,6 +166,19 @@ describe("attendance command boundaries", () => {
       origin: "historical_correction",
     });
 
+    const rejectedLinkedRequest = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/employees/${employee.user.id}/historical-corrections`,
+      headers: headers(admin.token),
+      payload: {
+        event_type: "check_in",
+        occurred_at: past,
+        reason: "Attempted public regularization materialization.",
+        linked_regularization_request_id: "018f9f4a-7f9a-7c15-8f25-6f7f96f9401",
+      },
+    });
+    expect(rejectedLinkedRequest.statusCode).toBe(400);
+
     const deniedEmployee = await app.inject({
       method: "POST",
       url: `/api/v1/attendance/employees/${employee.user.id}/historical-corrections`,

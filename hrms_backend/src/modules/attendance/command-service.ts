@@ -2221,7 +2221,7 @@ export class AttendanceCommandService {
             [input.companyId, input.employeeUserId, locked.work_date],
           )
         ).rows;
-        if (historicalShifts.length > 1) {
+        if (input.decision === "approve" && historicalShifts.length !== 1) {
           throw conflict(
             "Attendance regularization cannot resolve an unambiguous historical shift.",
           );
@@ -2240,7 +2240,10 @@ export class AttendanceCommandService {
             )
           : new Set<UUID>();
         for (const item of items) {
-          if (item.operation === "add" || item.operation === "replace") {
+          if (
+            input.decision === "approve" &&
+            (item.operation === "add" || item.operation === "replace")
+          ) {
             if (!item.event_type || !item.occurred_at) {
               throw badRequest(
                 "ADD and REPLACE items require event_type and occurred_at.",
@@ -2254,18 +2257,15 @@ export class AttendanceCommandService {
                 "Approved regularizations may materialize only check-in and check-out facts.",
               );
             }
+            if (!historicalShift) {
+              throw conflict(
+                "Attendance regularization requires one persisted historical shift.",
+              );
+            }
             const occurredAtMs = item.occurred_at.getTime();
-            const replacementTarget = item.target_punch_event_id
-              ? targetById.get(item.target_punch_event_id)
-              : null;
-            const withinHistoricalShift = historicalShift
-              ? occurredAtMs >= historicalShift.eligibility_start_at.getTime() &&
-                occurredAtMs < historicalShift.eligibility_end_at.getTime()
-              : item.operation === "replace" && replacementTarget
-                ? Math.abs(occurredAtMs - replacementTarget.occurred_at.getTime()) <=
-                  24 * 60 * 60 * 1_000
-                : dateInTimeZone(item.occurred_at.toISOString(), input.timeZone) ===
-                  locked.work_date;
+            const withinHistoricalShift =
+              occurredAtMs >= historicalShift.eligibility_start_at.getTime() &&
+              occurredAtMs < historicalShift.eligibility_end_at.getTime();
             if (!withinHistoricalShift) {
               throw badRequest(
                 "Requested punch timestamp falls outside the employee's historical shift window.",

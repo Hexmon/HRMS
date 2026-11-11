@@ -949,7 +949,7 @@ describe("AttendanceService.punch", () => {
       expect(voidRequest.requested_punches).toEqual([]);
     });
 
-    it("uses the persisted work date for overnight regularization targets", () => {
+    it("rejects overnight replacements when memory mode has no persisted historical shift", () => {
       const target = service["repository"].addPunch({
         company_id: companyId(store),
         employee_user_id: employee().id,
@@ -963,7 +963,7 @@ describe("AttendanceService.punch", () => {
       });
       target.work_date = "2026-07-08";
 
-      const request = service.createRegularization(employee(), {
+      expect(() => service.createRegularization(employee(), {
         work_date: "2026-07-08",
         reason: "Correct overnight checkout",
         items: [{
@@ -972,28 +972,8 @@ describe("AttendanceService.punch", () => {
           event_type: "check_out",
           occurred_at: "2026-07-09T01:15:00.000Z",
         }],
-      });
-
-      expect(request.items[0]).toMatchObject({
-        target_punch_event_id: target.id,
-        occurred_at: "2026-07-09T01:15:00.000Z",
-      });
-
-      service.decideRegularization(manager(), request.id, {
-        decision: "approve",
-        expected_version: 1,
-      });
-      const replacement = store.attendancePunches.find(
-        (punch) => punch.origin === "approved_regularization",
-      );
-      expect(replacement).toMatchObject({
-        work_date: "2026-07-08",
-        occurred_at: "2026-07-09T01:15:00.000Z",
-      });
-      expect(store.outbox.find(
-        (event) => event.idempotency_key ===
-          `attendance.punch.recorded:${replacement!.id}`,
-      )?.payload.work_date).toBe("2026-07-08");
+      })).toThrow(/historical shift window/iu);
+      expect(store.attendanceRegularizations).toHaveLength(0);
     });
 
     it("rejects replacement timestamps more than one day from the target", () => {
@@ -1018,7 +998,7 @@ describe("AttendanceService.punch", () => {
           event_type: "check_out",
           occurred_at: "2026-07-10T12:00:01.000Z",
         }],
-      })).toThrow(/target punch correction window/iu);
+      })).toThrow(/historical shift window/iu);
       expect(store.attendanceRegularizations).toHaveLength(0);
     });
 
