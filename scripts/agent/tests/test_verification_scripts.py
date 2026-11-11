@@ -9,22 +9,54 @@ import unittest
 SOURCE = Path(__file__).resolve().parents[1]
 
 
+def copy_script(name: str, destination: Path) -> None:
+    shutil.copyfile(SOURCE / name, destination / name)
+    (destination / name).chmod(0o755)
+
+
 def run(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, cwd=repo, text=True, capture_output=True, check=False)
 
 
 class VerificationScriptTests(unittest.TestCase):
+    def test_trusted_coverage_workflow_uses_pinned_source_without_privileged_trigger(self) -> None:
+        workflow = (SOURCE.parents[1] / ".github" / "workflows" / "trusted-changed-coverage.yml").read_text(encoding="utf-8")
+        self.assertIn("pull_request: {}", workflow)
+        self.assertIn("merge_group: {}", workflow)
+        self.assertNotIn("pull_request_target", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("job.workflow_sha", workflow)
+        self.assertIn("repository: ${{ job.workflow_repository }}", workflow)
+        self.assertIn("ref: ${{ job.workflow_sha }}", workflow)
+        self.assertIn('validator="$GITHUB_WORKSPACE/trusted/scripts/agent/changed-coverage.mjs"', workflow)
+        self.assertIn('--trusted-validator "$validator"', workflow)
+        self.assertIn("actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683", workflow)
+        self.assertIn("actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020", workflow)
+        candidate_installs = [line.strip() for line in workflow.splitlines() if "pnpm --dir candidate/" in line]
+        self.assertEqual(len(candidate_installs), 2)
+        for command in candidate_installs:
+            self.assertIn("--frozen-lockfile", command)
+            self.assertIn("--ignore-scripts", command)
+            self.assertIn("--ignore-pnpmfile", command)
+
     def test_change_plan_keeps_unrelated_suites_out_of_each_path_class(self) -> None:
         cases = (
             ("docs/README.md", ("Agent setup and documentation references",), ("Backend unit tests", "Frontend lint", "Disposable database preflight")),
             ("hrms_backend/src/modules/employees/service.ts", ("Backend unit tests", "Disposable database preflight"), ("Backend contract tests", "Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/src/modules/employees/routes.ts", ("Backend contract tests", "Disposable database preflight"), ("Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
+            ("hrms_backend/src/platform/openapi.ts", ("Backend contract tests", "Frontend contract route coverage", "Disposable database preflight"), ("Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
+            ("hrms_backend/src/shared/schemas.ts", ("Backend contract tests", "Frontend contract route coverage", "Disposable database preflight"), ("Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
+            ("hrms_backend/src/shared/attendance-contract.ts", ("Backend contract tests", "Frontend contract route coverage", "Disposable database preflight"), ("Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
+            ("hrms_backend/src/modules/attendance/attendance-openapi-examples.ts", ("Backend contract tests", "Frontend contract route coverage", "Disposable database preflight"), ("Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
+            ("hrms_backend/src/modules/attendance/reporting-projection.ts", ("Backend contract tests", "Frontend contract route coverage", "Disposable database preflight"), ("Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
+            ("hrms_backend/src/modules/attendance/reporting-evidence.ts", ("Backend contract tests", "Frontend contract route coverage", "Disposable database preflight"), ("Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/docs/api/openapi.json", ("Backend contract tests", "Disposable database preflight"), ("Backend unit tests", "Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/src/db/schema.ts", ("Migration history and schema drift", "Disposable database preflight"), ("Backend contract tests", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/src/workers/run.ts", ("Cloudflare Queue DLQ and replay", "Disposable database preflight"), ("Backend contract tests", "Migration history and schema drift", "Frontend lint")),
             ("hrms-client/src/components/example.tsx", ("Frontend lint", "Frontend unit tests", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
             ("hrms-client/vitest.config.ts", ("Frontend lint", "Frontend unit tests", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
             ("hrms-client/src/domains/example.ts", ("Frontend contract route coverage", "Frontend lint"), ("Backend unit tests", "Disposable database preflight")),
+            (".github/workflows/branch-ci-cd.yml", ("Agent setup and documentation references", "Agent verifier unit tests"), ("Backend unit tests", "Frontend lint", "Disposable database preflight")),
         )
         for changed_path, selected, absent in cases:
             with self.subTest(changed_path=changed_path), tempfile.TemporaryDirectory() as directory:
@@ -32,7 +64,7 @@ class VerificationScriptTests(unittest.TestCase):
                 scripts = repo / "scripts" / "agent"
                 scripts.mkdir(parents=True)
                 for name in ("lib.sh", "verify-change.sh"):
-                    shutil.copy2(SOURCE / name, scripts / name)
+                    copy_script(name, scripts)
                 self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
                 self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
                 self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
@@ -57,7 +89,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "verify-change.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             (repo / ".gitignore").write_text(".env.test\n", encoding="utf-8")
             self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
@@ -99,7 +131,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "verify-change.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             guard = scripts / "protect-sensitive-files.sh"
             guard.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
             guard.chmod(0o755)
@@ -129,7 +161,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "verify-change.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             guard = scripts / "protect-sensitive-files.sh"
             guard.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
             guard.chmod(0o755)
@@ -157,7 +189,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "verify-full.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             for name in ("protect-sensitive-files.sh", "validate-agent-setup.sh"):
                 target = scripts / name
                 target.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
@@ -220,7 +252,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "protect-sensitive-files.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
@@ -235,13 +267,195 @@ class VerificationScriptTests(unittest.TestCase):
             self.assertEqual(guarded.returncode, 1)
             self.assertIn("Potential secret material", guarded.stderr)
 
+    def test_secret_guard_scans_all_bounded_untracked_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            scripts = repo / "scripts" / "agent"
+            scripts.mkdir(parents=True)
+            for name in ("lib.sh", "protect-sensitive-files.sh"):
+                shutil.copy2(SOURCE / name, scripts / name)
+            self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
+            self.assertEqual(run(repo, "git", "add", ".").returncode, 0)
+            self.assertEqual(run(repo, "git", "commit", "-qm", "baseline").returncode, 0)
+            self.assertEqual(run(repo, "git", "update-ref", "refs/remotes/origin/release-01", "HEAD").returncode, 0)
+
+            payload = repo / "late-secret.txt"
+            payload.write_text("safe\n" * 450 + "AKIA" + "A" * 16 + "\n", encoding="utf-8")
+            guarded = run(repo, "bash", "scripts/agent/protect-sensitive-files.sh")
+            self.assertEqual(guarded.returncode, 1)
+            self.assertIn("Potential secret material", guarded.stderr)
+
+    def test_secret_guard_rejects_oversized_untracked_files_instead_of_skipping(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            scripts = repo / "scripts" / "agent"
+            scripts.mkdir(parents=True)
+            for name in ("lib.sh", "protect-sensitive-files.sh"):
+                shutil.copy2(SOURCE / name, scripts / name)
+            self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
+            self.assertEqual(run(repo, "git", "add", ".").returncode, 0)
+            self.assertEqual(run(repo, "git", "commit", "-qm", "baseline").returncode, 0)
+            self.assertEqual(run(repo, "git", "update-ref", "refs/remotes/origin/release-01", "HEAD").returncode, 0)
+
+            (repo / "oversized.txt").write_text("x" * (1024 * 1024 + 1), encoding="utf-8")
+            guarded = run(repo, "bash", "scripts/agent/protect-sensitive-files.sh")
+            self.assertEqual(guarded.returncode, 1)
+            self.assertIn("Untracked file exceeds the sensitive-scan limit", guarded.stderr)
+
+    def test_branch_ci_executes_repository_verification_before_deploy(self) -> None:
+        workflow = (SOURCE.parents[1] / ".github" / "workflows" / "branch-ci-cd.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("repository-checks:", workflow)
+        self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn("bash scripts/agent/resolve-ci-base.sh", workflow)
+        self.assertIn("PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}", workflow)
+        self.assertIn("PUSH_BEFORE_SHA: ${{ github.event.before }}", workflow)
+        self.assertIn('bash scripts/agent/protect-sensitive-files.sh --base "${{ steps.event-base.outputs.sha }}"', workflow)
+        self.assertIn('bash scripts/agent/verify-change.sh --plan --base "${{ steps.event-base.outputs.sha }}"', workflow)
+        self.assertIn("bash scripts/agent/validate-agent-setup.sh", workflow)
+        self.assertIn("python3 -m unittest discover -s scripts/agent/tests -v", workflow)
+        self.assertIn("- repository-checks", workflow)
+
+    def test_push_base_catches_committed_secret_when_release_ref_is_already_head(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            scripts = repo / "scripts" / "agent"
+            scripts.mkdir(parents=True)
+            for name in ("lib.sh", "protect-sensitive-files.sh", "resolve-ci-base.sh"):
+                shutil.copy2(SOURCE / name, scripts / name)
+            self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
+            (repo / "tracked.txt").write_text("baseline\n", encoding="utf-8")
+            self.assertEqual(run(repo, "git", "add", ".").returncode, 0)
+            self.assertEqual(run(repo, "git", "commit", "-qm", "baseline").returncode, 0)
+            before = run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+
+            constructed_fixture = "ghp_" + "A" * 36
+            (repo / "tracked.txt").write_text(constructed_fixture + "\n", encoding="utf-8")
+            self.assertEqual(run(repo, "git", "add", "tracked.txt").returncode, 0)
+            self.assertEqual(run(repo, "git", "commit", "-qm", "pushed commit fixture").returncode, 0)
+            self.assertEqual(run(repo, "git", "update-ref", "refs/remotes/origin/release-01", "HEAD").returncode, 0)
+
+            resolved = run(repo, "bash", "scripts/agent/resolve-ci-base.sh", "push", "", before)
+            self.assertEqual(resolved.returncode, 0, resolved.stderr)
+            guarded = run(
+                repo,
+                "bash",
+                "scripts/agent/protect-sensitive-files.sh",
+                "--base",
+                resolved.stdout.strip(),
+            )
+            self.assertEqual(guarded.returncode, 1)
+            self.assertIn("Potential secret material", guarded.stderr)
+            self.assertNotIn(constructed_fixture, guarded.stdout + guarded.stderr)
+
+    def test_ci_base_resolver_uses_event_sha_and_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            scripts = repo / "scripts" / "agent"
+            scripts.mkdir(parents=True)
+            shutil.copy2(SOURCE / "lib.sh", scripts / "lib.sh")
+            shutil.copy2(SOURCE / "resolve-ci-base.sh", scripts / "resolve-ci-base.sh")
+            self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
+            self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
+            (repo / "tracked.txt").write_text("baseline\n", encoding="utf-8")
+            self.assertEqual(run(repo, "git", "add", ".").returncode, 0)
+            self.assertEqual(run(repo, "git", "commit", "-qm", "baseline").returncode, 0)
+            before = run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+            primary_branch = run(repo, "git", "branch", "--show-current").stdout.strip()
+            (repo / "tracked.txt").write_text("head\n", encoding="utf-8")
+            self.assertEqual(run(repo, "git", "commit", "-am", "head", "-q").returncode, 0)
+
+            push = run(repo, "bash", "scripts/agent/resolve-ci-base.sh", "push", "", before)
+            self.assertEqual(push.returncode, 0, push.stderr)
+            self.assertEqual(push.stdout.strip(), before)
+            pull_request = run(repo, "bash", "scripts/agent/resolve-ci-base.sh", "pull_request", before, "")
+            self.assertEqual(pull_request.returncode, 0, pull_request.stderr)
+            self.assertEqual(pull_request.stdout.strip(), before)
+            workflow_dispatch = run(
+                repo,
+                "bash",
+                "scripts/agent/resolve-ci-base.sh",
+                "workflow_dispatch",
+                "",
+                "",
+            )
+            self.assertEqual(workflow_dispatch.returncode, 0, workflow_dispatch.stderr)
+            self.assertEqual(workflow_dispatch.stdout.strip(), before)
+
+            head = run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+            equal_to_head = run(repo, "bash", "scripts/agent/resolve-ci-base.sh", "push", "", head)
+            self.assertNotEqual(equal_to_head.returncode, 0)
+            self.assertIn("equals HEAD", equal_to_head.stderr)
+
+            missing = run(repo, "bash", "scripts/agent/resolve-ci-base.sh", "push", "", "")
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("missing or all-zero", missing.stderr)
+
+            zero = run(repo, "bash", "scripts/agent/resolve-ci-base.sh", "push", "", "0" * 40)
+            self.assertNotEqual(zero.returncode, 0)
+            self.assertIn("missing or all-zero", zero.stderr)
+
+            malformed = run(repo, "bash", "scripts/agent/resolve-ci-base.sh", "push", "", "not-a-sha")
+            self.assertNotEqual(malformed.returncode, 0)
+            self.assertIn("not a valid commit SHA", malformed.stderr)
+
+            unavailable = run(repo, "bash", "scripts/agent/resolve-ci-base.sh", "push", "", "f" * 40)
+            self.assertNotEqual(unavailable.returncode, 0)
+            self.assertIn("not available", unavailable.stderr)
+
+            unsupported = run(repo, "bash", "scripts/agent/resolve-ci-base.sh", "schedule", "", before)
+            self.assertNotEqual(unsupported.returncode, 0)
+            self.assertIn("Unsupported CI event", unsupported.stderr)
+
+            self.assertEqual(run(repo, "git", "branch", "side", before).returncode, 0)
+            self.assertEqual(run(repo, "git", "checkout", "-q", "side").returncode, 0)
+            (repo / "side.txt").write_text("side\n", encoding="utf-8")
+            self.assertEqual(run(repo, "git", "add", "side.txt").returncode, 0)
+            self.assertEqual(run(repo, "git", "commit", "-qm", "side").returncode, 0)
+            side = run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+            self.assertEqual(run(repo, "git", "checkout", "-q", primary_branch).returncode, 0)
+            non_ancestor = run(repo, "bash", "scripts/agent/resolve-ci-base.sh", "push", "", side)
+            self.assertNotEqual(non_ancestor.returncode, 0)
+            self.assertIn("not an ancestor", non_ancestor.stderr)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root_repo = Path(directory)
+            scripts = root_repo / "scripts" / "agent"
+            scripts.mkdir(parents=True)
+            shutil.copy2(SOURCE / "lib.sh", scripts / "lib.sh")
+            shutil.copy2(SOURCE / "resolve-ci-base.sh", scripts / "resolve-ci-base.sh")
+            self.assertEqual(run(root_repo, "git", "init", "-q").returncode, 0)
+            self.assertEqual(run(root_repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
+            self.assertEqual(run(root_repo, "git", "config", "user.name", "Verification Test").returncode, 0)
+            self.assertEqual(run(root_repo, "git", "add", ".").returncode, 0)
+            self.assertEqual(run(root_repo, "git", "commit", "-qm", "root commit").returncode, 0)
+
+            no_parent = run(
+                root_repo,
+                "bash",
+                "scripts/agent/resolve-ci-base.sh",
+                "workflow_dispatch",
+                "",
+                "",
+            )
+            self.assertNotEqual(no_parent.returncode, 0)
+            self.assertIn("requires a parent commit", no_parent.stderr)
+
     def test_change_gate_preserves_checkout_path_with_spaces(self) -> None:
         with tempfile.TemporaryDirectory(prefix="hrms spaced checkout ") as directory:
             repo = Path(directory)
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "protect-sensitive-files.sh", "verify-change.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
@@ -261,7 +475,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "protect-sensitive-files.sh", "verify-change.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)

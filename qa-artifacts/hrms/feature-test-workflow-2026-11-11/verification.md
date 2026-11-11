@@ -4,7 +4,7 @@ Scope: documentation and existing skill routing only. Root/backend/frontend AGEN
 
 ## Structural Checks Actually Run
 
-- `python3 /home/hexmon/.codex/skills/.system/skill-creator/scripts/quick_validate.py .agents/skills/<name>` for qa-master-checklist, implement-feature, fix-bug and commit-and-track: all valid.
+- Historical machine-local skill validation, normalized here to `python3 <CODEX_HOME>/skills/.system/skill-creator/scripts/quick_validate.py .agents/skills/<name>`, ran for qa-master-checklist, implement-feature, fix-bug and commit-and-track: all valid. The original executable path was local to the review workstation and is not a portable repository dependency.
 - `git diff --check`: passed.
 - `./scripts/agent/verify-change.sh --plan`: selected sensitive-file, staged/unstaged patch-integrity and agent documentation checks; no runtime files detected.
 - `./scripts/agent/verify-change.sh`: all selected checks passed; agent setup/reference validation passed.

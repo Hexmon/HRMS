@@ -90,8 +90,8 @@ export async function resolvePushCoverageBase({ root, repository, branch, head, 
   throw new Error(`No prior successful ${branch} push run with a successful changed-coverage job`);
 }
 
-async function githubJson(path, token) {
-  const response = await fetch(`https://api.github.com${path}`, {
+export async function githubJson(path, token, fetchImplementation = fetch) {
+  const response = await fetchImplementation(`https://api.github.com${path}`, {
     headers: {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${token}`,
@@ -103,25 +103,44 @@ async function githubJson(path, token) {
   return response.json();
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {
-    if (process.env.GITHUB_EVENT_NAME !== "push" || !process.env.GITHUB_TOKEN) {
+export async function main(environment, dependencies, io) {
+    if (environment.GITHUB_EVENT_NAME !== "push" || !environment.GITHUB_TOKEN) {
       throw new Error("Push event and GITHUB_TOKEN with Actions read permission are required");
     }
     const result = await resolvePushCoverageBase({
-      root: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
-      repository: process.env.GITHUB_REPOSITORY,
-      branch: process.env.GITHUB_REF_NAME,
-      head: process.env.GITHUB_SHA,
-      runId: Number(process.env.GITHUB_RUN_ID),
-      runNumber: Number(process.env.GITHUB_RUN_NUMBER),
-      requestJson: (path) => githubJson(path, process.env.GITHUB_TOKEN),
-      bootstrapSha: bootstrapShaForBranch(process.env.GITHUB_REF_NAME, process.env),
+      root: dependencies.root,
+      repository: environment.GITHUB_REPOSITORY,
+      branch: environment.GITHUB_REF_NAME,
+      head: environment.GITHUB_SHA,
+      runId: Number(environment.GITHUB_RUN_ID),
+      runNumber: Number(environment.GITHUB_RUN_NUMBER),
+      requestJson: dependencies.requestJson,
+      bootstrapSha: bootstrapShaForBranch(environment.GITHUB_REF_NAME, environment),
     });
-    console.error(result.runId === null
-      ? `Using owner-provided ${process.env.GITHUB_REF_NAME} bootstrap commit as cumulative push baseline.`
+    io.error(result.runId === null
+      ? `Using owner-provided ${environment.GITHUB_REF_NAME} bootstrap commit as cumulative push baseline.`
       : `Using successful coverage run ${result.runId} at ${result.base} as cumulative push baseline.`);
-    process.stdout.write(`base=${result.base}\n`);
+    io.output(`base=${result.base}\n`);
+    return result;
+}
+
+export function createDefaultCliDependencies(environment = process.env, fetchImplementation = fetch) {
+  return {
+    root: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+    requestJson: (path) => githubJson(path, environment.GITHUB_TOKEN, fetchImplementation),
+  };
+}
+
+export function createDefaultCliIo(
+  error = (message) => console.error(message),
+  output = (message) => process.stdout.write(message),
+) {
+  return { error, output };
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    await main(process.env, createDefaultCliDependencies(), createDefaultCliIo());
   } catch (error) {
     console.error(`Push coverage baseline resolution failed: ${error.message}`);
     process.exitCode = 1;

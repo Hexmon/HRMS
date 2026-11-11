@@ -1,0 +1,96 @@
+name: Trusted changed executable coverage
+
+# This workflow becomes authoritative only after an organization ruleset pins
+# this exact file to an independently reviewed immutable commit SHA. A normal
+# repository workflow or required status name is not an equivalent trust anchor.
+on:
+  pull_request: {}
+  merge_group: {}
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-changed-coverage:
+    name: Trusted changed executable coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+    steps:
+      - name: Validate immutable workflow identity
+        shell: bash
+        env:
+          TRUSTED_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          TRUSTED_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          [[ "$TRUSTED_WORKFLOW_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+          [[ "$TRUSTED_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$COVERAGE_BASE" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Check out candidate without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: candidate
+
+      - name: Check out validator from the required workflow commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: trusted
+
+      - name: Verify trusted and candidate revisions
+        shell: bash
+        env:
+          TRUSTED_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          test "$(git -C trusted rev-parse HEAD)" = "$TRUSTED_WORKFLOW_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git -C candidate merge-base --is-ancestor "$COVERAGE_BASE" "$CANDIDATE_SHA"
+
+      - name: Set up pinned Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - name: Set up pinned package manager
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.25.0 --activate
+          test "$(pnpm --version)" = "10.25.0"
+
+      - name: Install immutable validator dependencies
+        run: pnpm --dir trusted/hrms_backend install --frozen-lockfile --ignore-scripts
+
+      - name: Install candidate dependencies
+        run: |
+          pnpm --dir candidate/hrms_backend install --frozen-lockfile --ignore-scripts --ignore-pnpmfile
+          pnpm --dir candidate/hrms-client install --frozen-lockfile --ignore-scripts --ignore-pnpmfile
+
+      - name: Install pinned Python coverage runner
+        run: python3 -m pip install coverage==7.11.0
+
+      - name: Run immutable validator against candidate
+        shell: bash
+        env:
+          TRUSTED_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          validator="$GITHUB_WORKSPACE/trusted/scripts/agent/changed-coverage.mjs"
+          candidate="$GITHUB_WORKSPACE/candidate"
+          test "$(git -C trusted rev-parse HEAD)" = "$TRUSTED_WORKFLOW_SHA"
+          test -z "$(git -C trusted status --porcelain=v1 --untracked-files=all)"
+          HRMS_COVERAGE_REPO_ROOT="$candidate" node "$validator" \
+            --run-full-suite \
+            --base "$COVERAGE_BASE" \
+            --head "$CANDIDATE_SHA" \
+            --trusted-validator "$validator"
