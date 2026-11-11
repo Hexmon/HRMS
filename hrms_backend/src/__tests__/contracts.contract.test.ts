@@ -1890,6 +1890,23 @@ describe("API contracts", () => {
         });
     }
 
+    const notificationReadAll = operation(
+      spec,
+      "POST /api/v1/notifications/read-all",
+    ) as Record<string, any>;
+    expect(notificationReadAll.description).toContain("Repeat while has_more is true");
+    expect(notificationReadAll.responses?.["200"]?.content?.["application/json"]?.schema)
+      .toMatchObject({
+        type: "object",
+        additionalProperties: false,
+        required: ["updated_count", "unread_count", "has_more"],
+        properties: {
+          updated_count: { type: "integer", minimum: 0 },
+          unread_count: { type: "integer", minimum: 0 },
+          has_more: { type: "boolean" },
+        },
+      });
+
     const financeKeys = operations(spec)
       .filter(
         ({ path }) =>

@@ -1,6 +1,6 @@
 import type { AttendanceDayRecord, AuthUser, CoreUser, ExpenseTicket, LeaveRequest, TimesheetSubmission, UUID, WfhRequest } from "#shared";
 import { AssetStatuses, AttendanceEvidenceStates, AttendancePresenceStates, AttendancePunctualityStates, EmploymentStatuses, ExpenseStatuses, LeaveRequestStatuses, Roles, TimesheetStatuses } from "#shared";
-import type { MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
+import type { DashboardSummaryProjection, MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import {
   countAttendanceReportingEvidenceCategories,
@@ -92,6 +92,59 @@ const FINANCE_PENDING_STATUSES = new Set<string>([
 
 export class DashboardService {
   constructor(private readonly store: MemoryDataStore) {}
+
+  summaryFromProjection(
+    actor: AuthUser,
+    activeRole: AuthUser["roles"][number],
+    projection: DashboardSummaryProjection,
+  ): DashboardSummary {
+    const expensePending = projection.approvals.expense_manager_pending
+      + projection.approvals.expense_finance_pending;
+    const leaveWfhPending = projection.approvals.leave_pending
+      + projection.approvals.wfh_pending;
+    const operations = projection.operations;
+    const workload = projection.workload;
+    return {
+      generated_at: nowIso(),
+      scope: {
+        actor_user_id: actor.id,
+        employee_code: actor.employee_code,
+        primary_role: activeRole,
+        roles: [...actor.roles],
+        visibility: this.canSeeSystemWide(actor) ? "all" : "self_and_descendants",
+      },
+      cards: [
+        metric("active_employees", "Active employees", projection.workforce.active_employees, "count", "core"),
+        metric("pending_expense_approvals", "Pending expense approvals", expensePending, "count", "expenses"),
+        metric("pending_timesheet_approvals", "Pending timesheet approvals", projection.approvals.timesheet_pending, "count", "timesheets"),
+        metric("pending_leave_wfh_approvals", "Pending Leave/WFH approvals", leaveWfhPending, "count", "leave_wfh"),
+        metric("attendance_exceptions", "Attendance exceptions", projection.attendance.exceptions, "count", "attendance"),
+        metric("assigned_assets", "Assigned assets", operations.assets_assigned, "count", "assets"),
+        metric("documents_pending_verification", "Documents pending verification", projection.approvals.document_verification_pending, "count", "documents"),
+        metric("submitted_hours", "Submitted hours", workload.submitted_hours_total, "hours", "timesheets"),
+      ],
+      workforce: projection.workforce,
+      approvals: {
+        ...projection.approvals,
+        expense_total_pending: expensePending,
+      },
+      operations,
+      attendance: {
+        evidence_categories: projection.attendance.evidence_categories,
+        source_categories: projection.attendance.source_categories,
+      },
+      workload,
+      attention: [
+        metric("pending_expense_approvals", "Expense approvals waiting", expensePending, "count", "expenses"),
+        metric("pending_timesheet_approvals", "Timesheets waiting", projection.approvals.timesheet_pending, "count", "timesheets"),
+        metric("pending_leave_wfh_approvals", "Leave/WFH approvals waiting", leaveWfhPending, "count", "leave_wfh"),
+        metric("attendance_exceptions", "Attendance exceptions", projection.attendance.exceptions, "count", "attendance"),
+        metric("asset_recovery_pending", "Asset recoveries pending", operations.assets_recovery_pending, "count", "assets"),
+        metric("outbox_pending", "Integration events pending", operations.outbox_pending, "count", "outbox"),
+      ].filter((item) => Number(item.value) > 0),
+      unavailable_features: dashboardUnavailableFeatures(),
+    };
+  }
 
   summary(actor: AuthUser): DashboardSummary {
     const visibleUsers = this.visibleUsers(actor);
@@ -188,20 +241,7 @@ export class DashboardService {
         metric("asset_recovery_pending", "Asset recoveries pending", operations.assets_recovery_pending, "count", "assets"),
         metric("outbox_pending", "Integration events pending", operations.outbox_pending, "count", "outbox")
       ].filter((item) => Number(item.value) > 0),
-      unavailable_features: [
-        {
-          key: "helpdesk",
-          label: "Helpdesk",
-          status: "not_implemented",
-          notes: "Helpdesk workflows are scheduled for Phase 4 and are not counted in this dashboard yet."
-        },
-        {
-          key: "projects_utilization",
-          label: "Projects and utilization",
-          status: "not_implemented",
-          notes: "Projects/utilization APIs are scheduled for Phase 4; current timesheet project codes remain lightweight metadata."
-        }
-      ]
+      unavailable_features: dashboardUnavailableFeatures(),
     };
   }
 
@@ -438,6 +478,23 @@ export class DashboardService {
       }))
       .sort((left, right) => left.department_code.localeCompare(right.department_code));
   }
+}
+
+function dashboardUnavailableFeatures(): DashboardSummary["unavailable_features"] {
+  return [
+    {
+      key: "helpdesk",
+      label: "Helpdesk",
+      status: "not_implemented",
+      notes: "Helpdesk workflows are scheduled for Phase 4 and are not counted in this dashboard yet.",
+    },
+    {
+      key: "projects_utilization",
+      label: "Projects and utilization",
+      status: "not_implemented",
+      notes: "Projects/utilization APIs are scheduled for Phase 4; current timesheet project codes remain lightweight metadata.",
+    },
+  ];
 }
 
 function metric(

@@ -26,25 +26,28 @@ describe("expense Finance API adapter", () => {
   it.each([
     [
       "approve",
-      () => expensesApi.financeApprove("ticket-a", { expected_version: 1, decision: "verify" }),
+      { expected_version: 1, decision: "verify" },
       "/api/v1/expenses/ticket-a/finance/approve",
     ],
     [
       "payment",
-      () => expensesApi.recordPayment("ticket-a", { expected_version: 2, amount: "100.00" }),
+      { expected_version: 2, amount: "100.00" },
       "/api/v1/expenses/ticket-a/finance/payment",
     ],
     [
       "settlement",
-      () => expensesApi.settle("ticket-a", { expected_version: 3, actual_amount: "100.00" }),
+      { expected_version: 3, actual_amount: "100.00" },
       "/api/v1/expenses/ticket-a/settlement",
     ],
-  ])("wires the %s command route, body, and idempotency header", async (_label, invoke, path) => {
-    await invoke();
+  ])("wires the %s command route, body, and idempotency header", async (label, body, path) => {
+    if (label === "approve") await expensesApi.financeApprove("ticket-a", body);
+    else if (label === "payment") await expensesApi.recordPayment("ticket-a", body);
+    else await expensesApi.settle("ticket-a", body);
     expect(apiRequest).toHaveBeenCalledOnce();
     const [actualPath, options] = vi.mocked(apiRequest).mock.calls[0] ?? [];
     expect(actualPath).toBe(path);
     expect(options).toMatchObject({ method: "POST" });
+    expect(options?.body).toEqual(body);
     expect(options?.headers).toEqual({
       "Idempotency-Key": expect.stringMatching(/^[0-9a-f-]{36}$/u),
     });

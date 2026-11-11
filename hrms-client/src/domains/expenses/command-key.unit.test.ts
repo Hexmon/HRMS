@@ -105,6 +105,66 @@ describe("expense Finance intent keys", () => {
     getItem.mockRestore();
   });
 
+  it.each([
+    ["malformed", "not-a-token"],
+    ["missing sub", `header.${btoa(JSON.stringify({ role: "Finance" }))}.signature`],
+    ["non-string sub", `header.${btoa(JSON.stringify({ sub: 42 }))}.signature`],
+  ])("fails closed for a %s access token", async (_label, token) => {
+    setApiAccessToken(token);
+    await expect(
+      withExpenseCommandKey("ticket-a", "finance.approve", {}, async () => "sent"),
+    ).rejects.toThrow("Sign in again");
+  });
+
+  it("fails closed when either WebCrypto primitive is missing", async () => {
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: { randomUUID: webcrypto.randomUUID.bind(webcrypto) },
+    });
+    await expect(
+      withExpenseCommandKey("ticket-a", "finance.approve", {}, async () => "sent"),
+    ).rejects.toThrow("Secure retry tracking is unavailable");
+
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: { subtle: webcrypto.subtle },
+    });
+    await expect(
+      withExpenseCommandKey("ticket-a", "finance.approve", {}, async () => "sent"),
+    ).rejects.toThrow("Secure retry tracking is unavailable");
+  });
+
+  it("reuses the pending command key after an actual module reload", async () => {
+    vi.resetModules();
+    const firstModule = await import("./command-key");
+    let firstKey = "";
+    await expect(
+      firstModule.withExpenseCommandKey(
+        "ticket-a",
+        "finance.payment",
+        { expected_version: 2 },
+        async (key) => {
+          firstKey = key;
+          throw new Error("response lost");
+        },
+      ),
+    ).rejects.toThrow("response lost");
+
+    vi.resetModules();
+    const reloadedModule = await import("./command-key");
+    let reloadedKey = "";
+    await reloadedModule.withExpenseCommandKey(
+      "ticket-a",
+      "finance.payment",
+      { expected_version: 2 },
+      async (key) => {
+        reloadedKey = key;
+        return "sent";
+      },
+    );
+    expect(reloadedKey).toBe(firstKey);
+  });
+
   it("does not turn a confirmed server success into failure when cleanup is blocked", async () => {
     const removeItem = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
       throw new Error("storage cleanup blocked");

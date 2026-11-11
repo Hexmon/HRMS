@@ -9364,10 +9364,14 @@ const notificationMarkReadResponse = {
 
 const notificationReadAllResponse = {
   type: "object",
-  required: ["updated_count", "unread_count"],
+  required: ["updated_count", "unread_count", "has_more"],
   properties: {
     updated_count: { type: "integer", minimum: 0, example: 3 },
     unread_count: { type: "integer", minimum: 0, example: 0 },
+    has_more: {
+      type: "boolean",
+      description: "True when another bounded batch remains and the client should repeat this command.",
+    },
   },
   additionalProperties: false,
 };
@@ -10369,7 +10373,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/notifications/read-all": operation(
     "Notifications",
     "Mark all notifications read",
-    "Marks all visible unread notifications as read, optionally scoped by type/category or timestamp.",
+    "Marks up to 1,000 visible unread notifications as read, optionally scoped by type/category or timestamp. Repeat while has_more is true.",
     { body: notificationReadAllBody, response200: notificationReadAllResponse },
   ),
   "POST /api/v1/attendance/punches": operation(

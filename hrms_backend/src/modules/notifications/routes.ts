@@ -71,7 +71,11 @@ export const notificationsRoutes: FastifyPluginAsync = async (fastify) => {
         type: body.type,
         before: body.before,
       });
-      return { updated_count: result.updatedCount, unread_count: result.unreadCount };
+      return {
+        updated_count: result.updatedCount,
+        unread_count: result.unreadCount,
+        has_more: result.hasMore,
+      };
     }
     return new NotificationsService(fastify.store).markAllRead(request.actor, body);
   });

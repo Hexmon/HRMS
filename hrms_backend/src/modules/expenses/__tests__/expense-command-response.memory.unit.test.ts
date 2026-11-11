@@ -40,29 +40,47 @@ describe("expense Finance command response contract in memory mode", () => {
     });
     expect(managerVerified.statusCode, managerVerified.body).toBe(200);
 
+    const approveHeaders = { ...authHeader(finance.token), "idempotency-key": `memory-approve-${ticketId}` };
+    const approvePayload = { decision: "verify", expected_version: 2 };
     const approved = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticketId}/finance/approve`,
-      headers: { ...authHeader(finance.token), "idempotency-key": `memory-approve-${ticketId}` },
-      payload: { decision: "verify", expected_version: 2 },
+      headers: approveHeaders,
+      payload: approvePayload,
     });
     expect(approved.statusCode, approved.body).toBe(200);
     expect(approved.json()).toEqual({ id: ticketId, status: "Finance Approved", version: 3 });
+    const approveReplay = await app.inject({ method: "POST",
+      url: `/api/v1/expenses/${ticketId}/finance/approve`, headers: approveHeaders, payload: approvePayload });
+    expect(approveReplay.statusCode, approveReplay.body).toBe(200);
+    expect(approveReplay.json()).toEqual(approved.json());
+    expect(store.expenseApprovals.filter((approval) => approval.ticket_id === ticketId)).toHaveLength(2);
+    const approveMismatch = await app.inject({ method: "POST",
+      url: `/api/v1/expenses/${ticketId}/finance/approve`, headers: approveHeaders,
+      payload: { ...approvePayload, remarks: "different" } });
+    expect(approveMismatch.statusCode).toBe(409);
 
+    const paymentHeaders = { ...authHeader(finance.token), "idempotency-key": `memory-payment-${ticketId}` };
+    const paymentPayload = {
+      payment_date: "2026-11-11",
+      amount: "500.00",
+      payment_mode: "NEFT",
+      reference_no: `MEMORY-${ticketId}`,
+      expected_version: 3,
+    };
     const paid = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticketId}/finance/payment`,
-      headers: { ...authHeader(finance.token), "idempotency-key": `memory-payment-${ticketId}` },
-      payload: {
-        payment_date: "2026-11-11",
-        amount: "500.00",
-        payment_mode: "NEFT",
-        reference_no: `MEMORY-${ticketId}`,
-        expected_version: 3,
-      },
+      headers: paymentHeaders,
+      payload: paymentPayload,
     });
     expect(paid.statusCode, paid.body).toBe(200);
     expect(paid.json()).toEqual({ id: ticketId, status: "Payment Released", version: 4 });
+    const paidReplay = await app.inject({ method: "POST",
+      url: `/api/v1/expenses/${ticketId}/finance/payment`, headers: paymentHeaders, payload: paymentPayload });
+    expect(paidReplay.statusCode, paidReplay.body).toBe(200);
+    expect(paidReplay.json()).toEqual(paid.json());
+    expect(store.payments.filter((payment) => payment.ticket_id === ticketId)).toHaveLength(1);
 
     for (const documentType of ["travel_ticket", "boarding_pass", "receipt"]) {
       const documentId = randomUUID();
@@ -76,13 +94,19 @@ describe("expense Finance command response contract in memory mode", () => {
         uploaded_at: nowIso(),
       });
     }
+    const settleHeaders = { ...authHeader(finance.token), "idempotency-key": `memory-settle-${ticketId}` };
+    const settlePayload = { actual_amount: "500.00", expected_version: 4 };
     const settled = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticketId}/settlement`,
-      headers: { ...authHeader(finance.token), "idempotency-key": `memory-settle-${ticketId}` },
-      payload: { actual_amount: "500.00", expected_version: 4 },
+      headers: settleHeaders,
+      payload: settlePayload,
     });
     expect(settled.statusCode, settled.body).toBe(200);
     expect(settled.json()).toEqual({ id: ticketId, status: "Closed", version: 5 });
+    const settledReplay = await app.inject({ method: "POST",
+      url: `/api/v1/expenses/${ticketId}/settlement`, headers: settleHeaders, payload: settlePayload });
+    expect(settledReplay.statusCode, settledReplay.body).toBe(200);
+    expect(settledReplay.json()).toEqual(settled.json());
   });
 });

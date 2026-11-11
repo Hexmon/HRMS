@@ -131438,7 +131438,7 @@
         "tags": [
           "Notifications"
         ],
-        "description": "Marks all visible unread notifications as read, optionally scoped by type/category or timestamp.",
+        "description": "Marks up to 1,000 visible unread notifications as read, optionally scoped by type/category or timestamp. Repeat while has_more is true.",
         "requestBody": {
           "required": true,
           "content": {
@@ -131480,7 +131480,8 @@
                   "type": "object",
                   "required": [
                     "updated_count",
-                    "unread_count"
+                    "unread_count",
+                    "has_more"
                   ],
                   "properties": {
                     "updated_count": {
@@ -131492,6 +131493,10 @@
                       "type": "integer",
                       "minimum": 0,
                       "example": 0
+                    },
+                    "has_more": {
+                      "type": "boolean",
+                      "description": "True when another bounded batch remains and the client should repeat this command."
                     }
                   },
                   "additionalProperties": false

@@ -103,6 +103,7 @@ export class ReportService {
   }
 
   managerQueue(actor: AuthUser, query: ExpenseReportQuery) {
+    assertReportRole(actor, [Roles.Reviewer]);
     const queueTickets = this.repository
       .tickets()
       .filter((ticket) => ticket.status === ExpenseStatuses.PendingManagerVerification)
@@ -144,6 +145,7 @@ export class ReportService {
   }
 
   managerHistory(actor: AuthUser, query: ExpenseReportQuery) {
+    assertReportRole(actor, [Roles.Reviewer]);
     const rows = this.store.expenseApprovals
       .filter((approval) => approval.approval_stage === "manager" && (approval.approver_user_id === actor.id || actor.roles.includes(Roles.Admin)))
       .sort((left, right) => Date.parse(right.action_at) - Date.parse(left.action_at))

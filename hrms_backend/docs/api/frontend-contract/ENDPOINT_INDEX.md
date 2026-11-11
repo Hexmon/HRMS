@@ -15873,6 +15873,7 @@ Success body highlights:
 |---|---|---|---|
 | `updated_count` | integer | required | minimum 0 |
 | `unread_count` | integer | required | minimum 0 |
+| `has_more` | boolean | required | True when another bounded batch remains and the client should repeat this command. |
 
 **Frontend behavior notes**
 

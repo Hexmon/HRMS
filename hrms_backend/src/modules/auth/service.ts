@@ -691,6 +691,45 @@ export class AuthService {
     });
   }
 
+  sessionContextFromDurableMembership(input: {
+    actor: AuthUser;
+    company: CompanyProfileRecord;
+    preference: UserSessionPreferenceRecord;
+    activeRole: RoleKey;
+  }): SessionContext {
+    return this.buildSessionContext({
+      user: input.actor,
+      company: input.company,
+      preference: input.preference,
+      activeRole: input.activeRole,
+      bootstrap: null,
+    });
+  }
+
+  sessionContextFromDurableBootstrap(input: {
+    actor: AuthUser;
+    company: CompanyProfileRecord;
+  }): { context: SessionContext; token: AuthTokenRecord } {
+    const bootstrap = this.createToken({
+      type: "company_bootstrap",
+      userId: input.actor.id,
+      email: input.actor.email,
+      companyId: input.company.id,
+      ttlSeconds: 24 * 60 * 60,
+      metadata: { reason: "resume_company_bootstrap" },
+    });
+    return {
+      context: this.buildSessionContext({
+        user: input.actor,
+        company: input.company,
+        preference: null,
+        activeRole: input.actor.roles[0] ?? Roles.Employee,
+        bootstrap,
+      }),
+      token: bootstrap.record,
+    };
+  }
+
   private buildSessionContext(input: {
     user: AuthUser;
     company: CompanyProfileRecord;

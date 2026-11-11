@@ -5,6 +5,7 @@ import { EmploymentStatuses, RequiredDocumentsByExpenseSubType, Roles, WorkflowA
 import type {
   AssetRecord,
   AttendanceDayRecord,
+  AttendanceGeoFallbackReview,
   AttendancePunch,
   AttendanceRegularizationAction,
   AttendanceRegularizationCorrectionApplication,
@@ -63,6 +64,9 @@ import {
   type DocumentProcessingConfig,
   type DocumentAccessLogRecord,
   type DocumentVersionRecord,
+  type DashboardSummaryProjection,
+  type DurableAuthSessionContext,
+  type DurableSessionContext,
   type ExpenseApprovalRecord,
   type LicenseActivation,
   type LicenseEntitlement,
@@ -81,6 +85,15 @@ import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
 import { badRequest, companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
 import { assertFinanceActor } from "../modules/expenses/policy.js";
+import {
+  countAttendanceReportingEvidenceCategories,
+  emptyAttendanceReportingEvidenceCounts,
+} from "../modules/attendance/reporting-evidence.js";
+import {
+  buildAttendanceReportEvidenceIndex,
+  countAttendanceReportSourceCategories,
+  emptyAttendanceReportSourceCategoryCounts,
+} from "../modules/attendance/reporting-projection.js";
 
 function optionalSet(
   values: readonly string[] | undefined,
@@ -538,6 +551,71 @@ class PostgresPersistence {
     }
   }
 
+  async authSessionContext(userId: UUID): Promise<DurableAuthSessionContext> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const bootstrap = await this.resolveDurableBootstrapContext(client, userId);
+      const context: DurableAuthSessionContext = bootstrap
+        ? { kind: "company_bootstrap", ...bootstrap }
+        : {
+            kind: "membership",
+            membership: await this.resolveDurableSessionContext(
+              client,
+              userId,
+              "auth.session_context",
+            ),
+          };
+      await client.query("COMMIT");
+      return context;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async persistAuthToken(token: AuthTokenRecord): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO platform.auth_tokens (
+          id, token_hash, token_type, user_id, email, company_id, status,
+          expires_at, used_at, revoked_at, created_ip_hash, user_agent_hash,
+          last_sent_at, send_count, created_at, metadata
+        ) VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb
+        )`,
+        [
+          token.id,
+          token.token_hash,
+          token.token_type,
+          token.user_id,
+          token.email,
+          token.company_id,
+          token.status,
+          token.expires_at,
+          token.used_at,
+          token.revoked_at,
+          token.created_ip_hash,
+          token.user_agent_hash,
+          token.last_sent_at,
+          token.send_count,
+          token.created_at,
+          JSON.stringify(token.metadata),
+        ],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore> {
     const client = await this.pool.connect();
     try {
@@ -555,33 +633,17 @@ class PostgresPersistence {
     }
   }
 
-  async dashboardReadStore(scope: { companyId: UUID }): Promise<DataStore> {
+  async dashboardSummaryContext(userId: UUID): Promise<{
+    session: DurableSessionContext;
+    projection: DashboardSummaryProjection;
+  }> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const tickets = await this.loadTickets(client, scope.companyId);
-      const userRows = await client.query<{ user_id: UUID }>(
-        "SELECT user_id FROM platform.user_session_preferences WHERE company_id = $1",
-        [scope.companyId],
-      );
-      const companyUserIds = userRows.rows.map((row) => row.user_id);
-      // node-postgres serializes one client; await each query explicitly so
-      // all projections are clearly read from this transaction snapshot.
-      const expenseDocuments = await this.loadExpenseDocuments(client, tickets.map((ticket) => ticket.id));
-      const notifications = await this.loadNotifications(client, companyUserIds);
-      const attendancePunches = await this.loadAttendancePunches(client, { companyId: scope.companyId });
-      const attendanceDayRecords = await this.loadAttendanceDayRecords(client, { companyId: scope.companyId });
-      const outbox = await this.loadOutbox(client, "pending", scope.companyId);
+      const session = await this.resolveDurableSessionContext(client, userId, "dashboard.summary");
+      const projection = await this.loadDashboardSummaryProjection(client, session);
       await client.query("COMMIT");
-      return {
-        ...this.store,
-        tickets,
-        expenseDocuments,
-        notifications,
-        attendancePunches,
-        attendanceDayRecords,
-        outbox,
-      };
+      return { session, projection };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
@@ -652,7 +714,7 @@ class PostgresPersistence {
     userId: UUID;
     type?: string;
     before?: string;
-  }): Promise<{ updatedCount: number; unreadCount: number }> {
+  }): Promise<{ updatedCount: number; unreadCount: number; hasMore: boolean }> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -672,10 +734,8 @@ class PostgresPersistence {
          LIMIT 1001 FOR UPDATE`,
         [input.userId, input.type ?? null, input.before ?? null],
       );
-      if (selected.rows.length > 1000) {
-        throw badRequest("Too many notifications match this request; narrow the type or before date");
-      }
-      const ids = selected.rows.map((row) => row.id);
+      const hasMore = selected.rows.length > 1000;
+      const ids = selected.rows.slice(0, 1000).map((row) => row.id);
       const updated = ids.length
         ? await client.query(
             `UPDATE platform.notifications
@@ -693,6 +753,7 @@ class PostgresPersistence {
       return {
         updatedCount: updated.rowCount ?? 0,
         unreadCount: Number(unread.rows[0]?.count ?? 0),
+        hasMore,
       };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -816,6 +877,44 @@ class PostgresPersistence {
       // This is deliberately a narrow current-company projection. Historical
       // requester access after a transfer is reconciled by report work item
       // #121 instead of broadening every report through shared hydrated state.
+      // The legacy report service still derives cards from its request-local
+      // graph. Bound that graph explicitly until #121 replaces it with typed
+      // SQL report projections; never silently truncate a tenant report.
+      const count = await client.query<{ total: string }>(
+        `SELECT count(*) AS total FROM expenses.expense_tickets
+         WHERE company_id=$1 AND deleted_at IS NULL`,
+        [companyId],
+      );
+      if (Number(count.rows[0]?.total ?? 0) > 1000) {
+        throw badRequest(
+          "Expense report supports at most 1,000 current-company tickets; narrow the report after SQL projection work item #121 is complete",
+        );
+      }
+      const childCount = await client.query<{ total: string }>(
+        `SELECT (
+           (SELECT count(*) FROM expenses.expense_line_items child
+             JOIN expenses.expense_tickets ticket ON ticket.id=child.ticket_id
+             WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL)
+           + (SELECT count(*) FROM expenses.expense_approvals child
+             JOIN expenses.expense_tickets ticket ON ticket.id=child.ticket_id
+             WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL)
+           + (SELECT count(*) FROM expenses.expense_audit_logs child
+             JOIN expenses.expense_tickets ticket ON ticket.id=child.ticket_id
+             WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL)
+           + (SELECT count(*) FROM expenses.expense_documents child
+             JOIN expenses.expense_tickets ticket ON ticket.id=child.ticket_id
+             WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL)
+           + (SELECT count(*) FROM expenses.expense_payments child
+             JOIN expenses.expense_tickets ticket ON ticket.id=child.ticket_id
+             WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL)
+         )::text AS total`,
+        [companyId],
+      );
+      if (Number(childCount.rows[0]?.total ?? 0) > 10_000) {
+        throw badRequest(
+          "Expense report cannot load more than 10,000 related records on this legacy endpoint; filters cannot narrow this graph until SQL projection work item #121 is complete",
+        );
+      }
       const tickets = await this.loadTickets(client, companyId);
       const store = await this.loadExpenseReadStore(client, companyId, tickets);
       await client.query("COMMIT");
@@ -1323,56 +1422,99 @@ class PostgresPersistence {
   }
 
   private async resolveExpenseActor(client: PoolClient, userId: UUID): Promise<{ actor: AuthUser; companyId: UUID }> {
-    const actorRow = await client.query<{
-        id: UUID;
-        employee_code: string;
-        email: string;
-        full_name: string;
-        department_id: UUID | null;
-        designation_id: UUID | null;
-        hierarchy_path: string;
-        employment_status: AuthUser["employment_status"];
-        email_verified_at: Date | null;
-        email_verification_status: AuthUser["email_verification_status"];
-        deleted_at: Date | null;
-        roles: RoleKey[];
-        company_id: UUID | null;
-        active_role: RoleKey | null;
-      }>(
-        `SELECT u.id, u.employee_code, u.email, u.full_name, u.department_id,
-                u.designation_id, u.hierarchy_path::text AS hierarchy_path,
-                u.employment_status, u.email_verified_at, u.email_verification_status,
-                u.deleted_at, pref.company_id, pref.active_role,
-                COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
-                  WHERE ur.role_key IS NOT NULL AND ur.status = 'active'
-                    AND ur.deleted_at IS NULL AND role.status = 'active'
-                    AND role.deleted_at IS NULL
-                    AND ur.effective_from <= CURRENT_DATE
-                    AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
-                ), '{}') AS roles
-         FROM core.users u
-         LEFT JOIN platform.user_session_preferences pref ON pref.user_id = u.id
-         LEFT JOIN core.user_roles ur ON ur.user_id = u.id
-         LEFT JOIN core.roles role ON role.role_key = ur.role_key
-         WHERE u.id = $1
-         GROUP BY u.id, pref.company_id, pref.active_role`,
-        [userId],
-      );
-    const current = actorRow.rows[0];
-    if (!current || current.deleted_at || current.employment_status !== EmploymentStatuses.Active) {
-      throw unauthorized("User account is inactive or blocked");
-    }
-    if (!current.company_id || !current.active_role) {
-      throw companyContextRequired({ user_id: userId, operation: "expenses.read" });
-    }
-    if (!current.roles.includes(current.active_role)) {
-      throw forbidden("Selected role is not assigned to this user.");
-    }
-    const companyRow = await client.query<{ status: string }>(
-      "SELECT status FROM platform.company_profiles WHERE id = $1", [current.company_id],
+    const session = await this.resolveDurableSessionContext(client, userId, "expenses.read");
+    return { actor: session.actor, companyId: session.company.id };
+  }
+
+  private async resolveDurableBootstrapContext(
+    client: PoolClient,
+    userId: UUID,
+  ): Promise<{ actor: AuthUser; company: CompanyProfileRecord } | null> {
+    const result = await client.query<{
+      id: UUID;
+      employee_code: string;
+      email: string;
+      full_name: string;
+      department_id: UUID | null;
+      designation_id: UUID | null;
+      hierarchy_path: string;
+      employment_status: AuthUser["employment_status"];
+      email_verified_at: Date | null;
+      email_verification_status: AuthUser["email_verification_status"];
+      deleted_at: Date | null;
+      roles: RoleKey[];
+      company_id: UUID;
+      company_name: string;
+      company_slug: string;
+      website: string | null;
+      industry: string | null;
+      address: string | null;
+      company_timezone: string;
+      company_locale: string;
+      currency: string;
+      fiscal_year_start_month: number;
+      working_week: string;
+      work_hours_per_day: string | number;
+      logo_label: string | null;
+      logo_document_id: UUID | null;
+      logo_url: string | null;
+      logo_file_name: string | null;
+      logo_mime_type: string | null;
+      logo_size_bytes: string | number | null;
+      company_status: CompanyProfileRecord["status"];
+      bootstrap_completed_at: Date | null;
+      company_created_at: Date;
+      company_updated_at: Date;
+      company_version: number;
+    }>(
+      `WITH pending_bootstrap AS (
+         SELECT token.company_id
+         FROM platform.auth_tokens token
+         JOIN platform.company_profiles company ON company.id=token.company_id
+         WHERE token.user_id=$1 AND token.token_type='company_bootstrap'
+           AND token.status='active' AND token.expires_at > now()
+           AND company.bootstrap_completed_at IS NULL AND company.status <> 'active'
+         ORDER BY token.created_at DESC, token.id DESC
+         LIMIT 1
+       )
+       SELECT u.id,u.employee_code,u.email,u.full_name,u.department_id,u.designation_id,
+              u.hierarchy_path::text AS hierarchy_path,u.employment_status,
+              u.email_verified_at,u.email_verification_status,u.deleted_at,
+              company.id AS company_id,company.company_name,company.company_slug,
+              company.website,company.industry,company.address,
+              company.timezone AS company_timezone,company.locale AS company_locale,
+              company.currency,company.fiscal_year_start_month,company.working_week,
+              company.work_hours_per_day,company.logo_label,company.logo_document_id,
+              company.logo_url,company.logo_file_name,company.logo_mime_type,
+              company.logo_size_bytes,company.status AS company_status,
+              company.bootstrap_completed_at,company.created_at AS company_created_at,
+              company.updated_at AS company_updated_at,company.version AS company_version,
+              COALESCE(ARRAY(
+                SELECT ur.role_key
+                FROM core.user_roles ur
+                JOIN core.roles role ON role.role_key=ur.role_key
+                WHERE ur.user_id=u.id AND ur.status='active' AND ur.deleted_at IS NULL
+                  AND role.status='active' AND role.deleted_at IS NULL
+                  AND ur.effective_from <= CURRENT_DATE
+                  AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
+                ORDER BY ur.role_key
+              ),'{}') AS roles
+       FROM core.users u
+       CROSS JOIN pending_bootstrap pending
+       JOIN platform.company_profiles company ON company.id=pending.company_id
+       WHERE u.id=$1
+         AND NOT EXISTS (
+           SELECT 1 FROM platform.user_session_preferences pref WHERE pref.user_id=u.id
+         )`,
+      [userId],
     );
-    if (companyRow.rows[0]?.status !== "active") {
-      throw companyContextRequired({ user_id: userId, company_id: current.company_id, operation: "expenses.read" });
+    const current = result.rows[0];
+    if (!current) return null;
+    if (current.deleted_at || current.employment_status !== EmploymentStatuses.Active) {
+      throw unauthorized("User account is inactive or blocked", {
+        user_id: userId,
+        operation: "auth.session_context",
+      });
     }
     return {
       actor: {
@@ -1380,17 +1522,628 @@ class PostgresPersistence {
         employee_code: current.employee_code,
         email: current.email,
         full_name: current.full_name,
-        // Preserve nullable onboarding fields from SQL. AuthUser predates the
-        // nullable schema and is tightened separately from this P1 fix.
         department_id: current.department_id as UUID,
         designation_id: current.designation_id as UUID,
         hierarchy_path: current.hierarchy_path,
         employment_status: current.employment_status,
         roles: current.roles,
         email_verified_at: asIsoOrNull(current.email_verified_at),
-        email_verification_status: current.email_verification_status ?? "unverified",
+        email_verification_status:
+          current.email_verification_status ?? "unverified",
       },
-      companyId: current.company_id,
+      company: {
+        id: current.company_id,
+        company_name: current.company_name,
+        company_slug: current.company_slug,
+        website: current.website,
+        industry: current.industry,
+        address: current.address,
+        timezone: current.company_timezone,
+        locale: current.company_locale,
+        currency: current.currency,
+        fiscal_year_start_month: current.fiscal_year_start_month,
+        working_week: current.working_week,
+        work_hours_per_day: Number(current.work_hours_per_day),
+        logo_label: current.logo_label,
+        logo_document_id: current.logo_document_id,
+        logo_url: current.logo_url,
+        logo_file_name: current.logo_file_name,
+        logo_mime_type: current.logo_mime_type,
+        logo_size_bytes:
+          current.logo_size_bytes === null
+            ? null
+            : Number(current.logo_size_bytes),
+        status: current.company_status,
+        bootstrap_completed_at: asIsoOrNull(current.bootstrap_completed_at),
+        created_at: asIso(current.company_created_at),
+        updated_at: asIso(current.company_updated_at),
+        version: current.company_version,
+      },
+    };
+  }
+
+  private async resolveDurableSessionContext(
+    client: PoolClient,
+    userId: UUID,
+    operation: string,
+  ): Promise<DurableSessionContext> {
+    const result = await client.query<{
+      id: UUID;
+      employee_code: string;
+      email: string;
+      full_name: string;
+      department_id: UUID | null;
+      designation_id: UUID | null;
+      hierarchy_path: string;
+      employment_status: AuthUser["employment_status"];
+      email_verified_at: Date | null;
+      email_verification_status: AuthUser["email_verification_status"];
+      deleted_at: Date | null;
+      roles: RoleKey[];
+      preference_id: UUID | null;
+      active_role: RoleKey | null;
+      company_id: UUID | null;
+      landing_page: string | null;
+      preference_locale: string | null;
+      preference_timezone: string | null;
+      preference_created_at: Date | null;
+      preference_updated_at: Date | null;
+      preference_version: number | null;
+      company_name: string | null;
+      company_slug: string | null;
+      website: string | null;
+      industry: string | null;
+      address: string | null;
+      company_timezone: string | null;
+      company_locale: string | null;
+      currency: string | null;
+      fiscal_year_start_month: number | null;
+      working_week: string | null;
+      work_hours_per_day: string | number | null;
+      logo_label: string | null;
+      logo_document_id: UUID | null;
+      logo_url: string | null;
+      logo_file_name: string | null;
+      logo_mime_type: string | null;
+      logo_size_bytes: string | number | null;
+      company_status: CompanyProfileRecord["status"] | null;
+      bootstrap_completed_at: Date | null;
+      company_created_at: Date | null;
+      company_updated_at: Date | null;
+      company_version: number | null;
+    }>(
+      `SELECT u.id, u.employee_code, u.email, u.full_name, u.department_id,
+              u.designation_id, u.hierarchy_path::text AS hierarchy_path,
+              u.employment_status, u.email_verified_at, u.email_verification_status,
+              u.deleted_at,
+              pref.id AS preference_id, pref.active_role, pref.company_id,
+              pref.landing_page, pref.locale AS preference_locale,
+              pref.timezone AS preference_timezone, pref.created_at AS preference_created_at,
+              pref.updated_at AS preference_updated_at, pref.version AS preference_version,
+              company.company_name, company.company_slug, company.website, company.industry,
+              company.address, company.timezone AS company_timezone,
+              company.locale AS company_locale, company.currency,
+              company.fiscal_year_start_month, company.working_week,
+              company.work_hours_per_day, company.logo_label, company.logo_document_id,
+              company.logo_url, company.logo_file_name, company.logo_mime_type,
+              company.logo_size_bytes, company.status AS company_status,
+              company.bootstrap_completed_at, company.created_at AS company_created_at,
+              company.updated_at AS company_updated_at, company.version AS company_version,
+              COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
+                WHERE ur.role_key IS NOT NULL AND ur.status = 'active'
+                  AND ur.deleted_at IS NULL AND role.status = 'active'
+                  AND role.deleted_at IS NULL
+                  AND ur.effective_from <= CURRENT_DATE
+                  AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
+              ), '{}') AS roles
+       FROM core.users u
+       LEFT JOIN platform.user_session_preferences pref ON pref.user_id = u.id
+       LEFT JOIN platform.company_profiles company ON company.id = pref.company_id
+       LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+       LEFT JOIN core.roles role ON role.role_key = ur.role_key
+       WHERE u.id = $1
+       GROUP BY u.id, pref.id, company.id`,
+      [userId],
+    );
+    const current = result.rows[0];
+    if (!current || current.deleted_at || current.employment_status !== EmploymentStatuses.Active) {
+      throw unauthorized("User account is inactive or blocked", { user_id: userId, operation });
+    }
+    if (!current.preference_id || !current.company_id || !current.active_role) {
+      throw companyContextRequired({ user_id: userId, company_id: current.company_id, operation });
+    }
+    if (!current.roles.includes(current.active_role)) {
+      throw forbidden("Selected role is not assigned to this user.", {
+        user_id: userId, company_id: current.company_id, active_role: current.active_role, operation,
+      });
+    }
+    if (current.company_status !== "active" || !current.company_name || !current.company_slug ||
+        !current.company_timezone || !current.company_locale || !current.currency ||
+        !current.working_week || current.fiscal_year_start_month === null ||
+        current.work_hours_per_day === null || !current.preference_locale ||
+        !current.preference_timezone || !current.landing_page ||
+        !current.preference_created_at || !current.preference_updated_at ||
+        current.preference_version === null || !current.company_created_at ||
+        !current.company_updated_at || current.company_version === null) {
+      throw companyContextRequired({ user_id: userId, company_id: current.company_id, operation });
+    }
+    const actor: AuthUser = {
+      id: current.id,
+      employee_code: current.employee_code,
+      email: current.email,
+      full_name: current.full_name,
+      department_id: current.department_id as UUID,
+      designation_id: current.designation_id as UUID,
+      hierarchy_path: current.hierarchy_path,
+      employment_status: current.employment_status,
+      roles: current.roles,
+      email_verified_at: asIsoOrNull(current.email_verified_at),
+      email_verification_status: current.email_verification_status ?? "unverified",
+    };
+    return {
+      actor,
+      activeRole: current.active_role,
+      preference: {
+        id: current.preference_id,
+        user_id: current.id,
+        active_role: current.active_role,
+        company_id: current.company_id,
+        landing_page: current.landing_page,
+        locale: current.preference_locale,
+        timezone: current.preference_timezone,
+        created_at: asIso(current.preference_created_at),
+        updated_at: asIso(current.preference_updated_at),
+        version: current.preference_version,
+      },
+      company: {
+        id: current.company_id,
+        company_name: current.company_name,
+        company_slug: current.company_slug,
+        website: current.website,
+        industry: current.industry,
+        address: current.address,
+        timezone: current.company_timezone,
+        locale: current.company_locale,
+        currency: current.currency,
+        fiscal_year_start_month: current.fiscal_year_start_month,
+        working_week: current.working_week,
+        work_hours_per_day: Number(current.work_hours_per_day),
+        logo_label: current.logo_label,
+        logo_document_id: current.logo_document_id,
+        logo_url: current.logo_url,
+        logo_file_name: current.logo_file_name,
+        logo_mime_type: current.logo_mime_type,
+        logo_size_bytes: current.logo_size_bytes === null ? null : Number(current.logo_size_bytes),
+        status: current.company_status,
+        bootstrap_completed_at: asIsoOrNull(current.bootstrap_completed_at),
+        created_at: asIso(current.company_created_at),
+        updated_at: asIso(current.company_updated_at),
+        version: current.company_version,
+      },
+    };
+  }
+
+  private async loadDashboardSummaryProjection(
+    client: PoolClient,
+    session: DurableSessionContext,
+  ): Promise<DashboardSummaryProjection> {
+    const systemWideRoles: readonly string[] = [Roles.Admin, Roles.Auditor, Roles.HRManager, Roles.AssetManager];
+    const systemWide = session.actor.roles.some((role) =>
+      systemWideRoles.includes(role),
+    );
+    const financeWideRoles: readonly string[] = [Roles.Admin, Roles.Auditor, Roles.FinanceManager];
+    const financeWide = session.actor.roles.some((role) =>
+      financeWideRoles.includes(role),
+    );
+    const params = [
+      session.company.id,
+      session.actor.id,
+      session.actor.hierarchy_path,
+      systemWide,
+      financeWide,
+    ];
+    const visibilityCte = `
+      WITH visible_users AS (
+        SELECT u.id, u.department_id, u.employment_status, u.joined_on
+        FROM core.users u
+        JOIN platform.user_session_preferences pref
+          ON pref.user_id = u.id AND pref.company_id = $1::uuid
+        WHERE u.deleted_at IS NULL
+          AND ($4::boolean OR u.id = $2::uuid OR u.hierarchy_path <@ $3::ltree)
+      ), visible_tickets AS (
+        SELECT ticket.*
+        FROM expenses.expense_tickets ticket
+        WHERE ticket.company_id = $1::uuid AND ticket.deleted_at IS NULL
+          AND ticket.owner_resolution_status <> 'quarantined'
+          AND (
+            $4::boolean OR $5::boolean
+            OR ticket.requester_user_id IN (SELECT id FROM visible_users)
+            OR ticket.manager_verifier_id = $2::uuid
+            OR ticket.manager_backup_user_id = $2::uuid
+            OR ticket.finance_approver_id = $2::uuid
+          )
+      ), visible_timesheets AS (
+        SELECT submission.*
+        FROM timesheets.timesheet_submissions submission
+        WHERE submission.deleted_at IS NULL
+          AND (submission.employee_user_id IN (SELECT id FROM visible_users)
+               OR submission.current_approver_user_id = $2::uuid)
+      ), visible_leave AS (
+        SELECT request.* FROM leave_wfh.leave_requests request
+        WHERE request.deleted_at IS NULL
+          AND (request.employee_user_id IN (SELECT id FROM visible_users)
+               OR request.current_approver_user_id = $2::uuid)
+      ), visible_wfh AS (
+        SELECT request.* FROM leave_wfh.wfh_requests request
+        WHERE request.deleted_at IS NULL
+          AND (request.employee_user_id IN (SELECT id FROM visible_users)
+               OR request.current_approver_user_id = $2::uuid)
+      ), visible_attendance AS (
+        SELECT day.* FROM attendance.daily_records day
+        WHERE day.company_id = $1::uuid AND day.deleted_at IS NULL
+          AND day.employee_user_id IN (SELECT id FROM visible_users)
+      )`;
+    const aggregate = await client.query<Record<string, string | number>>(
+      `${visibilityCte}
+       SELECT
+         (SELECT count(*) FROM visible_users) AS visible_employees,
+         (SELECT count(*) FROM visible_users WHERE employment_status='active') AS active_employees,
+         (SELECT count(*) FROM visible_users WHERE employment_status<>'active') AS inactive_employees,
+         (SELECT count(*) FROM visible_users WHERE joined_on >= CURRENT_DATE - 30) AS new_joiners_30d,
+         (SELECT count(*) FROM visible_tickets WHERE status='Pending Manager Verification'
+           AND (manager_verifier_id=$2::uuid OR manager_backup_user_id=$2::uuid OR $4::boolean)) AS expense_manager_pending,
+         (SELECT count(*) FROM visible_tickets WHERE status IN
+           ('Manager Verified','Finance Hold','Clarification Required','Finance Approved',
+            'Payment Released','Bills Submitted','Pending Adjustment')
+           AND (finance_approver_id=$2::uuid OR $5::boolean)) AS expense_finance_pending,
+         (SELECT count(*) FROM visible_timesheets WHERE status='Pending Approval'
+           AND (current_approver_user_id=$2::uuid OR $4::boolean)) AS timesheet_pending,
+         (SELECT count(*) FROM visible_leave WHERE status='pending_manager'
+           AND (current_approver_user_id=$2::uuid OR $4::boolean)) AS leave_pending,
+         (SELECT count(*) FROM visible_wfh WHERE status='pending_manager'
+           AND (current_approver_user_id=$2::uuid OR $4::boolean)) AS wfh_pending,
+         (SELECT count(*) FROM expenses.expense_documents document
+           WHERE document.verification_status='pending' AND (
+             document.ticket_id IN (SELECT id FROM visible_tickets)
+             OR document.uploaded_by IN (SELECT id FROM visible_users))) AS document_verification_pending,
+         (SELECT count(*) FROM assets.assets asset WHERE asset.deleted_at IS NULL
+           AND asset.current_assigned_user_id IN (SELECT id FROM visible_users)) AS assets_total,
+         (SELECT count(*) FROM assets.assets asset WHERE asset.deleted_at IS NULL
+           AND asset.status='Assigned'
+           AND asset.current_assigned_user_id IN (SELECT id FROM visible_users)) AS assets_assigned,
+         (SELECT count(*) FROM assets.asset_recovery_tickets recovery
+           WHERE recovery.status<>'closed'
+             AND recovery.employee_user_id IN (SELECT id FROM visible_users)) AS assets_recovery_pending,
+         (SELECT count(*) FROM platform.notifications notification
+           WHERE notification.status='pending'
+             AND notification.target_user_id IN (SELECT id FROM visible_users)) AS notifications_pending,
+         (SELECT count(*) FROM platform.outbox_events event
+           WHERE $4::boolean AND event.status IN ('pending','retry') AND (
+             event.payload->>'company_id'=$1::text OR
+             (event.aggregate_type='expense_ticket' AND EXISTS (
+               SELECT 1 FROM expenses.expense_tickets owner
+               WHERE owner.id=event.aggregate_id AND owner.company_id=$1::uuid
+             )))) AS outbox_pending,
+         (SELECT count(*) FROM timesheets.work_segments segment
+           WHERE segment.deleted_at IS NULL
+             AND segment.employee_user_id IN (SELECT id FROM visible_users)) AS work_segments_total,
+         COALESCE((SELECT sum(segment.hours) FROM timesheets.work_segments segment
+           WHERE segment.deleted_at IS NULL
+             AND segment.employee_user_id IN (SELECT id FROM visible_users)),0)::text AS submitted_hours_total,
+         (SELECT count(*) FROM visible_timesheets) AS timesheet_submissions_total,
+         (SELECT count(*) FROM visible_timesheets WHERE status='Approved') AS timesheet_submissions_approved,
+         (SELECT count(*) FROM visible_timesheets WHERE status='Returned') AS timesheet_submissions_returned,
+         (SELECT count(*) FROM visible_attendance WHERE
+           exception_type IS NOT NULL OR evidence_state IN ('missing','partial','disputed')
+           OR presence_state='absent' OR punctuality_state IN ('late','late_and_early_departure')) AS attendance_exceptions`,
+      params,
+    );
+    const departments = await client.query<{
+      department_id: UUID;
+      department_code: string;
+      name: string;
+      active_employees: string;
+    }>(
+      `${visibilityCte}
+       SELECT department.id AS department_id, department.department_code, department.name,
+              count(visible_users.id) FILTER (WHERE visible_users.employment_status='active') AS active_employees
+       FROM core.departments department
+       LEFT JOIN visible_users ON visible_users.department_id=department.id
+       WHERE department.company_id=$1::uuid AND department.deleted_at IS NULL AND department.status='active'
+       GROUP BY department.id ORDER BY department.department_code LIMIT 201`,
+      params,
+    );
+    if (departments.rows.length > 200) {
+      throw badRequest("Dashboard supports at most 200 active departments; archive or consolidate departments");
+    }
+    const attendanceEvidence = await this.loadDashboardAttendanceEvidence(
+      client,
+      session,
+      systemWide,
+    );
+    const row = aggregate.rows[0] ?? {};
+    const number = (key: string) => Number(row[key] ?? 0);
+    return {
+      workforce: {
+        visible_employees: number("visible_employees"),
+        active_employees: number("active_employees"),
+        inactive_employees: number("inactive_employees"),
+        new_joiners_30d: number("new_joiners_30d"),
+        departments: departments.rows.map((department) => ({
+          ...department,
+          active_employees: Number(department.active_employees),
+        })),
+      },
+      approvals: {
+        expense_manager_pending: number("expense_manager_pending"),
+        expense_finance_pending: number("expense_finance_pending"),
+        timesheet_pending: number("timesheet_pending"),
+        leave_pending: number("leave_pending"),
+        wfh_pending: number("wfh_pending"),
+        document_verification_pending: number("document_verification_pending"),
+      },
+      operations: {
+        assets_total: number("assets_total"),
+        assets_assigned: number("assets_assigned"),
+        assets_recovery_pending: number("assets_recovery_pending"),
+        notifications_pending: number("notifications_pending"),
+        outbox_pending: number("outbox_pending"),
+      },
+      attendance: {
+        exceptions: number("attendance_exceptions"),
+        evidence_categories: attendanceEvidence.evidence_categories,
+        source_categories: attendanceEvidence.source_categories,
+      },
+      workload: {
+        work_segments_total: number("work_segments_total"),
+        submitted_hours_total: String(row.submitted_hours_total ?? "0.00"),
+        timesheet_submissions_total: number("timesheet_submissions_total"),
+        timesheet_submissions_approved: number("timesheet_submissions_approved"),
+        timesheet_submissions_returned: number("timesheet_submissions_returned"),
+      },
+    };
+  }
+
+  private async loadDashboardAttendanceEvidence(
+    client: PoolClient,
+    session: DurableSessionContext,
+    systemWide: boolean,
+  ): Promise<Pick<DashboardSummaryProjection["attendance"], "evidence_categories" | "source_categories">> {
+    const empty = () => ({
+      evidence_categories: emptyAttendanceReportingEvidenceCounts(),
+      source_categories: emptyAttendanceReportSourceCategoryCounts(),
+    });
+    if (!systemWide) {
+      const descendants = await client.query<{ has_descendants: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM core.users u
+           JOIN platform.user_session_preferences pref
+             ON pref.user_id=u.id AND pref.company_id=$1
+           WHERE u.deleted_at IS NULL AND u.id<>$2
+             AND u.hierarchy_path <@ $3::ltree
+         ) AS has_descendants`,
+        [session.company.id, session.actor.id, session.actor.hierarchy_path],
+      );
+      if (!descendants.rows[0]?.has_descendants) return empty();
+    }
+
+    const dayResult = await client.query(
+      `SELECT day.*,day.work_date::text AS work_date
+       FROM attendance.daily_records day
+       JOIN core.users u ON u.id=day.employee_user_id AND u.deleted_at IS NULL
+       JOIN platform.user_session_preferences pref
+         ON pref.user_id=u.id AND pref.company_id=$1
+       WHERE day.company_id=$1 AND day.deleted_at IS NULL
+         AND ($4::boolean OR u.id=$2 OR u.hierarchy_path <@ $3::ltree)
+       ORDER BY day.work_date,day.employee_user_id,day.id
+       LIMIT 10001`,
+      [session.company.id, session.actor.id, session.actor.hierarchy_path, systemWide],
+    );
+    if (dayResult.rows.length > 10_000) {
+      throw badRequest(
+        "Dashboard attendance evidence supports at most 10,000 visible days; use the attendance report with a narrower date range",
+      );
+    }
+    const days: AttendanceDayRecord[] = dayResult.rows.map((row) => ({
+      id: row.id,
+      company_id: row.company_id,
+      employee_user_id: row.employee_user_id,
+      work_date: asDate(row.work_date),
+      status: row.status,
+      day_classification: row.day_classification,
+      presence_state: row.presence_state,
+      punctuality_state: row.punctuality_state,
+      evidence_state: row.evidence_state,
+      approval_kind: row.approval_kind,
+      approval_state: row.approval_state,
+      payroll_state: row.payroll_state,
+      first_check_in: asIsoOrNull(row.first_check_in),
+      last_check_out: asIsoOrNull(row.last_check_out),
+      work_minutes: row.work_minutes,
+      break_minutes: row.break_minutes,
+      late_minutes: row.late_minutes,
+      early_out_minutes: row.early_out_minutes,
+      work_seconds: row.work_seconds,
+      break_seconds: row.break_seconds,
+      scheduled_seconds: row.scheduled_seconds,
+      late_seconds: row.late_seconds,
+      early_departure_seconds: row.early_departure_seconds,
+      work_mode: row.work_mode,
+      note: row.note,
+      exception_type: row.exception_type,
+      regularization_status: row.regularization_status,
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+    }));
+    if (days.length === 0) return empty();
+
+    const dayIds = days.map((day) => day.id);
+    const punchesQuery = await client.query(
+      `SELECT punch.* FROM attendance.punch_events punch
+       JOIN attendance.daily_records day
+         ON day.id=ANY($1::uuid[]) AND day.company_id=punch.company_id
+        AND day.employee_user_id=punch.employee_user_id
+        AND day.work_date=punch.occurred_at::date
+       WHERE punch.deleted_at IS NULL
+       ORDER BY punch.occurred_at,punch.id LIMIT 50001`,
+      [dayIds],
+    );
+    const reviewsQuery = await client.query(
+      `SELECT review.*,review.work_date::text AS work_date
+       FROM attendance.geo_fallback_reviews review
+       JOIN attendance.daily_records day
+         ON day.id=ANY($1::uuid[]) AND day.company_id=review.company_id
+        AND day.employee_user_id=review.employee_user_id
+        AND day.work_date=review.work_date
+       WHERE review.deleted_at IS NULL
+       ORDER BY review.occurred_at,review.id LIMIT 50001`,
+      [dayIds],
+    );
+    const outboxQuery = await client.query(
+      `SELECT event.* FROM platform.outbox_events event
+       JOIN attendance.daily_records day
+         ON day.id=ANY($1::uuid[])
+        AND event.payload->>'company_id'=day.company_id::text
+        AND event.payload->>'subject_employee_user_id'=day.employee_user_id::text
+        AND left(event.payload->>'captured_at',10)=day.work_date::text
+       WHERE event.event_type='attendance.provisional.recorded'
+       ORDER BY event.created_at,event.id LIMIT 50001`,
+      [dayIds],
+    );
+    const warningsQuery = await client.query(
+      `SELECT warning.*,warning.work_date::text AS work_date
+       FROM attendance.mobile_evidence_warnings warning
+       JOIN attendance.daily_records day
+         ON day.id=ANY($1::uuid[]) AND day.company_id=warning.company_id
+        AND day.employee_user_id=warning.employee_user_id
+        AND COALESCE(
+          warning.work_date,
+          warning.captured_at::date,
+          warning.server_received_at::date
+        )=day.work_date
+       ORDER BY warning.server_received_at,warning.id LIMIT 50001`,
+      [dayIds],
+    );
+    const regularizationsQuery = await client.query(
+      `SELECT request.*,request.work_date::text AS work_date
+       FROM attendance.regularization_requests request
+       JOIN attendance.daily_records day
+         ON day.id=ANY($1::uuid[]) AND day.company_id=request.company_id
+        AND day.employee_user_id=request.employee_user_id
+        AND day.work_date=request.work_date
+       WHERE request.deleted_at IS NULL
+       ORDER BY request.created_at,request.id LIMIT 50001`,
+      [dayIds],
+    );
+    for (const [label, rows] of [
+      ["punches", punchesQuery.rows],
+      ["geo reviews", reviewsQuery.rows],
+      ["provisional events", outboxQuery.rows],
+      ["mobile warnings", warningsQuery.rows],
+      ["regularizations", regularizationsQuery.rows],
+    ] as const) {
+      if (rows.length > 50_000) {
+        throw badRequest(
+          `Dashboard attendance evidence supports at most 50,000 related ${label}; use the attendance report with a narrower date range`,
+        );
+      }
+    }
+
+    const punches: AttendancePunch[] = punchesQuery.rows.map((row) => ({
+      id: row.id,
+      company_id: row.company_id,
+      employee_user_id: row.employee_user_id,
+      actor_user_id: row.actor_user_id ?? row.employee_user_id,
+      event_type: row.event_type,
+      occurred_at: asIso(row.occurred_at),
+      work_mode: row.work_mode,
+      source: row.source,
+      origin: row.origin ?? "employee_manual_now",
+      regularization_request_id: row.regularization_request_id ?? null,
+      metadata: json(row.metadata),
+      created_at: asIso(row.created_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+    }));
+    const reviews: AttendanceGeoFallbackReview[] = reviewsQuery.rows.map((row) => ({
+      id: row.id,
+      company_id: row.company_id,
+      employee_user_id: row.employee_user_id,
+      submitted_by_user_id: row.submitted_by_user_id,
+      current_approver_user_id: row.current_approver_user_id,
+      original_command_id: row.original_command_id,
+      original_decision_id: row.original_decision_id,
+      fallback_command_id: row.fallback_command_id,
+      punch_event_id: row.punch_event_id,
+      event_type: row.event_type,
+      work_date: asDate(row.work_date),
+      occurred_at: asIso(row.occurred_at),
+      reason_code: row.reason_code,
+      reason_detail: row.reason_detail,
+      geo_policy: json(row.geo_policy),
+      status: row.status,
+      decision_remarks: row.decision_remarks,
+      decided_by_user_id: row.decided_by_user_id,
+      decided_at: asIsoOrNull(row.decided_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+    }));
+    const regularizations: AttendanceRegularizationRequest[] =
+      regularizationsQuery.rows.map((row) => ({
+        id: row.id,
+        company_id: row.company_id,
+        employee_user_id: row.employee_user_id,
+        submitted_by_user_id: row.submitted_by_user_id ?? row.employee_user_id,
+        work_date: asDate(row.work_date),
+        reason: row.reason,
+        items: [],
+        requested_punches: Array.isArray(row.requested_punches)
+          ? row.requested_punches
+          : [],
+        status: row.status,
+        current_approver_user_id: row.current_approver_user_id,
+        decision_remarks: row.decision_remarks,
+        decided_by_user_id: row.decided_by_user_id,
+        decided_at: asIsoOrNull(row.decided_at),
+        version: row.version,
+        created_at: asIso(row.created_at),
+        updated_at: asIso(row.updated_at),
+        deleted_at: asIsoOrNull(row.deleted_at),
+      }));
+    const warnings = warningsQuery.rows.map((row) => ({
+      company_id: row.company_id as UUID,
+      employee_user_id: row.employee_user_id as UUID,
+      work_date: row.work_date ? asDate(row.work_date) : null,
+      event_type: row.event_type as string,
+      source: row.source as string,
+      captured_at: asIsoOrNull(row.captured_at),
+      server_received_at: asIsoOrNull(row.server_received_at),
+      reason_code: row.reason_code as string,
+      category: row.category as string,
+      evidence_status: null,
+      deleted_at: null,
+    }));
+    const evidenceStore = {
+      ...this.store,
+      attendanceDayRecords: days,
+      attendancePunches: punches,
+      attendanceGeoFallbackReviews: reviews,
+      attendanceRegularizations: regularizations,
+      outbox: outboxQuery.rows.map((row) => this.mapOutboxRow(row)),
+      attendanceMobileEvidenceWarnings: warnings,
+    };
+    const index = buildAttendanceReportEvidenceIndex(evidenceStore, days);
+    const summaries = days.map((day) => index.summaryFor(day));
+    return {
+      evidence_categories: countAttendanceReportingEvidenceCategories(
+        summaries.map((summary) => summary.reporting_evidence_category),
+      ),
+      source_categories: countAttendanceReportSourceCategories(
+        summaries.map((summary) => summary.source_categories),
+      ),
     };
   }
 

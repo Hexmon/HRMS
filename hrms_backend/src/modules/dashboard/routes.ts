@@ -8,14 +8,20 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
+    if (fastify.store.persistence?.dashboardSummaryContext) {
+      const context = await fastify.store.persistence.dashboardSummaryContext(request.actor.id);
+      return new DashboardService(fastify.store).summaryFromProjection(
+        context.session.actor,
+        context.session.activeRole,
+        context.projection,
+      );
+    }
     const company = resolveActiveCompanyMembershipContext(fastify.store, {
       userId: request.actor.id,
       operation: "dashboard.summary",
       requireActiveEmployment: true,
     });
-    const store = fastify.store.persistence?.dashboardReadStore
-      ? await fastify.store.persistence.dashboardReadStore({ companyId: company.companyId })
-      : fastify.store.persistence?.attendanceReadStore
+    const store = fastify.store.persistence?.attendanceReadStore
         ? await fastify.store.persistence.attendanceReadStore({ companyId: company.companyId, includePendingOutbox: true })
         : fastify.store;
     return new DashboardService(store).summary(request.actor);

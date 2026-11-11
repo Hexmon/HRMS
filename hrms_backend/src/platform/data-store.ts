@@ -251,6 +251,63 @@ export interface UserSessionPreferenceRecord {
   version: number;
 }
 
+export interface DurableSessionContext {
+  actor: AuthUser;
+  company: CompanyProfileRecord;
+  preference: UserSessionPreferenceRecord;
+  activeRole: AuthUser["roles"][number];
+}
+
+export type DurableAuthSessionContext =
+  | { kind: "membership"; membership: DurableSessionContext }
+  | {
+      kind: "company_bootstrap";
+      actor: AuthUser;
+      company: CompanyProfileRecord;
+    };
+
+export interface DashboardSummaryProjection {
+  workforce: {
+    visible_employees: number;
+    active_employees: number;
+    inactive_employees: number;
+    new_joiners_30d: number;
+    departments: Array<{
+      department_id: UUID;
+      department_code: string;
+      name: string;
+      active_employees: number;
+    }>;
+  };
+  approvals: {
+    expense_manager_pending: number;
+    expense_finance_pending: number;
+    timesheet_pending: number;
+    leave_pending: number;
+    wfh_pending: number;
+    document_verification_pending: number;
+  };
+  operations: {
+    assets_total: number;
+    assets_assigned: number;
+    assets_recovery_pending: number;
+    notifications_pending: number;
+    outbox_pending: number;
+  };
+  attendance: {
+    evidence_categories: Record<"verified" | "warning" | "provisional" | "review_required" | "rejected", number>;
+    source_categories: Record<"web" | "geo" | "mobile" | "manual" | "kiosk" | "system", number>;
+    exceptions: number;
+  };
+  workload: {
+    work_segments_total: number;
+    submitted_hours_total: string;
+    timesheet_submissions_total: number;
+    timesheet_submissions_approved: number;
+    timesheet_submissions_returned: number;
+  };
+}
+
 export interface AssetStateEventRecord {
   id: UUID;
   asset_id: UUID;
@@ -434,6 +491,8 @@ export interface ObjectStoragePort {
 export interface DataStorePersistence {
   flush(): Promise<void>;
   authUser?(userId: UUID): Promise<AuthUser | null>;
+  authSessionContext?(userId: UUID): Promise<DurableAuthSessionContext>;
+  persistAuthToken?(token: AuthTokenRecord): Promise<void>;
   flushInitialSeed?(): Promise<void>;
   flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
@@ -446,7 +505,10 @@ export interface DataStorePersistence {
   ): Promise<void>;
   reload(): Promise<void>;
   attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
-  dashboardReadStore?(scope: { companyId: UUID }): Promise<DataStore>;
+  dashboardSummaryContext?(userId: UUID): Promise<{
+    session: DurableSessionContext;
+    projection: DashboardSummaryProjection;
+  }>;
   notificationReadStore?(userId: UUID): Promise<DataStore>;
   notificationMarkRead?(input: {
     userId: UUID;
@@ -457,7 +519,7 @@ export interface DataStorePersistence {
     userId: UUID;
     type?: string;
     before?: string;
-  }): Promise<{ updatedCount: number; unreadCount: number }>;
+  }): Promise<{ updatedCount: number; unreadCount: number; hasMore: boolean }>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   expenseReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;

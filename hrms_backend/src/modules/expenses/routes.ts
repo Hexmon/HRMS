@@ -18,6 +18,7 @@ import {
   settlementSchema
 } from "#shared";
 import { badRequest, conflict, unauthorized } from "../../platform/errors.js";
+import type { MemoryDataStore } from "../../platform/data-store.js";
 import { ExpenseService } from "./service.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
@@ -34,6 +35,44 @@ function commandIdentity(request: { headers: Record<string, unknown> }, ticketId
     .update(JSON.stringify({ ticket_id: ticketId, action, body }))
     .digest("hex");
   return { idempotencyKey, requestHash };
+}
+type ExpenseCommandResponse = ReturnType<typeof expenseCommandResult>;
+type MemoryCommandResult = { requestHash: string; response: ExpenseCommandResponse };
+const memoryCommandResults = new WeakMap<MemoryDataStore, Map<string, MemoryCommandResult>>();
+const MAX_MEMORY_COMMAND_RESULTS_PER_STORE = 10_000;
+function runMemoryFinanceCommand(input: {
+  store: MemoryDataStore;
+  actor: AuthUser;
+  action: "finance.approve" | "finance.payment" | "settlement";
+  identity: ReturnType<typeof commandIdentity>;
+  run: () => ExpenseCommandResponse;
+}): ExpenseCommandResponse {
+  const companyId = input.store.userSessionPreferences.find(
+    (preference) => preference.user_id === input.actor.id,
+  )?.company_id ?? "no-company";
+  const resultKey = [companyId, input.actor.id, input.action, input.identity.idempotencyKey].join(":");
+  const results = memoryCommandResults.get(input.store) ?? new Map<string, MemoryCommandResult>();
+  memoryCommandResults.set(input.store, results);
+  const existing = results.get(resultKey);
+  if (existing) {
+    if (existing.requestHash !== input.identity.requestHash) {
+      throw conflict("Idempotency key was already used with a different request", {
+        action: input.action,
+      });
+    }
+    return existing.response;
+  }
+  // Memory persistence is restricted to local/test runtimes. Fail closed at a
+  // fixed bound instead of evicting a replay record and accidentally executing
+  // an old idempotency key twice.
+  if (results.size >= MAX_MEMORY_COMMAND_RESULTS_PER_STORE) {
+    throw conflict(
+      "Memory expense command replay capacity is exhausted; restart the isolated local/test instance",
+    );
+  }
+  const response = input.run();
+  results.set(resultKey, { requestHash: input.identity.requestHash, response });
+  return response;
 }
 const expenseDashboardQuerySchema = z.object({
   date_from: isoDateSchema.optional(),
@@ -294,11 +333,17 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
           .financeApprove(actor, params.id, body.decision, body.remarks, body.expected_version),
       });
     }
-    return expenseCommandResult(
-      new ExpenseService(fastify.store).financeApprove(
-        request.actor, params.id, body.decision, body.remarks, body.expected_version,
+    return runMemoryFinanceCommand({
+      store: fastify.store,
+      actor: request.actor,
+      action,
+      identity,
+      run: () => expenseCommandResult(
+        new ExpenseService(fastify.store).financeApprove(
+          request.actor!, params.id, body.decision, body.remarks, body.expected_version,
+        ),
       ),
-    );
+    });
   });
 
   fastify.post("/expenses/:id/finance/payment", async (request) => {
@@ -318,13 +363,19 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
           .releasePayment(actor, params.id, body),
       });
     }
-    return expenseCommandResult(new ExpenseService(fastify.store).releasePayment(request.actor, params.id, {
-      payment_date: body.payment_date,
-      amount: body.amount,
-      payment_mode: body.payment_mode,
-      reference_no: body.reference_no,
-      expected_version: body.expected_version
-    }));
+    return runMemoryFinanceCommand({
+      store: fastify.store,
+      actor: request.actor,
+      action,
+      identity,
+      run: () => expenseCommandResult(new ExpenseService(fastify.store).releasePayment(request.actor!, params.id, {
+        payment_date: body.payment_date,
+        amount: body.amount,
+        payment_mode: body.payment_mode,
+        reference_no: body.reference_no,
+        expected_version: body.expected_version,
+      })),
+    });
   });
 
   fastify.post("/expenses/:id/bills", async (request) => {
@@ -361,11 +412,17 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
           .settle(actor, params.id, body.actual_amount, body.remarks, body.expected_version),
       });
     }
-    return expenseCommandResult(
-      new ExpenseService(fastify.store).settle(
-        request.actor, params.id, body.actual_amount, body.remarks, body.expected_version,
+    return runMemoryFinanceCommand({
+      store: fastify.store,
+      actor: request.actor,
+      action,
+      identity,
+      run: () => expenseCommandResult(
+        new ExpenseService(fastify.store).settle(
+          request.actor!, params.id, body.actual_amount, body.remarks, body.expected_version,
+        ),
       ),
-    );
+    });
   });
 
   fastify.get("/expenses/:id/timeline", async (request) => {

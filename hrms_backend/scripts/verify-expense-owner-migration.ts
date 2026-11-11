@@ -20,6 +20,7 @@ const companyA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const companyB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const missingCompany = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const requester = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const reviewer = "cccccccc-cccc-4ccc-8ccc-cccccccccccd";
 const department = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const ticketIds = {
   valid: "11111111-1111-4111-8111-111111111111",
@@ -102,8 +103,9 @@ try {
   );
   await client.query(
     `INSERT INTO core.users (id, employee_code, email, full_name, hierarchy_path, employment_status)
-     VALUES ($1, 'EXP-TEST', 'expense.fixture@example.test', 'Fixture', 'fixture', 'active')`,
-    [requester],
+     VALUES ($1, 'EXP-TEST', 'expense.fixture@example.test', 'Fixture', 'fixture', 'active'),
+            ($2, 'EXP-REVIEW', 'expense.reviewer@example.test', 'Reviewer', 'fixture.reviewer', 'active')`,
+    [requester, reviewer],
   );
   await insertHistoricalTicket(ticketIds.valid, "EXP-VALID", companyA);
   await insertHistoricalTicket(ticketIds.missingAudit, "EXP-NO-AUDIT", companyA);
@@ -167,6 +169,11 @@ try {
     "SELECT owner_resolution_status FROM expenses.expense_tickets WHERE id=$1",
     [ticketIds.missingAudit],
   )).rows[0]?.owner_resolution_status, "quarantined");
+  for (const marker of ["app.expense_command_v1", "app.expense_owner_repair_v1"]) {
+    assert.notEqual((await client.query(
+      `SELECT current_setting('${marker}', true) AS marker`,
+    )).rows[0]?.marker, "on", `${marker} must clear after repair rollback`);
+  }
   await assert.rejects(ownerRepairTransaction(async () => {
     await client.query(
       `INSERT INTO expenses.expense_owner_repair_audit
@@ -189,6 +196,23 @@ try {
     "SELECT company_id,owner_resolution_status FROM expenses.expense_tickets WHERE id=$1",
     [ticketIds.missingAudit],
   )).rows[0]?.company_id, null, "a failed repair must leave the ticket quarantined");
+  await assert.rejects(ownerRepairTransaction(async () => {
+    await client.query(
+      `INSERT INTO expenses.expense_owner_repair_audit
+       (ticket_id,original_context_payload,repaired_company_id,evidence_reference,evidence_sha256,reviewed_by,applied_by)
+       VALUES ($1,'{}'::jsonb,$2,'wrong-context-fixture',$3,'fixture-reviewer','fixture-operator')`,
+      [ticketIds.missingAudit, companyA, "7".repeat(64)],
+    );
+    await client.query(
+      `UPDATE expenses.expense_tickets SET company_id=$2,
+       owner_resolution_status='audited_repair', owner_resolution_reason=NULL WHERE id=$1`,
+      [ticketIds.missingAudit, companyA],
+    );
+  }), repairInvariantError, "repair evidence must preserve the exact original context payload");
+  assert.equal(Number((await client.query(
+    "SELECT count(*) FROM expenses.expense_owner_repair_audit WHERE ticket_id=$1",
+    [ticketIds.missingAudit],
+  )).rows[0]?.count), 0, "wrong-context evidence must roll back atomically");
   await assert.rejects(ownerRepairTransaction(async () => {
     await client.query(
       `INSERT INTO expenses.expense_owner_repair_audit
@@ -316,6 +340,47 @@ try {
   assert.equal((await client.query(
     `SELECT company_id FROM expenses.expense_tickets WHERE id=$1`, [ticketIds.newTyped],
   )).rows[0]?.company_id, companyA);
+  const childRows: Array<{ table: string; id: string }> = [];
+  await command(async () => {
+    const inserts: Array<{ table: string; sql: string; params: unknown[] }> = [
+      { table: "expense_line_items", sql: `INSERT INTO expenses.expense_line_items
+          (ticket_id,line_category,description,line_total) VALUES ($1,'fixture','Fixture',1) RETURNING id`, params: [ticketIds.newTyped] },
+      { table: "expense_approvals", sql: `INSERT INTO expenses.expense_approvals
+          (ticket_id,approval_stage,approver_user_id,decision,role_snapshot)
+          VALUES ($1,'manager',$2,'approve','Reviewer') RETURNING id`, params: [ticketIds.newTyped, reviewer] },
+      { table: "expense_audit_logs", sql: `INSERT INTO expenses.expense_audit_logs
+          (ticket_id,actor_user_id,event_type) VALUES ($1,$2,'expense.fixture') RETURNING id`, params: [ticketIds.newTyped, requester] },
+      { table: "expense_documents", sql: `INSERT INTO expenses.expense_documents
+          (ticket_id,document_id,document_type,verification_status,uploaded_by)
+          VALUES ($1,gen_random_uuid(),'receipt','pending',$2) RETURNING id`, params: [ticketIds.newTyped, requester] },
+      { table: "expense_payments", sql: `INSERT INTO expenses.expense_payments
+          (ticket_id,payment_type,approved_amount,paid_amount,payment_date,payment_mode,reference_no,processed_by_user_id)
+          VALUES ($1,'Advance',1,1,CURRENT_DATE,'fixture',$2,$3) RETURNING id`, params: [ticketIds.newTyped, `fixture-${ticketIds.newTyped}`, requester] },
+      { table: "employee_reviewer_mappings", sql: `INSERT INTO expenses.employee_reviewer_mappings
+          (employee_user_id,reviewer_user_id,assigned_by_user_id,effective_from,status)
+          VALUES ($1,$2,$1,CURRENT_DATE,'active') RETURNING id`, params: [requester, reviewer] },
+      { table: "expense_policy_rules", sql: `INSERT INTO expenses.expense_policy_rules
+          (category,sub_type,status) VALUES ('fixture','fixture','active') RETURNING id`, params: [] },
+    ];
+    for (const insert of inserts) {
+      const inserted = await client.query<{ id: string }>(insert.sql, insert.params);
+      const id = inserted.rows[0]?.id;
+      assert.ok(id, `${insert.table} fixture id is required`);
+      childRows.push({ table: insert.table, id });
+    }
+  });
+  for (const child of childRows) {
+    await assert.rejects(
+      client.query(`UPDATE expenses.${child.table} SET id=id WHERE id=$1`, [child.id]),
+      /transaction-owned command/u,
+      `${child.table} update must require the command marker`,
+    );
+    await assert.rejects(
+      client.query(`DELETE FROM expenses.${child.table} WHERE id=$1`, [child.id]),
+      /transaction-owned command/u,
+      `${child.table} delete must require the command marker`,
+    );
+  }
   await assert.rejects(client.query(
     `UPDATE expenses.expense_tickets SET status=status WHERE id=$1`, [ticketIds.newTyped],
   ));
@@ -339,6 +404,11 @@ try {
       [ticketIds.malformed, companyA],
     );
   });
+  for (const marker of ["app.expense_command_v1", "app.expense_owner_repair_v1"]) {
+    assert.notEqual((await client.query(
+      `SELECT current_setting('${marker}', true) AS marker`,
+    )).rows[0]?.marker, "on", `${marker} must clear after repair commit`);
+  }
   await command(() => client.query(
     `UPDATE expenses.expense_tickets SET status='Submitted', version=version+1 WHERE id=$1`,
     [ticketIds.malformed],
