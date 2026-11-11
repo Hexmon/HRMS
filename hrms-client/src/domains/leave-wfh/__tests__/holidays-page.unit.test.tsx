@@ -21,6 +21,7 @@ vi.mock("@/domains/leave-wfh", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { error: mock.toastError, success: mock.toastSuccess } }));
 
+import { formatHolidayDate, isHolidayInMonth } from "@/domains/leave-wfh/calendar-date";
 import { HolidaysPage } from "@/routes/_app/leave-wfh.holidays";
 
 const firstId = "11111111-1111-4111-8111-111111111111";
@@ -46,6 +47,17 @@ function fillHoliday(name = "Founders Day") {
 }
 
 describe("holiday create form retry", () => {
+  it("keeps date-only holidays in their calendar month across local time zones", () => {
+    const date = "2026-12-01";
+    // Parsing the old value as an instant yields the previous local date in LA.
+    expect(new Date(date).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" })).toBe(
+      "11/30/2026",
+    );
+    expect(isHolidayInMonth(date, 2026, 11)).toBe(true);
+    expect(isHolidayInMonth(date, 2026, 10)).toBe(false);
+    expect(formatHolidayDate(date, "en-US")).toBe("Tue, Dec 01, 2026");
+  });
+
   it("keeps the same ID and draft after a network error, refetches, and resets only after confirmed success", async () => {
     mock.mutateAsync
       .mockRejectedValueOnce(new Error("Network disconnected"))

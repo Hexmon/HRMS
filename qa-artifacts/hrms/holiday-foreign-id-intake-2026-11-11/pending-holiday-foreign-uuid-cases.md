@@ -93,3 +93,16 @@ The developer then ran the four new integration cases one at a time with `pnpm e
 | Concurrent case-insensitive create | Passed 1/1 | Different UUIDs with same company/date/region and `Race Day`/`race day` yield one 200/one 409, one SQL row and one holiday event | 19.52 s | Unique DB dropped; Valkey DB 13 size 0 |
 
 The existing leave/WFH integration file passed 2/2 in the serial fixture-red run. This is focused developer API/SQL evidence, not a rendered browser journey, independent QA signoff, hosted deployment or shared Sprint 25 sheet publication. Full case bodies remain **Not Tested** until those gates and calendar-consumer dependencies are completed.
+
+### Combined asset and holiday stack follow-up
+
+The historical checkpoints above describe earlier revisions; the statement that an unchanged no-version retry is non-idempotent was superseded by the later no-op command and SQL regression. Lead stacked holiday migration 0067 after asset migrations 0065/0066 at `1fbdc30e`, then added independent QA follow-up source and test edits. Four new integration invocations each passed 1/1 against a separate guarded local Docker PostgreSQL database, with total Vitest durations 20.50, 19.33, 22.05 and 19.66 seconds. Each database was dropped; final matching temporary DB count was 0, Valkey DB 13 size 0, and `.env.test` hash unchanged.
+
+| Focused case | Added or reconfirmed oracle |
+| --- | --- |
+| S25-035-HOL-P/U | A Admin's B UUID attempts remain 404 with B row unchanged and no A event. A separate B-company Admin reads and changes B's original holiday; SQL retains B ownership/version and emits only B's event. Synthetic B role/preference setup is not proof of the product transfer-approval workflow. |
+| S25-035-HOL-N | Missing UUID plus supplied update version returns 404 with no row/event; undocumented `company_id`/`version` fields return 400 with no row/event. Stale/missing versions and duplicate names remain denied; revoked Admin yields 403 with no row/event and no fresh-instance listing. |
+| S25-035-HOL-F | Concurrent versioned edit, same-ID unchanged retry, stale full flush/restart and case-insensitive duplicate-create outcomes remain one-winner/one-conflict with bounded event counts. |
+| Migration order | Each database catalog confirmed asset command-results table, asset writer trigger, recovery assignment identity, removal of the legacy global holiday constraint and presence of the company holiday index. |
+
+The date-only UI month/display regression passed 3/3 frontend unit tests, and backend memory tests passed 7/7 after this follow-up. These are developer-run local checks. Independent senior and QA reviewed the earlier clean `1fbdc30e` source without running tests; the follow-up needs exact new-head review. Browser cases, B HR variant, malformed input variants beyond protected fields, B/A concurrent distinct writes, post-failure unrelated flush, real office-calendar consumers, hosted old-binary cutover and shared-sheet readback remain **Not Tested** or blocked. Do not mark the full U/P/N/F cases Done from these focused passes.

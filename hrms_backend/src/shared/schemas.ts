@@ -570,7 +570,7 @@ export const holidayUpsertSchema = z.object({
   region: z.string().trim().min(1).max(80).default("All"),
   optional: z.boolean().default(false),
   expected_version: z.number().int().min(1).optional()
-});
+}).strict();
 
 export type HolidayUpsertInput = z.infer<typeof holidayUpsertSchema>;
 
