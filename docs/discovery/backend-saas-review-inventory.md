@@ -2,6 +2,8 @@
 
 Checkpoint: 2026-11-09, `sprint-25/saas-s25-001` at `6a8d11f7`. The row-level artifact is [`backend-saas-review-inventory.csv`](backend-saas-review-inventory.csv). It is a **review coverage map**, not a security clearance or proof of production topology.
 
+The [2026-11-11 source-evidence index](../../qa-artifacts/hrms/source-inventory-index-2026-11-11.md) links bounded source notes for all 619 non-excluded rows at original source `87618f88`. This later source-touch pass did **not** change CSV status, verify every edge case, or establish runtime, browser or hosted security clearance.
+
 | Kind | Count | Scope and extraction |
 | --- | ---: | --- |
 | Source file | 202 | `hrms_backend/src/**/*.ts`, excluding `__tests__`, `.test.ts`, `.spec.ts` and SQL migrations; `src/testing/index.ts` is listed as excluded test support. Backend `scripts/` maintenance commands are outside this API/runtime inventory. |
