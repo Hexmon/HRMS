@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_app/leave-wfh/holidays")({
 
 const ADMIN: Role[] = ["hr_admin", "main_admin"];
 
-function HolidaysPage() {
+export function HolidaysPage() {
   const { activeRole } = useAuth();
   const isAdmin = !!activeRole && ADMIN.includes(activeRole);
   const [open, setOpen] = useState(false);
@@ -29,6 +29,8 @@ function HolidaysPage() {
   const [date, setDate] = useState("");
   const [region, setRegion] = useState("");
   const [optional, setOptional] = useState(false);
+  const draftId = useRef<string | null>(null);
+  const submissionInFlight = useRef(false);
 
   const today = new Date();
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
@@ -53,11 +55,29 @@ function HolidaysPage() {
     [list, cursor],
   );
 
+  const openForm = () => {
+    draftId.current ??= createId();
+    setOpen(true);
+  };
+
+  const closeForm = () => {
+    if (submissionInFlight.current) return;
+    draftId.current = null;
+    setOpen(false);
+    setName("");
+    setDate("");
+    setRegion("");
+    setOptional(false);
+  };
+
   const add = async () => {
     if (!name || !date) return toast.error("Name and date are required");
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    const id = draftId.current ?? (draftId.current = createId());
     try {
       await mutation.mutateAsync({
-        id: createId(),
+        id,
         input: {
           name,
           date,
@@ -66,13 +86,19 @@ function HolidaysPage() {
         },
       });
       toast.success(`${name} added to holidays`);
+      draftId.current = null;
       setOpen(false);
       setName("");
       setDate("");
       setRegion("");
       setOptional(false);
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(
+        `${errorMessage(error)} If the connection dropped, check the refreshed list or retry with the same details.`,
+      );
+      void holidaysQuery.refetch();
+    } finally {
+      submissionInFlight.current = false;
     }
   };
 
@@ -81,7 +107,7 @@ function HolidaysPage() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">Company-wide holiday calendar.</p>
         {isAdmin && (
-          <Button size="sm" className="rounded-full" onClick={() => setOpen(true)}>
+          <Button size="sm" className="rounded-full" onClick={openForm}>
             <Plus className="mr-1.5 h-4 w-4" /> Add holiday
           </Button>
         )}
@@ -211,11 +237,16 @@ function HolidaysPage() {
 
       <Modal
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(nextOpen) => (nextOpen ? openForm() : closeForm())}
         title="Add holiday"
         footer={
           <>
-            <Button variant="outline" className="rounded-full" onClick={() => setOpen(false)}>
+            <Button
+              variant="outline"
+              className="rounded-full"
+              disabled={mutation.isPending}
+              onClick={closeForm}
+            >
               Cancel
             </Button>
             <Button

@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { ValkeySessionStore } from "#auth";
-import { EmploymentStatuses, type AuthUser, type RoleKey } from "#shared";
+import { EmploymentStatuses, Roles, type AuthUser, type RoleKey } from "#shared";
 import type {
   AssetRecord,
   AttendanceDayRecord,
@@ -34,6 +35,7 @@ import type {
   HelpdeskTicketComment,
   HelpdeskTicketEvent,
   Holiday,
+  HolidayUpsertInput,
   LeaveRequest,
   ManagerBackupAssignment,
   OutboxEvent,
@@ -79,7 +81,7 @@ import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
-import { companyContextRequired, forbidden, unauthorized } from "./errors.js";
+import { companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
 
 function optionalSet(
   values: readonly string[] | undefined,
@@ -258,6 +260,21 @@ function asDate(value: unknown): string {
 
 function asDateOrNull(value: unknown): string | null {
   return value === null || value === undefined ? null : asDate(value);
+}
+
+function mapHolidayRow(row: Record<string, unknown>): Holiday {
+  return {
+    id: String(row.id),
+    company_id: String(row.company_id),
+    name: String(row.name),
+    holiday_date: asDate(row.holiday_date),
+    region: String(row.region),
+    optional: Boolean(row.optional),
+    version: Number(row.version),
+    created_at: asIso(row.created_at),
+    updated_at: asIso(row.updated_at),
+    deleted_at: asIsoOrNull(row.deleted_at),
+  };
 }
 
 function asMoney(value: unknown): string | null {
@@ -453,6 +470,138 @@ class PostgresPersistence {
     private readonly pool: Pool,
     private readonly store: DataStore,
   ) {}
+
+  private async holidayCompanyForActor(client: PoolClient, actorUserId: UUID, forWrite: boolean): Promise<UUID> {
+    const lock = forWrite ? " FOR SHARE" : "";
+    const user = await client.query<{ employment_status: string; deleted_at: Date | null }>(
+      `SELECT employment_status, deleted_at FROM core.users WHERE id = $1${lock}`,
+      [actorUserId],
+    );
+    if (!user.rows[0] || user.rows[0].deleted_at || user.rows[0].employment_status !== EmploymentStatuses.Active) {
+      throw unauthorized("User account is inactive or blocked");
+    }
+    const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
+      `SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1${lock}`,
+      [actorUserId],
+    );
+    const assignment = preference.rows[0];
+    if (!assignment?.company_id) {
+      throw companyContextRequired({ user_id: actorUserId, operation: forWrite ? "holidays.upsert" : "holidays.list" });
+    }
+    const roles = await client.query<{ role_key: RoleKey }>(
+      `SELECT ur.role_key FROM core.user_roles ur
+       JOIN core.roles role ON role.role_key = ur.role_key
+       WHERE ur.user_id = $1 AND ur.status = 'active' AND ur.deleted_at IS NULL
+         AND ur.effective_from <= CURRENT_DATE AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
+         AND role.status = 'active' AND role.deleted_at IS NULL${forWrite ? " FOR SHARE OF ur, role" : ""}`,
+      [actorUserId],
+    );
+    const assignedRoles = new Set(roles.rows.map((row) => row.role_key));
+    if (!assignedRoles.has(assignment.active_role)) {
+      throw forbidden("Selected role is not assigned to this user.");
+    }
+    const company = await client.query<{ status: string }>(
+      `SELECT status FROM platform.company_profiles WHERE id = $1${lock}`,
+      [assignment.company_id],
+    );
+    if (company.rows[0]?.status !== "active") {
+      throw companyContextRequired({ user_id: actorUserId, company_id: assignment.company_id, operation: forWrite ? "holidays.upsert" : "holidays.list" });
+    }
+    if (forWrite && !assignedRoles.has(Roles.Admin) && !assignedRoles.has(Roles.HRManager)) {
+      throw forbidden("Only HR Manager or Admin users can create or update holidays.");
+    }
+    return assignment.company_id;
+  }
+
+  async holidaysForActor(actorUserId: UUID, year: number): Promise<Holiday[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const companyId = await this.holidayCompanyForActor(client, actorUserId, false);
+      const holidays = await this.loadHolidays(client, { companyId, year });
+      await client.query("COMMIT");
+      return holidays;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async upsertHoliday(actorUserId: UUID, id: UUID, input: HolidayUpsertInput): Promise<Holiday> {
+    const client = await this.pool.connect();
+    let saved: Holiday;
+    try {
+      await client.query("BEGIN");
+      const companyId = await this.holidayCompanyForActor(client, actorUserId, true);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [companyId]);
+      const existing = await client.query<Record<string, unknown> & { company_id: UUID | null; version: number; deleted_at: Date | null; name: string; region: string; optional: boolean }>(
+        "SELECT * FROM leave_wfh.holidays WHERE id = $1 FOR UPDATE",
+        [id],
+      );
+      const row = existing.rows[0];
+      if (row && (row.company_id !== companyId || row.deleted_at)) throw notFound("Holiday not found");
+      if (!row && input.expected_version !== undefined) throw notFound("Holiday not found");
+      const name = input.name.trim();
+      const region = input.region.trim();
+      const unchanged = row && row.name === name && asDate(row.holiday_date) === input.date &&
+        row.region === region && row.optional === input.optional;
+      if (unchanged) {
+        saved = mapHolidayRow(row);
+      } else {
+        if (row && input.expected_version === undefined) {
+          throw conflict("expected_version is required to change an existing holiday.", { aggregate: "holiday", id });
+        }
+        if (row && row.version !== input.expected_version) {
+          throw conflict("Holiday was modified by another actor.", { aggregate: "holiday", id });
+        }
+        const duplicate = await client.query<{ id: UUID }>(
+          `SELECT id FROM leave_wfh.holidays
+           WHERE company_id = $1 AND region = $2 AND holiday_date = $3::date
+             AND lower(name) = lower($4) AND deleted_at IS NULL AND id <> $5 LIMIT 1`,
+          [companyId, region, input.date, name, id],
+        );
+        if (duplicate.rows[0]) {
+          throw conflict("Holiday with the same name, date, and region already exists.", { holiday_id: duplicate.rows[0].id });
+        }
+        const changed = row
+          ? await client.query(
+              `UPDATE leave_wfh.holidays SET name = $3, holiday_date = $4::date, region = $5,
+                 optional = $6, version = version + 1, updated_at = now()
+               WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL RETURNING *`,
+              [id, companyId, name, input.date, region, input.optional],
+            )
+          : await client.query(
+              `INSERT INTO leave_wfh.holidays (id, company_id, name, holiday_date, region, optional, version)
+               VALUES ($1, $2, $3, $4::date, $5, $6, 1) RETURNING *`,
+              [id, companyId, name, input.date, region, input.optional],
+            );
+        if (!changed.rows[0]) throw notFound("Holiday not found");
+        saved = mapHolidayRow(changed.rows[0]);
+        await client.query(
+          `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+           VALUES ($1, 'holiday', $2, 'holiday.upserted', $3::jsonb, $4)`,
+          [randomUUID(), id, JSON.stringify({ holiday_id: id, actor_user_id: actorUserId, company_id: companyId, date: saved.holiday_date, region: saved.region }), `holiday.upserted:${id}:${saved.version}`],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      if ((error as { code?: string }).code === "23505") {
+        throw conflict("Holiday update conflicted with an existing record or event.");
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+    const index = this.store.holidays.findIndex((holiday) => holiday.id === id);
+    if (index < 0) this.store.holidays.push(saved);
+    else if (this.store.holidays[index]!.company_id === saved.company_id && this.store.holidays[index]!.version <= saved.version) {
+      this.store.holidays[index] = saved;
+    }
+    return saved;
+  }
 
   async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore> {
     const client = await this.pool.connect();
@@ -2456,22 +2605,15 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadHolidays(client: PoolClient): Promise<Holiday[]> {
-    const { rows } = await client.query(
-      "SELECT * FROM leave_wfh.holidays ORDER BY holiday_date, name",
-    );
-    return rows.map((row) => ({
-      id: row.id,
-      company_id: row.company_id,
-      name: row.name,
-      holiday_date: asDate(row.holiday_date),
-      region: row.region,
-      optional: Boolean(row.optional),
-      version: row.version,
-      created_at: asIso(row.created_at),
-      updated_at: asIso(row.updated_at),
-      deleted_at: asIsoOrNull(row.deleted_at),
-    }));
+  private async loadHolidays(client: PoolClient, scope?: { companyId: UUID; year: number }): Promise<Holiday[]> {
+    const { rows } = scope
+      ? await client.query(
+          `SELECT * FROM leave_wfh.holidays WHERE company_id = $1 AND deleted_at IS NULL
+           AND holiday_date >= $2::date AND holiday_date < $3::date ORDER BY holiday_date, name`,
+          [scope.companyId, `${scope.year}-01-01`, `${scope.year + 1}-01-01`],
+        )
+      : await client.query("SELECT * FROM leave_wfh.holidays ORDER BY holiday_date, name");
+    return rows.map(mapHolidayRow);
   }
 
   private async loadEmsEmployeeProfiles(
@@ -4800,7 +4942,9 @@ class PostgresPersistence {
             optional = EXCLUDED.optional,
             version = EXCLUDED.version,
             updated_at = EXCLUDED.updated_at,
-            deleted_at = EXCLUDED.deleted_at`,
+            deleted_at = EXCLUDED.deleted_at
+        WHERE leave_wfh.holidays.company_id IS NOT DISTINCT FROM EXCLUDED.company_id
+          AND leave_wfh.holidays.version < EXCLUDED.version`,
         [
           holiday.id,
           holiday.company_id,
