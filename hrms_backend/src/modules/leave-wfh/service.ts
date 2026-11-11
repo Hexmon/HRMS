@@ -28,7 +28,7 @@ import {
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
-import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
+import { assertGeneratedExportAvailable, createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
 import { isWorkingDate, workingDatesInclusive, workdaysInclusive } from "../../platform/work-schedule.js";
 import { AttendanceRepository } from "../attendance/repository.js";
 import { projectAttendanceDay } from "../attendance/daily-projection.js";
@@ -463,6 +463,7 @@ export class LeaveWfhService {
     if (!canMonitorLeaveWfh(actor)) {
       throw forbidden("Only HR, Admin, or Auditor users can export Leave/WFH data.");
     }
+    assertGeneratedExportAvailable(this.store);
     const jobId = randomUUID();
     const format = input.format ?? "csv";
     const columns = input.columns?.length

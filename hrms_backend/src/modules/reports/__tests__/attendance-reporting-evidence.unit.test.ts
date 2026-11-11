@@ -113,7 +113,7 @@ describe("attendance report evidence categories", () => {
       page: 1,
       page_size: 20,
       status: AttendanceDayStatuses.Present,
-    });
+    }, companyId);
 
     expect(result.items).toEqual(
       expect.arrayContaining([
@@ -151,7 +151,7 @@ describe("attendance report evidence categories", () => {
       page_size: 20,
       status: AttendanceDayStatuses.Present,
       evidence_category: "warning",
-    });
+    }, companyId);
 
     expect(result.total).toBe(1);
     expect(result.items[0]).toMatchObject({
@@ -193,7 +193,7 @@ describe("attendance report evidence categories", () => {
       page: 1,
       page_size: 20,
       evidence_category: "provisional",
-    });
+    }, companyId);
 
     expect(result.total).toBe(1);
     expect(result.items[0]).toMatchObject({
@@ -228,7 +228,7 @@ describe("attendance report evidence categories", () => {
       page: 1,
       page_size: 20,
       evidence_category: "review_required",
-    });
+    }, companyId);
 
     expect(result.total).toBe(1);
     expect(result.items[0]).toMatchObject({
@@ -289,7 +289,7 @@ describe("attendance report evidence categories", () => {
       review_type: "manual_fallback",
       attendance_channel: "Web + location",
       reason_code: "geo_outside_fence",
-    });
+    }, companyId);
 
     expect(result.total).toBe(1);
     expect(result.items[0]).toMatchObject({
@@ -363,7 +363,7 @@ describe("attendance report evidence categories", () => {
     const result = new ReportService(store).attendanceSummary(admin, {
       page: 1,
       page_size: 20,
-    });
+    }, companyId);
     const byEmployee = new Map(result.items.map((row) => [row.employee_user_id, row]));
 
     expect(byEmployee.get(seedIds.employee1)).toMatchObject({
@@ -378,7 +378,7 @@ describe("attendance report evidence categories", () => {
     });
   });
 
-  it("intersects manager filter with actor hierarchy visibility", () => {
+  it("rejects historical manager filters rather than returning incomplete team totals", () => {
     const store = createMemoryDataStore();
     const manager = store.users.find((user) => user.id === seedIds.manager)!;
     store.attendanceDayRecords.push(
@@ -386,19 +386,13 @@ describe("attendance report evidence categories", () => {
       attendanceDay(seedIds.alternateFinance),
     );
 
-    const ownTeam = new ReportService(store).attendanceSummary(manager, {
-      page: 1,
-      page_size: 20,
-      manager_user_id: seedIds.manager,
-    });
-    const unrelatedTeam = new ReportService(store).attendanceSummary(manager, {
-      page: 1,
-      page_size: 20,
-      manager_user_id: seedIds.financeManager,
-    });
-
-    expect(ownTeam.items.map((row) => row.employee_user_id)).toEqual([seedIds.employee1]);
-    expect(unrelatedTeam.items).toHaveLength(0);
+    for (const managerUserId of [seedIds.manager, seedIds.financeManager]) {
+      expect(() => new ReportService(store).attendanceSummary(manager, {
+        page: 1,
+        page_size: 20,
+        manager_user_id: managerUserId,
+      }, companyId)).toThrowError(expect.objectContaining({ statusCode: 409 }));
+    }
   });
 
   it("filters site and approval state independently from evidence state", () => {
@@ -435,7 +429,7 @@ describe("attendance report evidence categories", () => {
       evidence_category: "review_required",
       work_site_id: mumbaiSiteId,
       approval_state: AttendanceApprovalStates.Pending,
-    });
+    }, companyId);
 
     expect(result.total).toBe(1);
     expect(result.items[0]).toMatchObject({
@@ -450,7 +444,7 @@ describe("attendance report evidence categories", () => {
     ]);
   });
 
-  it("scopes site options to manager-visible attendance rows", () => {
+  it("rejects manager site options when historical team membership cannot be proven", () => {
     const store = createMemoryDataStore();
     const manager = store.users.find((user) => user.id === seedIds.manager)!;
     store.attendanceDayRecords.push(
@@ -470,14 +464,75 @@ describe("attendance report evidence categories", () => {
       }),
     );
 
-    const result = new ReportService(store).attendanceSummary(manager, {
+    expect(() => new ReportService(store).attendanceSummary(manager, {
       page: 1,
       page_size: 20,
-    });
+    }, companyId)).toThrowError(expect.objectContaining({ statusCode: 409 }));
+  });
 
-    expect(result.items.map((row) => row.employee_user_id)).toEqual([seedIds.employee1]);
-    expect(result.site_options).toEqual([
-      { id: mumbaiSiteId, label: "Mumbai HQ", type: "office" },
-    ]);
+  it("allows a manager's explicit self report without presenting a partial team report", () => {
+    const store = createMemoryDataStore();
+    const manager = store.users.find((user) => user.id === seedIds.manager)!;
+    store.attendanceDayRecords.push(
+      attendanceDay(seedIds.manager),
+      attendanceDay(seedIds.employee1),
+    );
+    const service = new ReportService(store);
+    const own = service.attendanceSummary(manager, {
+      page: 1,
+      page_size: 20,
+      employee_user_id: manager.id,
+    }, companyId);
+    expect(own.total).toBe(1);
+    expect(own.totals.records).toBe(1);
+    expect(own.items[0]?.employee_user_id).toBe(manager.id);
+    expect(() => service.attendanceSummary(manager, {
+      page: 1,
+      page_size: 20,
+      employee_user_id: seedIds.employee1,
+    }, companyId)).toThrowError(expect.objectContaining({ statusCode: 409 }));
+  });
+
+  it("filters mixed-company attendance within the service before calculating rows and totals", () => {
+    const store = createMemoryDataStore();
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    const employee = store.users.find((user) => user.id === seedIds.employee1)!;
+    const otherCompanyId = randomUUID();
+    store.userSessionPreferences.find((preference) => preference.user_id === employee.id)!.company_id = companyId;
+    store.attendanceDayRecords.push(
+      attendanceDay(seedIds.employee1),
+      attendanceDay(seedIds.employee1, {
+        company_id: otherCompanyId,
+        status: AttendanceDayStatuses.Absent,
+        presence_state: AttendancePresenceStates.Absent,
+      }),
+    );
+    store.attendanceGeoFallbackReviews.push(
+      geoReview(seedIds.employee1),
+      geoReview(seedIds.employee1, { company_id: otherCompanyId, geo_policy: {
+        factual_outcome: "outside_confident",
+        selected_action: "fallback_review",
+        work_site_id: delhiSiteId,
+        work_site_name: "Delhi Office",
+        work_site_type: "office",
+      } }),
+    );
+
+    for (const actor of [admin, employee]) {
+      const result = new ReportService(store).attendanceSummary(actor, {
+        page: 1,
+        page_size: 20,
+      }, companyId);
+      expect(result.total).toBe(1);
+      expect(result.totals).toMatchObject({ records: 1, present: 1, absent: 0 });
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        employee: employee.full_name,
+        employee_code: employee.employee_code,
+      });
+      expect(result.site_options).toEqual([
+        { id: mumbaiSiteId, label: "Mumbai HQ", type: "office" },
+      ]);
+    }
   });
 });

@@ -5,6 +5,7 @@ import { EmploymentStatuses, type AuthUser, type RoleKey } from "#shared";
 import type {
   AssetRecord,
   AttendanceDayRecord,
+  AttendanceGeoFallbackReview,
   AttendancePunch,
   AttendanceRegularizationAction,
   AttendanceRegularizationCorrectionApplication,
@@ -454,39 +455,95 @@ class PostgresPersistence {
     private readonly store: DataStore,
   ) {}
 
-  async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore> {
+  async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean; includeReportEvidence?: boolean }): Promise<DataStore> {
     const client = await this.pool.connect();
     try {
       // Request-local data prevents an external Worker commit from being hidden
       // by this API process's hydrated startup snapshot. Never mutate the
       // shared store (or reload another request's unflushed changes).
-      return {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const reportStore: DataStore = {
         ...this.store,
         attendancePunches: await this.loadAttendancePunches(client, scope),
         attendanceDayRecords: await this.loadAttendanceDayRecords(client, scope),
-        outbox: scope.includePendingOutbox ? await this.loadOutbox(client, "pending") : this.store.outbox,
+        attendanceRegularizations: scope.includeReportEvidence
+          ? await this.loadAttendanceRegularizations(client, scope.companyId)
+          : this.store.attendanceRegularizations,
+        attendanceGeoFallbackReviews: scope.includeReportEvidence
+          ? await this.loadAttendanceGeoFallbackReviews(client, scope.companyId)
+          : this.store.attendanceGeoFallbackReviews,
+        outbox: scope.includeReportEvidence
+          ? await this.loadOutbox(client, "all", scope.companyId)
+          : scope.includePendingOutbox
+            ? await this.loadOutbox(client, "pending", scope.companyId)
+            : this.store.outbox,
       };
+      if (scope.includeReportEvidence) {
+        (reportStore as DataStore & { attendanceMobileEvidenceWarnings: Record<string, unknown>[] }).attendanceMobileEvidenceWarnings =
+          (await client.query("SELECT *, work_date::text AS work_date FROM attendance.mobile_evidence_warnings WHERE company_id = $1 ORDER BY server_received_at, id", [scope.companyId])).rows;
+      }
+      await client.query("COMMIT");
+      return reportStore;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
     } finally {
       client.release();
     }
   }
 
-  async reportExportReadStore(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore> {
+  async attendanceReportReadContext(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
     const client = await this.pool.connect();
     try {
-      if (!scope.companyId && !scope.exportId) return { ...this.store, outbox: [] };
-      const { rows } = scope.exportId
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.loadReportActorContext(client, userId, "reports.attendance.summary");
+      const scope = { companyId };
+      const attendanceDayRecords = await this.loadAttendanceDayRecords(client, scope);
+      const employeeUserIds = [...new Set(attendanceDayRecords.map((record) => record.employee_user_id))];
+      const store: DataStore = {
+        ...this.store,
+        attendancePunches: await this.loadAttendancePunches(client, scope),
+        attendanceDayRecords,
+        attendanceRegularizations: await this.loadAttendanceRegularizations(client, companyId),
+        attendanceGeoFallbackReviews: await this.loadAttendanceGeoFallbackReviews(client, companyId),
+        outbox: await this.loadOutbox(client, "all", companyId),
+        users: await this.loadUsers(client, employeeUserIds),
+        userSessionPreferences: await this.loadUserSessionPreferences(client, employeeUserIds),
+        departments: await this.loadDepartments(client, companyId),
+      };
+      (store as DataStore & { attendanceMobileEvidenceWarnings: Record<string, unknown>[] }).attendanceMobileEvidenceWarnings =
+        (await client.query("SELECT *, work_date::text AS work_date FROM attendance.mobile_evidence_warnings WHERE company_id = $1 ORDER BY server_received_at, id", [companyId])).rows;
+      await client.query("COMMIT");
+      return { actor, companyId, store };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async reportExportReadContext(userId: UUID, exportId?: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.loadReportActorContext(client, userId, "reports.exports.read");
+      const { rows } = exportId
         ? await client.query(
             `SELECT * FROM platform.outbox_events WHERE event_type = 'reports.export.requested'
-             AND (aggregate_id = $1 OR event_id = $1)`,
-            [scope.exportId],
+             AND payload->>'company_id' = $1 AND (aggregate_id = $2 OR event_id = $2)`,
+            [companyId, exportId],
           )
         : await client.query(
             `SELECT * FROM platform.outbox_events WHERE event_type = 'reports.export.requested'
              AND payload->>'company_id' = $1 ORDER BY id`,
-            [scope.companyId],
+            [companyId],
           );
-      return { ...this.store, outbox: rows.map((row) => this.mapOutboxRow(row)) };
+      await client.query("COMMIT");
+      return { actor, companyId, store: { ...this.store, outbox: rows.map((row) => this.mapOutboxRow(row)) } };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
     } finally {
       client.release();
     }
@@ -498,6 +555,42 @@ class PostgresPersistence {
       // One consistent, request-local snapshot. Never reload the shared store:
       // another request may have unflushed mutations in progress.
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.loadReportActorContext(client, userId, "reports.audit");
+      const tickets = await this.loadTickets(client, companyId);
+      const auditLogs = await this.loadAuditLogs(client, companyId);
+      const expenseApprovals = await this.loadExpenseApprovals(client, companyId);
+      const expenseDocuments = await this.loadExpenseDocuments(client, companyId);
+      const payments = await this.loadPayments(client, companyId);
+      const outbox = await this.loadOutbox(client, "all", companyId);
+      const users = await this.loadUsers(client);
+      const userSessionPreferences = await this.loadUserSessionPreferences(client);
+      const departments = await this.loadDepartments(client);
+      await client.query("COMMIT");
+      return { actor, companyId, store: { ...this.store, tickets, auditLogs, expenseApprovals, expenseDocuments, payments, outbox, users, userSessionPreferences, departments } };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async reportActorContext(userId: UUID, operation: string): Promise<{ actor: AuthUser; companyId: UUID }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const context = await this.loadReportActorContext(client, userId, operation);
+      await client.query("COMMIT");
+      return context;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async loadReportActorContext(client: PoolClient, userId: UUID, operation: string): Promise<{ actor: AuthUser; companyId: UUID }> {
       const actorRow = await client.query<{
         employment_status: AuthUser["employment_status"];
         deleted_at: Date | null;
@@ -506,9 +599,13 @@ class PostgresPersistence {
         `SELECT u.employment_status, u.deleted_at,
                 COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
                   WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL
+                    AND role.status = 'active' AND role.deleted_at IS NULL
+                    AND ur.effective_from <= CURRENT_DATE
+                    AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
                 ), '{}') AS roles
          FROM core.users u
          LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+         LEFT JOIN core.roles role ON role.role_key = ur.role_key
          WHERE u.id = $1 GROUP BY u.id`,
         [userId],
       );
@@ -524,7 +621,7 @@ class PostgresPersistence {
         [userId],
       );
       const assignment = preference.rows[0];
-      if (!assignment?.company_id) throw companyContextRequired({ user_id: userId, operation: "reports.audit" });
+      if (!assignment?.company_id) throw companyContextRequired({ user_id: userId, operation });
       if (!actor.roles.includes(assignment.active_role)) {
         throw forbidden("Selected role is not assigned to this user.");
       }
@@ -533,20 +630,9 @@ class PostgresPersistence {
         [assignment.company_id],
       );
       if (company.rows[0]?.status !== "active") {
-        throw companyContextRequired({ user_id: userId, company_id: assignment.company_id, operation: "reports.audit" });
+        throw companyContextRequired({ user_id: userId, company_id: assignment.company_id, operation });
       }
-      const companyId = assignment.company_id;
-      const tickets = await this.loadTickets(client, companyId);
-      const auditLogs = await this.loadAuditLogs(client, companyId);
-      const outbox = await this.loadOutbox(client, "all", companyId);
-      await client.query("COMMIT");
-      return { actor, companyId, store: { ...this.store, tickets, auditLogs, outbox } };
-    } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
+      return { actor, companyId: assignment.company_id };
   }
 
   async reload(): Promise<void> {
@@ -996,9 +1082,11 @@ class PostgresPersistence {
     }
   }
 
-  private async loadDepartments(client: PoolClient): Promise<Department[]> {
+  private async loadDepartments(client: PoolClient, companyId?: UUID): Promise<Department[]> {
     const { rows } = await client.query(
-      "SELECT id, company_id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version FROM core.departments ORDER BY department_code",
+      `SELECT id, company_id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version FROM core.departments
+       ${companyId ? "WHERE company_id = $1" : ""} ORDER BY department_code`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       ...row,
@@ -1204,7 +1292,7 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadUsers(client: PoolClient): Promise<CoreUser[]> {
+  private async loadUsers(client: PoolClient, userIds?: UUID[]): Promise<CoreUser[]> {
     const { rows } = await client.query(`
       SELECT
         u.id, u.employee_code, u.email, u.full_name, u.department_id, u.designation_id,
@@ -1215,9 +1303,10 @@ class PostgresPersistence {
         COALESCE(array_agg(DISTINCT ur.role_key) FILTER (WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL), '{}') AS roles
       FROM core.users u
       LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+      ${userIds ? "WHERE u.id = ANY($1::uuid[])" : ""}
       GROUP BY u.id
       ORDER BY u.employee_code
-    `);
+    `, userIds ? [userIds] : []);
     return rows.map((row) => ({
       ...row,
       roles: row.roles as RoleKey[],
@@ -1317,12 +1406,14 @@ class PostgresPersistence {
 
   private async loadUserSessionPreferences(
     client: PoolClient,
+    userIds?: UUID[],
   ): Promise<UserSessionPreferenceRecord[]> {
     const { rows } = await client.query(`
       SELECT id, user_id, active_role, company_id, landing_page, locale, timezone, created_at, updated_at, version
       FROM platform.user_session_preferences
+      ${userIds ? "WHERE user_id = ANY($1::uuid[])" : ""}
       ORDER BY updated_at, id
-    `);
+    `, userIds ? [userIds] : []);
     return rows.map((row) => ({
       id: row.id,
       user_id: row.user_id,
@@ -1474,9 +1565,13 @@ class PostgresPersistence {
 
   private async loadExpenseApprovals(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<ExpenseApprovalRecord[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_approvals ORDER BY created_at, id",
+      `SELECT approval.* FROM expenses.expense_approvals approval
+       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = approval.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ORDER BY approval.created_at, approval.id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1515,16 +1610,23 @@ class PostgresPersistence {
 
   private async loadExpenseDocuments(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<ExpenseDocument[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_documents ORDER BY uploaded_at, id",
+      `SELECT document.* FROM expenses.expense_documents document
+       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = document.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ORDER BY document.uploaded_at, document.id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({ ...row, uploaded_at: asIso(row.uploaded_at) }));
   }
 
-  private async loadPayments(client: PoolClient): Promise<ExpensePayment[]> {
+  private async loadPayments(client: PoolClient, companyId?: UUID): Promise<ExpensePayment[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_payments ORDER BY created_at, id",
+      `SELECT payment.* FROM expenses.expense_payments payment
+       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = payment.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ORDER BY payment.created_at, payment.id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -2304,13 +2406,18 @@ class PostgresPersistence {
 
   private async loadAttendanceRegularizations(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<AttendanceRegularizationRequest[]> {
     const { rows } = await client.query(
-      "SELECT regularization_requests.*, work_date::text AS work_date FROM attendance.regularization_requests ORDER BY created_at, id",
+      `SELECT regularization_requests.*, work_date::text AS work_date FROM attendance.regularization_requests
+       ${companyId ? "WHERE company_id = $1" : ""} ORDER BY created_at, id`,
+      companyId ? [companyId] : [],
     );
     const itemRows = (
       await client.query(
-        "SELECT * FROM attendance.regularization_request_items ORDER BY regularization_request_id, ordinal, id",
+        `SELECT * FROM attendance.regularization_request_items
+         ${companyId ? "WHERE company_id = $1" : ""} ORDER BY regularization_request_id, ordinal, id`,
+        companyId ? [companyId] : [],
       )
     ).rows;
     const itemsByRequest = new Map<
@@ -2348,6 +2455,38 @@ class PostgresPersistence {
       ),
       status: row.status,
       current_approver_user_id: row.current_approver_user_id,
+      decision_remarks: row.decision_remarks,
+      decided_by_user_id: row.decided_by_user_id,
+      decided_at: asIsoOrNull(row.decided_at),
+      version: row.version,
+      created_at: asIso(row.created_at),
+      updated_at: asIso(row.updated_at),
+      deleted_at: asIsoOrNull(row.deleted_at),
+    }));
+  }
+
+  private async loadAttendanceGeoFallbackReviews(client: PoolClient, companyId: UUID): Promise<AttendanceGeoFallbackReview[]> {
+    const { rows } = await client.query(
+      "SELECT *, work_date::text AS work_date FROM attendance.geo_fallback_reviews WHERE company_id = $1 ORDER BY created_at, id",
+      [companyId],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      company_id: row.company_id,
+      employee_user_id: row.employee_user_id,
+      submitted_by_user_id: row.submitted_by_user_id,
+      current_approver_user_id: row.current_approver_user_id,
+      original_command_id: row.original_command_id,
+      original_decision_id: row.original_decision_id,
+      fallback_command_id: row.fallback_command_id,
+      punch_event_id: row.punch_event_id,
+      event_type: row.event_type,
+      work_date: asDate(row.work_date),
+      occurred_at: asIso(row.occurred_at),
+      reason_code: row.reason_code,
+      reason_detail: row.reason_detail,
+      geo_policy: json(row.geo_policy),
+      status: row.status,
       decision_remarks: row.decision_remarks,
       decided_by_user_id: row.decided_by_user_id,
       decided_at: asIsoOrNull(row.decided_at),

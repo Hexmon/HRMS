@@ -2125,7 +2125,7 @@ Success body highlights:
 | `job_id` | string<uuid> | required | Employee export job UUID |
 | `export_id` | string<uuid> | required | Employee export job UUID |
 | `event_id` | string<uuid> | required | Source outbox event UUID |
-| `status` | string | required | - |
+| `status` | string | required | Legacy export metadata is not downloadable until private delivery is enabled. |
 | `outbox_status` | string | optional | - |
 | `format` | string enum("csv", "xlsx") | required | - |
 | `filters` | object | required | - |
@@ -7563,9 +7563,9 @@ Required: yes
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `format` | string enum("csv", "xlsx") | optional | default "csv" |
-| `report_type` | string | optional | default "expense" |
-| `filters` | object | optional | - |
+| `format` | string enum("csv", "xlsx") | required | - |
+| `report_type` | string enum("expense", "expenses", "expenses/register", "expenses/my", "expenses/manager-queue", "expenses/manager-history", "expenses/finance-dashboard", "expenses/finance-history", "hr", "hr/employees", "attendance", "attendance/summary", "leave", "leave-wfh", "leave-wfh/summary", "projects", "projects/summary", "timesheets", "timesheets/summary", "assets", "assets/summary", "helpdesk", "helpdesk/summary", "audit") | required | - |
+| `filters` | object | required | Both dates are required; the inclusive range may cover at most 12 calendar months. Results above 10,000 rows are rejected without truncation. |
 
 **Responses**
 | Status | Meaning |

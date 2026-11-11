@@ -48,6 +48,7 @@ import {
   notFound,
 } from "../../platform/errors.js";
 import {
+  assertGeneratedExportAvailable,
   createGeneratedExportDocument,
   type GeneratedExportFormat,
 } from "../../platform/generated-exports.js";
@@ -2921,6 +2922,7 @@ export class AttendanceService {
     const filters = input.filters ?? {};
     const reportMode = filters.report_mode ?? "daily";
     const columns = attendanceExportColumns(input.columns, reportMode);
+    assertGeneratedExportAvailable(this.store);
     const createdAt = nowIso();
     const rows = this.exportRows(companyId, filters, columns);
     const generated = await createGeneratedExportDocument(this.store, {

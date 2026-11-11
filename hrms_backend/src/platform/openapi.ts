@@ -23,6 +23,7 @@ import {
   AttendanceReportSourceCategoryValues,
 } from "../modules/attendance/reporting-projection.js";
 import { AttendanceReportingEvidenceCategoryValues } from "../modules/attendance/reporting-evidence.js";
+import { ReportExportTypes } from "../modules/reports/export-boundary.js";
 
 type JsonSchema = Record<string, unknown>;
 type RouteSchema = Record<string, unknown>;
@@ -2730,7 +2731,7 @@ const coreUserExportJobSchema = {
     job_id: uuid("Employee export job UUID"),
     export_id: uuid("Employee export job UUID"),
     event_id: uuid("Source outbox event UUID"),
-    status: { type: "string", example: "ready" },
+    status: { type: "string", example: "unavailable", description: "Legacy export metadata is not downloadable until private delivery is enabled." },
     outbox_status: { type: "string", example: "pending" },
     format: { type: "string", enum: ["csv", "xlsx"], example: "csv" },
     filters: { type: "object", additionalProperties: true },
@@ -2742,7 +2743,7 @@ const coreUserExportJobSchema = {
     download_url: { type: "string", nullable: true },
     created_by_user_id: { ...uuid("Actor user UUID"), nullable: true },
     created_by: { type: "string", example: "ADM - Priya Menon" },
-    adapter: { type: "string", example: "cloudinary-generated-csv" },
+    adapter: { type: "string", example: "private-materializer-unavailable" },
     file_name: {
       type: "string",
       nullable: true,
@@ -7744,10 +7745,21 @@ const reportExportJobSchema = {
 
 const reportExportCreateBodySchema = {
   type: "object",
+  required: ["format", "report_type", "filters"],
   properties: {
-    format: { type: "string", enum: ["csv", "xlsx"], default: "csv" },
-    report_type: { type: "string", default: "expense", example: "attendance" },
-    filters: { type: "object", additionalProperties: true },
+    format: { type: "string", enum: ["csv", "xlsx"] },
+    report_type: { type: "string", enum: enumValues(ReportExportTypes), example: "attendance" },
+    filters: {
+      type: "object",
+      required: ["date_from", "date_to"],
+      description: "Both dates are required; the inclusive range may cover at most 12 calendar months. Results above 10,000 rows are rejected without truncation.",
+      properties: {
+        date_from: date("Inclusive export start date"),
+        date_to: date("Inclusive export end date"),
+        page_size: { type: "integer", minimum: 1, maximum: 10000 },
+      },
+      additionalProperties: true,
+    },
   },
   additionalProperties: false,
 };
@@ -9939,7 +9951,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/core/users/exports": operation(
     "Core / Employees & Hierarchy",
     "Create employee export job",
-    "Creates CSV or XLSX employee export documents for HR/Admin/Auditor users when object storage is configured.",
+    "Currently returns 409 before object/outbox mutation until private export delivery is enabled. HR/Admin/Auditor authorization still applies.",
     { body: coreUserExportBodySchema, response200: coreUserExportJobSchema },
   ),
   "GET /api/v1/core/users/{id}/subtree": operation(
@@ -10876,7 +10888,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/attendance/exports": operation(
     "Attendance",
     "Create attendance export job",
-    "Creates CSV, JSON, or XLSX attendance export documents for HR/Admin/Auditor users when object storage is configured.",
+    "Currently returns 409 before object/outbox mutation until private export delivery is enabled. HR/Admin/Auditor authorization still applies.",
     { body: attendanceExportBody, response200: attendanceExportResponseSchema },
   ),
   "GET /api/v1/leave/balances/my": operation(
@@ -11003,7 +11015,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/leave-wfh/exports": operation(
     "Leave / WFH / Holidays",
     "Create Leave/WFH export job",
-    "Creates CSV, JSON, or XLSX Leave/WFH export documents for HR/Admin/Auditor users when object storage is configured.",
+    "Currently returns 409 before object/outbox mutation until private export delivery is enabled. HR/Admin/Auditor authorization still applies.",
     { body: leaveWfhExportBody, response200: leaveWfhExportResponseSchema },
   ),
   "GET /api/v1/holidays": operation(
@@ -12118,7 +12130,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/documents/{id}/content": operation(
     "Documents",
     "Download local document content",
-    "Streams document bytes through the backend for local/mock object storage after the same document access policy check. Real Cloudinary deployments continue to use provider HTTPS URLs from the download-url endpoint.",
+    "Streams permitted document bytes through the backend after policy checks. Generated export documents fail closed pending private storage migration; ordinary Cloudinary document policy is a separate prelaunch dependency.",
     {
       params: idParamSchema,
       response200: { type: "string", format: "binary" },
@@ -12225,7 +12237,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/hr/employees": operation(
     "Reports & Analytics",
     "HR employee report",
-    "HR/Admin/Auditor employee master report with headcount, department/designation breakdowns, role access rows, and filters.",
+    "Temporarily returns 409 until historical employee company ownership is verified; no report rows are released.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12234,7 +12246,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/attendance/summary": operation(
     "Reports & Analytics",
     "Attendance report",
-    "Attendance report rows for daily status, work hours, late/early exceptions, and safe day-level geo/offline/mobile evidence fields. Exact coordinates are intentionally excluded.",
+    "Company-scoped attendance day and evidence rows. Historical employee name, code and department are unavailable until a source snapshot is verified. Department/manager filters and Reviewer/Director team reporting return 409. Employee self access is current-company only. Exact coordinates are excluded.",
     {
       querystring: reportSummaryQuerySchema,
       response200: attendanceReportSummarySchema,
@@ -12243,7 +12255,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/leave-wfh/summary": operation(
     "Reports & Analytics",
     "Leave and WFH report",
-    "Leave/WFH report rows with balances, holidays, request status breakdowns, and duration totals.",
+    "Temporarily returns 409 until historical leave, balance and holiday company ownership is verified.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12252,7 +12264,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/projects/summary": operation(
     "Reports & Analytics",
     "Project portfolio report",
-    "Project report rows with allocations, utilization, assignment history, and cost rollups.",
+    "Temporarily returns 409 until historical project and allocation company ownership is verified.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12261,7 +12273,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/timesheets/summary": operation(
     "Reports & Analytics",
     "Timesheet report",
-    "Timesheet report rows with submitted hours, billable mix, project rollups, and productivity rows.",
+    "Temporarily returns 409 until timesheet and work-segment company ownership is verified.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12270,7 +12282,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/assets/summary": operation(
     "Reports & Analytics",
     "Asset report",
-    "Asset report rows with inventory status, maintenance history, recovery queue, and type/status breakdowns.",
+    "Temporarily returns 409 until historical asset and recovery company ownership is verified.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12279,7 +12291,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/helpdesk/summary": operation(
     "Reports & Analytics",
     "Helpdesk report",
-    "Helpdesk report rows with open/closed/SLA rollups, agent performance, category, employee, and resolution rows.",
+    "Temporarily returns 409 until historical helpdesk company ownership is verified.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12288,7 +12300,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/audit": operation(
     "Reports & Analytics",
     "Cross-module audit report",
-    "Admin/Auditor cross-module audit report assembled from expense audit logs, outbox events, asset events, and helpdesk events.",
+    "Current-company Admin/Auditor audit report from company-owned expense audit and outbox rows. Ambiguous asset/helpdesk legacy events are excluded.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12297,7 +12309,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/exports": operation(
     "Reports & Analytics",
     "List export jobs",
-    "Lists report export jobs backed by durable outbox events. Admin/Auditor can see all; other users see their own jobs.",
+    "Lists only current-company legacy export events. Their download references and ready status are suppressed until private delivery is enabled.",
     {
       querystring: reportSummaryQuerySchema,
       response200: paginated(reportExportJobSchema),
@@ -12306,13 +12318,13 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/exports/{id}": operation(
     "Reports & Analytics",
     "Get export job",
-    "Returns one report export job and generated document reference when available.",
+    "Returns current-company legacy export metadata with unavailable status and no download reference.",
     { params: idParamSchema, response200: reportExportJobSchema },
   ),
   "POST /api/v1/reports/exports": operation(
     "Reports & Analytics",
     "Create export job",
-    "Creates a CSV or XLSX report export document backed by object storage and durable outbox metadata.",
+    "Currently returns 409 before object or outbox mutation while private storage and bounded materialization are unavailable. Requires both dates; future exports are limited to 10,000 rows and 12 months.",
     { body: reportExportCreateBodySchema, response200: reportExportJobSchema },
   ),
 

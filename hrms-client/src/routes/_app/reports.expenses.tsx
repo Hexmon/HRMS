@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ReportShell } from "@/components/reports/report-shell";
+import { ReportError } from "@/components/reports/report-error";
 import { StatusBadge, type Column } from "@/components/ui-kit";
 import { useExpenses } from "@/lib/expenses-store";
 import { STATUS_LABEL, type ExpenseTicket, type ExpenseStatus } from "@/lib/expenses-store";
@@ -159,7 +160,17 @@ function ExpenseReports() {
   }
 
   if (apiMode && apiError instanceof Error) {
-    return <div className="p-6 text-sm text-destructive">{apiError.message}</div>;
+    return (
+      <ReportError
+        error={apiError}
+        onRetry={() => {
+          void registerQuery.refetch();
+          void managerQueueQuery.refetch();
+          void financeDashboardQuery.refetch();
+          void analyticsQuery.refetch();
+        }}
+      />
+    );
   }
 
   return (

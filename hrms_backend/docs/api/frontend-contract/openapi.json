@@ -20426,7 +20426,7 @@
         "tags": [
           "Core / Employees & Hierarchy"
         ],
-        "description": "Creates CSV or XLSX employee export documents for HR/Admin/Auditor users when object storage is configured.",
+        "description": "Currently returns 409 before object/outbox mutation until private export delivery is enabled. HR/Admin/Auditor authorization still applies.",
         "requestBody": {
           "required": true,
           "content": {
@@ -20519,7 +20519,8 @@
                     },
                     "status": {
                       "type": "string",
-                      "example": "ready"
+                      "example": "unavailable",
+                      "description": "Legacy export metadata is not downloadable until private delivery is enabled."
                     },
                     "outbox_status": {
                       "type": "string",
@@ -20567,7 +20568,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "cloudinary-generated-csv"
+                      "example": "private-materializer-unavailable"
                     },
                     "file_name": {
                       "type": "string",
@@ -39684,7 +39685,7 @@
         "tags": [
           "Documents"
         ],
-        "description": "Streams document bytes through the backend for local/mock object storage after the same document access policy check. Real Cloudinary deployments continue to use provider HTTPS URLs from the download-url endpoint.",
+        "description": "Streams permitted document bytes through the backend after policy checks. Generated export documents fail closed pending private storage migration; ordinary Cloudinary document policy is a separate prelaunch dependency.",
         "parameters": [
           {
             "schema": {
@@ -46952,7 +46953,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "HR/Admin/Auditor employee master report with headcount, department/designation breakdowns, role access rows, and filters.",
+        "description": "Temporarily returns 409 until historical employee company ownership is verified; no report rows are released.",
         "parameters": [
           {
             "schema": {
@@ -47646,7 +47647,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Attendance report rows for daily status, work hours, late/early exceptions, and safe day-level geo/offline/mobile evidence fields. Exact coordinates are intentionally excluded.",
+        "description": "Company-scoped attendance day and evidence rows. Historical employee name, code and department are unavailable until a source snapshot is verified. Department/manager filters and Reviewer/Director team reporting return 409. Employee self access is current-company only. Exact coordinates are excluded.",
         "parameters": [
           {
             "schema": {
@@ -48672,7 +48673,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Leave/WFH report rows with balances, holidays, request status breakdowns, and duration totals.",
+        "description": "Temporarily returns 409 until historical leave, balance and holiday company ownership is verified.",
         "parameters": [
           {
             "schema": {
@@ -49366,7 +49367,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Project report rows with allocations, utilization, assignment history, and cost rollups.",
+        "description": "Temporarily returns 409 until historical project and allocation company ownership is verified.",
         "parameters": [
           {
             "schema": {
@@ -50060,7 +50061,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Timesheet report rows with submitted hours, billable mix, project rollups, and productivity rows.",
+        "description": "Temporarily returns 409 until timesheet and work-segment company ownership is verified.",
         "parameters": [
           {
             "schema": {
@@ -50754,7 +50755,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Asset report rows with inventory status, maintenance history, recovery queue, and type/status breakdowns.",
+        "description": "Temporarily returns 409 until historical asset and recovery company ownership is verified.",
         "parameters": [
           {
             "schema": {
@@ -51448,7 +51449,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Helpdesk report rows with open/closed/SLA rollups, agent performance, category, employee, and resolution rows.",
+        "description": "Temporarily returns 409 until historical helpdesk company ownership is verified.",
         "parameters": [
           {
             "schema": {
@@ -52142,7 +52143,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Admin/Auditor cross-module audit report assembled from expense audit logs, outbox events, asset events, and helpdesk events.",
+        "description": "Current-company Admin/Auditor audit report from company-owned expense audit and outbox rows. Ambiguous asset/helpdesk legacy events are excluded.",
         "parameters": [
           {
             "schema": {
@@ -52836,7 +52837,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Lists report export jobs backed by durable outbox events. Admin/Auditor can see all; other users see their own jobs.",
+        "description": "Lists only current-company legacy export events. Their download references and ready status are suppressed until private delivery is enabled.",
         "parameters": [
           {
             "schema": {
@@ -53634,29 +53635,82 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Creates a CSV or XLSX report export document backed by object storage and durable outbox metadata.",
+        "description": "Currently returns 409 before object or outbox mutation while private storage and bounded materialization are unavailable. Requires both dates; future exports are limited to 10,000 rows and 12 months.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": [
+                  "format",
+                  "report_type",
+                  "filters"
+                ],
                 "properties": {
                   "format": {
                     "type": "string",
                     "enum": [
                       "csv",
                       "xlsx"
-                    ],
-                    "default": "csv"
+                    ]
                   },
                   "report_type": {
                     "type": "string",
-                    "default": "expense",
+                    "enum": [
+                      "expense",
+                      "expenses",
+                      "expenses/register",
+                      "expenses/my",
+                      "expenses/manager-queue",
+                      "expenses/manager-history",
+                      "expenses/finance-dashboard",
+                      "expenses/finance-history",
+                      "hr",
+                      "hr/employees",
+                      "attendance",
+                      "attendance/summary",
+                      "leave",
+                      "leave-wfh",
+                      "leave-wfh/summary",
+                      "projects",
+                      "projects/summary",
+                      "timesheets",
+                      "timesheets/summary",
+                      "assets",
+                      "assets/summary",
+                      "helpdesk",
+                      "helpdesk/summary",
+                      "audit"
+                    ],
                     "example": "attendance"
                   },
                   "filters": {
                     "type": "object",
+                    "required": [
+                      "date_from",
+                      "date_to"
+                    ],
+                    "description": "Both dates are required; the inclusive range may cover at most 12 calendar months. Results above 10,000 rows are rejected without truncation.",
+                    "properties": {
+                      "date_from": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Inclusive export start date",
+                        "example": "2026-05-04"
+                      },
+                      "date_to": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Inclusive export end date",
+                        "example": "2026-05-04"
+                      },
+                      "page_size": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000
+                      }
+                    },
                     "additionalProperties": true
                   }
                 },
@@ -54083,7 +54137,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Returns one report export job and generated document reference when available.",
+        "description": "Returns current-company legacy export metadata with unavailable status and no download reference.",
         "parameters": [
           {
             "schema": {
@@ -96650,7 +96704,7 @@
         "tags": [
           "Attendance"
         ],
-        "description": "Creates CSV, JSON, or XLSX attendance export documents for HR/Admin/Auditor users when object storage is configured.",
+        "description": "Currently returns 409 before object/outbox mutation until private export delivery is enabled. HR/Admin/Auditor authorization still applies.",
         "requestBody": {
           "required": true,
           "content": {
@@ -102828,7 +102882,7 @@
         "tags": [
           "Leave / WFH / Holidays"
         ],
-        "description": "Creates CSV, JSON, or XLSX Leave/WFH export documents for HR/Admin/Auditor users when object storage is configured.",
+        "description": "Currently returns 409 before object/outbox mutation until private export delivery is enabled. HR/Admin/Auditor authorization still applies.",
         "requestBody": {
           "required": true,
           "content": {

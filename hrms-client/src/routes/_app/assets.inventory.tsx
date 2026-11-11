@@ -16,6 +16,7 @@ import { Plus, Download } from "lucide-react";
 import type { Asset, AssetStatus } from "@/lib/mock/assets";
 import { AssetFormDrawer } from "@/components/assets/asset-form-drawer";
 import { toast } from "sonner";
+import { downloadCsv } from "@/lib/csv";
 
 export const Route = createFileRoute("/_app/assets/inventory")({ component: Inventory });
 
@@ -159,31 +160,21 @@ function Inventory() {
       }
       return;
     }
-    const csv = [headers.join(",")]
-      .concat(
-        rows.map((a) =>
-          [
-            a.id,
-            a.type,
-            a.brand,
-            a.model,
-            a.serial,
-            a.status,
-            a.assignedTo ?? "",
-            a.location,
-            a.warrantyExpiry,
-            a.cost,
-          ].join(","),
-        ),
-      )
-      .join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "assets-inventory.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv("assets-inventory.csv", [
+      headers,
+      ...rows.map((a) => [
+        a.id,
+        a.type,
+        a.brand,
+        a.model,
+        a.serial,
+        a.status,
+        a.assignedTo ?? "",
+        a.location,
+        a.warrantyExpiry,
+        a.cost,
+      ]),
+    ]);
   };
 
   return (
@@ -237,15 +228,17 @@ function Inventory() {
           />
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={exportCsv}
-            disabled={isApiBacked && exportMutation.isPending}
-            className="rounded-full"
-          >
-            <Download className="mr-2 h-4 w-4" />
-            {isApiBacked && exportMutation.isPending ? "Exporting..." : "Export"}
-          </Button>
+          {!isApiBacked && (
+            <Button
+              variant="outline"
+              onClick={exportCsv}
+              disabled={isApiBacked && exportMutation.isPending}
+              className="rounded-full"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {isApiBacked && exportMutation.isPending ? "Exporting..." : "Export"}
+            </Button>
+          )}
           <Button
             onClick={() => setOpen(true)}
             className="rounded-full text-primary-foreground"

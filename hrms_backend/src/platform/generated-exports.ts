@@ -3,6 +3,7 @@ import type { AuthUser, DocumentMetadata, UUID } from "#shared";
 import { DocumentClassifications } from "#shared";
 import type { MemoryDataStore } from "./data-store.js";
 import { makeStorageKey, nowIso } from "./data-store.js";
+import { conflict } from "./errors.js";
 
 export type GeneratedExportFormat = "csv" | "json" | "xlsx";
 
@@ -34,10 +35,7 @@ export async function createGeneratedExportDocument(
   store: MemoryDataStore,
   input: GeneratedExportDocumentInput
 ): Promise<GeneratedExportDocumentResult> {
-  if (!store.objectStorage) {
-    return queuedResult(input);
-  }
-
+  assertGeneratedExportAvailable(store);
   const rendered = renderExport(
     input.rows,
     input.columns,
@@ -57,7 +55,7 @@ export async function createGeneratedExportDocument(
   });
   const checksum = createHash("sha256").update(rendered).digest("hex");
 
-  const stored = await store.objectStorage.putObject(storageKey, rendered, {
+  const stored = await store.objectStorage!.putObject(storageKey, rendered, {
     "content-type": mimeType,
     "x-hrms-document-id": documentId,
     "x-hrms-export-type": input.businessObjectType,
@@ -86,17 +84,17 @@ export async function createGeneratedExportDocument(
       row_count: input.rows.length,
       columns: input.columns,
       filters: input.filters ?? {},
-      storage: store.objectStorage.kind,
-      storage_adapter: store.objectStorage.kind,
-      folder: store.objectStorage.bucket,
+      storage: store.objectStorage!.kind,
+      storage_adapter: store.objectStorage!.kind,
+      folder: store.objectStorage!.bucket,
       object_public_id: stored.publicId ?? null,
       object_resource_type: stored.resourceType ?? null,
       object_url: stored.url ?? null,
       object_upload_compressed: stored.compressed ?? false,
-      cloudinary_public_id: store.objectStorage.kind === "cloudinary" ? stored.publicId ?? null : null,
-      cloudinary_resource_type: store.objectStorage.kind === "cloudinary" ? stored.resourceType ?? null : null,
-      cloudinary_url: store.objectStorage.kind === "cloudinary" ? stored.url ?? null : null,
-      cloudinary_upload_compressed: store.objectStorage.kind === "cloudinary" ? stored.compressed ?? false : false,
+      cloudinary_public_id: null,
+      cloudinary_resource_type: null,
+      cloudinary_url: null,
+      cloudinary_upload_compressed: false,
       stored_size_bytes: stored.size
     },
     created_by_user_id: input.actor.id,
@@ -120,7 +118,7 @@ export async function createGeneratedExportDocument(
 
   return {
     status: "ready",
-    adapter: `${store.objectStorage.kind}-generated-${input.format}`,
+    adapter: `${store.objectStorage!.kind}-generated-${input.format}`,
     download_document_id: document.id,
     download_url: null,
     file_name: document.file_name,
@@ -130,17 +128,13 @@ export async function createGeneratedExportDocument(
   };
 }
 
-function queuedResult(input: GeneratedExportDocumentInput): GeneratedExportDocumentResult {
-  return {
-    status: "queued",
-    adapter: "outbox-queued-placeholder",
-    download_document_id: null,
-    download_url: null,
-    file_name: null,
-    row_count: input.rows.length,
-    size_bytes: null,
-    generated_at: null
-  };
+export function assertGeneratedExportAvailable(store: MemoryDataStore): void {
+  // PostgreSQL-backed requests cannot publish public object bytes before a
+  // durable, company-owned intent and private materialization transaction.
+  // The memory renderer remains available only to isolated renderer tests.
+  if (store.kind === "postgres" || !store.objectStorage || store.objectStorage.kind !== "memory") {
+    throw conflict("Generated exports require private storage and a bounded materializer.");
+  }
 }
 
 function exportExtension(format: GeneratedExportFormat): string {
@@ -194,8 +188,7 @@ function csvCell(value: unknown): string {
 }
 
 function neutralizeSpreadsheetFormula(value: string): string {
-  const first = value.trimStart()[0];
-  if (first === "=" || first === "+" || first === "-" || first === "@") {
+  if (/^[\s\u0000-\u001f\u007f\ufeff]*[=+\-@]/u.test(value)) {
     return `'${value}`;
   }
   return value;
@@ -304,7 +297,9 @@ function xmlText(value: unknown): string {
     : typeof value === "object"
       ? JSON.stringify(value)
       : String(value);
-  return text
+  const safeText = typeof value === "string" ? neutralizeSpreadsheetFormula(text) : text;
+  return safeText
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/gu, "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
