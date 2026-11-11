@@ -6,7 +6,7 @@
   "status": "skipped",
   "visualReview": "pending",
   "artifact": {
-    "path": "/home/hexmon/Desktop/HRMS/docs/architecture/hrms-runtime-source-2026-11-09.html",
+    "path": "docs/architecture/hrms-runtime-source-2026-11-09.html",
     "sha256": "59ee29a86ad4a6dfee66456ae049435fc72aa91247ce4f655f5f9de362aaa162",
     "bytes": 808894
   },
@@ -24,7 +24,7 @@
       "severity": "warning",
       "message": "Chrome or Chromium is unavailable. Set ARCHIFY_CHROME to its executable path.",
       "subject": {
-        "artifact": "/home/hexmon/Desktop/HRMS/docs/architecture/hrms-runtime-source-2026-11-09.html"
+        "artifact": "docs/architecture/hrms-runtime-source-2026-11-09.html"
       },
       "evidence": {
         "executable": null
