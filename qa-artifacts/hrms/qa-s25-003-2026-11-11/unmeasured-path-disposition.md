@@ -1,0 +1,29 @@
+# QA-S25-003 unmeasured path disposition
+
+Read-only audit at `deb6012de16e9226dd1480bebea43b9f83c8a230` against merge base `30783aa5ccaef41900195e1902f9dcb9f92d4270`, 2026-11-11. The lead independently reran `node scripts/agent/changed-coverage.mjs --base origin/release-01 --head HEAD`: exit **1**, changed executable lines **0/0**, decision branches **0/0**, and **21 unmeasured entries**. The prior exact-head CI ran 541 backend unit and two frontend component tests before this same red gate. This document is a proposed path-by-path verification disposition, **not** an exception file, coverage pass, or completion claim. The CI gate rejects PR-authored manual bypass data and must remain red until additional verification and a trusted protected-branch decision.
+
+| # | Changed path | Required proof and current limit |
+| --- | --- | --- |
+| 1 | `.github/workflows/branch-ci-cd.yml` | Contract-test PR/push/dev/qa/main/release event matrix, cumulative baseline failure and job dependencies; verify an actual PR run. YAML parsing alone cannot establish behavior; no meaningful V8 line metric. |
+| 2 | `hrms-client/package.json` | Frozen install, component coverage command, typecheck and build; inspect script/dependency diff. Declarative manifest, no source-line metric. |
+| 3 | `hrms-client/pnpm-lock.yaml` | Frozen install and lockfile integrity/diff review; no source-line metric. |
+| 4 | `hrms-client/vitest.config.ts` | Execute component/coverage runner and controlled include/exclude/setup/alias fixtures; inspect report paths. Config loading can be instrumented separately, but runner behavior is the useful oracle. |
+| 5 | `hrms_backend/package.json` | Frozen install, backend coverage command and build; inspect script/dependency diff. Declarative manifest, no source-line metric. |
+| 6 | `hrms_backend/pnpm-lock.yaml` | Frozen install and lockfile integrity/diff review; no source-line metric. |
+| 7 | `hrms_backend/scripts/lib.ts` | Add this script to an instrumented TS coverage map and cover changed lines/branches. The selected walker unit test proves one root/nested boundary only; the helper remains unmeasured. |
+| 8 | `hrms_backend/vitest.config.ts` | Execute unit/integration/contract selection and V8 include/exclude/report fixtures. Config can be instrumented, but full runner contract is required. |
+| 9 | `qa-artifacts/hrms/discovery-2026-11-09/admin-settings-cross-company-probe.ts` | Exact-head isolated in-memory injection/output contract or instrumented probe harness. Existing dated evidence records a defect, not a SaaS remediation pass. |
+| 10 | `qa-artifacts/hrms/discovery-2026-11-09/disposable-probe-guard.ts` | Add the external TS file to an instrumented scope. Existing selected unit tests cover accepted/rejected URL cases, but the report omits this file and its changed branches. |
+| 11 | `qa-artifacts/hrms/discovery-2026-11-09/multi-instance-asset-probe.ts` | Strict disposable preflight, exact-head isolated PostgreSQL/Valkey two-instance result and teardown; optionally instrument probe. Do not rerun against hosted or shared data. A defect reproduction is not a product pass. |
+| 12 | `qa-artifacts/hrms/discovery-2026-11-09/tenant-boundary-probe.ts` | Exact-head isolated API injection/output assertions and independent review; optionally instrument probe. A cross-company 200 is a security finding, not success. |
+| 13 | `scripts/agent/assert-disposable-test-db.py` | Python `coverage.py` changed-line/branch mapping; existing local/remote/query tests need fail-before-DB and URL/environment precedence boundaries. |
+| 14 | `scripts/agent/changed-coverage.mjs` | Node V8 quantitative map: earlier focused run reported 100% lines and 93.58% branches. Map exact changed branches and retain synthetic temporary-Git red/green fixtures; 25 test passes do not measure the cumulative PR. |
+| 15 | `scripts/agent/resolve-push-coverage-base.mjs` | Node V8 quantitative map around the 12 synthetic baseline tests; require workflow integration and actual push behavior before any deployment claim. |
+| 16 | `scripts/agent/validate-doc-references.py` | Python quantitative coverage plus direct missing/path-escape/URL fixtures. The current 88-reference real check alone is insufficient. |
+| 17 | `scripts/agent/lib.sh` | `bash -n`, sourced-function/fake-command contracts, `git ls-files -s` executable mode and independent review; no current trustworthy source-line map. |
+| 18 | `scripts/agent/protect-sensitive-files.sh` | `bash -n`, executable mode, tracked/unstaged/untracked secret and false-positive fixtures; existing synthetic secret rejection is partial. |
+| 19 | `scripts/agent/validate-agent-setup.sh` | `bash -n`, executable mode, real 88-reference run and negative missing-skill/name/non-executable/bad-reference fixtures. |
+| 20 | `scripts/agent/verify-change.sh` | `bash -n`, executable mode, exact-head selection/preflight matrix; existing Python tests cover some path, DB, spacing, secret and config boundaries. |
+| 21 | `scripts/agent/verify-full.sh` | `bash -n`, executable mode, existing fake-pnpm ordering/fail-fast checks, actual disposable full gate, dry-run worker and separate browser evidence. |
+
+TypeScript/JavaScript/Python programs in rows 7 and 9–16 can gain quantitative evidence. Workflow, manifests, lockfiles, runner configuration and shell modes need executable contracts plus independent review. No blanket allowlist, ignored branch, fabricated report or self-authored JSON waiver is justified. Product source remains subject to the numerical changed-line/branch gate. The owner must decide whether protected-branch policy may accept reviewed nonnumeric contract evidence for the declarative/shell rows, and must separately approve strict-ancestor bootstrap SHAs before the first `dev`/`qa`/`main` push coverage run. No GitHub rule, variable, deployment or sheet row was changed by this audit.
