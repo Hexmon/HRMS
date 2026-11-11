@@ -32,6 +32,12 @@ class VerificationScriptTests(unittest.TestCase):
         self.assertIn('--trusted-validator "$validator"', workflow)
         self.assertIn("actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683", workflow)
         self.assertIn("actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020", workflow)
+        candidate_installs = [line.strip() for line in workflow.splitlines() if "pnpm --dir candidate/" in line]
+        self.assertEqual(len(candidate_installs), 2)
+        for command in candidate_installs:
+            self.assertIn("--frozen-lockfile", command)
+            self.assertIn("--ignore-scripts", command)
+            self.assertIn("--ignore-pnpmfile", command)
 
     def test_change_plan_keeps_unrelated_suites_out_of_each_path_class(self) -> None:
         cases = (
