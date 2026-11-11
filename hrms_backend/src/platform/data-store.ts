@@ -450,7 +450,7 @@ export interface DataStorePersistence {
   assetAssignees?(actorUserId: UUID, companyId: UUID, search?: string): Promise<{ items: Array<{ id: UUID; full_name: string }>; has_more: boolean }>;
   assetCommand?<T>(
     input: AssetCommandInput,
-    authorize: (store: DataStore, actor: AuthUser) => void,
+    authorize: (store: DataStore, actor: AuthUser, replayBody?: T) => void,
     execute: (store: DataStore, actor: AuthUser) => T,
   ): Promise<T>;
   close(): Promise<void>;

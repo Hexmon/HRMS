@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useEmployees } from "@/lib/employees-store";
 import { useAssets, warrantyDaysLeft, fmtMoney, ASSET_ADMIN_ROLES } from "@/lib/assets-store";
-import { assetsApi, mapApiAsset } from "@/domains/assets";
-import { isUuid, toastApiError, userFacingErrorMessage, withApiFallback } from "@/shared/api";
+import { assetOverviewMetadata, assetsApi, mapApiAsset } from "@/domains/assets";
+import { isUuid, toastApiError, userFacingErrorMessage } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import { DataCard, StatusBadge } from "@/components/ui-kit";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -60,16 +60,12 @@ function AssetDetail() {
   const { employees } = useEmployees();
   const listAsset = assets.find((a) => a.id === id);
   const detailQuery = useQuery({
-    queryKey: queryKeys.detail("assets", "asset", id),
-    queryFn: () =>
-      withApiFallback(
-        async () => mapApiAsset(await assetsApi.get(id), listAsset),
-        () => listAsset as NonNullable<typeof listAsset>,
-      ),
-    enabled: isUuid(id),
+    queryKey: queryKeys.detail("assets", "asset", id, { actor_id: user?.id }),
+    queryFn: async () => mapApiAsset(await assetsApi.get(id)),
+    enabled: isApiBacked && isUuid(id),
     staleTime: queryTimings.detailStaleMs,
   });
-  const asset = detailQuery.data ?? listAsset;
+  const asset = isApiBacked && detailQuery.isError ? undefined : (detailQuery.data ?? listAsset);
   const isAdmin = !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const assigneesQuery = useQuery({
@@ -107,7 +103,9 @@ function AssetDetail() {
   }
 
   const days = warrantyDaysLeft(asset.warrantyExpiry);
-  const expired = days < 0;
+  const hasWarranty = !!asset.warrantyExpiry;
+  const expired = hasWarranty && days < 0;
+  const overview = assetOverviewMetadata(asset, days);
 
   return (
     <div className="space-y-4">
@@ -121,7 +119,7 @@ function AssetDetail() {
           </Button>
           <div className="min-w-0">
             <h2 className="break-words text-xl font-semibold tracking-tight">
-              {asset.brand} {asset.model}
+              {asset.brand === "—" ? asset.model : `${asset.brand} ${asset.model}`}
             </h2>
             <p className="break-words text-xs text-muted-foreground">
               {asset.id} · {asset.serial} · {asset.type}
@@ -207,14 +205,20 @@ function AssetDetail() {
                 <Info k="Serial" v={asset.serial} />
                 <Info k="Vendor" v={asset.vendor} />
                 <Info k="Invoice #" v={asset.invoiceNumber} />
-                <Info k="Purchased" v={asset.purchaseDate} />
-                <Info
-                  k="Warranty"
-                  v={`${asset.warrantyExpiry} (${days < 0 ? "expired" : days + "d left"})`}
-                />
-                <Info k="Cost" v={fmtMoney(asset.cost)} />
+                <Info k="Purchased" v={overview.purchaseDate} />
+                <Info k="Warranty" v={overview.warranty} />
+                <Info k="Cost" v={overview.cost === null ? "—" : fmtMoney(overview.cost)} />
                 <Info k="Location" v={asset.location} />
-                <Info k="Condition" v={<span className="uppercase">{asset.condition}</span>} />
+                <Info
+                  k="Condition"
+                  v={
+                    overview.condition === null ? (
+                      "—"
+                    ) : (
+                      <span className="uppercase">{overview.condition}</span>
+                    )
+                  }
+                />
               </dl>
             </DataCard>
             <DataCard title="Current assignment">
@@ -273,7 +277,7 @@ function AssetDetail() {
                     <div>
                       <p className="text-xs text-muted-foreground">Condition</p>
                       <p className="text-sm uppercase">
-                        {h.conditionAtHandover}
+                        {asset.apiMissing?.condition ? "—" : h.conditionAtHandover}
                         {h.conditionAtReturn ? ` → ${h.conditionAtReturn}` : ""}
                       </p>
                     </div>
@@ -334,7 +338,11 @@ function AssetDetail() {
 
         <TabsContent value="documents" className="mt-4">
           <DataCard title="Documents">
-            {asset.documents.length === 0 ? (
+            {isApiBacked ? (
+              <p className="text-sm text-muted-foreground">
+                Asset documents are not available in this view.
+              </p>
+            ) : asset.documents.length === 0 ? (
               <p className="text-sm text-muted-foreground">No documents uploaded for this asset.</p>
             ) : (
               <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -354,22 +362,28 @@ function AssetDetail() {
 
         <TabsContent value="audit" className="mt-4">
           <DataCard title="Audit trail" padded={false}>
-            <ul className="divide-y">
-              {asset.audit.map((a) => (
-                <li key={a.id} className="px-5 py-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium">{a.action}</p>
+            {isApiBacked ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">
+                Asset audit history is not available in this view.
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {asset.audit.map((a) => (
+                  <li key={a.id} className="px-5 py-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium">{a.action}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(a.at).toLocaleString()}
+                      </p>
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(a.at).toLocaleString()}
+                      {a.actor}
+                      {a.remarks ? ` · ${a.remarks}` : ""}
                     </p>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {a.actor}
-                    {a.remarks ? ` · ${a.remarks}` : ""}
-                  </p>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+            )}
           </DataCard>
         </TabsContent>
       </Tabs>

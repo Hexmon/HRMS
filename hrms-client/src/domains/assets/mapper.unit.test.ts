@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapApiAsset } from "./mapper";
+import { assetOverviewMetadata, mapApiAsset } from "./mapper";
 
 describe("asset API projection", () => {
   it("uses the current assignment acknowledgement after refresh, not mock history", () => {
@@ -36,5 +36,25 @@ describe("asset API projection", () => {
         staleMock,
       ).history[0]?.acknowledged,
     ).toBe(true);
+  });
+
+  it("shows missing backend metadata as unavailable in the detail overview", () => {
+    const asset = mapApiAsset({
+      id: "asset-new",
+      name: "Dell Latitude",
+      asset_type: "Laptop",
+      status: "InStock",
+      serial_no: "SN-1",
+    });
+    expect(asset.purchaseDate).toBe("");
+    expect(asset.warrantyExpiry).toBe("");
+    expect(asset.brand).toBe("—");
+    expect(asset.category).toBe("—");
+    expect(assetOverviewMetadata(asset, Number.NaN)).toEqual({
+      purchaseDate: "—",
+      warranty: "—",
+      cost: null,
+      condition: null,
+    });
   });
 });

@@ -17,7 +17,7 @@ async function assetMutation<T>(
   request: FastifyRequest,
   actionKey: string,
   body: Record<string, unknown>,
-  authorize: (store: DataStore, actor: AuthUser) => void,
+  authorize: (store: DataStore, actor: AuthUser, replayBody?: T) => void,
   execute: (service: AssetService, actor: AuthUser) => T,
   assigneeUserId?: string,
 ): Promise<T> {
@@ -56,8 +56,16 @@ function authorizeOwnRequest(store: DataStore, actor: AuthUser, id: string): voi
   }
 }
 
-function authorizeAcknowledgement(store: DataStore, actor: AuthUser, id: string): void {
+function authorizeAcknowledgement(store: DataStore, actor: AuthUser, id: string, replayBody?: unknown): void {
   if (!store.assets.some((item) => item.id === id && !item.deleted_at && (item.current_assigned_user_id === actor.id || actor.roles.includes(Roles.Admin)))) {
+    const body = replayBody && typeof replayBody === "object" ? replayBody as Record<string, unknown> : null;
+    const acknowledgement = body?.acknowledgement && typeof body.acknowledgement === "object"
+      ? body.acknowledgement as Record<string, unknown> : null;
+    if (
+      acknowledgement?.asset_id === id && acknowledgement.employee_user_id === actor.id &&
+      typeof acknowledgement.id === "string" &&
+      store.assetAcknowledgements.some((item) => item.id === acknowledgement.id && item.asset_id === id && item.employee_user_id === actor.id)
+    ) return;
     throw forbidden("Only the assigned employee can acknowledge this asset.");
   }
 }
@@ -288,7 +296,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = acknowledgementSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.acknowledge:${params.id}`, body, (store, actor) => authorizeAcknowledgement(store, actor, params.id), (service, actor) => service.acknowledge(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.acknowledge:${params.id}`, body, (store, actor, replayBody) => authorizeAcknowledgement(store, actor, params.id, replayBody), (service, actor) => service.acknowledge(actor, params.id, body));
   });
 
   fastify.get("/:id/maintenance", async (request) => {

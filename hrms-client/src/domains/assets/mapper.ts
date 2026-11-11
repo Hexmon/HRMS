@@ -16,6 +16,13 @@ function mapAssetStatus(value: unknown, fallback: Asset["status"] = "available")
 
 export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
   const row = asRecord(value);
+  const hasValue = (field: unknown) => field !== null && field !== undefined && field !== "";
+  const apiMissing: Asset["apiMissing"] = {
+    ...(!hasValue(row.purchase_date) && { purchaseDate: true as const }),
+    ...(!hasValue(row.warranty_expiry) && { warrantyExpiry: true as const }),
+    ...(!hasValue(row.cost) && { cost: true as const }),
+    ...(!hasValue(row.condition) && { condition: true as const }),
+  };
   const assetType = text(row.asset_type ?? row.type, fallback?.type ?? "Asset");
   const name = text(row.name, fallback?.model ?? assetType);
   const maintenance = Array.isArray(row.maintenance)
@@ -41,24 +48,19 @@ export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
   return {
     id: text(row.id ?? row.asset_code, fallback?.id ?? "AST-API"),
     version: numberValue(row.version, fallback?.version ?? 1),
+    apiMissing,
     type: assetType,
-    category: text(row.category, fallback?.category ?? "Hardware"),
-    brand: text(row.brand, fallback?.brand ?? name.split(" ")[0] ?? assetType),
+    category: text(row.category, "—"),
+    brand: text(row.brand, "—"),
     model: text(row.model ?? row.name, fallback?.model ?? name),
     serial: text(row.serial_no ?? row.serial, fallback?.serial ?? "—"),
-    purchaseDate: dateText(
-      row.purchase_date,
-      fallback?.purchaseDate ?? new Date().toISOString(),
-    ).slice(0, 10),
-    vendor: text(row.vendor, fallback?.vendor ?? "—"),
-    invoiceNumber: text(row.invoice_no ?? row.invoiceNumber, fallback?.invoiceNumber ?? "—"),
-    warrantyExpiry: dateText(
-      row.warranty_expiry,
-      fallback?.warrantyExpiry ?? new Date().toISOString(),
-    ).slice(0, 10),
-    cost: numberValue(row.cost, fallback?.cost ?? 0),
-    location: text(row.location, fallback?.location ?? "—"),
-    condition: (text(row.condition, fallback?.condition ?? "good") as Asset["condition"]) || "good",
+    purchaseDate: text(row.purchase_date).slice(0, 10),
+    vendor: text(row.vendor, "—"),
+    invoiceNumber: text(row.invoice_no ?? row.invoiceNumber, "—"),
+    warrantyExpiry: text(row.warranty_expiry).slice(0, 10),
+    cost: numberValue(row.cost, 0),
+    location: text(row.location, "—"),
+    condition: (text(row.condition, "good") as Asset["condition"]) || "good",
     status: mapAssetStatus(row.status, fallback?.status),
     assignedTo: text(row.assigned_to_name, fallback?.assignedTo),
     assignedToId: text(row.assigned_to_user_id, fallback?.assignedToId),
@@ -78,6 +80,17 @@ export function mapApiAssets(values: unknown[], fallbacks: Asset[]): Asset[] {
     const fallback = fallbacks.find((asset) => asset.id === key || asset.serial === row.serial_no);
     return mapApiAsset(row as ApiRecord, fallback);
   });
+}
+
+export function assetOverviewMetadata(asset: Asset, warrantyDaysLeft: number) {
+  return {
+    purchaseDate: asset.purchaseDate || "—",
+    warranty: asset.warrantyExpiry
+      ? `${asset.warrantyExpiry} (${warrantyDaysLeft < 0 ? "expired" : `${warrantyDaysLeft}d left`})`
+      : "—",
+    cost: asset.apiMissing?.cost ? null : asset.cost,
+    condition: asset.apiMissing?.condition ? null : asset.condition,
+  };
 }
 
 function mapPriority(value: unknown): AssetRequest["priority"] {

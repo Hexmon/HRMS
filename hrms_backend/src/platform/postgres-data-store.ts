@@ -596,7 +596,7 @@ class PostgresPersistence {
 
   async assetCommand<T>(
     input: AssetCommandInput,
-    authorize: (store: DataStore, actor: AuthUser) => void,
+    authorize: (store: DataStore, actor: AuthUser, replayBody?: T) => void,
     execute: (store: DataStore, actor: AuthUser) => T,
   ): Promise<T> {
     const client = await this.pool.connect();
@@ -611,7 +611,6 @@ class PostgresPersistence {
       await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
       const actor = await this.loadCurrentAssetActor(client, input);
       const before = await this.loadAssetSnapshot(client);
-      authorize(before, actor);
 
       const previous = await client.query<{
         request_hash: string;
@@ -623,6 +622,9 @@ class PostgresPersistence {
            AND action_key = $3 AND idempotency_key = $4`,
         [input.companyId, input.actorUserId, input.actionKey, input.idempotencyKey],
       );
+      // Authorize against current SQL actor state and resource visibility
+      // before either replaying or revealing a key/hash conflict.
+      authorize(before, actor, previous.rows[0]?.response_body);
       if (previous.rows[0]) {
         if (previous.rows[0].request_hash !== input.requestHash) {
           throw conflict("Idempotency-Key was already used for a different asset command.");

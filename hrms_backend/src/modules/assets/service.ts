@@ -427,25 +427,21 @@ export class AssetService {
       throw conflict("Asset recovery ticket is already closed.", { id });
     }
     const asset = this.repository.find(ticket.asset_id);
+    const assignment = this.repository.activeAssignment(asset.id);
+    if (
+      asset.current_assigned_user_id !== ticket.employee_user_id ||
+      assignment?.assigned_to_user_id !== ticket.employee_user_id
+    ) {
+      throw conflict("Recovery ticket no longer matches the current asset assignment. HR review is required.", { id, asset_id: asset.id });
+    }
     const now = nowIso();
-    if (input.settlement_status === "lost_damaged") {
-      asset.status = AssetStatuses.LostStolen;
-    } else {
-      asset.status = AssetStatuses.Returned;
-    }
-    if (asset.current_assigned_user_id === ticket.employee_user_id) {
-      asset.current_assigned_user_id = null;
-    }
+    asset.status = input.settlement_status === "lost_damaged" ? AssetStatuses.LostStolen : AssetStatuses.Returned;
+    asset.current_assigned_user_id = null;
     asset.version += 1;
     asset.updated_at = now;
-    const assignment = this.store.assetAssignments.find(
-      (candidate) => candidate.asset_id === asset.id && candidate.status === "active"
-    );
-    if (assignment) {
-      assignment.status = "returned";
-      assignment.returned_at = now;
-      assignment.updated_at = now;
-    }
+    assignment.status = "returned";
+    assignment.returned_at = now;
+    assignment.updated_at = now;
     ticket.status = "closed";
     ticket.settlement_status = input.settlement_status;
     ticket.settlement_amount = input.settlement_amount ?? null;

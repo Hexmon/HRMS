@@ -236,7 +236,9 @@ function AdminQueue({
               size="icon"
               variant="ghost"
               className="h-8 w-8 text-primary"
-              onClick={() => onDecide(r.id, "fulfilled", "Asset handed over")}
+              disabled
+              aria-label="Fulfillment unavailable until asset assignment is supported"
+              title="Fulfillment requires assigning an available asset to the requester"
             >
               <PackageCheck className="h-4 w-4" />
             </Button>

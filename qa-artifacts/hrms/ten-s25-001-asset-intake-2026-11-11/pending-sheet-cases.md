@@ -33,8 +33,8 @@ Source and oracle: `docs/discovery/sprint-25-saas-remediation.md` TEN-S25-001/01
 - Task/layer/priority/owner: TEN-S25-001; integration/deployment recovery; P0; Anurag Kumar.
 - Actor/data: disposable SQL with one current writer and one old binary or deliberately retained legacy whole-domain writer; Asset Manager A; original and unrelated assets; synthetic QR hash/license fixture.
 - Steps: commit assignment or return on the current writer. From a stale process invoke unrelated create, QR scan and licence validation POSTs; attempt an old-writer mutation during the documented cutover window. Inspect HTTP result, SQL versions, assignments/events and both process views; restart and retry according to the migration runbook.
-- Expected: DB fencing or deployment gate prevents any legacy snapshot from overwriting committed rows. Read-only POSTs do not write asset state. An incompatible old writer fails visibly and can recover after update; no false success. Exact cutover mechanism must be documented before running.
-- Forbidden effects: rolling-version silent overwrite, QR/license validation mutation, mixed-version success that reverts an assignment. Oracle: current `onSend` source plus TEN-S25-001; mixed-version implementation is open. Status: Not Tested.
+- Expected: the installed asset row-DML trigger fence prevents any legacy snapshot from overwriting committed rows. Read-only POSTs do not write asset state. An incompatible old writer fails visibly and can recover after update; no false success. Actual old-binary execution and hosted runtime privilege checks remain pending.
+- Forbidden effects: rolling-version silent overwrite, QR/license validation mutation, mixed-version success that reverts an assignment. Oracle: the local migration and TEN-S25-001 cutover contract. Status: Not Tested.
 
 ## S25-037-U — Failed-command unit contract
 
@@ -48,16 +48,16 @@ Source and oracle: `docs/discovery/sprint-25-saas-remediation.md` TEN-S25-001/01
 
 - Task/layer/priority/owner: TEN-S25-018; integration; P0; Anurag Kumar.
 - Actor/data: two API instances, disposable PostgreSQL, one original asset/version and E1; controlled SQL statement failure after staging asset, assignment and event writes.
-- Steps: force a statement or constraint failure before commit; request assignment; inspect SQL and both API processes plus Core/dashboard/report/QR readers, then restart both processes.
-- Expected: error is returned; SQL remains at original asset/version with zero new assignment/event/outbox effects; no process or UI reports a ghost assignment after failure or restart.
+- Steps: force a statement or constraint failure before commit; request assignment; inspect SQL and both API processes plus Core/dashboard/report/QR readers, then restart both processes. Stage an E1 recovery ticket, return E1's asset, complete maintenance to InStock, assign E2, and attempt to settle the stale E1 ticket. In API-backed Employee browser mode, deny `/assets/my` or disconnect and verify a visible load error with no seeded/prior-account assets; repeat after switching accounts. In API-backed Add Asset, submit once and double-click during pending and fail the request; verify the drawer remains open until durable success and never claims unsupported metadata was saved. Inspect detail after create: missing purchase, warranty, cost and condition must display unavailable, not today's date, zero or a default condition.
+- Expected: error is returned; SQL remains at original asset/version with zero new assignment/event/outbox effects; no process or UI reports a ghost assignment after failure or restart. Stale E1 ticket conflicts and leaves E2's active assignment and asset state unchanged. Employee UI shows an API error rather than local mock data; failed Add Asset has no success toast; detail reports only persisted metadata.
 - Forbidden effects: partial assignment, memory-only success, duplicate denial audit, raw error payload. Oracle: TEN-S25-018; target not yet runtime-tested. Status: Not Tested.
 
 ## S25-037-N — Retry after a known rollback
 
 - Task/layer/priority/owner: TEN-S25-018; API/integration; P0; Anurag Kumar.
 - Actor/data: same disposable fixture after a confirmed pre-commit rollback; same intended command and current version. Distinguish known rollback from response loss after an uncertain commit.
-- Steps: remove the injected failure, retry once through the supported command interface, then inspect SQL/version/assignment/event and both API instances after refresh.
-- Expected: one successful durable assignment and one event; no ghost state from the failed attempt. The separate uncertain-commit retry contract requires an approved command identity/idempotency design before execution.
+- Steps: remove the injected failure, retry once through the supported command interface, then inspect SQL/version/assignment/event and both API instances after refresh. After an employee acknowledges an active assignment, return and reassign the asset; retry the original acknowledgement with its original key/body as that employee, then attempt a new key.
+- Expected: one successful durable assignment and one event; no ghost state from the failed attempt. The original authorized acknowledgement replays its durable result without a new effect; a new acknowledgement for an assignment the employee no longer holds is denied. The uncertain-commit path uses a scoped durable command identity.
 - Forbidden effects: duplicate business effect or false success. Oracle: TEN-S25-018 and root retry-safe write invariant. Status: Not Tested.
 
 ## S25-037-F — Commit failure and uncertain outcome recovery
@@ -65,5 +65,5 @@ Source and oracle: `docs/discovery/sprint-25-saas-remediation.md` TEN-S25-001/01
 - Task/layer/priority/owner: TEN-S25-018; failure/recovery integration; P0; Anurag Kumar.
 - Actor/data: two API instances on disposable SQL; fault injection at COMMIT and response boundary; a command identity once the implementation contract is approved.
 - Steps: run separately for definitive COMMIT rejection and a committed transaction whose response is lost. Reconnect, resolve outcome by the scoped `Idempotency-Key`, and retry only with the same key/body. Inspect SQL, versions, assignment/event/outbox, process views and user-visible error/retry state.
-- Expected: rejected transaction is absent everywhere; an uncertain but committed operation is reported consistently and never applied twice. No operation is declared successful until durable outcome is known. Exact idempotency and mixed-version fence are open design inputs.
-- Forbidden effects: ghost memory after rollback, duplicate active assignment/event, false failure after a known durable success, stale overwrite by old binary. Oracle: TEN-S25-018/root invariants; some details require owner-approved implementation design. Status: Not Tested.
+- Expected: rejected transaction is absent everywhere; an uncertain but committed operation is reported consistently and never applied twice. No operation is declared successful until durable outcome is known. The client retains the same intent key across response loss/refresh until a definitive result, and a separate later intent gets a new key.
+- Forbidden effects: ghost memory after rollback, duplicate active assignment/event, false failure after a known durable success, stale overwrite by old binary. Oracle: TEN-S25-018/root invariants and the local durable command-key design; hosted retention policy remains pending. Status: Not Tested.
