@@ -9836,7 +9836,6 @@ Required: yes
 | `reason` | string | required | minLength 3 |
 | `work_mode` | string enum("office", "remote", "wfh", "field") | optional | default "office" |
 | `metadata` | object | optional | - |
-| `linked_regularization_request_id` | string<uuid> | optional | Linked regularization request UUID |
 
 **Responses**
 | Status | Meaning |

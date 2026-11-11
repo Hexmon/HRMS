@@ -1854,6 +1854,29 @@ describe("regularization normalized items and actions", () => {
       `SELECT status, version FROM attendance.regularization_requests WHERE id = $1`,
       [losingRequestId],
     )).rows[0]).toMatchObject({ status: "pending", version: 1 });
+
+    const rejectedLoser = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/regularizations/${losingRequestId}/decision`,
+      headers: authHeader(reloadedManager.token),
+      payload: {
+        decision: "reject",
+        remarks: "Another request already corrected this punch",
+        expected_version: 1,
+      },
+    });
+    expect(rejectedLoser.statusCode, rejectedLoser.body).toBe(200);
+    expect(rejectedLoser.json()).toMatchObject({ status: "rejected", version: 2 });
+    expect((await reloadedPool.query(
+      `SELECT count(*)::int AS count FROM attendance.regularization_correction_applications
+       WHERE target_punch_event_id = $1`,
+      [targetId],
+    )).rows[0].count).toBe(1);
+    expect((await reloadedPool.query(
+      `SELECT count(*)::int AS count FROM attendance.punch_events
+       WHERE regularization_request_id = ANY($1::uuid[])`,
+      [requestIds],
+    )).rows[0].count).toBe(1);
   });
 
   it("emits safe approved and rejected regularization decision events once", async () => {

@@ -2240,10 +2240,8 @@ export class AttendanceCommandService {
             )
           : new Set<UUID>();
         for (const item of items) {
-          if (
-            input.decision === "approve" &&
-            (item.operation === "add" || item.operation === "replace")
-          ) {
+          if (input.decision !== "approve") continue;
+          if (item.operation === "add" || item.operation === "replace") {
             if (!item.event_type || !item.occurred_at) {
               throw badRequest(
                 "ADD and REPLACE items require event_type and occurred_at.",

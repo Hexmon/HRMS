@@ -75103,12 +75103,6 @@
                   "metadata": {
                     "type": "object",
                     "additionalProperties": true
-                  },
-                  "linked_regularization_request_id": {
-                    "type": "string",
-                    "format": "uuid",
-                    "description": "Linked regularization request UUID",
-                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                   }
                 },
                 "additionalProperties": false
