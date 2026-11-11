@@ -99,7 +99,7 @@ export class AttendanceRepository {
         ) {
           return false;
         }
-        const date = dateInTimeZone(punch.occurred_at, timeZone);
+        const date = punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone);
         if (dateFrom && date < dateFrom) {
           return false;
         }

@@ -62,7 +62,9 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       await client.query("BEGIN");
       await client.query("SELECT set_config('app.expense_command_v1', 'on', true)");
       await client.query(
-        "INSERT INTO platform.company_profiles (id, company_name, company_slug, status) VALUES ($1, 'Other Company', $2, 'active')",
+        `INSERT INTO platform.company_profiles
+          (id, company_name, company_slug, status, timezone)
+         VALUES ($1, 'Other Company', $2, 'active', 'America/Los_Angeles')`,
         [companyB, `expense-other-${companyB}`],
       );
       await client.query(
@@ -613,19 +615,52 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
         cleanup.release();
       }
     }
-    for (const range of [
-      "date_from=2026-01-01",
-      "date_to=2026-12-31",
-      "date_from=2025-11-11&date_to=2026-11-11",
-    ]) {
-      const oneSidedOrBoundaryRange = await app.inject({
-        method: "GET",
-        url: `${managerReportUrl}&${range}`,
-        headers: authHeader(manager.token),
-      });
-      expect(oneSidedOrBoundaryRange.statusCode, oneSidedOrBoundaryRange.body).toBe(200);
-      expect(oneSidedOrBoundaryRange.json().total).toBe(1);
-      expect(oneSidedOrBoundaryRange.json().items[0].id).toBe(pendingTicketId);
+    const oldDateTicketId = randomUUID();
+    const dateFixture = await pool.connect();
+    try {
+      await dateFixture.query("BEGIN");
+      await dateFixture.query("SELECT set_config('app.expense_command_v1','on',true)");
+      await dateFixture.query(
+        `INSERT INTO expenses.expense_tickets
+          (id,ticket_no,requester_user_id,requester_role_snapshot,department_id,
+           expense_type,expense_sub_type,task_title,task_description,start_date,end_date,
+           estimated_amount,payment_type,manager_verifier_id,finance_approver_id,status,
+           context_payload,company_id,owner_resolution_status,created_at,updated_at)
+         VALUES ($1,$2,$3,'Employee',$4,'Project','Project Travel','Old date fixture',
+           'Fixture',date '2025-01-01',date '2025-01-01',1,'Advance',$5,$6,
+           'Pending Manager Verification',jsonb_build_object('company_id',$7::text),
+           $7::uuid,'typed_creation',timestamptz '2025-01-01 00:00:00Z',
+           timestamptz '2025-01-01 00:00:00Z')`,
+        [oldDateTicketId, `EXP-DATE-${oldDateTicketId}`, employee.user.id,
+          employee.user.department_id, manager.user.id, finance.user.id, companyA],
+      );
+      await dateFixture.query("COMMIT");
+      for (const [range, expectedId] of [
+        ["date_from=2026-01-01", pendingTicketId],
+        ["date_to=2026-01-01", oldDateTicketId],
+        ["date_from=2025-11-11&date_to=2026-11-11", pendingTicketId],
+      ] as const) {
+        const oneSidedOrBoundaryRange = await app.inject({
+          method: "GET",
+          url: `${managerReportUrl}&${range}`,
+          headers: authHeader(manager.token),
+        });
+        expect(oneSidedOrBoundaryRange.statusCode, oneSidedOrBoundaryRange.body).toBe(200);
+        expect(oneSidedOrBoundaryRange.json().total).toBe(1);
+        expect(oneSidedOrBoundaryRange.json().items[0].id).toBe(expectedId);
+      }
+    } finally {
+      try {
+        await dateFixture.query("BEGIN");
+        await dateFixture.query("SELECT set_config('app.expense_command_v1','on',true)");
+        await dateFixture.query("DELETE FROM expenses.expense_tickets WHERE id=$1", [oldDateTicketId]);
+        await dateFixture.query("COMMIT");
+      } catch (error) {
+        await dateFixture.query("ROLLBACK");
+        throw error;
+      } finally {
+        dateFixture.release();
+      }
     }
     const unrelatedCompanyBacklog = await pool.connect();
     try {
@@ -1072,9 +1107,10 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       await pool.query(
         `INSERT INTO core.users
           (id,employee_code,email,full_name,department_id,designation_id,manager_user_id,
-           hierarchy_path,employment_status,email_verified_at,email_verification_status)
+           hierarchy_path,employment_status,timezone,email_verified_at,email_verification_status)
          SELECT $1, $2, $3, 'Post-start employee', department_id, designation_id,
-                manager_user_id, hierarchy_path || text2ltree($4), 'active', now(), 'verified'
+                manager_user_id, hierarchy_path || text2ltree($4), 'active',
+                'Asia/Kolkata', now(), 'verified'
          FROM core.users WHERE id = $5`,
         [postStartUserId, `POST-${postStartUserId}`, `post-${postStartUserId}@example.test`,
           `post${postStartUserId.replaceAll("-", "")}`, employee.user.id],
@@ -1221,7 +1257,7 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
            VALUES
             ('attendance',gen_random_uuid(),'attendance.provisional.recorded',
              jsonb_build_object('company_id',$1::text,'subject_employee_user_id',$2::text,
-               'work_date',$3::text,'captured_at',
+               'work_date','invalid-work-date','captured_at',
                (($3::date - interval '1 day' + interval '19 hours') AT TIME ZONE 'UTC')::text,
                'verification_status','unverified'),
              $5),
@@ -1229,7 +1265,11 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
              jsonb_build_object('company_id',$1::text,'subject_employee_user_id',$2::text,
                'work_date',$4::text,'captured_at',$4::text || 'T09:00:00.000Z',
                'verification_status','rejected'),
-             $6)`,
+             $6),
+            ('attendance',gen_random_uuid(),'attendance.provisional.recorded',
+             jsonb_build_object('company_id',$1::text,'subject_employee_user_id',$2::text,
+               'captured_at','not-a-date','verification_status','unverified'),
+             $7)`,
           [
             companyB,
             postStartUserId,
@@ -1237,6 +1277,7 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
             evidenceDates.rejected,
             `dashboard-provisional-${postStartUserId}`,
             `dashboard-rejected-${postStartUserId}`,
+            `dashboard-corrupt-${postStartUserId}`,
           ],
         );
         await evidenceFixture.query(
@@ -1258,6 +1299,22 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
              )),'pending')`,
           [companyB, postStartUserId, evidenceDates.review],
         );
+        await evidenceFixture.query("SET LOCAL enable_seqscan=off");
+        await evidenceFixture.query("SET LOCAL enable_hashjoin=off");
+        await evidenceFixture.query("SET LOCAL enable_mergejoin=off");
+        const indexedPunchEventPlan = await evidenceFixture.query<{ "QUERY PLAN": string }>(
+          `EXPLAIN (COSTS OFF)
+           SELECT recorded.payload
+           FROM attendance.punch_events punch
+           LEFT JOIN platform.outbox_events recorded
+             ON recorded.idempotency_key='attendance.punch.recorded:' || punch.id::text
+            AND recorded.event_type='attendance.punch.recorded'
+           WHERE punch.company_id=$1 AND punch.employee_user_id=$2`,
+          [companyB, postStartUserId],
+        );
+        expect(indexedPunchEventPlan.rows.map(
+          (row) => row["QUERY PLAN"],
+        ).join("\n")).toMatch(/Index Scan using \S*idempotency\S* on outbox_events/u);
         await evidenceFixture.query("COMMIT");
       } catch (error) {
         await evidenceFixture.query("ROLLBACK");
@@ -1289,12 +1346,19 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
           ),
           pool.query<{ record: AttendancePunch }>(
             `SELECT to_jsonb(punch) || jsonb_build_object(
-               'work_date',to_char(timezone(company.timezone,punch.occurred_at),'YYYY-MM-DD')
+               'work_date',to_char(
+                 timezone(COALESCE(evidence_user.timezone,company.timezone),punch.occurred_at),
+                 'YYYY-MM-DD'
+               )
              ) AS record
              FROM attendance.punch_events punch
              JOIN platform.company_profiles company ON company.id=punch.company_id
+             LEFT JOIN core.users evidence_user ON evidence_user.id=punch.employee_user_id
              WHERE punch.company_id=$1 AND punch.employee_user_id=$2
-               AND to_char(timezone(company.timezone,punch.occurred_at),'YYYY-MM-DD')
+               AND to_char(
+                 timezone(COALESCE(evidence_user.timezone,company.timezone),punch.occurred_at),
+                 'YYYY-MM-DD'
+               )
                  BETWEEN $3 AND $4
              ORDER BY punch.occurred_at`,
             [companyB, postStartUserId, evidenceDates.verified, evidenceDates.rejected],
@@ -1329,6 +1393,16 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
         ]);
       const canonicalStore = {
         ...second.store,
+        users: [
+          ...second.store.users,
+          {
+            ...second.store.users.find((user) => user.id === employee.user.id)!,
+            id: postStartUserId,
+            employee_code: `POST-${postStartUserId}`,
+            email: `post-${postStartUserId}@example.test`,
+            timezone: "Asia/Kolkata",
+          },
+        ],
         attendanceDayRecords: canonicalDaysResult.rows.map((row) => row.record),
         attendancePunches: canonicalPunchesResult.rows.map((row) => row.record),
         attendanceGeoFallbackReviews: canonicalReviewsResult.rows.map((row) => row.record),

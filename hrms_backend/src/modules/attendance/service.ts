@@ -749,6 +749,18 @@ function dateInTimeZone(value: string, timeZone: string): string {
   return value.slice(0, 10);
 }
 
+function calendarDateValue(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
+    return null;
+  }
+  const [year, month, day] = value.split("-").map(Number);
+  const normalized = new Date(Date.UTC(year!, month! - 1, day!));
+  return !Number.isNaN(normalized.getTime()) &&
+    normalized.toISOString().slice(0, 10) === value
+    ? value
+    : null;
+}
+
 function monthRange(
   monthInput?: string,
   timeZone = "UTC",
@@ -3551,7 +3563,7 @@ export class AttendanceService {
             closures.push(closure);
           }
         }
-        openWorkDate = dateInTimeZone(punch.occurred_at, timeZone);
+        openWorkDate = punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone);
         firstCheckIn = punch;
         lastOpenPunch = punch;
         continue;
@@ -4022,10 +4034,10 @@ export class AttendanceService {
       .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at))
       .filter((punch) => {
         if (punch.event_type === AttendancePunchEventTypes.CheckIn) {
-          openWorkDate = dateInTimeZone(punch.occurred_at, timeZone);
+          openWorkDate = punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone);
         }
         const assignedWorkDate =
-          openWorkDate ?? dateInTimeZone(punch.occurred_at, timeZone);
+          openWorkDate ?? punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone);
         const include = assignedWorkDate === workDate;
         if (punch.event_type === AttendancePunchEventTypes.CheckOut) {
           openWorkDate = null;
@@ -4072,7 +4084,7 @@ export class AttendanceService {
       .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
     for (const punch of punches) {
       if (punch.event_type === AttendancePunchEventTypes.CheckIn) {
-        openWorkDate = dateInTimeZone(punch.occurred_at, timeZone);
+        openWorkDate = punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone);
       }
       if (punch.event_type === AttendancePunchEventTypes.CheckOut) {
         openWorkDate = null;
@@ -4895,14 +4907,23 @@ export class AttendanceService {
         !review.deleted_at,
     );
     const offlineVerificationStatuses = this.store.outbox
-      .filter(
-        (event) =>
-          event.event_type === "attendance.provisional.recorded" &&
-          event.payload.company_id === record.company_id &&
-          event.payload.subject_employee_user_id === record.employee_user_id &&
-          typeof event.payload.captured_at === "string" &&
-          event.payload.captured_at.slice(0, 10) === record.work_date,
-      )
+      .filter((event) => {
+        if (
+          event.event_type !== "attendance.provisional.recorded" ||
+          event.payload.company_id !== record.company_id ||
+          event.payload.subject_employee_user_id !== record.employee_user_id ||
+          typeof event.payload.captured_at !== "string"
+        ) {
+          return false;
+        }
+        const workDate =
+          calendarDateValue(event.payload.work_date) ??
+          dateInTimeZone(
+            event.payload.captured_at,
+            this.timezoneForUser(record.employee_user_id, record.company_id),
+          );
+        return workDate === record.work_date;
+      })
       .map((event) => event.payload.verification_status);
     return {
       reviewRequired: reviews.some(
@@ -5374,7 +5395,7 @@ export class AttendanceService {
           punch.company_id === companyId &&
           punch.employee_user_id === employeeUserId &&
           !punch.deleted_at &&
-          dateInTimeZone(punch.occurred_at, timeZone) === workDate,
+          (punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone)) === workDate,
       )
       .sort((left, right) => left.occurred_at.localeCompare(right.occurred_at))
       .map((punch) => ({
@@ -6001,7 +6022,7 @@ export class AttendanceService {
   private presentPunch(punch: AttendancePunch, timeZone: string) {
     return {
       ...punch,
-      work_date: dateInTimeZone(punch.occurred_at, timeZone),
+      work_date: punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone),
       time: timeText(punch.occurred_at, timeZone),
     };
   }

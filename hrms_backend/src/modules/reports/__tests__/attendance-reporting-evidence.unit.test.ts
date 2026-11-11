@@ -278,6 +278,66 @@ describe("attendance report evidence categories", () => {
     });
   });
 
+  it("uses the employee timezone before the company timezone for legacy evidence", () => {
+    const store = createMemoryDataStore();
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    const employee = store.users.find((user) => user.id === seedIds.employee1)!;
+    employee.timezone = "America/Los_Angeles";
+    const capturedAt = "2026-07-21T02:00:00.000Z";
+    const attendanceEventId = randomUUID();
+    store.attendanceDayRecords.push(attendanceDay(seedIds.employee1));
+    store.attendancePunches.push({
+      id: randomUUID(),
+      employee_user_id: seedIds.employee1,
+      actor_user_id: seedIds.employee1,
+      company_id: companyId,
+      event_type: "check_in",
+      occurred_at: capturedAt,
+      work_mode: "office",
+      source: "web",
+      origin: "employee_manual_now",
+      regularization_request_id: null,
+      metadata: {},
+      created_at: capturedAt,
+      deleted_at: null,
+    });
+    store.outbox.push({
+      id: 17,
+      event_id: randomUUID(),
+      aggregate_type: "attendance",
+      aggregate_id: attendanceEventId,
+      event_type: "attendance.provisional.recorded",
+      payload: {
+        company_id: companyId,
+        subject_employee_user_id: seedIds.employee1,
+        attendance_event_id: attendanceEventId,
+        verification_status: "unverified",
+        captured_at: capturedAt,
+      },
+      idempotency_key: `attendance.provisional.recorded:${attendanceEventId}`,
+      status: "pending",
+      retry_count: 0,
+      available_at: capturedAt,
+      created_at: capturedAt,
+      published_at: null,
+      failed_at: null,
+      last_error: null,
+    });
+
+    const result = new ReportService(store).attendanceSummary(admin, {
+      page: 1,
+      page_size: 20,
+      date_from: "2026-07-20",
+      date_to: "2026-07-20",
+    });
+
+    expect(result.items[0]).toMatchObject({
+      date: "2026-07-20",
+      attendance_channels: ["Web", "Mobile - captured offline"],
+      source_categories: ["web", "mobile"],
+    });
+  });
+
   it("projects safe geo review fields without exact coordinates", () => {
     const store = createMemoryDataStore();
     const admin = store.users.find((user) => user.id === seedIds.admin)!;

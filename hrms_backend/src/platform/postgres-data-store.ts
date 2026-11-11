@@ -2093,14 +2093,9 @@ class PostgresPersistence {
     const punchesQuery = await client.query(
       `SELECT punch.*,day.work_date::text AS evidence_work_date
        FROM attendance.punch_events punch
-       LEFT JOIN LATERAL (
-         SELECT event.payload
-         FROM platform.outbox_events event
-         WHERE event.aggregate_id=punch.id
-           AND event.event_type='attendance.punch.recorded'
-         ORDER BY event.id
-         LIMIT 1
-       ) recorded ON true
+       LEFT JOIN platform.outbox_events recorded
+         ON recorded.idempotency_key='attendance.punch.recorded:' || punch.id::text
+        AND recorded.event_type='attendance.punch.recorded'
        LEFT JOIN attendance.sessions session
          ON session.id=punch.session_id
         AND session.company_id=punch.company_id
@@ -2109,15 +2104,24 @@ class PostgresPersistence {
          ON regularization.id=punch.regularization_request_id
         AND regularization.company_id=punch.company_id
         AND regularization.employee_user_id=punch.employee_user_id
+       LEFT JOIN core.users evidence_user ON evidence_user.id=punch.employee_user_id
        JOIN platform.company_profiles company ON company.id=punch.company_id
        JOIN attendance.daily_records day
          ON day.id=ANY($1::uuid[]) AND day.company_id=punch.company_id
         AND day.employee_user_id=punch.employee_user_id
         AND day.work_date::text=COALESCE(
-          NULLIF(recorded.payload->>'work_date',''),
+          CASE
+            WHEN recorded.payload->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+             AND pg_input_is_valid(recorded.payload->>'work_date','date')
+              THEN recorded.payload->>'work_date'
+            ELSE NULL
+          END,
           session.work_date::text,
           regularization.work_date::text,
-          to_char(timezone(company.timezone,punch.occurred_at),'YYYY-MM-DD')
+          to_char(
+            timezone(COALESCE(evidence_user.timezone,company.timezone),punch.occurred_at),
+            'YYYY-MM-DD'
+          )
         )
        WHERE punch.deleted_at IS NULL
        ORDER BY punch.occurred_at,punch.id LIMIT 50001`,
@@ -2139,16 +2143,32 @@ class PostgresPersistence {
        FROM platform.outbox_events event
        JOIN platform.company_profiles company
          ON company.id::text=event.payload->>'company_id'
+       LEFT JOIN core.users evidence_user
+         ON evidence_user.id::text=event.payload->>'subject_employee_user_id'
        JOIN attendance.daily_records day
          ON day.id=ANY($1::uuid[])
         AND event.payload->>'company_id'=day.company_id::text
         AND event.payload->>'subject_employee_user_id'=day.employee_user_id::text
         AND day.work_date::text=COALESCE(
-          NULLIF(event.payload->>'work_date',''),
-          to_char(
-            timezone(company.timezone,(event.payload->>'captured_at')::timestamptz),
-            'YYYY-MM-DD'
-          )
+          CASE
+            WHEN event.payload->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+             AND pg_input_is_valid(event.payload->>'work_date','date')
+              THEN event.payload->>'work_date'
+            ELSE NULL
+          END,
+          CASE
+            WHEN pg_input_is_valid(
+              event.payload->>'captured_at',
+              'timestamp with time zone'
+            ) THEN to_char(
+              timezone(
+                COALESCE(evidence_user.timezone,company.timezone),
+                (event.payload->>'captured_at')::timestamptz
+              ),
+              'YYYY-MM-DD'
+            )
+            ELSE NULL
+          END
         )
        WHERE event.event_type='attendance.provisional.recorded'
        ORDER BY event.created_at,event.id LIMIT 50001`,

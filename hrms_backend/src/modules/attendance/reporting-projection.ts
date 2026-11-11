@@ -853,12 +853,12 @@ function evidenceWorkDate(
   persistedWorkDate: string | null | undefined,
   occurredAt: string | null | undefined,
 ): string | null {
-  const persisted = stringValue(persistedWorkDate);
+  const persisted = calendarDateValue(persistedWorkDate);
   if (persisted) return persisted;
   if (!occurredAt) return null;
   const timeZone =
-    store.companyProfiles.find((company) => company.id === companyId)?.timezone ??
     store.users.find((user) => user.id === employeeUserId)?.timezone ??
+    store.companyProfiles.find((company) => company.id === companyId)?.timezone ??
     "UTC";
   try {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -876,6 +876,17 @@ function evidenceWorkDate(
       ? occurredAt.slice(0, 10)
       : null;
   }
+}
+
+function calendarDateValue(value: unknown): string | null {
+  const candidate = stringValue(value);
+  if (!candidate || !/^\d{4}-\d{2}-\d{2}$/u.test(candidate)) return null;
+  const [year, month, day] = candidate.split("-").map(Number);
+  const normalized = new Date(Date.UTC(year!, month! - 1, day!));
+  return !Number.isNaN(normalized.getTime()) &&
+    normalized.toISOString().slice(0, 10) === candidate
+    ? candidate
+    : null;
 }
 
 function isoValue(value: string | Date | null | undefined): string | null {

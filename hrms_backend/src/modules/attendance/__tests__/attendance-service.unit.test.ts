@@ -783,6 +783,55 @@ describe("AttendanceService.punch", () => {
       expect(result.total).toBe(1);
       expect(result.items).toHaveLength(1);
     });
+
+    it("uses persisted and employee-local work dates for provisional evidence", () => {
+      employee().timezone = "America/Los_Angeles";
+      const capturedAt = "2026-07-21T02:00:00.000Z";
+      const attendanceEventId = randomUUID();
+      store.outbox.push({
+        id: 18,
+        event_id: randomUUID(),
+        aggregate_type: "attendance",
+        aggregate_id: attendanceEventId,
+        event_type: "attendance.provisional.recorded",
+        payload: {
+          company_id: companyId(store),
+          subject_employee_user_id: employee().id,
+          attendance_event_id: attendanceEventId,
+          verification_status: "unverified",
+          captured_at: capturedAt,
+        },
+        idempotency_key: `attendance.provisional.recorded:${attendanceEventId}`,
+        status: "pending",
+        retry_count: 0,
+        available_at: capturedAt,
+        created_at: capturedAt,
+        published_at: null,
+        failed_at: null,
+        last_error: null,
+      });
+
+      const legacyFallback = service.dailyCalendar(employee(), {
+        page: 1,
+        page_size: 10,
+        date: "2026-07-20",
+      });
+      expect(legacyFallback.items[0]).toMatchObject({
+        work_date: "2026-07-20",
+        reporting_evidence_category: "provisional",
+      });
+
+      store.outbox[store.outbox.length - 1]!.payload.work_date = "2026-07-19";
+      const persistedOverride = service.dailyCalendar(employee(), {
+        page: 1,
+        page_size: 10,
+        date: "2026-07-19",
+      });
+      expect(persistedOverride.items[0]).toMatchObject({
+        work_date: "2026-07-19",
+        reporting_evidence_category: "provisional",
+      });
+    });
   });
 
   describe("AttendanceService.regularizations", () => {
