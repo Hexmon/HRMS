@@ -182,28 +182,39 @@ describe("production user-flow smoke", () => {
     const markAll = await requestJson("POST", "/api/v1/notifications/read-all", employee.token, {});
     expect(markAll.unread_count).toBe(0);
 
+    const attendanceReport = await requestJson("GET", "/api/v1/reports/attendance/summary?page=1&page_size=10", admin.token);
+    expect(attendanceReport).toMatchObject({ page: 1, page_size: 10 });
+    expect(attendanceReport.totals).toBeDefined();
+
     for (const path of [
-      "/api/v1/reports/attendance/summary?page=1&page_size=10",
       "/api/v1/reports/leave-wfh/summary?page=1&page_size=10",
       "/api/v1/reports/projects/summary?page=1&page_size=10",
       "/api/v1/reports/helpdesk/summary?page=1&page_size=10"
     ]) {
-      const report = await requestJson("GET", path, admin.token);
-      expect(report).toMatchObject({ page: 1, page_size: 10 });
-      expect(report.totals).toBeDefined();
+      const report = await app.inject({ method: "GET", url: path, headers: authHeader(admin.token) });
+      expect(report.statusCode, report.body).toBe(409);
+      expect(report.json().code).toBe("WORKFLOW_CONFLICT");
     }
 
-    const reportExport = await requestJson("POST", "/api/v1/reports/exports", admin.token, {
-      report_type: "projects/summary",
-      format: "csv",
-      filters: { status: "active" }
+    const beforeExportOutbox = await app.store.pgPool!.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM platform.outbox_events",
+    );
+    const reportExport = await app.inject({
+      method: "POST",
+      url: "/api/v1/reports/exports",
+      headers: authHeader(admin.token),
+      payload: {
+        report_type: "projects/summary",
+        format: "csv",
+        filters: { status: "active", date_from: "2026-05-01", date_to: "2026-05-31" }
+      }
     });
-    expect(reportExport).toMatchObject({
-      report_type: "projects/summary",
-      status: "ready",
-      adapter: `${app.store.objectStorage?.kind}-generated-csv`,
-      download_document_id: expect.any(String)
-    });
+    expect(reportExport.statusCode, reportExport.body).toBe(409);
+    expect(reportExport.json().code).toBe("WORKFLOW_CONFLICT");
+    const afterExportOutbox = await app.store.pgPool!.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM platform.outbox_events",
+    );
+    expect(afterExportOutbox.rows[0]?.count).toBe(beforeExportOutbox.rows[0]?.count);
   });
 
   async function loginByEmail(email: string): Promise<LoginResult> {
