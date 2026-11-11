@@ -1,0 +1,62 @@
+[
+  {
+    "file": ".agents/skills/qa-master-checklist/references/feature-case-workflow.md",
+    "before_sha256": null
+  },
+  {
+    "file": "AGENTS.md",
+    "before_sha256": "762a20376fba011da42b6dc0ccd5fa7132b93654e4a6074081b425fbaa218397"
+  },
+  {
+    "file": "hrms_backend/AGENTS.md",
+    "before_sha256": "e23ebd1bc666c68ac2fbe524ae345e5bb8c5dcaac735b72b47b2cf5d8f839c6a"
+  },
+  {
+    "file": "hrms-client/AGENTS.md",
+    "before_sha256": "ed82f309c6034c9c3ebf2b92aed834c0fdfdfecac17c474f257d101703e5bd19"
+  },
+  {
+    "file": ".agents/skills/qa-master-checklist/SKILL.md",
+    "before_sha256": "70ec98a52277efa6a7aad6e76572747998518a7b359da93d97591c54dabb4aab"
+  },
+  {
+    "file": ".agents/skills/qa-completion-gate/SKILL.md",
+    "before_sha256": "c7a69c4e943b82839ccf53b25fc922b8b092384a54619c5e207bfeed3ac80384"
+  },
+  {
+    "file": ".agents/skills/implement-feature/SKILL.md",
+    "before_sha256": "f101bb0c9e058b077f3aac033b52a17e83e261cafeed040d7b64e6c4ea11fd39"
+  },
+  {
+    "file": ".agents/skills/fix-bug/SKILL.md",
+    "before_sha256": "aa044898381a4113aa787c116abb9ca32861c868cf941d1c35ce52be25c55856"
+  },
+  {
+    "file": "docs/agent/test-and-qa-completion.md",
+    "before_sha256": "2c4f33b5003cd7b8cd1556d7ee0c6ba3fb83719d5912ef4d523e0d5170f008f9"
+  },
+  {
+    "file": "docs/agent/verification-matrix.md",
+    "before_sha256": "d3db26cbc2cb739c3cf629952e2bea7123d94138beff0ee097f8266b82576722"
+  },
+  {
+    "file": "docs/agent/testing-skills-research-2026-11-11.md",
+    "before_sha256": null
+  },
+  {
+    "file": ".agents/skill-registry.md",
+    "before_sha256": "7a89140749d41e5f42516b3d91a8acaaf6b1d343b7733863d67738ba1eb5fb4b"
+  },
+  {
+    "file": "docs/README.md",
+    "before_sha256": "7dc5264ab6861ebaf3f6d03d09b7e68e7624971e30e98b639039eb01e0fb4af0"
+  },
+  {
+    "file": ".agents/specialists/qa-reviewer.md",
+    "before_sha256": "bb7cf3447852c8c6b463f50ec68535b621929a413005be490bcc6444f312ab89"
+  },
+  {
+    "file": ".agents/skills/verify-change/SKILL.md",
+    "before_sha256": "f1cbe09a8f2f75917958a1ae145cde15dd71f10a523ce23b2b3495ca23fae2a8"
+  }
+]

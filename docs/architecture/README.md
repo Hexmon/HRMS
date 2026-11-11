@@ -15,6 +15,7 @@ This folder contains architecture documents for the current Hawkaii HRMS system.
 | `security-auth-rbac.md` | Auth, sessions, cookies, role split, permission boundaries, rate limits, production safety. |
 | `integrations-events.md` | Cloudinary, Resend, Valkey, outbox, health, generated exports, and external boundary rules. |
 | `email-verification.md` | Detailed Resend-backed email verification architecture. |
+| `current-runtime-source-2026-11-09.md` | Current source-backed runtime boundaries and failure model at `af89c6a`; links to a validated standalone diagram. |
 
 ## Evidence Used
 

@@ -3,7 +3,7 @@
 ## Sprint Planning
 
 - Confirm sprint goal.
-- Confirm capacity: 48 points per 7-day sprint.
+- Confirm dates, working days, owner assignments, and capacity against the shared task sheet's current sprint and `SP Calculation` tabs.
 - Select P0/P1/P2 work based on release risk.
 - Confirm test data and roles.
 

@@ -1,0 +1,167 @@
+{
+  "authored_remark_cells": [
+    "M20",
+    "M21",
+    "M22",
+    "M24",
+    "M35",
+    "M37",
+    "M38",
+    "M42",
+    "M47",
+    "M48",
+    "M49",
+    "M50",
+    "M51",
+    "M56",
+    "M61",
+    "M80"
+  ],
+  "remarks_preserved": true,
+  "new_task_checks": [
+    {
+      "row": 83,
+      "task": "AUTH-S25-001",
+      "id_ok": true,
+      "owner_ok": true,
+      "points_ok": true,
+      "status_ok": true,
+      "dates_blank": true,
+      "role_ok": true
+    },
+    {
+      "row": 84,
+      "task": "AUTH-S25-002",
+      "id_ok": true,
+      "owner_ok": true,
+      "points_ok": true,
+      "status_ok": true,
+      "dates_blank": true,
+      "role_ok": true
+    },
+    {
+      "row": 85,
+      "task": "AUTH-S25-003",
+      "id_ok": true,
+      "owner_ok": true,
+      "points_ok": true,
+      "status_ok": true,
+      "dates_blank": true,
+      "role_ok": true
+    },
+    {
+      "row": 86,
+      "task": "AUTH-S25-004",
+      "id_ok": true,
+      "owner_ok": true,
+      "points_ok": true,
+      "status_ok": true,
+      "dates_blank": true,
+      "role_ok": true
+    },
+    {
+      "row": 87,
+      "task": "AUTH-S25-005",
+      "id_ok": true,
+      "owner_ok": true,
+      "points_ok": true,
+      "status_ok": true,
+      "dates_blank": true,
+      "role_ok": true
+    },
+    {
+      "row": 88,
+      "task": "AUTH-S25-006",
+      "id_ok": true,
+      "owner_ok": true,
+      "points_ok": true,
+      "status_ok": true,
+      "dates_blank": true,
+      "role_ok": true
+    },
+    {
+      "row": 89,
+      "task": "AUTH-S25-007",
+      "id_ok": true,
+      "owner_ok": true,
+      "points_ok": true,
+      "status_ok": true,
+      "dates_blank": true,
+      "role_ok": true
+    },
+    {
+      "row": 90,
+      "task": "QA-AUTH-S25-001",
+      "id_ok": true,
+      "owner_ok": true,
+      "points_ok": true,
+      "status_ok": true,
+      "dates_blank": true,
+      "role_ok": true
+    }
+  ],
+  "unexpected_changes": [],
+  "formula_changes": [],
+  "SP": {
+    "K19": "620",
+    "O19": "70",
+    "P19": "550",
+    "R19": "590"
+  },
+  "metadata": {
+    "filter": "<ns0:autoFilter xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" ref=\"$A$1:$N$90\" />",
+    "rows": [
+      {
+        "r": "83"
+      },
+      {
+        "r": "84"
+      },
+      {
+        "r": "85"
+      },
+      {
+        "r": "86"
+      },
+      {
+        "r": "87"
+      },
+      {
+        "r": "88"
+      },
+      {
+        "r": "89"
+      },
+      {
+        "r": "90"
+      }
+    ],
+    "cells": {
+      "G82": {
+        "r": "G82",
+        "s": "58",
+        "style": "<ns0:xf xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" borderId=\"0\" fillId=\"0\" fontId=\"3\" numFmtId=\"0\" xfId=\"0\" applyAlignment=\"1\" applyFont=\"1\"><ns0:alignment readingOrder=\"0\" shrinkToFit=\"0\" vertical=\"center\" wrapText=\"1\" /></ns0:xf>",
+        "font": "<ns0:font xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><ns0:sz val=\"10.0\" /><ns0:color rgb=\"FF000000\" /><ns0:name val=\"Arial\" /></ns0:font>"
+      },
+      "A83": {
+        "r": "A83",
+        "s": "58",
+        "t": "s",
+        "style": "<ns0:xf xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" borderId=\"0\" fillId=\"0\" fontId=\"3\" numFmtId=\"0\" xfId=\"0\" applyAlignment=\"1\" applyFont=\"1\"><ns0:alignment readingOrder=\"0\" shrinkToFit=\"0\" vertical=\"center\" wrapText=\"1\" /></ns0:xf>",
+        "font": "<ns0:font xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><ns0:sz val=\"10.0\" /><ns0:color rgb=\"FF000000\" /><ns0:name val=\"Arial\" /></ns0:font>"
+      },
+      "G83": {
+        "r": "G83",
+        "s": "58",
+        "style": "<ns0:xf xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" borderId=\"0\" fillId=\"0\" fontId=\"3\" numFmtId=\"0\" xfId=\"0\" applyAlignment=\"1\" applyFont=\"1\"><ns0:alignment readingOrder=\"0\" shrinkToFit=\"0\" vertical=\"center\" wrapText=\"1\" /></ns0:xf>",
+        "font": "<ns0:font xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><ns0:sz val=\"10.0\" /><ns0:color rgb=\"FF000000\" /><ns0:name val=\"Arial\" /></ns0:font>"
+      }
+    }
+  },
+  "all_formula_xml_unchanged": true,
+  "formula_xml_changes": [],
+  "automatically_recalculated_shared_formula_cells": [
+    "P20",
+    "R20"
+  ]
+}

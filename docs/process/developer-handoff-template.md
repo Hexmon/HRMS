@@ -82,3 +82,7 @@ Attach or record:
 - document/upload proof when file handling changed
 - deploy SHA/build SHA for hosted validation
 
+## Test And QA Evidence Addendum
+
+For behavior work include: ticket/finding IDs; approved expected input/output/state and forbidden side effects; test-to-rule mapping; failing-before/passing-after regression evidence; base/head including new files; measured unit/branch and changed executable line coverage; actual SQL/RLS/queue/provider/browser results; independent reviewer identity, reviewed SHA and findings; commands/environment/artifact paths; explicit Failed/Blocked/Not run cases. Use [completion policy](../agent/test-and-qa-completion.md). Do not put raw proofs, credentials or direct sensitive file URLs in artifacts.
+
