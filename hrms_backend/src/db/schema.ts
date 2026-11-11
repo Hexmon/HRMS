@@ -1850,7 +1850,7 @@ export const holidays = leaveWfh.table(
   "holidays",
   {
     id: uuidPk.defaultRandom(),
-    companyId: uuid("company_id"),
+    companyId: uuid("company_id").notNull(),
     name: text("name").notNull(),
     holidayDate: date("holiday_date").notNull(),
     region: text("region").notNull().default("All"),
