@@ -231,12 +231,15 @@ export function mapApiWarrantyAlerts(values: unknown[]): AssetWarrantyAlertView[
 
 export type AssetRecoveryTicketView = {
   id: string;
+  assignmentId: string | null;
   employeeName: string;
   employeeStatus: string;
   assetId: string;
   assetName: string;
   assetCode: string;
-  assignedOn: string;
+  custodyAssignedOn: string | null;
+  ticketOpenedOn: string;
+  reviewRequired: boolean;
   status: string;
   settlementStatus: string;
   settlementAmount: string;
@@ -249,12 +252,15 @@ export function mapApiRecoveryTicket(value: unknown): AssetRecoveryTicketView {
   const asset = asRecord(row.asset);
   return {
     id: text(row.id, "recovery-ticket"),
+    assignmentId: text(row.assignment_id) || null,
     employeeName: text(employee.full_name ?? employee.name ?? employee.email, "Employee"),
     employeeStatus: text(employee.employment_status ?? employee.status, "offboarding"),
     assetId: text(row.asset_id ?? asset.id),
     assetName: text(asset.name ?? asset.model ?? asset.asset_type, "Asset"),
     assetCode: text(asset.asset_code ?? asset.id, "Asset"),
-    assignedOn: dateText(asset.assigned_on ?? row.created_at, new Date().toISOString()),
+    custodyAssignedOn: text(row.assignment_assigned_at) || null,
+    ticketOpenedOn: text(row.created_at),
+    reviewRequired: row.review_required !== false,
     status: text(row.status, "open"),
     settlementStatus: text(row.settlement_status),
     settlementAmount: text(row.settlement_amount),
@@ -264,4 +270,10 @@ export function mapApiRecoveryTicket(value: unknown): AssetRecoveryTicketView {
 
 export function mapApiRecoveryTickets(values: unknown[]): AssetRecoveryTicketView[] {
   return values.map(mapApiRecoveryTicket);
+}
+
+export function recoveryTicketDateLabel(ticket: AssetRecoveryTicketView): string {
+  return ticket.custodyAssignedOn
+    ? `assigned on ${ticket.custodyAssignedOn.slice(0, 10)}`
+    : `ticket opened ${ticket.ticketOpenedOn.slice(0, 10)}`;
 }

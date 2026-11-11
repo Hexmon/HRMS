@@ -24,6 +24,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Undo2, Laptop } from "lucide-react";
+import { RecoverySettlementControl } from "@/components/assets/recovery-settlement-control";
 import type { AssetCondition } from "@/lib/mock/assets";
 import { toast } from "sonner";
 import { toastApiError } from "@/shared/api";
@@ -31,6 +32,7 @@ import { useApiRouteEnabled } from "@/shared/api";
 import {
   useAssetRecoveryQueue,
   useAssetRecoverySettlementMutation,
+  recoveryTicketDateLabel,
   type AssetRecoveryTicketView,
 } from "@/domains/assets";
 
@@ -117,18 +119,19 @@ function ReturnsScreen() {
                   <Link to="/assets/$id" params={{ id: ticket.assetId }} className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{ticket.assetName}</p>
                     <p className="text-xs text-muted-foreground">
-                      {ticket.assetCode} · {ticket.employeeName} · since{" "}
-                      {ticket.assignedOn.slice(0, 10)}
+                      {ticket.assetCode} · {ticket.employeeName} · {recoveryTicketDateLabel(ticket)}
                     </p>
                   </Link>
                   <div className="flex items-center gap-2">
                     <StatusBadge status={ticket.status} label={ticket.status} />
-                    <ReturnInline
-                      detailsSupported
-                      onConfirm={(date, condition, remarks) =>
-                        settleTicket(ticket, date, condition, remarks)
-                      }
-                    />
+                    <RecoverySettlementControl ticket={ticket}>
+                      <ReturnInline
+                        detailsSupported
+                        onConfirm={(date, condition, remarks) =>
+                          settleTicket(ticket, date, condition, remarks)
+                        }
+                      />
+                    </RecoverySettlementControl>
                   </div>
                 </li>
               ))}

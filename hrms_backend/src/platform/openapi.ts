@@ -3347,6 +3347,8 @@ const assetRecoveryTicketSchema = {
     "employee_user_id",
     "asset_id",
     "assignment_id",
+    "assignment_assigned_at",
+    "review_required",
     "status",
     "version",
     "created_at",
@@ -3356,6 +3358,8 @@ const assetRecoveryTicketSchema = {
     employee_user_id: uuid("Employee user UUID"),
     asset_id: uuid("Asset UUID"),
     assignment_id: { ...uuid("Custody assignment UUID"), nullable: true },
+    assignment_assigned_at: { ...dateTime("Original custody assignment timestamp"), nullable: true },
+    review_required: { type: "boolean", description: "Ticket cannot settle against the current custody assignment and requires HR review", example: false },
     status: {
       type: "string",
       enum: ["open", "in_progress", "closed"],

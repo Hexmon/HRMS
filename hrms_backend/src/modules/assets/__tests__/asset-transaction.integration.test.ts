@@ -290,13 +290,19 @@ describe("asset transaction boundary", () => {
     const termination = await first.inject({ method: "POST", url: "/api/v1/assets/events/employee-terminated", headers: headers(), payload: { employee_user_id: seedIds.employee1 } });
     expect(termination.statusCode).toBe(200);
     const queue = await first.inject({ method: "GET", url: "/api/v1/assets/recovery-queue", headers: authHeader(manager.token) });
-    const oldTicket = queue.json().items.find((item: { asset_id: string }) => item.asset_id === original.id) as { id: string; version: number };
+    const oldTicket = queue.json().items.find((item: { asset_id: string }) => item.asset_id === original.id) as { id: string; version: number; assignment_id: string; assignment_assigned_at: string; review_required: boolean; created_at: string };
     expect(oldTicket).toBeDefined();
+    expect(oldTicket.review_required).toBe(false);
+    expect(oldTicket.assignment_id).toBeTruthy();
+    expect(oldTicket.assignment_assigned_at).toBeTruthy();
+    expect(oldTicket.assignment_assigned_at <= oldTicket.created_at).toBe(true);
     const returnPending = await first.inject({ method: "GET", url: `/api/v1/assets/${original.id}`, headers: authHeader(manager.token) });
     const returned = await first.inject({ method: "POST", url: `/api/v1/assets/${original.id}/return`, headers: headers(), payload: { expected_version: returnPending.json().version } });
     expect(returned.statusCode).toBe(200);
     const afterReturnSettlement = await first.inject({ method: "POST", url: `/api/v1/assets/recovery-queue/${oldTicket.id}/settlement`, headers: headers(), payload: { settlement_status: "recovered", expected_version: oldTicket.version } });
     expect(afterReturnSettlement.statusCode).toBe(409);
+    const afterReturnQueue = await first.inject({ method: "GET", url: "/api/v1/assets/recovery-queue", headers: authHeader(manager.token) });
+    expect(afterReturnQueue.json().items.find((item: { id: string }) => item.id === oldTicket.id)).toMatchObject({ review_required: true, assignment_assigned_at: oldTicket.assignment_assigned_at });
     const maintenance = await first.inject({ method: "POST", url: `/api/v1/assets/${original.id}/maintenance`, headers: headers(), payload: { maintenance_type: "inspection", started_on: "2026-11-11", status: "completed", expected_version: returned.json().version } });
     expect(maintenance.statusCode).toBe(200);
     const assignSecond = await first.inject({ method: "POST", url: `/api/v1/assets/${original.id}/assign`, headers: headers(), payload: { assigned_to_user_id: seedIds.employee2, expected_version: maintenance.json().asset.version } });
@@ -330,6 +336,8 @@ describe("asset transaction boundary", () => {
     expect(secondAssignment.statusCode).toBe(200);
     const currentAssignment = await first.store.pgPool!.query<{ id: string }>("SELECT id FROM assets.asset_assignments WHERE asset_id = $1 AND status = 'active'", [original.id]);
     expect(currentAssignment.rows[0]!.id).not.toBe(ticket.assignment_id);
+    const staleQueue = await first.inject({ method: "GET", url: "/api/v1/assets/recovery-queue", headers: authHeader(manager.token) });
+    expect(staleQueue.json().items.find((item: { id: string }) => item.id === ticket.id)).toMatchObject({ review_required: true, assignment_id: ticket.assignment_id });
     const stale = await first.inject({ method: "POST", url: `/api/v1/assets/recovery-queue/${ticket.id}/settlement`, headers: headers(), payload: { settlement_status: "recovered", expected_version: ticket.version } });
     expect(stale.statusCode).toBe(409);
     const durable = await first.store.pgPool!.query<{ status: string; current_assigned_user_id: string; version: number }>("SELECT status, current_assigned_user_id, version FROM assets.assets WHERE id = $1", [original.id]);
@@ -357,6 +365,8 @@ describe("asset transaction boundary", () => {
     }
     const rejected = await first.inject({ method: "POST", url: `/api/v1/assets/recovery-queue/${ticket.rows[0]!.id}/settlement`, headers: headers(), payload: { settlement_status: "recovered", expected_version: ticket.rows[0]!.version } });
     expect(rejected.statusCode).toBe(409);
+    const queue = await first.inject({ method: "GET", url: "/api/v1/assets/recovery-queue", headers: authHeader(manager.token) });
+    expect(queue.json().items.find((item: { id: string }) => item.id === ticket.rows[0]!.id)).toMatchObject({ assignment_id: null, assignment_assigned_at: null, review_required: true });
     const durable = await first.store.pgPool!.query<{ status: string; current_assigned_user_id: string }>("SELECT status, current_assigned_user_id FROM assets.assets WHERE id = $1", [asset.id]);
     expect(durable.rows[0]).toEqual({ status: "Return Pending", current_assigned_user_id: seedIds.employee1 });
     const openTicket = await first.store.pgPool!.query<{ status: string; assignment_id: string | null }>("SELECT status, assignment_id FROM assets.asset_recovery_tickets WHERE id = $1", [ticket.rows[0]!.id]);

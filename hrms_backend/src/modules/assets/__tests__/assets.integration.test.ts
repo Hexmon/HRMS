@@ -326,6 +326,7 @@ describe("assets and licenses", () => {
       id: recoveryTicket.id,
       status: "closed",
       settlement_status: "recovered",
+      review_required: false,
       version: recoveryTicket.version + 1
     });
     expect(settlement.json().asset).toMatchObject({

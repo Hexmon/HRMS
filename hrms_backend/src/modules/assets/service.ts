@@ -393,11 +393,7 @@ export class AssetService {
       .filter((ticket) => !query.user_id || ticket.employee_user_id === query.user_id)
       .filter((ticket) => !query.status || ticket.status === query.status)
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
-    const items = tickets.map((ticket) => ({
-      ...ticket,
-      employee: this.store.users.find((user) => user.id === ticket.employee_user_id) ?? null,
-      asset: this.store.assets.find((asset) => asset.id === ticket.asset_id) ?? null
-    }));
+    const items = tickets.map((ticket) => this.presentRecoveryTicket(ticket));
     return {
       ...page(items, query.page, query.page_size),
       totals: {
@@ -427,15 +423,11 @@ export class AssetService {
       throw conflict("Asset recovery ticket is already closed.", { id });
     }
     const asset = this.repository.find(ticket.asset_id);
-    const assignment = this.repository.activeAssignment(asset.id);
-    if (
-      ticket.assignment_id === null ||
-      asset.current_assigned_user_id !== ticket.employee_user_id ||
-      assignment?.assigned_to_user_id !== ticket.employee_user_id ||
-      assignment.id !== ticket.assignment_id
-    ) {
+    const context = this.recoveryTicketContext(ticket);
+    if (context.reviewRequired || !context.activeAssignment) {
       throw conflict("Recovery ticket no longer matches the current asset assignment. HR review is required.", { id, asset_id: asset.id });
     }
+    const assignment = context.activeAssignment;
     const now = nowIso();
     asset.status = input.settlement_status === "lost_damaged" ? AssetStatuses.LostStolen : AssetStatuses.Returned;
     asset.current_assigned_user_id = null;
@@ -622,11 +614,36 @@ export class AssetService {
     };
   }
 
+  private recoveryTicketContext(ticket: MemoryDataStore["assetRecoveryTickets"][number]) {
+    const asset = this.store.assets.find((candidate) => candidate.id === ticket.asset_id && !candidate.deleted_at);
+    const activeAssignment = asset ? this.repository.activeAssignment(asset.id) : null;
+    const linkedAssignment = ticket.assignment_id
+      ? this.store.assetAssignments.find((candidate) =>
+          candidate.id === ticket.assignment_id &&
+          candidate.asset_id === ticket.asset_id &&
+          candidate.assigned_to_user_id === ticket.employee_user_id
+        )
+      : null;
+    const matchesCurrentCustody = ticket.assignment_id !== null &&
+      asset?.current_assigned_user_id === ticket.employee_user_id &&
+      activeAssignment?.id === ticket.assignment_id &&
+      activeAssignment.assigned_to_user_id === ticket.employee_user_id;
+    return {
+      asset,
+      activeAssignment: matchesCurrentCustody ? activeAssignment : null,
+      assignmentAssignedAt: linkedAssignment?.assigned_at ?? null,
+      reviewRequired: ticket.status !== "closed" && !matchesCurrentCustody
+    };
+  }
+
   private presentRecoveryTicket(ticket: MemoryDataStore["assetRecoveryTickets"][number]) {
+    const context = this.recoveryTicketContext(ticket);
     return {
       ...ticket,
+      assignment_assigned_at: context.assignmentAssignedAt,
+      review_required: context.reviewRequired,
       employee: this.store.users.find((user) => user.id === ticket.employee_user_id) ?? null,
-      asset: this.store.assets.find((asset) => asset.id === ticket.asset_id) ?? null
+      asset: context.asset ?? null
     };
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetOverviewMetadata, mapApiAsset } from "./mapper";
+import { assetOverviewMetadata, mapApiAsset, mapApiRecoveryTicket } from "./mapper";
 
 describe("asset API projection", () => {
   it("uses the current assignment acknowledgement after refresh, not mock history", () => {
@@ -56,5 +56,35 @@ describe("asset API projection", () => {
       cost: null,
       condition: null,
     });
+  });
+
+  it("maps recovery custody identity and fails closed when review state is absent", () => {
+    const base = {
+      id: "ticket-a",
+      asset_id: "asset-a",
+      assignment_id: "assignment-a",
+      assignment_assigned_at: "2026-11-01T10:00:00Z",
+      created_at: "2026-11-11T10:00:00Z",
+      review_required: false,
+    };
+    expect(mapApiRecoveryTicket(base)).toMatchObject({
+      assignmentId: "assignment-a",
+      custodyAssignedOn: "2026-11-01T10:00:00Z",
+      ticketOpenedOn: "2026-11-11T10:00:00Z",
+      reviewRequired: false,
+    });
+    expect(
+      mapApiRecoveryTicket({
+        ...base,
+        assignment_id: null,
+        assignment_assigned_at: null,
+        review_required: true,
+      }),
+    ).toMatchObject({
+      assignmentId: null,
+      custodyAssignedOn: null,
+      reviewRequired: true,
+    });
+    expect(mapApiRecoveryTicket({ ...base, review_required: undefined }).reviewRequired).toBe(true);
   });
 });
