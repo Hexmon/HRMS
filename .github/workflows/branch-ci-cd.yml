@@ -23,6 +23,46 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  repository-checks:
+    name: Repository verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout with base history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pnpm for verification planning
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: hrms_backend/package.json
+          run_install: false
+
+      - name: Resolve authoritative event base
+        id: event-base
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          base_sha="$(bash scripts/agent/resolve-ci-base.sh "$EVENT_NAME" "$PR_BASE_SHA" "$PUSH_BEFORE_SHA")"
+          echo "sha=$base_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Protect sensitive files
+        run: bash scripts/agent/protect-sensitive-files.sh --base "${{ steps.event-base.outputs.sha }}"
+
+      - name: Validate agent setup and references
+        run: bash scripts/agent/validate-agent-setup.sh
+
+      - name: Test verification scripts
+        run: python3 -m unittest discover -s scripts/agent/tests -v
+
+      - name: Plan change-aware verification for the event diff
+        run: bash scripts/agent/verify-change.sh --plan --base "${{ steps.event-base.outputs.sha }}"
+
   backend-checks:
     name: Backend checks
     runs-on: ubuntu-latest
@@ -168,6 +208,7 @@ jobs:
     name: Deploy backend
     runs-on: ubuntu-latest
     needs:
+      - repository-checks
       - backend-checks
       - frontend-checks
     if: >-
