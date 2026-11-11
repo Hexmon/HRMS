@@ -12510,6 +12510,41 @@ const routeDocs: Record<string, RouteSchema> = {
       },
     },
   ),
+  "GET /api/v1/assets/my": operation(
+    "Assets",
+    "My assigned assets",
+    "Lists only assets currently assigned to the authenticated employee.",
+    { querystring: paginationQuerySchema, response200: paginated(assetSchema) },
+  ),
+  "GET /api/v1/assets/assignees": operation(
+    "Assets",
+    "Asset assignment candidates",
+    "Lists active employees in the Asset Manager's assigned company with only ID and display name.",
+    {
+      querystring: {
+        type: "object",
+        properties: { q: { type: "string", maxLength: 120, description: "Optional employee name search." } },
+        additionalProperties: false,
+      },
+      response200: {
+        type: "object",
+        required: ["items", "has_more"],
+        properties: {
+          has_more: { type: "boolean", description: "True when more than 50 employees match; refine the search." },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["id", "full_name"],
+              properties: { id: uuid("Employee UUID"), full_name: { type: "string" } },
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  ),
   "POST /api/v1/assets/requests": operation(
     "Assets",
     "Create asset request",
@@ -13108,6 +13143,13 @@ export const swaggerTransform: NonNullable<
     schema: {
       ...(schema as RouteSchema | undefined),
       ...docs,
+      ...(url.startsWith("/api/v1/assets") && ["POST", "PATCH"].includes(method ?? "") &&
+      !url.includes("/scan/") && !url.endsWith("/licenses/validate")
+        ? { headers: {
+            type: "object", required: ["idempotency-key"],
+            properties: { "idempotency-key": { type: "string", minLength: 8, maxLength: 200, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$", description: "Stable client command key. Reuse after an uncertain response; use a fresh key for a new action." } },
+          } }
+        : {}),
     },
     url,
   };

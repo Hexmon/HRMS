@@ -115,16 +115,21 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const apiAssetsQuery = useQuery({
-    queryKey: queryKeys.list("assets", "inventory", { page_size: 100 }),
+    queryKey: queryKeys.list("assets", canUseAssetInventory ? "inventory" : "my", {
+      page_size: 100,
+      actor_id: user?.id,
+    }),
     queryFn: () =>
       withApiFallback(
         async () => {
-          const response = await assetsApi.list({ page_size: 100 });
+          const response = canUseAssetInventory
+            ? await assetsApi.list({ page_size: 100 })
+            : await assetsApi.myAssets({ page_size: 100 });
           return mapApiAssets(pageItems(response), assets);
         },
         () => assets,
       ),
-    enabled: apiEnabled && canUseAssetInventory,
+    enabled: apiEnabled,
     staleTime: queryTimings.listStaleMs,
   });
 
@@ -260,13 +265,12 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") }),
   });
 
-  const hasApiResult = canUseAssetInventory ? apiAssetsQuery.data !== undefined : true;
+  const hasApiResult = apiAssetsQuery.data !== undefined;
   const visibleAssets = React.useMemo(() => {
     if (!apiEnabled) return assets;
-    if (!canUseAssetInventory) return [];
     if (!hasApiResult) return [];
     return apiAssetsQuery.data ?? [];
-  }, [apiAssetsQuery.data, apiEnabled, assets, canUseAssetInventory, hasApiResult]);
+  }, [apiAssetsQuery.data, apiEnabled, assets, hasApiResult]);
   const hasRequestApiResult =
     apiMyRequestsQuery.data !== undefined ||
     (isAssetAdmin && apiQueueRequestsQuery.data !== undefined);

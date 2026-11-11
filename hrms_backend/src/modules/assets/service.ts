@@ -9,6 +9,7 @@ import { assertAssetManager } from "./policy.js";
 import { AssetRepository } from "./repository.js";
 import { assertAssetTransition } from "./state-machine.js";
 import { createRecoveryTicketsForTerminatedEmployee } from "./events.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 
 export class AssetService {
   private readonly repository: AssetRepository;
@@ -27,6 +28,28 @@ export class AssetService {
     const items = this.repository.list().map((asset) => this.presentAsset(asset));
     const start = (page - 1) * pageSize;
     return { items: items.slice(start, start + pageSize), page, page_size: pageSize, total: items.length };
+  }
+
+  myAssets(actor: AuthUser, pageNumber: number, pageSize: number) {
+    const items = this.repository.list()
+      .filter((asset) => asset.current_assigned_user_id === actor.id)
+      .map((asset) => this.presentAsset(asset));
+    const start = (pageNumber - 1) * pageSize;
+    return { items: items.slice(start, start + pageSize), page: pageNumber, page_size: pageSize, total: items.length };
+  }
+
+  assignees(actor: AuthUser, search = "") {
+    assertAssetManager(actor);
+    const companyId = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id, operation: "assets.assignees", requireActiveEmployment: true,
+    }).companyId;
+    const items = this.store.users
+      .filter((user) => !user.deleted_at && user.employment_status === "active")
+      .filter((user) => this.store.userSessionPreferences.some((preference) => preference.user_id === user.id && preference.company_id === companyId))
+      .filter((user) => !search || user.full_name.toLowerCase().includes(search.toLowerCase()))
+      .map((user) => ({ id: user.id, full_name: user.full_name }))
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    return { items: items.slice(0, 50), has_more: items.length > 50 };
   }
 
   warrantyAlerts(
@@ -77,13 +100,13 @@ export class AssetService {
   }
 
   detail(actor: AuthUser, id: UUID) {
-    assertAssetManager(actor);
-    return this.presentAsset(this.repository.find(id));
+    return this.presentAsset(this.assertAssetVisible(actor, id));
   }
 
   assign(actor: AuthUser, id: UUID, assignedToUserId: UUID, expectedVersion: number): AssetRecord {
     assertAssetManager(actor);
     const asset = this.repository.find(id);
+    if (asset.version !== expectedVersion) throw conflict("Asset was modified by another actor.", { aggregate: "asset", id });
     assertAssetTransition(asset.status, AssetStatuses.Assigned);
     const updated = this.repository.updateVersioned(id, expectedVersion, (candidate) => {
       candidate.status = AssetStatuses.Assigned;
@@ -448,6 +471,7 @@ export class AssetService {
   returnAsset(actor: AuthUser, id: UUID, expectedVersion: number): AssetRecord {
     assertAssetManager(actor);
     const asset = this.repository.find(id);
+    if (asset.version !== expectedVersion) throw conflict("Asset was modified by another actor.", { aggregate: "asset", id });
     assertAssetTransition(asset.status, AssetStatuses.Returned);
     const updated = this.repository.updateVersioned(id, expectedVersion, (candidate) => {
       candidate.status = AssetStatuses.Returned;
@@ -614,7 +638,7 @@ export class AssetService {
       : null;
     const activeAssignment = this.repository.activeAssignment(asset.id);
     const latestAcknowledgement = this.store.assetAcknowledgements
-      .filter((acknowledgement) => acknowledgement.asset_id === asset.id)
+      .filter((acknowledgement) => acknowledgement.asset_id === asset.id && acknowledgement.assignment_id === activeAssignment?.id)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
     const metadata = asset.metadata ?? {};
     return {
@@ -632,6 +656,7 @@ export class AssetService {
       assigned_to_user_id: asset.current_assigned_user_id,
       assigned_to_name: assigned?.full_name ?? null,
       assigned_on: activeAssignment?.assigned_at ?? null,
+      active_assignment_id: activeAssignment?.id ?? null,
       latest_acknowledgement: latestAcknowledgement ?? null,
       maintenance: this.repository.listMaintenance(asset.id).map((record) => this.presentMaintenance(record))
     };

@@ -2294,6 +2294,30 @@ export const compromisedKeys = assets.table("compromised_keys", {
   updatedAt
 });
 
+export const assetCommandResults = assets.table(
+  "asset_command_results",
+  {
+    id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
+    actorUserId: uuid("actor_user_id").notNull(),
+    actionKey: text("action_key").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    responseStatus: integer("response_status").notNull(),
+    responseBody: jsonb("response_body").notNull(),
+    committedAt: timestamp("committed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("asset_command_results_scope_key_uq").on(
+      table.companyId,
+      table.actorUserId,
+      table.actionKey,
+      table.idempotencyKey,
+    ),
+    index("asset_command_results_committed_idx").on(table.committedAt),
+  ],
+);
+
 export const workSegments = timesheets.table(
   "work_segments",
   {
@@ -2840,6 +2864,7 @@ export const schema = {
   licenseEntitlements,
   licenseActivations,
   compromisedKeys,
+  assetCommandResults,
   workSegments,
   workflowDefinitions,
   timesheetSubmissions,

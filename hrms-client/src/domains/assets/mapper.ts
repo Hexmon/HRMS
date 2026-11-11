@@ -21,6 +21,22 @@ export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
   const maintenance = Array.isArray(row.maintenance)
     ? row.maintenance.map(mapApiMaintenance)
     : (fallback?.maintenance ?? []);
+  const acknowledgement = asRecord(row.latest_acknowledgement);
+  const activeAssignmentId = text(row.active_assignment_id);
+  const history: Asset["history"] = activeAssignmentId
+    ? [
+        {
+          id: activeAssignmentId,
+          employee: text(row.assigned_to_name),
+          employeeId: text(row.assigned_to_user_id),
+          assignedOn: text(row.assigned_on),
+          conditionAtHandover: text(row.condition, "good") as Asset["condition"],
+          acknowledged:
+            text(acknowledgement.assignment_id) === activeAssignmentId &&
+            text(acknowledgement.status) === "acknowledged",
+        },
+      ]
+    : [];
 
   return {
     id: text(row.id ?? row.asset_code, fallback?.id ?? "AST-API"),
@@ -48,7 +64,7 @@ export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
     assignedToId: text(row.assigned_to_user_id, fallback?.assignedToId),
     assignedOn: text(row.assigned_on, fallback?.assignedOn),
     expectedReturn: text(row.expected_return, fallback?.expectedReturn),
-    history: fallback?.history ?? [],
+    history,
     maintenance,
     documents: fallback?.documents ?? [],
     audit: fallback?.audit ?? [],

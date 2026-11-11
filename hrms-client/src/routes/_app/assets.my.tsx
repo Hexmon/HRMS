@@ -13,7 +13,7 @@ export const Route = createFileRoute("/_app/assets/my")({ component: MyAssets })
 function MyAssets() {
   const { user } = useAuth();
   const { assets, acknowledgeAssignment, loading, error } = useAssets();
-  const mine = assets.filter((a) => a.assignedTo === user?.name);
+  const mine = assets.filter((a) => a.assignedToId === user?.id);
 
   return (
     <div className="space-y-4">

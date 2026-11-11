@@ -1,0 +1,63 @@
+# TEN-S25-001/018 Asset Transaction Cutover
+
+## Objective And Success Criteria
+
+- Replace the request-end whole-domain asset snapshot flush with a transaction-owned, request-local asset command boundary. Two API instances must not overwrite one another's committed asset work; a failed SQL transaction must leave no process-local ghost state.
+- Every current asset mutation must use the new boundary. Public QR scan and license validation are reads and must perform no write. Asset, Core employee detail, dashboard and asset report reads must observe committed SQL state after another instance writes. Employee assigned-assets and Asset Manager assignee lookup are bounded, scope-limited reads needed for the real UI journey.
+- An older binary still using the legacy snapshot flush must fail visibly after the DB fence is installed. The owner controls deployment and migration timing; this branch only prepares code, migration and isolated evidence.
+
+## Scope
+
+- In scope: all current `assets/routes.ts` writes (create, assign, return, license activate/revoke, termination recovery, request create/decision/cancel, acknowledgement, maintenance, vendor create/update, recovery settlement), asset read routes, the known Core/dashboard/report readers, SQL write fence across every `assets` table, targeted delta persistence, outbox, rollback and two-instance tests.
+- Out of scope: adding permanent company ownership/backfill to asset tables (TEN-S25-010), production deployment/worker activation, entitlement semantics beyond existing approved behavior, Cloudinary/documents and broader Core/Admin persistence migration.
+- Affected actors: Asset Manager, Admin, employee requester/acknowledger, HR recovery viewer and public QR/license caller. Tenant isolation remains a TEN-S25-010 dependency; no current-source cross-tenant guarantee is claimed here.
+
+## Evidence And Decisions
+
+- At `deb6012d`, `app.ts:persistenceFlushTarget` selects `assets` for successful non-GET asset paths, and `PostgresPersistence.flushDomain('assets')` calls `flushAssets` over all hydrated arrays. Existing asset repository/service mutate those arrays before the SQL transaction. The SQL upserts can overwrite a newer row from another process; a rejected flush leaves already-mutated memory. Historical disposable two-instance repro is in `qa-artifacts/hrms/discovery-2026-11-09/multi-instance-asset-probe.evidence.md`.
+- `AssetService` and `AssetRepository` use 11 in-memory asset collections; `assets.routes` currently has 14 mutating and 10 read handlers, including read-only POST QR/license validation. `CoreService.toDetail`, `DashboardService` and `ReportService.assetsSummary` also read the hydrated asset arrays. `flush()` can be invoked by workers/tests and must not continue rewriting assets from stale snapshots.
+- Approved rule: root AGENTS transaction/outbox invariants and TEN-S25-001/018. Exact pending S25-020 and S25-037 case bodies are at `qa-artifacts/hrms/ten-s25-001-asset-intake-2026-11-11/pending-sheet-cases.md`; the browser journey draft is alongside it. The connected sheet is not available in this chat, so they are **Not Tested**, not published.
+- Prelaunch API change: require a client-generated `Idempotency-Key` for all 14 authenticated asset mutations. Bind each key to current actor, assigned company, method/path action and canonical request hash. In the same SQL transaction as domain rows/outbox, persist the exact response status/body; a retry with the same key and hash replays it, while key reuse with another body conflicts. Public QR and license validation remain reads. `platform.idempotency_keys` stores a response hash but no body; an asset-specific command-result table avoids changing shared platform semantics. Retention/pruning duration needs an owner policy; no arbitrary expiry will be claimed. TEN-S25-024 will replace global sequential asset request codes; this cutover must avoid duplicate codes under concurrency without inventing tenant codes.
+
+## Implementation Steps
+
+| Status | Step | Evidence/notes |
+| --- | --- | --- |
+| Implemented locally | Add append-only asset-specific SQL fence migration. | Migration 0065 uses a transaction-local marker for INSERT/UPDATE/DELETE on all 13 asset tables, including `software_products` and command results; 13 installed row triggers were counted on disposable SQL. TRUNCATE/DDL bypass row triggers and require a separate least-privilege runtime DB role. |
+| Implemented locally | Add PostgreSQL `assetReadStore` and `assetCommand`. | Reads use one REPEATABLE READ READ ONLY snapshot. Commands take a bounded advisory transaction lock, recheck current SQL actor roles/company, authorize before replay, mutate staged arrays, write changed rows/outbox/result and commit. Assignee eligibility is checked against current SQL only for a new assignment, after replay lookup. |
+| Implemented locally | Stop legacy asset flushes. | All 14 mutation routes call `assetCommand`; QR scan/license validation remain reads. `app.ts` exempts asset paths from `onSend` persistence, generic `flush()` excludes assets, and `flushDomain('assets')` fails closed. Initial seed requires every asset table empty and uses a guarded transaction-local marker. |
+| Implemented locally | Update dependent readers and frontend. | Core user detail, dashboard, report, QR and asset reads use fresh SQL snapshots. Added scoped `/assets/my` and bounded searchable `/assets/assignees`; asset UI uses stable pending keys across network failure/refresh, waits for successful assign/return/request before closing, and maps current assignment acknowledgement from API evidence. |
+| Partly verified | Add regression and recovery evidence. | Disposable SQL tests cover two-instance overwrite/contention, duplicate replay, role revocation, stale/foreign assignee, failed statement/no ghost, simulated post-COMMIT lost acknowledgement, read-only POST, old DML fence, request-code gap, termination dedupe and fresh Core/dashboard/report/QR readers. Actual old binary, report interleaved-commit timing, browser and restart journeys still need independent evidence. |
+| Partly verified | Run typecheck, migrations/schema gate, focused tests and changed-coverage gate; request independent review. | Backend/frontend typechecks, focused integration/frontend tests, migration history/schema drift, API docs and consumer checks and full 27/27 backend contracts passed locally. Changed coverage, independent exact-head review, browser QA and sheet publication remain pending. |
+
+## Test Design And Shared Tracker
+
+- Sprint/task IDs: Sprint 25, TEN-S25-001 and TEN-S25-018. Existing sheet IDs S25-020-U/P/N/F (rows 16–19) and S25-037-U/P/N/F (rows 84–87) are local replacement drafts pending publication/readback.
+- Unit: current/stale version, invalid transition, unrelated asset preservation, no pre-commit publication. API/integration: two instances with disposable SQL/Valkey, competing commands, rollback, read-only POST, old writer, Core/dashboard/report/QR, restart. Browser: actual Asset Manager assign/return and stale tab/conflict UI.
+- Success requires SQL counts and versions, not just 200 responses; failure requires zero durable side effects and no ghost same-process read. Never mark cases passed from this plan.
+
+## Verification
+
+| Status | Check or journey | Environment/evidence |
+| --- | --- | --- |
+| Pass locally | Failing-before and passing-after two-instance repro | Before: one failed assertion showed stale instance reverting assignment. After: dedicated asset DB integration suite 11/11 passed, including same-version contention. |
+| Pass for row DML; hosted privilege pending | Migration and legacy/new writer fence | Migration history/schema drift passed on separate disposable migration DB; 13 row triggers counted; direct old-style UPDATE rejected with SQLSTATE 55000. Actual old binary and runtime TRUNCATE privilege remain unverified. |
+| Partly passed | Backend unit/integration/contract and affected frontend checks | Asset regression 4/4, asset transaction 11/11, frontend intent/projection 3/3, backend/frontend typechecks, full contracts 27/27, API docs and consumer checks passed. Full backend unit and changed coverage still pending. |
+| Partial HTTP/SQL; browser blocked | Real browser Asset Manager journey | Separate disposable local database had 65 migrations and independent HTTP/SQL create/assign/replay/employee-own-assets/QR checks. Automatic browser approval review denied `http://127.0.0.1:5173`; its saved permission policy explicitly forbids alternate browser automation. See `qa-artifacts/hrms/ten-s25-001-asset-intake-2026-11-11/independent-local-qa-2026-11-11.md`. Browser cases remain Not Tested until access is granted or human QA executes them. |
+| Pending | Independent senior/security/QA exact-head review | Lead to coordinate after code. |
+
+## Risks, Compatibility And Recovery
+
+- Global advisory lock serializes asset commands until company ownership exists; keep lock duration bounded and persist only changed rows. Revisit per-company lock and indexes with TEN-S25-010. Lock timeout returns a visible retryable failure, never false success.
+- The DB fence intentionally blocks old app asset writes as soon as migration runs. Deployment runbook must stage new binary and migration with a short fail-closed window; rolling back to old code while the fence remains makes asset writes fail. Do not remove the fence after new data writes without a data-reconciliation plan. The fence checks row DML only; TRUNCATE and DDL bypass it. The production runtime DB credential must lack TRUNCATE/schema ownership before cutover; that hosted privilege has not been inspected here.
+- New service uses request-local staged asset arrays and staged outbox; COMMIT is the only publication point. Other domain flushes must never rewrite asset tables. Version conflicts refresh from SQL; an exact same-key retry after a committed response loss returns the committed result. Frontend intent keys must survive a network failure and clear after a definitive outcome. Retention/pruning is an explicit outstanding policy.
+- Asset tables still lack company ownership. `/assets/my` and asset detail could expose an old-company assignment after employee transfer; termination recovery also lacks a target-company check. These are TEN-S25-010/016 release blockers for SaaS tenant isolation, despite the current SQL check on new assignee eligibility. Never claim this cutover establishes tenant-safe assets.
+- Command-result JSON may contain employee/assignee details and is retained indefinitely until an approved policy exists. Replay retrieval is company+actor+action+key scoped and no body is logged, but at-rest retention/RLS policy remains pending. Do not purge keys without durable tombstones that prevent old-key reapplication.
+- The existing asset API does not persist handover/return date, condition or remarks, so those controls are hidden in API-backed assign/return dialogs. A fuller workflow remains a business follow-up. HR navigation still advertises inventory it cannot read, and inventory loads only the first 100 assets; these remain linked UI/capacity follow-ups.
+- The public QR scan request path currently reaches the backend request log with the QR lookup token unredacted. The independent local HTTP run observed this without recording the token. Link logger masking, QR hash echo and rotation/revocation to TEN-S25-011 before release; no logging fix is claimed in this transaction cutover.
+- No user/company IDs, raw fingerprints or secret values in evidence. Tenant-specific RLS/ownership awaits TEN-S25-010/016/017.
+
+## Handoff
+
+- Current branch: `sprint-25/ten-s25-001` stacked on `deb6012d` (QA #117), which is stacked on bootstrap #116; base `origin/release-01` was `30783aa5` at worktree creation.
+- This remains an in-progress local implementation. Migration and tests were run only on disposable local SQL; no commit, PR, hosted migration, sheet write, deployment or independent review is claimed here.

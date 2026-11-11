@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs } from "#testing";
 import { seedIds } from "../../../platform/data-store.js";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
+
+function assetAuthHeader(token: string) {
+  return { ...authHeader(token), "Idempotency-Key": randomUUID() };
+}
 
 describe("assets and licenses", () => {
   let app: FastifyInstance;
@@ -21,14 +26,14 @@ describe("assets and licenses", () => {
     const list = await app.inject({
       method: "GET",
       url: "/api/v1/assets?page=1&page_size=10",
-      headers: authHeader(assetManager.token)
+      headers: assetAuthHeader(assetManager.token)
     });
     const asset = list.json().items[0];
 
     const assign = await app.inject({
       method: "POST",
       url: `/api/v1/assets/${asset.id}/assign`,
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version }
     });
     expect(assign.statusCode).toBe(200);
@@ -44,7 +49,7 @@ describe("assets and licenses", () => {
     const recovery = await app.inject({
       method: "POST",
       url: "/api/v1/assets/events/employee-terminated",
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: { employee_user_id: seedIds.employee1 }
     });
     expect(recovery.statusCode).toBe(200);
@@ -56,7 +61,7 @@ describe("assets and licenses", () => {
     const first = await app.inject({
       method: "POST",
       url: "/api/v1/assets/licenses/activate",
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: {
         product_id: seedIds.licenseProduct,
         entitlement_id: seedIds.entitlement,
@@ -68,7 +73,7 @@ describe("assets and licenses", () => {
     const second = await app.inject({
       method: "POST",
       url: "/api/v1/assets/licenses/activate",
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: {
         product_id: seedIds.licenseProduct,
         entitlement_id: seedIds.entitlement,
@@ -80,13 +85,13 @@ describe("assets and licenses", () => {
     await app.inject({
       method: "POST",
       url: "/api/v1/assets/licenses/revoke",
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: { hardware_fingerprint: "device-two" }
     });
     const compromised = await app.inject({
       method: "POST",
       url: "/api/v1/assets/licenses/activate",
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: {
         product_id: seedIds.licenseProduct,
         entitlement_id: seedIds.entitlement,
@@ -111,6 +116,18 @@ describe("assets and licenses", () => {
       vendor: "Lenovo India",
       warranty_expiry: dateAfterDays(30)
     };
+    const fixtureClient = await app.store.pgPool!.connect();
+    try {
+      await fixtureClient.query("BEGIN");
+      await fixtureClient.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
+      await fixtureClient.query("UPDATE assets.assets SET metadata = $1::jsonb WHERE id = $2", [JSON.stringify(asset.metadata), asset.id]);
+      await fixtureClient.query("COMMIT");
+    } catch (error) {
+      await fixtureClient.query("ROLLBACK");
+      throw error;
+    } finally {
+      fixtureClient.release();
+    }
     assetPolicy.config = {
       ...assetPolicy.config,
       warrantyAlertDays: 45
@@ -119,14 +136,14 @@ describe("assets and licenses", () => {
     const denied = await app.inject({
       method: "GET",
       url: "/api/v1/assets/warranty-alerts?page=1&page_size=10",
-      headers: authHeader(employee.token)
+      headers: assetAuthHeader(employee.token)
     });
     expect(denied.statusCode).toBe(403);
 
     const alerts = await app.inject({
       method: "GET",
       url: "/api/v1/assets/warranty-alerts?page=1&page_size=10",
-      headers: authHeader(assetManager.token)
+      headers: assetAuthHeader(assetManager.token)
     });
     expect(alerts.statusCode).toBe(200);
     expect(alerts.json()).toMatchObject({
@@ -145,7 +162,7 @@ describe("assets and licenses", () => {
     const narrowWindow = await app.inject({
       method: "GET",
       url: "/api/v1/assets/warranty-alerts?page=1&page_size=10&window_days=14&include_expired=false",
-      headers: authHeader(assetManager.token)
+      headers: assetAuthHeader(assetManager.token)
     });
     expect(narrowWindow.statusCode).toBe(200);
     expect(narrowWindow.json()).toMatchObject({ alert_window_days: 14, total: 0 });
@@ -158,7 +175,7 @@ describe("assets and licenses", () => {
     const createRequest = await app.inject({
       method: "POST",
       url: "/api/v1/assets/requests",
-      headers: authHeader(employee.token),
+      headers: assetAuthHeader(employee.token),
       payload: {
         request_type: "new",
         asset_type: "Laptop",
@@ -179,7 +196,7 @@ describe("assets and licenses", () => {
     const mine = await app.inject({
       method: "GET",
       url: "/api/v1/assets/requests/my?page=1&page_size=10",
-      headers: authHeader(employee.token)
+      headers: assetAuthHeader(employee.token)
     });
     expect(mine.statusCode).toBe(200);
     expect(mine.json().total).toBeGreaterThanOrEqual(1);
@@ -187,7 +204,7 @@ describe("assets and licenses", () => {
     const queue = await app.inject({
       method: "GET",
       url: "/api/v1/assets/requests/queue?page=1&page_size=10",
-      headers: authHeader(assetManager.token)
+      headers: assetAuthHeader(assetManager.token)
     });
     expect(queue.statusCode).toBe(200);
     expect(queue.json().queue_counts.pending).toBeGreaterThanOrEqual(1);
@@ -195,7 +212,7 @@ describe("assets and licenses", () => {
     const decision = await app.inject({
       method: "POST",
       url: `/api/v1/assets/requests/${createRequest.json().request.id}/decision`,
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: {
         decision: "approved",
         remarks: "Approved by IT",
@@ -208,13 +225,13 @@ describe("assets and licenses", () => {
     const list = await app.inject({
       method: "GET",
       url: "/api/v1/assets?page=1&page_size=10",
-      headers: authHeader(assetManager.token)
+      headers: assetAuthHeader(assetManager.token)
     });
     const asset = list.json().items[0];
     const assign = await app.inject({
       method: "POST",
       url: `/api/v1/assets/${asset.id}/assign`,
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version }
     });
     expect(assign.statusCode).toBe(200);
@@ -222,7 +239,7 @@ describe("assets and licenses", () => {
     const acknowledge = await app.inject({
       method: "POST",
       url: `/api/v1/assets/${asset.id}/acknowledgements`,
-      headers: authHeader(employee.token),
+      headers: assetAuthHeader(employee.token),
       payload: { acknowledgement_type: "received", expected_version: assign.json().version }
     });
     expect(acknowledge.statusCode).toBe(200);
@@ -235,14 +252,14 @@ describe("assets and licenses", () => {
     const vendors = await app.inject({
       method: "GET",
       url: "/api/v1/assets/vendors?page=1&page_size=10",
-      headers: authHeader(assetManager.token)
+      headers: assetAuthHeader(assetManager.token)
     });
     expect(vendors.statusCode).toBe(200);
     expect(vendors.json().items[0]).toMatchObject({ name: "Lenovo India", status: "active" });
     const createdVendor = await app.inject({
       method: "POST",
       url: "/api/v1/assets/vendors",
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: {
         name: "Apple Enterprise",
         contact_email: "apple-assets@example.test",
@@ -260,7 +277,7 @@ describe("assets and licenses", () => {
     const updatedVendor = await app.inject({
       method: "PATCH",
       url: `/api/v1/assets/vendors/${createdVendor.json().vendor.id}`,
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: {
         phone: "+91-33333-44444",
         status: "inactive",
@@ -277,13 +294,13 @@ describe("assets and licenses", () => {
     await app.inject({
       method: "POST",
       url: "/api/v1/assets/events/employee-terminated",
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: { employee_user_id: seedIds.employee1 }
     });
     const recoveryQueue = await app.inject({
       method: "GET",
       url: "/api/v1/assets/recovery-queue?page=1&page_size=10",
-      headers: authHeader(assetManager.token)
+      headers: assetAuthHeader(assetManager.token)
     });
     expect(recoveryQueue.statusCode).toBe(200);
     expect(recoveryQueue.json().totals.open).toBeGreaterThanOrEqual(1);
@@ -297,7 +314,7 @@ describe("assets and licenses", () => {
     const settlement = await app.inject({
       method: "POST",
       url: `/api/v1/assets/recovery-queue/${recoveryTicket.id}/settlement`,
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: {
         settlement_status: "recovered",
         remarks: "Recovered during exit clearance.",
@@ -320,12 +337,12 @@ describe("assets and licenses", () => {
     const detail = await app.inject({
       method: "GET",
       url: `/api/v1/assets/${asset.id}`,
-      headers: authHeader(assetManager.token)
+      headers: assetAuthHeader(assetManager.token)
     });
     const maintenance = await app.inject({
       method: "POST",
       url: `/api/v1/assets/${asset.id}/maintenance`,
-      headers: authHeader(assetManager.token),
+      headers: assetAuthHeader(assetManager.token),
       payload: {
         maintenance_type: "repair",
         vendor_id: vendors.json().items[0].id,
@@ -346,7 +363,7 @@ describe("assets and licenses", () => {
     const maintenanceList = await app.inject({
       method: "GET",
       url: `/api/v1/assets/${asset.id}/maintenance?page=1&page_size=10`,
-      headers: authHeader(assetManager.token)
+      headers: assetAuthHeader(assetManager.token)
     });
     expect(maintenanceList.statusCode).toBe(200);
     expect(maintenanceList.json().total).toBe(1);

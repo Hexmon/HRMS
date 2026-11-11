@@ -49,7 +49,7 @@ function AssetsDashboard() {
 
   // Employee view
   if (activeRole === "employee") {
-    const mine = assets.filter((a) => a.assignedTo === user?.name);
+    const mine = assets.filter((a) => a.assignedToId === user?.id);
     const myReqs = requests.filter((r) => r.raisedBy === user?.name);
     return (
       <div className="space-y-5">
