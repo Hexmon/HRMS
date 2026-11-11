@@ -167,13 +167,20 @@ jobs:
   changed-coverage:
     name: Changed executable coverage
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' &&
+      (github.ref == 'refs/heads/dev' ||
+      github.ref == 'refs/heads/qa' ||
+      github.ref == 'refs/heads/main'))
+    permissions:
+      contents: read
+      actions: read
     timeout-minutes: 30
     env:
       NODE_ENV: test
       APP_ENV: local
       TEST_DATABASE_URL: postgresql://unused:unused@127.0.0.1:5432/hrms_coverage_unit_only
-      COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - name: Checkout actual PR or push head with base history
         uses: actions/checkout@v7
@@ -193,13 +200,22 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Resolve cumulative push coverage baseline
+        id: push-baseline
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/agent/resolve-push-coverage-base.mjs >> "$GITHUB_OUTPUT"
+
       - name: Install backend and frontend dependencies
         run: |
           pnpm --dir hrms_backend install --frozen-lockfile
           pnpm --dir hrms-client install --frozen-lockfile
 
       - name: Test changed coverage gate
-        run: node --experimental-test-coverage --test --test-coverage-lines=100 scripts/agent/changed-coverage.test.mjs
+        run: |
+          node --test scripts/agent/resolve-push-coverage-base.test.mjs
+          node --experimental-test-coverage --test --test-coverage-lines=100 scripts/agent/changed-coverage.test.mjs
 
       - name: Backend unit coverage
         run: pnpm --dir hrms_backend test:unit:coverage
@@ -208,7 +224,14 @@ jobs:
         run: pnpm --dir hrms-client test:unit:coverage
 
       - name: Require changed lines and decision branches
-        run: node scripts/agent/changed-coverage.mjs --base "$COVERAGE_BASE" --head HEAD
+        env:
+          COVERAGE_BASE: ${{ github.event.pull_request.base.sha || steps.push-baseline.outputs.base }}
+        run: |
+          if [[ -z "$COVERAGE_BASE" ]]; then
+            echo "Missing validated coverage baseline." >&2
+            exit 1
+          fi
+          node scripts/agent/changed-coverage.mjs --base "$COVERAGE_BASE" --head HEAD
 
   deploy-backend:
     name: Deploy backend
