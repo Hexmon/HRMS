@@ -34,8 +34,10 @@ class DocumentationReferenceTests(unittest.TestCase):
         self.assertIn("escapes repository", escaped or "")
 
     def test_file_checks_markdown_links_root_code_spans_and_skill_scripts(self) -> None:
-        with tempfile.TemporaryDirectory(dir=MODULE.ROOT) as directory:
+        with tempfile.TemporaryDirectory() as directory, patch.object(MODULE, "ROOT", Path(directory)):
             root = Path(directory)
+            (root / "docs").mkdir()
+            (root / "docs" / "README.md").write_text("ok\n", encoding="utf-8")
             target = root / "target.md"
             target.write_text("ok\n", encoding="utf-8")
             guide = root / "guide.md"
@@ -48,8 +50,9 @@ class DocumentationReferenceTests(unittest.TestCase):
             self.assertEqual(len(problems), 2)
             self.assertTrue(any("absent.md" in problem for problem in problems))
             self.assertTrue(any("docs/missing.md" in problem for problem in problems))
-
-            skill = MODULE.ROOT / ".agents" / "skills" / "verify-change" / "coverage-reference-fixture.md"
+            skill_root = root / ".agents" / "skills" / "verify-change"
+            skill_root.mkdir(parents=True)
+            skill = skill_root / "coverage-reference-fixture.md"
             skill.write_text("`scripts/not-present.py`\n", encoding="utf-8")
             try:
                 skill_problems = MODULE.check_file(skill)
