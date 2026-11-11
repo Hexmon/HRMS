@@ -5,6 +5,7 @@ import { buildRealApp } from "../../../__tests__/real-infra.js";
 import { ATTENDANCE_OFFLINE_SYNC_CONTRACT_VERSION } from "../offline-sync-contract.js";
 import { OFFLINE_LOCATION_EVIDENCE_MAX_AGE_MS } from "../offline-sync-service.js";
 import { setAttendanceObservabilityTestSink } from "../observability.js";
+import { canonicalJsonHash } from "../canonical-json.js";
 
 type TestApp = Awaited<ReturnType<typeof buildRealApp>>;
 
@@ -78,12 +79,32 @@ describe("attendance offline sync ingestion", () => {
       userId: employee.user.id,
     });
     const offlineEvent = event({ sequence: 1, event_type: "check_in" });
+    const storedEmployee = app.store.users.find((user) => user.id === employee.user.id)!;
+    const storedTimeZone = storedEmployee.timezone;
+    storedEmployee.timezone = "Asia/Kolkatta";
 
     const response = await sync(app, employee.token, batch(registeredDeviceId, [
       offlineEvent,
     ]));
+    storedEmployee.timezone = storedTimeZone;
     expect(response.statusCode).toBe(200);
     const result = response.json().results[0];
+    const ledger = await app.store.pgPool!.query<{
+      payload: Record<string, unknown>;
+      payload_hash: string;
+    }>(
+      `SELECT payload,payload_hash FROM attendance.attendance_events
+       WHERE employee_user_id=$1 AND source='mobile_offline'
+       ORDER BY created_at DESC LIMIT 1`,
+      [employee.user.id],
+    );
+    expect(ledger.rows[0]?.payload_hash).toBe(
+      canonicalJsonHash(ledger.rows[0]!.payload),
+    );
+    expect(ledger.rows[0]?.payload).toMatchObject({
+      work_date: workDateForOfflineEvent(offlineEvent),
+      source_event_hash: expect.stringMatching(/^[0-9a-f]{64}$/u),
+    });
     const originalWorkDate = workDateForOfflineEvent(offlineEvent);
     const originalUserTimeZone = (await app.store.pgPool!.query<{ timezone: string | null }>(
       "SELECT timezone FROM core.users WHERE id=$1",
@@ -101,12 +122,25 @@ describe("attendance offline sync ingestion", () => {
       employee.token,
       originalWorkDate,
     );
+    const shiftedWorkDate = workDateInTimeZone(
+      String(offlineEvent.captured_at),
+      changedTimeZone!,
+    );
+    const shiftedDaily = await dailyCalendar(
+      app,
+      employee.token,
+      shiftedWorkDate,
+    );
     await app.store.pgPool!.query(
       "UPDATE core.users SET timezone=$2 WHERE id=$1",
       [employee.user.id, originalUserTimeZone],
     );
 
     expect(daily.statusCode, daily.body).toBe(200);
+    expect(shiftedDaily.statusCode, shiftedDaily.body).toBe(200);
+    expect(shiftedDaily.json().self_evidence.events.filter(
+      (item: { source: string }) => item.source === "mobile_offline",
+    )).toHaveLength(0);
     expect(daily.json().self_evidence.summary_sources).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

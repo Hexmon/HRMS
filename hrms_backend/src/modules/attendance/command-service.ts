@@ -7,6 +7,7 @@ import type {
   AuthUser,
   UUID,
 } from "#shared";
+import { validTimeZoneOrUtc } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { badRequest, conflict, type AppError } from "../../platform/errors.js";
 import {
@@ -493,7 +494,7 @@ export class AttendanceCommandService {
         )
       ).rows[0];
       if (!company) return null;
-      const timeZone = company.timezone ?? "Asia/Kolkata";
+      const timeZone = validTimeZoneOrUtc(company.timezone);
       const { policy, source: policySource } = await resolveAutoCheckoutPolicy(tx, {
         companyId: input.companyId,
         employeeUserId: input.employeeUserId,
@@ -2157,11 +2158,40 @@ export class AttendanceCommandService {
                 employee_user_id: UUID;
                 event_type: AttendancePunchEventType;
                 occurred_at: Date;
+                work_date: string | null;
               }>(
-                `SELECT id, company_id, employee_user_id, event_type, occurred_at
-             FROM attendance.punch_events
-             WHERE id = ANY($1::uuid[]) AND company_id = $2 AND deleted_at IS NULL
-             FOR UPDATE`,
+                `SELECT punch.id, punch.company_id, punch.employee_user_id,
+                    punch.event_type, punch.occurred_at,
+                    COALESCE(
+                      CASE
+                        WHEN recorded.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                         AND pg_input_is_valid(recorded.payload->>'work_date','date')
+                          THEN recorded.payload->>'work_date'
+                        ELSE NULL
+                      END,
+                      session.work_date::text,
+                      regularization.work_date::text,
+                      CASE
+                        WHEN command.request_snapshot->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                         AND pg_input_is_valid(command.request_snapshot->>'work_date','date')
+                          THEN command.request_snapshot->>'work_date'
+                        ELSE NULL
+                      END
+                    ) AS work_date
+             FROM attendance.punch_events punch
+             LEFT JOIN platform.outbox_events recorded
+               ON recorded.idempotency_key='attendance.punch.recorded:' || punch.id::text
+              AND recorded.event_type='attendance.punch.recorded'
+             LEFT JOIN attendance.sessions session
+               ON session.id=punch.session_id AND session.company_id=punch.company_id
+             LEFT JOIN attendance.regularization_requests regularization
+               ON regularization.id=punch.regularization_request_id
+              AND regularization.company_id=punch.company_id
+             LEFT JOIN attendance.command_executions command
+               ON command.id=punch.command_execution_id AND command.company_id=punch.company_id
+             WHERE punch.id = ANY($1::uuid[]) AND punch.company_id = $2
+               AND punch.deleted_at IS NULL
+             FOR UPDATE OF punch`,
                 [targetIds, input.companyId],
               )
             ).rows
@@ -2196,12 +2226,13 @@ export class AttendanceCommandService {
                 "Approved regularizations may materialize only check-in and check-out facts.",
               );
             }
-            if (
-              dateInTimeZone(item.occurred_at.toISOString(), input.timeZone) !==
-              input.workDate
-            ) {
+            if (!regularizationTimestampWithinWorkDateEnvelope(
+              item.occurred_at.toISOString(),
+              input.workDate,
+              input.timeZone,
+            )) {
               throw badRequest(
-                "Requested punch timestamps must fall on the regularization work_date.",
+                "Requested punch timestamp falls outside the supported regularization shift window.",
               );
             }
           }
@@ -2234,10 +2265,9 @@ export class AttendanceCommandService {
               "Target punch type is not eligible for regularization correction.",
             );
           }
-          if (
-            dateInTimeZone(target.occurred_at.toISOString(), input.timeZone) !==
-            input.workDate
-          ) {
+          const targetWorkDate = target.work_date ??
+            dateInTimeZone(target.occurred_at.toISOString(), input.timeZone);
+          if (targetWorkDate !== input.workDate) {
             throw badRequest(
               "Target punch must belong to the regularization work_date.",
             );
@@ -3516,6 +3546,15 @@ function addDays(date: string, days: number): string {
   const value = new Date(`${date}T00:00:00.000Z`);
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
+}
+
+function regularizationTimestampWithinWorkDateEnvelope(
+  occurredAt: string,
+  workDate: string,
+  timeZone: string,
+): boolean {
+  const localDate = dateInTimeZone(occurredAt, validTimeZoneOrUtc(timeZone));
+  return localDate >= addDays(workDate, -1) && localDate <= addDays(workDate, 7);
 }
 
 function maxIso(values: Array<string | null>): string {

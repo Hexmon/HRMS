@@ -1275,7 +1275,15 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
             ('attendance',gen_random_uuid(),'attendance.provisional.recorded',
              jsonb_build_object('company_id',$1::text,'subject_employee_user_id',$2::text,
                'captured_at','not-a-date','verification_status','unverified'),
-             $7)`,
+             $7),
+            ('attendance',gen_random_uuid(),'attendance.provisional.recorded',
+             jsonb_build_object('company_id',$1::text,'subject_employee_user_id',$2::text,
+               'captured_at',$8::text,'verification_status','unverified'),
+             $10),
+            ('attendance',gen_random_uuid(),'attendance.provisional.recorded',
+             jsonb_build_object('company_id',$1::text,'subject_employee_user_id',$2::text,
+               'captured_at',$9::text || ' 09:00:00','verification_status','unverified'),
+             $11)`,
           [
             companyB,
             postStartUserId,
@@ -1284,6 +1292,10 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
             `dashboard-provisional-${postStartUserId}`,
             `dashboard-rejected-${postStartUserId}`,
             `dashboard-corrupt-${postStartUserId}`,
+            evidenceDates.verified,
+            evidenceDates.warning,
+            `dashboard-date-only-${postStartUserId}`,
+            `dashboard-offset-free-${postStartUserId}`,
           ],
         );
         await evidenceFixture.query(

@@ -2115,7 +2115,7 @@ class PostgresPersistence {
         AND day.employee_user_id=punch.employee_user_id
         AND day.work_date::text=COALESCE(
           CASE
-            WHEN recorded.payload->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+            WHEN recorded.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
              AND pg_input_is_valid(recorded.payload->>'work_date','date')
               THEN recorded.payload->>'work_date'
             ELSE NULL
@@ -2162,13 +2162,15 @@ class PostgresPersistence {
         AND event.payload->>'subject_employee_user_id'=day.employee_user_id::text
         AND day.work_date::text=COALESCE(
           CASE
-            WHEN event.payload->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+            WHEN event.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
              AND pg_input_is_valid(event.payload->>'work_date','date')
               THEN event.payload->>'work_date'
             ELSE NULL
           END,
           CASE
-            WHEN pg_input_is_valid(
+            WHEN event.payload->>'captured_at' ~
+                   '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$'
+             AND pg_input_is_valid(
               event.payload->>'captured_at',
               'timestamp with time zone'
             ) THEN to_char(

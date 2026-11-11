@@ -1,4 +1,4 @@
-import type { UUID } from "#shared";
+import { validTimeZoneOrUtc, type UUID } from "#shared";
 import { AttendanceCommandService } from "../modules/attendance/command-service.js";
 import {
   AttendanceService,
@@ -184,7 +184,7 @@ export class AttendanceAutoPunchoutWorker {
           scheduleFromConfig(
             row.company_id,
             row.config ?? {},
-            row.timezone ?? "Asia/Kolkata",
+            validTimeZoneOrUtc(row.timezone),
             referenceIso,
           ),
         );
@@ -208,7 +208,7 @@ export class AttendanceAutoPunchoutWorker {
               scheduleFromConfig(
                 company.id,
                 policy.config,
-                company.timezone,
+                validTimeZoneOrUtc(company.timezone),
                 referenceIso,
               ),
             ]

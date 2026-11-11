@@ -5,6 +5,7 @@ import {
   AttendanceDayClassifications,
   AttendancePunchEventTypes,
   Roles,
+  validTimeZoneOrUtc,
 } from "#shared";
 import { forbidden } from "../../platform/errors.js";
 import { isWorkingDate } from "../../platform/work-schedule.js";
@@ -175,6 +176,7 @@ interface ShiftInstanceRow {
 interface PunchFactRow {
   id: UUID;
   session_id: UUID | null;
+  work_date: string | null;
   event_type: AttendancePunchEventType;
   occurred_at: Date;
   work_mode: AttendanceDayRecord["work_mode"];
@@ -824,7 +826,11 @@ async function loadCompanyEmployeeContext(
   )).rows[0];
   const employee = await loadUserContext(client, employeeUserId);
   if (!company || !employee) throw new AttendanceProjectionReplayError("projection_context_missing", "Company or employee context is unavailable.");
-  return { company, employeeTimeZone: employee.timezone ?? company.timezone };
+  const companyTimeZone = validTimeZoneOrUtc(company.timezone);
+  return {
+    company: { ...company, timezone: companyTimeZone },
+    employeeTimeZone: validTimeZoneOrUtc(employee.timezone, companyTimeZone),
+  };
 }
 
 async function loadShiftInstances(
@@ -856,7 +862,24 @@ async function loadEffectivePunchFacts(
   to: string,
 ): Promise<PunchFactRow[]> {
   return (await client.query<PunchFactRow>(
-    `SELECT punch.id, punch.session_id, punch.event_type, punch.occurred_at, punch.work_mode,
+    `SELECT punch.id, punch.session_id,
+        COALESCE(
+          CASE
+            WHEN recorded.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+             AND pg_input_is_valid(recorded.payload->>'work_date','date')
+              THEN recorded.payload->>'work_date'
+            ELSE NULL
+          END,
+          session.work_date::text,
+          regularization.work_date::text,
+          CASE
+            WHEN command.request_snapshot->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+             AND pg_input_is_valid(command.request_snapshot->>'work_date','date')
+              THEN command.request_snapshot->>'work_date'
+            ELSE NULL
+          END
+        ) AS work_date,
+        punch.event_type, punch.occurred_at, punch.work_mode,
         punch.source, punch.origin, punch.metadata, punch.command_execution_id,
         command.command_origin, command.command_type,
         command_decision.id AS command_decision_id,
@@ -873,6 +896,14 @@ async function loadEffectivePunchFacts(
         audit_decision.evaluator_version,
         audit_decision.evaluation_context
      FROM attendance.punch_events punch
+     LEFT JOIN platform.outbox_events recorded
+       ON recorded.idempotency_key='attendance.punch.recorded:' || punch.id::text
+      AND recorded.event_type='attendance.punch.recorded'
+     LEFT JOIN attendance.sessions session
+       ON session.id=punch.session_id AND session.company_id=punch.company_id
+     LEFT JOIN attendance.regularization_requests regularization
+       ON regularization.id=punch.regularization_request_id
+      AND regularization.company_id=punch.company_id
      LEFT JOIN attendance.regularization_correction_applications application
        ON application.company_id = punch.company_id
       AND application.target_punch_event_id = punch.id
@@ -1708,7 +1739,11 @@ function blockedWorkDates(
     if (item.scope.startsWith("punch_events:")) {
       const punchId = item.scope.slice("punch_events:".length);
       const fact = byPunchId.get(punchId as UUID);
-      if (fact) dates.add(dateInTimeZone(fact.occurred_at.toISOString(), timeZone));
+      if (fact) {
+        dates.add(
+          fact.work_date ?? dateInTimeZone(fact.occurred_at.toISOString(), timeZone),
+        );
+      }
     }
   }
   return dates;
@@ -1861,7 +1896,7 @@ function datesBetween(from: string, to: string): string[] {
 
 function dateInTimeZone(value: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
+    timeZone: validTimeZoneOrUtc(timeZone),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

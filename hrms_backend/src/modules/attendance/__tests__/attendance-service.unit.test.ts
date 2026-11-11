@@ -949,6 +949,37 @@ describe("AttendanceService.punch", () => {
       expect(voidRequest.requested_punches).toEqual([]);
     });
 
+    it("uses the persisted work date for overnight regularization targets", () => {
+      const target = service["repository"].addPunch({
+        company_id: companyId(store),
+        employee_user_id: employee().id,
+        actor_user_id: employee().id,
+        event_type: "check_out",
+        occurred_at: "2026-07-09T01:00:00.000Z",
+        work_mode: "office",
+        source: "web",
+        origin: "employee_manual_now",
+        metadata: {},
+      });
+      target.work_date = "2026-07-08";
+
+      const request = service.createRegularization(employee(), {
+        work_date: "2026-07-08",
+        reason: "Correct overnight checkout",
+        items: [{
+          operation: "replace",
+          target_punch_event_id: target.id,
+          event_type: "check_out",
+          occurred_at: "2026-07-09T01:15:00.000Z",
+        }],
+      });
+
+      expect(request.items[0]).toMatchObject({
+        target_punch_event_id: target.id,
+        occurred_at: "2026-07-09T01:15:00.000Z",
+      });
+    });
+
     it("derives legacy punches from mixed normalized items and omits VOID", () => {
       const target = service["repository"].addPunch({
         company_id: companyId(store),

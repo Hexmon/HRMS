@@ -867,6 +867,15 @@ function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
+function regularizationTimestampWithinWorkDateEnvelope(
+  occurredAt: string,
+  workDate: string,
+  timeZone: string,
+): boolean {
+  const localDate = dateInTimeZone(occurredAt, validTimeZoneOrUtc(timeZone));
+  return localDate >= addDays(workDate, -1) && localDate <= addDays(workDate, 7);
+}
+
 function minutesOfDay(clock: string): number {
   const [hourText, minuteText] = clock.split(":");
   return Number(hourText) * 60 + Number(minuteText);
@@ -3647,7 +3656,7 @@ export class AttendanceService {
         continue;
       }
       scannedUsers += 1;
-      const timeZone = this.company(companyId).timezone;
+      const timeZone = validTimeZoneOrUtc(this.company(companyId).timezone);
       const userClosures = this.autoPunchOutExpiredSessions(
         companyId,
         employeeUserId,
@@ -3756,9 +3765,17 @@ export class AttendanceService {
     const policy = this.attendancePolicy(companyId);
     const holiday = this.holidayForDate(companyId, workDate);
     const workingDay = this.isWorkingDay(companyId, workDate);
+    const shiftCompany = this.company(companyId);
+    const shiftEmployee = this.requireUser(employeeUserId);
     const shift = resolveEmployeeShift({
-      company: this.company(companyId),
-      employee: this.requireUser(employeeUserId),
+      company: {
+        ...shiftCompany,
+        timezone: validTimeZoneOrUtc(shiftCompany.timezone),
+      },
+      employee: {
+        ...shiftEmployee,
+        timezone: validTimeZoneOrUtc(shiftEmployee.timezone, shiftCompany.timezone),
+      },
       workDate,
       templates: [],
       versions: [],
@@ -3966,9 +3983,17 @@ export class AttendanceService {
         : workDate > localToday
           ? AttendanceDayClassifications.Future
           : AttendanceDayClassifications.WorkingDay;
+    const shiftCompany = this.company(companyId);
+    const shiftEmployee = this.requireUser(employeeUserId);
     const shift = resolveEmployeeShift({
-      company: this.company(companyId),
-      employee: this.requireUser(employeeUserId),
+      company: {
+        ...shiftCompany,
+        timezone: validTimeZoneOrUtc(shiftCompany.timezone),
+      },
+      employee: {
+        ...shiftEmployee,
+        timezone: validTimeZoneOrUtc(shiftEmployee.timezone, shiftCompany.timezone),
+      },
       workDate,
       templates: [],
       versions: [],
@@ -5170,8 +5195,14 @@ export class AttendanceService {
         if (!([AttendancePunchEventTypes.CheckIn, AttendancePunchEventTypes.CheckOut] as string[]).includes(item.event_type)) {
           throw badRequest("Regularization items support only check-in and check-out events.");
         }
-        if (dateInTimeZone(item.occurred_at, timeZone) !== workDate) {
-          throw badRequest("Requested punch timestamps must fall on the regularization work_date.");
+        if (!regularizationTimestampWithinWorkDateEnvelope(
+          item.occurred_at,
+          workDate,
+          timeZone,
+        )) {
+          throw badRequest(
+            "Requested punch timestamp falls outside the supported regularization shift window.",
+          );
         }
         const logicalKey = `${item.event_type}:${item.occurred_at}`;
         if (item.operation === "add" && adds.has(logicalKey)) {
@@ -5202,7 +5233,9 @@ export class AttendanceService {
       if (!([AttendancePunchEventTypes.CheckIn, AttendancePunchEventTypes.CheckOut] as string[]).includes(target.event_type)) {
         throw badRequest("Target punch type is not eligible for regularization correction.");
       }
-      if (dateInTimeZone(target.occurred_at, timeZone) !== workDate) {
+      const targetWorkDate = calendarDateValue(target.work_date) ??
+        dateInTimeZone(target.occurred_at, timeZone);
+      if (targetWorkDate !== workDate) {
         throw badRequest("Target punch must belong to the regularization work_date.");
       }
       if (this.store.attendanceRegularizationCorrectionApplications.some(
@@ -5332,6 +5365,9 @@ export class AttendanceService {
            ON offline.company_id = event.company_id
           AND offline.attendance_event_id = event.id
           AND offline.sync_status IN ('accepted', 'deferred')
+         LEFT JOIN platform.outbox_events provisional
+           ON provisional.idempotency_key='attendance.provisional.recorded:' || event.id::text
+          AND provisional.event_type='attendance.provisional.recorded'
          LEFT JOIN attendance.punch_events punch
            ON punch.company_id = event.company_id
           AND punch.command_execution_id = event.command_execution_id
@@ -5352,13 +5388,19 @@ export class AttendanceService {
           AND event.employee_user_id = $2
           AND COALESCE(
             CASE
-              WHEN event.payload->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+              WHEN event.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
                AND pg_input_is_valid(event.payload->>'work_date', 'date')
                 THEN event.payload->>'work_date'
               ELSE NULL
             END,
             CASE
-              WHEN command.request_snapshot->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+              WHEN provisional.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(provisional.payload->>'work_date', 'date')
+                THEN provisional.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN command.request_snapshot->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
                AND pg_input_is_valid(command.request_snapshot->>'work_date', 'date')
                 THEN command.request_snapshot->>'work_date'
               ELSE NULL
@@ -5558,6 +5600,9 @@ export class AttendanceService {
           command_decision.evidence_snapshot #>> '{geo_policy,work_site_id}'
         )::uuid AS work_site_id
          FROM attendance.attendance_events event
+         LEFT JOIN platform.outbox_events provisional
+           ON provisional.idempotency_key='attendance.provisional.recorded:' || event.id::text
+          AND provisional.event_type='attendance.provisional.recorded'
          LEFT JOIN attendance.command_decisions command_decision
            ON command_decision.company_id = event.company_id
           AND command_decision.command_execution_id = event.command_execution_id
@@ -5571,13 +5616,19 @@ export class AttendanceService {
           AND event.employee_user_id = $2
           AND COALESCE(
             CASE
-              WHEN event.payload->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+              WHEN event.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
                AND pg_input_is_valid(event.payload->>'work_date', 'date')
                 THEN event.payload->>'work_date'
               ELSE NULL
             END,
             CASE
-              WHEN command.request_snapshot->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+              WHEN provisional.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(provisional.payload->>'work_date', 'date')
+                THEN provisional.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN command.request_snapshot->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
                AND pg_input_is_valid(command.request_snapshot->>'work_date', 'date')
                 THEN command.request_snapshot->>'work_date'
               ELSE NULL
@@ -5663,13 +5714,22 @@ export class AttendanceService {
            ON offline.company_id = event.company_id
           AND offline.attendance_event_id = event.id
           AND offline.sync_status IN ('accepted', 'deferred')
+         LEFT JOIN platform.outbox_events provisional
+           ON provisional.idempotency_key='attendance.provisional.recorded:' || event.id::text
+          AND provisional.event_type='attendance.provisional.recorded'
         WHERE event.company_id = $1
           AND event.employee_user_id = $2
           AND COALESCE(
             CASE
-              WHEN event.payload->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+              WHEN event.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
                AND pg_input_is_valid(event.payload->>'work_date', 'date')
                 THEN event.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN provisional.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(provisional.payload->>'work_date', 'date')
+                THEN provisional.payload->>'work_date'
               ELSE NULL
             END,
             to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD')
