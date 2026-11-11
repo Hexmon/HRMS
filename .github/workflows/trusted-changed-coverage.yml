@@ -78,13 +78,18 @@ jobs:
           pnpm --dir candidate/hrms-client install --frozen-lockfile --ignore-scripts --ignore-pnpmfile
 
       - name: Install pinned Python coverage runner
-        run: python3 -m pip install coverage==7.11.0
+        shell: bash
+        run: |
+          python3 -m venv --copies "$RUNNER_TEMP/hrms-coverage-python"
+          "$RUNNER_TEMP/hrms-coverage-python/bin/python3" -m pip install --disable-pip-version-check coverage==7.11.0
+          test "$(realpath "$RUNNER_TEMP/hrms-coverage-python/bin/python3")" = "$RUNNER_TEMP/hrms-coverage-python/bin/python3"
 
       - name: Run immutable validator against candidate
         shell: bash
         env:
           TRUSTED_WORKFLOW_SHA: ${{ job.workflow_sha }}
         run: |
+          export PATH="$RUNNER_TEMP/hrms-coverage-python/bin:$PATH"
           validator="$GITHUB_WORKSPACE/trusted/scripts/agent/changed-coverage.mjs"
           candidate="$GITHUB_WORKSPACE/candidate"
           test "$(git -C trusted rev-parse HEAD)" = "$TRUSTED_WORKFLOW_SHA"
