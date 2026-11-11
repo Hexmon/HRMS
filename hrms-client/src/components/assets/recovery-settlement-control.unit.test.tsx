@@ -48,6 +48,21 @@ describe("recovery settlement presentation", () => {
     expect(screen.getByText(/HR review required/)).toBeInTheDocument();
   });
 
+  it("fails closed if the API marks an unbound ticket actionable", () => {
+    const ticket = mapApiRecoveryTicket({
+      ...source,
+      assignment_id: null,
+      review_required: false,
+    });
+    render(
+      <RecoverySettlementControl ticket={ticket}>
+        <button>Mark returned</button>
+      </RecoverySettlementControl>,
+    );
+    expect(screen.queryByRole("button", { name: "Mark returned" })).not.toBeInTheDocument();
+    expect(screen.getByText(/HR review required/)).toBeInTheDocument();
+  });
+
   it("does not offer settlement when a closed ticket appears in a stale list", () => {
     const ticket = mapApiRecoveryTicket({ ...source, status: "closed", review_required: false });
     render(

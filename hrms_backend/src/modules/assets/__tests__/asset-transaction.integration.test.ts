@@ -296,6 +296,11 @@ describe("asset transaction boundary", () => {
     expect(oldTicket.assignment_id).toBeTruthy();
     expect(oldTicket.assignment_assigned_at).toBeTruthy();
     expect(oldTicket.assignment_assigned_at <= oldTicket.created_at).toBe(true);
+    const originalAssignment = await first.store.pgPool!.query<{ assigned_at: Date }>(
+      "SELECT assigned_at FROM assets.asset_assignments WHERE id = $1",
+      [oldTicket.assignment_id],
+    );
+    expect(oldTicket.assignment_assigned_at).toBe(originalAssignment.rows[0]?.assigned_at.toISOString());
     const returnPending = await first.inject({ method: "GET", url: `/api/v1/assets/${original.id}`, headers: authHeader(manager.token) });
     const returned = await first.inject({ method: "POST", url: `/api/v1/assets/${original.id}/return`, headers: headers(), payload: { expected_version: returnPending.json().version } });
     expect(returned.statusCode).toBe(200);

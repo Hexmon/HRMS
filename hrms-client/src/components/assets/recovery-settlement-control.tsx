@@ -8,13 +8,13 @@ export function RecoverySettlementControl({
   ticket: AssetRecoveryTicketView;
   children: ReactNode;
 }) {
-  if (ticket.reviewRequired) {
+  if (ticket.status === "closed") return null;
+  if (ticket.reviewRequired || !ticket.assignmentId) {
     return (
       <p className="max-w-52 text-xs text-amber-700 dark:text-amber-300">
         HR review required. This ticket does not match the asset’s current custody assignment.
       </p>
     );
   }
-  if (ticket.status === "closed") return null;
   return <>{children}</>;
 }
