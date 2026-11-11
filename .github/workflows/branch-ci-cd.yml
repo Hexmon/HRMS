@@ -84,6 +84,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: hrms_backend/pnpm-lock.yaml
 
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -200,6 +205,11 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
       - name: Resolve cumulative push coverage baseline
         id: push-baseline
         if: github.event_name == 'push'
@@ -217,18 +227,10 @@ jobs:
           pnpm --dir hrms_backend install --frozen-lockfile
           pnpm --dir hrms-client install --frozen-lockfile
 
-      - name: Test changed coverage gate
-        run: |
-          node --test scripts/agent/resolve-push-coverage-base.test.mjs
-          node --experimental-test-coverage --test --test-coverage-lines=100 scripts/agent/changed-coverage.test.mjs
+      - name: Install Python coverage runner
+        run: python -m pip install coverage==7.11.0
 
-      - name: Backend unit coverage
-        run: pnpm --dir hrms_backend test:unit:coverage
-
-      - name: Frontend component coverage
-        run: pnpm --dir hrms-client test:unit:coverage
-
-      - name: Require changed lines and decision branches
+      - name: Generate exact-commit reports and require changed coverage
         env:
           COVERAGE_BASE: ${{ github.event.pull_request.base.sha || steps.push-baseline.outputs.base }}
         run: |
@@ -236,7 +238,7 @@ jobs:
             echo "Missing validated coverage baseline." >&2
             exit 1
           fi
-          node scripts/agent/changed-coverage.mjs --base "$COVERAGE_BASE" --head HEAD
+          node scripts/agent/changed-coverage.mjs --run-full-suite --base "$COVERAGE_BASE" --head HEAD
 
   deploy-backend:
     name: Deploy backend
