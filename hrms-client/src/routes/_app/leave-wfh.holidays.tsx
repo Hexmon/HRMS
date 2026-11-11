@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Plus, MapPin, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { holidaysFromResponse, useHolidayMutation, useHolidays } from "@/domains/leave-wfh";
+import { formatHolidayDate, isHolidayInMonth } from "@/domains/leave-wfh/calendar-date";
 import { userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/leave-wfh/holidays")({
@@ -47,11 +48,7 @@ export function HolidaysPage() {
   const list = holidaysFromResponse(holidaysQuery.data);
 
   const monthHolidays = useMemo(
-    () =>
-      list.filter((h) => {
-        const d = new Date(h.date);
-        return d.getFullYear() === cursor.y && d.getMonth() === cursor.m;
-      }),
+    () => list.filter((h) => isHolidayInMonth(h.date, cursor.y, cursor.m)),
     [list, cursor],
   );
 
@@ -160,14 +157,7 @@ export function HolidaysPage() {
                           </p>
                         </div>
                       </div>
-                      <p className="text-sm font-medium">
-                        {new Date(h.date).toLocaleDateString(undefined, {
-                          weekday: "short",
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </p>
+                      <p className="text-sm font-medium">{formatHolidayDate(h.date)}</p>
                     </li>
                   ))}
               </ul>
@@ -185,6 +175,7 @@ export function HolidaysPage() {
                   size="icon"
                   className="h-8 w-8 rounded-full"
                   onClick={prev}
+                  aria-label="Previous month"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
@@ -193,6 +184,7 @@ export function HolidaysPage() {
                   size="icon"
                   className="h-8 w-8 rounded-full"
                   onClick={next}
+                  aria-label="Next month"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>

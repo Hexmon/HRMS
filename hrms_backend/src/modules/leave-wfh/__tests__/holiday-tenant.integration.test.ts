@@ -100,12 +100,28 @@ describe("holiday tenant transaction boundary", () => {
       expect(app.store.holidays.some((row) => row.id === foreignId)).toBe(false);
     }
 
+    // A separate B account must retain its own holiday after A's denied ID
+    // attempts. The fixture assigns its B preference and Admin role directly;
+    // this does not exercise the product's transfer-approval workflow.
+    const bAdminUser = app.store.users.find((user) => user.employee_code === "AUD")!;
+    await pool.query("UPDATE platform.user_session_preferences SET company_id = $2 WHERE user_id = $1", [bAdminUser.id, companyB]);
+    await pool.query("INSERT INTO core.user_roles (user_id, role_key, status, effective_from) VALUES ($1, $2, 'active', CURRENT_DATE)", [bAdminUser.id, Roles.Admin]);
+
     const other = await secondApp();
     const adminOther = await loginAs(other, "ADM");
+    const bAdmin = await loginAs(other, "AUD");
     const list = await other.inject({ method: "GET", url: "/api/v1/holidays?year=2026&page=1&page_size=25", headers: authHeader(adminOther.token) });
     expect(list.statusCode).toBe(200);
     expect(list.json().holidays.some((row: { id: string }) => row.id === foreignId)).toBe(false);
     expect((await holiday(foreignId))?.company_id).toBe(companyB);
+    const bList = await other.inject({ method: "GET", url: "/api/v1/holidays?year=2026&page=1&page_size=25", headers: authHeader(bAdmin.token) });
+    expect(bList.statusCode).toBe(200);
+    expect(bList.json().holidays.find((row: { id: string }) => row.id === foreignId)).toMatchObject({ name: before?.name, version: before?.version });
+    const bEdit = await other.inject({ method: "PUT", url: `/api/v1/holidays/${foreignId}`,
+      headers: authHeader(bAdmin.token), payload: holidayBody("B Reviewed", before!.version) });
+    expect(bEdit.statusCode).toBe(200);
+    expect(await holiday(foreignId)).toMatchObject({ company_id: companyB, name: "B Reviewed", version: before!.version + 1 });
+    expect(await events(foreignId)).toMatchObject([{ payload: { company_id: companyB, actor_user_id: bAdmin.user.id } }]);
 
     const ownId = randomUUID();
     const created = await app.inject({ method: "PUT", url: `/api/v1/holidays/${ownId}`,
@@ -161,6 +177,12 @@ describe("holiday tenant transaction boundary", () => {
     expect(missingEdit.statusCode).toBe(404);
     expect(await holiday(missingEditId)).toBeUndefined();
     expect(await events(missingEditId)).toEqual([]);
+    const protectedFieldId = randomUUID();
+    const protectedField = await app.inject({ method: "PUT", url: `/api/v1/holidays/${protectedFieldId}`,
+      headers: authHeader(admin.token), payload: { ...holidayBody("Protected Attempt"), company_id: randomUUID(), version: 99 } });
+    expect(protectedField.statusCode).toBe(400);
+    expect(await holiday(protectedFieldId)).toBeUndefined();
+    expect(await events(protectedFieldId)).toEqual([]);
     const id = randomUUID();
     const first = await app.inject({ method: "PUT", url: `/api/v1/holidays/${id}`, headers: authHeader(admin.token), payload: holidayBody("First") });
     expect(first.statusCode).toBe(200);
@@ -199,8 +221,15 @@ describe("holiday tenant transaction boundary", () => {
     const allowed = await app.inject({ method: "PUT", url: `/api/v1/holidays/${randomUUID()}`, headers: authHeader(admin.token), payload: holidayBody("Role Union") });
     expect(allowed.statusCode).toBe(200);
     await pool.query("UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = $2", [admin.user.id, Roles.Admin]);
-    const denied = await app.inject({ method: "PUT", url: `/api/v1/holidays/${randomUUID()}`, headers: authHeader(admin.token), payload: holidayBody("Revoked Role") });
+    const deniedId = randomUUID();
+    const denied = await app.inject({ method: "PUT", url: `/api/v1/holidays/${deniedId}`, headers: authHeader(admin.token), payload: holidayBody("Revoked Role") });
     expect(denied.statusCode).toBe(403);
+    expect(await holiday(deniedId)).toBeUndefined();
+    expect(await events(deniedId)).toEqual([]);
+    const other = await secondApp();
+    const freshRead = await other.inject({ method: "GET", url: "/api/v1/holidays?year=2026&page=1&page_size=25", headers: authHeader(admin.token) });
+    expect(freshRead.statusCode).toBe(200);
+    expect(freshRead.json().holidays.some((row: { id: string }) => row.id === deniedId)).toBe(false);
   });
 
   it("serializes competing same-company edits and a stale instance full flush cannot revert the committed holiday", async () => {
