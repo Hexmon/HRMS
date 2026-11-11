@@ -1,4 +1,10 @@
 import { z } from "zod";
+import { isValidTimeZone } from "#shared";
+
+const timeZoneSchema = z.string().trim().min(1).max(64).refine(
+  isValidTimeZone,
+  "Timezone must be a valid IANA timezone name.",
+);
 
 export const loginSchema = z
   .object({
@@ -39,7 +45,7 @@ export const signupSchema = z
     full_name: z.string().min(2).max(160),
     email: z.email(),
     password: strongPasswordSchema.optional(),
-    timezone: z.string().min(1).max(64).default("Asia/Kolkata"),
+    timezone: timeZoneSchema.default("Asia/Kolkata"),
     locale: z.string().min(2).max(16).default("en-IN"),
     company_slug: z.string().min(2).max(80).optional(),
     invite_token: z.string().min(16).optional()
@@ -77,7 +83,7 @@ export const companyBootstrapSchema = z.object({
   bootstrap_token: z.string().min(16),
   company_profile: z.object({
     company_name: z.string().min(2).max(120).optional(),
-    timezone: z.string().min(1).max(64).optional(),
+    timezone: timeZoneSchema.optional(),
     locale: z.string().min(2).max(16).optional(),
     fiscal_year_start_month: z.number().int().min(1).max(12).optional()
   }).default({}),
@@ -95,7 +101,7 @@ export const sessionPreferenceSchema = z.object({
   company_id: z.uuid().nullable().optional(),
   landing_page: z.string().min(1).max(120).optional(),
   locale: z.string().min(2).max(16).optional(),
-  timezone: z.string().min(1).max(64).optional()
+  timezone: timeZoneSchema.optional()
 }).strict().superRefine((value, context) => {
   if (!value.active_role_id && !value.active_role && !value.company_id && !value.landing_page && !value.locale && !value.timezone) {
     context.addIssue({ code: "custom", path: ["active_role_id"], message: "At least one preference field is required." });

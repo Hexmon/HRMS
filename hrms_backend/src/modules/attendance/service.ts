@@ -30,6 +30,8 @@ import {
   ErrorCodes,
   EmploymentStatuses,
   Roles,
+  parseStrictIsoInstant,
+  validTimeZoneOrUtc,
 } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
@@ -729,24 +731,22 @@ function todayDate(timeZone = "UTC"): string {
 }
 
 function dateInTimeZone(value: string, timeZone: string): string {
-  try {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(new Date(value));
-    const map = new Map(parts.map((part) => [part.type, part.value]));
-    const year = map.get("year");
-    const month = map.get("month");
-    const day = map.get("day");
-    if (year && month && day) {
-      return `${year}-${month}-${day}`;
-    }
-  } catch {
-    // Fall back to UTC below.
+  const instant = parseStrictIsoInstant(value);
+  if (!instant) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: validTimeZoneOrUtc(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(instant);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+  const year = map.get("year");
+  const month = map.get("month");
+  const day = map.get("day");
+  if (year && month && day) {
+    return `${year}-${month}-${day}`;
   }
-  return value.slice(0, 10);
+  return "";
 }
 
 function calendarDateValue(value: unknown): string | null {
@@ -4760,7 +4760,7 @@ export class AttendanceService {
       (candidate) => candidate.id === userId && !candidate.deleted_at,
     );
     const company = this.company(companyId);
-    return user?.timezone ?? company?.timezone ?? "Asia/Kolkata";
+    return validTimeZoneOrUtc(user?.timezone, company?.timezone);
   }
 
   private recordsForUsers(
@@ -5336,6 +5336,9 @@ export class AttendanceService {
            ON punch.company_id = event.company_id
           AND punch.command_execution_id = event.command_execution_id
           AND punch.deleted_at IS NULL
+         LEFT JOIN attendance.command_executions command
+           ON command.company_id = event.company_id
+          AND command.id = event.command_execution_id
          LEFT JOIN attendance.command_decisions command_decision
            ON command_decision.company_id = event.company_id
           AND command_decision.command_execution_id = event.command_execution_id
@@ -5347,7 +5350,21 @@ export class AttendanceService {
           AND reason.attendance_decision_id = audit_decision.id
         WHERE event.company_id = $1
           AND event.employee_user_id = $2
-          AND to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD') = $4
+          AND COALESCE(
+            CASE
+              WHEN event.payload->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+               AND pg_input_is_valid(event.payload->>'work_date', 'date')
+                THEN event.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN command.request_snapshot->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+               AND pg_input_is_valid(command.request_snapshot->>'work_date', 'date')
+                THEN command.request_snapshot->>'work_date'
+              ELSE NULL
+            END,
+            to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD')
+          ) = $4
         GROUP BY
           event.event_type,
           event.source,
@@ -5544,12 +5561,29 @@ export class AttendanceService {
          LEFT JOIN attendance.command_decisions command_decision
            ON command_decision.company_id = event.company_id
           AND command_decision.command_execution_id = event.command_execution_id
+         LEFT JOIN attendance.command_executions command
+           ON command.company_id = event.company_id
+          AND command.id = event.command_execution_id
          LEFT JOIN attendance.attendance_decisions audit_decision
            ON audit_decision.company_id = event.company_id
           AND audit_decision.attendance_event_id = event.id
         WHERE event.company_id = $1
           AND event.employee_user_id = $2
-          AND to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD') = $4
+          AND COALESCE(
+            CASE
+              WHEN event.payload->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+               AND pg_input_is_valid(event.payload->>'work_date', 'date')
+                THEN event.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN command.request_snapshot->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+               AND pg_input_is_valid(command.request_snapshot->>'work_date', 'date')
+                THEN command.request_snapshot->>'work_date'
+              ELSE NULL
+            END,
+            to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD')
+          ) = $4
           AND COALESCE(
             audit_decision.evaluation_context #>> '{geo_policy,work_site_id}',
             command_decision.evidence_snapshot #>> '{geo_policy,work_site_id}'
@@ -5631,7 +5665,15 @@ export class AttendanceService {
           AND offline.sync_status IN ('accepted', 'deferred')
         WHERE event.company_id = $1
           AND event.employee_user_id = $2
-          AND to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD') = $4
+          AND COALESCE(
+            CASE
+              WHEN event.payload->>'work_date' ~ '^\d{4}-\d{2}-\d{2}$'
+               AND pg_input_is_valid(event.payload->>'work_date', 'date')
+                THEN event.payload->>'work_date'
+              ELSE NULL
+            END,
+            to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD')
+          ) = $4
         ORDER BY event.occurred_at ASC, event.event_type ASC`,
       [companyId, employeeUserId, timeZone, workDate],
     );

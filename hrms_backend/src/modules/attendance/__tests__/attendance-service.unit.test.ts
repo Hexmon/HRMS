@@ -831,6 +831,29 @@ describe("AttendanceService.punch", () => {
         work_date: "2026-07-19",
         reporting_evidence_category: "provisional",
       });
+
+      delete store.outbox[store.outbox.length - 1]!.payload.work_date;
+      store.outbox[store.outbox.length - 1]!.payload.captured_at =
+        "2026-02-31T00:00:00.000Z";
+      const normalizedImpossibleDate = service.dailyCalendar(employee(), {
+        page: 1,
+        page_size: 10,
+        date: "2026-03-03",
+      });
+      expect(normalizedImpossibleDate.items[0]?.reporting_evidence_category).not.toBe(
+        "provisional",
+      );
+
+      store.outbox[store.outbox.length - 1]!.payload.captured_at =
+        "2026-07-20-not-a-date";
+      const datePrefixedGarbage = service.dailyCalendar(employee(), {
+        page: 1,
+        page_size: 10,
+        date: "2026-07-20",
+      });
+      expect(datePrefixedGarbage.items[0]?.reporting_evidence_category).not.toBe(
+        "provisional",
+      );
     });
   });
 

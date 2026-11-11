@@ -85,11 +85,14 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
           (id, ticket_no, requester_user_id, requester_role_snapshot, department_id,
            expense_type, expense_sub_type, task_title, task_description, start_date,
            end_date, estimated_amount, payment_type, manager_verifier_id,
-           finance_approver_id, status, context_payload, company_id, owner_resolution_status)
+           finance_approver_id, status, context_payload, company_id, owner_resolution_status,
+           created_at, updated_at)
          VALUES ($1, $2, $3, 'Employee', $4, 'Project', 'Project Travel',
                  'Pending A travel', 'Fixture', CURRENT_DATE, CURRENT_DATE,
                  50, 'Advance', $5, $6, 'Pending Manager Verification',
-                 jsonb_build_object('company_id', $7::text), $7::uuid, 'typed_creation')`,
+                 jsonb_build_object('company_id', $7::text), $7::uuid, 'typed_creation',
+                 timestamptz '2026-11-11 00:00:00Z',
+                 timestamptz '2026-11-11 00:00:00Z')`,
         [pendingTicketId, `EXP-READ-${pendingTicketId}`, employee.user.id, employee.user.department_id,
           manager.user.id, finance.user.id, companyA],
       );
@@ -1258,7 +1261,10 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
             ('attendance',gen_random_uuid(),'attendance.provisional.recorded',
              jsonb_build_object('company_id',$1::text,'subject_employee_user_id',$2::text,
                'work_date','invalid-work-date','captured_at',
-               (($3::date - interval '1 day' + interval '19 hours') AT TIME ZONE 'UTC')::text,
+               to_char(
+                 $3::date - interval '1 day' + interval '19 hours',
+                 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+               ),
                'verification_status','unverified'),
              $5),
             ('attendance',gen_random_uuid(),'attendance.provisional.recorded',
@@ -1448,6 +1454,23 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
           system: 1,
         },
       });
+      await pool.query(
+        "UPDATE core.users SET timezone='Asia/Kolkatta' WHERE id=$1",
+        [postStartUserId],
+      );
+      const invalidEmployeeTimeZoneDashboard = await second.inject({
+        method: "GET",
+        url: "/api/v1/dashboard/summary",
+        headers: authHeader(postStartJwt.token),
+      });
+      expect(
+        invalidEmployeeTimeZoneDashboard.statusCode,
+        invalidEmployeeTimeZoneDashboard.body,
+      ).toBe(200);
+      await pool.query(
+        "UPDATE core.users SET timezone='Asia/Kolkata' WHERE id=$1",
+        [postStartUserId],
+      );
       const companyBObserverId = randomUUID();
       await pool.query(
         `INSERT INTO core.users

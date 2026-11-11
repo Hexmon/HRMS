@@ -7,7 +7,7 @@ import type {
   OutboxEvent,
   UUID,
 } from "#shared";
-import { AttendanceRegularizationStatuses } from "#shared";
+import { AttendanceRegularizationStatuses, parseStrictIsoInstant, validTimeZoneOrUtc } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import {
   deriveAttendanceReportingEvidenceCategory,
@@ -856,26 +856,22 @@ function evidenceWorkDate(
   const persisted = calendarDateValue(persistedWorkDate);
   if (persisted) return persisted;
   if (!occurredAt) return null;
-  const timeZone =
-    store.users.find((user) => user.id === employeeUserId)?.timezone ??
-    store.companyProfiles.find((company) => company.id === companyId)?.timezone ??
-    "UTC";
-  try {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(new Date(occurredAt));
-    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-    return values.year && values.month && values.day
-      ? `${values.year}-${values.month}-${values.day}`
-      : null;
-  } catch {
-    return /^\d{4}-\d{2}-\d{2}/u.test(occurredAt)
-      ? occurredAt.slice(0, 10)
-      : null;
-  }
+  const instant = parseStrictIsoInstant(occurredAt);
+  if (!instant) return null;
+  const timeZone = validTimeZoneOrUtc(
+    store.users.find((user) => user.id === employeeUserId)?.timezone,
+    store.companyProfiles.find((company) => company.id === companyId)?.timezone,
+  );
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(instant);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return values.year && values.month && values.day
+    ? `${values.year}-${values.month}-${values.day}`
+    : null;
 }
 
 function calendarDateValue(value: unknown): string | null {

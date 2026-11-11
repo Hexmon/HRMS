@@ -851,6 +851,7 @@ export class AttendanceCommandService {
           const evidencePayload = {
             schema_version: 1,
             command_type: commandInput.event_type,
+            work_date: workDate,
             work_mode: commandInput.work_mode,
             source_channel: commandInput.source,
           };
@@ -1514,6 +1515,7 @@ export class AttendanceCommandService {
         const evidencePayload = {
           schema_version: 1,
           command_type: commandInput.event_type,
+          work_date: workDate,
           work_mode: commandInput.work_mode,
           source_channel: commandInput.source,
           manual_fallback: {
@@ -1872,6 +1874,7 @@ export class AttendanceCommandService {
       const evidencePayload = {
         schema_version: 1,
         command_kind: input.commandKind,
+        work_date: workDate,
         reason: input.command.reason,
         linked_regularization_request_id:
           input.command.linked_regularization_request_id ?? null,
@@ -2577,6 +2580,7 @@ export class AttendanceCommandService {
         const evidencePayload = {
           schema_version: 1,
           command_kind: input.commandKind,
+          work_date: workDate,
           reason: input.command.reason,
           linked_regularization_request_id:
             input.command.linked_regularization_request_id ?? null,

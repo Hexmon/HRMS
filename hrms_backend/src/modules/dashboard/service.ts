@@ -1,5 +1,6 @@
 import type { AttendanceDayRecord, AuthUser, CoreUser, ExpenseTicket, UUID } from "#shared";
 import { AttendanceEvidenceStates, AttendancePresenceStates, AttendancePunctualityStates, EmploymentStatuses, ExpenseStatuses, Roles } from "#shared";
+import { validTimeZoneOrUtc } from "#shared";
 import type { DashboardSummaryProjection, MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import {
@@ -475,7 +476,7 @@ function monthsBeforeDate(currentDate: string, months: number): string {
 
 function dateInTimeZone(timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
+    timeZone: validTimeZoneOrUtc(timeZone),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

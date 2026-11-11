@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { Pool, type PoolClient } from "pg";
 import { MemorySessionStore, ValkeySessionStore } from "#auth";
-import { EmploymentStatuses, RequiredDocumentsByExpenseSubType, Roles, WorkflowActions, type AuthUser, type RoleKey } from "#shared";
+import { EmploymentStatuses, RequiredDocumentsByExpenseSubType, Roles, WorkflowActions, validTimeZoneOrUtc, type AuthUser, type RoleKey } from "#shared";
 import type {
   AssetRecord,
   AttendanceDayRecord,
@@ -1860,7 +1860,7 @@ class PostgresPersistence {
       session.actor.hierarchy_path,
       systemWide,
       financeWide,
-      session.company.timezone,
+      validTimeZoneOrUtc(session.company.timezone),
     ];
     const visibilityCte = `
       WITH visible_users AS (
@@ -2046,7 +2046,7 @@ class PostgresPersistence {
         session.actor.id,
         session.actor.hierarchy_path,
         systemWide,
-        session.company.timezone,
+        validTimeZoneOrUtc(session.company.timezone),
       ],
     );
     if (dayResult.rows.length > 10_000) {
@@ -2106,6 +2106,10 @@ class PostgresPersistence {
         AND regularization.employee_user_id=punch.employee_user_id
        LEFT JOIN core.users evidence_user ON evidence_user.id=punch.employee_user_id
        JOIN platform.company_profiles company ON company.id=punch.company_id
+       LEFT JOIN pg_timezone_names evidence_timezone
+         ON evidence_timezone.name=evidence_user.timezone
+       LEFT JOIN pg_timezone_names company_timezone
+         ON company_timezone.name=company.timezone
        JOIN attendance.daily_records day
          ON day.id=ANY($1::uuid[]) AND day.company_id=punch.company_id
         AND day.employee_user_id=punch.employee_user_id
@@ -2119,7 +2123,10 @@ class PostgresPersistence {
           session.work_date::text,
           regularization.work_date::text,
           to_char(
-            timezone(COALESCE(evidence_user.timezone,company.timezone),punch.occurred_at),
+            timezone(
+              COALESCE(evidence_timezone.name,company_timezone.name,'UTC'),
+              punch.occurred_at
+            ),
             'YYYY-MM-DD'
           )
         )
@@ -2145,6 +2152,10 @@ class PostgresPersistence {
          ON company.id::text=event.payload->>'company_id'
        LEFT JOIN core.users evidence_user
          ON evidence_user.id::text=event.payload->>'subject_employee_user_id'
+       LEFT JOIN pg_timezone_names evidence_timezone
+         ON evidence_timezone.name=evidence_user.timezone
+       LEFT JOIN pg_timezone_names company_timezone
+         ON company_timezone.name=company.timezone
        JOIN attendance.daily_records day
          ON day.id=ANY($1::uuid[])
         AND event.payload->>'company_id'=day.company_id::text
@@ -2162,7 +2173,7 @@ class PostgresPersistence {
               'timestamp with time zone'
             ) THEN to_char(
               timezone(
-                COALESCE(evidence_user.timezone,company.timezone),
+                COALESCE(evidence_timezone.name,company_timezone.name,'UTC'),
                 (event.payload->>'captured_at')::timestamptz
               ),
               'YYYY-MM-DD'

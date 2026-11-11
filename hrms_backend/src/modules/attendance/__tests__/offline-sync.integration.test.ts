@@ -84,10 +84,26 @@ describe("attendance offline sync ingestion", () => {
     ]));
     expect(response.statusCode).toBe(200);
     const result = response.json().results[0];
+    const originalWorkDate = workDateForOfflineEvent(offlineEvent);
+    const originalUserTimeZone = (await app.store.pgPool!.query<{ timezone: string | null }>(
+      "SELECT timezone FROM core.users WHERE id=$1",
+      [employee.user.id],
+    )).rows[0]?.timezone ?? null;
+    const changedTimeZone = ["Pacific/Kiritimati", "Pacific/Honolulu"]
+      .find((timeZone) => workDateInTimeZone(String(offlineEvent.captured_at), timeZone) !== originalWorkDate);
+    expect(changedTimeZone).toBeTruthy();
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET timezone=$2 WHERE id=$1",
+      [employee.user.id, changedTimeZone],
+    );
     const daily = await dailyCalendar(
       app,
       employee.token,
-      workDateForOfflineEvent(offlineEvent),
+      originalWorkDate,
+    );
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET timezone=$2 WHERE id=$1",
+      [employee.user.id, originalUserTimeZone],
     );
 
     expect(daily.statusCode, daily.body).toBe(200);
@@ -864,9 +880,12 @@ async function dailyCalendar(
 }
 
 function workDateForOfflineEvent(offlineEvent: Record<string, unknown>): string {
-  const capturedAt = String(offlineEvent.captured_at);
+  return workDateInTimeZone(String(offlineEvent.captured_at), "Asia/Calcutta");
+}
+
+function workDateInTimeZone(capturedAt: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Calcutta",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

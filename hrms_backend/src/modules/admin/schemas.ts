@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { AdminEmailTemplateKeys, AdminNotificationEventKeys, AdminPolicyKeys, AdminWorkflowApproverTypes, AdminWorkflowKeys } from "#shared";
+import { AdminEmailTemplateKeys, AdminNotificationEventKeys, AdminPolicyKeys, AdminWorkflowApproverTypes, AdminWorkflowKeys, isValidTimeZone } from "#shared";
+
+const timeZoneSchema = z.string().trim().min(2).max(80).refine(
+  isValidTimeZone,
+  "Timezone must be a valid IANA timezone name.",
+);
 
 export const masterDataQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -251,7 +256,7 @@ export const companyProfileUpdateSchema = z.object({
   website: z.string().max(240).nullable().optional(),
   industry: z.string().max(160).nullable().optional(),
   address: z.string().max(1000).nullable().optional(),
-  timezone: z.string().min(2).max(80).optional(),
+  timezone: timeZoneSchema.optional(),
   locale: z.string().min(2).max(20).optional(),
   currency: z.string().min(2).max(64).optional(),
   fiscal_year_start_month: z.number().int().min(1).max(12).optional(),

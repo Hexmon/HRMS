@@ -483,6 +483,7 @@ export class AttendanceOfflineSyncService {
       payload: {
         schema_version: 1,
         contract_version: ATTENDANCE_OFFLINE_SYNC_CONTRACT_VERSION,
+        work_date: dateInTimeZone(event.captured_at, input.timeZone),
         batch_id: input.batchId,
         client_event_id: event.client_event_id,
         sequence: event.sequence,

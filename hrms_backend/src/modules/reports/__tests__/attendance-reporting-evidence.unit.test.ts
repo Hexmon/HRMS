@@ -338,6 +338,53 @@ describe("attendance report evidence categories", () => {
     });
   });
 
+  it("ignores malformed legacy captured timestamps instead of moving them to a real day", () => {
+    const store = createMemoryDataStore();
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    store.attendanceDayRecords.push(
+      attendanceDay(seedIds.employee1, { work_date: "2026-03-03" }),
+      attendanceDay(seedIds.employee2, { work_date: "2026-07-20" }),
+    );
+    for (const [index, employeeUserId, capturedAt] of [
+      [18, seedIds.employee1, "2026-02-31T00:00:00.000Z"],
+      [19, seedIds.employee2, "2026-07-20-not-a-date"],
+    ] as const) {
+      const attendanceEventId = randomUUID();
+      store.outbox.push({
+        id: index,
+        event_id: randomUUID(),
+        aggregate_type: "attendance",
+        aggregate_id: attendanceEventId,
+        event_type: "attendance.provisional.recorded",
+        payload: {
+          company_id: companyId,
+          subject_employee_user_id: employeeUserId,
+          attendance_event_id: attendanceEventId,
+          verification_status: "unverified",
+          captured_at: capturedAt,
+        },
+        idempotency_key: `attendance.provisional.recorded:${attendanceEventId}`,
+        status: "pending",
+        retry_count: 0,
+        available_at: "2026-07-20T00:00:00.000Z",
+        created_at: "2026-07-20T00:00:00.000Z",
+        published_at: null,
+        failed_at: null,
+        last_error: null,
+      });
+    }
+
+    const result = new ReportService(store).attendanceSummary(admin, {
+      page: 1,
+      page_size: 20,
+    });
+
+    expect(result.items).toHaveLength(2);
+    expect(result.items.every((item) =>
+      item.reporting_evidence_category !== "provisional"
+    )).toBe(true);
+  });
+
   it("projects safe geo review fields without exact coordinates", () => {
     const store = createMemoryDataStore();
     const admin = store.users.find((user) => user.id === seedIds.admin)!;

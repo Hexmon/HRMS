@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { EmploymentStatuses, Roles } from "#shared";
+import { EmploymentStatuses, Roles, isValidTimeZone } from "#shared";
 import { paginationQuerySchema } from "#shared";
 import { badRequest, unauthorized } from "../../platform/errors.js";
 import { CoreService, type ProfilePhotoPolicy, type ProfilePhotoUploadInput } from "./service.js";
@@ -34,6 +34,10 @@ const userListQuerySchema = paginationQuerySchema.extend({
 });
 
 const dateSchema = z.iso.date();
+const timeZoneSchema = z.string().trim().min(1).max(80).refine(
+  isValidTimeZone,
+  "Timezone must be a valid IANA timezone name.",
+);
 const auditQuerySchema = paginationQuerySchema.extend({
   event_type: z.string().min(1).max(120).optional(),
   date_from: dateSchema.optional(),
@@ -52,7 +56,7 @@ const createUserSchema = z.object({
   manager_user_id: z.uuid().nullable().optional(),
   roles: z.array(roleSchema).min(1).optional(),
   employment_status: employmentStatusSchema.optional(),
-  timezone: z.string().min(1).max(80).nullable().optional(),
+  timezone: timeZoneSchema.nullable().optional(),
   joined_on: dateSchema.nullable().optional(),
   login_enabled: z.boolean().optional()
 });
@@ -64,7 +68,7 @@ const updateUserSchema = expectedVersionSchema.extend({
   designation_id: z.uuid().optional(),
   manager_user_id: z.uuid().nullable().optional(),
   employment_status: employmentStatusSchema.optional(),
-  timezone: z.string().min(1).max(80).nullable().optional(),
+  timezone: timeZoneSchema.nullable().optional(),
   joined_on: dateSchema.nullable().optional(),
   terminated_on: dateSchema.nullable().optional()
 });
