@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
-import { resolvePushCoverageBase } from "./resolve-push-coverage-base.mjs";
+import { bootstrapShaForBranch, resolvePushCoverageBase } from "./resolve-push-coverage-base.mjs";
 
 const roots = [];
 afterEach(() => {
@@ -94,6 +94,24 @@ test("latest successful coverage run becomes baseline, while skipped jobs fall b
   assert.deepEqual(await resolvePushCoverageBase(context(commits, latest.requestJson)), { base: commits.B, runId: 102 });
   const skipped = api(runs, { 101: success, 102: [{ name: "Changed executable coverage", status: "completed", conclusion: "skipped" }] });
   assert.deepEqual(await resolvePushCoverageBase(context(commits, skipped.requestJson)), { base: commits.A, runId: 101 });
+  assert.deepEqual(await resolvePushCoverageBase({ ...context(commits, latest.requestJson), bootstrapSha: commits.A }), { base: commits.B, runId: 102 });
+  assert.deepEqual(await resolvePushCoverageBase({ ...context(commits, latest.requestJson), bootstrapSha: "stale-invalid-value" }), { base: commits.B, runId: 102 });
+});
+
+test("a valid first-page coverage run avoids a full historical search", async () => {
+  const commits = history();
+  const pages = [];
+  const requestJson = async (path) => {
+    const url = new URL(path, "https://api.github.com");
+    if (url.pathname.endsWith("/runs")) {
+      pages.push(Number(url.searchParams.get("page")));
+      return { workflow_runs: [run(102, 2, commits.B),
+        ...Array.from({ length: 99 }, (_, index) => run(200 + index, 100 + index, commits.A))] };
+    }
+    return { total_count: 1, jobs: [{ name: "Changed executable coverage", status: "completed", conclusion: "success" }] };
+  };
+  assert.deepEqual(await resolvePushCoverageBase(context(commits, requestJson)), { base: commits.B, runId: 102 });
+  assert.deepEqual(pages, [1]);
 });
 
 test("workflow run search follows bounded pagination", async () => {
@@ -120,6 +138,47 @@ test("missing successful baseline fails instead of using github.event.before", a
   await assert.rejects(resolvePushCoverageBase(context(commits, requestJson)), /No prior successful dev push run/);
 });
 
+test("owner bootstrap A covers failed B and docs-only C when no run qualifies", async () => {
+  const commits = history();
+  const { requestJson } = api([]);
+  const result = await resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: commits.A });
+  assert.deepEqual(result, { base: commits.A, runId: null });
+  assert.deepEqual(git(commits.root, "diff", "--name-only", result.base, commits.C).split("\n"), ["README.md", "hrms_backend/src/guard.ts"]);
+  const skipped = api([run(102, 2, commits.B)], {
+    102: [{ name: "Changed executable coverage", status: "completed", conclusion: "skipped" }],
+  });
+  assert.deepEqual(await resolvePushCoverageBase({ ...context(commits, skipped.requestJson), bootstrapSha: commits.A }), { base: commits.A, runId: null });
+});
+
+test("bootstrap variables are selected only for their matching branch", () => {
+  const env = {
+    DEV_HRMS_COVERAGE_BOOTSTRAP_SHA: "a".repeat(40),
+    QA_HRMS_COVERAGE_BOOTSTRAP_SHA: "b".repeat(40),
+    MAIN_HRMS_COVERAGE_BOOTSTRAP_SHA: "c".repeat(40),
+  };
+  assert.equal(bootstrapShaForBranch("dev", env), env.DEV_HRMS_COVERAGE_BOOTSTRAP_SHA);
+  assert.equal(bootstrapShaForBranch("qa", env), env.QA_HRMS_COVERAGE_BOOTSTRAP_SHA);
+  assert.equal(bootstrapShaForBranch("main", env), env.MAIN_HRMS_COVERAGE_BOOTSTRAP_SHA);
+  assert.equal(bootstrapShaForBranch("release-01", env), undefined);
+});
+
+test("missing, invalid, equal-head and nonancestor bootstrap values fail closed", async () => {
+  const commits = history();
+  const { requestJson } = api([]);
+  await assert.rejects(resolvePushCoverageBase(context(commits, requestJson)), /No prior successful/);
+  await assert.rejects(resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: "not-a-sha" }), /Invalid Owner bootstrap/);
+  await assert.rejects(resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: "a".repeat(40) }), /absent from checkout history/);
+  await assert.rejects(resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: commits.C }), /must precede push head/);
+  const branch = git(commits.root, "branch", "--show-current");
+  git(commits.root, "switch", "-qc", "diverged", commits.A);
+  write(commits.root, "README.md", "alternate\n");
+  git(commits.root, "add", ".");
+  git(commits.root, "commit", "-qm", "alternate bootstrap");
+  const divergent = git(commits.root, "rev-parse", "HEAD");
+  git(commits.root, "switch", "-q", branch);
+  await assert.rejects(resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: divergent }), /not an ancestor/);
+});
+
 test("successful run on a nonancestor commit fails closed", async () => {
   const commits = history();
   const branch = git(commits.root, "branch", "--show-current");
@@ -138,7 +197,7 @@ test("successful run on a nonancestor commit fails closed", async () => {
 
 test("GitHub API errors fail closed", async () => {
   const commits = history();
-  await assert.rejects(resolvePushCoverageBase(context(commits, async () => { throw new Error("API unavailable"); })), /API unavailable/);
+  await assert.rejects(resolvePushCoverageBase({ ...context(commits, async () => { throw new Error("API unavailable"); }), bootstrapSha: commits.A }), /API unavailable/);
   const requestJson = async (path) => {
     if (path.includes("/jobs?")) throw new Error("jobs API unavailable");
     return { workflow_runs: [run(101, 1, commits.A)] };

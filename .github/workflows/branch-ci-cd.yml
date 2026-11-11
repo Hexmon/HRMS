@@ -203,8 +203,13 @@ jobs:
       - name: Resolve cumulative push coverage baseline
         id: push-baseline
         if: github.event_name == 'push'
+        # Owner-set branch bootstrap SHAs are used only until a successful
+        # same-branch push run with a successful coverage job exists.
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          DEV_HRMS_COVERAGE_BOOTSTRAP_SHA: ${{ vars.DEV_HRMS_COVERAGE_BOOTSTRAP_SHA }}
+          QA_HRMS_COVERAGE_BOOTSTRAP_SHA: ${{ vars.QA_HRMS_COVERAGE_BOOTSTRAP_SHA }}
+          MAIN_HRMS_COVERAGE_BOOTSTRAP_SHA: ${{ vars.MAIN_HRMS_COVERAGE_BOOTSTRAP_SHA }}
         run: node scripts/agent/resolve-push-coverage-base.mjs >> "$GITHUB_OUTPUT"
 
       - name: Install backend and frontend dependencies

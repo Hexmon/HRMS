@@ -7,12 +7,31 @@ import { fileURLToPath } from "node:url";
 const workflowFile = "branch-ci-cd.yml";
 const coverageJob = "Changed executable coverage";
 const shaPattern = /^[0-9a-f]{40}$/i;
+const bootstrapVariables = {
+  dev: "DEV_HRMS_COVERAGE_BOOTSTRAP_SHA",
+  qa: "QA_HRMS_COVERAGE_BOOTSTRAP_SHA",
+  main: "MAIN_HRMS_COVERAGE_BOOTSTRAP_SHA",
+};
+
+export function bootstrapShaForBranch(branch, env) {
+  const name = bootstrapVariables[branch];
+  return name ? env[name] : undefined;
+}
 
 function git(root, ...args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
-export async function resolvePushCoverageBase({ root, repository, branch, head, runId, runNumber, requestJson }) {
+function validateAncestor(root, sha, head, label, strict = false) {
+  if (!shaPattern.test(sha)) throw new Error(`Invalid ${label} SHA`);
+  if (strict && sha === head) throw new Error(`${label} SHA must precede push head`);
+  const commit = spawnSync("git", ["cat-file", "-e", `${sha}^{commit}`], { cwd: root, stdio: "ignore" });
+  if (commit.status !== 0) throw new Error(`${label} SHA is absent from checkout history`);
+  const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", sha, head], { cwd: root, stdio: "ignore" });
+  if (ancestor.status !== 0) throw new Error(`${label} SHA is not an ancestor of push head`);
+}
+
+export async function resolvePushCoverageBase({ root, repository, branch, head, runId, runNumber, requestJson, bootstrapSha }) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !["dev", "qa", "main"].includes(branch) ||
       !shaPattern.test(head) || !Number.isSafeInteger(runId) || runId <= 0 ||
       !Number.isSafeInteger(runNumber) || runNumber <= 0 || typeof requestJson !== "function") {
@@ -20,43 +39,46 @@ export async function resolvePushCoverageBase({ root, repository, branch, head, 
   }
   if (git(root, "rev-parse", "HEAD") !== head) throw new Error("Push coverage head does not match checked-out HEAD");
 
-  const runs = [];
   let complete = false;
+  let previousPageLast = Infinity;
   for (let page = 1; page <= 10; page++) {
     const query = new URLSearchParams({ branch, event: "push", status: "success", per_page: "100", page: String(page) });
     const result = await requestJson(`/repos/${repository}/actions/workflows/${workflowFile}/runs?${query}`);
-    if (!Array.isArray(result?.workflow_runs)) throw new Error("Malformed GitHub workflow runs response");
-    runs.push(...result.workflow_runs);
-    if (result.workflow_runs.length < 100) {
+    if (!Array.isArray(result?.workflow_runs) || result.workflow_runs.length > 100) {
+      throw new Error("Malformed GitHub workflow runs response");
+    }
+    const ordered = [...result.workflow_runs].sort((a, b) => b.run_number - a.run_number);
+    for (const run of ordered) {
+      if (!Number.isSafeInteger(run.run_number) || !Number.isSafeInteger(run.id)) {
+        throw new Error("Malformed GitHub workflow run metadata");
+      }
+    }
+    if (ordered.length && ordered[0].run_number > previousPageLast) {
+      throw new Error("GitHub workflow runs are out of newest-first page order");
+    }
+    if (ordered.length) previousPageLast = ordered.at(-1).run_number;
+    for (const run of ordered) {
+      if (run.id === runId || run.run_number >= runNumber || run.event !== "push" ||
+          run.head_branch !== branch || run.status !== "completed" || run.conclusion !== "success") continue;
+      const jobs = await requestJson(`/repos/${repository}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`);
+      if (!Array.isArray(jobs?.jobs) || !Number.isSafeInteger(jobs.total_count) || jobs.total_count > 100) {
+        throw new Error(`Malformed or oversized GitHub jobs response for run ${run.id}`);
+      }
+      const matches = jobs.jobs.filter((job) => job.name === coverageJob);
+      if (matches.length > 1) throw new Error(`Ambiguous changed-coverage jobs for run ${run.id}`);
+      if (matches.length === 0 || matches[0].conclusion !== "success" || matches[0].status !== "completed") continue;
+      validateAncestor(root, run.head_sha, head, `Baseline for run ${run.id}`);
+      return { base: run.head_sha, runId: run.id };
+    }
+    if (ordered.length < 100) {
       complete = true;
       break;
     }
   }
   if (!complete) throw new Error("Push coverage baseline search exceeded 1000 successful runs");
-
-  const prior = runs.filter((run) => {
-    if (!Number.isSafeInteger(run.run_number) || !Number.isSafeInteger(run.id)) {
-      throw new Error("Malformed GitHub workflow run metadata");
-    }
-    return run.id !== runId && run.run_number < runNumber &&
-      run.event === "push" && run.head_branch === branch &&
-      run.status === "completed" && run.conclusion === "success";
-  }).sort((a, b) => b.run_number - a.run_number);
-
-  for (const run of prior) {
-    const result = await requestJson(`/repos/${repository}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`);
-    if (!Array.isArray(result?.jobs) || !Number.isSafeInteger(result.total_count) || result.total_count > 100) {
-      throw new Error(`Malformed or oversized GitHub jobs response for run ${run.id}`);
-    }
-    const matches = result.jobs.filter((job) => job.name === coverageJob);
-    if (matches.length > 1) throw new Error(`Ambiguous changed-coverage jobs for run ${run.id}`);
-    if (matches.length === 0 || matches[0].conclusion !== "success" || matches[0].status !== "completed") continue;
-    if (!shaPattern.test(run.head_sha)) throw new Error(`Invalid baseline SHA for run ${run.id}`);
-    const commit = spawnSync("git", ["cat-file", "-e", `${run.head_sha}^{commit}`], { cwd: root, stdio: "ignore" });
-    if (commit.status !== 0) throw new Error(`Baseline SHA for run ${run.id} is absent from checkout history`);
-    const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", run.head_sha, head], { cwd: root, stdio: "ignore" });
-    if (ancestor.status !== 0) throw new Error(`Baseline SHA for run ${run.id} is not an ancestor of push head`);
-    return { base: run.head_sha, runId: run.id };
+  if (bootstrapSha !== undefined && bootstrapSha !== "") {
+    validateAncestor(root, bootstrapSha, head, `Owner bootstrap for ${branch}`, true);
+    return { base: bootstrapSha, runId: null };
   }
   throw new Error(`No prior successful ${branch} push run with a successful changed-coverage job`);
 }
@@ -87,8 +109,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       runId: Number(process.env.GITHUB_RUN_ID),
       runNumber: Number(process.env.GITHUB_RUN_NUMBER),
       requestJson: (path) => githubJson(path, process.env.GITHUB_TOKEN),
+      bootstrapSha: bootstrapShaForBranch(process.env.GITHUB_REF_NAME, process.env),
     });
-    console.error(`Using successful coverage run ${result.runId} at ${result.base} as cumulative push baseline.`);
+    console.error(result.runId === null
+      ? `Using owner-provided ${process.env.GITHUB_REF_NAME} bootstrap commit as cumulative push baseline.`
+      : `Using successful coverage run ${result.runId} at ${result.base} as cumulative push baseline.`);
     process.stdout.write(`base=${result.base}\n`);
   } catch (error) {
     console.error(`Push coverage baseline resolution failed: ${error.message}`);
