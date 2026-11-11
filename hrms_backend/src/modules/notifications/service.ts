@@ -109,7 +109,7 @@ export class NotificationsService {
     };
   }
 
-  private present(notification: NotificationRecord) {
+  present(notification: NotificationRecord) {
     const actor = notification.actor_user_id
       ? this.store.users.find((candidate) => candidate.id === notification.actor_user_id)
       : null;

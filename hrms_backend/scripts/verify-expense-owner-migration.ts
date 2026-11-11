@@ -18,6 +18,7 @@ const client = new Client({ connectionString: databaseUrl });
 const migrationDirectory = join(process.cwd(), "src/db/migrations");
 const companyA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const companyB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const missingCompany = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const requester = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const department = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const ticketIds = {
@@ -55,6 +56,34 @@ async function command<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+async function transaction<T>(run: () => Promise<T>): Promise<T> {
+  await client.query("BEGIN");
+  try {
+    const result = await run();
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
+// The marker is transaction-local defense in depth, not authorization. A
+// production repair must additionally run under the dedicated migration role;
+// the application runtime role must not be able to insert repair evidence.
+async function ownerRepairTransaction<T>(
+  run: () => Promise<T>,
+  options: { setRepairMarker?: boolean } = {},
+): Promise<T> {
+  return transaction(async () => {
+    await client.query("SELECT set_config('app.expense_command_v1', 'on', true)");
+    if (options.setRepairMarker ?? true) {
+      await client.query("SELECT set_config('app.expense_owner_repair_v1', 'on', true)");
+    }
+    return run();
+  });
+}
+
 try {
   await client.connect();
   const files = readdirSync(migrationDirectory).filter((name) => /^\d{4}_.+\.sql$/.test(name)).sort();
@@ -79,7 +108,7 @@ try {
   await insertHistoricalTicket(ticketIds.valid, "EXP-VALID", companyA);
   await insertHistoricalTicket(ticketIds.missingAudit, "EXP-NO-AUDIT", companyA);
   await insertHistoricalTicket(ticketIds.malformed, "EXP-MALFORMED", "not-a-uuid");
-  await insertHistoricalTicket(ticketIds.nonexistent, "EXP-NO-COMPANY", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+  await insertHistoricalTicket(ticketIds.nonexistent, "EXP-NO-COMPANY", missingCompany);
   await client.query(
     `INSERT INTO expenses.expense_audit_logs
        (ticket_id, actor_user_id, event_type) VALUES ($1, $2, 'expense.created')`,
@@ -120,6 +149,125 @@ try {
       `${table} must reject legacy inserts before any row is written`,
     );
   }
+
+  const repairInvariantError = (error: unknown) =>
+    (error as { constraint?: string }).constraint === "expense_owner_repair_evidence_consistency";
+  await assert.rejects(ownerRepairTransaction(async () => {
+    await client.query(
+      `UPDATE expenses.expense_tickets SET company_id=$2,
+       owner_resolution_status='audited_repair', owner_resolution_reason=NULL WHERE id=$1`,
+      [ticketIds.missingAudit, companyA],
+    );
+  }), repairInvariantError, "the repair marker without evidence must fail");
+  assert.equal(Number((await client.query(
+    "SELECT count(*) FROM expenses.expense_owner_repair_audit WHERE ticket_id=$1",
+    [ticketIds.missingAudit],
+  )).rows[0]?.count), 0);
+  assert.equal((await client.query(
+    "SELECT owner_resolution_status FROM expenses.expense_tickets WHERE id=$1",
+    [ticketIds.missingAudit],
+  )).rows[0]?.owner_resolution_status, "quarantined");
+  await assert.rejects(ownerRepairTransaction(async () => {
+    await client.query(
+      `INSERT INTO expenses.expense_owner_repair_audit
+       (ticket_id,original_context_payload,repaired_company_id,evidence_reference,evidence_sha256,reviewed_by,applied_by)
+       SELECT id,context_payload,$2,'mismatch-fixture',$3,'fixture-reviewer','fixture-operator'
+       FROM expenses.expense_tickets WHERE id=$1`,
+      [ticketIds.missingAudit, companyB, "c".repeat(64)],
+    );
+    await client.query(
+      `UPDATE expenses.expense_tickets SET company_id=$2,
+       owner_resolution_status='audited_repair', owner_resolution_reason=NULL WHERE id=$1`,
+      [ticketIds.missingAudit, companyA],
+    );
+  }), repairInvariantError, "repair evidence company must match the repaired ticket owner");
+  assert.equal(Number((await client.query(
+    "SELECT count(*) FROM expenses.expense_owner_repair_audit WHERE ticket_id=$1",
+    [ticketIds.missingAudit],
+  )).rows[0]?.count), 0, "a failed repair must roll back its audit row atomically");
+  assert.equal((await client.query(
+    "SELECT company_id,owner_resolution_status FROM expenses.expense_tickets WHERE id=$1",
+    [ticketIds.missingAudit],
+  )).rows[0]?.company_id, null, "a failed repair must leave the ticket quarantined");
+  await assert.rejects(ownerRepairTransaction(async () => {
+    await client.query(
+      `INSERT INTO expenses.expense_owner_repair_audit
+       (ticket_id,original_context_payload,repaired_company_id,evidence_reference,evidence_sha256,reviewed_by,applied_by)
+       SELECT id,context_payload,$2,'audit-without-marker',$3,'fixture-reviewer','fixture-operator'
+       FROM expenses.expense_tickets WHERE id=$1`,
+      [ticketIds.missingAudit, companyA, "f".repeat(64)],
+    );
+    await client.query(
+      `UPDATE expenses.expense_tickets SET company_id=$2,
+       owner_resolution_status='audited_repair', owner_resolution_reason=NULL WHERE id=$1`,
+      [ticketIds.missingAudit, companyA],
+    );
+  }, { setRepairMarker: false }), repairInvariantError, "matching evidence without the repair marker must fail");
+  assert.equal(Number((await client.query(
+    "SELECT count(*) FROM expenses.expense_owner_repair_audit WHERE ticket_id=$1",
+    [ticketIds.missingAudit],
+  )).rows[0]?.count), 0, "the audit-only failure must roll back evidence");
+  const protectedRepairFields = (await client.query(
+    `SELECT company_id,owner_resolution_status,owner_resolution_reason,status,context_payload
+     FROM expenses.expense_tickets WHERE id=$1`,
+    [ticketIds.missingAudit],
+  )).rows[0];
+  await assert.rejects(ownerRepairTransaction(async () => {
+    await client.query(
+      `INSERT INTO expenses.expense_owner_repair_audit
+       (ticket_id,original_context_payload,repaired_company_id,evidence_reference,evidence_sha256,reviewed_by,applied_by)
+       SELECT id,context_payload,$2,'overbroad-repair-fixture',$3,'fixture-reviewer','fixture-operator'
+       FROM expenses.expense_tickets WHERE id=$1`,
+      [ticketIds.missingAudit, companyA, "9".repeat(64)],
+    );
+    await client.query(
+      `UPDATE expenses.expense_tickets SET company_id=$2,
+       owner_resolution_status='audited_repair', owner_resolution_reason=NULL,
+       status='Submitted', context_payload=context_payload || '{"tampered":true}'::jsonb
+       WHERE id=$1`,
+      [ticketIds.missingAudit, companyA],
+    );
+  }), repairInvariantError, "owner repair must not alter status, context or other ticket fields");
+  assert.deepEqual((await client.query(
+    `SELECT company_id,owner_resolution_status,owner_resolution_reason,status,context_payload
+     FROM expenses.expense_tickets WHERE id=$1`,
+    [ticketIds.missingAudit],
+  )).rows[0], protectedRepairFields, "an overbroad repair must roll back the whole ticket change");
+  assert.equal(Number((await client.query(
+    "SELECT count(*) FROM expenses.expense_owner_repair_audit WHERE ticket_id=$1",
+    [ticketIds.missingAudit],
+  )).rows[0]?.count), 0, "an overbroad repair must roll back its audit row");
+  await assert.rejects(ownerRepairTransaction(async () => {
+    await client.query(
+      `INSERT INTO expenses.expense_owner_repair_audit
+       (ticket_id,original_context_payload,repaired_company_id,evidence_reference,evidence_sha256,reviewed_by,applied_by)
+       SELECT id,context_payload,$2,'missing-company-fixture',$3,'fixture-reviewer','fixture-operator'
+       FROM expenses.expense_tickets WHERE id=$1`,
+      [ticketIds.nonexistent, missingCompany, "8".repeat(64)],
+    );
+    await client.query(
+      `UPDATE expenses.expense_tickets SET company_id=$2,
+       owner_resolution_status='audited_repair', owner_resolution_reason=NULL WHERE id=$1`,
+      [ticketIds.nonexistent, missingCompany],
+    );
+  }), repairInvariantError, "owner repair must reject a nonexistent company identity");
+  assert.equal(Number((await client.query(
+    "SELECT count(*) FROM expenses.expense_owner_repair_audit WHERE ticket_id=$1",
+    [ticketIds.nonexistent],
+  )).rows[0]?.count), 0, "a nonexistent-company repair must roll back evidence");
+  assert.deepEqual((await client.query(
+    `SELECT company_id,owner_resolution_status FROM expenses.expense_tickets WHERE id=$1`,
+    [ticketIds.nonexistent],
+  )).rows[0], { company_id: null, owner_resolution_status: "quarantined" });
+  await assert.rejects(transaction(async () => {
+    await client.query(
+      `INSERT INTO expenses.expense_owner_repair_audit
+       (ticket_id,original_context_payload,repaired_company_id,evidence_reference,evidence_sha256,reviewed_by,applied_by)
+       SELECT id,context_payload,$2,'non-repair-fixture',$3,'fixture-reviewer','fixture-operator'
+       FROM expenses.expense_tickets WHERE id=$1`,
+      [ticketIds.valid, companyA, "d".repeat(64)],
+    );
+  }), repairInvariantError, "non-audited tickets must reject repair evidence");
 
   // An ordinary write cannot adopt or mutate a quarantined/historical owner.
   await assert.rejects(command(() => client.query(
@@ -177,10 +325,7 @@ try {
   )));
   // Simulate only the separate privileged forward repair using independently
   // reviewed A evidence. Keep contradictory legacy JSON intact in its audit.
-  await client.query("BEGIN");
-  try {
-    await client.query("SELECT set_config('app.expense_command_v1', 'on', true)");
-    await client.query("ALTER TABLE expenses.expense_tickets DISABLE TRIGGER expense_ticket_original_company_guard_trg");
+  await ownerRepairTransaction(async () => {
     await client.query(
       `INSERT INTO expenses.expense_owner_repair_audit
        (ticket_id,original_context_payload,repaired_company_id,evidence_reference,evidence_sha256,reviewed_by,applied_by)
@@ -193,17 +338,36 @@ try {
         owner_resolution_status='audited_repair', owner_resolution_reason=NULL WHERE id=$1`,
       [ticketIds.malformed, companyA],
     );
-    await client.query("ALTER TABLE expenses.expense_tickets ENABLE TRIGGER expense_ticket_original_company_guard_trg");
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  }
+  });
   await command(() => client.query(
     `UPDATE expenses.expense_tickets SET status='Submitted', version=version+1 WHERE id=$1`,
     [ticketIds.malformed],
   ));
   assert.equal((await client.query("SELECT company_id FROM expenses.expense_tickets WHERE id=$1", [ticketIds.malformed])).rows[0]?.company_id, companyA);
+  await ownerRepairTransaction(async () => {
+    await client.query(
+      `INSERT INTO expenses.expense_owner_repair_audit
+       (ticket_id,original_context_payload,repaired_company_id,evidence_reference,evidence_sha256,reviewed_by,applied_by)
+       SELECT id,context_payload,$2,'ticket-first-fixture',$3,'fixture-reviewer','fixture-operator'
+       FROM expenses.expense_tickets WHERE id=$1`,
+      [ticketIds.missingAudit, companyA, "e".repeat(64)],
+    );
+    await client.query(
+      `UPDATE expenses.expense_tickets SET company_id=$2,
+       owner_resolution_status='audited_repair', owner_resolution_reason=NULL WHERE id=$1`,
+      [ticketIds.missingAudit, companyA],
+    );
+  });
+  for (const id of [ticketIds.malformed, ticketIds.missingAudit]) {
+    await assert.rejects(client.query(
+      "UPDATE expenses.expense_owner_repair_audit SET reviewed_by='changed' WHERE ticket_id=$1",
+      [id],
+    ), /immutable audit\/log rows/u);
+    await assert.rejects(client.query(
+      "DELETE FROM expenses.expense_owner_repair_audit WHERE ticket_id=$1",
+      [id],
+    ), /immutable audit\/log rows/u);
+  }
   await assert.rejects(command(() => client.query(
     `UPDATE expenses.expense_tickets SET context_payload='{}'::jsonb WHERE id=$1`, [ticketIds.malformed],
   )));

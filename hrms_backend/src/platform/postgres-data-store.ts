@@ -403,12 +403,19 @@ export async function resetPostgresDatabase(
       "SELECT pg_advisory_lock(hashtext('hrms_postgres_schema_reset'))",
     );
     schemaLockAcquired = true;
+    // Reapplying the full local migration bundle is a test-only bootstrap.
+    // Once 0068 exists, its old-writer fence is already active while earlier
+    // idempotent migrations are replayed, so explicitly mark this trusted
+    // schema-maintenance session and clear it before returning the client.
+    await client.query("SELECT set_config('app.expense_command_v1', 'on', false)");
     await client.query(migrationSql());
+    await client.query("SELECT set_config('app.expense_command_v1', 'off', false)");
     await client.query("BEGIN");
     await client.query(`TRUNCATE ${resetTables.join(", ")} RESTART IDENTITY`);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    await client.query("SELECT set_config('app.expense_command_v1', 'off', false)").catch(() => undefined);
     throw error;
   } finally {
     if (schemaLockAcquired) {
@@ -470,6 +477,67 @@ class PostgresPersistence {
     private readonly store: DataStore,
   ) {}
 
+  async authUser(userId: UUID): Promise<AuthUser | null> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query<{
+        id: UUID;
+        employee_code: string;
+        email: string;
+        full_name: string;
+        department_id: UUID | null;
+        designation_id: UUID | null;
+        hierarchy_path: string;
+        employment_status: AuthUser["employment_status"];
+        email_verified_at: Date | null;
+        email_verification_status: AuthUser["email_verification_status"];
+        deleted_at: Date | null;
+        roles: RoleKey[];
+      }>(
+        `SELECT u.id, u.employee_code, u.email, u.full_name, u.department_id,
+                u.designation_id, u.hierarchy_path::text AS hierarchy_path,
+                u.employment_status, u.email_verified_at, u.email_verification_status,
+                u.deleted_at,
+                COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
+                  WHERE ur.role_key IS NOT NULL AND ur.status = 'active'
+                    AND ur.deleted_at IS NULL AND role.status = 'active'
+                    AND role.deleted_at IS NULL
+                    AND ur.effective_from <= CURRENT_DATE
+                    AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
+                ), '{}') AS roles
+         FROM core.users u
+         LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+         LEFT JOIN core.roles role ON role.role_key = ur.role_key
+         WHERE u.id = $1
+         GROUP BY u.id`,
+        [userId],
+      );
+      const current = result.rows[0];
+      // Authentication proves a current active identity only. Company and
+      // selected-role semantics remain route-level policy so this lookup does
+      // not broaden authorization beyond the prior middleware contract.
+      if (!current || current.deleted_at ||
+          current.employment_status !== EmploymentStatuses.Active) return null;
+      return {
+        id: current.id,
+        employee_code: current.employee_code,
+        email: current.email,
+        full_name: current.full_name,
+        // The SQL schema permits these values to be null during onboarding;
+        // preserve the database value instead of inventing an assignment.
+        department_id: current.department_id as UUID,
+        designation_id: current.designation_id as UUID,
+        hierarchy_path: current.hierarchy_path,
+        employment_status: current.employment_status,
+        roles: current.roles,
+        email_verified_at: asIsoOrNull(current.email_verified_at),
+        email_verification_status: current.email_verification_status ?? "unverified",
+      };
+    } finally {
+      client.release();
+    }
+  }
+
   async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore> {
     const client = await this.pool.connect();
     try {
@@ -482,6 +550,153 @@ class PostgresPersistence {
         attendanceDayRecords: await this.loadAttendanceDayRecords(client, scope),
         outbox: scope.includePendingOutbox ? await this.loadOutbox(client, "pending") : this.store.outbox,
       };
+    } finally {
+      client.release();
+    }
+  }
+
+  async dashboardReadStore(scope: { companyId: UUID }): Promise<DataStore> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const tickets = await this.loadTickets(client, scope.companyId);
+      const userRows = await client.query<{ user_id: UUID }>(
+        "SELECT user_id FROM platform.user_session_preferences WHERE company_id = $1",
+        [scope.companyId],
+      );
+      const companyUserIds = userRows.rows.map((row) => row.user_id);
+      // node-postgres serializes one client; await each query explicitly so
+      // all projections are clearly read from this transaction snapshot.
+      const expenseDocuments = await this.loadExpenseDocuments(client, tickets.map((ticket) => ticket.id));
+      const notifications = await this.loadNotifications(client, companyUserIds);
+      const attendancePunches = await this.loadAttendancePunches(client, { companyId: scope.companyId });
+      const attendanceDayRecords = await this.loadAttendanceDayRecords(client, { companyId: scope.companyId });
+      const outbox = await this.loadOutbox(client, "pending", scope.companyId);
+      await client.query("COMMIT");
+      return {
+        ...this.store,
+        tickets,
+        expenseDocuments,
+        notifications,
+        attendancePunches,
+        attendanceDayRecords,
+        outbox,
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async notificationReadStore(userId: UUID): Promise<DataStore> {
+    const client = await this.pool.connect();
+    try {
+      return { ...this.store, notifications: await this.loadNotifications(client, [userId]) };
+    } finally {
+      client.release();
+    }
+  }
+
+  async notificationMarkRead(input: {
+    userId: UUID;
+    notificationId: UUID;
+    expectedVersion?: number;
+  }): Promise<{ notification: NotificationRecord; unreadCount: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const selected = await client.query(
+        `SELECT * FROM platform.notifications
+         WHERE id = $1 AND target_user_id = $2 FOR UPDATE`,
+        [input.notificationId, input.userId],
+      );
+      const current = selected.rows[0];
+      if (!current) throw notFound("Notification not found", { id: input.notificationId });
+      if (input.expectedVersion !== undefined && current.version !== input.expectedVersion) {
+        throw conflict("Notification was modified by another actor.", {
+          aggregate: "notification", id: input.notificationId,
+        });
+      }
+      const result = current.status === "pending"
+        ? await client.query(
+            `UPDATE platform.notifications
+             SET status='sent', read_at=now(), version=version+1, updated_at=now()
+             WHERE id=$1 AND target_user_id=$2 AND status='pending'
+             RETURNING *`,
+            [input.notificationId, input.userId],
+          )
+        : selected;
+      const notification = result.rows[0];
+      if (!notification) throw conflict("Notification changed during read acknowledgement");
+      const unread = await client.query<{ count: string }>(
+        `SELECT count(*) AS count FROM platform.notifications
+         WHERE target_user_id=$1 AND status='pending'`,
+        [input.userId],
+      );
+      await client.query("COMMIT");
+      return {
+        notification: this.mapNotificationRow(notification),
+        unreadCount: Number(unread.rows[0]?.count ?? 0),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async notificationMarkAllRead(input: {
+    userId: UUID;
+    type?: string;
+    before?: string;
+  }): Promise<{ updatedCount: number; unreadCount: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const selected = await client.query<{ id: UUID }>(
+        `SELECT id FROM platform.notifications
+         WHERE target_user_id=$1 AND status='pending'
+           AND ($2::text IS NULL OR event_type=$2 OR
+             CASE
+               WHEN nullif(trim(payload->>'category'),'') IS NOT NULL THEN payload->>'category'
+               WHEN event_type LIKE '%submitted%' OR event_type LIKE '%approval%' THEN 'approval'
+               WHEN event_type LIKE '%mention%' THEN 'mention'
+               WHEN event_type LIKE '%helpdesk%' OR event_type LIKE '%escalated%' THEN 'alert'
+               ELSE 'system'
+             END = $2)
+           AND ($3::timestamptz IS NULL OR created_at <= $3::timestamptz)
+         ORDER BY created_at, id
+         LIMIT 1001 FOR UPDATE`,
+        [input.userId, input.type ?? null, input.before ?? null],
+      );
+      if (selected.rows.length > 1000) {
+        throw badRequest("Too many notifications match this request; narrow the type or before date");
+      }
+      const ids = selected.rows.map((row) => row.id);
+      const updated = ids.length
+        ? await client.query(
+            `UPDATE platform.notifications
+             SET status='sent', read_at=now(), version=version+1, updated_at=now()
+             WHERE target_user_id=$1 AND status='pending' AND id=ANY($2::uuid[])`,
+            [input.userId, ids],
+          )
+        : { rowCount: 0 };
+      const unread = await client.query<{ count: string }>(
+        `SELECT count(*) AS count FROM platform.notifications
+         WHERE target_user_id=$1 AND status='pending'`,
+        [input.userId],
+      );
+      await client.query("COMMIT");
+      return {
+        updatedCount: updated.rowCount ?? 0,
+        unreadCount: Number(unread.rows[0]?.count ?? 0),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
     } finally {
       client.release();
     }
@@ -515,26 +730,54 @@ class PostgresPersistence {
       // another request may have unflushed mutations in progress.
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const actorRow = await client.query<{
+        id: UUID;
+        employee_code: string;
+        email: string;
+        full_name: string;
+        department_id: UUID | null;
+        designation_id: UUID | null;
+        hierarchy_path: string;
         employment_status: AuthUser["employment_status"];
+        email_verified_at: Date | null;
+        email_verification_status: AuthUser["email_verification_status"];
         deleted_at: Date | null;
         roles: RoleKey[];
       }>(
-        `SELECT u.employment_status, u.deleted_at,
+        `SELECT u.id, u.employee_code, u.email, u.full_name, u.department_id,
+                u.designation_id, u.hierarchy_path::text AS hierarchy_path,
+                u.employment_status, u.email_verified_at, u.email_verification_status,
+                u.deleted_at,
                 COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
-                  WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL
+                  WHERE ur.role_key IS NOT NULL AND ur.status = 'active'
+                    AND ur.deleted_at IS NULL AND role.status = 'active'
+                    AND role.deleted_at IS NULL
+                    AND ur.effective_from <= CURRENT_DATE
+                    AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
                 ), '{}') AS roles
          FROM core.users u
          LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+         LEFT JOIN core.roles role ON role.role_key = ur.role_key
          WHERE u.id = $1 GROUP BY u.id`,
         [userId],
       );
       const current = actorRow.rows[0];
-      const cachedActor = this.store.users.find((user) => user.id === userId);
-      if (!current || current.deleted_at || !cachedActor) throw unauthorized("User no longer exists");
+      if (!current || current.deleted_at) throw unauthorized("User no longer exists");
       if (current.employment_status !== EmploymentStatuses.Active) {
         throw unauthorized("User account is inactive or blocked");
       }
-      const actor: AuthUser = { ...cachedActor, roles: current.roles, employment_status: current.employment_status };
+      const actor: AuthUser = {
+        id: current.id,
+        employee_code: current.employee_code,
+        email: current.email,
+        full_name: current.full_name,
+        department_id: current.department_id as UUID,
+        designation_id: current.designation_id as UUID,
+        hierarchy_path: current.hierarchy_path,
+        employment_status: current.employment_status,
+        roles: current.roles,
+        email_verified_at: asIsoOrNull(current.email_verified_at),
+        email_verification_status: current.email_verification_status ?? "unverified",
+      };
       const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
         "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
         [userId],
@@ -557,6 +800,26 @@ class PostgresPersistence {
       const outbox = await this.loadOutbox(client, "all", companyId);
       await client.query("COMMIT");
       return { actor, companyId, store: { ...this.store, tickets, auditLogs, outbox } };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async expenseReportReadContext(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      // This is deliberately a narrow current-company projection. Historical
+      // requester access after a transfer is reconciled by report work item
+      // #121 instead of broadening every report through shared hydrated state.
+      const tickets = await this.loadTickets(client, companyId);
+      const store = await this.loadExpenseReadStore(client, companyId, tickets);
+      await client.query("COMMIT");
+      return { actor, companyId, store };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
@@ -885,17 +1148,86 @@ class PostgresPersistence {
     }
   }
 
-  async isExpenseDocumentId(documentId: UUID): Promise<boolean> {
-    const result = await this.pool.query<{ is_expense: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1 FROM documents.doc_metadata metadata
-         WHERE metadata.id = $1 AND metadata.business_object_type = 'expense_ticket'
-       ) OR EXISTS (
-         SELECT 1 FROM expenses.expense_documents link WHERE link.document_id = $1
-       ) AS is_expense`,
-      [documentId],
-    );
-    return result.rows[0]?.is_expense === true;
+  async classifyExpenseDocumentAccess(
+    userId: UUID,
+    documentId: UUID,
+    mode: "metadata" | "raw" | "workflow",
+  ): Promise<"other" | "expense-authorized" | "hidden"> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      const result = await client.query<{
+        metadata_id: UUID | null;
+        business_object_type: string | null;
+        business_object_id: UUID | null;
+        metadata_document_type: string | null;
+        classification: string | null;
+        metadata_deleted_at: Date | null;
+        link_ticket_id: UUID | null;
+        link_document_type: string | null;
+        ticket_id: UUID | null;
+        ticket_company_id: UUID | null;
+        requester_user_id: UUID | null;
+        manager_verifier_id: UUID | null;
+        finance_approver_id: UUID | null;
+        owner_resolution_status: string | null;
+        ticket_deleted_at: Date | null;
+      }>(
+        `SELECT metadata.id AS metadata_id, metadata.business_object_type,
+                metadata.business_object_id, metadata.document_type AS metadata_document_type,
+                metadata.classification, metadata.deleted_at AS metadata_deleted_at,
+                link.ticket_id AS link_ticket_id, link.document_type AS link_document_type,
+                ticket.id AS ticket_id, ticket.company_id AS ticket_company_id,
+                ticket.requester_user_id, ticket.manager_verifier_id,
+                ticket.finance_approver_id, ticket.owner_resolution_status,
+                ticket.deleted_at AS ticket_deleted_at
+         FROM (SELECT $1::uuid AS document_id) requested
+         LEFT JOIN documents.doc_metadata metadata ON metadata.id = requested.document_id
+         LEFT JOIN expenses.expense_documents link ON link.document_id = requested.document_id
+         LEFT JOIN expenses.expense_tickets ticket
+           ON ticket.id = COALESCE(link.ticket_id,
+             CASE WHEN metadata.business_object_type = 'expense_ticket'
+               THEN metadata.business_object_id ELSE NULL END)`,
+        [documentId],
+      );
+      if (result.rows.length !== 1) {
+        await client.query("COMMIT");
+        return "hidden";
+      }
+      const row = result.rows[0];
+      const isExpense = row?.business_object_type === "expense_ticket" || Boolean(row?.link_ticket_id);
+      if (!isExpense) {
+        await client.query("COMMIT");
+        return row?.metadata_id ? "other" : "hidden";
+      }
+      const consistent = Boolean(row &&
+        row.metadata_id && !row.metadata_deleted_at && row.business_object_type === "expense_ticket" &&
+        row.business_object_id && row.link_ticket_id === row.business_object_id &&
+        row.ticket_id === row.business_object_id && !row.ticket_deleted_at && row.ticket_company_id &&
+        row.owner_resolution_status !== "quarantined" && row.classification === "finance" &&
+        row.metadata_document_type === row.link_document_type,
+      );
+      if (!consistent) {
+        await client.query("COMMIT");
+        return "hidden";
+      }
+      if (!row) throw new Error("Expense receipt classification invariant failed");
+      const sameCompany = row.ticket_company_id === companyId;
+      const metadataOnly = mode === "metadata";
+      const authorized = row.requester_user_id === actor.id ||
+        (sameCompany && actor.roles.includes(Roles.Admin)) ||
+        (sameCompany && actor.roles.includes(Roles.FinanceManager) && row.finance_approver_id === actor.id) ||
+        (sameCompany && actor.roles.includes(Roles.Reviewer) && row.manager_verifier_id === actor.id) ||
+        (metadataOnly && sameCompany && actor.roles.includes(Roles.Auditor));
+      await client.query("COMMIT");
+      return authorized ? "expense-authorized" : "hidden";
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async expenseDashboardContext(userId: UUID, filters: {
@@ -992,17 +1324,31 @@ class PostgresPersistence {
 
   private async resolveExpenseActor(client: PoolClient, userId: UUID): Promise<{ actor: AuthUser; companyId: UUID }> {
     const actorRow = await client.query<{
+        id: UUID;
+        employee_code: string;
+        email: string;
+        full_name: string;
+        department_id: UUID | null;
+        designation_id: UUID | null;
+        hierarchy_path: string;
         employment_status: AuthUser["employment_status"];
+        email_verified_at: Date | null;
+        email_verification_status: AuthUser["email_verification_status"];
         deleted_at: Date | null;
         roles: RoleKey[];
         company_id: UUID | null;
         active_role: RoleKey | null;
       }>(
-        `SELECT u.employment_status, u.deleted_at, pref.company_id, pref.active_role,
+        `SELECT u.id, u.employee_code, u.email, u.full_name, u.department_id,
+                u.designation_id, u.hierarchy_path::text AS hierarchy_path,
+                u.employment_status, u.email_verified_at, u.email_verification_status,
+                u.deleted_at, pref.company_id, pref.active_role,
                 COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
                   WHERE ur.role_key IS NOT NULL AND ur.status = 'active'
                     AND ur.deleted_at IS NULL AND role.status = 'active'
                     AND role.deleted_at IS NULL
+                    AND ur.effective_from <= CURRENT_DATE
+                    AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
                 ), '{}') AS roles
          FROM core.users u
          LEFT JOIN platform.user_session_preferences pref ON pref.user_id = u.id
@@ -1013,8 +1359,7 @@ class PostgresPersistence {
         [userId],
       );
     const current = actorRow.rows[0];
-    const cached = this.store.users.find((user) => user.id === userId);
-    if (!current || current.deleted_at || !cached || current.employment_status !== EmploymentStatuses.Active) {
+    if (!current || current.deleted_at || current.employment_status !== EmploymentStatuses.Active) {
       throw unauthorized("User account is inactive or blocked");
     }
     if (!current.company_id || !current.active_role) {
@@ -1030,7 +1375,21 @@ class PostgresPersistence {
       throw companyContextRequired({ user_id: userId, company_id: current.company_id, operation: "expenses.read" });
     }
     return {
-      actor: { ...cached, roles: current.roles, employment_status: current.employment_status },
+      actor: {
+        id: current.id,
+        employee_code: current.employee_code,
+        email: current.email,
+        full_name: current.full_name,
+        // Preserve nullable onboarding fields from SQL. AuthUser predates the
+        // nullable schema and is tightened separately from this P1 fix.
+        department_id: current.department_id as UUID,
+        designation_id: current.designation_id as UUID,
+        hierarchy_path: current.hierarchy_path,
+        employment_status: current.employment_status,
+        roles: current.roles,
+        email_verified_at: asIsoOrNull(current.email_verified_at),
+        email_verification_status: current.email_verification_status ?? "unverified",
+      },
       companyId: current.company_id,
     };
   }
@@ -2209,11 +2568,20 @@ class PostgresPersistence {
 
   private async loadNotifications(
     client: PoolClient,
+    targetUserIds?: readonly UUID[],
   ): Promise<NotificationRecord[]> {
+    if (targetUserIds?.length === 0) return [];
     const { rows } = await client.query(
-      "SELECT * FROM platform.notifications ORDER BY created_at, id",
+      `SELECT * FROM platform.notifications
+       ${targetUserIds ? "WHERE target_user_id = ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      targetUserIds ? [targetUserIds] : [],
     );
-    return rows.map((row) => ({
+    return rows.map((row) => this.mapNotificationRow(row));
+  }
+
+  private mapNotificationRow(row: Record<string, any>): NotificationRecord {
+    return {
       id: row.id,
       actor_user_id: row.actor_user_id,
       target_user_id: row.target_user_id,
@@ -2224,7 +2592,7 @@ class PostgresPersistence {
       version: row.version,
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
-    }));
+    };
   }
 
   private async loadEmailDeliveries(

@@ -5368,6 +5368,7 @@ Schema: `object`.
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9._:-]+$ |
 
 **Request body**
 
@@ -5398,37 +5399,8 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `id` | string<uuid> | required | Expense ticket UUID |
-| `ticket_no` | string | required | - |
-| `requester_user_id` | string<uuid> | required | Requester user UUID |
-| `requester_role_snapshot` | string | optional | - |
-| `department_id` | string<uuid> | optional | Department UUID |
-| `expense_type` | string enum("Project", "SalesPreSales") | optional | - |
-| `expense_sub_type` | string enum("Project Travel", "Material Consumables", "Lodging & Boarding", "Client Meeting", "Demo / Presentation", "Marketing Event", "Sales Travel", "Misc Sales Expense") | optional | - |
-| `project_code` | string | optional, nullable | - |
-| `client_name` | string | optional, nullable | - |
-| `task_title` | string | optional | - |
-| `estimated_amount` | string | optional | Estimated amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `payment_type` | string enum("Advance", "ReimbursementAccrued") | optional | - |
-| `advance_amount` | string | optional, nullable | Advance amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `actual_amount` | string | optional, nullable | Actual amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `variance_amount` | string | optional, nullable | Settlement variance amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `payment_reference_no` | string | optional, nullable | - |
-| `assigned_finance_actor_user_id` | string<uuid> | optional, nullable | Assigned finance-stage actor UUID |
-| `manager_verifier_id` | string<uuid> | optional, nullable | Assigned manager verifier UUID |
-| `manager_verifier_label` | string | optional, nullable | - |
-| `finance_approver_id` | string<uuid> | optional, nullable | Assigned finance approver UUID |
-| `finance_approver_label` | string | optional, nullable | - |
-| `assigned_finance_actor_label` | string | optional, nullable | - |
-| `primary_finance_manager_user_id` | string<uuid> | optional, nullable | Configured primary finance manager UUID |
-| `primary_finance_manager_label` | string | optional, nullable | - |
-| `finance_approval_backup_user_id` | string<uuid> | optional, nullable | Configured fallback finance approver UUID |
-| `finance_backup_applied` | boolean | optional | True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup. |
-| `governance_warning_codes` | array of string | optional | Route/governance warning markers preserved from the ticket route snapshot. |
-| `status` | string | required | - |
-| `version` | integer | required | minimum 1 |
-| `created_at` | string<date-time> | optional | Creation timestamp |
-
-Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
+| `status` | string | required | Status after the command commits. |
+| `version` | integer | required | Committed optimistic-concurrency version.; minimum 1 |
 
 **Frontend behavior notes**
 
@@ -5453,6 +5425,7 @@ Only the first 30 top-level fields are listed here; use `openapi.json` for the f
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9._:-]+$ |
 
 **Request body**
 
@@ -5485,37 +5458,8 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `id` | string<uuid> | required | Expense ticket UUID |
-| `ticket_no` | string | required | - |
-| `requester_user_id` | string<uuid> | required | Requester user UUID |
-| `requester_role_snapshot` | string | optional | - |
-| `department_id` | string<uuid> | optional | Department UUID |
-| `expense_type` | string enum("Project", "SalesPreSales") | optional | - |
-| `expense_sub_type` | string enum("Project Travel", "Material Consumables", "Lodging & Boarding", "Client Meeting", "Demo / Presentation", "Marketing Event", "Sales Travel", "Misc Sales Expense") | optional | - |
-| `project_code` | string | optional, nullable | - |
-| `client_name` | string | optional, nullable | - |
-| `task_title` | string | optional | - |
-| `estimated_amount` | string | optional | Estimated amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `payment_type` | string enum("Advance", "ReimbursementAccrued") | optional | - |
-| `advance_amount` | string | optional, nullable | Advance amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `actual_amount` | string | optional, nullable | Actual amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `variance_amount` | string | optional, nullable | Settlement variance amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `payment_reference_no` | string | optional, nullable | - |
-| `assigned_finance_actor_user_id` | string<uuid> | optional, nullable | Assigned finance-stage actor UUID |
-| `manager_verifier_id` | string<uuid> | optional, nullable | Assigned manager verifier UUID |
-| `manager_verifier_label` | string | optional, nullable | - |
-| `finance_approver_id` | string<uuid> | optional, nullable | Assigned finance approver UUID |
-| `finance_approver_label` | string | optional, nullable | - |
-| `assigned_finance_actor_label` | string | optional, nullable | - |
-| `primary_finance_manager_user_id` | string<uuid> | optional, nullable | Configured primary finance manager UUID |
-| `primary_finance_manager_label` | string | optional, nullable | - |
-| `finance_approval_backup_user_id` | string<uuid> | optional, nullable | Configured fallback finance approver UUID |
-| `finance_backup_applied` | boolean | optional | True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup. |
-| `governance_warning_codes` | array of string | optional | Route/governance warning markers preserved from the ticket route snapshot. |
-| `status` | string | required | - |
-| `version` | integer | required | minimum 1 |
-| `created_at` | string<date-time> | optional | Creation timestamp |
-
-Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
+| `status` | string | required | Status after the command commits. |
+| `version` | integer | required | Committed optimistic-concurrency version.; minimum 1 |
 
 **Frontend behavior notes**
 
@@ -5621,6 +5565,7 @@ Only the first 30 top-level fields are listed here; use `openapi.json` for the f
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9._:-]+$ |
 
 **Request body**
 
@@ -5651,37 +5596,8 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `id` | string<uuid> | required | Expense ticket UUID |
-| `ticket_no` | string | required | - |
-| `requester_user_id` | string<uuid> | required | Requester user UUID |
-| `requester_role_snapshot` | string | optional | - |
-| `department_id` | string<uuid> | optional | Department UUID |
-| `expense_type` | string enum("Project", "SalesPreSales") | optional | - |
-| `expense_sub_type` | string enum("Project Travel", "Material Consumables", "Lodging & Boarding", "Client Meeting", "Demo / Presentation", "Marketing Event", "Sales Travel", "Misc Sales Expense") | optional | - |
-| `project_code` | string | optional, nullable | - |
-| `client_name` | string | optional, nullable | - |
-| `task_title` | string | optional | - |
-| `estimated_amount` | string | optional | Estimated amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `payment_type` | string enum("Advance", "ReimbursementAccrued") | optional | - |
-| `advance_amount` | string | optional, nullable | Advance amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `actual_amount` | string | optional, nullable | Actual amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `variance_amount` | string | optional, nullable | Settlement variance amount; pattern ^-?\d{1,12}(\.\d{1,2})?$ |
-| `payment_reference_no` | string | optional, nullable | - |
-| `assigned_finance_actor_user_id` | string<uuid> | optional, nullable | Assigned finance-stage actor UUID |
-| `manager_verifier_id` | string<uuid> | optional, nullable | Assigned manager verifier UUID |
-| `manager_verifier_label` | string | optional, nullable | - |
-| `finance_approver_id` | string<uuid> | optional, nullable | Assigned finance approver UUID |
-| `finance_approver_label` | string | optional, nullable | - |
-| `assigned_finance_actor_label` | string | optional, nullable | - |
-| `primary_finance_manager_user_id` | string<uuid> | optional, nullable | Configured primary finance manager UUID |
-| `primary_finance_manager_label` | string | optional, nullable | - |
-| `finance_approval_backup_user_id` | string<uuid> | optional, nullable | Configured fallback finance approver UUID |
-| `finance_backup_applied` | boolean | optional | True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup. |
-| `governance_warning_codes` | array of string | optional | Route/governance warning markers preserved from the ticket route snapshot. |
-| `status` | string | required | - |
-| `version` | integer | required | minimum 1 |
-| `created_at` | string<date-time> | optional | Creation timestamp |
-
-Only the first 30 top-level fields are listed here; use `openapi.json` for the full schema.
+| `status` | string | required | Status after the command commits. |
+| `version` | integer | required | Committed optimistic-concurrency version.; minimum 1 |
 
 **Frontend behavior notes**
 

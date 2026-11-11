@@ -25,6 +25,9 @@ const documentParamSchema = z.object({ id: z.uuid(), documentId: z.uuid() });
 const mappingIdParamSchema = z.object({ id: z.uuid() });
 const versionQuerySchema = z.object({ expected_version: z.coerce.number().int().min(1).optional() });
 const expenseCommandKeySchema = z.string().min(8).max(200).regex(/^[A-Za-z0-9._:-]+$/u);
+function expenseCommandResult(ticket: { id: string; status: string; version: number }) {
+  return { id: ticket.id, status: ticket.status, version: ticket.version };
+}
 function commandIdentity(request: { headers: Record<string, unknown> }, ticketId: string, action: string, body: unknown) {
   const idempotencyKey = expenseCommandKeySchema.parse(request.headers["idempotency-key"]);
   const requestHash = createHash("sha256")
@@ -280,9 +283,9 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = financeVerifySchema.parse(request.body);
+    const action = "finance.approve" as const;
+    const identity = commandIdentity(request, params.id, action, body);
     if (fastify.store.kind === "postgres") {
-      const action = "finance.approve" as const;
-      const identity = commandIdentity(request, params.id, action, body);
       const persistence = fastify.store.persistence;
       if (!persistence?.expenseFinanceCommand) throw conflict("Expense Finance command is unavailable");
       return persistence.expenseFinanceCommand({ userId: request.actor.id, ticketId: params.id, action,
@@ -291,7 +294,11 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
           .financeApprove(actor, params.id, body.decision, body.remarks, body.expected_version),
       });
     }
-    return new ExpenseService(fastify.store).financeApprove(request.actor, params.id, body.decision, body.remarks, body.expected_version);
+    return expenseCommandResult(
+      new ExpenseService(fastify.store).financeApprove(
+        request.actor, params.id, body.decision, body.remarks, body.expected_version,
+      ),
+    );
   });
 
   fastify.post("/expenses/:id/finance/payment", async (request) => {
@@ -300,9 +307,9 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = paymentReleaseSchema.parse(request.body);
+    const action = "finance.payment" as const;
+    const identity = commandIdentity(request, params.id, action, body);
     if (fastify.store.kind === "postgres") {
-      const action = "finance.payment" as const;
-      const identity = commandIdentity(request, params.id, action, body);
       const persistence = fastify.store.persistence;
       if (!persistence?.expenseFinanceCommand) throw conflict("Expense Finance command is unavailable");
       return persistence.expenseFinanceCommand({ userId: request.actor.id, ticketId: params.id, action,
@@ -311,13 +318,13 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
           .releasePayment(actor, params.id, body),
       });
     }
-    return new ExpenseService(fastify.store).releasePayment(request.actor, params.id, {
+    return expenseCommandResult(new ExpenseService(fastify.store).releasePayment(request.actor, params.id, {
       payment_date: body.payment_date,
       amount: body.amount,
       payment_mode: body.payment_mode,
       reference_no: body.reference_no,
       expected_version: body.expected_version
-    });
+    }));
   });
 
   fastify.post("/expenses/:id/bills", async (request) => {
@@ -343,9 +350,9 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = settlementSchema.parse(request.body);
+    const action = "settlement" as const;
+    const identity = commandIdentity(request, params.id, action, body);
     if (fastify.store.kind === "postgres") {
-      const action = "settlement" as const;
-      const identity = commandIdentity(request, params.id, action, body);
       const persistence = fastify.store.persistence;
       if (!persistence?.expenseFinanceCommand) throw conflict("Expense Finance command is unavailable");
       return persistence.expenseFinanceCommand({ userId: request.actor.id, ticketId: params.id, action,
@@ -354,7 +361,11 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
           .settle(actor, params.id, body.actual_amount, body.remarks, body.expected_version),
       });
     }
-    return new ExpenseService(fastify.store).settle(request.actor, params.id, body.actual_amount, body.remarks, body.expected_version);
+    return expenseCommandResult(
+      new ExpenseService(fastify.store).settle(
+        request.actor, params.id, body.actual_amount, body.remarks, body.expected_version,
+      ),
+    );
   });
 
   fastify.get("/expenses/:id/timeline", async (request) => {

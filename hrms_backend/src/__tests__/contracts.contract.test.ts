@@ -1845,6 +1845,11 @@ describe("API contracts", () => {
 
   it("documents finance bodies, grouping, and OCC 409 responses", async () => {
     const spec = await openApiSpec(app);
+    const durableFinanceCommands = [
+      "POST /api/v1/expenses/{id}/finance/approve",
+      "POST /api/v1/expenses/{id}/finance/payment",
+      "POST /api/v1/expenses/{id}/settlement",
+    ];
 
     for (const key of bodyRequiredOperations) {
       expect(hasJsonBody(operation(spec, key)), `${key} request body`).toBe(
@@ -1857,6 +1862,32 @@ describe("API contracts", () => {
         operation(spec, key).responses?.["409"],
         `${key} OCC response`,
       ).toBeDefined();
+    }
+
+    for (const key of durableFinanceCommands) {
+      const command = operation(spec, key) as Record<string, any>;
+      expect(command.parameters).toContainEqual(expect.objectContaining({
+        name: "idempotency-key",
+        in: "header",
+        required: true,
+        schema: expect.objectContaining({
+          type: "string",
+          minLength: 8,
+          maxLength: 200,
+          pattern: "^[A-Za-z0-9._:-]+$",
+        }),
+      }));
+      expect(command.responses?.["200"]?.content?.["application/json"]?.schema)
+        .toMatchObject({
+          type: "object",
+          additionalProperties: false,
+          required: ["id", "status", "version"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            status: { type: "string" },
+            version: { type: "integer", minimum: 1 },
+          },
+        });
     }
 
     const financeKeys = operations(spec)

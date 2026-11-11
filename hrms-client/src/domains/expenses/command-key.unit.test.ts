@@ -1,5 +1,5 @@
 import { webcrypto } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setApiAccessToken } from "@/shared/api";
 import { withExpenseCommandKey } from "./command-key";
 
@@ -64,5 +64,56 @@ describe("expense Finance intent keys", () => {
       withExpenseCommandKey("ticket-a", "settlement", { actual_amount: "10.00" }, pending),
     ).rejects.toThrow();
     expect(new Set(seen).size).toBe(3);
+  });
+
+  it("shares one pending key across concurrent identical submissions", async () => {
+    const seen: string[] = [];
+    const release: Array<() => void> = [];
+    const send = (key: string) =>
+      new Promise<string>((resolve) => {
+        seen.push(key);
+        release.push(() => resolve(key));
+      });
+    const input = { expected_version: 2, decision: "verify" };
+    const first = withExpenseCommandKey("ticket-a", "finance.approve", input, send);
+    const second = withExpenseCommandKey("ticket-a", "finance.approve", input, send);
+    await vi.waitFor(() => expect(seen).toHaveLength(2));
+    expect(seen[1]).toBe(seen[0]);
+    release.forEach((resolve) => resolve());
+    await expect(Promise.all([first, second])).resolves.toEqual([seen[0], seen[0]]);
+  });
+
+  it("fails closed for missing identity, crypto, or writable session storage", async () => {
+    setApiAccessToken(null);
+    await expect(
+      withExpenseCommandKey("ticket-a", "settlement", {}, async () => "sent"),
+    ).rejects.toThrow("Sign in again");
+
+    setApiAccessToken(tokenFor("actor-a"));
+    Object.defineProperty(globalThis, "crypto", { configurable: true, value: undefined });
+    await expect(
+      withExpenseCommandKey("ticket-a", "settlement", {}, async () => "sent"),
+    ).rejects.toThrow("Secure retry tracking is unavailable");
+
+    Object.defineProperty(globalThis, "crypto", { configurable: true, value: webcrypto });
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage blocked");
+    });
+    await expect(
+      withExpenseCommandKey("ticket-a", "settlement", {}, async () => "sent"),
+    ).rejects.toThrow("Secure retry tracking is unavailable");
+    getItem.mockRestore();
+  });
+
+  it("does not turn a confirmed server success into failure when cleanup is blocked", async () => {
+    const removeItem = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new Error("storage cleanup blocked");
+    });
+    await expect(
+      withExpenseCommandKey("ticket-a", "finance.payment", { expected_version: 2 }, async () => ({
+        ok: true,
+      })),
+    ).resolves.toEqual({ ok: true });
+    removeItem.mockRestore();
   });
 });

@@ -76,7 +76,9 @@ export const authPlugin = fp(async (fastify) => {
     if (!session || session.revoked_at) {
       throw unauthorized("Session has been revoked");
     }
-    const actor = fastify.store.users.find((user) => user.id === claims.sub && !user.deleted_at);
+    const actor = fastify.store.persistence?.authUser
+      ? await fastify.store.persistence.authUser(claims.sub)
+      : fastify.store.users.find((user) => user.id === claims.sub && !user.deleted_at);
     if (!actor) {
       throw unauthorized("User no longer exists");
     }

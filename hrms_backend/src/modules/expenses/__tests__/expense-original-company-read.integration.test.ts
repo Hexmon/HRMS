@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
+import { createJwt } from "#auth";
 import { authHeader, loginAs } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
 
@@ -35,7 +36,6 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     const companyB = randomUUID();
     const ticketId = randomUUID();
     const pendingTicketId = randomUUID();
-    const quarantinedId = randomUUID();
     const receiptId = randomUUID();
     const companyBTicketId = randomUUID();
     const companyBDepartmentId = randomUUID();
@@ -97,24 +97,6 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
          VALUES ($1, $2, 'receipt', 'pending', $3)`,
         [ticketId, receiptId, employee.user.id],
       );
-      // Simulate a pre-migration legacy row that 0068 quarantined. The local
-      // fixture operator bypasses only the owner trigger inside this setup
-      // transaction; no application endpoint can perform this repair.
-      await client.query("ALTER TABLE expenses.expense_tickets DISABLE TRIGGER expense_ticket_original_company_guard_trg");
-      await client.query(
-        `INSERT INTO expenses.expense_tickets
-          (id, ticket_no, requester_user_id, requester_role_snapshot, department_id,
-           expense_type, expense_sub_type, task_title, task_description, start_date,
-           end_date, estimated_amount, payment_type, manager_verifier_id,
-           finance_approver_id, status, context_payload, owner_resolution_status, owner_resolution_reason)
-         VALUES ($1, $2, $3, 'Employee', $4, 'Project', 'Project Travel',
-                 'Unverified legacy ticket', 'Fixture', CURRENT_DATE, CURRENT_DATE,
-                 25, 'Advance', $5, $6, 'Manager Verified',
-                 jsonb_build_object('company_id', $7::text), 'quarantined', 'legacy_owner_unverified')`,
-        [quarantinedId, `EXP-READ-${quarantinedId}`, employee.user.id, employee.user.department_id,
-          manager.user.id, finance.user.id, companyA],
-      );
-      await client.query("ALTER TABLE expenses.expense_tickets ENABLE TRIGGER expense_ticket_original_company_guard_trg");
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -122,13 +104,10 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     } finally {
       client.release();
     }
-
     const financeBefore = await app.inject({ method: "GET", url: `/api/v1/expenses/${ticketId}/finance-detail`, headers: authHeader(finance.token) });
     expect(financeBefore.statusCode).toBe(200);
     expect(financeBefore.json().ticket.company_id).toBe(companyA);
     expect(financeBefore.json().line_items).toHaveLength(1);
-    expect((await app.inject({ method: "GET", url: `/api/v1/expenses/${quarantinedId}`, headers: authHeader(employee.token) })).statusCode).toBe(404);
-    expect((await app.inject({ method: "GET", url: `/api/v1/expenses/${quarantinedId}/finance-detail`, headers: authHeader(finance.token) })).statusCode).toBe(404);
     const managerQueue = await app.inject({ method: "GET", url: "/api/v1/expenses/queue/manager?page=1&page_size=10", headers: authHeader(manager.token) });
     expect(managerQueue.statusCode).toBe(200);
     expect(managerQueue.json().total).toBe(1);
@@ -198,6 +177,180 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       const response = await app.inject({ method, url: path, headers: authHeader(finance.token) });
       expect(response.statusCode).toBe(409);
     }
+    expect((await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${receiptId}`,
+      headers: authHeader(auditor.token),
+    })).statusCode).toBe(409);
+    expect((await app.inject({
+      method: "POST",
+      url: `/api/v1/documents/${receiptId}/download-url`,
+      headers: authHeader(auditor.token),
+    })).statusCode).toBe(404);
+    const oversightState = async () => (await pool.query(
+      `SELECT t.version,
+        (SELECT count(*) FROM expenses.expense_approvals WHERE ticket_id=t.id) AS approvals,
+        (SELECT count(*) FROM expenses.expense_payments WHERE ticket_id=t.id) AS payments,
+        (SELECT count(*) FROM expenses.expense_audit_logs WHERE ticket_id=t.id) AS audits,
+        (SELECT count(*) FROM expenses.expense_command_results WHERE ticket_id=t.id) AS command_results,
+        (SELECT count(*) FROM platform.outbox_events WHERE aggregate_id=t.id) AS outbox,
+        (SELECT count(*) FROM platform.notifications WHERE payload->>'ticket_id'=t.id::text) AS notifications,
+        (SELECT count(*) FROM documents.doc_access_logs WHERE document_id=$2) AS document_accesses
+       FROM expenses.expense_tickets t WHERE t.id=$1`,
+      [ticketId, receiptId],
+    )).rows[0];
+    const oversightBefore = await oversightState();
+    const adminAuditorUnionRoleId = randomUUID();
+    await pool.query(
+      `INSERT INTO core.user_roles
+        (id,user_id,role_key,status,effective_from,effective_to)
+       VALUES ($1,$2,'Auditor','active',CURRENT_DATE,NULL)`,
+      [adminAuditorUnionRoleId, admin.user.id],
+    );
+    await pool.query(
+      "UPDATE platform.user_session_preferences SET active_role='Auditor' WHERE user_id=$1",
+      [admin.user.id],
+    );
+    try {
+      expect((await app.inject({
+        method: "GET", url: `/api/v1/expenses/${ticketId}`, headers: authHeader(admin.token),
+      })).statusCode).toBe(200);
+      expect((await app.inject({
+        method: "POST", url: `/api/v1/documents/${receiptId}/download-url`, headers: authHeader(admin.token),
+      })).statusCode).toBe(409);
+
+      await pool.query(
+        "UPDATE core.user_roles SET status='inactive' WHERE user_id=$1 AND role_key='Admin'",
+        [admin.user.id],
+      );
+      expect((await app.inject({
+        method: "GET", url: `/api/v1/expenses/${ticketId}`, headers: authHeader(admin.token),
+      })).statusCode).toBe(200);
+      expect((await app.inject({
+        method: "GET", url: `/api/v1/documents/${receiptId}`, headers: authHeader(admin.token),
+      })).statusCode).toBe(409);
+      expect((await app.inject({
+        method: "POST", url: `/api/v1/documents/${receiptId}/download-url`, headers: authHeader(admin.token),
+      })).statusCode).toBe(404);
+
+      await pool.query(
+        "UPDATE core.user_roles SET status='active' WHERE user_id=$1 AND role_key='Admin'",
+        [admin.user.id],
+      );
+      expect((await app.inject({
+        method: "POST", url: `/api/v1/documents/${receiptId}/download-url`, headers: authHeader(admin.token),
+      })).statusCode).toBe(409);
+
+      await pool.query(
+        "UPDATE core.user_roles SET status='inactive' WHERE user_id=$1 AND role_key IN ('Admin','Auditor')",
+        [admin.user.id],
+      );
+      expect((await app.inject({
+        method: "GET", url: `/api/v1/expenses/${ticketId}`, headers: authHeader(admin.token),
+      })).statusCode).toBe(403);
+      expect((await app.inject({
+        method: "GET", url: `/api/v1/documents/${receiptId}`, headers: authHeader(admin.token),
+      })).statusCode).toBe(403);
+
+      await pool.query(
+        "UPDATE core.user_roles SET status='active' WHERE id=$1",
+        [adminAuditorUnionRoleId],
+      );
+      expect((await app.inject({
+        method: "GET", url: `/api/v1/expenses/${ticketId}`, headers: authHeader(admin.token),
+      })).statusCode).toBe(200);
+      expect((await app.inject({
+        method: "GET", url: `/api/v1/documents/${receiptId}`, headers: authHeader(admin.token),
+      })).statusCode).toBe(409);
+    } finally {
+      await pool.query(
+        "UPDATE core.user_roles SET status='active' WHERE user_id=$1 AND role_key='Admin'",
+        [admin.user.id],
+      );
+      await pool.query("DELETE FROM core.user_roles WHERE id=$1", [adminAuditorUnionRoleId]);
+      await pool.query(
+        "UPDATE platform.user_session_preferences SET active_role='Admin' WHERE user_id=$1",
+        [admin.user.id],
+      );
+    }
+    expect(await oversightState()).toEqual(oversightBefore);
+
+    const temporalTicketId = randomUUID();
+    const temporalAdminRoleId = randomUUID();
+    const temporalFinanceRoleId = randomUUID();
+    const temporalFixture = await pool.connect();
+    try {
+      await temporalFixture.query("BEGIN");
+      await temporalFixture.query("SELECT set_config('app.expense_command_v1', 'on', true)");
+      await temporalFixture.query(
+        `INSERT INTO expenses.expense_tickets
+          (id,ticket_no,requester_user_id,requester_role_snapshot,department_id,
+           expense_type,expense_sub_type,task_title,task_description,start_date,end_date,
+           estimated_amount,payment_type,manager_verifier_id,finance_approver_id,status,
+           context_payload,company_id,owner_resolution_status)
+         VALUES ($1,$2,$3,'Employee',$4,'Project','Project Travel','Temporal role fixture',
+           'Fixture',CURRENT_DATE,CURRENT_DATE,10,'Advance',$5,$6,'Manager Verified',
+           jsonb_build_object('company_id',$7::text),$7::uuid,'typed_creation')`,
+        [temporalTicketId, `EXP-TEMP-${temporalTicketId}`, manager.user.id,
+          manager.user.department_id, manager.user.id, unrelated.user.id, companyA],
+      );
+      await temporalFixture.query("COMMIT");
+    } catch (error) {
+      await temporalFixture.query("ROLLBACK");
+      throw error;
+    } finally {
+      temporalFixture.release();
+    }
+    await pool.query(
+      `INSERT INTO core.user_roles
+        (id,user_id,role_key,status,effective_from,effective_to)
+       VALUES ($1,$3,'Admin','active',CURRENT_DATE + 1,NULL),
+              ($2,$3,'Finance Manager','active',CURRENT_DATE - 10,CURRENT_DATE - 1)`,
+      [temporalAdminRoleId, temporalFinanceRoleId, unrelated.user.id],
+    );
+    try {
+      expect((await app.inject({
+        method: "GET", url: `/api/v1/expenses/${temporalTicketId}/finance-detail`,
+        headers: authHeader(unrelated.token),
+      })).statusCode).toBe(403);
+      expect((await app.inject({
+        method: "GET", url: "/api/v1/reports/audit?page=1&page_size=10",
+        headers: authHeader(unrelated.token),
+      })).statusCode).toBe(403);
+
+      await pool.query(
+        `UPDATE core.user_roles SET effective_from=CURRENT_DATE, effective_to=NULL
+         WHERE id=ANY($1::uuid[])`,
+        [[temporalAdminRoleId, temporalFinanceRoleId]],
+      );
+      expect((await app.inject({
+        method: "GET", url: `/api/v1/expenses/${temporalTicketId}/finance-detail`,
+        headers: authHeader(unrelated.token),
+      })).statusCode).toBe(200);
+      expect((await app.inject({
+        method: "GET", url: "/api/v1/reports/audit?page=1&page_size=10",
+        headers: authHeader(unrelated.token),
+      })).statusCode).toBe(200);
+
+      await pool.query(
+        `UPDATE core.user_roles SET effective_from=CURRENT_DATE - 10, effective_to=CURRENT_DATE - 1
+         WHERE id=ANY($1::uuid[])`,
+        [[temporalAdminRoleId, temporalFinanceRoleId]],
+      );
+      expect((await app.inject({
+        method: "GET", url: `/api/v1/expenses/${temporalTicketId}/finance-detail`,
+        headers: authHeader(unrelated.token),
+      })).statusCode).toBe(403);
+      expect((await app.inject({
+        method: "GET", url: "/api/v1/reports/audit?page=1&page_size=10",
+        headers: authHeader(unrelated.token),
+      })).statusCode).toBe(403);
+    } finally {
+      await pool.query(
+        "DELETE FROM core.user_roles WHERE id=ANY($1::uuid[])",
+        [[temporalAdminRoleId, temporalFinanceRoleId]],
+      );
+    }
     expect((await app.inject({ method: "GET", url: "/api/v1/documents", headers: authHeader(finance.token) })).statusCode).toBe(409);
     expect((await app.inject({ method: "POST", url: `/api/v1/expenses/${ticketId}/documents`, headers: authHeader(employee.token), payload: {} })).statusCode).toBe(409);
     const putSpy = app.store.objectStorage ? vi.spyOn(app.store.objectStorage, "putObject") : null;
@@ -213,6 +366,56 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     expect(putSpy).not.toHaveBeenCalled();
     putSpy?.mockRestore();
     expect(Number((await pool.query("SELECT count(*) FROM expenses.expense_documents WHERE document_id=$1", [receiptId])).rows[0]?.count)).toBe(1);
+
+    const financeBoundaryBefore = await pool.query(
+      `SELECT t.version,
+        (SELECT count(*) FROM expenses.expense_approvals WHERE ticket_id=t.id) AS approvals,
+        (SELECT count(*) FROM expenses.expense_payments WHERE ticket_id=t.id) AS payments,
+        (SELECT count(*) FROM expenses.expense_audit_logs WHERE ticket_id=t.id) AS audits,
+        (SELECT count(*) FROM expenses.expense_command_results WHERE ticket_id=t.id) AS command_results,
+        (SELECT count(*) FROM platform.outbox_events WHERE aggregate_id=t.id) AS outbox,
+        (SELECT count(*) FROM platform.notifications WHERE payload->>'ticket_id'=t.id::text) AS notifications
+       FROM expenses.expense_tickets t WHERE t.id=$1`,
+      [ticketId],
+    );
+    for (const [label, deniedActor] of [["admin", admin], ["auditor", auditor]] as const) {
+      const denied = await app.inject({
+        method: "POST",
+        url: `/api/v1/expenses/${ticketId}/finance/approve`,
+        headers: { ...authHeader(deniedActor.token), "idempotency-key": `${label}-${ticketId}` },
+        payload: { decision: "verify", expected_version: 1 },
+      });
+      expect(denied.statusCode).toBe(403);
+    }
+    const adminAuditorRoleId = randomUUID();
+    await pool.query(
+      `INSERT INTO core.user_roles (id,user_id,role_key,status,effective_from)
+       VALUES ($1,$2,'Auditor','active',CURRENT_DATE)`,
+      [adminAuditorRoleId, admin.user.id],
+    );
+    try {
+      const multiRoleDenied = await app.inject({
+        method: "POST",
+        url: `/api/v1/expenses/${ticketId}/finance/approve`,
+        headers: { ...authHeader(admin.token), "idempotency-key": `admin-auditor-${ticketId}` },
+        payload: { decision: "verify", expected_version: 1 },
+      });
+      expect(multiRoleDenied.statusCode).toBe(403);
+    } finally {
+      await pool.query("DELETE FROM core.user_roles WHERE id=$1", [adminAuditorRoleId]);
+    }
+    const financeBoundaryAfter = await pool.query(
+      `SELECT t.version,
+        (SELECT count(*) FROM expenses.expense_approvals WHERE ticket_id=t.id) AS approvals,
+        (SELECT count(*) FROM expenses.expense_payments WHERE ticket_id=t.id) AS payments,
+        (SELECT count(*) FROM expenses.expense_audit_logs WHERE ticket_id=t.id) AS audits,
+        (SELECT count(*) FROM expenses.expense_command_results WHERE ticket_id=t.id) AS command_results,
+        (SELECT count(*) FROM platform.outbox_events WHERE aggregate_id=t.id) AS outbox,
+        (SELECT count(*) FROM platform.notifications WHERE payload->>'ticket_id'=t.id::text) AS notifications
+       FROM expenses.expense_tickets t WHERE t.id=$1`,
+      [ticketId],
+    );
+    expect(financeBoundaryAfter.rows[0]).toEqual(financeBoundaryBefore.rows[0]);
 
     await pool.query("UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1", [employee.user.id, companyB]);
     await pool.query("UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1", [admin.user.id, companyB]);
@@ -282,6 +485,30 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     expect(financeAfterTransfer.body).not.toContain(employee.user.email);
     const foreignAdmin = await app.inject({ method: "GET", url: `/api/v1/expenses/${ticketId}`, headers: authHeader(admin.token) });
     expect(foreignAdmin.statusCode).toBe(404);
+    for (const [method, suffix] of [
+      ["GET", ""],
+      ["POST", "/download-url"],
+      ["GET", "/content"],
+      ["DELETE", ""],
+      ["POST", "/verify"],
+      ["GET", "/access-log"],
+    ] as const) {
+      const requestId = randomUUID();
+      const headers = { ...authHeader(admin.token), "x-request-id": requestId };
+      const foreign = await app.inject({
+        method,
+        url: `/api/v1/documents/${receiptId}${suffix}`,
+        headers,
+      });
+      const missing = await app.inject({
+        method,
+        url: `/api/v1/documents/${randomUUID()}${suffix}`,
+        headers,
+      });
+      expect(foreign.statusCode, `${method} ${suffix || "/metadata"}`).toBe(404);
+      expect(missing.statusCode, `${method} ${suffix || "/metadata"}`).toBe(foreign.statusCode);
+      expect(missing.body, `${method} ${suffix || "/metadata"}`).toBe(foreign.body);
+    }
     expect((await app.inject({ method: "GET", url: `/api/v1/expenses/${ticketId}`, headers: authHeader(auditor.token) })).statusCode).toBe(404);
     expect((await app.inject({ method: "GET", url: `/api/v1/expenses/${ticketId}/finance-detail`, headers: authHeader(foreignFinance.token) })).statusCode).toBe(404);
     expect((await app.inject({ method: "GET", url: `/api/v1/expenses/${ticketId}/timeline`, headers: authHeader(auditor.token) })).statusCode).toBe(404);
@@ -298,6 +525,106 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     try {
       const secondRead = await second.inject({ method: "GET", url: `/api/v1/expenses/${ticketId}`, headers: authHeader(employee.token) });
       expect(secondRead.statusCode).toBe(200);
+      const postStartUserId = randomUUID();
+      await pool.query(
+        `INSERT INTO core.users
+          (id,employee_code,email,full_name,department_id,designation_id,manager_user_id,
+           hierarchy_path,employment_status,email_verified_at,email_verification_status)
+         SELECT $1, $2, $3, 'Post-start employee', department_id, designation_id,
+                manager_user_id, hierarchy_path || text2ltree($4), 'active', now(), 'verified'
+         FROM core.users WHERE id = $5`,
+        [postStartUserId, `POST-${postStartUserId}`, `post-${postStartUserId}@example.test`,
+          `post${postStartUserId.replaceAll("-", "")}`, employee.user.id],
+      );
+      await pool.query(
+        `INSERT INTO core.user_roles (user_id,role_key,status,effective_from)
+         VALUES ($1,'Employee','active',CURRENT_DATE),($1,'Admin','active',CURRENT_DATE)`,
+        [postStartUserId],
+      );
+      await pool.query(
+        `INSERT INTO platform.user_session_preferences (user_id,active_role,company_id)
+         VALUES ($1,'Admin',$2)`,
+        [postStartUserId, companyB],
+      );
+      expect(second.store.users.some((user) => user.id === postStartUserId)).toBe(false);
+      const postStartContext = await second.store.persistence?.expenseReadContext?.(
+        postStartUserId, companyBTicketId,
+      );
+      expect(postStartContext?.actor).toMatchObject({
+        id: postStartUserId,
+        full_name: "Post-start employee",
+        roles: expect.arrayContaining(["Admin", "Employee"]),
+        email_verification_status: "verified",
+      });
+      if (!postStartContext) throw new Error("Post-start SQL actor context is required");
+      const postStartJwt = createJwt(postStartContext.actor, second.config.JWT_SECRET);
+      await second.store.sessionStore.create({
+        jti: postStartJwt.jti,
+        user_id: postStartUserId,
+        expires_at: postStartJwt.expiresAt,
+        revoked_at: null,
+      });
+      const postStartHttp = await second.inject({
+        method: "GET",
+        url: "/api/v1/expenses/dashboard-summary",
+        headers: authHeader(postStartJwt.token),
+      });
+      expect(postStartHttp.statusCode, postStartHttp.body).toBe(200);
+      expect(postStartHttp.json().queue_counts.my_tickets).toBe(0);
+      const postStartAuditReport = await second.inject({
+        method: "GET",
+        url: "/api/v1/reports/audit?page=1&page_size=10",
+        headers: authHeader(postStartJwt.token),
+      });
+      expect(postStartAuditReport.statusCode, postStartAuditReport.body).toBe(200);
+      await pool.query(
+        "UPDATE core.users SET employment_status='inactive' WHERE id=$1",
+        [postStartUserId],
+      );
+      expect((await second.inject({
+        method: "GET",
+        url: "/api/v1/expenses/dashboard-summary",
+        headers: authHeader(postStartJwt.token),
+      })).statusCode).toBe(401);
+      await pool.query(
+        "UPDATE core.users SET employment_status='active' WHERE id=$1",
+        [postStartUserId],
+      );
+      expect((await second.inject({
+        method: "GET",
+        url: "/api/v1/expenses/dashboard-summary",
+        headers: authHeader(postStartJwt.token),
+      })).statusCode).toBe(200);
+
+      const financeAdminRoleId = randomUUID();
+      await pool.query(
+        `INSERT INTO core.user_roles (id,user_id,role_key,status,effective_from)
+         VALUES ($1,$2,'Admin','active',CURRENT_DATE)`,
+        [financeAdminRoleId, finance.user.id],
+      );
+      await pool.query(
+        "UPDATE core.user_roles SET status='inactive' WHERE user_id=$1 AND role_key='Finance Manager'",
+        [finance.user.id],
+      );
+      try {
+        const secondRevoked = await second.inject({
+          method: "GET",
+          url: `/api/v1/expenses/${ticketId}/finance-detail`,
+          headers: authHeader(finance.token),
+        });
+        expect(secondRevoked.statusCode).toBe(403);
+      } finally {
+        await pool.query(
+          "UPDATE core.user_roles SET status='active' WHERE user_id=$1 AND role_key='Finance Manager'",
+          [finance.user.id],
+        );
+        await pool.query("DELETE FROM core.user_roles WHERE id=$1", [financeAdminRoleId]);
+      }
+      expect((await second.inject({
+        method: "GET",
+        url: `/api/v1/expenses/${ticketId}/finance-detail`,
+        headers: authHeader(finance.token),
+      })).statusCode).toBe(200);
     } finally {
       await second.close();
     }
@@ -315,6 +642,70 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     await pool.query("UPDATE core.roles SET status='active' WHERE role_key='Finance Manager'");
     const financeHeaders = { ...authHeader(finance.token), "idempotency-key": `expense-approve-${ticketId}` };
     const approvePayload = { decision: "verify", expected_version: 1 };
+    const historyBeforeCommand = await app.inject({
+      method: "GET",
+      url: `/api/v1/reports/expenses/finance-history?page=1&page_size=50&requester_user_id=${employee.user.id}`,
+      headers: authHeader(finance.token),
+    });
+    expect(historyBeforeCommand.statusCode, historyBeforeCommand.body).toBe(200);
+    const notificationsBeforeCommand = await app.inject({
+      method: "GET",
+      url: "/api/v1/notifications?page=1&page_size=50&type=expense.finance_decision",
+      headers: authHeader(employee.token),
+    });
+    expect(notificationsBeforeCommand.statusCode, notificationsBeforeCommand.body).toBe(200);
+    const unreadNotificationsBeforeCommand = await app.inject({
+      method: "GET",
+      url: "/api/v1/notifications?page=1&page_size=50&type=expense.finance_decision&unread_only=true",
+      headers: authHeader(employee.token),
+    });
+    expect(unreadNotificationsBeforeCommand.statusCode, unreadNotificationsBeforeCommand.body).toBe(200);
+    const malformedCommandState = async () => (await pool.query(
+      `SELECT t.status,t.version,
+        (SELECT count(*) FROM expenses.expense_approvals WHERE ticket_id=t.id) AS approvals,
+        (SELECT count(*) FROM expenses.expense_payments WHERE ticket_id=t.id) AS payments,
+        (SELECT count(*) FROM expenses.expense_audit_logs WHERE ticket_id=t.id) AS audits,
+        (SELECT count(*) FROM expenses.expense_command_results WHERE ticket_id=t.id) AS command_results,
+        (SELECT count(*) FROM platform.outbox_events WHERE aggregate_id=t.id) AS outbox,
+        (SELECT count(*) FROM platform.notifications WHERE payload->>'ticket_id'=t.id::text) AS notifications
+       FROM expenses.expense_tickets t WHERE t.id=$1`,
+      [ticketId],
+    )).rows[0];
+    const assertMalformedCommandKeys = async (
+      url: string,
+      payload: Record<string, unknown>,
+      phase: string,
+    ) => {
+      const before = await malformedCommandState();
+      for (const [label, key] of [
+        ["too-short", "short"],
+        ["invalid-character", "invalid/key"],
+        ["too-long", "x".repeat(201)],
+      ] as const) {
+        const denied = await app.inject({
+          method: "POST",
+          url,
+          headers: { ...authHeader(finance.token), "idempotency-key": key },
+          payload,
+        });
+        expect(denied.statusCode, `${phase} ${label}`).toBe(400);
+      }
+      expect(await malformedCommandState()).toEqual(before);
+    };
+    await assertMalformedCommandKeys(
+      `/api/v1/expenses/${ticketId}/finance/approve`, approvePayload, "approve",
+    );
+    const missingCommandKey = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${ticketId}/finance/approve`,
+      headers: authHeader(finance.token),
+      payload: approvePayload,
+    });
+    expect(missingCommandKey.statusCode).toBe(400);
+    expect((await pool.query("SELECT version FROM expenses.expense_tickets WHERE id=$1", [ticketId])).rows[0]?.version).toBe(1);
+    expect(Number((await pool.query(
+      "SELECT count(*) FROM expenses.expense_command_results WHERE ticket_id=$1", [ticketId],
+    )).rows[0]?.count)).toBe(0);
     const approved = await app.inject({ method: "POST", url: `/api/v1/expenses/${ticketId}/finance/approve`,
       headers: financeHeaders, payload: approvePayload });
     expect(approved.statusCode, approved.body).toBe(200);
@@ -323,6 +714,173 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       headers: financeHeaders, payload: approvePayload });
     expect(approveReplay.statusCode, approveReplay.body).toBe(200);
     expect(approveReplay.json()).toEqual(approved.json());
+    const commandSideEffects = async () => (await pool.query(
+      `SELECT t.status,t.version,
+        (SELECT count(*) FROM expenses.expense_approvals WHERE ticket_id=t.id) AS approvals,
+        (SELECT count(*) FROM expenses.expense_payments WHERE ticket_id=t.id) AS payments,
+        (SELECT count(*) FROM expenses.expense_audit_logs WHERE ticket_id=t.id) AS audits,
+        (SELECT count(*) FROM expenses.expense_command_results WHERE ticket_id=t.id) AS command_results,
+        (SELECT count(*) FROM platform.outbox_events WHERE aggregate_id=t.id) AS outbox,
+        (SELECT count(*) FROM platform.notifications WHERE payload->>'ticket_id'=t.id::text) AS notifications
+       FROM expenses.expense_tickets t WHERE t.id=$1`,
+      [ticketId],
+    )).rows[0];
+    const assertNonFinanceCommandDenied = async (
+      phase: "payment" | "settlement",
+      url: string,
+      payload: Record<string, unknown>,
+    ) => {
+      await pool.query(
+        "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=ANY($1::uuid[])",
+        [[admin.user.id, auditor.user.id], companyA],
+      );
+      const before = await commandSideEffects();
+      try {
+        for (const [roleLabel, deniedActor] of [["admin", admin], ["auditor", auditor]] as const) {
+          const denied = await app.inject({
+            method: "POST",
+            url,
+            headers: {
+              ...authHeader(deniedActor.token),
+              "idempotency-key": `${phase}-${roleLabel}-${ticketId}`,
+            },
+            payload,
+          });
+          expect(denied.statusCode, `${phase} ${roleLabel}`).toBe(403);
+        }
+        const multiRoleId = randomUUID();
+        await pool.query(
+          `INSERT INTO core.user_roles (id,user_id,role_key,status,effective_from)
+           VALUES ($1,$2,'Auditor','active',CURRENT_DATE)`,
+          [multiRoleId, admin.user.id],
+        );
+        try {
+          const multiRoleDenied = await app.inject({
+            method: "POST",
+            url,
+            headers: {
+              ...authHeader(admin.token),
+              "idempotency-key": `${phase}-admin-auditor-${ticketId}`,
+            },
+            payload,
+          });
+          expect(multiRoleDenied.statusCode, `${phase} admin+auditor`).toBe(403);
+        } finally {
+          await pool.query("DELETE FROM core.user_roles WHERE id=$1", [multiRoleId]);
+        }
+      } finally {
+        await pool.query(
+          "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=ANY($1::uuid[])",
+          [[admin.user.id, auditor.user.id], companyB],
+        );
+      }
+      expect(await commandSideEffects()).toEqual(before);
+    };
+    const sameInstanceHistory = await app.inject({
+      method: "GET",
+      url: `/api/v1/reports/expenses/finance-history?page=1&page_size=50&requester_user_id=${employee.user.id}`,
+      headers: authHeader(finance.token),
+    });
+    expect(sameInstanceHistory.statusCode, sameInstanceHistory.body).toBe(200);
+    expect(sameInstanceHistory.json().total).toBe(historyBeforeCommand.json().total + 1);
+    expect(sameInstanceHistory.json().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        audit_event_type: "expense.finance.verify",
+        ticket: expect.objectContaining({ id: ticketId, status: "Finance Approved" }),
+      }),
+    ]));
+    const sameInstanceNotifications = await app.inject({
+      method: "GET",
+      url: "/api/v1/notifications?page=1&page_size=50&type=expense.finance_decision",
+      headers: authHeader(employee.token),
+    });
+    expect(sameInstanceNotifications.statusCode, sameInstanceNotifications.body).toBe(200);
+    expect(sameInstanceNotifications.json().total).toBe(notificationsBeforeCommand.json().total + 1);
+    expect(sameInstanceNotifications.json().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "expense.finance_decision", target_user_id: employee.user.id }),
+    ]));
+    const approvalNotification = sameInstanceNotifications.json().items.find(
+      (item: { description: string }) => item.description.includes(ticketId),
+    );
+    expect(approvalNotification).toEqual(expect.objectContaining({
+      type: "expense.finance_decision",
+      target_user_id: employee.user.id,
+      read: false,
+    }));
+    const immediateReader = await buildRealApp({ reset: false });
+    await immediateReader.ready();
+    try {
+      const secondHistory = await immediateReader.inject({
+        method: "GET",
+        url: `/api/v1/reports/expenses/finance-history?page=1&page_size=50&requester_user_id=${employee.user.id}`,
+        headers: authHeader(finance.token),
+      });
+      expect(secondHistory.statusCode, secondHistory.body).toBe(200);
+      expect(secondHistory.json().total).toBe(sameInstanceHistory.json().total);
+      expect(secondHistory.json().items).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          audit_event_type: "expense.finance.verify",
+          ticket: expect.objectContaining({ id: ticketId, status: "Finance Approved" }),
+        }),
+      ]));
+      const secondNotifications = await immediateReader.inject({
+        method: "GET",
+        url: "/api/v1/notifications?page=1&page_size=50&type=expense.finance_decision",
+        headers: authHeader(employee.token),
+      });
+      expect(secondNotifications.statusCode, secondNotifications.body).toBe(200);
+      expect(secondNotifications.json().total).toBe(sameInstanceNotifications.json().total);
+      expect(secondNotifications.json().items).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "expense.finance_decision", target_user_id: employee.user.id }),
+      ]));
+      const secondUnreadBeforeMark = await immediateReader.inject({
+        method: "GET",
+        url: "/api/v1/notifications?page=1&page_size=50&type=expense.finance_decision&unread_only=true",
+        headers: authHeader(employee.token),
+      });
+      expect(secondUnreadBeforeMark.statusCode, secondUnreadBeforeMark.body).toBe(200);
+      expect(secondUnreadBeforeMark.json().total).toBe(unreadNotificationsBeforeCommand.json().total + 1);
+      const markedBySecondInstance = await immediateReader.inject({
+        method: "POST",
+        url: `/api/v1/notifications/${approvalNotification.id}/read`,
+        headers: authHeader(employee.token),
+        payload: { expected_version: approvalNotification.version },
+      });
+      expect(markedBySecondInstance.statusCode, markedBySecondInstance.body).toBe(200);
+      expect(markedBySecondInstance.json().notification).toEqual(expect.objectContaining({
+        id: approvalNotification.id,
+        read: true,
+        version: approvalNotification.version + 1,
+      }));
+      const idempotentSameInstance = await app.inject({
+        method: "POST",
+        url: `/api/v1/notifications/${approvalNotification.id}/read`,
+        headers: authHeader(employee.token),
+        payload: {},
+      });
+      expect(idempotentSameInstance.statusCode, idempotentSameInstance.body).toBe(200);
+      expect(idempotentSameInstance.json().notification.version).toBe(approvalNotification.version + 1);
+      for (const reader of [app, immediateReader]) {
+        const afterMark = await reader.inject({
+          method: "GET",
+          url: "/api/v1/notifications?page=1&page_size=50&type=expense.finance_decision&unread_only=true",
+          headers: authHeader(employee.token),
+        });
+        expect(afterMark.statusCode, afterMark.body).toBe(200);
+        expect(afterMark.json().total).toBe(unreadNotificationsBeforeCommand.json().total);
+        const fullList = await reader.inject({
+          method: "GET",
+          url: "/api/v1/notifications?page=1&page_size=50&type=expense.finance_decision",
+          headers: authHeader(employee.token),
+        });
+        expect(fullList.statusCode, fullList.body).toBe(200);
+        expect(fullList.json().items).toEqual(expect.arrayContaining([
+          expect.objectContaining({ id: approvalNotification.id, read: true }),
+        ]));
+      }
+    } finally {
+      await immediateReader.close();
+    }
     expect((await app.inject({ method: "POST", url: `/api/v1/expenses/${ticketId}/finance/approve`,
       headers: financeHeaders, payload: { ...approvePayload, remarks: "different" } })).statusCode).toBe(409);
     expect((await app.inject({ method: "POST", url: `/api/v1/expenses/${ticketId}/finance/approve`,
@@ -336,6 +894,18 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     const paymentKey = `expense-payment-${ticketId}`;
     const paymentPayload = { payment_date: "2026-11-11", amount: "100.00", payment_mode: "NEFT",
       reference_no: `PAY-${ticketId}`, expected_version: 2 };
+    await assertMalformedCommandKeys(
+      `/api/v1/expenses/${ticketId}/finance/payment`, paymentPayload, "payment",
+    );
+    await assertNonFinanceCommandDenied(
+      "payment", `/api/v1/expenses/${ticketId}/finance/payment`, paymentPayload,
+    );
+    const paymentUnreadBeforeCommand = await app.inject({
+      method: "GET",
+      url: "/api/v1/notifications?page=1&page_size=50&type=expense.payment_released&unread_only=true",
+      headers: authHeader(employee.token),
+    });
+    expect(paymentUnreadBeforeCommand.statusCode, paymentUnreadBeforeCommand.body).toBe(200);
     const paid = await app.inject({ method: "POST", url: `/api/v1/expenses/${ticketId}/finance/payment`,
       headers: { ...authHeader(finance.token), "idempotency-key": paymentKey }, payload: paymentPayload });
     expect(paid.statusCode, paid.body).toBe(200);
@@ -345,10 +915,52 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     expect(paymentReplay.statusCode, paymentReplay.body).toBe(200);
     expect(paymentReplay.json()).toEqual(paid.json());
     expect(Number((await pool.query("SELECT count(*) FROM expenses.expense_payments WHERE ticket_id=$1", [ticketId])).rows[0]?.count)).toBe(1);
+    const paymentReader = await buildRealApp({ reset: false });
+    await paymentReader.ready();
+    try {
+      for (const reader of [app, paymentReader]) {
+        const paymentUnread = await reader.inject({
+          method: "GET",
+          url: "/api/v1/notifications?page=1&page_size=50&type=expense.payment_released&unread_only=true",
+          headers: authHeader(employee.token),
+        });
+        expect(paymentUnread.statusCode, paymentUnread.body).toBe(200);
+        expect(paymentUnread.json().total).toBe(paymentUnreadBeforeCommand.json().total + 1);
+      }
+      const markPaymentRead = await paymentReader.inject({
+        method: "POST",
+        url: "/api/v1/notifications/read-all",
+        headers: authHeader(employee.token),
+        payload: { type: "expense.payment_released" },
+      });
+      expect(markPaymentRead.statusCode, markPaymentRead.body).toBe(200);
+      expect(markPaymentRead.json().updated_count).toBe(paymentUnreadBeforeCommand.json().total + 1);
+      const repeatedMarkAll = await app.inject({
+        method: "POST",
+        url: "/api/v1/notifications/read-all",
+        headers: authHeader(employee.token),
+        payload: { type: "expense.payment_released" },
+      });
+      expect(repeatedMarkAll.statusCode, repeatedMarkAll.body).toBe(200);
+      expect(repeatedMarkAll.json().updated_count).toBe(0);
+      for (const reader of [app, paymentReader]) {
+        const paymentUnread = await reader.inject({
+          method: "GET",
+          url: "/api/v1/notifications?page=1&page_size=50&type=expense.payment_released&unread_only=true",
+          headers: authHeader(employee.token),
+        });
+        expect(paymentUnread.statusCode, paymentUnread.body).toBe(200);
+        expect(paymentUnread.json().total).toBe(0);
+      }
+    } finally {
+      await paymentReader.close();
+    }
 
     const settleUrl = `/api/v1/expenses/${ticketId}/settlement`;
     const settleHeaders = { ...authHeader(finance.token), "idempotency-key": `expense-settle-${ticketId}` };
     const settlePayload = { actual_amount: "100.00", expected_version: 3 };
+    await assertMalformedCommandKeys(settleUrl, settlePayload, "settlement");
+    await assertNonFinanceCommandDenied("settlement", settleUrl, settlePayload);
     const missingDocuments = await app.inject({ method: "POST", url: settleUrl,
       headers: settleHeaders, payload: settlePayload });
     expect(missingDocuments.statusCode).toBe(400);
@@ -437,6 +1049,26 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     } finally {
       validDocs.release();
     }
+    const beforeSettlementDashboard = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard/summary",
+      headers: authHeader(finance.token),
+    });
+    expect(beforeSettlementDashboard.statusCode, beforeSettlementDashboard.body).toBe(200);
+    expect(beforeSettlementDashboard.json().approvals.expense_finance_pending).toBe(1);
+    const beforeSettlementReader = await buildRealApp({ reset: false });
+    await beforeSettlementReader.ready();
+    try {
+      const secondBeforeSettlement = await beforeSettlementReader.inject({
+        method: "GET",
+        url: "/api/v1/dashboard/summary",
+        headers: authHeader(finance.token),
+      });
+      expect(secondBeforeSettlement.statusCode, secondBeforeSettlement.body).toBe(200);
+      expect(secondBeforeSettlement.json().approvals.expense_finance_pending).toBe(1);
+    } finally {
+      await beforeSettlementReader.close();
+    }
     const settled = await app.inject({ method: "POST", url: settleUrl,
       headers: settleHeaders, payload: settlePayload });
     expect(settled.statusCode, settled.body).toBe(200);
@@ -445,9 +1077,39 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       headers: settleHeaders, payload: settlePayload });
     expect(settledReplay.statusCode, settledReplay.body).toBe(200);
     expect(settledReplay.json()).toEqual(settled.json());
+    const sameDashboard = await app.inject({
+      method: "GET", url: "/api/v1/dashboard/summary", headers: authHeader(finance.token),
+    });
+    expect(sameDashboard.statusCode, sameDashboard.body).toBe(200);
+    expect(sameDashboard.json().approvals.expense_finance_pending).toBe(0);
+    const settledReader = await buildRealApp({ reset: false });
+    await settledReader.ready();
+    try {
+      const secondDashboard = await settledReader.inject({
+        method: "GET", url: "/api/v1/dashboard/summary", headers: authHeader(finance.token),
+      });
+      expect(secondDashboard.statusCode, secondDashboard.body).toBe(200);
+      expect(secondDashboard.json().approvals.expense_finance_pending).toBe(0);
+      const secondUnread = await settledReader.inject({
+        method: "GET", url: "/api/v1/notifications/unread-count", headers: authHeader(employee.token),
+      });
+      expect(secondUnread.statusCode, secondUnread.body).toBe(200);
+      expect(secondUnread.json().unread_count).toBeGreaterThanOrEqual(1);
+    } finally {
+      await settledReader.close();
+    }
     expect(Number((await pool.query("SELECT count(*) FROM expenses.expense_command_results WHERE ticket_id=$1", [ticketId])).rows[0]?.count)).toBe(3);
     expect(Number((await pool.query("SELECT count(*) FROM platform.outbox_events WHERE aggregate_id=$1 AND payload->>'company_id'=$2", [ticketId, companyA])).rows[0]?.count)).toBe(4);
     expect(Number((await pool.query("SELECT count(*) FROM expenses.expense_payments WHERE ticket_id=$1 AND settlement_status='no_balance'", [ticketId])).rows[0]?.count)).toBe(1);
+    await expect(pool.query(
+      "UPDATE expenses.expense_command_results SET response_body='{}'::jsonb WHERE ticket_id=$1",
+      [ticketId],
+    )).rejects.toThrow(/immutable audit\/log rows/u);
+    await expect(pool.query(
+      "DELETE FROM expenses.expense_command_results WHERE ticket_id=$1",
+      [ticketId],
+    )).rejects.toThrow(/immutable audit\/log rows/u);
+
     expect((await app.inject({ method: "POST", url: `/api/v1/expenses/${companyBTicketId}/finance/approve`,
       headers: { ...authHeader(employee.token), "idempotency-key": `self-${companyBTicketId}` },
       payload: { decision: "verify", expected_version: 1 } })).statusCode).toBe(403);

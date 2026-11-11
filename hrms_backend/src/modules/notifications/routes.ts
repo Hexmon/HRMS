@@ -23,7 +23,10 @@ const markAllReadSchema = z.object({
 export const notificationsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get("/notifications", async (request) => {
     if (!request.actor) throw unauthorized();
-    return new NotificationsService(fastify.store).list(
+    const store = fastify.store.persistence?.notificationReadStore
+      ? await fastify.store.persistence.notificationReadStore(request.actor.id)
+      : fastify.store;
+    return new NotificationsService(store).list(
       request.actor,
       notificationsQuerySchema.parse(request.query)
     );
@@ -31,24 +34,45 @@ export const notificationsRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/notifications/unread-count", async (request) => {
     if (!request.actor) throw unauthorized();
-    return new NotificationsService(fastify.store).unreadCount(request.actor);
+    const store = fastify.store.persistence?.notificationReadStore
+      ? await fastify.store.persistence.notificationReadStore(request.actor.id)
+      : fastify.store;
+    return new NotificationsService(store).unreadCount(request.actor);
   });
 
   fastify.post("/notifications/:id/read", async (request) => {
     if (!request.actor) throw unauthorized();
     const params = idParamSchema.parse(request.params);
-    return new NotificationsService(fastify.store).markRead(
-      request.actor,
-      params.id,
-      markReadSchema.parse(request.body ?? {})
-    );
+    const body = markReadSchema.parse(request.body ?? {});
+    if (fastify.store.persistence?.notificationMarkRead) {
+      const result = await fastify.store.persistence.notificationMarkRead({
+        userId: request.actor.id,
+        notificationId: params.id,
+        expectedVersion: body.expected_version,
+      });
+      const service = new NotificationsService({
+        ...fastify.store,
+        notifications: [result.notification],
+      });
+      return {
+        notification: service.present(result.notification),
+        unread_count: result.unreadCount,
+      };
+    }
+    return new NotificationsService(fastify.store).markRead(request.actor, params.id, body);
   });
 
   fastify.post("/notifications/read-all", async (request) => {
     if (!request.actor) throw unauthorized();
-    return new NotificationsService(fastify.store).markAllRead(
-      request.actor,
-      markAllReadSchema.parse(request.body ?? {})
-    );
+    const body = markAllReadSchema.parse(request.body ?? {});
+    if (fastify.store.persistence?.notificationMarkAllRead) {
+      const result = await fastify.store.persistence.notificationMarkAllRead({
+        userId: request.actor.id,
+        type: body.type,
+        before: body.before,
+      });
+      return { updated_count: result.updatedCount, unread_count: result.unreadCount };
+    }
+    return new NotificationsService(fastify.store).markAllRead(request.actor, body);
   });
 };

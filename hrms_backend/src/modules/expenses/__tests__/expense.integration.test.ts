@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
 import { authHeader, loginAs, projectTravelPayload } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
+
+function expenseCommandHeaders(token: string) {
+  return { ...authHeader(token), "idempotency-key": `expense-test-${randomUUID()}` };
+}
 
 describe("expense manager-finance workflow integration", () => {
   let app: FastifyInstance;
@@ -49,10 +54,18 @@ describe("expense manager-finance workflow integration", () => {
     expect(managerVerify.statusCode).toBe(200);
     expect(managerVerify.json().status).toBe("Manager Verified");
 
-    const staleFinanceApprove = await app.inject({
+    const missingIdempotencyKey = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/finance/approve`,
       headers: authHeader(finance.token),
+      payload: { decision: "verify", expected_version: 2 }
+    });
+    expect(missingIdempotencyKey.statusCode).toBe(400);
+
+    const staleFinanceApprove = await app.inject({
+      method: "POST",
+      url: `/api/v1/expenses/${ticket.id}/finance/approve`,
+      headers: expenseCommandHeaders(finance.token),
       payload: { decision: "verify", expected_version: 1 }
     });
     expect(staleFinanceApprove.statusCode).toBe(409);
@@ -75,16 +88,17 @@ describe("expense manager-finance workflow integration", () => {
     const financeApprove = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/finance/approve`,
-      headers: authHeader(finance.token),
+      headers: expenseCommandHeaders(finance.token),
       payload: { decision: "verify", expected_version: 2 }
     });
     expect(financeApprove.statusCode).toBe(200);
     expect(financeApprove.json().status).toBe("Finance Approved");
+    expect(Object.keys(financeApprove.json()).sort()).toEqual(["id", "status", "version"]);
 
     const payment = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/finance/payment`,
-      headers: authHeader(finance.token),
+      headers: expenseCommandHeaders(finance.token),
       payload: {
         payment_date: "2026-05-04",
         amount: "500.00",
@@ -95,6 +109,7 @@ describe("expense manager-finance workflow integration", () => {
     });
     expect(payment.statusCode).toBe(200);
     expect(payment.json().status).toBe("Payment Released");
+    expect(Object.keys(payment.json()).sort()).toEqual(["id", "status", "version"]);
 
     const uploadedDocuments: Array<{ id: string; document_type: string }> = [];
     for (const document_type of ["travel_ticket", "boarding_pass", "receipt"]) {
@@ -110,7 +125,7 @@ describe("expense manager-finance workflow integration", () => {
           size_bytes: 2000
         }
       });
-      expect(upload.statusCode).toBe(200);
+      expect(upload.statusCode, upload.body).toBe(200);
       uploadedDocuments.push({ id: upload.json().id, document_type });
     }
 
@@ -126,7 +141,7 @@ describe("expense manager-finance workflow integration", () => {
     const blockedByPendingDocumentVerification = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/settlement`,
-      headers: authHeader(finance.token),
+      headers: expenseCommandHeaders(finance.token),
       payload: { actual_amount: "500.00", expected_version: 5 }
     });
     expect(blockedByPendingDocumentVerification.statusCode).toBe(400);
@@ -144,11 +159,12 @@ describe("expense manager-finance workflow integration", () => {
     const settle = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/settlement`,
-      headers: authHeader(finance.token),
+      headers: expenseCommandHeaders(finance.token),
       payload: { actual_amount: "500.00", expected_version: 5 }
     });
     expect(settle.statusCode).toBe(200);
     expect(settle.json().status).toBe("Closed");
+    expect(Object.keys(settle.json()).sort()).toEqual(["id", "status", "version"]);
 
     const managerHistory = await app.inject({
       method: "GET",
@@ -206,7 +222,7 @@ describe("expense manager-finance workflow integration", () => {
     const earlyFinance = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${pendingTicket.id}/finance/approve`,
-      headers: authHeader(finance.token),
+      headers: expenseCommandHeaders(finance.token),
       payload: { decision: "verify", expected_version: 1 }
     });
     expect(earlyFinance.statusCode).toBe(403);
@@ -273,7 +289,7 @@ describe("expense manager-finance workflow integration", () => {
     const holdWithoutRemarks = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${holdTicket.id}/finance/approve`,
-      headers: authHeader(finance.token),
+      headers: expenseCommandHeaders(finance.token),
       payload: { decision: "hold", expected_version: 2 }
     });
     expect(holdWithoutRemarks.statusCode).toBe(400);
@@ -281,7 +297,7 @@ describe("expense manager-finance workflow integration", () => {
     const clarificationWithoutRemarks = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${holdTicket.id}/finance/approve`,
-      headers: authHeader(finance.token),
+      headers: expenseCommandHeaders(finance.token),
       payload: { decision: "clarification", expected_version: 2 }
     });
     expect(clarificationWithoutRemarks.statusCode).toBe(400);
@@ -289,7 +305,7 @@ describe("expense manager-finance workflow integration", () => {
     const financeHold = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${holdTicket.id}/finance/approve`,
-      headers: authHeader(finance.token),
+      headers: expenseCommandHeaders(finance.token),
       payload: { decision: "hold", remarks: "Need vendor GST details", expected_version: 2 }
     });
     expect(financeHold.statusCode).toBe(200);
@@ -320,7 +336,7 @@ describe("expense manager-finance workflow integration", () => {
     const oldApproveAction = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${pendingTicket.id}/approve`,
-      headers: authHeader(finance.token),
+      headers: expenseCommandHeaders(finance.token),
       payload: { decision: "approve", expected_version: 1 }
     });
     expect(oldApproveAction.statusCode).toBe(404);
@@ -395,7 +411,7 @@ describe("expense manager-finance workflow integration", () => {
     const financeClarification = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${clarifyTicket.id}/finance/approve`,
-      headers: authHeader(finance.token),
+      headers: expenseCommandHeaders(finance.token),
       payload: { decision: "clarification", remarks: "Attach original GST invoice", expected_version: 2 }
     });
     expect(financeClarification.statusCode).toBe(200);
@@ -438,7 +454,7 @@ describe("expense manager-finance workflow integration", () => {
     const selfRequestResponse = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(financePrimary.token),
+      headers: expenseCommandHeaders(financePrimary.token),
       payload: {
         ...projectTravelPayload,
         project_code: "FIN-SELF-1",
@@ -455,7 +471,7 @@ describe("expense manager-finance workflow integration", () => {
     const primaryFinanceDenied = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${selfRequest.id}/finance/approve`,
-      headers: authHeader(financePrimary.token),
+      headers: expenseCommandHeaders(financePrimary.token),
       payload: { decision: "verify", expected_version: 1 }
     });
     expect(primaryFinanceDenied.statusCode).toBe(403);
@@ -471,7 +487,7 @@ describe("expense manager-finance workflow integration", () => {
     const backupFinanceApprove = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${selfRequest.id}/finance/approve`,
-      headers: authHeader(financeBackup.token),
+      headers: expenseCommandHeaders(financeBackup.token),
       payload: { decision: "verify", expected_version: 2 }
     });
     expect(backupFinanceApprove.statusCode).toBe(200);

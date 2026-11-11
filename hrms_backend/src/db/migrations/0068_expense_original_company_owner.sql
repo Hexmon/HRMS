@@ -33,6 +33,23 @@ BEGIN
   END IF;
 END $$;
 
+-- Test/bootstrap tooling can reapply the ordered idempotent bundle to an
+-- already-migrated database. Earlier migrations may touch tickets and queue
+-- this migration's existing deferred constraint triggers in the surrounding
+-- transaction. Validate those queued events at the migration boundary before
+-- issuing CREATE INDEX/trigger DDL; first-time installs have no such triggers.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid='expenses.expense_tickets'::regclass
+      AND tgname='expense_ticket_repair_evidence_consistency_trg'
+  ) THEN
+    SET CONSTRAINTS expenses.expense_ticket_repair_evidence_consistency_trg,
+      expenses.expense_owner_repair_evidence_consistency_trg IMMEDIATE;
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS expense_tickets_company_status_updated_idx
   ON expenses.expense_tickets (company_id, status, updated_at DESC, id)
   WHERE deleted_at IS NULL AND company_id IS NOT NULL;
@@ -80,22 +97,57 @@ CREATE OR REPLACE FUNCTION expenses.enforce_ticket_original_company()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   recorded_company_text text;
+  matching_repair_evidence integer;
 BEGIN
   IF TG_OP = 'UPDATE' THEN
     IF OLD.company_id IS NULL THEN
-      RAISE EXCEPTION 'Quarantined expense ticket requires audited owner repair'
-        USING ERRCODE = '23514';
-    END IF;
-    IF NEW.company_id IS DISTINCT FROM OLD.company_id
-       OR NEW.owner_resolution_status IS DISTINCT FROM OLD.owner_resolution_status
-       OR NEW.owner_resolution_reason IS DISTINCT FROM OLD.owner_resolution_reason THEN
-      RAISE EXCEPTION 'Expense original company owner is immutable'
-        USING ERRCODE = '23514';
-    END IF;
-    IF OLD.owner_resolution_status = 'audited_repair'
-       AND NEW.context_payload IS DISTINCT FROM OLD.context_payload THEN
-      RAISE EXCEPTION 'Audited expense creation context is immutable'
-        USING ERRCODE = '23514';
+      -- This marker is a transaction fence, not authorization. The repair
+      -- runbook must use a dedicated migration role that can insert immutable
+      -- repair evidence; the application runtime role must not receive that
+      -- privilege. Evidence is deliberately audit-first so the guard never
+      -- needs to be disabled and there is no committed bypass window.
+      IF current_setting('app.expense_owner_repair_v1', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION 'Quarantined expense ticket requires the audited repair path'
+          USING ERRCODE = '23514', CONSTRAINT = 'expense_owner_repair_evidence_consistency';
+      END IF;
+      IF NEW.company_id IS NULL OR NEW.owner_resolution_status <> 'audited_repair'
+         OR NEW.owner_resolution_reason IS NOT NULL THEN
+        RAISE EXCEPTION 'Audited expense repair requires a typed company owner'
+          USING ERRCODE = '23514', CONSTRAINT = 'expense_owner_repair_evidence_consistency';
+      END IF;
+      IF (to_jsonb(NEW) - ARRAY['company_id','owner_resolution_status','owner_resolution_reason'])
+         IS DISTINCT FROM
+         (to_jsonb(OLD) - ARRAY['company_id','owner_resolution_status','owner_resolution_reason']) THEN
+        RAISE EXCEPTION 'Audited expense repair may change only owner resolution fields'
+          USING ERRCODE = '23514', CONSTRAINT = 'expense_owner_repair_evidence_consistency';
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM platform.company_profiles company WHERE company.id = NEW.company_id
+      ) THEN
+        RAISE EXCEPTION 'Repaired expense company identity does not exist'
+          USING ERRCODE = '23514', CONSTRAINT = 'expense_owner_repair_evidence_consistency';
+      END IF;
+      SELECT count(*) INTO matching_repair_evidence
+      FROM expenses.expense_owner_repair_audit audit
+      WHERE audit.ticket_id = OLD.id
+        AND audit.repaired_company_id = NEW.company_id
+        AND audit.original_context_payload = OLD.context_payload;
+      IF matching_repair_evidence <> 1 THEN
+        RAISE EXCEPTION 'Audited expense repair requires one matching immutable audit row'
+          USING ERRCODE = '23514', CONSTRAINT = 'expense_owner_repair_evidence_consistency';
+      END IF;
+    ELSE
+      IF NEW.company_id IS DISTINCT FROM OLD.company_id
+         OR NEW.owner_resolution_status IS DISTINCT FROM OLD.owner_resolution_status
+         OR NEW.owner_resolution_reason IS DISTINCT FROM OLD.owner_resolution_reason THEN
+        RAISE EXCEPTION 'Expense original company owner is immutable'
+          USING ERRCODE = '23514';
+      END IF;
+      IF OLD.owner_resolution_status = 'audited_repair'
+         AND NEW.context_payload IS DISTINCT FROM OLD.context_payload THEN
+        RAISE EXCEPTION 'Audited expense creation context is immutable'
+          USING ERRCODE = '23514';
+      END IF;
     END IF;
   ELSIF NEW.company_id IS NULL OR NEW.owner_resolution_status <> 'typed_creation'
         OR NEW.owner_resolution_reason IS NOT NULL THEN
@@ -156,6 +208,87 @@ DO $$ BEGIN
       FOR EACH ROW EXECUTE FUNCTION platform.prevent_immutable_update_delete();
   END IF;
 END $$;
+
+-- Repair evidence and repaired ownership form one deferred invariant. A
+-- privileged forward migration writes immutable evidence first and repairs
+-- the ticket in the same transaction. The committed state must contain a
+-- one-to-one, same-company pair. Ordinary typed/quarantined tickets must not
+-- acquire a misleading repair-audit row.
+CREATE OR REPLACE FUNCTION expenses.enforce_owner_repair_evidence()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  subject_ticket_id uuid;
+  ticket_status text;
+  ticket_company_id uuid;
+  audit_count integer;
+  matching_audit_count integer;
+BEGIN
+  IF TG_TABLE_NAME = 'expense_tickets' THEN
+    subject_ticket_id := COALESCE(NEW.id, OLD.id);
+  ELSE
+    subject_ticket_id := COALESCE(NEW.ticket_id, OLD.ticket_id);
+  END IF;
+
+  SELECT owner_resolution_status, company_id
+    INTO ticket_status, ticket_company_id
+  FROM expenses.expense_tickets
+  WHERE id = subject_ticket_id;
+
+  SELECT count(*), count(*) FILTER (WHERE repaired_company_id = ticket_company_id)
+    INTO audit_count, matching_audit_count
+  FROM expenses.expense_owner_repair_audit
+  WHERE ticket_id = subject_ticket_id;
+
+  IF ticket_status IS NULL THEN
+    IF audit_count <> 0 THEN
+      RAISE EXCEPTION 'Expense owner repair audit has no ticket'
+        USING ERRCODE = '23514', CONSTRAINT = 'expense_owner_repair_evidence_consistency';
+    END IF;
+    RETURN NULL;
+  END IF;
+
+  IF ticket_status = 'audited_repair' THEN
+    IF ticket_company_id IS NULL OR audit_count <> 1 OR matching_audit_count <> 1 THEN
+      RAISE EXCEPTION 'Audited expense owner requires exactly one matching repair audit'
+        USING ERRCODE = '23514', CONSTRAINT = 'expense_owner_repair_evidence_consistency';
+    END IF;
+  ELSIF audit_count <> 0 THEN
+    RAISE EXCEPTION 'Expense owner repair audit requires an audited repair ticket'
+      USING ERRCODE = '23514', CONSTRAINT = 'expense_owner_repair_evidence_consistency';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM expenses.expense_tickets ticket
+    LEFT JOIN expenses.expense_owner_repair_audit audit ON audit.ticket_id = ticket.id
+    WHERE (ticket.owner_resolution_status = 'audited_repair'
+           AND (ticket.company_id IS NULL OR audit.ticket_id IS NULL
+                OR audit.repaired_company_id IS DISTINCT FROM ticket.company_id))
+       OR (ticket.owner_resolution_status <> 'audited_repair' AND audit.ticket_id IS NOT NULL)
+  ) THEN
+    RAISE EXCEPTION 'Existing expense owner repair evidence is inconsistent'
+      USING ERRCODE = '23514', CONSTRAINT = 'expense_owner_repair_evidence_consistency';
+  END IF;
+END $$;
+
+DROP TRIGGER IF EXISTS expense_ticket_repair_evidence_consistency_trg
+  ON expenses.expense_tickets;
+CREATE CONSTRAINT TRIGGER expense_ticket_repair_evidence_consistency_trg
+  AFTER INSERT OR UPDATE OR DELETE ON expenses.expense_tickets
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION expenses.enforce_owner_repair_evidence();
+
+DROP TRIGGER IF EXISTS expense_owner_repair_evidence_consistency_trg
+  ON expenses.expense_owner_repair_audit;
+CREATE CONSTRAINT TRIGGER expense_owner_repair_evidence_consistency_trg
+  AFTER INSERT OR UPDATE OR DELETE ON expenses.expense_owner_repair_audit
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION expenses.enforce_owner_repair_evidence();
 
 -- Keep committed Finance command results for exact uncertain-response replay.
 -- There is no automatic purge until a tombstone/retention design is approved.

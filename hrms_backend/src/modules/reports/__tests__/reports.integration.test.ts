@@ -98,7 +98,7 @@ describe("expanded expense reports", () => {
     const financeApprove = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/finance/approve`,
-      headers: authHeader(finance.token),
+      headers: { ...authHeader(finance.token), "idempotency-key": "report-finance-approve" },
       payload: { decision: "verify", expected_version: 2 }
     });
     expect(financeApprove.statusCode).toBe(200);
@@ -106,7 +106,7 @@ describe("expanded expense reports", () => {
     const payment = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/finance/payment`,
-      headers: authHeader(finance.token),
+      headers: { ...authHeader(finance.token), "idempotency-key": "report-finance-payment" },
       payload: {
         payment_date: "2026-05-04",
         amount: "500.00",

@@ -433,6 +433,7 @@ export interface ObjectStoragePort {
 
 export interface DataStorePersistence {
   flush(): Promise<void>;
+  authUser?(userId: UUID): Promise<AuthUser | null>;
   flushInitialSeed?(): Promise<void>;
   flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
@@ -445,8 +446,21 @@ export interface DataStorePersistence {
   ): Promise<void>;
   reload(): Promise<void>;
   attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
+  dashboardReadStore?(scope: { companyId: UUID }): Promise<DataStore>;
+  notificationReadStore?(userId: UUID): Promise<DataStore>;
+  notificationMarkRead?(input: {
+    userId: UUID;
+    notificationId: UUID;
+    expectedVersion?: number;
+  }): Promise<{ notification: NotificationRecord; unreadCount: number }>;
+  notificationMarkAllRead?(input: {
+    userId: UUID;
+    type?: string;
+    before?: string;
+  }): Promise<{ updatedCount: number; unreadCount: number }>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   expenseReadContext?(userId: UUID, ticketId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   expenseFinanceCommand?(input: {
     userId: UUID;
@@ -474,7 +488,11 @@ export interface DataStorePersistence {
       sort?: string;
     };
   }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore; total: number }>;
-  isExpenseDocumentId?(documentId: UUID): Promise<boolean>;
+  classifyExpenseDocumentAccess?(
+    userId: UUID,
+    documentId: UUID,
+    mode: "metadata" | "raw" | "workflow",
+  ): Promise<"other" | "expense-authorized" | "hidden">;
   expenseDashboardContext?(userId: UUID, filters: {
     status?: string;
     date_from?: string;

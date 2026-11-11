@@ -244,6 +244,22 @@ const idempotencyKeyParameter = {
     "Required client_event_id UUID. Reuse only to retry the same validated attendance punch request; a new logical action requires a new UUID.",
 };
 
+const expenseCommandIdempotencyHeaderObject = {
+  type: "object",
+  required: ["idempotency-key"],
+  properties: {
+    "idempotency-key": {
+      type: "string",
+      minLength: 8,
+      maxLength: 200,
+      pattern: "^[A-Za-z0-9._:-]+$",
+      description:
+        "Required client-generated key. Reuse it only for an exact retry of the same expense command payload.",
+      example: "expense-command-019fc5b7",
+    },
+  },
+};
+
 const errorResponseSchema = {
   type: "object",
   required: ["code", "message", "request_id"],
@@ -3014,6 +3030,17 @@ const ticketSchema = {
     closed_at: { ...dateTime("Closure timestamp"), nullable: true },
   },
   additionalProperties: true,
+};
+
+const expenseCommandResultSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["id", "status", "version"],
+  properties: {
+    id: uuid("Expense ticket UUID"),
+    status: { type: "string", description: "Status after the command commits." },
+    version: { type: "integer", minimum: 1, description: "Committed optimistic-concurrency version." },
+  },
 };
 
 const expenseTimelineEventSchema = {
@@ -11932,8 +11959,9 @@ const routeDocs: Record<string, RouteSchema> = {
     "The assigned finance approver approves, holds, or requests clarification after manager verification. Normally this is the configured primary Finance Manager; for finance-manager self-requests it may be the configured Finance/Admin backup. Hold/clarification require remarks; self-processing and OCC conflicts are enforced.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: financeVerifyBody,
-      response200: ticketSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "POST /api/v1/expenses/{id}/finance/payment": operation(
@@ -11942,8 +11970,9 @@ const routeDocs: Record<string, RouteSchema> = {
     "The assigned finance-stage actor releases advance or reimbursement payment with date, amount, mode, reference, and OCC expected_version.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: paymentReleaseBody,
-      response200: ticketSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "POST /api/v1/expenses/{id}/bills": operation(
@@ -11966,7 +11995,12 @@ const routeDocs: Record<string, RouteSchema> = {
     "Finance Management",
     "Approve settlement",
     "Finalizes settlement and calculates payable/recoverable/no-balance state. Required documents must be verified before closure.",
-    { params: idParamSchema, body: settlementBody, response200: ticketSchema },
+    {
+      params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
+      body: settlementBody,
+      response200: expenseCommandResultSchema,
+    },
   ),
   "GET /api/v1/expenses/{id}/timeline": operation(
     "Expenses / Requester",
