@@ -5,6 +5,7 @@ import { assertDisposableResetTarget, resetPostgresDatabase } from "../platform/
 let openAppCount = 0;
 let activeTestDatabaseUrl: string | undefined;
 let previousDatabaseUrl: string | undefined;
+let resetInProgress = false;
 
 function sameDatabaseTarget(left: string, right: string | undefined): boolean {
   if (!right) return false;
@@ -54,6 +55,9 @@ export async function buildRealApp(options: { reset?: boolean } = {}): Promise<F
   // reject the second instance when it will not reset the database.
   assertDisposableResetTarget(databaseUrl);
   const reset = options.reset ?? true;
+  if (resetInProgress) {
+    throw new Error("Cannot start another test app while the test database is resetting.");
+  }
   if (openAppCount > 0 && activeTestDatabaseUrl !== databaseUrl) {
     throw new Error("Cannot use a different test database while another test app is open.");
   }
@@ -66,7 +70,12 @@ export async function buildRealApp(options: { reset?: boolean } = {}): Promise<F
     );
   }
   if (reset) {
-    await resetPostgresDatabase(databaseUrl);
+    resetInProgress = true;
+    try {
+      await resetPostgresDatabase(databaseUrl);
+    } finally {
+      resetInProgress = false;
+    }
   }
   const releaseDatabaseUrl = acquireTestDatabaseUrl(databaseUrl);
   try {

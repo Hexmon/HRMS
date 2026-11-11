@@ -146,4 +146,31 @@ describe("real integration app database guard", () => {
     await app.close();
     expect(process.env.DATABASE_URL).toBe("malformed-prior-url");
   });
+
+  it("reserves the reset before awaiting SQL and rejects concurrent app startup", async () => {
+    let finishReset: (() => void) | undefined;
+    mocks.resetPostgresDatabase.mockReturnValueOnce(new Promise<void>((resolve) => {
+      finishReset = resolve;
+    }));
+    const firstPromise = buildRealApp();
+    await expect(buildRealApp()).rejects.toThrow("test database is resetting");
+    await expect(buildRealApp({ reset: false })).rejects.toThrow("test database is resetting");
+    expect(mocks.resetPostgresDatabase).toHaveBeenCalledTimes(1);
+    expect(mocks.buildApp).not.toHaveBeenCalled();
+    finishReset?.();
+    const app = await firstPromise;
+    expect(mocks.buildApp).toHaveBeenCalledTimes(1);
+    await app.close();
+    expect(process.env.DATABASE_URL).toBe(previousUrl);
+  });
+
+  it("releases the reservation after a failed reset without changing the app URL", async () => {
+    mocks.resetPostgresDatabase.mockRejectedValueOnce(new Error("synthetic reset failure"));
+    await expect(buildRealApp()).rejects.toThrow("synthetic reset failure");
+    expect(process.env.DATABASE_URL).toBe(previousUrl);
+    expect(mocks.buildApp).not.toHaveBeenCalled();
+    const app = await buildRealApp({ reset: false });
+    await app.close();
+    expect(process.env.DATABASE_URL).toBe(previousUrl);
+  });
 });
