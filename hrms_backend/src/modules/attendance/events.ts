@@ -55,6 +55,7 @@ export type AttendanceProvisionalRecordedPayload = AttendanceEventBase & {
   subject_employee_user_id: UUID;
   attendance_event_id: UUID;
   command_id: UUID | null;
+  work_date: string;
   source_channel: AttendancePunchSourceChannel;
   verification_status: AttendanceOfflineVerificationStatus;
   provisional_reason_code: AttendanceOfflineSyncReasonCode;
@@ -200,6 +201,7 @@ export function buildProvisionalRecordedEvent(input: {
   subjectEmployeeUserId: UUID;
   attendanceEventId: UUID;
   commandId?: UUID | null;
+  workDate: string;
   sourceChannel: AttendanceProvisionalRecordedPayload["source_channel"];
   verificationStatus: AttendanceProvisionalRecordedPayload["verification_status"];
   provisionalReasonCode: AttendanceProvisionalRecordedPayload["provisional_reason_code"];
@@ -213,6 +215,7 @@ export function buildProvisionalRecordedEvent(input: {
     subject_employee_user_id: input.subjectEmployeeUserId,
     attendance_event_id: input.attendanceEventId,
     command_id: input.commandId ?? null,
+    work_date: input.workDate,
     source_channel: input.sourceChannel,
     verification_status: input.verificationStatus,
     provisional_reason_code: input.provisionalReasonCode,

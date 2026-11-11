@@ -520,6 +520,7 @@ export class AttendanceOfflineSyncService {
         subjectEmployeeUserId: input.employeeUserId,
         attendanceEventId: attendanceEvent.id,
         commandId: null,
+        workDate: dateInTimeZone(event.captured_at, input.timeZone),
         sourceChannel: "mobile_offline",
         verificationStatus: result.verification_status,
         provisionalReasonCode: result.reason_code ?? "offline_sync.accepted_unverified",

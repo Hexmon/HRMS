@@ -203,6 +203,81 @@ describe("attendance report evidence categories", () => {
     });
   });
 
+  it("uses persisted work dates for evidence captured across UTC midnight", () => {
+    const store = createMemoryDataStore();
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    const attendanceEventId = randomUUID();
+    const capturedAt = "2026-07-20T19:00:00.000Z";
+    store.attendanceDayRecords.push(attendanceDay(seedIds.employee1, {
+      work_date: "2026-07-21",
+    }));
+    store.attendancePunches.push({
+      id: randomUUID(),
+      employee_user_id: seedIds.employee1,
+      actor_user_id: seedIds.employee1,
+      company_id: companyId,
+      work_date: "2026-07-21",
+      event_type: "check_in",
+      occurred_at: capturedAt,
+      work_mode: "office",
+      source: "web",
+      origin: "employee_manual_now",
+      regularization_request_id: null,
+      metadata: {},
+      created_at: capturedAt,
+      deleted_at: null,
+    });
+    store.outbox.push({
+      id: 16,
+      event_id: randomUUID(),
+      aggregate_type: "attendance",
+      aggregate_id: attendanceEventId,
+      event_type: "attendance.provisional.recorded",
+      payload: {
+        company_id: companyId,
+        subject_employee_user_id: seedIds.employee1,
+        attendance_event_id: attendanceEventId,
+        verification_status: "unverified",
+        work_date: "2026-07-21",
+        captured_at: capturedAt,
+      },
+      idempotency_key: `attendance.provisional.recorded:${attendanceEventId}`,
+      status: "pending",
+      retry_count: 0,
+      available_at: capturedAt,
+      created_at: capturedAt,
+      published_at: null,
+      failed_at: null,
+      last_error: null,
+    });
+    (store as typeof store & { attendanceMobileEvidenceWarnings: Array<Record<string, unknown>> })
+      .attendanceMobileEvidenceWarnings = [{
+        company_id: companyId,
+        employee_user_id: seedIds.employee1,
+        work_date: "2026-07-21",
+        source: "mobile",
+        captured_at: capturedAt,
+        server_received_at: "2026-07-20T19:00:05.000Z",
+        reason_code: "mobile_replay.changed_body_conflict",
+        category: "replay_warning",
+      }];
+
+    const result = new ReportService(store).attendanceSummary(admin, {
+      page: 1,
+      page_size: 20,
+      date_from: "2026-07-21",
+      date_to: "2026-07-21",
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toMatchObject({
+      date: "2026-07-21",
+      attendance_channels: ["Web", "Mobile - captured offline", "Mobile"],
+      source_categories: ["web", "mobile"],
+      reason_codes: ["mobile_replay.changed_body_conflict"],
+    });
+  });
+
   it("projects safe geo review fields without exact coordinates", () => {
     const store = createMemoryDataStore();
     const admin = store.users.find((user) => user.id === seedIds.admin)!;

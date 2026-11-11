@@ -95,6 +95,36 @@ import {
   emptyAttendanceReportSourceCategoryCounts,
 } from "../modules/attendance/reporting-projection.js";
 
+type ExpenseReportAudience =
+  | "company"
+  | "requester"
+  | "manager_queue"
+  | "manager_history"
+  | "finance_assigned"
+  | "finance_history"
+  | "advance_aging"
+  | "payment_register"
+  | "audit";
+
+function assertExpenseReportAudienceRole(
+  actor: AuthUser,
+  audience: ExpenseReportAudience,
+): void {
+  const required: readonly RoleKey[] | null =
+    audience === "manager_queue" || audience === "manager_history"
+      ? [Roles.Reviewer, Roles.Admin]
+      : audience === "finance_assigned" || audience === "finance_history"
+        ? [Roles.FinanceManager, Roles.Admin, Roles.Auditor]
+        : audience === "advance_aging"
+          ? [Roles.FinanceManager, Roles.Admin]
+          : audience === "payment_register" || audience === "audit"
+            ? [Roles.FinanceManager, Roles.Admin, Roles.Auditor]
+            : null;
+  if (required && !required.some((role) => actor.roles.includes(role))) {
+    throw forbidden("Report access denied");
+  }
+}
+
 function optionalSet(
   values: readonly string[] | undefined,
 ): ReadonlySet<string> | undefined {
@@ -830,7 +860,7 @@ class PostgresPersistence {
   }
 
   async expenseReportReadContext(userId: UUID, options?: {
-    audience?: "company" | "requester" | "manager_queue" | "manager_history" | "finance_assigned" | "finance_history" | "advance_aging" | "payment_register" | "audit";
+    audience?: ExpenseReportAudience;
     filters?: {
       status?: string; expense_type?: string; expense_sub_type?: string;
       payment_type?: string; department_id?: UUID; requester_user_id?: UUID;
@@ -843,6 +873,8 @@ class PostgresPersistence {
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      const audience = options?.audience ?? "company";
+      assertExpenseReportAudienceRole(actor, audience);
       const filters = options?.filters;
       for (const [name, value] of [["date_from", filters?.date_from], ["date_to", filters?.date_to]] as const) {
         if (value) {
@@ -875,7 +907,6 @@ class PostgresPersistence {
         params.push(value);
         return `$${params.length}`;
       };
-      const audience = options?.audience ?? "company";
       const where = [
         "ticket.deleted_at IS NULL",
         "ticket.company_id IS NOT NULL",
@@ -2060,11 +2091,34 @@ class PostgresPersistence {
 
     const dayIds = days.map((day) => day.id);
     const punchesQuery = await client.query(
-      `SELECT punch.* FROM attendance.punch_events punch
+      `SELECT punch.*,day.work_date::text AS evidence_work_date
+       FROM attendance.punch_events punch
+       LEFT JOIN LATERAL (
+         SELECT event.payload
+         FROM platform.outbox_events event
+         WHERE event.aggregate_id=punch.id
+           AND event.event_type='attendance.punch.recorded'
+         ORDER BY event.id
+         LIMIT 1
+       ) recorded ON true
+       LEFT JOIN attendance.sessions session
+         ON session.id=punch.session_id
+        AND session.company_id=punch.company_id
+        AND session.employee_user_id=punch.employee_user_id
+       LEFT JOIN attendance.regularization_requests regularization
+         ON regularization.id=punch.regularization_request_id
+        AND regularization.company_id=punch.company_id
+        AND regularization.employee_user_id=punch.employee_user_id
+       JOIN platform.company_profiles company ON company.id=punch.company_id
        JOIN attendance.daily_records day
          ON day.id=ANY($1::uuid[]) AND day.company_id=punch.company_id
         AND day.employee_user_id=punch.employee_user_id
-        AND day.work_date=punch.occurred_at::date
+        AND day.work_date::text=COALESCE(
+          NULLIF(recorded.payload->>'work_date',''),
+          session.work_date::text,
+          regularization.work_date::text,
+          to_char(timezone(company.timezone,punch.occurred_at),'YYYY-MM-DD')
+        )
        WHERE punch.deleted_at IS NULL
        ORDER BY punch.occurred_at,punch.id LIMIT 50001`,
       [dayIds],
@@ -2081,27 +2135,32 @@ class PostgresPersistence {
       [dayIds],
     );
     const outboxQuery = await client.query(
-      `SELECT event.* FROM platform.outbox_events event
+      `SELECT event.*,day.work_date::text AS evidence_work_date
+       FROM platform.outbox_events event
+       JOIN platform.company_profiles company
+         ON company.id::text=event.payload->>'company_id'
        JOIN attendance.daily_records day
          ON day.id=ANY($1::uuid[])
         AND event.payload->>'company_id'=day.company_id::text
         AND event.payload->>'subject_employee_user_id'=day.employee_user_id::text
-        AND left(event.payload->>'captured_at',10)=day.work_date::text
+        AND day.work_date::text=COALESCE(
+          NULLIF(event.payload->>'work_date',''),
+          to_char(
+            timezone(company.timezone,(event.payload->>'captured_at')::timestamptz),
+            'YYYY-MM-DD'
+          )
+        )
        WHERE event.event_type='attendance.provisional.recorded'
        ORDER BY event.created_at,event.id LIMIT 50001`,
       [dayIds],
     );
     const warningsQuery = await client.query(
-      `SELECT warning.*,warning.work_date::text AS work_date
+      `SELECT warning.*,day.work_date::text AS evidence_work_date
        FROM attendance.mobile_evidence_warnings warning
        JOIN attendance.daily_records day
          ON day.id=ANY($1::uuid[]) AND day.company_id=warning.company_id
         AND day.employee_user_id=warning.employee_user_id
-        AND COALESCE(
-          warning.work_date,
-          warning.captured_at::date,
-          warning.server_received_at::date
-        )=day.work_date
+        AND warning.work_date=day.work_date
        ORDER BY warning.server_received_at,warning.id LIMIT 50001`,
       [dayIds],
     );
@@ -2135,6 +2194,7 @@ class PostgresPersistence {
       company_id: row.company_id,
       employee_user_id: row.employee_user_id,
       actor_user_id: row.actor_user_id ?? row.employee_user_id,
+      work_date: asDate(row.evidence_work_date),
       event_type: row.event_type,
       occurred_at: asIso(row.occurred_at),
       work_mode: row.work_mode,
@@ -2195,7 +2255,7 @@ class PostgresPersistence {
     const warnings = warningsQuery.rows.map((row) => ({
       company_id: row.company_id as UUID,
       employee_user_id: row.employee_user_id as UUID,
-      work_date: row.work_date ? asDate(row.work_date) : null,
+      work_date: asDate(row.evidence_work_date),
       event_type: row.event_type as string,
       source: row.source as string,
       captured_at: asIsoOrNull(row.captured_at),
@@ -2211,7 +2271,16 @@ class PostgresPersistence {
       attendancePunches: punches,
       attendanceGeoFallbackReviews: reviews,
       attendanceRegularizations: regularizations,
-      outbox: outboxQuery.rows.map((row) => this.mapOutboxRow(row)),
+      outbox: outboxQuery.rows.map((row) => {
+        const event = this.mapOutboxRow(row);
+        return {
+          ...event,
+          payload: {
+            ...event.payload,
+            work_date: asDate(row.evidence_work_date),
+          },
+        };
+      }),
       attendanceMobileEvidenceWarnings: warnings,
     };
     const index = buildAttendanceReportEvidenceIndex(evidenceStore, days);

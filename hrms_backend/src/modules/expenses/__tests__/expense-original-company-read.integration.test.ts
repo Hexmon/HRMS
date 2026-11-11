@@ -385,6 +385,24 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       headers: authHeader(admin.token) })).statusCode).toBe(200);
     expect((await app.inject({ method: "GET", url: managerHistoryUrl,
       headers: authHeader(employee.token) })).statusCode).toBe(403);
+    for (const [url, allowedActor] of [
+      ["/api/v1/reports/expenses/finance-dashboard?page=1&page_size=1", finance],
+      ["/api/v1/reports/expenses/finance-history?page=1&page_size=1", finance],
+      ["/api/v1/reports/expenses/advance-aging?page=1&page_size=1", finance],
+      ["/api/v1/reports/expenses/payments?page=1&page_size=1", auditor],
+      ["/api/v1/reports/expenses/audit?page=1&page_size=1", admin],
+    ] as const) {
+      expect((await app.inject({
+        method: "GET",
+        url,
+        headers: authHeader(allowedActor.token),
+      })).statusCode).toBe(200);
+      expect((await app.inject({
+        method: "GET",
+        url,
+        headers: authHeader(employee.token),
+      })).statusCode).toBe(403);
+    }
     const routeSnapshotFixture = await pool.connect();
     try {
       await routeSnapshotFixture.query("BEGIN");
@@ -546,6 +564,13 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
         headers: authHeader(manager.token) });
       expect(overBounded.statusCode, overBounded.body).toBe(400);
       expect(overBounded.body).toContain("at most 1,000 matching tickets");
+      const unauthorizedOverBounded = await app.inject({
+        method: "GET",
+        url: managerReportUrl,
+        headers: authHeader(employee.token),
+      });
+      expect(unauthorizedOverBounded.statusCode, unauthorizedOverBounded.body).toBe(403);
+      expect(unauthorizedOverBounded.body).not.toContain("1,000 matching tickets");
       const narrowedBoundary = await app.inject({
         method: "GET",
         url: `${managerReportUrl}&status=Manager%20Verified`,
@@ -560,12 +585,6 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       });
       expect(overlongRange.statusCode, overlongRange.body).toBe(400);
       expect(overlongRange.body).toContain("cannot exceed 12 months");
-      const oneSidedRange = await app.inject({
-        method: "GET",
-        url: `${managerReportUrl}&status=Manager%20Verified&date_from=2026-01-01`,
-        headers: authHeader(manager.token),
-      });
-      expect(oneSidedRange.statusCode, oneSidedRange.body).toBe(200);
       const invalidRange = await app.inject({
         method: "GET",
         url: `${managerReportUrl}&date_from=2026-02-31&date_to=2026-03-01`,
@@ -573,6 +592,13 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       });
       expect(invalidRange.statusCode, invalidRange.body).toBe(400);
       expect(invalidRange.body).toContain("must be a valid calendar date");
+      const reversedRange = await app.inject({
+        method: "GET",
+        url: `${managerReportUrl}&date_from=2026-03-01&date_to=2026-02-01`,
+        headers: authHeader(manager.token),
+      });
+      expect(reversedRange.statusCode, reversedRange.body).toBe(400);
+      expect(reversedRange.body).toContain("date range is reversed");
     } finally {
       const cleanup = await pool.connect();
       try {
@@ -586,6 +612,20 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       } finally {
         cleanup.release();
       }
+    }
+    for (const range of [
+      "date_from=2026-01-01",
+      "date_to=2026-12-31",
+      "date_from=2025-11-11&date_to=2026-11-11",
+    ]) {
+      const oneSidedOrBoundaryRange = await app.inject({
+        method: "GET",
+        url: `${managerReportUrl}&${range}`,
+        headers: authHeader(manager.token),
+      });
+      expect(oneSidedOrBoundaryRange.statusCode, oneSidedOrBoundaryRange.body).toBe(200);
+      expect(oneSidedOrBoundaryRange.json().total).toBe(1);
+      expect(oneSidedOrBoundaryRange.json().items[0].id).toBe(pendingTicketId);
     }
     const unrelatedCompanyBacklog = await pool.connect();
     try {
@@ -778,6 +818,23 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     expect(financeBoundaryAfter.rows[0]).toEqual(financeBoundaryBefore.rows[0]);
 
     await pool.query("UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1", [employee.user.id, companyB]);
+    for (const oversight of [admin, auditor]) {
+      expect((await app.inject({
+        method: "GET",
+        url: `/api/v1/expenses/${ticketId}`,
+        headers: authHeader(oversight.token),
+      })).statusCode).toBe(200);
+    }
+    expect((await app.inject({
+      method: "POST",
+      url: `/api/v1/documents/${receiptId}/download-url`,
+      headers: authHeader(admin.token),
+    })).statusCode).toBe(409);
+    expect((await app.inject({
+      method: "POST",
+      url: `/api/v1/documents/${receiptId}/download-url`,
+      headers: authHeader(auditor.token),
+    })).statusCode).toBe(404);
     await pool.query("UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1", [admin.user.id, companyB]);
     await pool.query("UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1", [auditor.user.id, companyB]);
     await pool.query("UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1", [foreignFinance.user.id, companyB]);
@@ -1137,7 +1194,11 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
             `INSERT INTO attendance.punch_events
               (company_id,employee_user_id,actor_user_id,event_type,occurred_at,
                work_mode,source,origin,metadata)
-             VALUES ($1,$2,$2,'check_in',$3::date + ($4 || ' minutes')::interval,
+             VALUES ($1,$2,$2,'check_in',
+               CASE WHEN $4::int=0
+                 THEN $3::date - interval '1 day' + interval '19 hours'
+                 ELSE $3::date + ($4 || ' minutes')::interval
+               END,
                'office',$5,$6,'{}')`,
             [companyB, postStartUserId, evidenceDates.verified, ordinal, source, origin],
           );
@@ -1148,7 +1209,8 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
              source,work_date,captured_at,server_received_at,client_event_id)
            VALUES
             ($1,$2,'replay_warning','mobile_replay.changed_body_conflict','check_in','office',
-             'mobile',$3,$3::date + interval '9 hours',$3::date + interval '9 hours',gen_random_uuid()),
+             'mobile',$3,$3::date - interval '1 day' + interval '19 hours',
+             $3::date - interval '1 day' + interval '19 hours 5 seconds',gen_random_uuid()),
             ($1,$2,'device_eligibility','mobile_registered_device_required','check_in','office',
              'mobile_offline',$4,$4::date + interval '9 hours',$4::date + interval '9 hours',gen_random_uuid())`,
           [companyB, postStartUserId, evidenceDates.warning, evidenceDates.rejected],
@@ -1159,11 +1221,14 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
            VALUES
             ('attendance',gen_random_uuid(),'attendance.provisional.recorded',
              jsonb_build_object('company_id',$1::text,'subject_employee_user_id',$2::text,
-               'captured_at',$3::text || 'T09:00:00.000Z','verification_status','unverified'),
+               'work_date',$3::text,'captured_at',
+               (($3::date - interval '1 day' + interval '19 hours') AT TIME ZONE 'UTC')::text,
+               'verification_status','unverified'),
              $5),
             ('attendance',gen_random_uuid(),'attendance.provisional.recorded',
              jsonb_build_object('company_id',$1::text,'subject_employee_user_id',$2::text,
-               'captured_at',$4::text || 'T09:00:00.000Z','verification_status','rejected'),
+               'work_date',$4::text,'captured_at',$4::text || 'T09:00:00.000Z',
+               'verification_status','rejected'),
              $6)`,
           [
             companyB,
@@ -1223,9 +1288,15 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
             [companyB, postStartUserId, evidenceDates.verified, evidenceDates.rejected],
           ),
           pool.query<{ record: AttendancePunch }>(
-            `SELECT to_jsonb(punch) AS record FROM attendance.punch_events punch
+            `SELECT to_jsonb(punch) || jsonb_build_object(
+               'work_date',to_char(timezone(company.timezone,punch.occurred_at),'YYYY-MM-DD')
+             ) AS record
+             FROM attendance.punch_events punch
+             JOIN platform.company_profiles company ON company.id=punch.company_id
              WHERE punch.company_id=$1 AND punch.employee_user_id=$2
-               AND punch.occurred_at::date BETWEEN $3 AND $4 ORDER BY punch.occurred_at`,
+               AND to_char(timezone(company.timezone,punch.occurred_at),'YYYY-MM-DD')
+                 BETWEEN $3 AND $4
+             ORDER BY punch.occurred_at`,
             [companyB, postStartUserId, evidenceDates.verified, evidenceDates.rejected],
           ),
           pool.query<{ record: AttendanceGeoFallbackReview }>(

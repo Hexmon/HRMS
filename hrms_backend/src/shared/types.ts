@@ -407,6 +407,7 @@ export interface AttendancePunch {
   employee_user_id: UUID;
   actor_user_id: UUID;
   company_id: UUID;
+  work_date?: ISODate;
   event_type: AttendancePunchEventType;
   occurred_at: ISODateTime;
   work_mode: "office" | "remote" | "wfh" | "field";

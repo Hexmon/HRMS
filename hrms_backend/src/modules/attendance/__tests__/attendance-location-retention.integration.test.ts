@@ -558,6 +558,7 @@ async function seedAcceptedExpiredOfflineSubmission(
     subjectEmployeeUserId: input.employeeUserId,
     attendanceEventId,
     commandId: null,
+    workDate: event.captured_at.slice(0, 10),
     sourceChannel: "mobile_offline",
     verificationStatus: "unverified",
     provisionalReasonCode: "offline_sync.accepted_unverified",

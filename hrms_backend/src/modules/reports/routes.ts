@@ -17,6 +17,30 @@ const attendanceApprovalStateValues = Object.values(AttendanceApprovalStates) as
   ...AttendanceApprovalState[],
 ];
 
+function validCalendarDate(value: string): boolean {
+  const [year, month, day] = value.split("-").map(Number);
+  const normalized = new Date(Date.UTC(year!, month! - 1, day!));
+  return !Number.isNaN(normalized.getTime()) &&
+    normalized.toISOString().slice(0, 10) === value;
+}
+
+function maximumExpenseReportDate(dateFrom: string): string {
+  const [year, month, day] = dateFrom.split("-").map(Number);
+  const maximumYear = year! + 1;
+  const maximumDay = Math.min(
+    day!,
+    new Date(Date.UTC(maximumYear, month!, 0)).getUTCDate(),
+  );
+  return `${maximumYear.toString().padStart(4, "0")}-${month!
+    .toString()
+    .padStart(2, "0")}-${maximumDay.toString().padStart(2, "0")}`;
+}
+
+const expenseReportDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/u)
+  .refine(validCalendarDate, "Expense report date must be a valid calendar date");
+
 const reportExpenseQuerySchema = paginationQuerySchema.extend({
   status: z.string().optional(),
   expense_type: z.string().optional(),
@@ -26,9 +50,26 @@ const reportExpenseQuerySchema = paginationQuerySchema.extend({
   requester_user_id: z.uuid().optional(),
   manager_user_id: z.uuid().optional(),
   finance_user_id: z.uuid().optional(),
-  date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
-  date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
+  date_from: expenseReportDateSchema.optional(),
+  date_to: expenseReportDateSchema.optional(),
   document_status: z.enum(["any", "complete", "missing", "pending", "not_required"]).default("any")
+}).superRefine((query, context) => {
+  if (!query.date_from || !query.date_to) return;
+  if (query.date_from > query.date_to) {
+    context.addIssue({
+      code: "custom",
+      path: ["date_to"],
+      message: "Expense report date range is reversed",
+    });
+    return;
+  }
+  if (query.date_to > maximumExpenseReportDate(query.date_from)) {
+    context.addIssue({
+      code: "custom",
+      path: ["date_to"],
+      message: "Expense report date range cannot exceed 12 months",
+    });
+  }
 });
 
 const reportSummaryQuerySchema = paginationQuerySchema.extend({
