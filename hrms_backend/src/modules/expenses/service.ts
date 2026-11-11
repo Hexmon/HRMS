@@ -8,6 +8,7 @@ import type {
   ExpenseLineItem,
   ExpenseStatus,
   ExpenseTicket,
+  NewExpenseTicket,
   ManagerBackupAssignment,
   PaginatedResult,
   UUID,
@@ -140,7 +141,10 @@ export class ExpenseService {
   private readonly repository: ExpenseRepository;
   private readonly core: CoreService;
 
-  constructor(private readonly store: MemoryDataStore) {
+  constructor(
+    private readonly store: MemoryDataStore,
+    private readonly currentCompanyId?: UUID,
+  ) {
     this.repository = new ExpenseRepository(store);
     this.core = new CoreService(store);
   }
@@ -163,8 +167,11 @@ export class ExpenseService {
       : null;
     const created = nowIso();
     const ticketId = randomUUID();
-    const ticket: ExpenseTicket = {
+    const ticket: NewExpenseTicket = {
       id: ticketId,
+      company_id: companyId,
+      owner_resolution_status: "typed_creation",
+      owner_resolution_reason: null,
       ticket_no: this.repository.nextTicketNo(),
       requester_user_id: actor.id,
       requester_role_snapshot: roleSnapshot(actor),
@@ -222,7 +229,7 @@ export class ExpenseService {
       actor_user_id: actor.id,
       event_type: input.submit ? "expense.submitted" : "expense.created",
       old_value: null,
-      new_value: { status: ticket.status, ticket_no: ticket.ticket_no },
+      new_value: { status: ticket.status, ticket_no: ticket.ticket_no, company_id: ticket.company_id },
       remarks: null,
       payload_hash: null,
     });
@@ -232,6 +239,7 @@ export class ExpenseService {
       eventType: input.submit ? "expense.submitted" : "expense.created",
       payload: {
         ticket_id: ticket.id,
+        company_id: ticket.company_id,
         status: ticket.status,
         requester_user_id: actor.id,
       },
@@ -595,13 +603,34 @@ export class ExpenseService {
     pageSize: number,
   ): PaginatedResult<Record<string, unknown>> {
     return this.presentPaginatedTickets(
-      this.repository.listByRequester(actor.id),
+      this.repository.listByRequester(actor.id).filter(
+        (ticket) => !this.currentCompanyId || canReadTicket(actor, ticket, this.currentCompanyId),
+      ),
       page,
       pageSize,
     );
   }
 
+  presentScopedPage(
+    actor: AuthUser,
+    page: number,
+    pageSize: number,
+    total: number,
+  ): PaginatedResult<Record<string, unknown>> {
+    const tickets = this.store.tickets.filter((ticket) =>
+      !ticket.deleted_at && canReadTicket(actor, ticket, this.currentCompanyId));
+    return {
+      items: tickets.map((ticket) => this.presentTicket(ticket)),
+      page,
+      page_size: pageSize,
+      total,
+    };
+  }
+
   metadata(actor: AuthUser): Record<string, unknown> {
+    if (this.currentCompanyId) {
+      throw conflict("Expense project and approver metadata is temporarily unavailable");
+    }
     const activeProjects = this.store.projects
       .filter(
         (project) =>
@@ -853,9 +882,62 @@ export class ExpenseService {
     };
   }
 
+  presentSqlDashboard(
+    actor: AuthUser,
+    aggregate: Record<string, string | number>,
+  ): Record<string, unknown> {
+    const count = (key: string): number => Number(aggregate[key] ?? 0);
+    const money = (key: string): string => {
+      const [whole = "0", fractional = ""] = String(aggregate[key] ?? "0").split(".");
+      return `${whole}.${fractional.padEnd(2, "0").slice(0, 2)}`;
+    };
+    const totals = {
+      submitted: count("submitted"),
+      pending_approval: count("pending_approval"),
+      approved: count("approved"),
+      returned_or_rejected: count("returned_or_rejected"),
+      finance_pending: count("finance_pending"),
+      payment_pending: count("payment_pending"),
+      settlement_pending: count("settlement_pending"),
+    };
+    return {
+      generated_at: nowIso(),
+      scope: { actor_user_id: actor.id, roles: actor.roles },
+      cards: [
+        { key: "submitted", label: "Submitted", value: totals.submitted, tone: "primary" },
+        { key: "pending_approval", label: "Pending approval", value: totals.pending_approval, tone: "warning" },
+        { key: "finance_pending", label: "Finance pending", value: totals.finance_pending, tone: "info" },
+        { key: "payment_pending", label: "Payment pending", value: totals.payment_pending,
+          amount: money("payment_pending_amount"), tone: "success" },
+        { key: "settlement_pending", label: "Settlement pending", value: totals.settlement_pending, tone: "warning" },
+        { key: "returned_or_rejected", label: "Returned / Rejected", value: totals.returned_or_rejected, tone: "destructive" },
+      ],
+      queue_counts: {
+        my_tickets: count("my_tickets"),
+        manager_pending: count("manager_pending"),
+        finance_pending: count("finance_queue_count"),
+        total_visible: count("total_visible"),
+      },
+      aging: [
+        { bucket: "0-24h", count: count("aging_0_24_count"), total_amount: money("aging_0_24_amount") },
+        { bucket: "24-72h", count: count("aging_24_72_count"), total_amount: money("aging_24_72_amount") },
+        { bucket: "72h-plus", count: count("aging_72_plus_count"), total_amount: money("aging_72_plus_amount") },
+      ],
+      totals: {
+        ...totals,
+        visible_amount: money("visible_amount"),
+        mine_amount: money("mine_amount"),
+        finance_queue_amount: money("finance_queue_amount"),
+      },
+      rows: this.store.tickets
+        .filter((ticket) => canReadTicket(actor, ticket, this.currentCompanyId))
+        .map((ticket) => this.presentTicket(ticket)),
+    };
+  }
+
   getTicket(actor: AuthUser, ticketId: UUID): Record<string, unknown> {
     const ticket = this.repository.findTicket(ticketId);
-    if (!canReadTicket(actor, ticket)) {
+    if (!canReadTicket(actor, ticket, this.currentCompanyId)) {
       throw forbidden("You do not have access to this ticket");
     }
     return this.presentTicket(ticket);
@@ -928,7 +1010,7 @@ export class ExpenseService {
     input: ExpenseClarificationInput,
   ): Record<string, unknown> {
     const ticket = this.repository.findTicket(ticketId);
-    if (!canReadTicket(actor, ticket)) {
+    if (!canReadTicket(actor, ticket, this.currentCompanyId)) {
       throw forbidden(
         "You do not have access to this ticket clarification thread",
       );
@@ -996,14 +1078,19 @@ export class ExpenseService {
     page: number,
     pageSize: number,
   ): PaginatedResult<Record<string, unknown>> {
-    const isAdmin = actor.roles.includes(Roles.Admin);
+    if (this.currentCompanyId && !actor.roles.includes(Roles.Reviewer)) {
+      throw forbidden("Current Manager authority is required for this queue");
+    }
+    const isAdmin = !this.currentCompanyId && actor.roles.includes(Roles.Admin);
     const items = isAdmin
       ? this.store.tickets.filter(
           (ticket) =>
             ticket.status === ExpenseStatuses.PendingManagerVerification &&
             !ticket.deleted_at,
         )
-      : this.repository.managerQueue(actor.id);
+      : this.repository.managerQueue(actor.id).filter((ticket) =>
+          (!this.currentCompanyId || ticket.company_id === this.currentCompanyId) &&
+          canReadTicket(actor, ticket, this.currentCompanyId));
     return this.presentPaginatedTickets(items, page, pageSize);
   }
 
@@ -1011,8 +1098,11 @@ export class ExpenseService {
     actor: AuthUser,
     filters: FinanceQueueFilters,
   ): PaginatedResult<Record<string, unknown>> {
-    const canSeeAllFinance =
-      actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor);
+    if (this.currentCompanyId && !actor.roles.includes(Roles.FinanceManager)) {
+      throw forbidden("Current Finance authority is required for this queue");
+    }
+    const canSeeAllFinance = !this.currentCompanyId &&
+      (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor));
     const isConfiguredPrimaryFinanceManager =
       actor.roles.includes(Roles.FinanceManager) &&
       this.store.financeGovernanceConfig?.primary_finance_manager_user_id ===
@@ -1047,7 +1137,9 @@ export class ExpenseService {
     const departmentFilter = filters.department?.toLowerCase();
 
     const filtered = this.store.tickets
-      .filter((ticket) => !ticket.deleted_at)
+      .filter((ticket) => !ticket.deleted_at &&
+        (!this.currentCompanyId || ticket.company_id === this.currentCompanyId) &&
+        canReadTicket(actor, ticket, this.currentCompanyId))
       .filter(
         (ticket) => canSeeAllFinance || ticket.finance_approver_id === actor.id,
       )
@@ -1141,10 +1233,16 @@ export class ExpenseService {
 
   financeDetail(actor: AuthUser, ticketId: UUID): Record<string, unknown> {
     const ticket = this.repository.findTicket(ticketId);
-    const canSeeAllFinance =
-      actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor);
-    const isAssignedFinanceActor = ticket.finance_approver_id === actor.id;
-    if (!canSeeAllFinance && !isAssignedFinanceActor) {
+    const canSeeAllFinance = !this.currentCompanyId &&
+      (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor));
+    const canSeeOriginalCompanyOversight = Boolean(this.currentCompanyId &&
+      ticket.company_id === this.currentCompanyId &&
+      ticket.owner_resolution_status !== "quarantined" &&
+      (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor)));
+    const isAssignedFinanceActor = ticket.finance_approver_id === actor.id &&
+      actor.roles.includes(Roles.FinanceManager) &&
+      (!this.currentCompanyId || ticket.company_id === this.currentCompanyId);
+    if (!canSeeAllFinance && !canSeeOriginalCompanyOversight && !isAssignedFinanceActor) {
       throw forbidden("You do not have access to this finance ticket detail");
     }
     const missingDocuments = this.missingRequiredDocuments(ticket);
@@ -1488,7 +1586,7 @@ export class ExpenseService {
         aggregateType: "expense_ticket",
         aggregateId: ticket.id,
         eventType: "expense.closed",
-        payload: { ticket_id: ticket.id },
+        payload: { ticket_id: ticket.id, company_id: ticket.company_id },
         idempotencyKey: `${RetryableMutationScopes.ExpenseSettlement}:${ticket.id}:${ticket.version}`,
       });
     }
@@ -1574,7 +1672,7 @@ export class ExpenseService {
     pageSize: number,
   ): PaginatedResult<unknown> {
     const ticket = this.repository.findTicket(ticketId);
-    if (!canReadTicket(actor, ticket)) {
+    if (!canReadTicket(actor, ticket, this.currentCompanyId)) {
       throw forbidden("You do not have access to this ticket audit");
     }
     const rows = this.store.auditLogs.filter(
@@ -1585,7 +1683,7 @@ export class ExpenseService {
 
   timeline(actor: AuthUser, ticketId: UUID): ExpenseTimelineEvent[] {
     const ticket = this.repository.findTicket(ticketId);
-    if (!canReadTicket(actor, ticket)) {
+    if (!canReadTicket(actor, ticket, this.currentCompanyId)) {
       throw forbidden("You do not have access to this ticket timeline");
     }
     return this.store.auditLogs
@@ -1770,7 +1868,7 @@ export class ExpenseService {
 
   private visibleTickets(actor: AuthUser): ExpenseTicket[] {
     return this.store.tickets.filter(
-      (ticket) => !ticket.deleted_at && canReadTicket(actor, ticket),
+      (ticket) => !ticket.deleted_at && canReadTicket(actor, ticket, this.currentCompanyId),
     );
   }
 
@@ -1879,7 +1977,7 @@ export class ExpenseService {
       actor_user_id: actor.id,
       event_type: eventType,
       old_value: { status: oldStatus },
-      new_value: { status: newStatus, version: ticket.version },
+      new_value: { status: newStatus, version: ticket.version, company_id: ticket.company_id },
       remarks,
       payload_hash: null,
     });
@@ -1889,6 +1987,7 @@ export class ExpenseService {
       eventType,
       payload: {
         ticket_id: ticket.id,
+        company_id: ticket.company_id,
         actor_user_id: actor.id,
         status: newStatus,
       },

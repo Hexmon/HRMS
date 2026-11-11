@@ -1,10 +1,12 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyInstance, FastifyPluginAsync } from "fastify";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   ExpenseStatuses,
   ExpenseSubTypes,
   ExpenseTypes,
   PaymentTypes,
+  type AuthUser,
   expenseCreateSchema,
   expenseDecisionSchema,
   financeVerifySchema,
@@ -15,13 +17,21 @@ import {
   paymentReleaseSchema,
   settlementSchema
 } from "#shared";
-import { badRequest, unauthorized } from "../../platform/errors.js";
+import { badRequest, conflict, unauthorized } from "../../platform/errors.js";
 import { ExpenseService } from "./service.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
 const documentParamSchema = z.object({ id: z.uuid(), documentId: z.uuid() });
 const mappingIdParamSchema = z.object({ id: z.uuid() });
 const versionQuerySchema = z.object({ expected_version: z.coerce.number().int().min(1).optional() });
+const expenseCommandKeySchema = z.string().min(8).max(200).regex(/^[A-Za-z0-9._:-]+$/u);
+function commandIdentity(request: { headers: Record<string, unknown> }, ticketId: string, action: string, body: unknown) {
+  const idempotencyKey = expenseCommandKeySchema.parse(request.headers["idempotency-key"]);
+  const requestHash = createHash("sha256")
+    .update(JSON.stringify({ ticket_id: ticketId, action, body }))
+    .digest("hex");
+  return { idempotencyKey, requestHash };
+}
 const expenseDashboardQuerySchema = z.object({
   date_from: isoDateSchema.optional(),
   date_to: isoDateSchema.optional(),
@@ -86,7 +96,32 @@ const financeQueueQuerySchema = paginationQuerySchema.extend({
   sort: z.enum(["sla", "created_at", "amount", "status"]).default("sla")
 });
 
+async function expenseReadService(fastify: FastifyInstance, actor: AuthUser, ticketId: string) {
+  if (fastify.store.kind !== "postgres") {
+    return { actor, service: new ExpenseService(fastify.store) };
+  }
+  const context = await fastify.store.persistence?.expenseReadContext?.(actor.id, ticketId);
+  if (!context) throw conflict("Expense read is temporarily unavailable");
+  return {
+    actor: context.actor,
+    service: new ExpenseService(context.store, context.companyId),
+  };
+}
+
 export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook("preHandler", async (request) => {
+    if (fastify.store.kind === "postgres" && !["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+      if (!request.actor) throw unauthorized();
+      if (request.method === "POST" &&
+          /^\/api\/v1\/expenses\/[0-9a-f-]+\/(?:finance\/(?:approve|payment)|settlement)$/iu.test(request.url.split("?")[0] ?? "")) {
+        return;
+      }
+      // Until each mutation owns its SQL transaction, running the legacy
+      // memory service would create ghost state after the 0068 DB fence rejects
+      // its response-end flush. Keep writes visibly unavailable meanwhile.
+      throw conflict("Expense changes are temporarily unavailable during the transaction cutover");
+    }
+  });
   fastify.post("/expenses", async (request) => {
     const actor = request.actor;
     if (!actor) {
@@ -101,6 +136,15 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const query = paginationQuerySchema.parse(request.query);
+    if (fastify.store.kind === "postgres") {
+      const context = await fastify.store.persistence?.expensePageContext?.(request.actor.id, {
+        kind: "my", page: query.page, pageSize: query.page_size,
+      });
+      if (!context) throw conflict("Expense history list is temporarily unavailable");
+      return new ExpenseService(context.store, context.companyId).presentScopedPage(
+        context.actor, query.page, query.page_size, context.total,
+      );
+    }
     return new ExpenseService(fastify.store).listMyTickets(request.actor, query.page, query.page_size);
   });
 
@@ -108,6 +152,7 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
+    if (fastify.store.kind === "postgres") throw conflict("Expense metadata requires company-scoped selectors");
     return new ExpenseService(fastify.store).metadata(request.actor);
   });
 
@@ -116,6 +161,13 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const query = expenseDashboardQuerySchema.parse(request.query);
+    if (fastify.store.kind === "postgres") {
+      const context = await fastify.store.persistence?.expenseDashboardContext?.(request.actor.id, query);
+      if (!context) throw conflict("Expense dashboard is temporarily unavailable");
+      return new ExpenseService(context.store, context.companyId).presentSqlDashboard(
+        context.actor, context.aggregate,
+      );
+    }
     return new ExpenseService(fastify.store).dashboardSummary(request.actor, query);
   });
 
@@ -124,7 +176,8 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
-    return new ExpenseService(fastify.store).getTicket(request.actor, params.id);
+    const { actor, service } = await expenseReadService(fastify, request.actor, params.id);
+    return service.getTicket(actor, params.id);
   });
 
   fastify.post("/expenses/:id/submit", async (request) => {
@@ -159,6 +212,15 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const query = paginationQuerySchema.parse(request.query);
+    if (fastify.store.kind === "postgres") {
+      const context = await fastify.store.persistence?.expensePageContext?.(request.actor.id, {
+        kind: "manager", page: query.page, pageSize: query.page_size,
+      });
+      if (!context) throw conflict("Manager expense queue is temporarily unavailable");
+      return new ExpenseService(context.store, context.companyId).presentScopedPage(
+        context.actor, query.page, query.page_size, context.total,
+      );
+    }
     return new ExpenseService(fastify.store).managerQueue(request.actor, query.page, query.page_size);
   });
 
@@ -176,6 +238,30 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const query = financeQueueQuerySchema.parse(request.query);
+    if (fastify.store.kind === "postgres") {
+      if (query.requester || query.department || query.document_status !== "any") {
+        throw conflict("Expense name, department and document filters require historical scoped indexes");
+      }
+      const context = await fastify.store.persistence?.expensePageContext?.(request.actor.id, {
+        kind: "finance", page: query.page, pageSize: query.page_size,
+        filters: {
+          status: query.status,
+          date_from: query.date_from,
+          date_to: query.date_to,
+          payment_type: query.payment_type,
+          expense_type: query.expense_type,
+          expense_sub_type: query.expense_sub_type,
+          amount_min: query.amount_min,
+          amount_max: query.amount_max,
+          sla_bucket: query.sla_bucket,
+          sort: query.sort,
+        },
+      });
+      if (!context) throw conflict("Finance expense queue is temporarily unavailable");
+      return new ExpenseService(context.store, context.companyId).presentScopedPage(
+        context.actor, query.page, query.page_size, context.total,
+      );
+    }
     return new ExpenseService(fastify.store).financeQueue(request.actor, query);
   });
 
@@ -184,7 +270,8 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
-    return new ExpenseService(fastify.store).financeDetail(request.actor, params.id);
+    const { actor, service } = await expenseReadService(fastify, request.actor, params.id);
+    return service.financeDetail(actor, params.id);
   });
 
   fastify.post("/expenses/:id/finance/approve", async (request) => {
@@ -193,6 +280,17 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = financeVerifySchema.parse(request.body);
+    if (fastify.store.kind === "postgres") {
+      const action = "finance.approve" as const;
+      const identity = commandIdentity(request, params.id, action, body);
+      const persistence = fastify.store.persistence;
+      if (!persistence?.expenseFinanceCommand) throw conflict("Expense Finance command is unavailable");
+      return persistence.expenseFinanceCommand({ userId: request.actor.id, ticketId: params.id, action,
+        ...identity, expectedVersion: body.expected_version,
+        run: ({ actor, companyId, store }) => new ExpenseService(store, companyId)
+          .financeApprove(actor, params.id, body.decision, body.remarks, body.expected_version),
+      });
+    }
     return new ExpenseService(fastify.store).financeApprove(request.actor, params.id, body.decision, body.remarks, body.expected_version);
   });
 
@@ -202,6 +300,17 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = paymentReleaseSchema.parse(request.body);
+    if (fastify.store.kind === "postgres") {
+      const action = "finance.payment" as const;
+      const identity = commandIdentity(request, params.id, action, body);
+      const persistence = fastify.store.persistence;
+      if (!persistence?.expenseFinanceCommand) throw conflict("Expense Finance command is unavailable");
+      return persistence.expenseFinanceCommand({ userId: request.actor.id, ticketId: params.id, action,
+        ...identity, expectedVersion: body.expected_version,
+        run: ({ actor, companyId, store }) => new ExpenseService(store, companyId)
+          .releasePayment(actor, params.id, body),
+      });
+    }
     return new ExpenseService(fastify.store).releasePayment(request.actor, params.id, {
       payment_date: body.payment_date,
       amount: body.amount,
@@ -234,6 +343,17 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = settlementSchema.parse(request.body);
+    if (fastify.store.kind === "postgres") {
+      const action = "settlement" as const;
+      const identity = commandIdentity(request, params.id, action, body);
+      const persistence = fastify.store.persistence;
+      if (!persistence?.expenseFinanceCommand) throw conflict("Expense Finance command is unavailable");
+      return persistence.expenseFinanceCommand({ userId: request.actor.id, ticketId: params.id, action,
+        ...identity, expectedVersion: body.expected_version,
+        run: ({ actor, companyId, store }) => new ExpenseService(store, companyId)
+          .settle(actor, params.id, body.actual_amount, body.remarks, body.expected_version),
+      });
+    }
     return new ExpenseService(fastify.store).settle(request.actor, params.id, body.actual_amount, body.remarks, body.expected_version);
   });
 
@@ -242,7 +362,8 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
-    return new ExpenseService(fastify.store).timeline(request.actor, params.id);
+    const { actor, service } = await expenseReadService(fastify, request.actor, params.id);
+    return service.timeline(actor, params.id);
   });
 
   fastify.get("/expenses/:id/audit", async (request) => {
@@ -251,7 +372,8 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const query = paginationQuerySchema.parse(request.query);
-    return new ExpenseService(fastify.store).audit(request.actor, params.id, query.page, query.page_size);
+    const { actor, service } = await expenseReadService(fastify, request.actor, params.id);
+    return service.audit(actor, params.id, query.page, query.page_size);
   });
 
   fastify.get("/manager-backups", async (request) => {
@@ -259,6 +381,9 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const query = paginationQuerySchema.parse(request.query);
+    if (fastify.store.kind === "postgres") {
+      throw conflict("Manager backup listing requires company-scoped governance data");
+    }
     return new ExpenseService(fastify.store).listManagerBackupAssignments(request.actor, query.page, query.page_size);
   });
 

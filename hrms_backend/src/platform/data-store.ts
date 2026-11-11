@@ -433,6 +433,7 @@ export interface ObjectStoragePort {
 
 export interface DataStorePersistence {
   flush(): Promise<void>;
+  flushInitialSeed?(): Promise<void>;
   flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyLogo?(
@@ -446,6 +447,44 @@ export interface DataStorePersistence {
   attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseReadContext?(userId: UUID, ticketId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseFinanceCommand?(input: {
+    userId: UUID;
+    ticketId: UUID;
+    action: "finance.approve" | "finance.payment" | "settlement";
+    idempotencyKey: string;
+    requestHash: string;
+    expectedVersion: number;
+    run: (context: { actor: AuthUser; companyId: UUID; store: DataStore }) => ExpenseTicket;
+  }): Promise<Pick<ExpenseTicket, "id" | "status" | "version">>;
+  expensePageContext?(userId: UUID, options: {
+    kind: "my" | "manager" | "finance";
+    page: number;
+    pageSize: number;
+    filters?: {
+      status?: string;
+      date_from?: string;
+      date_to?: string;
+      payment_type?: string;
+      expense_type?: string;
+      expense_sub_type?: string;
+      amount_min?: string;
+      amount_max?: string;
+      sla_bucket?: string;
+      sort?: string;
+    };
+  }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore; total: number }>;
+  isExpenseDocumentId?(documentId: UUID): Promise<boolean>;
+  expenseDashboardContext?(userId: UUID, filters: {
+    status?: string;
+    date_from?: string;
+    date_to?: string;
+  }): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    store: DataStore;
+    aggregate: Record<string, string | number>;
+  }>;
   close(): Promise<void>;
 }
 

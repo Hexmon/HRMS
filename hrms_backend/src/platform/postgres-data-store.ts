@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { Pool, type PoolClient } from "pg";
-import { ValkeySessionStore } from "#auth";
-import { EmploymentStatuses, type AuthUser, type RoleKey } from "#shared";
+import { MemorySessionStore, ValkeySessionStore } from "#auth";
+import { EmploymentStatuses, RequiredDocumentsByExpenseSubType, Roles, WorkflowActions, type AuthUser, type RoleKey } from "#shared";
 import type {
   AssetRecord,
   AttendanceDayRecord,
@@ -79,7 +79,8 @@ import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
-import { companyContextRequired, forbidden, unauthorized } from "./errors.js";
+import { badRequest, companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
+import { assertFinanceActor } from "../modules/expenses/policy.js";
 
 function optionalSet(
   values: readonly string[] | undefined,
@@ -201,6 +202,8 @@ const resetTables = [
   "documents.doc_permissions",
   "documents.doc_versions",
   "documents.doc_metadata",
+  "expenses.expense_command_results",
+  "expenses.expense_owner_repair_audit",
   "expenses.expense_policy_rules",
   "expenses.expense_audit_logs",
   "expenses.expense_payments",
@@ -380,6 +383,18 @@ function migrationSql(): string {
 export async function resetPostgresDatabase(
   databaseUrl: string,
 ): Promise<void> {
+  // Direct Vitest invocations bypass the shell preflight. Refuse remote or
+  // non-test targets before opening a connection or applying migrations.
+  const target = new URL(databaseUrl);
+  const database = decodeURIComponent(target.pathname.slice(1));
+  if (
+    !["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) ||
+    !/(?:^|[_-])test(?:$|[_-])/i.test(database) ||
+    database.includes("/") || target.search || target.hash ||
+    !["postgres:", "postgresql:"].includes(target.protocol)
+  ) {
+    throw new Error("Refusing to reset a nonlocal or non-test PostgreSQL database");
+  }
   const pool = new Pool({ connectionString: databaseUrl });
   const client = await pool.connect();
   let schemaLockAcquired = false;
@@ -440,8 +455,9 @@ export async function createPostgresDataStore(
     if (documentProcessing) {
       store.documentProcessing = documentProcessing;
     }
-    store.persistence = new PostgresPersistence(pool, store);
-    await store.persistence.flush();
+    const seedPersistence = new PostgresPersistence(pool, store);
+    store.persistence = seedPersistence;
+    await seedPersistence.flushInitialSeed();
     await store.persistence.reload();
   }
 
@@ -549,6 +565,518 @@ class PostgresPersistence {
     }
   }
 
+  async expenseFinanceCommand(input: {
+    userId: UUID; ticketId: UUID;
+    action: "finance.approve" | "finance.payment" | "settlement";
+    idempotencyKey: string; requestHash: string; expectedVersion: number;
+    run: (context: { actor: AuthUser; companyId: UUID; store: DataStore }) => ExpenseTicket;
+  }): Promise<Pick<ExpenseTicket, "id" | "status" | "version">> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      // Lock current authority through commit. The ticket row lock also
+      // serializes different command keys targeting the same version.
+      await client.query("SELECT 1 FROM core.users WHERE id = $1 FOR SHARE", [input.userId]);
+      const preference = await client.query<{ company_id: UUID | null }>(
+        "SELECT company_id FROM platform.user_session_preferences WHERE user_id = $1 FOR SHARE",
+        [input.userId],
+      );
+      await client.query(
+        `SELECT 1 FROM core.user_roles ur JOIN core.roles role ON role.role_key = ur.role_key
+         WHERE ur.user_id = $1 FOR SHARE OF ur, role`, [input.userId],
+      );
+      if (preference.rows[0]?.company_id) {
+        await client.query(
+          "SELECT 1 FROM platform.company_profiles WHERE id = $1 FOR SHARE",
+          [preference.rows[0].company_id],
+        );
+      }
+      const { actor, companyId } = await this.resolveExpenseActor(client, input.userId);
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
+        [`expense:${companyId}:${actor.id}:${input.action}:${input.idempotencyKey}`],
+      );
+      const locked = await client.query<{ id: UUID; company_id: UUID | null; version: number }>(
+        `SELECT id, company_id, version FROM expenses.expense_tickets
+         WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, [input.ticketId],
+      );
+      if (!locked.rows[0]) throw notFound("Expense ticket not found");
+      if (!locked.rows[0].company_id || locked.rows[0].company_id !== companyId) {
+        throw notFound("Expense ticket not found");
+      }
+      const tickets = await this.loadTickets(client, undefined, undefined, undefined, [input.ticketId]);
+      const original = tickets[0];
+      if (!original) throw notFound("Expense ticket not found");
+      const actionType = input.action === "finance.approve"
+        ? WorkflowActions.FinanceApprove
+        : input.action === "finance.payment"
+          ? WorkflowActions.PaymentRelease : WorkflowActions.SettlementClose;
+      assertFinanceActor(actor, original, actionType);
+      const prior = await client.query<{ request_hash: string; ticket_id: UUID; response_body: {
+        id: UUID; status: ExpenseTicket["status"]; version: number;
+      } }>(
+        `SELECT request_hash, ticket_id, response_body
+         FROM expenses.expense_command_results
+         WHERE company_id = $1 AND actor_user_id = $2 AND action = $3 AND idempotency_key = $4`,
+        [companyId, actor.id, input.action, input.idempotencyKey],
+      );
+      if (prior.rows[0]) {
+        if (prior.rows[0].request_hash !== input.requestHash || prior.rows[0].ticket_id !== input.ticketId) {
+          throw conflict("Idempotency key was already used for a different expense command");
+        }
+        await client.query("COMMIT");
+        return prior.rows[0].response_body;
+      }
+      if (original.version !== input.expectedVersion) {
+        throw conflict("The ticket was modified by another actor. Refresh and retry.", {
+          expected_version: input.expectedVersion, current_version: original.version,
+        });
+      }
+      if (input.action === "settlement") {
+        const required = RequiredDocumentsByExpenseSubType[original.expense_sub_type] ?? [];
+        const verified = await client.query<{ document_type: string }>(
+          `SELECT link.document_type
+           FROM expenses.expense_documents link
+           JOIN documents.doc_metadata metadata ON metadata.id = link.document_id
+           JOIN documents.doc_versions version ON version.document_id = metadata.id
+             AND version.version = metadata.current_version
+             AND version.storage_key = metadata.storage_key
+             AND version.size_bytes = metadata.size_bytes
+             AND version.checksum_sha256 IS NOT DISTINCT FROM metadata.checksum_sha256
+           WHERE link.ticket_id = $1 AND link.verification_status = 'verified'
+             AND metadata.business_object_type = 'expense_ticket'
+             AND metadata.business_object_id = $1
+             AND metadata.classification = 'finance'
+             AND metadata.document_type = link.document_type
+             AND metadata.deleted_at IS NULL AND metadata.size_bytes > 0
+             AND version.size_bytes > 0
+           FOR SHARE OF link, metadata, version`, [input.ticketId],
+        );
+        const present = new Set(verified.rows.map((row) => row.document_type));
+        const missing = required.filter((type) => !present.has(type));
+        if (missing.length) {
+          throw badRequest("Closure requires live, matching and verified expense documents", {
+            missing_document_types: missing,
+          });
+        }
+      }
+      const originalVersion = original.version;
+      const store = await this.loadExpenseReadStore(client, companyId, tickets);
+      const priorApprovalIds = new Set(store.expenseApprovals.map((item) => item.id));
+      const priorAuditIds = new Set(store.auditLogs.map((item) => item.id));
+      const priorPaymentIds = new Set(store.payments.map((item) => item.id));
+      const priorPayments = new Map(store.payments.map((item) => [item.id, {
+        settlement_status: item.settlement_status, settlement_amount: item.settlement_amount,
+      }]));
+      const changed = input.run({ actor, companyId, store });
+      if (changed.id !== input.ticketId || changed.company_id !== companyId ||
+          changed.version !== originalVersion + 1 || store.tickets.length !== 1) {
+        throw conflict("Expense command changed an unexpected ticket or owner");
+      }
+      await client.query("SELECT set_config('app.expense_command_v1', 'on', true)");
+      const updated = await client.query(
+        `UPDATE expenses.expense_tickets SET status = $1, actual_amount = $2,
+           variance_amount = $3, payment_reference_no = $4, closure_remarks = $5,
+           version = $6, updated_at = $7, closed_at = $8
+         WHERE id = $9 AND company_id = $10 AND version = $11`,
+        [changed.status, changed.actual_amount, changed.variance_amount,
+          changed.payment_reference_no, changed.closure_remarks, changed.version,
+          changed.updated_at, changed.closed_at, changed.id, companyId, originalVersion],
+      );
+      if (updated.rowCount !== 1) throw conflict("Expense ticket changed during the command");
+      for (const approval of store.expenseApprovals.filter((item) => !priorApprovalIds.has(item.id))) {
+        if (approval.ticket_id !== input.ticketId) throw conflict("Expense approval parent mismatch");
+        await client.query(
+          `INSERT INTO expenses.expense_approvals
+           (id, ticket_id, approval_stage, approver_user_id, decision, remarks,
+            role_snapshot, designation_snapshot, route_snapshot, action_at, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)`,
+          [approval.id, approval.ticket_id, approval.approval_stage, approval.approver_user_id,
+            approval.decision, approval.remarks, approval.role_snapshot, approval.designation_snapshot,
+            JSON.stringify(approval.route_snapshot), approval.action_at, approval.created_at],
+        );
+      }
+      for (const payment of store.payments) {
+        if (payment.ticket_id !== input.ticketId) throw conflict("Expense payment parent mismatch");
+        if (!priorPaymentIds.has(payment.id)) {
+          await client.query(
+            `INSERT INTO expenses.expense_payments
+             (id,ticket_id,payment_type,approved_amount,paid_amount,payment_date,
+              payment_mode,reference_no,settlement_status,settlement_amount,processed_by_user_id,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            [payment.id, payment.ticket_id, payment.payment_type, payment.approved_amount,
+              payment.paid_amount, payment.payment_date, payment.payment_mode, payment.reference_no,
+              payment.settlement_status, payment.settlement_amount, payment.processed_by_user_id,
+              payment.created_at],
+          );
+        } else if (payment.settlement_status !== priorPayments.get(payment.id)?.settlement_status ||
+                   payment.settlement_amount !== priorPayments.get(payment.id)?.settlement_amount) {
+          await client.query(
+            `UPDATE expenses.expense_payments SET settlement_status = $1, settlement_amount = $2
+             WHERE id = $3 AND ticket_id = $4`,
+            [payment.settlement_status, payment.settlement_amount, payment.id, input.ticketId],
+          );
+        }
+      }
+      for (const audit of store.auditLogs.filter((item) => !priorAuditIds.has(item.id))) {
+        if (audit.ticket_id !== input.ticketId) throw conflict("Expense audit parent mismatch");
+        await client.query(
+          `INSERT INTO expenses.expense_audit_logs
+           (id,ticket_id,actor_user_id,event_type,old_value,new_value,remarks,payload_hash,created_at)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9)`,
+          [audit.id, audit.ticket_id, audit.actor_user_id, audit.event_type,
+            audit.old_value ? JSON.stringify(audit.old_value) : null,
+            audit.new_value ? JSON.stringify(audit.new_value) : null,
+            audit.remarks, audit.payload_hash, audit.created_at],
+        );
+      }
+      for (const notice of store.notifications) {
+        await client.query(
+          `INSERT INTO platform.notifications
+           (id,actor_user_id,target_user_id,event_type,payload,status,read_at,version,created_at,updated_at)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10)`,
+          [notice.id, notice.actor_user_id, notice.target_user_id, notice.event_type,
+            JSON.stringify(notice.payload), notice.status, notice.read_at, notice.version,
+            notice.created_at, notice.updated_at],
+        );
+      }
+      for (const event of store.outbox) {
+        if (event.aggregate_id !== input.ticketId || event.payload.company_id !== companyId) {
+          throw conflict("Expense event owner mismatch");
+        }
+        await client.query(
+          `INSERT INTO platform.outbox_events
+           (event_id,aggregate_type,aggregate_id,event_type,payload,idempotency_key,status,
+            retry_count,available_at,created_at,published_at,failed_at,last_error)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [event.event_id, event.aggregate_type, event.aggregate_id, event.event_type,
+            JSON.stringify(event.payload), event.idempotency_key, event.status, event.retry_count,
+            event.available_at, event.created_at, event.published_at, event.failed_at, event.last_error],
+        );
+      }
+      const response = { id: changed.id, status: changed.status, version: changed.version };
+      await client.query(
+        `INSERT INTO expenses.expense_command_results
+         (company_id,actor_user_id,ticket_id,action,idempotency_key,request_hash,response_body)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+        [companyId, actor.id, input.ticketId, input.action, input.idempotencyKey,
+          input.requestHash, JSON.stringify(response)],
+      );
+      await client.query("COMMIT");
+      return response;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async expenseReadContext(userId: UUID, ticketId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      const tickets = await this.loadTickets(client, companyId, userId, ticketId);
+      const store = await this.loadExpenseReadStore(client, companyId, tickets);
+      await client.query("COMMIT");
+      return { actor, companyId, store };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async expensePageContext(userId: UUID, options: {
+    kind: "my" | "manager" | "finance";
+    page: number;
+    pageSize: number;
+    filters?: {
+      status?: string; date_from?: string; date_to?: string;
+      payment_type?: string; expense_type?: string; expense_sub_type?: string;
+      amount_min?: string; amount_max?: string; sla_bucket?: string; sort?: string;
+    };
+  }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore; total: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      if (options.kind === "manager" && !actor.roles.includes(Roles.Reviewer)) {
+        throw forbidden("Current Manager authority is required for this queue");
+      }
+      if (options.kind === "finance" && !actor.roles.includes(Roles.FinanceManager)) {
+        throw forbidden("Current Finance authority is required for this queue");
+      }
+      const params: unknown[] = [];
+      const bind = (value: unknown): string => {
+        params.push(value);
+        return `$${params.length}`;
+      };
+      const where = ["t.deleted_at IS NULL", "t.company_id IS NOT NULL"];
+      if (options.kind === "my") {
+        where.push(`t.requester_user_id = ${bind(userId)}::uuid`);
+      } else if (options.kind === "manager") {
+        where.push(`t.company_id = ${bind(companyId)}::uuid`);
+        where.push(`t.manager_verifier_id = ${bind(userId)}::uuid`);
+        where.push(`(
+          t.status = 'Pending Manager Verification'
+          OR (t.status IN ('Payment Released', 'Bills Submitted', 'Pending Adjustment')
+            AND EXISTS (SELECT 1 FROM expenses.expense_documents doc
+              WHERE doc.ticket_id = t.id AND doc.verification_status = 'pending'))
+        )`);
+      } else {
+        where.push(`t.company_id = ${bind(companyId)}::uuid`);
+        where.push(`t.finance_approver_id = ${bind(userId)}::uuid`);
+        if (!options.filters?.status) {
+          where.push(`t.status IN ('Manager Verified', 'Finance Hold', 'Clarification Required',
+            'Finance Approved', 'Payment Released', 'Bills Submitted', 'Pending Adjustment')`);
+        }
+      }
+      const filters = options.filters;
+      if (filters?.status) where.push(`t.status = ${bind(filters.status)}`);
+      if (filters?.date_from) where.push(`t.created_at::date >= ${bind(filters.date_from)}::date`);
+      if (filters?.date_to) where.push(`t.created_at::date <= ${bind(filters.date_to)}::date`);
+      if (filters?.date_from && filters?.date_to && filters.date_from > filters.date_to) {
+        throw badRequest("Expense date range is reversed");
+      }
+      if (filters?.payment_type) where.push(`t.payment_type = ${bind(filters.payment_type)}`);
+      if (filters?.expense_type) where.push(`t.expense_type = ${bind(filters.expense_type)}`);
+      if (filters?.expense_sub_type) where.push(`t.expense_sub_type = ${bind(filters.expense_sub_type)}`);
+      if (filters?.amount_min) where.push(`t.estimated_amount >= ${bind(filters.amount_min)}::numeric`);
+      if (filters?.amount_max) where.push(`t.estimated_amount <= ${bind(filters.amount_max)}::numeric`);
+      if (filters?.sla_bucket && filters.sla_bucket !== "any") {
+        if (filters.sla_bucket === "0-24h") where.push("t.created_at >= now() - interval '24 hours'");
+        else if (filters.sla_bucket === "24-72h") where.push("t.created_at < now() - interval '24 hours' AND t.created_at >= now() - interval '72 hours'");
+        else if (filters.sla_bucket === "72h-plus") where.push("t.created_at < now() - interval '72 hours'");
+        else throw badRequest("Unsupported expense SLA bucket");
+      }
+      const order = options.kind === "finance" && filters?.sort === "amount"
+        ? "t.estimated_amount DESC, t.id DESC"
+        : options.kind === "finance" && filters?.sort === "status"
+          ? "t.status ASC, t.created_at DESC, t.id DESC"
+          : options.kind === "finance" && (filters?.sort === "sla" || !filters?.sort)
+            ? "t.created_at ASC, t.id ASC"
+            : "t.created_at DESC, t.id DESC";
+      const predicate = where.join(" AND ");
+      const count = await client.query<{ total: string }>(
+        `SELECT count(*) AS total FROM expenses.expense_tickets t WHERE ${predicate}`, params,
+      );
+      const total = Number(count.rows[0]?.total ?? 0);
+      const pageParams = [...params, options.pageSize, (options.page - 1) * options.pageSize];
+      const pageRows = await client.query<{ id: UUID }>(
+        `SELECT t.id FROM expenses.expense_tickets t WHERE ${predicate}
+         ORDER BY ${order} LIMIT $${pageParams.length - 1}::integer OFFSET $${pageParams.length}::integer`,
+        pageParams,
+      );
+      const orderedIds = pageRows.rows.map((row) => row.id);
+      const loaded = await this.loadTickets(client, undefined, undefined, undefined, orderedIds);
+      const byId = new Map(loaded.map((ticket) => [ticket.id, ticket]));
+      const tickets = orderedIds.flatMap((id) => byId.get(id) ? [byId.get(id)!] : []);
+      const store = await this.loadExpenseReadStore(client, companyId, tickets);
+      await client.query("COMMIT");
+      return { actor, companyId, store, total };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async isExpenseDocumentId(documentId: UUID): Promise<boolean> {
+    const result = await this.pool.query<{ is_expense: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM documents.doc_metadata metadata
+         WHERE metadata.id = $1 AND metadata.business_object_type = 'expense_ticket'
+       ) OR EXISTS (
+         SELECT 1 FROM expenses.expense_documents link WHERE link.document_id = $1
+       ) AS is_expense`,
+      [documentId],
+    );
+    return result.rows[0]?.is_expense === true;
+  }
+
+  async expenseDashboardContext(userId: UUID, filters: {
+    status?: string; date_from?: string; date_to?: string;
+  }): Promise<{
+    actor: AuthUser; companyId: UUID; store: DataStore;
+    aggregate: Record<string, string | number>;
+  }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      if (filters.date_from && filters.date_to && filters.date_from > filters.date_to) {
+        throw badRequest("Expense date range is reversed");
+      }
+      const params: unknown[] = [
+        userId, companyId,
+        actor.roles.includes(Roles.Reviewer), actor.roles.includes(Roles.FinanceManager),
+      ];
+      const where = [
+        "t.deleted_at IS NULL", "t.company_id IS NOT NULL",
+        `(t.requester_user_id = $1::uuid OR
+          (t.company_id = $2::uuid AND
+            (($3::boolean AND t.manager_verifier_id = $1::uuid)
+              OR ($4::boolean AND t.finance_approver_id = $1::uuid))))`,
+      ];
+      if (filters.status) { params.push(filters.status); where.push(`t.status = $${params.length}`); }
+      if (filters.date_from) { params.push(filters.date_from); where.push(`t.created_at::date >= $${params.length}::date`); }
+      if (filters.date_to) { params.push(filters.date_to); where.push(`t.created_at::date <= $${params.length}::date`); }
+      const predicate = where.join(" AND ");
+      const aggregate = await client.query<Record<string, string | number>>(`
+        WITH visible AS (
+          SELECT t.*, GREATEST(0, floor(extract(epoch FROM (now() - t.created_at)) / 3600)) AS age_hours
+          FROM expenses.expense_tickets t WHERE ${predicate}
+        )
+        SELECT
+          count(*) AS total_visible,
+          count(*) FILTER (WHERE requester_user_id = $1) AS my_tickets,
+          count(*) FILTER (WHERE $3::boolean AND company_id = $2 AND manager_verifier_id = $1
+            AND status = 'Pending Manager Verification') AS manager_pending,
+          count(*) FILTER (WHERE $4::boolean AND company_id = $2 AND finance_approver_id = $1
+            AND status IN ('Manager Verified', 'Finance Hold', 'Clarification Required',
+              'Finance Approved', 'Payment Released', 'Bills Submitted', 'Pending Adjustment')) AS finance_queue_count,
+          count(*) FILTER (WHERE requester_user_id = $1 AND status IN
+            ('Submitted', 'Pending Manager Verification', 'Manager Verified', 'Finance Hold',
+             'Clarification Required', 'Finance Approved', 'Payment Released', 'Bills Submitted',
+             'Pending Adjustment', 'Closed')) AS submitted,
+          count(*) FILTER (WHERE requester_user_id = $1 AND status IN
+            ('Pending Manager Verification', 'Manager Verified')) AS pending_approval,
+          count(*) FILTER (WHERE requester_user_id = $1 AND status IN
+            ('Finance Approved', 'Payment Released', 'Bills Submitted', 'Pending Adjustment', 'Closed')) AS approved,
+          count(*) FILTER (WHERE requester_user_id = $1 AND status IN
+            ('Manager Returned', 'Manager Rejected')) AS returned_or_rejected,
+          count(*) FILTER (WHERE $4::boolean AND company_id = $2 AND finance_approver_id = $1
+            AND status = 'Manager Verified') AS finance_pending,
+          count(*) FILTER (WHERE $4::boolean AND company_id = $2 AND finance_approver_id = $1
+            AND status = 'Finance Approved') AS payment_pending,
+          count(*) FILTER (WHERE status IN
+            ('Payment Released', 'Bills Submitted', 'Pending Adjustment')) AS settlement_pending,
+          COALESCE(sum(estimated_amount), 0)::text AS visible_amount,
+          COALESCE(sum(estimated_amount) FILTER (WHERE requester_user_id = $1), 0)::text AS mine_amount,
+          COALESCE(sum(estimated_amount) FILTER (WHERE $4::boolean AND company_id = $2
+            AND finance_approver_id = $1 AND status IN
+            ('Manager Verified', 'Finance Hold', 'Clarification Required', 'Finance Approved',
+             'Payment Released', 'Bills Submitted', 'Pending Adjustment')), 0)::text AS finance_queue_amount,
+          COALESCE(sum(estimated_amount) FILTER (WHERE $4::boolean AND company_id = $2
+            AND finance_approver_id = $1 AND status = 'Finance Approved'), 0)::text AS payment_pending_amount,
+          count(*) FILTER (WHERE age_hours <= 24) AS aging_0_24_count,
+          COALESCE(sum(estimated_amount) FILTER (WHERE age_hours <= 24), 0)::text AS aging_0_24_amount,
+          count(*) FILTER (WHERE age_hours BETWEEN 25 AND 72) AS aging_24_72_count,
+          COALESCE(sum(estimated_amount) FILTER (WHERE age_hours BETWEEN 25 AND 72), 0)::text AS aging_24_72_amount,
+          count(*) FILTER (WHERE age_hours >= 73) AS aging_72_plus_count,
+          COALESCE(sum(estimated_amount) FILTER (WHERE age_hours >= 73), 0)::text AS aging_72_plus_amount
+        FROM visible`, params,
+      );
+      const ids = await client.query<{ id: UUID }>(
+        `SELECT t.id FROM expenses.expense_tickets t WHERE ${predicate}
+         ORDER BY t.updated_at DESC, t.id DESC LIMIT 10`, params,
+      );
+      const orderedIds = ids.rows.map((row) => row.id);
+      const loaded = await this.loadTickets(client, undefined, undefined, undefined, orderedIds);
+      const byId = new Map(loaded.map((ticket) => [ticket.id, ticket]));
+      const tickets = orderedIds.flatMap((id) => byId.get(id) ? [byId.get(id)!] : []);
+      const store = await this.loadExpenseReadStore(client, companyId, tickets);
+      await client.query("COMMIT");
+      return { actor, companyId, store, aggregate: aggregate.rows[0] ?? {} };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async resolveExpenseActor(client: PoolClient, userId: UUID): Promise<{ actor: AuthUser; companyId: UUID }> {
+    const actorRow = await client.query<{
+        employment_status: AuthUser["employment_status"];
+        deleted_at: Date | null;
+        roles: RoleKey[];
+        company_id: UUID | null;
+        active_role: RoleKey | null;
+      }>(
+        `SELECT u.employment_status, u.deleted_at, pref.company_id, pref.active_role,
+                COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
+                  WHERE ur.role_key IS NOT NULL AND ur.status = 'active'
+                    AND ur.deleted_at IS NULL AND role.status = 'active'
+                    AND role.deleted_at IS NULL
+                ), '{}') AS roles
+         FROM core.users u
+         LEFT JOIN platform.user_session_preferences pref ON pref.user_id = u.id
+         LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+         LEFT JOIN core.roles role ON role.role_key = ur.role_key
+         WHERE u.id = $1
+         GROUP BY u.id, pref.company_id, pref.active_role`,
+        [userId],
+      );
+    const current = actorRow.rows[0];
+    const cached = this.store.users.find((user) => user.id === userId);
+    if (!current || current.deleted_at || !cached || current.employment_status !== EmploymentStatuses.Active) {
+      throw unauthorized("User account is inactive or blocked");
+    }
+    if (!current.company_id || !current.active_role) {
+      throw companyContextRequired({ user_id: userId, operation: "expenses.read" });
+    }
+    if (!current.roles.includes(current.active_role)) {
+      throw forbidden("Selected role is not assigned to this user.");
+    }
+    const companyRow = await client.query<{ status: string }>(
+      "SELECT status FROM platform.company_profiles WHERE id = $1", [current.company_id],
+    );
+    if (companyRow.rows[0]?.status !== "active") {
+      throw companyContextRequired({ user_id: userId, company_id: current.company_id, operation: "expenses.read" });
+    }
+    return {
+      actor: { ...cached, roles: current.roles, employment_status: current.employment_status },
+      companyId: current.company_id,
+    };
+  }
+
+  private async loadExpenseReadStore(client: PoolClient, companyId: UUID, tickets: ExpenseTicket[]): Promise<DataStore> {
+      const ticketIds = tickets.map((ticket) => ticket.id);
+      // node-postgres runs one statement at a time per client. Await each
+      // query to preserve its execution contract and the same SQL snapshot.
+      const lineItems = await this.loadLineItems(client, ticketIds);
+      const expenseApprovals = await this.loadExpenseApprovals(client, ticketIds);
+      const auditLogs = await this.loadAuditLogs(client, undefined, ticketIds);
+      const expenseDocuments = await this.loadExpenseDocuments(client, ticketIds);
+      const payments = await this.loadPayments(client, ticketIds);
+      const displayUserIds = Array.from(new Set([
+        ...tickets.flatMap((ticket) => [ticket.requester_user_id, ticket.manager_verifier_id, ticket.finance_approver_id]),
+        ...auditLogs.map((audit) => audit.actor_user_id),
+      ].filter((id): id is UUID => Boolean(id))));
+      const departmentIds = Array.from(new Set(tickets.map((ticket) => ticket.department_id)));
+      const users = await this.loadUsers(client, companyId, displayUserIds);
+      const departments = await this.loadDepartments(client, companyId, departmentIds);
+      // Start with no hydrated tenant collections. The shared process store
+      // contains other companies' users/preferences/documents and must never
+      // be reachable through this request-local service instance.
+      const emptyCollections = Object.fromEntries(
+        Object.entries(this.store)
+          .filter(([, value]) => Array.isArray(value))
+          .map(([key]) => [key, []]),
+      );
+      return {
+          ...this.store,
+          ...emptyCollections,
+          tickets, lineItems, expenseApprovals, auditLogs, expenseDocuments, payments,
+          users, departments,
+          financeGovernanceConfig: null,
+          adminSecuritySettings: buildDefaultAdminSecuritySettings(new Date().toISOString()),
+          processedEvents: new Set<string>(),
+          sessionStore: new MemorySessionStore(),
+          objectStorage: null,
+          persistence: null,
+          pgPool: null,
+          valkey: null,
+          nextOutboxId: 1,
+          nextTicketNo: 1,
+      };
+  }
+
   async reload(): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -651,6 +1179,49 @@ class PostgresPersistence {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      await this.flushCore(client);
+      await this.flushPlatform(client);
+      await this.flushExpenses(client);
+      await this.flushDocuments(client);
+      await this.flushAssets(client);
+      await this.flushTimesheets(client);
+      await this.flushProjects(client);
+      await this.flushHelpdesk(client);
+      await this.flushAttendance(client);
+      await this.flushLeaveWfh(client);
+      await this.flushEms(client);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async flushInitialSeed(): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(76001, 1007)");
+      const existing = await client.query<{ occupied: boolean }>(`
+        SELECT EXISTS (SELECT 1 FROM core.users)
+          OR EXISTS (SELECT 1 FROM expenses.expense_tickets)
+          OR EXISTS (SELECT 1 FROM expenses.expense_line_items)
+          OR EXISTS (SELECT 1 FROM expenses.expense_approvals)
+          OR EXISTS (SELECT 1 FROM expenses.expense_audit_logs)
+          OR EXISTS (SELECT 1 FROM expenses.expense_documents)
+          OR EXISTS (SELECT 1 FROM expenses.expense_payments)
+          OR EXISTS (SELECT 1 FROM expenses.employee_reviewer_mappings)
+          OR EXISTS (SELECT 1 FROM expenses.expense_policy_rules)
+          OR EXISTS (SELECT 1 FROM expenses.expense_owner_repair_audit)
+          OR EXISTS (SELECT 1 FROM expenses.expense_command_results)
+          AS occupied
+      `);
+      if (existing.rows[0]?.occupied) {
+        throw new Error("Initial seed requires an empty user and expense database");
+      }
+      await client.query("SELECT set_config('app.expense_command_v1', 'on', true)");
       await this.flushCore(client);
       await this.flushPlatform(client);
       await this.flushExpenses(client);
@@ -996,9 +1567,15 @@ class PostgresPersistence {
     }
   }
 
-  private async loadDepartments(client: PoolClient): Promise<Department[]> {
+  private async loadDepartments(client: PoolClient, companyId?: UUID, departmentIds?: readonly UUID[]): Promise<Department[]> {
     const { rows } = await client.query(
-      "SELECT id, company_id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version FROM core.departments ORDER BY department_code",
+      `SELECT id, company_id, department_code, name, cost_center, parent_department_id,
+              director_user_id, status, deleted_at, version
+       FROM core.departments
+       ${companyId ? `WHERE company_id = $1 AND deleted_at IS NULL
+         ${departmentIds ? "AND id = ANY($2::uuid[])" : ""}` : ""}
+       ORDER BY department_code`,
+      companyId ? departmentIds ? [companyId, departmentIds] : [companyId] : [],
     );
     return rows.map((row) => ({
       ...row,
@@ -1204,7 +1781,7 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadUsers(client: PoolClient): Promise<CoreUser[]> {
+  private async loadUsers(client: PoolClient, companyId?: UUID, userIds?: readonly UUID[]): Promise<CoreUser[]> {
     const { rows } = await client.query(`
       SELECT
         u.id, u.employee_code, u.email, u.full_name, u.department_id, u.designation_id,
@@ -1214,10 +1791,13 @@ class PostgresPersistence {
         u.timezone, u.joined_on, u.terminated_on, u.deleted_at, u.version,
         COALESCE(array_agg(DISTINCT ur.role_key) FILTER (WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL), '{}') AS roles
       FROM core.users u
+      ${companyId ? "JOIN platform.user_session_preferences pref ON pref.user_id = u.id AND pref.company_id = $1" : ""}
       LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+      ${companyId ? `WHERE u.deleted_at IS NULL
+        ${userIds ? "AND u.id = ANY($2::uuid[])" : ""}` : ""}
       GROUP BY u.id
       ORDER BY u.employee_code
-    `);
+    `, companyId ? userIds ? [companyId, userIds] : [companyId] : []);
     return rows.map((row) => ({
       ...row,
       roles: row.roles as RoleKey[],
@@ -1406,15 +1986,25 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadTickets(client: PoolClient, companyId?: UUID): Promise<ExpenseTicket[]> {
+  private async loadTickets(client: PoolClient, companyId?: UUID, requesterId?: UUID, ticketId?: UUID, ticketIds?: readonly UUID[]): Promise<ExpenseTicket[]> {
     const { rows } = await client.query(
       `SELECT * FROM expenses.expense_tickets
-       ${companyId ? "WHERE context_payload->>'company_id' = $1" : ""}
+       ${ticketIds ? "WHERE id = ANY($1::uuid[]) AND company_id IS NOT NULL"
+         : companyId && requesterId && ticketId
+         ? "WHERE id = $3 AND company_id IS NOT NULL AND (company_id = $1 OR requester_user_id = $2)"
+         : companyId && requesterId
+         ? "WHERE company_id IS NOT NULL AND (company_id = $1 OR requester_user_id = $2)"
+         : companyId ? "WHERE company_id = $1" : ""}
        ORDER BY created_at, ticket_no`,
-      companyId ? [companyId] : [],
+      ticketIds ? [ticketIds]
+        : companyId && requesterId && ticketId ? [companyId, requesterId, ticketId]
+        : companyId && requesterId ? [companyId, requesterId] : companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id ?? null,
+      owner_resolution_status: row.owner_resolution_status ?? "quarantined",
+      owner_resolution_reason: row.owner_resolution_reason ?? null,
       ticket_no: row.ticket_no,
       requester_user_id: row.requester_user_id,
       requester_role_snapshot: row.requester_role_snapshot,
@@ -1455,9 +2045,12 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadLineItems(client: PoolClient): Promise<ExpenseLineItem[]> {
+  private async loadLineItems(client: PoolClient, ticketIds?: readonly UUID[]): Promise<ExpenseLineItem[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_line_items ORDER BY created_at, id",
+      `SELECT * FROM expenses.expense_line_items
+       ${ticketIds ? "WHERE ticket_id = ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      ticketIds ? [ticketIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1474,9 +2067,13 @@ class PostgresPersistence {
 
   private async loadExpenseApprovals(
     client: PoolClient,
+    ticketIds?: readonly UUID[],
   ): Promise<ExpenseApprovalRecord[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_approvals ORDER BY created_at, id",
+      `SELECT * FROM expenses.expense_approvals
+       ${ticketIds ? "WHERE ticket_id = ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      ticketIds ? [ticketIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1493,12 +2090,12 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadAuditLogs(client: PoolClient, companyId?: UUID): Promise<ExpenseAuditLog[]> {
+  private async loadAuditLogs(client: PoolClient, companyId?: UUID, ticketIds?: readonly UUID[]): Promise<ExpenseAuditLog[]> {
     const { rows } = await client.query(
       `SELECT log.* FROM expenses.expense_audit_logs log
-       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = log.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = log.ticket_id WHERE ticket.company_id = $1" : ticketIds ? "WHERE log.ticket_id = ANY($1::uuid[])" : ""}
        ORDER BY log.created_at, log.id`,
-      companyId ? [companyId] : [],
+      companyId ? [companyId] : ticketIds ? [ticketIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1515,16 +2112,23 @@ class PostgresPersistence {
 
   private async loadExpenseDocuments(
     client: PoolClient,
+    ticketIds?: readonly UUID[],
   ): Promise<ExpenseDocument[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_documents ORDER BY uploaded_at, id",
+      `SELECT * FROM expenses.expense_documents
+       ${ticketIds ? "WHERE ticket_id = ANY($1::uuid[])" : ""}
+       ORDER BY uploaded_at, id`,
+      ticketIds ? [ticketIds] : [],
     );
     return rows.map((row) => ({ ...row, uploaded_at: asIso(row.uploaded_at) }));
   }
 
-  private async loadPayments(client: PoolClient): Promise<ExpensePayment[]> {
+  private async loadPayments(client: PoolClient, ticketIds?: readonly UUID[]): Promise<ExpensePayment[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_payments ORDER BY created_at, id",
+      `SELECT * FROM expenses.expense_payments
+       ${ticketIds ? "WHERE ticket_id = ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      ticketIds ? [ticketIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -3483,6 +4087,9 @@ class PostgresPersistence {
       );
     }
     for (const ticket of this.store.tickets) {
+      if (!ticket.company_id || ticket.owner_resolution_status !== "typed_creation") {
+        throw new Error("Whole-domain flush cannot persist unowned or historical expense tickets");
+      }
       await client.query(
         `INSERT INTO expenses.expense_tickets (
           id, ticket_no, requester_user_id, requester_role_snapshot, department_id, expense_type,
@@ -3491,12 +4098,14 @@ class PostgresPersistence {
           assigned_reviewer_id, director_approver_id, finance_manager_id,
           manager_verifier_id, manager_backup_user_id, finance_approver_id,
           status, actual_amount, variance_amount, payment_reference_no, closure_remarks, context_payload, route_snapshot,
-          policy_snapshot, version, created_at, updated_at, submitted_at, closed_at, deleted_at
+          policy_snapshot, version, created_at, updated_at, submitted_at, closed_at, deleted_at,
+          company_id, owner_resolution_status, owner_resolution_reason
         )
         VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
           $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29,
-          $30::jsonb, $31::jsonb, $32::jsonb, $33, $34, $35, $36, $37, $38
+          $30::jsonb, $31::jsonb, $32::jsonb, $33, $34, $35, $36, $37, $38,
+          $39, $40, $41
         )
         ON CONFLICT (id) DO UPDATE
         SET status = EXCLUDED.status, assigned_reviewer_id = EXCLUDED.assigned_reviewer_id,
@@ -3549,6 +4158,9 @@ class PostgresPersistence {
           ticket.submitted_at,
           ticket.closed_at,
           ticket.deleted_at,
+          ticket.company_id,
+          ticket.owner_resolution_status,
+          ticket.owner_resolution_reason ?? null,
         ],
       );
     }

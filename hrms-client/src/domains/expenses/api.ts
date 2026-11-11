@@ -1,5 +1,6 @@
 import { apiRequest } from "@/shared/api";
 import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } from "@/shared/api";
+import { withExpenseCommandKey } from "./command-key";
 
 export const expensesApi = {
   metadata() {
@@ -56,16 +57,22 @@ export const expensesApi = {
     return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/finance-detail`);
   },
   financeApprove(id: string, input: ExpectedVersionBody) {
-    return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/finance/approve`, {
-      method: "POST",
-      body: input,
-    });
+    return withExpenseCommandKey(id, "finance.approve", input, (key) =>
+      apiRequest<ApiRecord>(`/api/v1/expenses/${id}/finance/approve`, {
+        method: "POST",
+        body: input,
+        headers: { "Idempotency-Key": key },
+      }),
+    );
   },
   recordPayment(id: string, input: ExpectedVersionBody) {
-    return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/finance/payment`, {
-      method: "POST",
-      body: input,
-    });
+    return withExpenseCommandKey(id, "finance.payment", input, (key) =>
+      apiRequest<ApiRecord>(`/api/v1/expenses/${id}/finance/payment`, {
+        method: "POST",
+        body: input,
+        headers: { "Idempotency-Key": key },
+      }),
+    );
   },
   submitBills(id: string, input: ApiRecord) {
     return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/bills`, { method: "POST", body: input });
@@ -77,10 +84,13 @@ export const expensesApi = {
     });
   },
   settle(id: string, input: ExpectedVersionBody) {
-    return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/settlement`, {
-      method: "POST",
-      body: input,
-    });
+    return withExpenseCommandKey(id, "settlement", input, (key) =>
+      apiRequest<ApiRecord>(`/api/v1/expenses/${id}/settlement`, {
+        method: "POST",
+        body: input,
+        headers: { "Idempotency-Key": key },
+      }),
+    );
   },
   timeline(id: string) {
     return apiRequest<ApiRecord[]>(`/api/v1/expenses/${id}/timeline`);
