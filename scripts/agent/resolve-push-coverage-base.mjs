@@ -25,10 +25,14 @@ function git(root, ...args) {
 function validateAncestor(root, sha, head, label, strict = false) {
   if (!shaPattern.test(sha)) throw new Error(`Invalid ${label} SHA`);
   const normalizedSha = sha.toLowerCase();
+  const rawGitEnv = { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" };
+  const object = spawnSync("git", ["cat-file", "-t", normalizedSha], {
+    cwd: root, env: rawGitEnv, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (object.status !== 0) throw new Error(`${label} SHA is absent from checkout history`);
+  if (object.stdout.trim() !== "commit") throw new Error(`${label} SHA must identify a commit object directly`);
   if (strict && normalizedSha === head) throw new Error(`${label} SHA must precede push head`);
-  const commit = spawnSync("git", ["cat-file", "-e", `${normalizedSha}^{commit}`], { cwd: root, stdio: "ignore" });
-  if (commit.status !== 0) throw new Error(`${label} SHA is absent from checkout history`);
-  const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", normalizedSha, head], { cwd: root, stdio: "ignore" });
+  const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", normalizedSha, head], { cwd: root, env: rawGitEnv, stdio: "ignore" });
   if (ancestor.status !== 0) throw new Error(`${label} SHA is not an ancestor of push head`);
   return normalizedSha;
 }

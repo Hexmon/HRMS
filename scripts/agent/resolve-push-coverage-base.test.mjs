@@ -183,6 +183,23 @@ test("missing, invalid, equal-head and nonancestor bootstrap values fail closed"
   await assert.rejects(resolvePushCoverageBase({ ...context(commits, requestJson), bootstrapSha: divergent }), /not an ancestor/);
 });
 
+test("annotated tag object SHAs cannot replace commit baselines", async () => {
+  const commits = history();
+  git(commits.root, "tag", "-a", "-m", "tag current head", "tag-current", commits.C);
+  git(commits.root, "tag", "-a", "-m", "tag ancestor", "tag-ancestor", commits.A);
+  const tagCurrent = git(commits.root, "rev-parse", "refs/tags/tag-current");
+  const tagAncestor = git(commits.root, "rev-parse", "refs/tags/tag-ancestor");
+  assert.equal(git(commits.root, "cat-file", "-t", tagCurrent), "tag");
+  assert.equal(git(commits.root, "cat-file", "-t", tagAncestor), "tag");
+  const noRuns = api([]);
+  await assert.rejects(resolvePushCoverageBase({ ...context(commits, noRuns.requestJson), bootstrapSha: tagCurrent }), /must identify a commit object directly/);
+  await assert.rejects(resolvePushCoverageBase({ ...context(commits, noRuns.requestJson), bootstrapSha: tagAncestor }), /must identify a commit object directly/);
+  const prior = api([run(101, 1, tagAncestor)], {
+    101: [{ name: "Changed executable coverage", status: "completed", conclusion: "success" }],
+  });
+  await assert.rejects(resolvePushCoverageBase(context(commits, prior.requestJson)), /must identify a commit object directly/);
+});
+
 test("successful run on a nonancestor commit fails closed", async () => {
   const commits = history();
   const branch = git(commits.root, "branch", "--show-current");
