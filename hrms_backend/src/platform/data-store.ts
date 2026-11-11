@@ -526,18 +526,21 @@ export interface DataStorePersistence {
   }): Promise<{ updatedCount: number; unreadCount: number; hasMore: boolean }>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
-  expenseReportReadContext?(userId: UUID, filters?: {
-    status?: string;
-    expense_type?: string;
-    expense_sub_type?: string;
-    payment_type?: string;
-    department_id?: UUID;
-    requester_user_id?: UUID;
-    manager_user_id?: UUID;
-    finance_user_id?: UUID;
-    date_from?: string;
-    date_to?: string;
-    document_status?: "any" | "complete" | "missing" | "pending" | "not_required";
+  expenseReportReadContext?(userId: UUID, options?: {
+    audience?: "company" | "requester" | "manager_queue" | "manager_history" | "finance_assigned" | "finance_history" | "advance_aging" | "payment_register" | "audit";
+    filters?: {
+      status?: string;
+      expense_type?: string;
+      expense_sub_type?: string;
+      payment_type?: string;
+      department_id?: UUID;
+      requester_user_id?: UUID;
+      manager_user_id?: UUID;
+      finance_user_id?: UUID;
+      date_from?: string;
+      date_to?: string;
+      document_status?: "any" | "complete" | "missing" | "pending" | "not_required";
+    };
   }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   expenseReadContext?(userId: UUID, ticketId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   expenseFinanceCommand?(input: {

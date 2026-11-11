@@ -394,7 +394,10 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
         [ticketId, foreignFinance.user.id],
       );
       await routeSnapshotFixture.query("COMMIT");
-      const fullReportContext = await app.store.persistence?.expenseReportReadContext?.(admin.user.id, {});
+      const fullReportContext = await app.store.persistence?.expenseReportReadContext?.(
+        admin.user.id,
+        { audience: "company", filters: {} },
+      );
       expect(fullReportContext).toBeDefined();
       if (!fullReportContext) throw new Error("PostgreSQL report context required");
       for (const filter of [
@@ -403,7 +406,7 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       ]) {
         const sqlFiltered = await app.store.persistence?.expenseReportReadContext?.(
           admin.user.id,
-          filter,
+          { audience: "company", filters: filter },
         );
         expect(sqlFiltered).toBeDefined();
         if (!sqlFiltered) throw new Error("Filtered PostgreSQL report context required");
@@ -514,8 +517,35 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     try {
       const bounded = await app.inject({ method: "GET", url: managerReportUrl,
         headers: authHeader(manager.token) });
-      expect(bounded.statusCode, bounded.body).toBe(400);
-      expect(bounded.body).toContain("at most 1,000 matching tickets");
+      expect(bounded.statusCode, bounded.body).toBe(200);
+      expect(bounded.json().total).toBe(1000);
+      const overBoundary = await pool.connect();
+      try {
+        await overBoundary.query("BEGIN");
+        await overBoundary.query("SELECT set_config('app.expense_command_v1','on',true)");
+        await overBoundary.query(
+          `INSERT INTO expenses.expense_tickets
+            (id,ticket_no,requester_user_id,requester_role_snapshot,department_id,
+             expense_type,expense_sub_type,task_title,task_description,start_date,end_date,
+             estimated_amount,payment_type,manager_verifier_id,finance_approver_id,status,
+             context_payload,company_id,owner_resolution_status)
+           VALUES (gen_random_uuid(),'EXP-BOUND-' || gen_random_uuid()::text,$1,'Employee',$2,
+             'Project','Project Travel','Bound fixture','Fixture',CURRENT_DATE,CURRENT_DATE,
+             1,'Advance',$3,$4,'Pending Manager Verification',
+             jsonb_build_object('company_id',$5::text),$5::uuid,'typed_creation')`,
+          [employee.user.id, employee.user.department_id, manager.user.id, finance.user.id, companyA],
+        );
+        await overBoundary.query("COMMIT");
+      } catch (error) {
+        await overBoundary.query("ROLLBACK");
+        throw error;
+      } finally {
+        overBoundary.release();
+      }
+      const overBounded = await app.inject({ method: "GET", url: managerReportUrl,
+        headers: authHeader(manager.token) });
+      expect(overBounded.statusCode, overBounded.body).toBe(400);
+      expect(overBounded.body).toContain("at most 1,000 matching tickets");
       const narrowedBoundary = await app.inject({
         method: "GET",
         url: `${managerReportUrl}&status=Manager%20Verified`,
@@ -532,11 +562,10 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       expect(overlongRange.body).toContain("cannot exceed 12 months");
       const oneSidedRange = await app.inject({
         method: "GET",
-        url: `${managerReportUrl}&date_from=2026-01-01`,
+        url: `${managerReportUrl}&status=Manager%20Verified&date_from=2026-01-01`,
         headers: authHeader(manager.token),
       });
-      expect(oneSidedRange.statusCode, oneSidedRange.body).toBe(400);
-      expect(oneSidedRange.body).toContain("must be provided together");
+      expect(oneSidedRange.statusCode, oneSidedRange.body).toBe(200);
       const invalidRange = await app.inject({
         method: "GET",
         url: `${managerReportUrl}&date_from=2026-02-31&date_to=2026-03-01`,
@@ -558,6 +587,51 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
         cleanup.release();
       }
     }
+    const unrelatedCompanyBacklog = await pool.connect();
+    try {
+      await unrelatedCompanyBacklog.query("BEGIN");
+      await unrelatedCompanyBacklog.query("SELECT set_config('app.expense_command_v1','on',true)");
+      await unrelatedCompanyBacklog.query(
+        `INSERT INTO expenses.expense_tickets
+          (id,ticket_no,requester_user_id,requester_role_snapshot,department_id,
+           expense_type,expense_sub_type,task_title,task_description,start_date,end_date,
+           estimated_amount,payment_type,manager_verifier_id,finance_approver_id,status,
+           context_payload,company_id,owner_resolution_status)
+         SELECT gen_random_uuid(), 'EXP-UNRELATED-' || gen_random_uuid()::text,
+           $1,'Employee',$2,'Project','Project Travel','Unrelated manager backlog',
+           'Fixture',CURRENT_DATE,CURRENT_DATE,1,'Advance',$3,$4,
+           'Pending Manager Verification',jsonb_build_object('company_id',$5::text),
+           $5::uuid,'typed_creation'
+         FROM generate_series(1,1001)`,
+        [employee.user.id, employee.user.department_id, unrelated.user.id, finance.user.id, companyA],
+      );
+      await unrelatedCompanyBacklog.query("COMMIT");
+      const scopedBelowCompanyBacklog = await app.inject({
+        method: "GET",
+        url: managerReportUrl,
+        headers: authHeader(manager.token),
+      });
+      expect(scopedBelowCompanyBacklog.statusCode, scopedBelowCompanyBacklog.body).toBe(200);
+      expect(scopedBelowCompanyBacklog.json().total).toBe(1);
+      expect(scopedBelowCompanyBacklog.json().items[0].id).toBe(pendingTicketId);
+    } catch (error) {
+      await unrelatedCompanyBacklog.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      try {
+        await unrelatedCompanyBacklog.query("BEGIN");
+        await unrelatedCompanyBacklog.query("SELECT set_config('app.expense_command_v1','on',true)");
+        await unrelatedCompanyBacklog.query(
+          "DELETE FROM expenses.expense_tickets WHERE ticket_no LIKE 'EXP-UNRELATED-%'",
+        );
+        await unrelatedCompanyBacklog.query("COMMIT");
+      } catch (error) {
+        await unrelatedCompanyBacklog.query("ROLLBACK");
+        throw error;
+      } finally {
+        unrelatedCompanyBacklog.release();
+      }
+    }
     const childBoundary = await pool.connect();
     try {
       await childBoundary.query("BEGIN");
@@ -565,18 +639,51 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       await childBoundary.query(
         `INSERT INTO expenses.expense_line_items
           (ticket_id,line_category,description,line_total)
-         SELECT $1,'other','Child bound fixture ' || series::text,1
+         SELECT $1,'other','Unrelated child fixture ' || series::text,1
          FROM generate_series(1,10000) AS series`,
         [ticketId],
       );
       await childBoundary.query("COMMIT");
-      const boundedChildren = await app.inject({
+      const unrelatedChildren = await app.inject({
         method: "GET",
         url: managerReportUrl,
         headers: authHeader(manager.token),
       });
-      expect(boundedChildren.statusCode, boundedChildren.body).toBe(400);
-      expect(boundedChildren.body).toContain(
+      expect(unrelatedChildren.statusCode, unrelatedChildren.body).toBe(200);
+      expect(unrelatedChildren.json().total).toBe(1);
+      await childBoundary.query("BEGIN");
+      await childBoundary.query("SELECT set_config('app.expense_command_v1','on',true)");
+      await childBoundary.query(
+        `INSERT INTO expenses.expense_line_items
+          (ticket_id,line_category,description,line_total)
+         SELECT $1,'other','Scoped child fixture ' || series::text,1
+         FROM generate_series(1,10000) AS series`,
+        [pendingTicketId],
+      );
+      await childBoundary.query("COMMIT");
+      const exactChildren = await app.inject({
+        method: "GET",
+        url: managerReportUrl,
+        headers: authHeader(manager.token),
+      });
+      expect(exactChildren.statusCode, exactChildren.body).toBe(200);
+      expect(exactChildren.json().total).toBe(1);
+      await childBoundary.query("BEGIN");
+      await childBoundary.query("SELECT set_config('app.expense_command_v1','on',true)");
+      await childBoundary.query(
+        `INSERT INTO expenses.expense_line_items
+          (ticket_id,line_category,description,line_total)
+         VALUES ($1,'other','Scoped child fixture overflow',1)`,
+        [pendingTicketId],
+      );
+      await childBoundary.query("COMMIT");
+      const overBoundedChildren = await app.inject({
+        method: "GET",
+        url: managerReportUrl,
+        headers: authHeader(manager.token),
+      });
+      expect(overBoundedChildren.statusCode, overBoundedChildren.body).toBe(400);
+      expect(overBoundedChildren.body).toContain(
         "at most 10,000 related records",
       );
       const narrowedChildren = await app.inject({
@@ -592,8 +699,10 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
         await childBoundary.query("SELECT set_config('app.expense_command_v1','on',true)");
         await childBoundary.query(
           `DELETE FROM expenses.expense_line_items
-           WHERE ticket_id=$1 AND description LIKE 'Child bound fixture %'`,
-          [ticketId],
+           WHERE ticket_id=ANY($1::uuid[])
+             AND (description LIKE 'Unrelated child fixture %'
+               OR description LIKE 'Scoped child fixture %')`,
+          [[ticketId, pendingTicketId]],
         );
         await childBoundary.query("COMMIT");
       } catch (error) {
@@ -706,6 +815,24 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     expect(ownList.statusCode).toBe(200);
     expect(ownList.json().total).toBe(3);
     expect(new Set(ownList.json().items.map((row: { company_id: string }) => row.company_id))).toEqual(new Set([companyA, companyB]));
+    const ownHistoricalReportContext = await app.store.persistence?.expenseReportReadContext?.(
+      employee.user.id,
+      { audience: "requester", filters: {} },
+    );
+    expect(ownHistoricalReportContext).toBeDefined();
+    expect(new Set(ownHistoricalReportContext?.store.tickets.map(
+      (row) => row.company_id,
+    ))).toEqual(new Set([companyA, companyB]));
+    const ownHistoricalReport = await app.inject({
+      method: "GET",
+      url: "/api/v1/reports/expenses/my?page=1&page_size=10",
+      headers: authHeader(employee.token),
+    });
+    expect(ownHistoricalReport.statusCode, ownHistoricalReport.body).toBe(200);
+    expect(ownHistoricalReport.json().total).toBe(3);
+    expect(new Set(ownHistoricalReport.json().items.map(
+      (row: { company_id: string }) => row.company_id,
+    ))).toEqual(new Set([companyA, companyB]));
     const ownFirst = await app.inject({ method: "GET", url: "/api/v1/expenses/my?page=1&page_size=1", headers: authHeader(employee.token) });
     const ownSecond = await app.inject({ method: "GET", url: "/api/v1/expenses/my?page=2&page_size=1", headers: authHeader(employee.token) });
     const ownBeyond = await app.inject({ method: "GET", url: "/api/v1/expenses/my?page=4&page_size=1", headers: authHeader(employee.token) });
@@ -1079,6 +1206,12 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
         headers: authHeader(postStartJwt.token),
       });
       expect(evidenceDashboard.statusCode, evidenceDashboard.body).toBe(200);
+      const companyCalendar = await pool.query<{ today: string; start: string }>(
+        `SELECT (timezone(company.timezone, now()))::date::text AS today,
+                ((timezone(company.timezone, now()))::date - INTERVAL '12 months')::date::text AS start
+         FROM platform.company_profiles company WHERE company.id=$1`,
+        [companyB],
+      );
       const [canonicalDaysResult, canonicalPunchesResult, canonicalReviewsResult,
         canonicalOutboxResult, canonicalWarningsResult, canonicalRegularizationsResult] =
         await Promise.all([
@@ -1149,8 +1282,8 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       };
       expect(evidenceDashboard.json().attendance).toMatchObject(canonicalAttendance);
       expect(evidenceDashboard.json().attendance.window).toEqual({
-        date_from: expect.any(String),
-        date_to: expect.any(String),
+        date_from: companyCalendar.rows[0]?.start,
+        date_to: companyCalendar.rows[0]?.today,
         max_months: 12,
       });
       expect(canonicalAttendance).toEqual({
@@ -1170,6 +1303,117 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
           system: 1,
         },
       });
+      const companyBObserverId = randomUUID();
+      await pool.query(
+        `INSERT INTO core.users
+          (id,employee_code,email,full_name,department_id,designation_id,manager_user_id,
+           hierarchy_path,employment_status,email_verified_at,email_verification_status)
+         SELECT $1,$2,$3,'Company B attendance observer',$4,designation_id,manager_user_id,
+           hierarchy_path || text2ltree($5),'active',now(),'verified'
+         FROM core.users WHERE id=$6`,
+        [
+          companyBObserverId,
+          `B-OBS-${companyBObserverId}`,
+          `b-observer-${companyBObserverId}@example.test`,
+          companyBDepartmentId,
+          `bobs${companyBObserverId.replaceAll("-", "")}`,
+          employee.user.id,
+        ],
+      );
+      await pool.query(
+        `INSERT INTO core.user_roles (user_id,role_key,status,effective_from)
+         VALUES ($1,'Admin','active',CURRENT_DATE)`,
+        [companyBObserverId],
+      );
+      await pool.query(
+        `INSERT INTO platform.user_session_preferences (user_id,active_role,company_id)
+         VALUES ($1,'Admin',$2)`,
+        [companyBObserverId, companyB],
+      );
+      const companyBObserverJwt = createJwt(
+        {
+          ...employee.user,
+          id: companyBObserverId,
+          employee_code: `B-OBS-${companyBObserverId}`,
+          email: `b-observer-${companyBObserverId}@example.test`,
+          full_name: "Company B attendance observer",
+          department_id: companyBDepartmentId,
+          roles: ["Admin"],
+        },
+        second.config.JWT_SECRET,
+      );
+      await second.store.sessionStore.create({
+        jti: companyBObserverJwt.jti,
+        user_id: companyBObserverId,
+        expires_at: companyBObserverJwt.expiresAt,
+        revoked_at: null,
+      });
+      const companyBObserverBefore = await second.inject({
+        method: "GET",
+        url: "/api/v1/dashboard/summary",
+        headers: authHeader(companyBObserverJwt.token),
+      });
+      expect(companyBObserverBefore.statusCode, companyBObserverBefore.body).toBe(200);
+      expect(companyBObserverBefore.json().attendance).toMatchObject(canonicalAttendance);
+      const companyBExceptionCount = companyBObserverBefore.json().cards.find(
+        (card: { key: string }) => card.key === "attendance_exceptions",
+      )?.value;
+      expect(companyBExceptionCount).toBeGreaterThanOrEqual(5);
+
+      await pool.query(
+        "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
+        [admin.user.id, companyA],
+      );
+      const companyABeforeTransfer = await second.inject({
+        method: "GET",
+        url: "/api/v1/dashboard/summary",
+        headers: authHeader(admin.token),
+      });
+      expect(companyABeforeTransfer.statusCode, companyABeforeTransfer.body).toBe(200);
+      await pool.query(
+        "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
+        [postStartUserId, companyA],
+      );
+      const companyBAfterTransfer = await second.inject({
+        method: "GET",
+        url: "/api/v1/dashboard/summary",
+        headers: authHeader(companyBObserverJwt.token),
+      });
+      expect(companyBAfterTransfer.statusCode, companyBAfterTransfer.body).toBe(200);
+      expect(companyBAfterTransfer.json().attendance).toMatchObject(canonicalAttendance);
+      expect(companyBAfterTransfer.json().cards.find(
+        (card: { key: string }) => card.key === "attendance_exceptions",
+      )?.value).toBe(companyBExceptionCount);
+      const companyAAfterTransfer = await second.inject({
+        method: "GET",
+        url: "/api/v1/dashboard/summary",
+        headers: authHeader(admin.token),
+      });
+      expect(companyAAfterTransfer.statusCode, companyAAfterTransfer.body).toBe(200);
+      expect(companyAAfterTransfer.json().attendance).toEqual(
+        companyABeforeTransfer.json().attendance,
+      );
+
+      await pool.query("UPDATE core.users SET deleted_at=now() WHERE id=$1", [postStartUserId]);
+      const companyBAfterDeletion = await second.inject({
+        method: "GET",
+        url: "/api/v1/dashboard/summary",
+        headers: authHeader(companyBObserverJwt.token),
+      });
+      expect(companyBAfterDeletion.statusCode, companyBAfterDeletion.body).toBe(200);
+      expect(companyBAfterDeletion.json().attendance).toMatchObject(canonicalAttendance);
+      expect(companyBAfterDeletion.json().cards.find(
+        (card: { key: string }) => card.key === "attendance_exceptions",
+      )?.value).toBe(companyBExceptionCount);
+      await pool.query("UPDATE core.users SET deleted_at=NULL WHERE id=$1", [postStartUserId]);
+      await pool.query(
+        "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
+        [postStartUserId, companyB],
+      );
+      await pool.query(
+        "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
+        [admin.user.id, companyB],
+      );
       const selfOnlyUserId = randomUUID();
       await pool.query(
         `INSERT INTO core.users

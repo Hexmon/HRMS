@@ -62,10 +62,15 @@ export function BackendDashboardSummary({ summary, loading, error }: Props) {
 
   if (!summary) return null;
 
+  const unavailable = new Set(summary.unavailable_features.map((feature) => feature.key));
+  const visibleCards = summary.cards.filter(
+    (card) => !metricUnavailableFeature(card) || !unavailable.has(metricUnavailableFeature(card)!),
+  );
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-        {summary.cards.map((card) => {
+        {visibleCards.map((card) => {
           const meta = CARD_META[card.key] ?? { icon: ClipboardCheck, tone: "primary" as const };
           return (
             <StatCard
@@ -258,16 +263,31 @@ function DepartmentRow({
 }
 
 function QueuePanel({ summary }: { summary: DashboardSummary }) {
+  const unavailable = new Set(summary.unavailable_features.map((feature) => feature.key));
+  const timesheetsAvailable = !unavailable.has("timesheets_historical_ownership");
+  const leaveWfhAvailable = !unavailable.has("leave_wfh_historical_ownership");
+  const approvalDataUnavailable = !timesheetsAvailable || !leaveWfhAvailable;
   const total =
     summary.approvals.expense_manager_pending +
     summary.approvals.expense_finance_pending +
-    summary.approvals.timesheet_pending +
-    summary.approvals.leave_pending +
-    summary.approvals.wfh_pending +
+    (timesheetsAvailable ? summary.approvals.timesheet_pending : 0) +
+    (leaveWfhAvailable ? summary.approvals.leave_pending + summary.approvals.wfh_pending : 0) +
     summary.approvals.document_verification_pending;
   return (
     <div className="space-y-3 p-3">
-      {total === 0 ? (
+      {approvalDataUnavailable ? (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Some approval data is unavailable</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Unavailable lanes are shown explicitly and are not counted as clear.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : total === 0 ? (
         <div className="dashboard-liquid-hero rounded-2xl p-4">
           <div className="flex items-start gap-3">
             <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-success/25 bg-success/10 text-success">
@@ -304,6 +324,7 @@ function QueuePanel({ summary }: { summary: DashboardSummary }) {
           status="pending"
           to="/timesheet/approvals"
           icon={Timer}
+          available={timesheetsAvailable}
         />
         <QueueRow
           label="Leave & WFH"
@@ -311,6 +332,7 @@ function QueuePanel({ summary }: { summary: DashboardSummary }) {
           status="pending"
           to="/leave-wfh/approvals"
           icon={ListChecks}
+          available={leaveWfhAvailable}
         />
         <QueueRow
           label="Documents"
@@ -325,6 +347,10 @@ function QueuePanel({ summary }: { summary: DashboardSummary }) {
 }
 
 function OperationsPanel({ summary }: { summary: DashboardSummary }) {
+  const unavailable = new Set(summary.unavailable_features.map((feature) => feature.key));
+  const assetsAvailable = !unavailable.has("assets_historical_ownership");
+  const notificationsAvailable = !unavailable.has("notifications_historical_ownership");
+  const operationsPartiallyUnavailable = !assetsAvailable || !notificationsAvailable;
   const setupNeedsPeople = summary.workforce.active_employees <= 1;
   const syncClear = summary.operations.outbox_pending === 0;
   const notificationsClear = summary.operations.notifications_pending === 0;
@@ -337,12 +363,18 @@ function OperationsPanel({ summary }: { summary: DashboardSummary }) {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold">
-              {setupNeedsPeople ? "Workspace setup is ready" : "Workspace is operational"}
+              {operationsPartiallyUnavailable
+                ? "Operational data is partially unavailable"
+                : setupNeedsPeople
+                  ? "Workspace setup is ready"
+                  : "Workspace is operational"}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              {setupNeedsPeople
-                ? "Departments are configured. Add employees to start seeing team capacity, approvals and operations activity."
-                : "Live operational signals are being summarized from assets, notifications and integration events."}
+              {operationsPartiallyUnavailable
+                ? "Unavailable signals are not treated as zero or healthy. Available integration data remains live."
+                : setupNeedsPeople
+                  ? "Departments are configured. Add employees to start seeing team capacity, approvals and operations activity."
+                  : "Live operational signals are being summarized from assets, notifications and integration events."}
             </p>
           </div>
         </div>
@@ -358,6 +390,7 @@ function OperationsPanel({ summary }: { summary: DashboardSummary }) {
           value={summary.operations.assets_total}
           icon={Boxes}
           to="/assets"
+          available={assetsAvailable}
         />
         <QueueRow
           label="Asset recoveries"
@@ -365,11 +398,13 @@ function OperationsPanel({ summary }: { summary: DashboardSummary }) {
           status="pending"
           to="/assets/returns"
           icon={Laptop}
+          available={assetsAvailable}
         />
         <SignalRow
           label="Notifications"
           clear={notificationsClear}
           value={summary.operations.notifications_pending}
+          available={notificationsAvailable}
         />
         <SignalRow label="Sync queue" clear={syncClear} value={summary.operations.outbox_pending} />
       </ul>
@@ -383,12 +418,14 @@ function QueueRow({
   status,
   icon: Icon,
   to,
+  available = true,
 }: {
   label: string;
   value: number;
   status?: string;
   icon?: typeof Boxes;
   to?: string;
+  available?: boolean;
 }) {
   const content = (
     <>
@@ -407,8 +444,12 @@ function QueueRow({
         <div className="flex min-w-0 items-center gap-2">{content}</div>
       )}
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold">{value}</span>
-        {status && value > 0 ? (
+        <span className="text-sm font-semibold">{available ? value : "—"}</span>
+        {!available ? (
+          <span className="rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[11px] text-warning">
+            Unavailable
+          </span>
+        ) : status && value > 0 ? (
           <StatusBadge status={status} />
         ) : (
           <span className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground">
@@ -420,23 +461,35 @@ function QueueRow({
   );
 }
 
-function SignalRow({ label, clear, value }: { label: string; clear: boolean; value: number }) {
+function SignalRow({
+  label,
+  clear,
+  value,
+  available = true,
+}: {
+  label: string;
+  clear: boolean;
+  value: number;
+  available?: boolean;
+}) {
   return (
     <li className="dashboard-liquid-row flex items-center justify-between gap-3 rounded-xl px-3.5 py-3">
       <div className="flex min-w-0 items-center gap-2">
-        <CheckCircle2 className={clear ? "h-4 w-4 text-success" : "h-4 w-4 text-warning"} />
+        <CheckCircle2
+          className={available && clear ? "h-4 w-4 text-success" : "h-4 w-4 text-warning"}
+        />
         <span className="truncate text-sm font-medium">{label}</span>
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold">{value}</span>
+        <span className="text-sm font-semibold">{available ? value : "—"}</span>
         <span
           className={
-            clear
+            available && clear
               ? "rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[11px] text-success"
               : "rounded-full border border-warning/30 bg-warning/15 px-2 py-0.5 text-[11px] text-warning"
           }
         >
-          {clear ? "Healthy" : "Watch"}
+          {!available ? "Unavailable" : clear ? "Healthy" : "Watch"}
         </span>
       </div>
     </li>
@@ -465,5 +518,20 @@ function metricHint(metric: DashboardMetric, summary: DashboardSummary): string 
       return `${summary.workload.work_segments_total.toLocaleString()} segments`;
     default:
       return undefined;
+  }
+}
+
+function metricUnavailableFeature(metric: DashboardMetric): string | null {
+  switch (metric.source) {
+    case "timesheets":
+      return "timesheets_historical_ownership";
+    case "leave_wfh":
+      return "leave_wfh_historical_ownership";
+    case "assets":
+      return "assets_historical_ownership";
+    case "notifications":
+      return "notifications_historical_ownership";
+    default:
+      return null;
   }
 }

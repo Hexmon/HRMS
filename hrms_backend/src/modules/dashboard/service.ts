@@ -155,9 +155,13 @@ export class DashboardService {
   summary(actor: AuthUser): DashboardSummary {
     const visibleUsers = this.visibleUsers(actor);
     const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
+    const currentCompany = this.store.companyProfiles.find(
+      (company) => company.id === this.companyIdForUser(actor.id),
+    );
+    const currentCompanyDate = dateInTimeZone(currentCompany?.timezone ?? "UTC");
     const attendanceWindow = {
-      date_from: monthsAgoDate(12),
-      date_to: nowIso().slice(0, 10),
+      date_from: monthsBeforeDate(currentCompanyDate, 12),
+      date_to: currentCompanyDate,
       max_months: 12 as const,
     };
     const visibleTickets = this.visibleTickets(actor, visibleUserIds);
@@ -453,8 +457,8 @@ function daysAgoDate(days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function monthsAgoDate(months: number): string {
-  const current = new Date();
+function monthsBeforeDate(currentDate: string, months: number): string {
+  const current = new Date(`${currentDate}T00:00:00.000Z`);
   const targetMonthStart = new Date(Date.UTC(
     current.getUTCFullYear(),
     current.getUTCMonth() - months,
@@ -467,4 +471,16 @@ function monthsAgoDate(months: number): string {
   )).getUTCDate();
   targetMonthStart.setUTCDate(Math.min(current.getUTCDate(), lastDay));
   return targetMonthStart.toISOString().slice(0, 10);
+}
+
+function dateInTimeZone(timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = (type: "year" | "month" | "day") =>
+    parts.find((part) => part.type === type)?.value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
 }

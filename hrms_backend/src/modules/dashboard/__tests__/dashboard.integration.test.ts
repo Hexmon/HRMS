@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { authHeader, loginAs, projectTravelPayload } from "#testing";
+import { randomUUID } from "node:crypto";
+import { authHeader, loginAs } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
 
 describe("dashboard summary API", () => {
@@ -26,9 +27,13 @@ describe("dashboard summary API", () => {
 
   it("fails closed when an authenticated administrator has no active company context", async () => {
     const admin = await loginAs(app, "ADM");
-    const preference = app.store.userSessionPreferences.find((candidate) => candidate.user_id === admin.user.id);
-    expect(preference).toBeDefined();
-    preference!.company_id = null;
+    const pool = app.store.pgPool;
+    expect(pool).not.toBeNull();
+    if (!pool) throw new Error("PostgreSQL pool required");
+    await pool.query(
+      "UPDATE platform.user_session_preferences SET company_id=NULL WHERE user_id=$1",
+      [admin.user.id],
+    );
 
     const response = await app.inject({
       method: "GET",
@@ -43,6 +48,7 @@ describe("dashboard summary API", () => {
   it("returns role-scoped operational metrics from implemented modules only", async () => {
     const employee = await loginAs(app, "E1");
     const manager = await loginAs(app, "D1");
+    const finance = await loginAs(app, "N1");
 
     const segment = await app.inject({
       method: "POST",
@@ -66,13 +72,48 @@ describe("dashboard summary API", () => {
     });
     expect(submit.statusCode).toBe(200);
 
-    const expense = await app.inject({
-      method: "POST",
-      url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
-      payload: projectTravelPayload
-    });
-    expect(expense.statusCode).toBe(200);
+    const pool = app.store.pgPool;
+    expect(pool).not.toBeNull();
+    if (!pool) throw new Error("PostgreSQL pool required");
+    const company = await pool.query<{ company_id: string }>(
+      "SELECT company_id FROM platform.user_session_preferences WHERE user_id=$1",
+      [employee.user.id],
+    );
+    const companyId = company.rows[0]?.company_id;
+    expect(companyId).toBeTruthy();
+    if (!companyId) throw new Error("Employee company fixture required");
+    const ticketId = randomUUID();
+    const ticketFixture = await pool.connect();
+    try {
+      await ticketFixture.query("BEGIN");
+      await ticketFixture.query("SELECT set_config('app.expense_command_v1','on',true)");
+      await ticketFixture.query(
+        `INSERT INTO expenses.expense_tickets
+          (id,ticket_no,requester_user_id,requester_role_snapshot,department_id,
+           expense_type,expense_sub_type,task_title,task_description,start_date,end_date,
+           estimated_amount,payment_type,manager_verifier_id,finance_approver_id,status,
+           context_payload,company_id,owner_resolution_status)
+         VALUES ($1,$2,$3,'Employee',$4,'Project','Project Travel','Dashboard fixture',
+           'Durable PostgreSQL dashboard fixture',CURRENT_DATE,CURRENT_DATE,100,'Advance',
+           $5,$6,'Pending Manager Verification',jsonb_build_object('company_id',$7::text),
+           $7::uuid,'typed_creation')`,
+        [
+          ticketId,
+          `EXP-DASH-${ticketId}`,
+          employee.user.id,
+          employee.user.department_id,
+          manager.user.id,
+          finance.user.id,
+          companyId,
+        ],
+      );
+      await ticketFixture.query("COMMIT");
+    } catch (error) {
+      await ticketFixture.query("ROLLBACK");
+      throw error;
+    } finally {
+      ticketFixture.release();
+    }
 
     const summary = await app.inject({
       method: "GET",

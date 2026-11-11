@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { AttendanceDayRecord } from "#shared";
 import {
@@ -16,6 +16,34 @@ import { createMemoryDataStore, seedIds } from "../../../platform/data-store.js"
 import { DashboardService } from "../service.js";
 
 describe("dashboard summary scoping", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("uses the active company's calendar date for the attendance window", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-11T11:30:00.000Z"));
+    const store = createMemoryDataStore();
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    const preference = store.userSessionPreferences.find(
+      (candidate) => candidate.user_id === admin.id,
+    );
+    expect(preference?.company_id).toBeTruthy();
+    const company = store.companyProfiles.find(
+      (candidate) => candidate.id === preference?.company_id,
+    );
+    expect(company).toBeDefined();
+    company!.timezone = "Pacific/Kiritimati";
+
+    const summary = new DashboardService(store).summary(admin);
+
+    expect(summary.attendance.window).toEqual({
+      date_from: "2025-11-12",
+      date_to: "2026-11-12",
+      max_months: 12,
+    });
+  });
+
   it("limits privileged dashboard metrics to the actor active company", () => {
     const store = createMemoryDataStore();
     const admin = store.users.find((user) => user.id === seedIds.admin)!;

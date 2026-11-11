@@ -829,28 +829,31 @@ class PostgresPersistence {
     }
   }
 
-  async expenseReportReadContext(userId: UUID, filters?: {
-    status?: string; expense_type?: string; expense_sub_type?: string;
-    payment_type?: string; department_id?: UUID; requester_user_id?: UUID;
-    manager_user_id?: UUID; finance_user_id?: UUID;
-    date_from?: string; date_to?: string;
-    document_status?: "any" | "complete" | "missing" | "pending" | "not_required";
+  async expenseReportReadContext(userId: UUID, options?: {
+    audience?: "company" | "requester" | "manager_queue" | "manager_history" | "finance_assigned" | "finance_history" | "advance_aging" | "payment_register" | "audit";
+    filters?: {
+      status?: string; expense_type?: string; expense_sub_type?: string;
+      payment_type?: string; department_id?: UUID; requester_user_id?: UUID;
+      manager_user_id?: UUID; finance_user_id?: UUID;
+      date_from?: string; date_to?: string;
+      document_status?: "any" | "complete" | "missing" | "pending" | "not_required";
+    };
   }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const { actor, companyId } = await this.resolveExpenseActor(client, userId);
-      if (Boolean(filters?.date_from) !== Boolean(filters?.date_to)) {
-        throw badRequest("Expense report date_from and date_to must be provided together");
-      }
-      if (filters?.date_from && filters?.date_to) {
-        for (const [name, value] of [["date_from", filters.date_from], ["date_to", filters.date_to]] as const) {
+      const filters = options?.filters;
+      for (const [name, value] of [["date_from", filters?.date_from], ["date_to", filters?.date_to]] as const) {
+        if (value) {
           const [valueYear, valueMonth, valueDay] = value.split("-").map(Number);
           const normalized = new Date(Date.UTC(valueYear!, valueMonth! - 1, valueDay!));
           if (Number.isNaN(normalized.getTime()) || normalized.toISOString().slice(0, 10) !== value) {
             throw badRequest(`Expense report ${name} must be a valid calendar date`);
           }
         }
+      }
+      if (filters?.date_from && filters?.date_to) {
         if (filters.date_from > filters.date_to) {
           throw badRequest("Expense report date range is reversed");
         }
@@ -867,12 +870,68 @@ class PostgresPersistence {
           throw badRequest("Expense report date range cannot exceed 12 months");
         }
       }
-      const params: unknown[] = [companyId];
+      const params: unknown[] = [companyId, userId];
       const bind = (value: unknown): string => {
         params.push(value);
         return `$${params.length}`;
       };
-      const where = ["ticket.company_id=$1::uuid", "ticket.deleted_at IS NULL"];
+      const audience = options?.audience ?? "company";
+      const where = [
+        "ticket.deleted_at IS NULL",
+        "ticket.company_id IS NOT NULL",
+        "ticket.owner_resolution_status<>'quarantined'",
+        "$1::uuid IS NOT NULL",
+        "$2::uuid IS NOT NULL",
+        audience === "requester"
+          ? "ticket.requester_user_id=$2::uuid"
+          : "ticket.company_id=$1::uuid",
+      ];
+      const seesWholeCompany = actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor);
+      if (audience === "manager_queue") {
+        where.push("ticket.status='Pending Manager Verification'");
+        if (!actor.roles.includes(Roles.Admin)) {
+          where.push("(ticket.manager_verifier_id=$2::uuid OR ticket.manager_backup_user_id=$2::uuid)");
+        }
+      }
+      if (audience === "manager_history") {
+        where.push(`EXISTS (
+          SELECT 1 FROM expenses.expense_approvals approval
+          WHERE approval.ticket_id=ticket.id
+            AND approval.approval_stage='manager'
+            ${actor.roles.includes(Roles.Admin) ? "" : "AND approval.approver_user_id=$2::uuid"}
+        )`);
+      }
+      if ((audience === "finance_assigned" || audience === "payment_register") && !seesWholeCompany) {
+        where.push(`(
+          ticket.finance_approver_id=$2::uuid
+          OR ticket.route_snapshot->>'finance_approver_id'=$2::text
+        )`);
+      }
+      if (audience === "finance_history") {
+        where.push(`EXISTS (
+          SELECT 1 FROM expenses.expense_audit_logs audit
+          WHERE audit.ticket_id=ticket.id
+            ${seesWholeCompany ? "" : "AND audit.actor_user_id=$2::uuid"}
+            AND (audit.event_type LIKE 'expense.finance.%'
+              OR audit.event_type IN ('expense.payment_released','expense.settlement'))
+        )`);
+      }
+      if (audience === "advance_aging") {
+        where.push("ticket.payment_type='Advance'");
+        where.push("ticket.status IN ('Payment Released','Bills Submitted','Pending Adjustment')");
+      }
+      if (audience === "payment_register") {
+        where.push(`EXISTS (
+          SELECT 1 FROM expenses.expense_payments payment
+          WHERE payment.ticket_id=ticket.id
+        )`);
+      }
+      if (audience === "audit") {
+        where.push(`EXISTS (
+          SELECT 1 FROM expenses.expense_audit_logs audit
+          WHERE audit.ticket_id=ticket.id
+        )`);
+      }
       if (filters?.status) where.push(`ticket.status=${bind(filters.status)}`);
       if (filters?.expense_type) where.push(`ticket.expense_type=${bind(filters.expense_type)}`);
       if (filters?.expense_sub_type) where.push(`ticket.expense_sub_type=${bind(filters.expense_sub_type)}`);
@@ -1770,6 +1829,7 @@ class PostgresPersistence {
       session.actor.hierarchy_path,
       systemWide,
       financeWide,
+      session.company.timezone,
     ];
     const visibilityCte = `
       WITH visible_users AS (
@@ -1794,9 +1854,9 @@ class PostgresPersistence {
       ), visible_attendance AS (
         SELECT day.* FROM attendance.daily_records day
         WHERE day.company_id = $1::uuid AND day.deleted_at IS NULL
-          AND day.employee_user_id IN (SELECT id FROM visible_users)
-          AND day.work_date >= (CURRENT_DATE - INTERVAL '12 months')::date
-          AND day.work_date <= CURRENT_DATE
+          AND ($4::boolean OR day.employee_user_id IN (SELECT id FROM visible_users))
+          AND day.work_date >= ((timezone($6::text, now()))::date - INTERVAL '12 months')::date
+          AND day.work_date <= (timezone($6::text, now()))::date
       )`;
     const aggregate = await client.query<Record<string, string | number>>(
       `${visibilityCte}
@@ -1837,8 +1897,8 @@ class PostgresPersistence {
          (SELECT count(*) FROM visible_attendance WHERE
            exception_type IS NOT NULL OR evidence_state IN ('missing','partial','disputed')
            OR presence_state='absent' OR punctuality_state IN ('late','late_and_early_departure')) AS attendance_exceptions,
-         (CURRENT_DATE - INTERVAL '12 months')::date::text AS attendance_window_start,
-         CURRENT_DATE::text AS attendance_window_end`,
+         ((timezone($6::text, now()))::date - INTERVAL '12 months')::date::text AS attendance_window_start,
+         (timezone($6::text, now()))::date::text AS attendance_window_end`,
       params,
     );
     const departments = await client.query<{
@@ -1938,16 +1998,25 @@ class PostgresPersistence {
     const dayResult = await client.query(
       `SELECT day.*,day.work_date::text AS work_date
        FROM attendance.daily_records day
-       JOIN core.users u ON u.id=day.employee_user_id AND u.deleted_at IS NULL
-       JOIN platform.user_session_preferences pref
+       LEFT JOIN core.users u ON u.id=day.employee_user_id AND u.deleted_at IS NULL
+       LEFT JOIN platform.user_session_preferences pref
          ON pref.user_id=u.id AND pref.company_id=$1
        WHERE day.company_id=$1 AND day.deleted_at IS NULL
-         AND day.work_date >= (CURRENT_DATE - INTERVAL '12 months')::date
-         AND day.work_date <= CURRENT_DATE
-         AND ($4::boolean OR u.id=$2 OR u.hierarchy_path <@ $3::ltree)
+         AND day.work_date >= ((timezone($5::text, now()))::date - INTERVAL '12 months')::date
+         AND day.work_date <= (timezone($5::text, now()))::date
+         AND ($4::boolean OR (
+           pref.user_id IS NOT NULL
+           AND (u.id=$2 OR u.hierarchy_path <@ $3::ltree)
+         ))
        ORDER BY day.work_date,day.employee_user_id,day.id
        LIMIT 10001`,
-      [session.company.id, session.actor.id, session.actor.hierarchy_path, systemWide],
+      [
+        session.company.id,
+        session.actor.id,
+        session.actor.hierarchy_path,
+        systemWide,
+        session.company.timezone,
+      ],
     );
     if (dayResult.rows.length > 10_000) {
       throw badRequest(
