@@ -18,6 +18,7 @@
 - DEC-020 and docs/agent/test-and-qa-completion.md require all changed executable lines, changed business/security decision branches, meaningful assertions, and independent QA at exact SHA.
 - Generated/typed-only lines are not executable; exclusions must be explicit and source-backed. Test quality is manually reviewed, not inferred from counts.
 - The shared sheet currently has QA-S25-003 at Sprint 25 row 57 and four generic case bodies at Sprint 25 Test Cases rows 161-164. Connector access is unavailable to this task; exact replacement bodies are in qa-artifacts/hrms/qa-s25-003-2026-11-11/pending-sheet-cases.md and remain Not Tested until execution.
+- At `eb6e94a8`, the cumulative PR gate lists 21 unmeasured entries. `qa-artifacts/hrms/qa-s25-003-2026-11-11/unmeasured-path-disposition.md` proposes path-specific executable contracts for workflow, package manifest, lockfile, runner configuration and shell paths, but explicitly records that the owner has **not** approved a protected-branch contract-evidence policy. The instrumentable script/probe paths still require numerical changed-line and branch evidence. No PR-authored approval file may clear either class.
 
 ## Implementation Steps
 
@@ -25,13 +26,15 @@
 | --- | --- | --- |
 | Implemented | Install compatible Vitest coverage/frontend testing dependencies and configure package scripts. | Vitest 4.1.6/V8 in both packages; React Testing Library/jsdom in frontend. |
 | Implemented; review pending | Implement and test base/head changed-line and branch mapping. | Synthetic red/green, missing/stale, new-file, deletion-only and outside-source cases; see execution artifact. |
-| Implemented; PR run pending | Wire PR CI enforcement. | Actual PR head checkout and base SHA; full gate cannot be evaluated until task changes are committed. |
-| Partially verified | Demonstrate red/green behavior and run package gates. | Real component branch red/green; backend 535/535 and frontend 2/2 unit tests passed. Lint/typecheck evidence in execution artifact; cumulative inherited scripts remain unmeasured. |
+| Implemented; PR rerun pending | Wire PR CI enforcement. | Run `42938804718` checked out exact head `eb6e94a8` but stopped at a boundary-flaky backend coverage test before the final gate. The local correction must be committed before an exact-head rerun. |
+| Partially verified | Demonstrate red/green behavior and run package gates. | Real component branch red/green; historical exact-head CI passed 541/541 backend and 2/2 frontend tests before reporting 21 unmeasured paths. The local flake correction passed its complete 22-test file plus five focused repetitions; see the execution artifact. |
 | Pending | Independent senior and QA review. | Lead will dispatch; no self-certification. |
+| Needs owner decision | Define whether exact-path, same-run contract evidence may satisfy nonnumeric workflow/config/manifest/lockfile/shell changes. | No such policy is approved. Reject unknown outside paths, source paths, deletions, type/mode changes and missing contract execution. Do not implement an allowlist or self-authored waiver as a substitute. |
 
 ## Test Design And Shared Tracker
 
 - Existing IDs S25-057-U/P/N/F are revised in the pending sheet artifact. They map unit/component setup, CI merge-base mapping, negative uncovered branch, and missing/stale/ambiguous report recovery.
+- Proposed contract-policy partitions, pending owner approval: exact unchanged-mode path with a passing same-run contract; missing/failed contract; unknown executable/config path; instrumentable script; product line/branch; deleted/symlink/mode-changed path. Product and instrumentable-script omissions remain red; the proposal is not current gate behavior.
 - Expected outcome is grounded in DEC-020, not current absence of tooling. No business-policy oracle is missing for this infrastructure task.
 - Affected executable branch inventory will be reconciled to final diff and added tests. Browser journey, tenant data, audit/outbox and PostgreSQL integration are N/A because this task changes test infrastructure, not product behavior.
 
