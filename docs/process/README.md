@@ -16,6 +16,7 @@ This folder defines how work moves from ready state to delivery, QA, release, an
 | `release-governance.md` | Production release gates, approvals, smoke expectations. |
 | `sprint-ceremonies.md` | Planning, daily, QA handoff, review, retrospective. |
 | `documentation-maintenance-process.md` | Which docs must change with code/config/process changes. |
+| `task-tracker.md` | Shared sprint sheet, date convention, task fields, and evidence rules. |
 | `developer-handoff-template.md` | Standard handoff template for dev-to-QA/new-dev transfer. |
 
 ## Work Movement

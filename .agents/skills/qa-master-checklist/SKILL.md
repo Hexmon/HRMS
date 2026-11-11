@@ -138,3 +138,11 @@ Read: `references/assurance-and-release-gates.md`. The optional `scripts/validat
 
 ## Final answer format
 Report scope and revision/commit, discovery completeness, number of traced critical journeys and untraced paths, confirmed/implemented/inferred/unknown rules, top architecture-specific risks and conflicting rules, questions ranked by materiality and owner, test/coverage counts **only if generated**, evidence gaps, and artifact locations. Include a concise engineering-decision summary. Cite repository paths without leaking secrets. Never imply access to a codebase that was not supplied.
+
+## Implementation handoff boundary
+
+For a completed feature or fix, route execution and independent acceptance review to qa-completion-gate and docs/agent/test-and-qa-completion.md. Include planned unit input/output contracts, changed executable lines/decision branches and applicable negative/concurrency/recovery cases in incremental planning. This skill remains planning-only: defining a case, checklist or expected result does not execute it or satisfy the completion gate. Preserve owner questions and do not promise every possible test case is covered.
+
+## Per-Feature And Sprint Case Workflow
+
+For an explicitly requested feature/sprint plan, requirements discussion or incremental review in any sprint, read [feature-case-workflow](references/feature-case-workflow.md). Discuss concrete cases and expected outcomes during refinement; when a task is written or materially updated, publish its full cases in the shared sheet under docs/process/task-tracker.md. Preserve the planning/execution and oracle-approval boundaries. Derive task-specific decision tables and negative/recovery/user cases through the real vertical slice, retain approved/unknown oracles, and link stable case IDs to sprint tasks. After authorized implementation, hand the cases to the execution and completion procedure; planning never supplies PASS. Preserve existing discovery gates and the 19 adversarial dimensions; no fixed case count or finite input list proves exhaustive coverage.
