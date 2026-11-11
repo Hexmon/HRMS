@@ -247,7 +247,10 @@ export function assertExternalArtifactDestination(root, path, label) {
 export function assertCleanRepository(root, label = "coverage input") {
   const status = git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all");
   if (status.length > 0) {
-    throw new Error(`${label}: repository worktree and index must be completely clean; commit the exact tested tree before stamping or verifying coverage`);
+    const entries = status.split("\0").filter(Boolean);
+    const summary = entries.slice(0, 20).map((entry) => JSON.stringify(entry)).join(", ");
+    const remainder = entries.length > 20 ? `, ... ${entries.length - 20} more` : "";
+    throw new Error(`${label}: repository worktree and index must be completely clean; commit the exact tested tree before stamping or verifying coverage; status entries: ${summary}${remainder}`);
   }
   return git(root, "rev-parse", "HEAD").trim();
 }
