@@ -1,10 +1,11 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { Pool, type PoolClient } from "pg";
-import { ValkeySessionStore } from "#auth";
-import { EmploymentStatuses, type AuthUser, type RoleKey } from "#shared";
+import { MemorySessionStore, ValkeySessionStore } from "#auth";
+import { EmploymentStatuses, RequiredDocumentsByExpenseSubType, Roles, WorkflowActions, type AuthUser, type RoleKey } from "#shared";
 import type {
   AssetRecord,
   AttendanceDayRecord,
+  AttendanceGeoFallbackReview,
   AttendancePunch,
   AttendanceRegularizationAction,
   AttendanceRegularizationCorrectionApplication,
@@ -59,10 +60,12 @@ import {
   type CompanyLogoPersistenceFlushOptions,
   type CompanyProfileRecord,
   type DataStore,
+  type DashboardExactMetrics,
   type DomainPersistenceFlushOptions,
   type DocumentProcessingConfig,
   type DocumentAccessLogRecord,
   type DocumentVersionRecord,
+  type DurableSessionContext,
   type ExpenseApprovalRecord,
   type LicenseActivation,
   type LicenseEntitlement,
@@ -79,7 +82,55 @@ import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
-import { companyContextRequired, forbidden, unauthorized } from "./errors.js";
+import { badRequest, companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
+import { assertFinanceActor, assertManagerActor } from "../modules/expenses/policy.js";
+import {
+  lockExpenseCombinedRoutingWriter,
+  lockExpenseFinanceGovernanceWriter,
+  lockExpenseReviewerRoutingGovernance,
+  lockExpenseReviewerRoutingSubjects,
+  lockExpenseReviewerRoutingWriter,
+  lockExpenseRoutingReader,
+} from "../modules/expenses/routing-locks.js";
+
+type ExpenseReportAudience =
+  | "company"
+  | "requester"
+  | "manager_queue"
+  | "manager_history"
+  | "finance_assigned"
+  | "finance_history"
+  | "advance_aging"
+  | "payment_register"
+  | "audit";
+
+type ExpenseMutationAction =
+  | "create"
+  | "submit"
+  | "withdraw"
+  | "clarification"
+  | "manager.verify"
+  | "bills";
+type ExpenseMutationResult = Pick<ExpenseTicket, "id" | "status" | "version">;
+
+function assertExpenseReportAudienceRole(
+  actor: AuthUser,
+  audience: ExpenseReportAudience,
+): void {
+  const required: readonly RoleKey[] | null =
+    audience === "manager_queue" || audience === "manager_history"
+      ? [Roles.Reviewer, Roles.Admin]
+      : audience === "finance_assigned" || audience === "finance_history"
+        ? [Roles.FinanceManager, Roles.Admin, Roles.Auditor]
+        : audience === "advance_aging"
+          ? [Roles.FinanceManager, Roles.Admin]
+          : audience === "payment_register" || audience === "audit"
+            ? [Roles.FinanceManager, Roles.Admin, Roles.Auditor]
+            : null;
+  if (required && !required.some((role) => actor.roles.includes(role))) {
+    throw forbidden("Report access denied");
+  }
+}
 
 function optionalSet(
   values: readonly string[] | undefined,
@@ -201,6 +252,8 @@ const resetTables = [
   "documents.doc_permissions",
   "documents.doc_versions",
   "documents.doc_metadata",
+  "expenses.expense_command_results",
+  "expenses.expense_owner_repair_audit",
   "expenses.expense_policy_rules",
   "expenses.expense_audit_logs",
   "expenses.expense_payments",
@@ -380,6 +433,18 @@ function migrationSql(): string {
 export async function resetPostgresDatabase(
   databaseUrl: string,
 ): Promise<void> {
+  // Direct Vitest invocations bypass the shell preflight. Refuse remote or
+  // non-test targets before opening a connection or applying migrations.
+  const target = new URL(databaseUrl);
+  const database = decodeURIComponent(target.pathname.slice(1));
+  if (
+    !["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) ||
+    !/(?:^|[_-])test(?:$|[_-])/i.test(database) ||
+    database.includes("/") || target.search || target.hash ||
+    !["postgres:", "postgresql:"].includes(target.protocol)
+  ) {
+    throw new Error("Refusing to reset a nonlocal or non-test PostgreSQL database");
+  }
   const pool = new Pool({ connectionString: databaseUrl });
   const client = await pool.connect();
   let schemaLockAcquired = false;
@@ -388,12 +453,19 @@ export async function resetPostgresDatabase(
       "SELECT pg_advisory_lock(hashtext('hrms_postgres_schema_reset'))",
     );
     schemaLockAcquired = true;
+    // Reapplying the full local migration bundle is a test-only bootstrap.
+    // Once 0068 exists, its old-writer fence is already active while earlier
+    // idempotent migrations are replayed, so explicitly mark this trusted
+    // schema-maintenance session and clear it before returning the client.
+    await client.query("SELECT set_config('app.expense_command_v1', 'on', false)");
     await client.query(migrationSql());
+    await client.query("SELECT set_config('app.expense_command_v1', 'off', false)");
     await client.query("BEGIN");
     await client.query(`TRUNCATE ${resetTables.join(", ")} RESTART IDENTITY`);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    await client.query("SELECT set_config('app.expense_command_v1', 'off', false)").catch(() => undefined);
     throw error;
   } finally {
     if (schemaLockAcquired) {
@@ -440,8 +512,9 @@ export async function createPostgresDataStore(
     if (documentProcessing) {
       store.documentProcessing = documentProcessing;
     }
-    store.persistence = new PostgresPersistence(pool, store);
-    await store.persistence.flush();
+    const seedPersistence = new PostgresPersistence(pool, store);
+    store.persistence = seedPersistence;
+    await seedPersistence.flushInitialSeed();
     await store.persistence.reload();
   }
 
@@ -466,6 +539,776 @@ class PostgresPersistence {
         attendanceDayRecords: await this.loadAttendanceDayRecords(client, scope),
         outbox: scope.includePendingOutbox ? await this.loadOutbox(client, "pending") : this.store.outbox,
       };
+    } finally {
+      client.release();
+    }
+  }
+
+  async dashboardExpenseReadContext(userId: UUID): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    store: DataStore;
+    exactMetrics: DashboardExactMetrics;
+  }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const session = await this.resolveDurableSessionContext(
+        client,
+        userId,
+        "dashboard.summary",
+      );
+      const actor = session.actor;
+      const companyId = session.company.id;
+      const exactMetrics = await this.loadDashboardExactMetrics(client, actor, companyId);
+      const users = await this.loadUsers(client, companyId, undefined, 5000);
+      const store: DataStore = {
+        ...this.store,
+        users,
+        userSessionPreferences: await this.loadUserSessionPreferences(client, companyId),
+        companyProfiles: [session.company],
+        departments: await this.loadDepartments(client, companyId),
+        tickets: [],
+        notifications: [],
+        outbox: [],
+        attendancePunches: [],
+        attendanceDayRecords: [],
+      };
+      await client.query("COMMIT");
+      return { actor, companyId, store, exactMetrics };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async notificationListContext(input: {
+    userId: UUID;
+    page: number;
+    pageSize: number;
+    unreadOnly?: boolean;
+    type?: string;
+  }): Promise<{ actor: AuthUser; store: DataStore; total: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const session = await this.resolveDurableSessionContext(
+        client,
+        input.userId,
+        "notifications.list",
+      );
+      const params: unknown[] = [
+        input.userId,
+        session.company.id,
+        session.actor.roles.includes(Roles.Reviewer),
+        session.actor.roles.includes(Roles.FinanceManager),
+      ];
+      const where = [
+        "target_user_id=$1",
+        this.notificationVisibilitySql(),
+      ];
+      if (input.unreadOnly) where.push("status='pending'");
+      if (input.type) {
+        params.push(input.type);
+        where.push(`(event_type=$${params.length} OR ${this.notificationCategorySql()}=$${params.length})`);
+      }
+      const predicate = where.join(" AND ");
+      const count = await client.query<{ total: string }>(
+        `SELECT count(*) AS total FROM platform.notifications WHERE ${predicate}`,
+        params,
+      );
+      params.push(input.pageSize, (input.page - 1) * input.pageSize);
+      const rows = await client.query(
+        `SELECT * FROM platform.notifications WHERE ${predicate}
+         ORDER BY created_at DESC,id DESC
+         LIMIT $${params.length - 1}::integer OFFSET $${params.length}::integer`,
+        params,
+      );
+      const notifications = rows.rows.map((row) => this.mapNotificationRow(row));
+      const actorUserIds = Array.from(new Set(notifications
+        .map((notification) => notification.actor_user_id)
+        .filter((id): id is UUID => Boolean(id))));
+      const users = actorUserIds.length
+        ? await this.loadUsers(client, session.company.id, actorUserIds)
+        : [];
+      await client.query("COMMIT");
+      return {
+        actor: session.actor,
+        store: { ...this.store, notifications, users },
+        total: Number(count.rows[0]?.total ?? 0),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async notificationUnreadCount(userId: UUID): Promise<{ unreadCount: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const session = await this.resolveDurableSessionContext(
+        client,
+        userId,
+        "notifications.unread-count",
+      );
+      const unread = await client.query<{ count: string }>(
+        `SELECT count(*) AS count FROM platform.notifications
+         WHERE target_user_id=$1 AND status='pending'
+           AND ${this.notificationVisibilitySql()}`,
+        [
+          userId,
+          session.company.id,
+          session.actor.roles.includes(Roles.Reviewer),
+          session.actor.roles.includes(Roles.FinanceManager),
+        ],
+      );
+      await client.query("COMMIT");
+      return { unreadCount: Number(unread.rows[0]?.count ?? 0) };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async notificationMarkRead(input: {
+    userId: UUID;
+    notificationId: UUID;
+    expectedVersion?: number;
+  }): Promise<{ notification: NotificationRecord; unreadCount: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.lockNotificationActorAuthority(client, input.userId);
+      const session = await this.resolveDurableSessionContext(
+        client,
+        input.userId,
+        "notifications.mark-read",
+      );
+      const selected = await client.query(
+        `SELECT * FROM platform.notifications
+         WHERE target_user_id=$1 AND id=$5
+           AND ${this.notificationVisibilitySql()}
+         FOR UPDATE`,
+        [
+          input.userId,
+          session.company.id,
+          session.actor.roles.includes(Roles.Reviewer),
+          session.actor.roles.includes(Roles.FinanceManager),
+          input.notificationId,
+        ],
+      );
+      const current = selected.rows[0];
+      if (!current) throw notFound("Notification not found", { id: input.notificationId });
+      await this.lockNotificationExpenseTickets(client, [input.notificationId]);
+      if (input.expectedVersion !== undefined && current.version !== input.expectedVersion) {
+        throw conflict("Notification was modified by another actor.", {
+          aggregate: "notification", id: input.notificationId,
+        });
+      }
+      const revalidated = await this.resolveDurableSessionContext(
+        client,
+        input.userId,
+        "notifications.mark-read",
+      );
+      const result = current.status === "pending"
+        ? await client.query(
+            `UPDATE platform.notifications
+             SET status='sent', read_at=now(), version=version+1, updated_at=now()
+             WHERE target_user_id=$1 AND id=$5 AND status='pending'
+               AND ${this.notificationVisibilitySql()}
+             RETURNING *`,
+            [
+              input.userId,
+              revalidated.company.id,
+              revalidated.actor.roles.includes(Roles.Reviewer),
+              revalidated.actor.roles.includes(Roles.FinanceManager),
+              input.notificationId,
+            ],
+          )
+        : selected;
+      const notification = result.rows[0];
+      if (!notification) throw conflict("Notification changed during read acknowledgement");
+      const unread = await client.query<{ count: string }>(
+        `SELECT count(*) AS count FROM platform.notifications
+         WHERE target_user_id=$1 AND status='pending'
+           AND ${this.notificationVisibilitySql()}`,
+        [
+          input.userId,
+          revalidated.company.id,
+          revalidated.actor.roles.includes(Roles.Reviewer),
+          revalidated.actor.roles.includes(Roles.FinanceManager),
+        ],
+      );
+      await client.query("COMMIT");
+      return {
+        notification: this.mapNotificationRow(notification),
+        unreadCount: Number(unread.rows[0]?.count ?? 0),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async notificationMarkAllRead(input: {
+    userId: UUID;
+    type?: string;
+    before?: string;
+  }): Promise<{ updatedCount: number; unreadCount: number; hasMore: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.lockNotificationActorAuthority(client, input.userId);
+      const session = await this.resolveDurableSessionContext(
+        client,
+        input.userId,
+        "notifications.mark-all-read",
+      );
+      const selected = await client.query<{ id: UUID }>(
+        `SELECT id FROM platform.notifications
+         WHERE target_user_id=$1 AND status='pending'
+           AND ${this.notificationVisibilitySql()}
+           AND ($5::text IS NULL OR event_type=$5 OR ${this.notificationCategorySql()}=$5)
+           AND ($6::timestamptz IS NULL OR created_at <= $6::timestamptz)
+         ORDER BY created_at, id
+         LIMIT 1001 FOR UPDATE`,
+        [
+          input.userId,
+          session.company.id,
+          session.actor.roles.includes(Roles.Reviewer),
+          session.actor.roles.includes(Roles.FinanceManager),
+          input.type ?? null,
+          input.before ?? null,
+        ],
+      );
+      const hasMore = selected.rows.length > 1000;
+      const ids = selected.rows.slice(0, 1000).map((row) => row.id);
+      await this.lockNotificationExpenseTickets(client, ids);
+      const revalidated = await this.resolveDurableSessionContext(
+        client,
+        input.userId,
+        "notifications.mark-all-read",
+      );
+      const updated = ids.length
+        ? await client.query(
+            `UPDATE platform.notifications
+             SET status='sent', read_at=now(), version=version+1, updated_at=now()
+             WHERE target_user_id=$1 AND status='pending' AND id=ANY($5::uuid[])
+               AND ${this.notificationVisibilitySql()}`,
+            [
+              input.userId,
+              revalidated.company.id,
+              revalidated.actor.roles.includes(Roles.Reviewer),
+              revalidated.actor.roles.includes(Roles.FinanceManager),
+              ids,
+            ],
+          )
+        : { rowCount: 0 };
+      const unread = await client.query<{ count: string }>(
+        `SELECT count(*) AS count FROM platform.notifications
+         WHERE target_user_id=$1 AND status='pending'
+           AND ${this.notificationVisibilitySql()}`,
+        [
+          input.userId,
+          revalidated.company.id,
+          revalidated.actor.roles.includes(Roles.Reviewer),
+          revalidated.actor.roles.includes(Roles.FinanceManager),
+        ],
+      );
+      await client.query("COMMIT");
+      return {
+        updatedCount: updated.rowCount ?? 0,
+        unreadCount: Number(unread.rows[0]?.count ?? 0),
+        hasMore,
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private notificationCategorySql(): string {
+    return `CASE
+      WHEN nullif(trim(payload->>'category'),'') IS NOT NULL THEN payload->>'category'
+      WHEN event_type LIKE '%submitted%' OR event_type LIKE '%approval%' THEN 'approval'
+      WHEN event_type LIKE '%mention%' THEN 'mention'
+      WHEN event_type LIKE '%helpdesk%' OR event_type LIKE '%escalated%' THEN 'alert'
+      ELSE 'system'
+    END`;
+  }
+
+  private async lockNotificationActorAuthority(
+    client: PoolClient,
+    userId: UUID,
+  ): Promise<void> {
+    await client.query("SELECT id FROM core.users WHERE id=$1 FOR SHARE", [userId]);
+    const preference = await client.query<{ company_id: UUID | null }>(
+      `SELECT company_id FROM platform.user_session_preferences
+       WHERE user_id=$1 FOR SHARE`,
+      [userId],
+    );
+    await client.query(
+      `SELECT ur.user_id FROM core.user_roles ur
+       JOIN core.roles role ON role.role_key=ur.role_key
+       WHERE ur.user_id=$1 ORDER BY ur.role_key FOR SHARE OF ur,role`,
+      [userId],
+    );
+    if (preference.rows[0]?.company_id) {
+      await client.query(
+        "SELECT id FROM platform.company_profiles WHERE id=$1 FOR SHARE",
+        [preference.rows[0].company_id],
+      );
+    }
+  }
+
+  private async lockNotificationExpenseTickets(
+    client: PoolClient,
+    notificationIds: readonly UUID[],
+  ): Promise<void> {
+    if (notificationIds.length === 0) return;
+    await client.query(
+      `SELECT ticket.id
+       FROM expenses.expense_tickets ticket
+       JOIN platform.notifications notification
+         ON nullif(notification.payload->>'ticket_id','') ~
+           '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+        AND ticket.id=(notification.payload->>'ticket_id')::uuid
+       WHERE notification.id=ANY($1::uuid[])
+       ORDER BY ticket.id FOR SHARE OF ticket`,
+      [notificationIds],
+    );
+  }
+
+  private notificationVisibilitySql(): string {
+    return `CASE
+      WHEN payload ? 'ticket_id' THEN CASE
+        WHEN nullif(payload->>'ticket_id','') ~
+          '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+        THEN EXISTS (
+          SELECT 1 FROM expenses.expense_tickets notification_ticket
+          WHERE notification_ticket.id=(payload->>'ticket_id')::uuid
+            AND notification_ticket.deleted_at IS NULL
+            AND notification_ticket.owner_resolution_status<>'quarantined'
+            AND (
+              notification_ticket.requester_user_id=$1::uuid
+              OR (
+                notification_ticket.company_id=$2::uuid
+                AND (
+                  ($3::boolean AND (
+                    notification_ticket.manager_verifier_id=$1::uuid
+                    OR notification_ticket.manager_backup_user_id=$1::uuid
+                  ))
+                  OR ($4::boolean AND notification_ticket.finance_approver_id=$1::uuid)
+                )
+              )
+            )
+        )
+        ELSE FALSE
+      END
+      ELSE nullif(payload->>'company_id','')=$2::text
+    END`;
+  }
+
+  async managerBackupListContext(input: {
+    userId: UUID;
+    page: number;
+    pageSize: number;
+  }): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    assignments: ManagerBackupAssignment[];
+    total: number;
+  }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const session = await this.resolveDurableSessionContext(
+        client,
+        input.userId,
+        "reviewer-routing.list",
+      );
+      if (!session.actor.roles.includes(Roles.Admin)) {
+        throw forbidden("Current Admin authority is required to list reviewer routing");
+      }
+      const ownership = `mapping.deleted_at IS NULL
+        AND mapping.company_id=$1
+        AND mapping.owner_resolution_status IN ('typed_creation','audited_repair')`;
+      const count = await client.query<{ total: string }>(
+        `SELECT count(*) AS total
+         FROM expenses.employee_reviewer_mappings mapping
+         WHERE ${ownership}`,
+        [session.company.id],
+      );
+      const rows = await client.query(
+        `SELECT mapping.*
+         FROM expenses.employee_reviewer_mappings mapping
+         WHERE ${ownership}
+         ORDER BY mapping.created_at DESC,mapping.id DESC
+         LIMIT $2::integer OFFSET $3::integer`,
+        [session.company.id, input.pageSize, (input.page - 1) * input.pageSize],
+      );
+      await client.query("COMMIT");
+      return {
+        actor: session.actor,
+        companyId: session.company.id,
+        assignments: rows.rows.map((row) => this.mapManagerBackupAssignment(row)),
+        total: Number(count.rows[0]?.total ?? 0),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async managerBackupCommand(input: {
+    userId: UUID;
+    action: "reviewer-routing.create" | "reviewer-routing.revoke";
+    idempotencyKey: string;
+    requestHash: string;
+    mappingId?: UUID;
+    expectedVersion?: number;
+    create?: {
+      employeeUserId: UUID;
+      backupManagerUserId: UUID;
+      effectiveFrom: string;
+      effectiveTo: string | null;
+    };
+  }): Promise<ManagerBackupAssignment> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const preliminarySession = await this.resolveDurableSessionContext(
+        client,
+        input.userId,
+        input.action,
+      );
+      if (!preliminarySession.actor.roles.includes(Roles.Admin)) {
+        throw forbidden("Current Admin authority is required to manage reviewer routing");
+      }
+
+      let requesterUserId = input.create?.employeeUserId;
+      if (input.action === "reviewer-routing.create" && !requesterUserId) {
+        throw badRequest("Reviewer routing requester is required");
+      }
+      if (input.action === "reviewer-routing.revoke" && !input.mappingId) {
+        throw badRequest("Reviewer routing mapping id is required");
+      }
+
+      // Platform/full-store writers take governance before authority rows.
+      // The preliminary Admin check is intentionally non-locking; take only
+      // the subject-independent governance lock now, then lock and revalidate
+      // current authority before any client-selected subject or mapping lock.
+      await lockExpenseReviewerRoutingGovernance(client);
+
+      await this.lockReviewerRoutingActorAuthority(client, input.userId);
+      const session = await this.resolveDurableSessionContext(
+        client,
+        input.userId,
+        input.action,
+      );
+      if (!session.actor.roles.includes(Roles.Admin)) {
+        throw forbidden("Current Admin authority is required to manage reviewer routing");
+      }
+
+      if (input.action === "reviewer-routing.revoke") {
+        const owned = await client.query<{ employee_user_id: UUID }>(
+          `SELECT employee_user_id
+           FROM expenses.employee_reviewer_mappings
+           WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL
+             AND owner_resolution_status IN ('typed_creation','audited_repair')`,
+          [input.mappingId, session.company.id],
+        );
+        requesterUserId = owned.rows[0]?.employee_user_id;
+        if (!requesterUserId) throw notFound("Manager backup assignment not found");
+      }
+      if (!requesterUserId) throw badRequest("Reviewer routing requester is required");
+      await lockExpenseReviewerRoutingSubjects(client, [requesterUserId]);
+      if (input.action === "reviewer-routing.revoke") {
+        const locked = await client.query<{ employee_user_id: UUID }>(
+          `SELECT employee_user_id
+           FROM expenses.employee_reviewer_mappings
+           WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL
+             AND owner_resolution_status IN ('typed_creation','audited_repair')
+           FOR UPDATE`,
+          [input.mappingId, session.company.id],
+        );
+        if (!locked.rows[0]) throw notFound("Manager backup assignment not found");
+        if (locked.rows[0].employee_user_id !== requesterUserId) {
+          throw conflict("Reviewer routing changed during concurrent processing");
+        }
+      }
+
+      let globalCreateReplay: {
+        company_id: UUID;
+        request_hash: string;
+        response_body: ManagerBackupAssignment;
+      } | undefined;
+      if (input.action === "reviewer-routing.create") {
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended($1::text,0))",
+          [`expense:${session.actor.id}:${input.action}:${input.idempotencyKey}`],
+        );
+        const globalPrior = await client.query<{
+          company_id: UUID;
+          request_hash: string;
+          response_body: ManagerBackupAssignment;
+        }>(
+          `SELECT company_id,request_hash,response_body
+           FROM expenses.expense_command_results
+           WHERE actor_user_id=$1 AND action=$2 AND idempotency_key=$3
+           ORDER BY created_at,id
+           LIMIT 2
+           FOR SHARE`,
+          [session.actor.id, input.action, input.idempotencyKey],
+        );
+        if (globalPrior.rows.length > 1 ||
+            (globalPrior.rows[0] && globalPrior.rows[0].company_id !== session.company.id)) {
+          throw conflict("Idempotency key was already used for a different reviewer-routing command or company");
+        }
+        globalCreateReplay = globalPrior.rows[0];
+        if (globalCreateReplay && globalCreateReplay.request_hash !== input.requestHash) {
+          throw conflict("Idempotency key was already used for a different reviewer-routing command");
+        }
+      }
+
+      // Durable replay is still an authorization decision. The global lookup
+      // above binds the key to its original company, but validate the current
+      // routing subject before returning any journal response so a transferred
+      // requester or reviewer, or a reviewer whose authority was removed, cannot
+      // receive a previously committed response from a stale tenant context.
+      if (input.action === "reviewer-routing.create") {
+        const create = input.create;
+        if (!create) throw badRequest("Reviewer routing create payload is required");
+        if (create.employeeUserId === create.backupManagerUserId) {
+          throw badRequest("Manager backup assignment cannot be self-referential");
+        }
+        if (create.effectiveTo && create.effectiveTo < create.effectiveFrom) {
+          throw badRequest("Manager backup effective date range is reversed");
+        }
+        const participantIds = [create.employeeUserId, create.backupManagerUserId].sort();
+        const participants = await client.query<{
+          id: UUID;
+          employment_status: string;
+          deleted_at: Date | null;
+          company_id: UUID | null;
+        }>(
+          `SELECT u.id,u.employment_status,u.deleted_at,pref.company_id
+           FROM core.users u
+           JOIN platform.user_session_preferences pref ON pref.user_id=u.id
+           WHERE u.id=ANY($1::uuid[])
+           ORDER BY u.id FOR SHARE OF u,pref`,
+          [participantIds],
+        );
+        if (participants.rows.length !== 2 || participants.rows.some(
+          (participant) => participant.deleted_at ||
+            participant.employment_status !== EmploymentStatuses.Active ||
+            participant.company_id !== session.company.id,
+        )) {
+          throw badRequest("Reviewer routing participants must be active users of the Admin company");
+        }
+        const reviewerRole = await client.query(
+          `SELECT ur.user_id FROM core.user_roles ur
+           JOIN core.roles role ON role.role_key=ur.role_key
+           WHERE ur.user_id=$1 AND ur.role_key=$2
+             AND ur.status='active' AND ur.deleted_at IS NULL
+             AND role.status='active' AND role.deleted_at IS NULL
+             AND ur.effective_from<=CURRENT_DATE
+             AND (ur.effective_to IS NULL OR ur.effective_to>=CURRENT_DATE)
+           FOR SHARE OF ur,role`,
+          [create.backupManagerUserId, Roles.Reviewer],
+        );
+        if (!reviewerRole.rows[0]) {
+          throw badRequest("Backup manager must have current Reviewer authority");
+        }
+      } else {
+        const currentOwnership = await client.query(
+          `SELECT mapping.id FROM expenses.employee_reviewer_mappings mapping
+           WHERE mapping.id=$1 AND mapping.deleted_at IS NULL
+             AND mapping.company_id=$2
+             AND mapping.owner_resolution_status IN ('typed_creation','audited_repair')
+           FOR SHARE OF mapping`,
+          [input.mappingId, session.company.id],
+        );
+        if (!currentOwnership.rows[0]) throw notFound("Manager backup assignment not found");
+      }
+      if (input.action !== "reviewer-routing.create") {
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended($1::text,0))",
+          [`expense:${session.company.id}:${session.actor.id}:${input.action}:${input.idempotencyKey}`],
+        );
+      }
+      const prior = globalCreateReplay
+        ? { rows: [globalCreateReplay] }
+        : await client.query<{ request_hash: string; response_body: ManagerBackupAssignment }>(
+            `SELECT request_hash,response_body FROM expenses.expense_command_results
+             WHERE company_id=$1 AND actor_user_id=$2 AND action=$3 AND idempotency_key=$4`,
+            [session.company.id, session.actor.id, input.action, input.idempotencyKey],
+          );
+      if (prior.rows[0]) {
+        if (prior.rows[0].request_hash !== input.requestHash) {
+          throw conflict("Idempotency key was already used for a different reviewer-routing command");
+        }
+        await client.query("COMMIT");
+        return prior.rows[0].response_body;
+      }
+
+      let changed: ManagerBackupAssignment;
+      if (input.action === "reviewer-routing.create") {
+        const create = input.create;
+        if (!create) throw badRequest("Reviewer routing create payload is required");
+        if (create.employeeUserId === create.backupManagerUserId) {
+          throw badRequest("Manager backup assignment cannot be self-referential");
+        }
+        if (create.effectiveTo && create.effectiveTo < create.effectiveFrom) {
+          throw badRequest("Manager backup effective date range is reversed");
+        }
+        const participantIds = [create.employeeUserId, create.backupManagerUserId].sort();
+        const participants = await client.query<{
+          id: UUID;
+          employment_status: string;
+          deleted_at: Date | null;
+          company_id: UUID | null;
+        }>(
+          `SELECT u.id,u.employment_status,u.deleted_at,pref.company_id
+           FROM core.users u
+           JOIN platform.user_session_preferences pref ON pref.user_id=u.id
+           WHERE u.id=ANY($1::uuid[])
+           ORDER BY u.id FOR SHARE OF u,pref`,
+          [participantIds],
+        );
+        if (participants.rows.length !== 2 || participants.rows.some(
+          (participant) => participant.deleted_at ||
+            participant.employment_status !== EmploymentStatuses.Active ||
+            participant.company_id !== session.company.id,
+        )) {
+          throw badRequest("Reviewer routing participants must be active users of the Admin company");
+        }
+        const reviewerRole = await client.query(
+          `SELECT ur.user_id FROM core.user_roles ur
+           JOIN core.roles role ON role.role_key=ur.role_key
+           WHERE ur.user_id=$1 AND ur.role_key=$2
+             AND ur.status='active' AND ur.deleted_at IS NULL
+             AND role.status='active' AND role.deleted_at IS NULL
+             AND ur.effective_from<=CURRENT_DATE
+             AND (ur.effective_to IS NULL OR ur.effective_to>=CURRENT_DATE)
+           FOR SHARE OF ur,role`,
+          [create.backupManagerUserId, Roles.Reviewer],
+        );
+        if (!reviewerRole.rows[0]) {
+          throw badRequest("Backup manager must have current Reviewer authority");
+        }
+        const overlap = await client.query(
+          `SELECT id FROM expenses.employee_reviewer_mappings
+           WHERE company_id=$1 AND employee_user_id=$2
+             AND owner_resolution_status IN ('typed_creation','audited_repair')
+             AND status='active' AND deleted_at IS NULL
+             AND daterange(effective_from,COALESCE(effective_to,'infinity'::date),'[]') &&
+                 daterange($3::date,COALESCE($4::date,'infinity'::date),'[]')
+           FOR UPDATE`,
+          [session.company.id, create.employeeUserId, create.effectiveFrom, create.effectiveTo],
+        );
+        if (overlap.rows[0]) {
+          throw conflict("An active manager backup already overlaps this effective period");
+        }
+        await client.query("SELECT set_config('app.expense_command_v1','on',true)");
+        const inserted = await client.query(
+          `INSERT INTO expenses.employee_reviewer_mappings
+            (company_id,owner_resolution_status,owner_resolution_reason,
+             employee_user_id,reviewer_user_id,assigned_by_user_id,effective_from,effective_to,status)
+           VALUES ($1,'typed_creation',NULL,$2,$3,$4,$5,$6,'active') RETURNING *`,
+          [session.company.id, create.employeeUserId, create.backupManagerUserId, session.actor.id,
+            create.effectiveFrom, create.effectiveTo],
+        );
+        changed = this.mapManagerBackupAssignment(inserted.rows[0]);
+      } else {
+        if (!input.mappingId || input.expectedVersion === undefined) {
+          throw badRequest("Reviewer routing revoke requires mapping id and expected_version");
+        }
+        const selected = await client.query(
+          `SELECT mapping.* FROM expenses.employee_reviewer_mappings mapping
+           WHERE mapping.id=$1 AND mapping.deleted_at IS NULL
+             AND mapping.company_id=$2
+             AND mapping.owner_resolution_status IN ('typed_creation','audited_repair')
+           FOR UPDATE OF mapping`,
+          [input.mappingId, session.company.id],
+        );
+        const current = selected.rows[0];
+        if (!current) throw notFound("Manager backup assignment not found");
+        if (current.employee_user_id !== requesterUserId) {
+          throw conflict("Reviewer routing changed during concurrent processing");
+        }
+        if (current.status !== "active") throw conflict("Manager backup assignment is not active");
+        if (current.version !== input.expectedVersion) {
+          throw conflict("Manager backup assignment was modified by another actor", {
+            id: input.mappingId,
+          });
+        }
+        await client.query("SELECT set_config('app.expense_command_v1','on',true)");
+        const updated = await client.query(
+          `UPDATE expenses.employee_reviewer_mappings
+           SET status='revoked',version=version+1,updated_at=now()
+           WHERE id=$1 AND version=$2 AND company_id=$3 RETURNING *`,
+          [input.mappingId, input.expectedVersion, session.company.id],
+        );
+        if (!updated.rows[0]) throw conflict("Manager backup assignment changed concurrently");
+        changed = this.mapManagerBackupAssignment(updated.rows[0]);
+      }
+
+      const eventType = input.action === "reviewer-routing.create"
+        ? "expense.reviewer_routing.created"
+        : "expense.reviewer_routing.revoked";
+      await client.query(
+        `INSERT INTO platform.outbox_events
+          (event_id,aggregate_type,aggregate_id,event_type,payload,idempotency_key,status,
+           retry_count,available_at,created_at)
+         VALUES (gen_random_uuid(),'employee_reviewer_mapping',$1,$2,$3::jsonb,$4,'pending',0,now(),now())`,
+        [changed.id, eventType, JSON.stringify({
+          company_id: session.company.id,
+          mapping_id: changed.id,
+          employee_user_id: changed.employee_user_id,
+          reviewer_user_id: changed.backup_manager_user_id,
+          actor_user_id: session.actor.id,
+          version: changed.version,
+        }), [
+          "reviewer-routing",
+          session.company.id,
+          session.actor.id,
+          changed.id,
+          input.action,
+          input.idempotencyKey,
+        ].join(":")],
+      );
+      await client.query(
+        `INSERT INTO expenses.expense_command_results
+          (company_id,actor_user_id,ticket_id,resource_id,action,idempotency_key,request_hash,response_body)
+         VALUES ($1,$2,NULL,$3,$4,$5,$6,$7::jsonb)`,
+        [session.company.id, session.actor.id, changed.id, input.action,
+          input.idempotencyKey, input.requestHash, JSON.stringify(changed)],
+      );
+      await client.query("COMMIT");
+      return changed;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      if (
+        typeof error === "object" && error !== null && "code" in error &&
+        (error.code === "40001" || error.code === "40P01")
+      ) {
+        throw conflict("Reviewer routing changed during concurrent processing; refresh and retry");
+      }
+      throw error;
     } finally {
       client.release();
     }
@@ -499,26 +1342,54 @@ class PostgresPersistence {
       // another request may have unflushed mutations in progress.
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const actorRow = await client.query<{
+        id: UUID;
+        employee_code: string;
+        email: string;
+        full_name: string;
+        department_id: UUID | null;
+        designation_id: UUID | null;
+        hierarchy_path: string;
         employment_status: AuthUser["employment_status"];
+        email_verified_at: Date | null;
+        email_verification_status: AuthUser["email_verification_status"];
         deleted_at: Date | null;
         roles: RoleKey[];
       }>(
-        `SELECT u.employment_status, u.deleted_at,
+        `SELECT u.id, u.employee_code, u.email, u.full_name, u.department_id,
+                u.designation_id, u.hierarchy_path::text AS hierarchy_path,
+                u.employment_status, u.email_verified_at, u.email_verification_status,
+                u.deleted_at,
                 COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
-                  WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL
+                  WHERE ur.role_key IS NOT NULL AND ur.status = 'active'
+                    AND ur.deleted_at IS NULL AND role.status = 'active'
+                    AND role.deleted_at IS NULL
+                    AND ur.effective_from <= CURRENT_DATE
+                    AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
                 ), '{}') AS roles
          FROM core.users u
          LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+         LEFT JOIN core.roles role ON role.role_key = ur.role_key
          WHERE u.id = $1 GROUP BY u.id`,
         [userId],
       );
       const current = actorRow.rows[0];
-      const cachedActor = this.store.users.find((user) => user.id === userId);
-      if (!current || current.deleted_at || !cachedActor) throw unauthorized("User no longer exists");
+      if (!current || current.deleted_at) throw unauthorized("User no longer exists");
       if (current.employment_status !== EmploymentStatuses.Active) {
         throw unauthorized("User account is inactive or blocked");
       }
-      const actor: AuthUser = { ...cachedActor, roles: current.roles, employment_status: current.employment_status };
+      const actor: AuthUser = {
+        id: current.id,
+        employee_code: current.employee_code,
+        email: current.email,
+        full_name: current.full_name,
+        department_id: current.department_id as UUID,
+        designation_id: current.designation_id as UUID,
+        hierarchy_path: current.hierarchy_path,
+        employment_status: current.employment_status,
+        roles: current.roles,
+        email_verified_at: asIsoOrNull(current.email_verified_at),
+        email_verification_status: current.email_verification_status ?? "unverified",
+      };
       const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
         "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
         [userId],
@@ -547,6 +1418,1648 @@ class PostgresPersistence {
     } finally {
       client.release();
     }
+  }
+
+  async expenseReportReadContext(userId: UUID, options?: {
+    audience?: ExpenseReportAudience;
+    filters?: {
+      status?: string; expense_type?: string; expense_sub_type?: string;
+      payment_type?: string; department_id?: UUID; requester_user_id?: UUID;
+      manager_user_id?: UUID; finance_user_id?: UUID;
+      date_from?: string; date_to?: string;
+      document_status?: "any" | "complete" | "missing" | "pending" | "not_required";
+    };
+  }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      const audience = options?.audience ?? "company";
+      assertExpenseReportAudienceRole(actor, audience);
+      const filters = options?.filters;
+      for (const [name, value] of [["date_from", filters?.date_from], ["date_to", filters?.date_to]] as const) {
+        if (value) {
+          const [valueYear, valueMonth, valueDay] = value.split("-").map(Number);
+          const normalized = new Date(Date.UTC(valueYear!, valueMonth! - 1, valueDay!));
+          if (Number.isNaN(normalized.getTime()) || normalized.toISOString().slice(0, 10) !== value) {
+            throw badRequest(`Expense report ${name} must be a valid calendar date`);
+          }
+        }
+      }
+      if (filters?.date_from && filters?.date_to) {
+        if (filters.date_from > filters.date_to) {
+          throw badRequest("Expense report date range is reversed");
+        }
+        const [year, month, day] = filters.date_from.split("-").map(Number);
+        const maximumYear = year! + 1;
+        const maximumDay = Math.min(
+          day!,
+          new Date(Date.UTC(maximumYear, month!, 0)).getUTCDate(),
+        );
+        const maximum = `${maximumYear.toString().padStart(4, "0")}-${month!
+          .toString()
+          .padStart(2, "0")}-${maximumDay.toString().padStart(2, "0")}`;
+        if (filters.date_to > maximum) {
+          throw badRequest("Expense report date range cannot exceed 12 months");
+        }
+      }
+      const params: unknown[] = [companyId, userId];
+      const bind = (value: unknown): string => {
+        params.push(value);
+        return `$${params.length}`;
+      };
+      const where = [
+        "ticket.deleted_at IS NULL",
+        "ticket.company_id IS NOT NULL",
+        "ticket.owner_resolution_status<>'quarantined'",
+        "$1::uuid IS NOT NULL",
+        "$2::uuid IS NOT NULL",
+        audience === "requester"
+          ? "ticket.requester_user_id=$2::uuid"
+          : "ticket.company_id=$1::uuid",
+      ];
+      const seesWholeCompany = actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor);
+      if (audience === "manager_queue") {
+        where.push("ticket.status='Pending Manager Verification'");
+        if (!actor.roles.includes(Roles.Admin)) {
+          where.push("(ticket.manager_verifier_id=$2::uuid OR ticket.manager_backup_user_id=$2::uuid)");
+        }
+      }
+      if (audience === "manager_history") {
+        where.push(`EXISTS (
+          SELECT 1 FROM expenses.expense_approvals approval
+          WHERE approval.ticket_id=ticket.id
+            AND approval.approval_stage='manager'
+            ${actor.roles.includes(Roles.Admin) ? "" : "AND approval.approver_user_id=$2::uuid"}
+        )`);
+      }
+      if ((audience === "finance_assigned" || audience === "payment_register") && !seesWholeCompany) {
+        where.push(`(
+          ticket.finance_approver_id=$2::uuid
+          OR ticket.route_snapshot->>'finance_approver_id'=$2::text
+        )`);
+      }
+      if (audience === "finance_history") {
+        where.push(`EXISTS (
+          SELECT 1 FROM expenses.expense_audit_logs audit
+          WHERE audit.ticket_id=ticket.id
+            ${seesWholeCompany ? "" : "AND audit.actor_user_id=$2::uuid"}
+            AND (audit.event_type LIKE 'expense.finance.%'
+              OR audit.event_type IN ('expense.payment_released','expense.settlement'))
+        )`);
+      }
+      if (audience === "advance_aging") {
+        where.push("ticket.payment_type='Advance'");
+        where.push("ticket.status IN ('Payment Released','Bills Submitted','Pending Adjustment')");
+      }
+      if (audience === "payment_register") {
+        where.push(`EXISTS (
+          SELECT 1 FROM expenses.expense_payments payment
+          WHERE payment.ticket_id=ticket.id
+        )`);
+      }
+      if (audience === "audit") {
+        where.push(`EXISTS (
+          SELECT 1 FROM expenses.expense_audit_logs audit
+          WHERE audit.ticket_id=ticket.id
+        )`);
+      }
+      if (filters?.status) where.push(`ticket.status=${bind(filters.status)}`);
+      if (filters?.expense_type) where.push(`ticket.expense_type=${bind(filters.expense_type)}`);
+      if (filters?.expense_sub_type) where.push(`ticket.expense_sub_type=${bind(filters.expense_sub_type)}`);
+      if (filters?.payment_type) where.push(`ticket.payment_type=${bind(filters.payment_type)}`);
+      if (filters?.department_id) where.push(`ticket.department_id=${bind(filters.department_id)}::uuid`);
+      if (filters?.requester_user_id) where.push(`ticket.requester_user_id=${bind(filters.requester_user_id)}::uuid`);
+      if (filters?.manager_user_id) {
+        const manager = bind(filters.manager_user_id);
+        where.push(`(ticket.manager_verifier_id=${manager}::uuid OR ticket.manager_backup_user_id=${manager}::uuid)`);
+      }
+      if (filters?.finance_user_id) {
+        const finance = bind(filters.finance_user_id);
+        where.push(`(ticket.finance_approver_id=${finance}::uuid OR ticket.route_snapshot->>'finance_approver_id'=${finance}::text)`);
+      }
+      if (filters?.date_from) where.push(`ticket.created_at::date>=${bind(filters.date_from)}::date`);
+      if (filters?.date_to) where.push(`ticket.created_at::date<=${bind(filters.date_to)}::date`);
+      if (filters?.document_status && filters.document_status !== "any") {
+        const requiredDocuments = bind(JSON.stringify(RequiredDocumentsByExpenseSubType));
+        const documentStatus = bind(filters.document_status);
+        where.push(`(
+          CASE
+            WHEN jsonb_array_length(COALESCE(${requiredDocuments}::jsonb->ticket.expense_sub_type,'[]'::jsonb))=0
+              THEN 'not_required'
+            WHEN EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(COALESCE(${requiredDocuments}::jsonb->ticket.expense_sub_type,'[]'::jsonb)) required(document_type)
+              WHERE NOT EXISTS (
+                SELECT 1 FROM expenses.expense_documents document
+                WHERE document.ticket_id=ticket.id
+                  AND document.document_type=required.document_type
+                  AND document.verification_status='verified'
+              )
+            ) THEN 'missing'
+            WHEN EXISTS (
+              SELECT 1 FROM expenses.expense_documents document
+              WHERE document.ticket_id=ticket.id AND document.verification_status='pending'
+            ) THEN 'pending'
+            ELSE 'complete'
+          END
+        )=${documentStatus}::text`);
+      }
+      const predicate = where.join(" AND ");
+      const selected = await client.query<{ id: UUID }>(
+        `SELECT ticket.id FROM expenses.expense_tickets ticket
+         WHERE ${predicate}
+         ORDER BY ticket.created_at DESC,ticket.id DESC LIMIT 1001`,
+        params,
+      );
+      if (selected.rows.length > 1000) {
+        throw badRequest(
+          "Expense report supports at most 1,000 matching tickets; add or narrow a date range of at most 12 months or other report filters",
+        );
+      }
+      const ticketIds = selected.rows.map((row) => row.id);
+      const childCount = await client.query<{ total: string }>(
+        `SELECT (
+           (SELECT count(*) FROM expenses.expense_line_items child WHERE child.ticket_id=ANY($1::uuid[]))
+           + (SELECT count(*) FROM expenses.expense_approvals child WHERE child.ticket_id=ANY($1::uuid[]))
+           + (SELECT count(*) FROM expenses.expense_audit_logs child WHERE child.ticket_id=ANY($1::uuid[]))
+           + (SELECT count(*) FROM expenses.expense_documents child WHERE child.ticket_id=ANY($1::uuid[]))
+           + (SELECT count(*) FROM expenses.expense_payments child WHERE child.ticket_id=ANY($1::uuid[]))
+         )::text AS total`,
+        [ticketIds],
+      );
+      if (Number(childCount.rows[0]?.total ?? 0) > 10_000) {
+        throw badRequest(
+          "Expense report supports at most 10,000 related records for the matching tickets; narrow the date range or other report filters",
+        );
+      }
+      const tickets = ticketIds.length
+        ? await this.loadTickets(client, undefined, undefined, undefined, ticketIds)
+        : [];
+      const store = await this.loadExpenseReadStore(client, companyId, tickets);
+      await client.query("COMMIT");
+      return { actor, companyId, store };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async expenseMutationCommand(input: {
+    userId: UUID;
+    ticketId?: UUID;
+    action: ExpenseMutationAction;
+    idempotencyKey: string;
+    requestHash: string;
+    run: (context: { actor: AuthUser; companyId: UUID; store: DataStore }) => ExpenseMutationResult;
+  }): Promise<ExpenseMutationResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      if (input.action === "create" || input.action === "submit") {
+        // Routing writers use this same global-then-requester order before
+        // touching actor, company or authority rows. Taking it at command
+        // entry avoids a row-lock/advisory-lock inversion with flush writers.
+        await lockExpenseRoutingReader(client, [input.userId]);
+      }
+      await client.query("SELECT 1 FROM core.users WHERE id = $1 FOR SHARE", [input.userId]);
+      const preference = await client.query<{ company_id: UUID | null }>(
+        "SELECT company_id FROM platform.user_session_preferences WHERE user_id = $1 FOR SHARE",
+        [input.userId],
+      );
+      await client.query(
+        `SELECT 1 FROM core.user_roles ur JOIN core.roles role ON role.role_key = ur.role_key
+         WHERE ur.user_id = $1 FOR SHARE OF ur, role`,
+        [input.userId],
+      );
+      if (preference.rows[0]?.company_id) {
+        await client.query(
+          "SELECT 1 FROM platform.company_profiles WHERE id = $1 FOR SHARE",
+          [preference.rows[0].company_id],
+        );
+      }
+      const { actor, companyId } = await this.resolveExpenseActor(client, input.userId);
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
+        [`expense:${actor.id}:${input.action}:${input.idempotencyKey}`],
+      );
+      let original: ExpenseTicket | null = null;
+      if (input.ticketId) {
+        if (input.action === "create") {
+          throw conflict("Expense create command cannot target an existing ticket");
+        }
+        const locked = await client.query<{ id: UUID }>(
+          `SELECT id FROM expenses.expense_tickets
+           WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+          [input.ticketId, companyId],
+        );
+        if (!locked.rows[0]) throw notFound("Expense ticket not found");
+        original = (
+          await this.loadTickets(client, undefined, undefined, undefined, [input.ticketId])
+        )[0] ?? null;
+        if (!original || original.company_id !== companyId) {
+          throw notFound("Expense ticket not found");
+        }
+        this.assertExpenseMutationActor(input.action, actor, original);
+      } else {
+        if (input.action !== "create") {
+          throw conflict("Expense mutation command requires a ticket");
+        }
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('expense-ticket-number', 0))",
+        );
+      }
+      const prior = await client.query<{
+        company_id: UUID;
+        request_hash: string;
+        ticket_id: UUID;
+        response_body: ExpenseMutationResult;
+      }>(
+        `SELECT company_id, request_hash, ticket_id, response_body
+         FROM expenses.expense_command_results
+         WHERE actor_user_id=$1 AND action=$2 AND idempotency_key=$3
+         ORDER BY created_at,id`,
+        [actor.id, input.action, input.idempotencyKey],
+      );
+      if (prior.rows.length > 1) {
+        throw conflict("Idempotency key has conflicting durable company ownership");
+      }
+      if (prior.rows[0]) {
+        if (
+          prior.rows[0].company_id !== companyId ||
+          prior.rows[0].request_hash !== input.requestHash ||
+          (input.ticketId && prior.rows[0].ticket_id !== input.ticketId)
+        ) {
+          throw conflict("Idempotency key was already used for a different expense command or company");
+        }
+        await client.query("COMMIT");
+        return prior.rows[0].response_body;
+      }
+      if (input.action === "create" || input.action === "submit") {
+        await this.lockExpenseRoutingAuthorityRows(
+          client,
+          original?.requester_user_id ?? actor.id,
+          companyId,
+        );
+      }
+      const store = await this.loadExpenseCommandStore(
+        client,
+        companyId,
+        original ? [original] : [],
+      );
+      const originalVersion = original?.version ?? null;
+      const originalSnapshot = original ? structuredClone(original) : null;
+      const priorTicketIds = new Set(store.tickets.map((ticket) => ticket.id));
+      const priorLineItemIds = new Set(store.lineItems.map((item) => item.id));
+      const priorApprovalIds = new Set(store.expenseApprovals.map((item) => item.id));
+      const priorAuditIds = new Set(store.auditLogs.map((item) => item.id));
+      const priorNotificationIds = new Set(store.notifications.map((item) => item.id));
+      const priorOutboxIds = new Set(store.outbox.map((item) => item.event_id));
+      const unchangedCollections = JSON.stringify({
+        mappings: store.managerBackupAssignments,
+        documents: store.expenseDocuments,
+        payments: store.payments,
+      });
+      const result = input.run({ actor, companyId, store });
+      if (input.action === "clarification") {
+        const clarificationAudits = store.auditLogs.filter(
+          (audit) =>
+            !priorAuditIds.has(audit.id) &&
+            audit.event_type === "expense.clarification.added",
+        );
+        if (clarificationAudits.length !== 1) {
+          throw conflict("Expense clarification produced an unexpected audit delta");
+        }
+        const documentIds = clarificationAudits[0]?.new_value?.document_ids;
+        if (
+          !Array.isArray(documentIds) ||
+          documentIds.some((id) => typeof id !== "string")
+        ) {
+          throw conflict("Expense clarification document evidence is invalid");
+        }
+        await this.lockExpenseClarificationDocuments(
+          client,
+          input.ticketId!,
+          documentIds as UUID[],
+        );
+      }
+      let changed: ExpenseTicket;
+      if (original) {
+        const candidate = store.tickets.find((ticket) => ticket.id === original!.id);
+        if (
+          !candidate ||
+          store.tickets.length !== 1 ||
+          candidate.company_id !== companyId ||
+          candidate.owner_resolution_status !== "typed_creation" ||
+          originalVersion === null ||
+          candidate.version !== originalVersion + 1
+        ) {
+          throw conflict("Expense command changed an unexpected ticket or owner");
+        }
+        changed = candidate;
+        this.assertExpenseMutationDelta(input.action, originalSnapshot!, changed);
+      } else {
+        const created = store.tickets.filter((ticket) => !priorTicketIds.has(ticket.id));
+        if (
+          created.length !== 1 ||
+          store.tickets.length !== 1 ||
+          created[0]?.company_id !== companyId ||
+          created[0]?.requester_user_id !== actor.id ||
+          created[0]?.owner_resolution_status !== "typed_creation" ||
+          created[0]?.version !== 1
+        ) {
+          throw conflict("Expense create command produced an unexpected ticket or owner");
+        }
+        changed = created[0]!;
+      }
+      if (
+        Object.keys(result).sort().join(",") !== "id,status,version" ||
+        result.id !== changed.id ||
+        result.status !== changed.status ||
+        result.version !== changed.version
+      ) {
+        throw conflict("Expense command result must contain only the committed id, status, and version");
+      }
+      if (
+        unchangedCollections !== JSON.stringify({
+          mappings: store.managerBackupAssignments,
+          documents: store.expenseDocuments,
+          payments: store.payments,
+        }) ||
+        (input.action !== "create" &&
+          store.lineItems.some((item) => !priorLineItemIds.has(item.id)))
+      ) {
+        throw conflict("Expense command changed an unrelated child collection");
+      }
+      await client.query("SELECT set_config('app.expense_command_v1', 'on', true)");
+      if (input.action === "create") {
+        await this.insertExpenseTicket(client, changed);
+        for (const item of store.lineItems.filter((row) => !priorLineItemIds.has(row.id))) {
+          if (item.ticket_id !== changed.id) throw conflict("Expense line-item parent mismatch");
+          await client.query(
+            `INSERT INTO expenses.expense_line_items
+             (id,ticket_id,line_category,description,quantity,unit_cost,line_total,tax_amount,vendor_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [item.id, item.ticket_id, item.line_category, item.description, item.quantity,
+              item.unit_cost, item.line_total, item.tax_amount, item.vendor_name],
+          );
+        }
+      } else {
+        await this.updateExpenseTicketForAction(
+          client,
+          input.action,
+          originalSnapshot!,
+          changed,
+          companyId,
+        );
+      }
+      for (const approval of store.expenseApprovals.filter(
+        (item) => !priorApprovalIds.has(item.id),
+      )) {
+        if (input.action !== "manager.verify" || approval.ticket_id !== changed.id) {
+          throw conflict("Expense approval delta is not valid for this command");
+        }
+        await client.query(
+          `INSERT INTO expenses.expense_approvals
+           (id,ticket_id,approval_stage,approver_user_id,decision,remarks,role_snapshot,
+            designation_snapshot,route_snapshot,action_at,created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)`,
+          [approval.id, approval.ticket_id, approval.approval_stage, approval.approver_user_id,
+            approval.decision, approval.remarks, approval.role_snapshot,
+            approval.designation_snapshot, JSON.stringify(approval.route_snapshot),
+            approval.action_at, approval.created_at],
+        );
+      }
+      for (const audit of store.auditLogs.filter((item) => !priorAuditIds.has(item.id))) {
+        if (audit.ticket_id !== changed.id) throw conflict("Expense audit parent mismatch");
+        await client.query(
+          `INSERT INTO expenses.expense_audit_logs
+           (id,ticket_id,actor_user_id,event_type,old_value,new_value,remarks,payload_hash,created_at)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9)`,
+          [audit.id, audit.ticket_id, audit.actor_user_id, audit.event_type,
+            audit.old_value ? JSON.stringify(audit.old_value) : null,
+            audit.new_value ? JSON.stringify(audit.new_value) : null,
+            audit.remarks, audit.payload_hash, audit.created_at],
+        );
+      }
+      for (const notification of store.notifications.filter(
+        (item) => !priorNotificationIds.has(item.id),
+      )) {
+        await client.query(
+          `INSERT INTO platform.notifications
+           (id,actor_user_id,target_user_id,event_type,payload,status,read_at,version,created_at,updated_at)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10)`,
+          [
+            notification.id,
+            notification.actor_user_id,
+            notification.target_user_id,
+            notification.event_type,
+            JSON.stringify(notification.payload),
+            notification.status,
+            notification.read_at,
+            notification.version,
+            notification.created_at,
+            notification.updated_at,
+          ],
+        );
+      }
+      for (const event of store.outbox.filter(
+        (item) => !priorOutboxIds.has(item.event_id),
+      )) {
+        if (
+          event.aggregate_id !== changed.id ||
+          event.payload.company_id !== companyId
+        ) {
+          throw conflict("Expense event owner mismatch");
+        }
+        await client.query(
+          `INSERT INTO platform.outbox_events
+           (event_id,aggregate_type,aggregate_id,event_type,payload,idempotency_key,status,
+            retry_count,available_at,created_at,published_at,failed_at,last_error)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [event.event_id, event.aggregate_type, event.aggregate_id, event.event_type,
+            JSON.stringify(event.payload), event.idempotency_key, event.status,
+            event.retry_count, event.available_at, event.created_at, event.published_at,
+            event.failed_at, event.last_error],
+        );
+      }
+      await client.query(
+        `INSERT INTO expenses.expense_command_results
+         (company_id,actor_user_id,ticket_id,action,idempotency_key,request_hash,response_body)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+        [companyId, actor.id, changed.id, input.action, input.idempotencyKey,
+          input.requestHash, JSON.stringify(result)],
+      );
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error.code === "40001" || error.code === "40P01")
+      ) {
+        throw conflict("Expense command changed during concurrent processing; refresh and retry");
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async lockExpenseRoutingAuthorityRows(
+    client: PoolClient,
+    requesterUserId: UUID,
+    companyId: UUID,
+  ): Promise<void> {
+    const requester = await client.query<{ manager_user_id: UUID | null }>(
+      "SELECT manager_user_id FROM core.users WHERE id=$1 FOR SHARE",
+      [requesterUserId],
+    );
+    const mappings = await client.query<{ reviewer_user_id: UUID }>(
+      `SELECT reviewer_user_id FROM expenses.employee_reviewer_mappings
+       WHERE company_id=$1 AND employee_user_id=$2
+         AND owner_resolution_status IN ('typed_creation','audited_repair')
+       FOR SHARE`,
+      [companyId, requesterUserId],
+    );
+    const governance = await client.query<{
+      primary_finance_manager_user_id: UUID;
+      manager_backup_user_id: UUID | null;
+      finance_approval_backup_user_id: UUID | null;
+      finance_self_request_fallback_user_id: UUID | null;
+    }>(
+      `SELECT primary_finance_manager_user_id,manager_backup_user_id,
+              finance_approval_backup_user_id,finance_self_request_fallback_user_id
+       FROM platform.finance_governance_config
+       WHERE deleted_at IS NULL ORDER BY updated_at DESC,id DESC LIMIT 1 FOR SHARE`,
+    );
+    const userIds = Array.from(new Set([
+      requesterUserId,
+      requester.rows[0]?.manager_user_id,
+      ...mappings.rows.map((row) => row.reviewer_user_id),
+      governance.rows[0]?.primary_finance_manager_user_id,
+      governance.rows[0]?.manager_backup_user_id,
+      governance.rows[0]?.finance_approval_backup_user_id,
+      governance.rows[0]?.finance_self_request_fallback_user_id,
+    ].filter((id): id is UUID => Boolean(id)))).sort();
+    if (!userIds.length) return;
+    await client.query(
+      "SELECT id FROM core.users WHERE id=ANY($1::uuid[]) ORDER BY id FOR SHARE",
+      [userIds],
+    );
+    await client.query(
+      `SELECT user_id FROM platform.user_session_preferences
+       WHERE user_id=ANY($1::uuid[]) ORDER BY user_id FOR SHARE`,
+      [userIds],
+    );
+    await client.query(
+      `SELECT ur.id FROM core.user_roles ur
+       JOIN core.roles role ON role.role_key=ur.role_key
+       WHERE ur.user_id=ANY($1::uuid[])
+       ORDER BY ur.user_id,ur.role_key,ur.id FOR SHARE OF ur,role`,
+      [userIds],
+    );
+  }
+
+  private async lockExpenseClarificationDocuments(
+    client: PoolClient,
+    ticketId: UUID,
+    documentIds: readonly UUID[],
+  ): Promise<void> {
+    if (documentIds.length > 20 || new Set(documentIds).size !== documentIds.length) {
+      throw badRequest("Clarification may reference at most 20 unique documents");
+    }
+    if (documentIds.length === 0) return;
+    const coherent = await client.query<{ document_id: UUID }>(
+      `SELECT link.document_id
+       FROM expenses.expense_documents link
+       JOIN documents.doc_metadata metadata ON metadata.id=link.document_id
+       JOIN documents.doc_versions current_version
+         ON current_version.document_id=metadata.id
+        AND current_version.version=metadata.current_version
+        AND current_version.storage_key=metadata.storage_key
+        AND current_version.size_bytes=metadata.size_bytes
+        AND current_version.checksum_sha256 IS NOT DISTINCT FROM metadata.checksum_sha256
+       WHERE link.ticket_id=$1
+         AND link.document_id=ANY($2::uuid[])
+         AND metadata.business_object_type='expense_ticket'
+         AND metadata.business_object_id=$1
+         AND metadata.classification='finance'
+         AND metadata.document_type=link.document_type
+         AND metadata.deleted_at IS NULL
+         AND metadata.size_bytes>0
+         AND current_version.size_bytes>0
+       ORDER BY link.document_id
+       FOR SHARE OF link,metadata,current_version`,
+      [ticketId, documentIds],
+    );
+    if (coherent.rows.length !== documentIds.length) {
+      throw badRequest(
+        "Every clarification document must be a live current document linked to this expense ticket",
+      );
+    }
+  }
+
+  private assertExpenseMutationActor(
+    action: Exclude<ExpenseMutationAction, "create">,
+    actor: AuthUser,
+    ticket: ExpenseTicket,
+  ): void {
+    if (action === "submit" || action === "withdraw") {
+      if (ticket.requester_user_id !== actor.id) {
+        throw forbidden(`Only the requester can ${action} this ticket`);
+      }
+      return;
+    }
+    if (action === "manager.verify") {
+      assertManagerActor(actor, ticket);
+      return;
+    }
+    if (action === "clarification") {
+      const assignedManager =
+        (ticket.manager_verifier_id === actor.id ||
+          ticket.manager_backup_user_id === actor.id) &&
+        actor.roles.includes(Roles.Reviewer);
+      const assignedFinance =
+        ticket.finance_approver_id === actor.id &&
+        actor.roles.includes(Roles.FinanceManager);
+      if (
+        ticket.requester_user_id !== actor.id &&
+        !assignedManager &&
+        !assignedFinance
+      ) {
+        throw forbidden(
+          "Only the requester, assigned Manager, or assigned Finance actor can add a clarification",
+        );
+      }
+      return;
+    }
+    const assignedFinance =
+      ticket.finance_approver_id === actor.id &&
+      actor.roles.includes(Roles.FinanceManager);
+    if (ticket.requester_user_id !== actor.id && !assignedFinance) {
+      throw forbidden("Only the requester or current assigned Finance actor can submit bills");
+    }
+  }
+
+  private assertExpenseMutationDelta(
+    action: ExpenseMutationAction,
+    original: ExpenseTicket,
+    changed: ExpenseTicket,
+  ): void {
+    const allowed = new Set<string>(["version", "updated_at"]);
+    for (const field of action === "submit"
+      ? ["status", "manager_verifier_id", "manager_backup_user_id", "finance_approver_id", "route_snapshot", "submitted_at"]
+      : action === "withdraw"
+        ? ["status", "closure_remarks", "closed_at"]
+        : action === "manager.verify" || action === "bills"
+          ? ["status"]
+          : []) {
+      allowed.add(field);
+    }
+    for (const key of Object.keys(original) as Array<keyof ExpenseTicket>) {
+      if (allowed.has(key)) continue;
+      if (JSON.stringify(original[key]) !== JSON.stringify(changed[key])) {
+        throw conflict(`Expense ${action} changed protected field ${key}`);
+      }
+    }
+  }
+
+  private async insertExpenseTicket(
+    client: PoolClient,
+    ticket: ExpenseTicket,
+  ): Promise<void> {
+    const inserted = await client.query(
+      `INSERT INTO expenses.expense_tickets (
+        id,ticket_no,requester_user_id,requester_role_snapshot,department_id,expense_type,
+        expense_sub_type,project_code,client_name,task_title,task_description,location,
+        start_date,end_date,estimated_amount,payment_type,advance_amount,advance_justification,
+        assigned_reviewer_id,director_approver_id,finance_manager_id,manager_verifier_id,
+        manager_backup_user_id,finance_approver_id,status,actual_amount,variance_amount,
+        payment_reference_no,closure_remarks,context_payload,route_snapshot,policy_snapshot,
+        version,created_at,updated_at,submitted_at,closed_at,deleted_at,company_id,
+        owner_resolution_status,owner_resolution_reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+         $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30::jsonb,$31::jsonb,$32::jsonb,
+         $33,$34,$35,$36,$37,$38,$39,$40,$41)
+       ON CONFLICT DO NOTHING`,
+      [ticket.id, ticket.ticket_no, ticket.requester_user_id, ticket.requester_role_snapshot,
+        ticket.department_id, ticket.expense_type, ticket.expense_sub_type, ticket.project_code,
+        ticket.client_name, ticket.task_title, ticket.task_description, ticket.location,
+        ticket.start_date, ticket.end_date, ticket.estimated_amount, ticket.payment_type,
+        ticket.advance_amount, ticket.advance_justification, ticket.manager_verifier_id, null,
+        ticket.finance_approver_id, ticket.manager_verifier_id, ticket.manager_backup_user_id,
+        ticket.finance_approver_id, ticket.status, ticket.actual_amount, ticket.variance_amount,
+        ticket.payment_reference_no, ticket.closure_remarks, JSON.stringify(ticket.context_payload),
+        JSON.stringify(ticket.route_snapshot), JSON.stringify(ticket.policy_snapshot), ticket.version,
+        ticket.created_at, ticket.updated_at, ticket.submitted_at, ticket.closed_at,
+        ticket.deleted_at, ticket.company_id, ticket.owner_resolution_status,
+        ticket.owner_resolution_reason ?? null],
+    );
+    if (inserted.rowCount !== 1) throw conflict("Expense ticket already exists");
+  }
+
+  private async updateExpenseTicketForAction(
+    client: PoolClient,
+    action: Exclude<ExpenseMutationAction, "create">,
+    original: ExpenseTicket,
+    changed: ExpenseTicket,
+    companyId: UUID,
+  ): Promise<void> {
+    const common = [changed.version, changed.updated_at, changed.id, companyId, original.version];
+    const result = action === "submit"
+      ? await client.query(
+          `UPDATE expenses.expense_tickets
+           SET status=$1,manager_verifier_id=$2,manager_backup_user_id=$3,
+               finance_approver_id=$4,route_snapshot=$5::jsonb,submitted_at=$6,
+               version=$7,updated_at=$8
+           WHERE id=$9 AND company_id=$10 AND version=$11 AND owner_resolution_status='typed_creation'`,
+          [changed.status, changed.manager_verifier_id, changed.manager_backup_user_id,
+            changed.finance_approver_id, JSON.stringify(changed.route_snapshot), changed.submitted_at,
+            ...common],
+        )
+      : action === "withdraw"
+        ? await client.query(
+            `UPDATE expenses.expense_tickets
+             SET status=$1,closure_remarks=$2,closed_at=$3,version=$4,updated_at=$5
+             WHERE id=$6 AND company_id=$7 AND version=$8 AND owner_resolution_status='typed_creation'`,
+            [changed.status, changed.closure_remarks, changed.closed_at, ...common],
+          )
+        : action === "clarification"
+          ? await client.query(
+              `UPDATE expenses.expense_tickets SET version=$1,updated_at=$2
+               WHERE id=$3 AND company_id=$4 AND version=$5 AND owner_resolution_status='typed_creation'`,
+              common,
+            )
+          : await client.query(
+              `UPDATE expenses.expense_tickets SET status=$1,version=$2,updated_at=$3
+               WHERE id=$4 AND company_id=$5 AND version=$6 AND owner_resolution_status='typed_creation'`,
+              [changed.status, ...common],
+            );
+    if (result.rowCount !== 1) throw conflict("Expense ticket changed during the command");
+  }
+
+  async expenseFinanceCommand(input: {
+    userId: UUID; ticketId: UUID;
+    action: "finance.approve" | "finance.payment" | "settlement";
+    idempotencyKey: string; requestHash: string; expectedVersion: number;
+    run: (context: { actor: AuthUser; companyId: UUID; store: DataStore }) => ExpenseTicket;
+  }): Promise<Pick<ExpenseTicket, "id" | "status" | "version">> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      // Lock current authority through commit. The ticket row lock also
+      // serializes different command keys targeting the same version.
+      await client.query("SELECT 1 FROM core.users WHERE id = $1 FOR SHARE", [input.userId]);
+      const preference = await client.query<{ company_id: UUID | null }>(
+        "SELECT company_id FROM platform.user_session_preferences WHERE user_id = $1 FOR SHARE",
+        [input.userId],
+      );
+      await client.query(
+        `SELECT 1 FROM core.user_roles ur JOIN core.roles role ON role.role_key = ur.role_key
+         WHERE ur.user_id = $1 FOR SHARE OF ur, role`, [input.userId],
+      );
+      if (preference.rows[0]?.company_id) {
+        await client.query(
+          "SELECT 1 FROM platform.company_profiles WHERE id = $1 FOR SHARE",
+          [preference.rows[0].company_id],
+        );
+      }
+      const { actor, companyId } = await this.resolveExpenseActor(client, input.userId);
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
+        [`expense:${companyId}:${actor.id}:${input.action}:${input.idempotencyKey}`],
+      );
+      const locked = await client.query<{ id: UUID; company_id: UUID | null; version: number }>(
+        `SELECT id, company_id, version FROM expenses.expense_tickets
+         WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, [input.ticketId],
+      );
+      if (!locked.rows[0]) throw notFound("Expense ticket not found");
+      if (!locked.rows[0].company_id || locked.rows[0].company_id !== companyId) {
+        throw notFound("Expense ticket not found");
+      }
+      const tickets = await this.loadTickets(client, undefined, undefined, undefined, [input.ticketId]);
+      const original = tickets[0];
+      if (!original) throw notFound("Expense ticket not found");
+      const actionType = input.action === "finance.approve"
+        ? WorkflowActions.FinanceApprove
+        : input.action === "finance.payment"
+          ? WorkflowActions.PaymentRelease : WorkflowActions.SettlementClose;
+      assertFinanceActor(actor, original, actionType);
+      const prior = await client.query<{ request_hash: string; ticket_id: UUID; response_body: {
+        id: UUID; status: ExpenseTicket["status"]; version: number;
+      } }>(
+        `SELECT request_hash, ticket_id, response_body
+         FROM expenses.expense_command_results
+         WHERE company_id = $1 AND actor_user_id = $2 AND action = $3 AND idempotency_key = $4`,
+        [companyId, actor.id, input.action, input.idempotencyKey],
+      );
+      if (prior.rows[0]) {
+        if (prior.rows[0].request_hash !== input.requestHash || prior.rows[0].ticket_id !== input.ticketId) {
+          throw conflict("Idempotency key was already used for a different expense command");
+        }
+        await client.query("COMMIT");
+        return prior.rows[0].response_body;
+      }
+      if (original.version !== input.expectedVersion) {
+        throw conflict("The ticket was modified by another actor. Refresh and retry.", {
+          expected_version: input.expectedVersion, current_version: original.version,
+        });
+      }
+      if (input.action === "settlement") {
+        const required = RequiredDocumentsByExpenseSubType[original.expense_sub_type] ?? [];
+        const verified = await client.query<{ document_type: string }>(
+          `SELECT link.document_type
+           FROM expenses.expense_documents link
+           JOIN documents.doc_metadata metadata ON metadata.id = link.document_id
+           JOIN documents.doc_versions version ON version.document_id = metadata.id
+             AND version.version = metadata.current_version
+             AND version.storage_key = metadata.storage_key
+             AND version.size_bytes = metadata.size_bytes
+             AND version.checksum_sha256 IS NOT DISTINCT FROM metadata.checksum_sha256
+           WHERE link.ticket_id = $1 AND link.verification_status = 'verified'
+             AND metadata.business_object_type = 'expense_ticket'
+             AND metadata.business_object_id = $1
+             AND metadata.classification = 'finance'
+             AND metadata.document_type = link.document_type
+             AND metadata.deleted_at IS NULL AND metadata.size_bytes > 0
+             AND version.size_bytes > 0
+           FOR SHARE OF link, metadata, version`, [input.ticketId],
+        );
+        const present = new Set(verified.rows.map((row) => row.document_type));
+        const missing = required.filter((type) => !present.has(type));
+        if (missing.length) {
+          throw badRequest("Closure requires live, matching and verified expense documents", {
+            missing_document_types: missing,
+          });
+        }
+      }
+      const originalVersion = original.version;
+      const store = await this.loadExpenseReadStore(client, companyId, tickets);
+      const priorApprovalIds = new Set(store.expenseApprovals.map((item) => item.id));
+      const priorAuditIds = new Set(store.auditLogs.map((item) => item.id));
+      const priorPaymentIds = new Set(store.payments.map((item) => item.id));
+      const priorPayments = new Map(store.payments.map((item) => [item.id, {
+        settlement_status: item.settlement_status, settlement_amount: item.settlement_amount,
+      }]));
+      const changed = input.run({ actor, companyId, store });
+      if (changed.id !== input.ticketId || changed.company_id !== companyId ||
+          changed.version !== originalVersion + 1 || store.tickets.length !== 1) {
+        throw conflict("Expense command changed an unexpected ticket or owner");
+      }
+      await client.query("SELECT set_config('app.expense_command_v1', 'on', true)");
+      const updated = await client.query(
+        `UPDATE expenses.expense_tickets SET status = $1, actual_amount = $2,
+           variance_amount = $3, payment_reference_no = $4, closure_remarks = $5,
+           version = $6, updated_at = $7, closed_at = $8
+         WHERE id = $9 AND company_id = $10 AND version = $11`,
+        [changed.status, changed.actual_amount, changed.variance_amount,
+          changed.payment_reference_no, changed.closure_remarks, changed.version,
+          changed.updated_at, changed.closed_at, changed.id, companyId, originalVersion],
+      );
+      if (updated.rowCount !== 1) throw conflict("Expense ticket changed during the command");
+      for (const approval of store.expenseApprovals.filter((item) => !priorApprovalIds.has(item.id))) {
+        if (approval.ticket_id !== input.ticketId) throw conflict("Expense approval parent mismatch");
+        await client.query(
+          `INSERT INTO expenses.expense_approvals
+           (id, ticket_id, approval_stage, approver_user_id, decision, remarks,
+            role_snapshot, designation_snapshot, route_snapshot, action_at, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)`,
+          [approval.id, approval.ticket_id, approval.approval_stage, approval.approver_user_id,
+            approval.decision, approval.remarks, approval.role_snapshot, approval.designation_snapshot,
+            JSON.stringify(approval.route_snapshot), approval.action_at, approval.created_at],
+        );
+      }
+      for (const payment of store.payments) {
+        if (payment.ticket_id !== input.ticketId) throw conflict("Expense payment parent mismatch");
+        if (!priorPaymentIds.has(payment.id)) {
+          await client.query(
+            `INSERT INTO expenses.expense_payments
+             (id,ticket_id,payment_type,approved_amount,paid_amount,payment_date,
+              payment_mode,reference_no,settlement_status,settlement_amount,processed_by_user_id,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            [payment.id, payment.ticket_id, payment.payment_type, payment.approved_amount,
+              payment.paid_amount, payment.payment_date, payment.payment_mode, payment.reference_no,
+              payment.settlement_status, payment.settlement_amount, payment.processed_by_user_id,
+              payment.created_at],
+          );
+        } else if (payment.settlement_status !== priorPayments.get(payment.id)?.settlement_status ||
+                   payment.settlement_amount !== priorPayments.get(payment.id)?.settlement_amount) {
+          await client.query(
+            `UPDATE expenses.expense_payments SET settlement_status = $1, settlement_amount = $2
+             WHERE id = $3 AND ticket_id = $4`,
+            [payment.settlement_status, payment.settlement_amount, payment.id, input.ticketId],
+          );
+        }
+      }
+      for (const audit of store.auditLogs.filter((item) => !priorAuditIds.has(item.id))) {
+        if (audit.ticket_id !== input.ticketId) throw conflict("Expense audit parent mismatch");
+        await client.query(
+          `INSERT INTO expenses.expense_audit_logs
+           (id,ticket_id,actor_user_id,event_type,old_value,new_value,remarks,payload_hash,created_at)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9)`,
+          [audit.id, audit.ticket_id, audit.actor_user_id, audit.event_type,
+            audit.old_value ? JSON.stringify(audit.old_value) : null,
+            audit.new_value ? JSON.stringify(audit.new_value) : null,
+            audit.remarks, audit.payload_hash, audit.created_at],
+        );
+      }
+      for (const notice of store.notifications) {
+        await client.query(
+          `INSERT INTO platform.notifications
+           (id,actor_user_id,target_user_id,event_type,payload,status,read_at,version,created_at,updated_at)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10)`,
+          [notice.id, notice.actor_user_id, notice.target_user_id, notice.event_type,
+            JSON.stringify(notice.payload), notice.status, notice.read_at, notice.version,
+            notice.created_at, notice.updated_at],
+        );
+      }
+      for (const event of store.outbox) {
+        if (event.aggregate_id !== input.ticketId || event.payload.company_id !== companyId) {
+          throw conflict("Expense event owner mismatch");
+        }
+        await client.query(
+          `INSERT INTO platform.outbox_events
+           (event_id,aggregate_type,aggregate_id,event_type,payload,idempotency_key,status,
+            retry_count,available_at,created_at,published_at,failed_at,last_error)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [event.event_id, event.aggregate_type, event.aggregate_id, event.event_type,
+            JSON.stringify(event.payload), event.idempotency_key, event.status, event.retry_count,
+            event.available_at, event.created_at, event.published_at, event.failed_at, event.last_error],
+        );
+      }
+      const response = { id: changed.id, status: changed.status, version: changed.version };
+      await client.query(
+        `INSERT INTO expenses.expense_command_results
+         (company_id,actor_user_id,ticket_id,action,idempotency_key,request_hash,response_body)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+        [companyId, actor.id, input.ticketId, input.action, input.idempotencyKey,
+          input.requestHash, JSON.stringify(response)],
+      );
+      await client.query("COMMIT");
+      return response;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async expenseReadContext(userId: UUID, ticketId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      const candidateTickets = await this.loadTickets(client, companyId, userId, ticketId);
+      const activeOwnerCompanies = candidateTickets.length
+        ? await client.query<{ id: UUID }>(
+            `SELECT id FROM platform.company_profiles
+             WHERE id=ANY($1::uuid[]) AND status='active'`,
+            [Array.from(new Set(candidateTickets
+              .map((ticket) => ticket.company_id)
+              .filter((id): id is UUID => Boolean(id))))],
+          )
+        : { rows: [] as Array<{ id: UUID }> };
+      const activeCompanyIds = new Set(activeOwnerCompanies.rows.map((row) => row.id));
+      const tickets = candidateTickets.filter(
+        (ticket) => ticket.company_id && activeCompanyIds.has(ticket.company_id),
+      );
+      const store = await this.loadExpenseReadStore(client, companyId, tickets);
+      await client.query("COMMIT");
+      return { actor, companyId, store };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async expenseMetadataContext(userId: UUID): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    store: DataStore;
+  }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      // Project rows do not yet have a durable company owner. Return the
+      // company-safe platform metadata without hydrating ambiguous project or
+      // client selectors; TEN-S25-009 owns project tenant attribution.
+      const store = await this.loadExpenseReadStore(client, companyId, []);
+      await client.query("COMMIT");
+      return { actor, companyId, store };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async expensePageContext(userId: UUID, options: {
+    kind: "my" | "manager" | "finance";
+    page: number;
+    pageSize: number;
+    filters?: {
+      status?: string; date_from?: string; date_to?: string;
+      payment_type?: string; expense_type?: string; expense_sub_type?: string;
+      amount_min?: string; amount_max?: string; requester?: string;
+      department?: string; document_status?: "any" | "complete" | "missing";
+      sla_bucket?: string; sort?: string;
+    };
+  }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore; total: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      if (options.kind === "manager" && !actor.roles.includes(Roles.Reviewer)) {
+        throw forbidden("Current Manager authority is required for this queue");
+      }
+      if (options.kind === "finance" && !actor.roles.includes(Roles.FinanceManager)) {
+        throw forbidden("Current Finance authority is required for this queue");
+      }
+      const params: unknown[] = [];
+      const bind = (value: unknown): string => {
+        params.push(value);
+        return `$${params.length}`;
+      };
+      const where = ["t.deleted_at IS NULL", "t.company_id IS NOT NULL"];
+      if (options.kind === "my") {
+        where.push(`t.requester_user_id = ${bind(userId)}::uuid`);
+      } else if (options.kind === "manager") {
+        where.push(`t.company_id = ${bind(companyId)}::uuid`);
+        where.push(`t.manager_verifier_id = ${bind(userId)}::uuid`);
+        where.push(`(
+          t.status = 'Pending Manager Verification'
+          OR (t.status IN ('Payment Released', 'Bills Submitted', 'Pending Adjustment')
+            AND EXISTS (SELECT 1 FROM expenses.expense_documents doc
+              WHERE doc.ticket_id = t.id AND doc.verification_status = 'pending'))
+        )`);
+      } else {
+        where.push(`t.company_id = ${bind(companyId)}::uuid`);
+        where.push(`t.finance_approver_id = ${bind(userId)}::uuid`);
+        if (!options.filters?.status) {
+          where.push(`t.status IN ('Manager Verified', 'Finance Hold', 'Clarification Required',
+            'Finance Approved', 'Payment Released', 'Bills Submitted', 'Pending Adjustment')`);
+        }
+      }
+      const filters = options.filters;
+      if (filters?.status) where.push(`t.status = ${bind(filters.status)}`);
+      if (filters?.date_from) where.push(`t.created_at::date >= ${bind(filters.date_from)}::date`);
+      if (filters?.date_to) where.push(`t.created_at::date <= ${bind(filters.date_to)}::date`);
+      if (filters?.date_from && filters?.date_to && filters.date_from > filters.date_to) {
+        throw badRequest("Expense date range is reversed");
+      }
+      if (filters?.payment_type) where.push(`t.payment_type = ${bind(filters.payment_type)}`);
+      if (filters?.expense_type) where.push(`t.expense_type = ${bind(filters.expense_type)}`);
+      if (filters?.expense_sub_type) where.push(`t.expense_sub_type = ${bind(filters.expense_sub_type)}`);
+      if (filters?.amount_min) where.push(`t.estimated_amount >= ${bind(filters.amount_min)}::numeric`);
+      if (filters?.amount_max) where.push(`t.estimated_amount <= ${bind(filters.amount_max)}::numeric`);
+      if (filters?.requester) {
+        const requester = bind(filters.requester);
+        where.push(`(
+          strpos(
+            lower(concat_ws(' ',
+              t.context_payload->'requester_snapshot'->>'employee_code',
+              t.context_payload->'requester_snapshot'->>'full_name'
+            )),
+            lower(${requester})
+          ) > 0
+          OR EXISTS (
+            SELECT 1
+            FROM core.users requester_user
+            JOIN platform.user_session_preferences requester_membership
+              ON requester_membership.user_id=requester_user.id
+             AND requester_membership.company_id=t.company_id
+            WHERE requester_user.id=t.requester_user_id
+              AND strpos(
+                lower(concat_ws(' ', requester_user.employee_code, requester_user.full_name)),
+                lower(${requester})
+              ) > 0
+          )
+        )`);
+      }
+      if (filters?.department) {
+        const department = bind(filters.department);
+        where.push(`EXISTS (
+          SELECT 1 FROM core.departments department
+          WHERE department.id=t.department_id
+            AND (
+              department.company_id=t.company_id
+              OR (
+                department.company_id IS NULL
+                AND EXISTS (
+                  SELECT 1 FROM core.users requester_user
+                  JOIN platform.user_session_preferences requester_membership
+                    ON requester_membership.user_id=requester_user.id
+                   AND requester_membership.company_id=t.company_id
+                  WHERE requester_user.id=t.requester_user_id
+                    AND requester_user.department_id=department.id
+                )
+              )
+            )
+            AND strpos(
+              lower(concat_ws(' ', department.department_code, department.name)),
+              lower(${department})
+            ) > 0
+        )`);
+      }
+      if (filters?.document_status && filters.document_status !== "any") {
+        const requiredDocuments = bind(
+          JSON.stringify(RequiredDocumentsByExpenseSubType),
+        );
+        const missingRequiredDocument = `EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(
+            COALESCE(${requiredDocuments}::jsonb->t.expense_sub_type, '[]'::jsonb)
+          ) required(document_type)
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM expenses.expense_documents document
+            JOIN documents.doc_metadata metadata ON metadata.id=document.document_id
+            JOIN documents.doc_versions version
+              ON version.document_id=metadata.id
+             AND version.version=metadata.current_version
+             AND version.storage_key=metadata.storage_key
+             AND version.size_bytes=metadata.size_bytes
+             AND version.checksum_sha256 IS NOT DISTINCT FROM metadata.checksum_sha256
+            WHERE document.ticket_id=t.id
+              AND document.document_type=required.document_type
+              AND document.verification_status='verified'
+              AND metadata.business_object_type='expense_ticket'
+              AND metadata.business_object_id=t.id
+              AND metadata.classification='finance'
+              AND metadata.document_type=document.document_type
+              AND metadata.deleted_at IS NULL
+              AND metadata.size_bytes > 0
+              AND version.size_bytes > 0
+          )
+        )`;
+        where.push(
+          filters.document_status === "missing"
+            ? missingRequiredDocument
+            : `NOT ${missingRequiredDocument}`,
+        );
+      }
+      if (filters?.sla_bucket && filters.sla_bucket !== "any") {
+        if (filters.sla_bucket === "0-24h") where.push("t.created_at >= now() - interval '24 hours'");
+        else if (filters.sla_bucket === "24-72h") where.push("t.created_at < now() - interval '24 hours' AND t.created_at >= now() - interval '72 hours'");
+        else if (filters.sla_bucket === "72h-plus") where.push("t.created_at < now() - interval '72 hours'");
+        else throw badRequest("Unsupported expense SLA bucket");
+      }
+      const order = options.kind === "finance" && filters?.sort === "amount"
+        ? "t.estimated_amount DESC, t.id DESC"
+        : options.kind === "finance" && filters?.sort === "status"
+          ? "t.status ASC, t.created_at DESC, t.id DESC"
+          : options.kind === "finance" && (filters?.sort === "sla" || !filters?.sort)
+            ? "t.created_at ASC, t.id ASC"
+            : "t.created_at DESC, t.id DESC";
+      const predicate = where.join(" AND ");
+      const count = await client.query<{ total: string }>(
+        `SELECT count(*) AS total FROM expenses.expense_tickets t WHERE ${predicate}`, params,
+      );
+      const total = Number(count.rows[0]?.total ?? 0);
+      const pageParams = [...params, options.pageSize, (options.page - 1) * options.pageSize];
+      const pageRows = await client.query<{ id: UUID }>(
+        `SELECT t.id FROM expenses.expense_tickets t WHERE ${predicate}
+         ORDER BY ${order} LIMIT $${pageParams.length - 1}::integer OFFSET $${pageParams.length}::integer`,
+        pageParams,
+      );
+      const orderedIds = pageRows.rows.map((row) => row.id);
+      const loaded = await this.loadTickets(client, undefined, undefined, undefined, orderedIds);
+      const byId = new Map(loaded.map((ticket) => [ticket.id, ticket]));
+      const tickets = orderedIds.flatMap((id) => byId.get(id) ? [byId.get(id)!] : []);
+      const store = await this.loadExpenseReadStore(client, companyId, tickets);
+      await client.query("COMMIT");
+      return { actor, companyId, store, total };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async classifyExpenseDocumentAccess(
+    userId: UUID,
+    documentId: UUID,
+    mode: "metadata" | "raw" | "workflow",
+  ): Promise<"other" | "expense-authorized" | "hidden"> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      const result = await client.query<{
+        metadata_id: UUID | null;
+        business_object_type: string | null;
+        business_object_id: UUID | null;
+        metadata_document_type: string | null;
+        classification: string | null;
+        metadata_deleted_at: Date | null;
+        link_ticket_id: UUID | null;
+        link_document_type: string | null;
+        ticket_id: UUID | null;
+        ticket_company_id: UUID | null;
+        requester_user_id: UUID | null;
+        manager_verifier_id: UUID | null;
+        finance_approver_id: UUID | null;
+        owner_resolution_status: string | null;
+        ticket_deleted_at: Date | null;
+        ticket_company_status: string | null;
+      }>(
+        `SELECT metadata.id AS metadata_id, metadata.business_object_type,
+                metadata.business_object_id, metadata.document_type AS metadata_document_type,
+                metadata.classification, metadata.deleted_at AS metadata_deleted_at,
+                link.ticket_id AS link_ticket_id, link.document_type AS link_document_type,
+                ticket.id AS ticket_id, ticket.company_id AS ticket_company_id,
+                ticket.requester_user_id, ticket.manager_verifier_id,
+                ticket.finance_approver_id, ticket.owner_resolution_status,
+                ticket.deleted_at AS ticket_deleted_at,
+                ticket_company.status AS ticket_company_status
+         FROM (SELECT $1::uuid AS document_id) requested
+         LEFT JOIN documents.doc_metadata metadata ON metadata.id = requested.document_id
+         LEFT JOIN expenses.expense_documents link ON link.document_id = requested.document_id
+         LEFT JOIN expenses.expense_tickets ticket
+           ON ticket.id = COALESCE(link.ticket_id,
+             CASE WHEN metadata.business_object_type = 'expense_ticket'
+               THEN metadata.business_object_id ELSE NULL END)
+         LEFT JOIN platform.company_profiles ticket_company
+           ON ticket_company.id=ticket.company_id`,
+        [documentId],
+      );
+      if (result.rows.length !== 1) {
+        await client.query("COMMIT");
+        return "hidden";
+      }
+      const row = result.rows[0];
+      const isExpense = row?.business_object_type === "expense_ticket" || Boolean(row?.link_ticket_id);
+      if (!isExpense) {
+        await client.query("COMMIT");
+        return row?.metadata_id ? "other" : "hidden";
+      }
+      const consistent = Boolean(row &&
+        row.metadata_id && !row.metadata_deleted_at && row.business_object_type === "expense_ticket" &&
+        row.business_object_id && row.link_ticket_id === row.business_object_id &&
+        row.ticket_id === row.business_object_id && !row.ticket_deleted_at && row.ticket_company_id &&
+        row.ticket_company_status === "active" &&
+        row.owner_resolution_status !== "quarantined" && row.classification === "finance" &&
+        row.metadata_document_type === row.link_document_type,
+      );
+      if (!consistent) {
+        await client.query("COMMIT");
+        return "hidden";
+      }
+      if (!row) throw new Error("Expense receipt classification invariant failed");
+      const sameCompany = row.ticket_company_id === companyId;
+      const metadataOnly = mode === "metadata";
+      const authorized = row.requester_user_id === actor.id ||
+        (sameCompany && actor.roles.includes(Roles.Admin)) ||
+        (sameCompany && actor.roles.includes(Roles.FinanceManager) && row.finance_approver_id === actor.id) ||
+        (sameCompany && actor.roles.includes(Roles.Reviewer) && row.manager_verifier_id === actor.id) ||
+        (metadataOnly && sameCompany && actor.roles.includes(Roles.Auditor));
+      await client.query("COMMIT");
+      return authorized ? "expense-authorized" : "hidden";
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async expenseDashboardContext(userId: UUID, filters: {
+    status?: string; date_from?: string; date_to?: string;
+  }): Promise<{
+    actor: AuthUser; companyId: UUID; store: DataStore;
+    aggregate: Record<string, string | number>;
+  }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      if (filters.date_from && filters.date_to && filters.date_from > filters.date_to) {
+        throw badRequest("Expense date range is reversed");
+      }
+      const params: unknown[] = [
+        userId, companyId,
+        actor.roles.includes(Roles.Reviewer), actor.roles.includes(Roles.FinanceManager),
+      ];
+      const where = [
+        "t.deleted_at IS NULL", "t.company_id IS NOT NULL",
+        `(t.requester_user_id = $1::uuid OR
+          (t.company_id = $2::uuid AND
+            (($3::boolean AND t.manager_verifier_id = $1::uuid)
+              OR ($4::boolean AND t.finance_approver_id = $1::uuid))))`,
+      ];
+      if (filters.status) { params.push(filters.status); where.push(`t.status = $${params.length}`); }
+      if (filters.date_from) { params.push(filters.date_from); where.push(`t.created_at::date >= $${params.length}::date`); }
+      if (filters.date_to) { params.push(filters.date_to); where.push(`t.created_at::date <= $${params.length}::date`); }
+      const predicate = where.join(" AND ");
+      const aggregate = await client.query<Record<string, string | number>>(`
+        WITH visible AS (
+          SELECT t.*, GREATEST(0, floor(extract(epoch FROM (now() - t.created_at)) / 3600)) AS age_hours
+          FROM expenses.expense_tickets t WHERE ${predicate}
+        )
+        SELECT
+          count(*) AS total_visible,
+          count(*) FILTER (WHERE requester_user_id = $1) AS my_tickets,
+          count(*) FILTER (WHERE $3::boolean AND company_id = $2 AND manager_verifier_id = $1
+            AND status = 'Pending Manager Verification') AS manager_pending,
+          count(*) FILTER (WHERE $4::boolean AND company_id = $2 AND finance_approver_id = $1
+            AND status IN ('Manager Verified', 'Finance Hold', 'Clarification Required',
+              'Finance Approved', 'Payment Released', 'Bills Submitted', 'Pending Adjustment')) AS finance_queue_count,
+          count(*) FILTER (WHERE requester_user_id = $1 AND status IN
+            ('Submitted', 'Pending Manager Verification', 'Manager Verified', 'Finance Hold',
+             'Clarification Required', 'Finance Approved', 'Payment Released', 'Bills Submitted',
+             'Pending Adjustment', 'Closed')) AS submitted,
+          count(*) FILTER (WHERE requester_user_id = $1 AND status IN
+            ('Pending Manager Verification', 'Manager Verified')) AS pending_approval,
+          count(*) FILTER (WHERE requester_user_id = $1 AND status IN
+            ('Finance Approved', 'Payment Released', 'Bills Submitted', 'Pending Adjustment', 'Closed')) AS approved,
+          count(*) FILTER (WHERE requester_user_id = $1 AND status IN
+            ('Manager Returned', 'Manager Rejected')) AS returned_or_rejected,
+          count(*) FILTER (WHERE $4::boolean AND company_id = $2 AND finance_approver_id = $1
+            AND status = 'Manager Verified') AS finance_pending,
+          count(*) FILTER (WHERE $4::boolean AND company_id = $2 AND finance_approver_id = $1
+            AND status = 'Finance Approved') AS payment_pending,
+          count(*) FILTER (WHERE status IN
+            ('Payment Released', 'Bills Submitted', 'Pending Adjustment')) AS settlement_pending,
+          COALESCE(sum(estimated_amount), 0)::text AS visible_amount,
+          COALESCE(sum(estimated_amount) FILTER (WHERE requester_user_id = $1), 0)::text AS mine_amount,
+          COALESCE(sum(estimated_amount) FILTER (WHERE $4::boolean AND company_id = $2
+            AND finance_approver_id = $1 AND status IN
+            ('Manager Verified', 'Finance Hold', 'Clarification Required', 'Finance Approved',
+             'Payment Released', 'Bills Submitted', 'Pending Adjustment')), 0)::text AS finance_queue_amount,
+          COALESCE(sum(estimated_amount) FILTER (WHERE $4::boolean AND company_id = $2
+            AND finance_approver_id = $1 AND status = 'Finance Approved'), 0)::text AS payment_pending_amount,
+          count(*) FILTER (WHERE age_hours <= 24) AS aging_0_24_count,
+          COALESCE(sum(estimated_amount) FILTER (WHERE age_hours <= 24), 0)::text AS aging_0_24_amount,
+          count(*) FILTER (WHERE age_hours BETWEEN 25 AND 72) AS aging_24_72_count,
+          COALESCE(sum(estimated_amount) FILTER (WHERE age_hours BETWEEN 25 AND 72), 0)::text AS aging_24_72_amount,
+          count(*) FILTER (WHERE age_hours >= 73) AS aging_72_plus_count,
+          COALESCE(sum(estimated_amount) FILTER (WHERE age_hours >= 73), 0)::text AS aging_72_plus_amount
+        FROM visible`, params,
+      );
+      const ids = await client.query<{ id: UUID }>(
+        `SELECT t.id FROM expenses.expense_tickets t WHERE ${predicate}
+         ORDER BY t.updated_at DESC, t.id DESC LIMIT 10`, params,
+      );
+      const orderedIds = ids.rows.map((row) => row.id);
+      const loaded = await this.loadTickets(client, undefined, undefined, undefined, orderedIds);
+      const byId = new Map(loaded.map((ticket) => [ticket.id, ticket]));
+      const tickets = orderedIds.flatMap((id) => byId.get(id) ? [byId.get(id)!] : []);
+      const store = await this.loadExpenseReadStore(client, companyId, tickets);
+      await client.query("COMMIT");
+      return { actor, companyId, store, aggregate: aggregate.rows[0] ?? {} };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async resolveExpenseActor(client: PoolClient, userId: UUID): Promise<{ actor: AuthUser; companyId: UUID }> {
+    const session = await this.resolveDurableSessionContext(client, userId, "expenses.read");
+    return { actor: session.actor, companyId: session.company.id };
+  }
+
+  private async lockReviewerRoutingActorAuthority(
+    client: PoolClient,
+    userId: UUID,
+  ): Promise<void> {
+    await client.query("SELECT id FROM core.users WHERE id=$1 FOR SHARE", [userId]);
+    const actorPreference = await client.query<{ company_id: UUID | null }>(
+      "SELECT company_id FROM platform.user_session_preferences WHERE user_id=$1 FOR SHARE",
+      [userId],
+    );
+    await client.query(
+      `SELECT ur.user_id FROM core.user_roles ur
+       JOIN core.roles role ON role.role_key=ur.role_key
+       WHERE ur.user_id=$1 FOR SHARE OF ur,role`,
+      [userId],
+    );
+    if (actorPreference.rows[0]?.company_id) {
+      await client.query(
+        "SELECT id FROM platform.company_profiles WHERE id=$1 FOR SHARE",
+        [actorPreference.rows[0].company_id],
+      );
+    }
+  }
+
+  private async resolveDurableSessionContext(
+    client: PoolClient,
+    userId: UUID,
+    operation: string,
+  ): Promise<DurableSessionContext> {
+    const result = await client.query<{
+      id: UUID;
+      employee_code: string;
+      email: string;
+      full_name: string;
+      department_id: UUID | null;
+      designation_id: UUID | null;
+      hierarchy_path: string;
+      employment_status: AuthUser["employment_status"];
+      email_verified_at: Date | null;
+      email_verification_status: AuthUser["email_verification_status"];
+      deleted_at: Date | null;
+      roles: RoleKey[];
+      preference_id: UUID | null;
+      active_role: RoleKey | null;
+      company_id: UUID | null;
+      landing_page: string | null;
+      preference_locale: string | null;
+      preference_timezone: string | null;
+      preference_created_at: Date | null;
+      preference_updated_at: Date | null;
+      preference_version: number | null;
+      company_name: string | null;
+      company_slug: string | null;
+      website: string | null;
+      industry: string | null;
+      address: string | null;
+      company_timezone: string | null;
+      company_locale: string | null;
+      currency: string | null;
+      fiscal_year_start_month: number | null;
+      working_week: string | null;
+      work_hours_per_day: string | number | null;
+      logo_label: string | null;
+      logo_document_id: UUID | null;
+      logo_url: string | null;
+      logo_file_name: string | null;
+      logo_mime_type: string | null;
+      logo_size_bytes: string | number | null;
+      company_status: CompanyProfileRecord["status"] | null;
+      bootstrap_completed_at: Date | null;
+      company_created_at: Date | null;
+      company_updated_at: Date | null;
+      company_version: number | null;
+    }>(
+      `SELECT u.id, u.employee_code, u.email, u.full_name, u.department_id,
+              u.designation_id, u.hierarchy_path::text AS hierarchy_path,
+              u.employment_status, u.email_verified_at, u.email_verification_status,
+              u.deleted_at,
+              pref.id AS preference_id, pref.active_role, pref.company_id,
+              pref.landing_page, pref.locale AS preference_locale,
+              pref.timezone AS preference_timezone, pref.created_at AS preference_created_at,
+              pref.updated_at AS preference_updated_at, pref.version AS preference_version,
+              company.company_name, company.company_slug, company.website, company.industry,
+              company.address, company.timezone AS company_timezone,
+              company.locale AS company_locale, company.currency,
+              company.fiscal_year_start_month, company.working_week,
+              company.work_hours_per_day, company.logo_label, company.logo_document_id,
+              company.logo_url, company.logo_file_name, company.logo_mime_type,
+              company.logo_size_bytes, company.status AS company_status,
+              company.bootstrap_completed_at, company.created_at AS company_created_at,
+              company.updated_at AS company_updated_at, company.version AS company_version,
+              COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
+                WHERE ur.role_key IS NOT NULL AND ur.status = 'active'
+                  AND ur.deleted_at IS NULL AND role.status = 'active'
+                  AND role.deleted_at IS NULL
+                  AND ur.effective_from <= CURRENT_DATE
+                  AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
+              ), '{}') AS roles
+       FROM core.users u
+       LEFT JOIN platform.user_session_preferences pref ON pref.user_id = u.id
+       LEFT JOIN platform.company_profiles company ON company.id = pref.company_id
+       LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+       LEFT JOIN core.roles role ON role.role_key = ur.role_key
+       WHERE u.id = $1
+       GROUP BY u.id, pref.id, company.id`,
+      [userId],
+    );
+    const current = result.rows[0];
+    if (!current || current.deleted_at || current.employment_status !== EmploymentStatuses.Active) {
+      throw unauthorized("User account is inactive or blocked", { user_id: userId, operation });
+    }
+    if (!current.preference_id || !current.company_id || !current.active_role) {
+      throw companyContextRequired({ user_id: userId, company_id: current.company_id, operation });
+    }
+    if (!current.roles.includes(current.active_role)) {
+      throw forbidden("Selected role is not assigned to this user.", {
+        user_id: userId, company_id: current.company_id, active_role: current.active_role, operation,
+      });
+    }
+    if (current.company_status !== "active" || !current.company_name || !current.company_slug ||
+        !current.company_timezone || !current.company_locale || !current.currency ||
+        !current.working_week || current.fiscal_year_start_month === null ||
+        current.work_hours_per_day === null || !current.preference_locale ||
+        !current.preference_timezone || !current.landing_page ||
+        !current.preference_created_at || !current.preference_updated_at ||
+        current.preference_version === null || !current.company_created_at ||
+        !current.company_updated_at || current.company_version === null) {
+      throw companyContextRequired({ user_id: userId, company_id: current.company_id, operation });
+    }
+    const actor: AuthUser = {
+      id: current.id,
+      employee_code: current.employee_code,
+      email: current.email,
+      full_name: current.full_name,
+      department_id: current.department_id as UUID,
+      designation_id: current.designation_id as UUID,
+      hierarchy_path: current.hierarchy_path,
+      employment_status: current.employment_status,
+      roles: current.roles,
+      email_verified_at: asIsoOrNull(current.email_verified_at),
+      email_verification_status: current.email_verification_status ?? "unverified",
+    };
+    return {
+      actor,
+      activeRole: current.active_role,
+      preference: {
+        id: current.preference_id,
+        user_id: current.id,
+        active_role: current.active_role,
+        company_id: current.company_id,
+        landing_page: current.landing_page,
+        locale: current.preference_locale,
+        timezone: current.preference_timezone,
+        created_at: asIso(current.preference_created_at),
+        updated_at: asIso(current.preference_updated_at),
+        version: current.preference_version,
+      },
+      company: {
+        id: current.company_id,
+        company_name: current.company_name,
+        company_slug: current.company_slug,
+        website: current.website,
+        industry: current.industry,
+        address: current.address,
+        timezone: current.company_timezone,
+        locale: current.company_locale,
+        currency: current.currency,
+        fiscal_year_start_month: current.fiscal_year_start_month,
+        working_week: current.working_week,
+        work_hours_per_day: Number(current.work_hours_per_day),
+        logo_label: current.logo_label,
+        logo_document_id: current.logo_document_id,
+        logo_url: current.logo_url,
+        logo_file_name: current.logo_file_name,
+        logo_mime_type: current.logo_mime_type,
+        logo_size_bytes: current.logo_size_bytes === null ? null : Number(current.logo_size_bytes),
+        status: current.company_status,
+        bootstrap_completed_at: asIsoOrNull(current.bootstrap_completed_at),
+        created_at: asIso(current.company_created_at),
+        updated_at: asIso(current.company_updated_at),
+        version: current.company_version,
+      },
+    };
+  }
+
+  private async loadExpenseReadStore(client: PoolClient, companyId: UUID, tickets: ExpenseTicket[]): Promise<DataStore> {
+      const ticketIds = tickets.map((ticket) => ticket.id);
+      // node-postgres runs one statement at a time per client. Await each
+      // query to preserve its execution contract and the same SQL snapshot.
+      const lineItems = await this.loadLineItems(client, ticketIds);
+      const expenseApprovals = await this.loadExpenseApprovals(client, ticketIds);
+      const auditLogs = await this.loadAuditLogs(client, undefined, ticketIds);
+      const expenseDocuments = await this.loadExpenseDocuments(client, ticketIds);
+      const documentIds = expenseDocuments.map((document) => document.document_id);
+      const documents = await this.loadDocuments(client, documentIds);
+      const documentVersions = await this.loadDocumentVersions(client, documentIds);
+      const payments = await this.loadPayments(client, ticketIds);
+      const displayUserIds = Array.from(new Set([
+        ...tickets.flatMap((ticket) => [ticket.requester_user_id, ticket.manager_verifier_id, ticket.finance_approver_id]),
+        ...auditLogs.map((audit) => audit.actor_user_id),
+      ].filter((id): id is UUID => Boolean(id))));
+      const departmentIds = Array.from(new Set(tickets.map((ticket) => ticket.department_id)));
+      const users = await this.loadUsers(client, companyId, displayUserIds);
+      const departments = await this.loadDepartments(client, companyId, departmentIds);
+      // Start with no hydrated tenant collections. The shared process store
+      // contains other companies' users/preferences/documents and must never
+      // be reachable through this request-local service instance.
+      const emptyCollections = Object.fromEntries(
+        Object.entries(this.store)
+          .filter(([, value]) => Array.isArray(value))
+          .map(([key]) => [key, []]),
+      );
+      return {
+          ...this.store,
+          ...emptyCollections,
+          tickets, lineItems, expenseApprovals, auditLogs, expenseDocuments,
+          documents, documentVersions, payments,
+          users, departments,
+          financeGovernanceConfig: null,
+          adminSecuritySettings: buildDefaultAdminSecuritySettings(new Date().toISOString()),
+          processedEvents: new Set<string>(),
+          sessionStore: new MemorySessionStore(),
+          objectStorage: null,
+          persistence: null,
+          pgPool: null,
+          valkey: null,
+          nextOutboxId: 1,
+          nextTicketNo: 1,
+      };
+  }
+
+  private async loadExpenseCommandStore(
+    client: PoolClient,
+    companyId: UUID,
+    tickets: ExpenseTicket[],
+  ): Promise<DataStore> {
+    const store = await this.loadExpenseReadStore(client, companyId, tickets);
+    const users = await this.loadUsers(client, companyId);
+    const userIds = users.map((user) => user.id);
+    const activeRoleRows = userIds.length
+      ? await client.query<{ user_id: UUID; role_key: RoleKey }>(
+          `SELECT ur.user_id, ur.role_key
+           FROM core.user_roles ur
+           JOIN core.roles role ON role.role_key = ur.role_key
+           WHERE ur.user_id = ANY($1::uuid[])
+             AND ur.status = 'active' AND ur.deleted_at IS NULL
+             AND role.status = 'active' AND role.deleted_at IS NULL
+             AND ur.effective_from <= CURRENT_DATE
+             AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
+           ORDER BY ur.user_id, ur.role_key`,
+          [userIds],
+        )
+      : { rows: [] as Array<{ user_id: UUID; role_key: RoleKey }> };
+    const rolesByUser = new Map<UUID, RoleKey[]>();
+    for (const row of activeRoleRows.rows) {
+      const roles = rolesByUser.get(row.user_id) ?? [];
+      roles.push(row.role_key);
+      rolesByUser.set(row.user_id, roles);
+    }
+    const companyProfiles = await this.loadCompanyProfiles(client, companyId);
+    const userSessionPreferences = await this.loadUserSessionPreferences(
+      client,
+      companyId,
+    );
+    const managerBackupAssignments = (
+      await this.loadManagerBackupAssignments(client, companyId)
+    ).filter(
+      (assignment) =>
+        userIds.includes(assignment.employee_user_id) &&
+        userIds.includes(assignment.backup_manager_user_id),
+    );
+    const ticketCounter = await client.query<{ next_ticket_no: number }>(
+      `SELECT COALESCE(MAX(
+         CASE WHEN ticket_no ~ '^EXP-2026-[0-9]+$'
+           THEN substring(ticket_no FROM '([0-9]+)$')::integer ELSE 0 END
+       ), 0) + 1 AS next_ticket_no
+       FROM expenses.expense_tickets`,
+    );
+    return {
+      ...store,
+      users: users.map((user) => ({
+        ...user,
+        roles: rolesByUser.get(user.id) ?? [],
+      })),
+      companyProfiles,
+      userSessionPreferences,
+      financeGovernanceConfig: await this.loadFinanceGovernanceConfig(client),
+      managerBackupAssignments,
+      nextTicketNo: Number(ticketCounter.rows[0]?.next_ticket_no ?? 1),
+    };
   }
 
   async reload(): Promise<void> {
@@ -651,9 +3164,63 @@ class PostgresPersistence {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      // Routing readers acquire this lock before row locks. A full-store
+      // writer must do the same so it cannot hold a user/preference row
+      // while waiting for the global governance lock.
+      await lockExpenseFinanceGovernanceWriter(client);
       await this.flushCore(client);
-      await this.flushPlatform(client);
-      await this.flushExpenses(client);
+      await this.flushPlatform(client, true);
+      // Expense mutations use request-local transaction commands. A generic
+      // response-end flush must never regain authority over the fenced tables.
+      await this.flushDocuments(client);
+      await this.flushAssets(client);
+      await this.flushTimesheets(client);
+      await this.flushProjects(client);
+      await this.flushHelpdesk(client);
+      await this.flushAttendance(client);
+      await this.flushLeaveWfh(client);
+      await this.flushEms(client);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async flushInitialSeed(): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(76001, 1007)");
+      const existing = await client.query<{ occupied: boolean }>(`
+        SELECT EXISTS (SELECT 1 FROM core.users)
+          OR EXISTS (SELECT 1 FROM expenses.expense_tickets)
+          OR EXISTS (SELECT 1 FROM expenses.expense_line_items)
+          OR EXISTS (SELECT 1 FROM expenses.expense_approvals)
+          OR EXISTS (SELECT 1 FROM expenses.expense_audit_logs)
+          OR EXISTS (SELECT 1 FROM expenses.expense_documents)
+          OR EXISTS (SELECT 1 FROM expenses.expense_payments)
+          OR EXISTS (SELECT 1 FROM expenses.employee_reviewer_mappings)
+          OR EXISTS (SELECT 1 FROM expenses.expense_policy_rules)
+          OR EXISTS (SELECT 1 FROM expenses.expense_owner_repair_audit)
+          OR EXISTS (SELECT 1 FROM expenses.expense_command_results)
+          AS occupied
+      `);
+      if (existing.rows[0]?.occupied) {
+        throw new Error("Initial seed requires an empty user and expense database");
+      }
+      await client.query("SELECT set_config('app.expense_command_v1', 'on', true)");
+      await lockExpenseCombinedRoutingWriter(
+        client,
+        this.store.managerBackupAssignments.map(
+          (mapping) => mapping.employee_user_id,
+        ),
+      );
+      await this.flushCore(client);
+      await this.flushPlatform(client, true, true);
+      await this.flushExpenses(client, this.store, true);
       await this.flushDocuments(client);
       await this.flushAssets(client);
       await this.flushTimesheets(client);
@@ -750,9 +3317,7 @@ class PostgresPersistence {
           await this.flushPlatform(client);
           break;
         case "expenses":
-          await this.flushExpenses(client);
-          await this.flushOutbox(client, aggregateIds);
-          break;
+          throw new Error("Expense mutations require a transaction-owned command");
         case "documents":
           await this.flushDocuments(client, optionalSet(options.documentIds));
           await this.flushOutbox(
@@ -996,9 +3561,15 @@ class PostgresPersistence {
     }
   }
 
-  private async loadDepartments(client: PoolClient): Promise<Department[]> {
+  private async loadDepartments(client: PoolClient, companyId?: UUID, departmentIds?: readonly UUID[]): Promise<Department[]> {
     const { rows } = await client.query(
-      "SELECT id, company_id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version FROM core.departments ORDER BY department_code",
+      `SELECT id, company_id, department_code, name, cost_center, parent_department_id,
+              director_user_id, status, deleted_at, version
+       FROM core.departments
+       ${companyId ? `WHERE company_id = $1 AND deleted_at IS NULL
+         ${departmentIds ? "AND id = ANY($2::uuid[])" : ""}` : ""}
+       ORDER BY department_code`,
+      companyId ? departmentIds ? [companyId, departmentIds] : [companyId] : [],
     );
     return rows.map((row) => ({
       ...row,
@@ -1204,7 +3775,16 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadUsers(client: PoolClient): Promise<CoreUser[]> {
+  private async loadUsers(
+    client: PoolClient,
+    companyId?: UUID,
+    userIds?: readonly UUID[],
+    limit?: number,
+  ): Promise<CoreUser[]> {
+    const params: unknown[] = [];
+    if (companyId) params.push(companyId);
+    if (userIds) params.push(userIds);
+    if (limit) params.push(limit);
     const { rows } = await client.query(`
       SELECT
         u.id, u.employee_code, u.email, u.full_name, u.department_id, u.designation_id,
@@ -1214,10 +3794,14 @@ class PostgresPersistence {
         u.timezone, u.joined_on, u.terminated_on, u.deleted_at, u.version,
         COALESCE(array_agg(DISTINCT ur.role_key) FILTER (WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL), '{}') AS roles
       FROM core.users u
+      ${companyId ? "JOIN platform.user_session_preferences pref ON pref.user_id = u.id AND pref.company_id = $1" : ""}
       LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+      ${companyId ? `WHERE u.deleted_at IS NULL
+        ${userIds ? "AND u.id = ANY($2::uuid[])" : ""}` : ""}
       GROUP BY u.id
       ORDER BY u.employee_code
-    `);
+      ${limit ? `LIMIT $${params.length}::integer` : ""}
+    `, params);
     return rows.map((row) => ({
       ...row,
       roles: row.roles as RoleKey[],
@@ -1278,6 +3862,7 @@ class PostgresPersistence {
 
   private async loadCompanyProfiles(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<CompanyProfileRecord[]> {
     const { rows } = await client.query(`
       SELECT id, company_name, company_slug, website, industry, address, timezone, locale, currency,
@@ -1285,8 +3870,9 @@ class PostgresPersistence {
         logo_document_id, logo_url, logo_file_name, logo_mime_type, logo_size_bytes,
         status, bootstrap_completed_at, created_at, updated_at, version
       FROM platform.company_profiles
+      ${companyId ? "WHERE id = $1" : ""}
       ORDER BY created_at, id
-    `);
+    `, companyId ? [companyId] : []);
     return rows.map((row) => ({
       id: row.id,
       company_name: row.company_name,
@@ -1317,12 +3903,14 @@ class PostgresPersistence {
 
   private async loadUserSessionPreferences(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<UserSessionPreferenceRecord[]> {
     const { rows } = await client.query(`
       SELECT id, user_id, active_role, company_id, landing_page, locale, timezone, created_at, updated_at, version
       FROM platform.user_session_preferences
+      ${companyId ? "WHERE company_id = $1" : ""}
       ORDER BY updated_at, id
-    `);
+    `, companyId ? [companyId] : []);
     return rows.map((row) => ({
       id: row.id,
       user_id: row.user_id,
@@ -1386,12 +3974,27 @@ class PostgresPersistence {
 
   private async loadManagerBackupAssignments(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<ManagerBackupAssignment[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.employee_reviewer_mappings ORDER BY created_at, id",
+      `SELECT * FROM expenses.employee_reviewer_mappings
+       WHERE company_id IS NOT NULL
+         AND owner_resolution_status IN ('typed_creation','audited_repair')
+         AND ($1::uuid IS NULL OR company_id=$1)
+       ORDER BY created_at,id`,
+      [companyId ?? null],
     );
-    return rows.map((row) => ({
+    return rows.map((row) => this.mapManagerBackupAssignment(row));
+  }
+
+  private mapManagerBackupAssignment(
+    row: Record<string, any>,
+  ): ManagerBackupAssignment {
+    return {
       id: row.id,
+      company_id: row.company_id,
+      owner_resolution_status: row.owner_resolution_status,
+      owner_resolution_reason: row.owner_resolution_reason,
       employee_user_id: row.employee_user_id,
       backup_manager_user_id:
         row.backup_manager_user_id ?? row.reviewer_user_id,
@@ -1403,18 +4006,28 @@ class PostgresPersistence {
       updated_at: asIso(row.updated_at),
       deleted_at: asIsoOrNull(row.deleted_at),
       version: row.version,
-    }));
+    };
   }
 
-  private async loadTickets(client: PoolClient, companyId?: UUID): Promise<ExpenseTicket[]> {
+  private async loadTickets(client: PoolClient, companyId?: UUID, requesterId?: UUID, ticketId?: UUID, ticketIds?: readonly UUID[]): Promise<ExpenseTicket[]> {
     const { rows } = await client.query(
       `SELECT * FROM expenses.expense_tickets
-       ${companyId ? "WHERE context_payload->>'company_id' = $1" : ""}
+       ${ticketIds ? "WHERE id = ANY($1::uuid[]) AND company_id IS NOT NULL"
+         : companyId && requesterId && ticketId
+         ? "WHERE id = $3 AND company_id IS NOT NULL AND (company_id = $1 OR requester_user_id = $2)"
+         : companyId && requesterId
+         ? "WHERE company_id IS NOT NULL AND (company_id = $1 OR requester_user_id = $2)"
+         : companyId ? "WHERE company_id = $1" : ""}
        ORDER BY created_at, ticket_no`,
-      companyId ? [companyId] : [],
+      ticketIds ? [ticketIds]
+        : companyId && requesterId && ticketId ? [companyId, requesterId, ticketId]
+        : companyId && requesterId ? [companyId, requesterId] : companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id ?? null,
+      owner_resolution_status: row.owner_resolution_status ?? "quarantined",
+      owner_resolution_reason: row.owner_resolution_reason ?? null,
       ticket_no: row.ticket_no,
       requester_user_id: row.requester_user_id,
       requester_role_snapshot: row.requester_role_snapshot,
@@ -1455,9 +4068,12 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadLineItems(client: PoolClient): Promise<ExpenseLineItem[]> {
+  private async loadLineItems(client: PoolClient, ticketIds?: readonly UUID[]): Promise<ExpenseLineItem[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_line_items ORDER BY created_at, id",
+      `SELECT * FROM expenses.expense_line_items
+       ${ticketIds ? "WHERE ticket_id = ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      ticketIds ? [ticketIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1474,9 +4090,13 @@ class PostgresPersistence {
 
   private async loadExpenseApprovals(
     client: PoolClient,
+    ticketIds?: readonly UUID[],
   ): Promise<ExpenseApprovalRecord[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_approvals ORDER BY created_at, id",
+      `SELECT * FROM expenses.expense_approvals
+       ${ticketIds ? "WHERE ticket_id = ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      ticketIds ? [ticketIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1493,12 +4113,12 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadAuditLogs(client: PoolClient, companyId?: UUID): Promise<ExpenseAuditLog[]> {
+  private async loadAuditLogs(client: PoolClient, companyId?: UUID, ticketIds?: readonly UUID[]): Promise<ExpenseAuditLog[]> {
     const { rows } = await client.query(
       `SELECT log.* FROM expenses.expense_audit_logs log
-       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = log.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = log.ticket_id WHERE ticket.company_id = $1" : ticketIds ? "WHERE log.ticket_id = ANY($1::uuid[])" : ""}
        ORDER BY log.created_at, log.id`,
-      companyId ? [companyId] : [],
+      companyId ? [companyId] : ticketIds ? [ticketIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1515,16 +4135,23 @@ class PostgresPersistence {
 
   private async loadExpenseDocuments(
     client: PoolClient,
+    ticketIds?: readonly UUID[],
   ): Promise<ExpenseDocument[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_documents ORDER BY uploaded_at, id",
+      `SELECT * FROM expenses.expense_documents
+       ${ticketIds ? "WHERE ticket_id = ANY($1::uuid[])" : ""}
+       ORDER BY uploaded_at, id`,
+      ticketIds ? [ticketIds] : [],
     );
     return rows.map((row) => ({ ...row, uploaded_at: asIso(row.uploaded_at) }));
   }
 
-  private async loadPayments(client: PoolClient): Promise<ExpensePayment[]> {
+  private async loadPayments(client: PoolClient, ticketIds?: readonly UUID[]): Promise<ExpensePayment[]> {
     const { rows } = await client.query(
-      "SELECT * FROM expenses.expense_payments ORDER BY created_at, id",
+      `SELECT * FROM expenses.expense_payments
+       ${ticketIds ? "WHERE ticket_id = ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      ticketIds ? [ticketIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1542,9 +4169,16 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadDocuments(client: PoolClient): Promise<DocumentMetadata[]> {
+  private async loadDocuments(
+    client: PoolClient,
+    documentIds?: readonly UUID[],
+  ): Promise<DocumentMetadata[]> {
+    if (documentIds?.length === 0) return [];
     const { rows } = await client.query(
-      "SELECT * FROM documents.doc_metadata ORDER BY created_at, id",
+      `SELECT * FROM documents.doc_metadata
+       ${documentIds ? "WHERE id=ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      documentIds ? [documentIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1569,9 +4203,14 @@ class PostgresPersistence {
 
   private async loadDocumentVersions(
     client: PoolClient,
+    documentIds?: readonly UUID[],
   ): Promise<DocumentVersionRecord[]> {
+    if (documentIds?.length === 0) return [];
     const { rows } = await client.query(
-      "SELECT * FROM documents.doc_versions ORDER BY created_at, id",
+      `SELECT * FROM documents.doc_versions
+       ${documentIds ? "WHERE document_id=ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      documentIds ? [documentIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1605,11 +4244,20 @@ class PostgresPersistence {
 
   private async loadNotifications(
     client: PoolClient,
+    targetUserIds?: readonly UUID[],
   ): Promise<NotificationRecord[]> {
+    if (targetUserIds?.length === 0) return [];
     const { rows } = await client.query(
-      "SELECT * FROM platform.notifications ORDER BY created_at, id",
+      `SELECT * FROM platform.notifications
+       ${targetUserIds ? "WHERE target_user_id = ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      targetUserIds ? [targetUserIds] : [],
     );
-    return rows.map((row) => ({
+    return rows.map((row) => this.mapNotificationRow(row));
+  }
+
+  private mapNotificationRow(row: Record<string, any>): NotificationRecord {
+    return {
       id: row.id,
       actor_user_id: row.actor_user_id,
       target_user_id: row.target_user_id,
@@ -1620,7 +4268,7 @@ class PostgresPersistence {
       version: row.version,
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
-    }));
+    };
   }
 
   private async loadEmailDeliveries(
@@ -1684,7 +4332,14 @@ class PostgresPersistence {
   private async loadOutbox(client: PoolClient, filter: "all" | "pending" = "all", companyId?: UUID): Promise<OutboxEvent[]> {
     const conditions = [
       ...(filter === "pending" ? ["status IN ('pending', 'retry')"] : []),
-      ...(companyId ? ["payload->>'company_id' = $1"] : []),
+      ...(companyId ? [`(
+        (aggregate_type='expense_ticket' AND EXISTS (
+          SELECT 1 FROM expenses.expense_tickets ticket
+          WHERE ticket.id=platform.outbox_events.aggregate_id
+            AND ticket.company_id=$1::uuid
+        ))
+        OR (aggregate_type<>'expense_ticket' AND payload->>'company_id'=$1::text)
+      )`] : []),
     ];
     const condition = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const { rows } = await client.query(
@@ -1692,6 +4347,432 @@ class PostgresPersistence {
       companyId ? [companyId] : [],
     );
     return rows.map((row) => this.mapOutboxRow(row));
+  }
+
+  private async loadDashboardExactMetrics(
+    client: PoolClient,
+    actor: AuthUser,
+    companyId: UUID,
+  ): Promise<DashboardExactMetrics> {
+    const systemWideRoles: readonly string[] = [
+      Roles.Admin,
+      Roles.Auditor,
+      Roles.HRManager,
+      Roles.AssetManager,
+    ];
+    const financeRoles: readonly string[] = [Roles.Admin, Roles.Auditor, Roles.FinanceManager];
+    const systemWide = actor.roles.some((role) => systemWideRoles.includes(role));
+    const canSeeFinance = actor.roles.some((role) => financeRoles.includes(role));
+    const hierarchyPrefix = `${actor.hierarchy_path}.%`;
+    const params = [companyId, systemWide, actor.id, hierarchyPrefix, canSeeFinance];
+    const visibleUsersCte = `visible_users AS (
+      SELECT user_row.id,user_row.department_id,user_row.employment_status,user_row.joined_on
+      FROM core.users user_row
+      JOIN platform.user_session_preferences membership ON membership.user_id=user_row.id
+      WHERE membership.company_id=$1 AND user_row.deleted_at IS NULL
+        AND ($2::boolean OR user_row.id=$3::uuid OR user_row.hierarchy_path::text LIKE $4)
+    )`;
+    const workforce = await client.query<{
+      visible_employees: string;
+      active_employees: string;
+      inactive_employees: string;
+      new_joiners_30d: string;
+    }>(
+      `WITH ${visibleUsersCte}
+       SELECT count(*)::text AS visible_employees,
+         count(*) FILTER (WHERE employment_status='active')::text AS active_employees,
+         count(*) FILTER (WHERE employment_status<>'active')::text AS inactive_employees,
+         count(*) FILTER (WHERE joined_on>=CURRENT_DATE-30)::text AS new_joiners_30d
+       FROM visible_users`,
+      params.slice(0, 4),
+    );
+    const departments = await client.query<{
+      department_id: UUID;
+      department_code: string;
+      name: string;
+      active_employees: string;
+    }>(
+      `WITH ${visibleUsersCte}
+       SELECT department.id AS department_id,department.department_code,department.name,
+         count(visible_users.id) FILTER (WHERE visible_users.employment_status='active')::text
+           AS active_employees
+       FROM core.departments department
+       LEFT JOIN visible_users ON visible_users.department_id=department.id
+       WHERE department.company_id=$1 AND department.deleted_at IS NULL
+         AND department.status='active'
+       GROUP BY department.id,department.department_code,department.name
+       ORDER BY department.department_code,department.id`,
+      params.slice(0, 4),
+    );
+    const counts = await client.query<Record<string, string>>(
+      `WITH ${visibleUsersCte},
+       visible_attendance AS (
+         SELECT daily.*
+         FROM attendance.daily_records daily
+         JOIN visible_users ON visible_users.id=daily.employee_user_id
+         WHERE daily.company_id=$1 AND daily.deleted_at IS NULL
+       ), attendance_reporting AS (
+         SELECT daily.*
+         FROM visible_attendance daily
+         WHERE $2::boolean
+           OR EXISTS (SELECT 1 FROM visible_users other WHERE other.id<>$3::uuid)
+       ), attendance_base_signals AS (
+         SELECT daily.*,
+           (daily.first_check_in IS NOT NULL OR daily.last_check_out IS NOT NULL
+             OR daily.work_seconds>0
+             OR EXISTS (
+               SELECT 1 FROM attendance.punch_events punch
+               WHERE punch.company_id=daily.company_id
+                 AND punch.employee_user_id=daily.employee_user_id
+                 AND (punch.occurred_at AT TIME ZONE 'UTC')::date=daily.work_date
+                 AND punch.deleted_at IS NULL
+             )
+             OR EXISTS (
+               SELECT 1 FROM attendance.geo_fallback_reviews review
+               WHERE review.company_id=daily.company_id
+                 AND review.employee_user_id=daily.employee_user_id
+                 AND review.work_date=daily.work_date
+                 AND review.deleted_at IS NULL AND review.status='approved'
+             )
+             OR EXISTS (
+               SELECT 1 FROM platform.outbox_events event
+               WHERE event.event_type='attendance.provisional.recorded'
+                 AND event.payload->>'company_id'=daily.company_id::text
+                 AND event.payload->>'subject_employee_user_id'=daily.employee_user_id::text
+                 AND left(event.payload->>'captured_at',10)=daily.work_date::text
+                 AND event.payload->>'verification_status' IN
+                   ('unverified','review_required','verified')
+             )) AS has_accepted_evidence,
+           EXISTS (
+             SELECT 1 FROM attendance.geo_fallback_reviews review
+             WHERE review.company_id=daily.company_id
+               AND review.employee_user_id=daily.employee_user_id
+               AND review.work_date=daily.work_date
+               AND review.deleted_at IS NULL
+           ) AS has_geo_review,
+           EXISTS (
+             SELECT 1 FROM attendance.geo_fallback_reviews review
+             WHERE review.company_id=daily.company_id
+               AND review.employee_user_id=daily.employee_user_id
+               AND review.work_date=daily.work_date
+               AND review.deleted_at IS NULL AND review.status IN ('pending','returned')
+           ) AS has_pending_geo_review,
+           EXISTS (
+             SELECT 1 FROM attendance.regularization_requests regularization
+             WHERE regularization.company_id=daily.company_id
+               AND regularization.employee_user_id=daily.employee_user_id
+               AND regularization.work_date=daily.work_date
+               AND regularization.deleted_at IS NULL
+               AND regularization.status IN ('pending','returned')
+           ) AS has_pending_regularization,
+           EXISTS (
+             SELECT 1 FROM platform.outbox_events event
+             WHERE event.event_type='attendance.provisional.recorded'
+               AND event.payload->>'company_id'=daily.company_id::text
+               AND event.payload->>'subject_employee_user_id'=daily.employee_user_id::text
+               AND left(event.payload->>'captured_at',10)=daily.work_date::text
+               AND event.payload->>'verification_status'='review_required'
+           ) AS has_review_required_outbox,
+           EXISTS (
+             SELECT 1 FROM platform.outbox_events event
+             WHERE event.event_type='attendance.provisional.recorded'
+               AND event.payload->>'company_id'=daily.company_id::text
+               AND event.payload->>'subject_employee_user_id'=daily.employee_user_id::text
+               AND left(event.payload->>'captured_at',10)=daily.work_date::text
+               AND event.payload->>'verification_status'='rejected'
+           ) AS has_rejected_outbox,
+           EXISTS (
+             SELECT 1 FROM platform.outbox_events event
+             WHERE event.event_type='attendance.provisional.recorded'
+               AND event.payload->>'company_id'=daily.company_id::text
+               AND event.payload->>'subject_employee_user_id'=daily.employee_user_id::text
+               AND left(event.payload->>'captured_at',10)=daily.work_date::text
+               AND event.payload->>'verification_status'='unverified'
+           ) AS has_provisional_outbox,
+           EXISTS (
+             SELECT 1 FROM attendance.mobile_evidence_warnings warning
+             WHERE warning.company_id=daily.company_id
+               AND warning.employee_user_id=daily.employee_user_id
+               AND warning.work_date=daily.work_date
+               AND warning.reason_code IN (
+                 'mobile_registered_device_required',
+                 'mobile_registered_device_revoked',
+                 'mobile_registered_device_suspended',
+                 'mobile_registered_device_unavailable'
+               )
+           ) AS has_device_warning,
+           EXISTS (
+             SELECT 1 FROM attendance.mobile_evidence_warnings warning
+             WHERE warning.company_id=daily.company_id
+               AND warning.employee_user_id=daily.employee_user_id
+               AND warning.work_date=daily.work_date
+               AND warning.reason_code IN (
+                 'mobile_replay.changed_body_conflict',
+                 'offline_sync.changed_body_conflict',
+                 'offline_sync.duplicate_sequence'
+               )
+           ) AS has_integrity_warning
+         FROM attendance_reporting daily
+       ), attendance_signals AS (
+         SELECT base.*,
+           (base.has_pending_geo_review OR base.has_pending_regularization
+             OR base.has_review_required_outbox) AS signal_review_required,
+           (base.has_rejected_outbox
+             OR (base.has_device_warning AND NOT base.has_accepted_evidence)) AS signal_rejected,
+           base.has_provisional_outbox AS signal_provisional,
+           (base.has_integrity_warning
+             OR (base.has_device_warning AND base.has_accepted_evidence)) AS signal_warning,
+           (base.has_accepted_evidence OR base.has_geo_review) AS has_contributing_evidence
+         FROM attendance_base_signals base
+       ), attendance_classified AS (
+         SELECT daily.id,daily.employee_user_id,daily.work_date,
+           CASE
+             WHEN daily.day_classification IN ('future','weekend','holiday','leave')
+               AND NOT daily.has_contributing_evidence
+               AND NOT daily.signal_review_required
+               AND NOT daily.signal_rejected
+               AND NOT daily.signal_provisional
+               AND NOT daily.signal_warning THEN NULL
+             WHEN daily.signal_review_required
+               OR daily.regularization_status IN ('pending','returned')
+               OR (daily.approval_kind='regularization' AND daily.approval_state IN ('pending','returned'))
+               THEN 'review_required'
+             WHEN daily.signal_rejected THEN 'rejected'
+             WHEN daily.signal_provisional THEN 'provisional'
+             WHEN daily.signal_warning THEN 'warning'
+             WHEN daily.evidence_state IN ('partial','missing','disputed','unknown')
+               OR daily.approval_state IN ('mixed','unknown') THEN 'warning'
+             WHEN daily.evidence_state='complete' OR daily.approval_state='approved'
+               OR (daily.evidence_state='not_applicable'
+                 AND daily.day_classification NOT IN ('future','weekend','holiday','leave'))
+               THEN 'verified'
+             ELSE 'warning'
+           END AS evidence_category
+         FROM attendance_signals daily
+       ), attendance_sources AS (
+         SELECT DISTINCT source.id,source.source_category
+         FROM (
+           SELECT classified.id,
+             CASE
+               WHEN punch.origin IN ('manager_assisted_now','approved_regularization','historical_correction')
+                 OR punch.source='admin' THEN 'manual'
+               WHEN punch.origin='system' OR punch.source='auto_geofence' THEN 'system'
+               WHEN punch.source='web' THEN 'web'
+               WHEN punch.source='web_geo' THEN 'geo'
+               WHEN punch.source IN ('mobile','mobile_foreground','mobile_offline') THEN 'mobile'
+               WHEN punch.source='kiosk' THEN 'kiosk'
+               ELSE NULL
+             END AS source_category
+           FROM attendance_classified classified
+           JOIN attendance.punch_events punch
+             ON punch.company_id=$1 AND punch.employee_user_id=classified.employee_user_id
+            AND (punch.occurred_at AT TIME ZONE 'UTC')::date=classified.work_date
+            AND punch.deleted_at IS NULL
+           UNION ALL
+           SELECT classified.id,'geo'
+           FROM attendance_classified classified
+           JOIN attendance.geo_fallback_reviews review
+             ON review.company_id=$1 AND review.employee_user_id=classified.employee_user_id
+            AND review.work_date=classified.work_date AND review.deleted_at IS NULL
+           UNION ALL
+           SELECT classified.id,'manual'
+           FROM attendance_classified classified
+           JOIN attendance.geo_fallback_reviews review
+             ON review.company_id=$1 AND review.employee_user_id=classified.employee_user_id
+            AND review.work_date=classified.work_date AND review.deleted_at IS NULL
+            AND (review.fallback_command_id IS NOT NULL OR review.punch_event_id IS NOT NULL)
+           UNION ALL
+           SELECT classified.id,'mobile'
+           FROM attendance_classified classified
+           JOIN platform.outbox_events event
+             ON event.event_type='attendance.provisional.recorded'
+            AND event.payload->>'company_id'=$1::text
+            AND event.payload->>'subject_employee_user_id'=classified.employee_user_id::text
+            AND left(event.payload->>'captured_at',10)=classified.work_date::text
+           UNION ALL
+           SELECT classified.id,'mobile'
+           FROM attendance_classified classified
+           JOIN attendance.mobile_evidence_warnings warning
+             ON warning.company_id=$1 AND warning.employee_user_id=classified.employee_user_id
+            AND warning.work_date=classified.work_date
+           UNION ALL
+           SELECT classified.id,'manual'
+           FROM attendance_classified classified
+           JOIN attendance.regularization_requests regularization
+             ON regularization.company_id=$1
+            AND regularization.employee_user_id=classified.employee_user_id
+            AND regularization.work_date=classified.work_date
+            AND regularization.deleted_at IS NULL
+            AND regularization.status IN ('pending','returned','approved','rejected')
+         ) source
+         WHERE source.source_category IS NOT NULL
+       )
+       SELECT
+         (SELECT count(*) FROM expenses.expense_tickets ticket
+           WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL
+             AND ticket.owner_resolution_status<>'quarantined'
+             AND ticket.status='Pending Manager Verification'
+             AND ($2::boolean OR ticket.requester_user_id IN (SELECT id FROM visible_users)
+               OR ticket.manager_verifier_id IN (SELECT id FROM visible_users)
+               OR ticket.manager_backup_user_id IN (SELECT id FROM visible_users)
+               OR ticket.finance_approver_id IN (SELECT id FROM visible_users))
+             AND ($2::boolean OR ticket.manager_verifier_id=$3 OR ticket.manager_backup_user_id=$3))::text
+           AS expense_manager_pending,
+         (SELECT count(*) FROM expenses.expense_tickets ticket
+           WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL
+             AND ticket.owner_resolution_status<>'quarantined'
+             AND ticket.status IN ('Manager Verified','Finance Hold','Clarification Required',
+               'Finance Approved','Payment Released','Bills Submitted','Pending Adjustment')
+             AND ($2::boolean OR ticket.requester_user_id IN (SELECT id FROM visible_users)
+               OR ticket.manager_verifier_id IN (SELECT id FROM visible_users)
+               OR ticket.manager_backup_user_id IN (SELECT id FROM visible_users)
+               OR ticket.finance_approver_id IN (SELECT id FROM visible_users))
+             AND ($5::boolean OR ticket.finance_approver_id=$3))::text
+           AS expense_finance_pending,
+         (SELECT count(*) FROM expenses.expense_documents document
+           JOIN expenses.expense_tickets ticket ON ticket.id=document.ticket_id
+           WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL
+             AND ticket.owner_resolution_status<>'quarantined'
+             AND ($2::boolean OR ticket.requester_user_id IN (SELECT id FROM visible_users)
+               OR ticket.manager_verifier_id=$3 OR ticket.manager_backup_user_id=$3
+               OR ticket.finance_approver_id=$3)
+             AND document.verification_status='pending')::text AS document_verification_pending,
+         (SELECT count(*) FROM timesheets.timesheet_submissions submission
+           WHERE submission.deleted_at IS NULL AND submission.status='Pending Approval'
+             AND (submission.employee_user_id IN (SELECT id FROM visible_users)
+               OR submission.current_approver_user_id=$3)
+             AND ($2::boolean OR submission.current_approver_user_id=$3))::text
+           AS timesheet_pending,
+         (SELECT count(*) FROM leave_wfh.leave_requests request
+           WHERE request.deleted_at IS NULL AND request.status='pending_manager'
+             AND (request.employee_user_id IN (SELECT id FROM visible_users)
+               OR request.current_approver_user_id=$3)
+             AND ($2::boolean OR request.current_approver_user_id=$3))::text AS leave_pending,
+         (SELECT count(*) FROM leave_wfh.wfh_requests request
+           WHERE request.deleted_at IS NULL AND request.status='pending_manager'
+             AND (request.employee_user_id IN (SELECT id FROM visible_users)
+               OR request.current_approver_user_id=$3)
+             AND ($2::boolean OR request.current_approver_user_id=$3))::text AS wfh_pending,
+         (SELECT count(*) FROM assets.assets asset
+           WHERE asset.deleted_at IS NULL
+             AND asset.current_assigned_user_id IN (SELECT id FROM visible_users))::text AS assets_total,
+         (SELECT count(*) FROM assets.assets asset
+           WHERE asset.deleted_at IS NULL AND asset.status='Assigned'
+             AND asset.current_assigned_user_id IN (SELECT id FROM visible_users))::text AS assets_assigned,
+         (SELECT count(*) FROM assets.asset_recovery_tickets recovery
+           WHERE recovery.employee_user_id IN (SELECT id FROM visible_users)
+             AND recovery.status<>'closed')::text AS assets_recovery_pending,
+         (SELECT count(*) FROM platform.notifications notification
+           WHERE notification.status='pending'
+             AND notification.target_user_id IN (SELECT id FROM visible_users)
+             AND CASE WHEN notification.payload ? 'ticket_id' THEN
+               nullif(notification.payload->>'ticket_id','') ~
+                 '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+               AND EXISTS (SELECT 1 FROM expenses.expense_tickets ticket
+                 WHERE ticket.id=(notification.payload->>'ticket_id')::uuid
+                   AND ticket.company_id=$1 AND ticket.deleted_at IS NULL
+                   AND ticket.owner_resolution_status<>'quarantined')
+             ELSE nullif(notification.payload->>'company_id','')=$1::text END)::text
+           AS notifications_pending,
+         (SELECT CASE WHEN $2::boolean THEN count(*) ELSE 0 END
+           FROM platform.outbox_events event
+           WHERE event.status IN ('pending','retry') AND (
+             (event.aggregate_type='expense_ticket' AND EXISTS (
+               SELECT 1 FROM expenses.expense_tickets ticket
+               WHERE ticket.id=event.aggregate_id AND ticket.company_id=$1))
+             OR (event.aggregate_type<>'expense_ticket' AND event.payload->>'company_id'=$1::text)
+           ))::text AS outbox_pending,
+         (SELECT count(*) FROM visible_attendance daily
+           WHERE daily.exception_type IS NOT NULL
+             OR daily.evidence_state IN ('missing','partial','disputed')
+             OR daily.presence_state='absent'
+             OR daily.punctuality_state IN ('late','late_and_early_departure'))::text
+           AS attendance_exception_count,
+         (SELECT count(*) FROM timesheets.work_segments segment
+           WHERE segment.deleted_at IS NULL
+             AND segment.employee_user_id IN (SELECT id FROM visible_users))::text AS work_segments_total,
+         (SELECT COALESCE(sum(segment.hours),0)::text FROM timesheets.work_segments segment
+           WHERE segment.deleted_at IS NULL
+             AND segment.employee_user_id IN (SELECT id FROM visible_users)) AS submitted_hours_total,
+         (SELECT count(*) FROM timesheets.timesheet_submissions submission
+           WHERE submission.deleted_at IS NULL AND (
+             submission.employee_user_id IN (SELECT id FROM visible_users)
+             OR submission.current_approver_user_id=$3))::text AS timesheet_submissions_total,
+         (SELECT count(*) FROM timesheets.timesheet_submissions submission
+           WHERE submission.deleted_at IS NULL AND submission.status='Approved' AND (
+             submission.employee_user_id IN (SELECT id FROM visible_users)
+             OR submission.current_approver_user_id=$3))::text AS timesheet_submissions_approved,
+         (SELECT count(*) FROM timesheets.timesheet_submissions submission
+           WHERE submission.deleted_at IS NULL AND submission.status='Returned' AND (
+             submission.employee_user_id IN (SELECT id FROM visible_users)
+             OR submission.current_approver_user_id=$3))::text AS timesheet_submissions_returned,
+         (SELECT count(*) FILTER (WHERE evidence_category='verified') FROM attendance_classified)::text
+           AS attendance_verified,
+         (SELECT count(*) FILTER (WHERE evidence_category='warning') FROM attendance_classified)::text
+           AS attendance_warning,
+         (SELECT count(*) FILTER (WHERE evidence_category='provisional') FROM attendance_classified)::text
+           AS attendance_provisional,
+         (SELECT count(*) FILTER (WHERE evidence_category='review_required') FROM attendance_classified)::text
+           AS attendance_review_required,
+         (SELECT count(*) FILTER (WHERE evidence_category='rejected') FROM attendance_classified)::text
+           AS attendance_rejected,
+         (SELECT count(*) FILTER (WHERE source_category='web') FROM attendance_sources)::text AS source_web,
+         (SELECT count(*) FILTER (WHERE source_category='geo') FROM attendance_sources)::text AS source_geo,
+         (SELECT count(*) FILTER (WHERE source_category='mobile') FROM attendance_sources)::text AS source_mobile,
+         (SELECT count(*) FILTER (WHERE source_category='manual') FROM attendance_sources)::text AS source_manual,
+         (SELECT count(*) FILTER (WHERE source_category='kiosk') FROM attendance_sources)::text AS source_kiosk,
+         (SELECT count(*) FILTER (WHERE source_category='system') FROM attendance_sources)::text AS source_system`,
+      params,
+    );
+    const workforceRow = workforce.rows[0];
+    const row = counts.rows[0] ?? {};
+    const number = (value: string | undefined): number => Number(value ?? 0);
+    return {
+      workforce: {
+        visible_employees: number(workforceRow?.visible_employees),
+        active_employees: number(workforceRow?.active_employees),
+        inactive_employees: number(workforceRow?.inactive_employees),
+        new_joiners_30d: number(workforceRow?.new_joiners_30d),
+        departments: departments.rows.map((department) => ({
+          ...department,
+          active_employees: number(department.active_employees),
+        })),
+      },
+      expense_manager_pending: number(row.expense_manager_pending),
+      expense_finance_pending: number(row.expense_finance_pending),
+      timesheet_pending: number(row.timesheet_pending),
+      leave_pending: number(row.leave_pending),
+      wfh_pending: number(row.wfh_pending),
+      document_verification_pending: number(row.document_verification_pending),
+      assets_total: number(row.assets_total),
+      assets_assigned: number(row.assets_assigned),
+      assets_recovery_pending: number(row.assets_recovery_pending),
+      notifications_pending: number(row.notifications_pending),
+      outbox_pending: number(row.outbox_pending),
+      workload: {
+        work_segments_total: number(row.work_segments_total),
+        submitted_hours_total: Number(row.submitted_hours_total ?? 0).toFixed(2),
+        timesheet_submissions_total: number(row.timesheet_submissions_total),
+        timesheet_submissions_approved: number(row.timesheet_submissions_approved),
+        timesheet_submissions_returned: number(row.timesheet_submissions_returned),
+      },
+      attendance_exception_count: number(row.attendance_exception_count),
+      attendance_evidence_categories: {
+        verified: number(row.attendance_verified),
+        warning: number(row.attendance_warning),
+        provisional: number(row.attendance_provisional),
+        review_required: number(row.attendance_review_required),
+        rejected: number(row.attendance_rejected),
+      },
+      attendance_source_categories: {
+        web: number(row.source_web),
+        geo: number(row.source_geo),
+        mobile: number(row.source_mobile),
+        manual: number(row.source_manual),
+        kiosk: number(row.source_kiosk),
+        system: number(row.source_system),
+      },
+    };
   }
 
   private mapOutboxRow(row: OutboxEvent & Record<string, unknown>): OutboxEvent {
@@ -2228,14 +5309,15 @@ class PostgresPersistence {
 
   private async loadAttendancePunches(
     client: PoolClient,
-    scope?: { companyId: UUID; employeeUserIds?: UUID[] },
+    scope?: { companyId: UUID; employeeUserIds?: UUID[]; fromDate?: string },
   ): Promise<AttendancePunch[]> {
     const { rows } = scope
       ? await client.query(
           `SELECT * FROM attendance.punch_events WHERE company_id = $1
            AND ($2::uuid[] IS NULL OR employee_user_id = ANY($2::uuid[]))
+           AND ($3::timestamptz IS NULL OR occurred_at >= $3::timestamptz)
            ORDER BY occurred_at, id`,
-          [scope.companyId, scope.employeeUserIds ?? null],
+          [scope.companyId, scope.employeeUserIds ?? null, scope.fromDate ?? null],
         )
       : await client.query("SELECT * FROM attendance.punch_events ORDER BY occurred_at, id");
     return rows.map((row) => ({
@@ -2257,14 +5339,15 @@ class PostgresPersistence {
 
   private async loadAttendanceDayRecords(
     client: PoolClient,
-    scope?: { companyId: UUID; employeeUserIds?: UUID[] },
+    scope?: { companyId: UUID; employeeUserIds?: UUID[]; fromDate?: string },
   ): Promise<AttendanceDayRecord[]> {
     const { rows } = scope
       ? await client.query(
           `SELECT day.*, day.work_date::text AS work_date FROM attendance.daily_records day WHERE day.company_id = $1
            AND ($2::uuid[] IS NULL OR day.employee_user_id = ANY($2::uuid[]))
+           AND ($3::date IS NULL OR day.work_date >= $3::date)
            ORDER BY day.work_date, day.employee_user_id`,
-          [scope.companyId, scope.employeeUserIds ?? null],
+          [scope.companyId, scope.employeeUserIds ?? null, scope.fromDate ?? null],
         )
       : await client.query("SELECT day.*, day.work_date::text AS work_date FROM attendance.daily_records day ORDER BY day.work_date, day.employee_user_id");
     return rows.map((row) => ({
@@ -2842,7 +5925,16 @@ class PostgresPersistence {
     }
   }
 
-  private async flushPlatform(client: PoolClient): Promise<void> {
+  private async flushPlatform(
+    client: PoolClient,
+    financeRoutingLockHeld = false,
+    includeInitialNotifications = false,
+  ): Promise<void> {
+    if (!financeRoutingLockHeld) {
+      // Platform-only writers use the same lock-before-row order as routing
+      // commands and the full-store writer.
+      await lockExpenseFinanceGovernanceWriter(client);
+    }
     for (const company of this.store.companyProfiles) {
       await client.query(
         `INSERT INTO platform.company_profiles (
@@ -3178,34 +6270,30 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const notification of this.store.notifications) {
-      await client.query(
-        `INSERT INTO platform.notifications (
-          id, actor_user_id, target_user_id, event_type, payload, status, read_at, version, created_at, updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)
-        ON CONFLICT (id) DO UPDATE
-        SET actor_user_id = EXCLUDED.actor_user_id,
-            target_user_id = EXCLUDED.target_user_id,
-            event_type = EXCLUDED.event_type,
-            payload = EXCLUDED.payload,
-            status = EXCLUDED.status,
-            read_at = EXCLUDED.read_at,
-            version = EXCLUDED.version,
-            updated_at = EXCLUDED.updated_at`,
-        [
-          notification.id,
-          notification.actor_user_id,
-          notification.target_user_id,
-          notification.event_type,
-          JSON.stringify(notification.payload),
-          notification.status,
-          notification.read_at,
-          notification.version,
-          notification.created_at,
-          notification.updated_at,
-        ],
-      );
+    // Runtime notification writes are transaction-owned. Replaying the
+    // process-start snapshot here would overwrite a newer SQL read marker.
+    // Only the empty-database seed may persist the initial notification set.
+    if (includeInitialNotifications) {
+      for (const notification of this.store.notifications) {
+        await client.query(
+          `INSERT INTO platform.notifications (
+            id, actor_user_id, target_user_id, event_type, payload, status, read_at, version, created_at, updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)`,
+          [
+            notification.id,
+            notification.actor_user_id,
+            notification.target_user_id,
+            notification.event_type,
+            JSON.stringify(notification.payload),
+            notification.status,
+            notification.read_at,
+            notification.version,
+            notification.created_at,
+            notification.updated_at,
+          ],
+        );
+      }
     }
     for (const delivery of this.store.emailDeliveries) {
       await client.query(
@@ -3410,8 +6498,9 @@ class PostgresPersistence {
   private async flushOutbox(
     client: PoolClient,
     aggregateIds?: ReadonlySet<string>,
+    sourceStore: DataStore = this.store,
   ): Promise<void> {
-    for (const event of this.store.outbox) {
+    for (const event of sourceStore.outbox) {
       if (aggregateIds && !aggregateIds.has(event.aggregate_id)) continue;
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO platform.outbox_events (
@@ -3451,24 +6540,40 @@ class PostgresPersistence {
         throw new Error("Outbox event was not persisted.");
       }
       event.id = Number(persistedId);
-      this.store.nextOutboxId = Math.max(this.store.nextOutboxId, event.id + 1);
+      sourceStore.nextOutboxId = Math.max(sourceStore.nextOutboxId, event.id + 1);
     }
   }
 
-  private async flushExpenses(client: PoolClient): Promise<void> {
-    for (const mapping of this.store.managerBackupAssignments) {
+  private async flushExpenses(
+    client: PoolClient,
+    sourceStore: DataStore = this.store,
+    reviewerRoutingLocksHeld = false,
+  ): Promise<void> {
+    if (!reviewerRoutingLocksHeld) {
+      await lockExpenseReviewerRoutingWriter(
+        client,
+        sourceStore.managerBackupAssignments.map(
+          (mapping) => mapping.employee_user_id,
+        ),
+      );
+    }
+    for (const mapping of sourceStore.managerBackupAssignments) {
       await client.query(
         `INSERT INTO expenses.employee_reviewer_mappings (
-          id, employee_user_id, reviewer_user_id, assigned_by_user_id, effective_from,
+          id, company_id, owner_resolution_status, owner_resolution_reason,
+          employee_user_id, reviewer_user_id, assigned_by_user_id, effective_from,
           effective_to, status, created_at, updated_at, deleted_at, version
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (id) DO UPDATE
         SET reviewer_user_id = EXCLUDED.reviewer_user_id, effective_to = EXCLUDED.effective_to,
             status = EXCLUDED.status, updated_at = EXCLUDED.updated_at,
             deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version`,
         [
           mapping.id,
+          mapping.company_id,
+          mapping.owner_resolution_status,
+          mapping.owner_resolution_reason,
           mapping.employee_user_id,
           mapping.backup_manager_user_id,
           mapping.assigned_by_user_id,
@@ -3482,7 +6587,10 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const ticket of this.store.tickets) {
+    for (const ticket of sourceStore.tickets) {
+      if (!ticket.company_id || ticket.owner_resolution_status !== "typed_creation") {
+        throw new Error("Whole-domain flush cannot persist unowned or historical expense tickets");
+      }
       await client.query(
         `INSERT INTO expenses.expense_tickets (
           id, ticket_no, requester_user_id, requester_role_snapshot, department_id, expense_type,
@@ -3491,12 +6599,14 @@ class PostgresPersistence {
           assigned_reviewer_id, director_approver_id, finance_manager_id,
           manager_verifier_id, manager_backup_user_id, finance_approver_id,
           status, actual_amount, variance_amount, payment_reference_no, closure_remarks, context_payload, route_snapshot,
-          policy_snapshot, version, created_at, updated_at, submitted_at, closed_at, deleted_at
+          policy_snapshot, version, created_at, updated_at, submitted_at, closed_at, deleted_at,
+          company_id, owner_resolution_status, owner_resolution_reason
         )
         VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
           $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29,
-          $30::jsonb, $31::jsonb, $32::jsonb, $33, $34, $35, $36, $37, $38
+          $30::jsonb, $31::jsonb, $32::jsonb, $33, $34, $35, $36, $37, $38,
+          $39, $40, $41
         )
         ON CONFLICT (id) DO UPDATE
         SET status = EXCLUDED.status, assigned_reviewer_id = EXCLUDED.assigned_reviewer_id,
@@ -3549,10 +6659,13 @@ class PostgresPersistence {
           ticket.submitted_at,
           ticket.closed_at,
           ticket.deleted_at,
+          ticket.company_id,
+          ticket.owner_resolution_status,
+          ticket.owner_resolution_reason ?? null,
         ],
       );
     }
-    for (const item of this.store.lineItems) {
+    for (const item of sourceStore.lineItems) {
       await client.query(
         `INSERT INTO expenses.expense_line_items (
           id, ticket_id, line_category, description, quantity, unit_cost, line_total,
@@ -3577,7 +6690,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const approval of this.store.expenseApprovals) {
+    for (const approval of sourceStore.expenseApprovals) {
       await client.query(
         `INSERT INTO expenses.expense_approvals (
           id, ticket_id, approval_stage, approver_user_id, decision, remarks,
@@ -3600,7 +6713,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const audit of this.store.auditLogs) {
+    for (const audit of sourceStore.auditLogs) {
       await client.query(
         `INSERT INTO expenses.expense_audit_logs (
           id, ticket_id, actor_user_id, event_type, old_value, new_value, remarks, payload_hash, created_at
@@ -3620,7 +6733,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const document of this.store.expenseDocuments) {
+    for (const document of sourceStore.expenseDocuments) {
       await client.query(
         `INSERT INTO expenses.expense_documents (
           id, ticket_id, document_id, document_type, verification_status, uploaded_by, uploaded_at
@@ -3639,7 +6752,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const payment of this.store.payments) {
+    for (const payment of sourceStore.payments) {
       await client.query(
         `INSERT INTO expenses.expense_payments (
           id, ticket_id, payment_type, approved_amount, paid_amount, payment_date,

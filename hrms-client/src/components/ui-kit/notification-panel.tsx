@@ -58,7 +58,9 @@ export function NotificationPanel() {
   });
   const markAllReadMutation = useMutation({
     mutationFn: () => notificationsApi.markAllRead({}),
-    onSuccess: refreshNotifications,
+    // A bounded continuation can partially commit before a later network or
+    // server failure. Always refresh so the panel reflects durable progress.
+    onSettled: refreshNotifications,
   });
 
   const markRead = (notification: NotificationItem) => {

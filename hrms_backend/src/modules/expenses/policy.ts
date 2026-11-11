@@ -19,6 +19,9 @@ export function assertNoSelfProcessing(input: {
 }
 
 export function assertManagerActor(actor: AuthUser, ticket: ExpenseTicket): void {
+  if (!actor.roles.includes(Roles.Reviewer)) {
+    throw forbidden("Current Manager authority is required for this action");
+  }
   const managerOk = ticket.manager_verifier_id === actor.id;
   if (!managerOk) {
     throw forbidden("Only the assigned Manager or configured Manager backup can act on this ticket");
@@ -31,6 +34,9 @@ export function assertManagerActor(actor: AuthUser, ticket: ExpenseTicket): void
 }
 
 export function assertFinanceActor(actor: AuthUser, ticket: ExpenseTicket, actionType: WorkflowAction): void {
+  if (!actor.roles.includes(Roles.FinanceManager)) {
+    throw forbidden("Current Finance authority is required for this action");
+  }
   const financeOk = ticket.finance_approver_id === actor.id;
   if (!financeOk) {
     throw forbidden("Only the assigned Finance Manager or configured finance backup can act on this ticket");
@@ -42,7 +48,24 @@ export function assertFinanceActor(actor: AuthUser, ticket: ExpenseTicket, actio
   });
 }
 
-export function canReadTicket(actor: AuthUser, ticket: ExpenseTicket): boolean {
+export function canReadTicket(
+  actor: AuthUser,
+  ticket: ExpenseTicket,
+  currentCompanyId?: UUID,
+): boolean {
+  if (currentCompanyId) {
+    // A linked requester keeps access to their own historical ticket after a
+    // transfer. Oversight roles act only for their present company. Raw
+    // receipt access is decided separately by the document parent policy.
+    if (!ticket.company_id || ticket.owner_resolution_status === "quarantined") return false;
+    if (actor.id === ticket.requester_user_id) return true;
+    if (ticket.company_id !== currentCompanyId) return false;
+    return (
+      (actor.roles.includes(Roles.Reviewer) && ticket.manager_verifier_id === actor.id) ||
+      (actor.roles.includes(Roles.FinanceManager) && ticket.finance_approver_id === actor.id) ||
+      actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor)
+    );
+  }
   return (
     actor.id === ticket.requester_user_id ||
     actor.id === ticket.manager_verifier_id ||

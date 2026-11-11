@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { adminApi } from "@/domains/admin";
+import { adminApi, loadManagerBackupsQuery } from "@/domains/admin";
 import { timesheetsApi } from "@/domains/timesheets";
 import { useApiRouteEnabled, withApiFallback } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
@@ -809,11 +809,7 @@ export function AdminSettingsProvider({ children }: { children: React.ReactNode 
 
   useQuery({
     queryKey: queryKeys.list("admin", "manager-backups"),
-    queryFn: () =>
-      withApiFallback(
-        () => adminApi.listManagerBackups(),
-        () => [],
-      ),
+    queryFn: () => withApiFallback(loadManagerBackupsQuery, () => []),
     enabled: apiEnabled && canManageManagerBackups,
     staleTime: queryTimings.referenceStaleMs,
   });

@@ -103,6 +103,7 @@ export class ReportService {
   }
 
   managerQueue(actor: AuthUser, query: ExpenseReportQuery) {
+    assertReportRole(actor, [Roles.Reviewer]);
     const queueTickets = this.repository
       .tickets()
       .filter((ticket) => ticket.status === ExpenseStatuses.PendingManagerVerification)
@@ -144,6 +145,7 @@ export class ReportService {
   }
 
   managerHistory(actor: AuthUser, query: ExpenseReportQuery) {
+    assertReportRole(actor, [Roles.Reviewer]);
     const rows = this.store.expenseApprovals
       .filter((approval) => approval.approval_stage === "manager" && (approval.approver_user_id === actor.id || actor.roles.includes(Roles.Admin)))
       .sort((left, right) => Date.parse(right.action_at) - Date.parse(left.action_at))
@@ -802,7 +804,7 @@ export class ReportService {
     }).companyId;
     const expenseCompanyByTicket = new Map(this.store.tickets.map((ticket) => [
       ticket.id,
-      ticket.context_payload.company_id,
+      ticket.company_id,
     ]));
     const expenseRows = this.store.auditLogs
       .filter((log) => expenseCompanyByTicket.get(log.ticket_id) === companyId)
@@ -817,7 +819,11 @@ export class ReportService {
         remarks: log.remarks,
       }));
     const outboxRows = this.store.outbox
-      .filter((event) => event.payload.company_id === companyId)
+      .filter((event) =>
+        event.aggregate_type === "expense_ticket"
+          ? expenseCompanyByTicket.get(event.aggregate_id) === companyId
+          : event.payload.company_id === companyId,
+      )
       .map((event) => ({
         id: event.event_id,
         at: event.created_at,

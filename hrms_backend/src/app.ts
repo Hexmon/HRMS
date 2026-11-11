@@ -267,11 +267,18 @@ const transactionOwnedMutationRoutes = new Set(["POST /api/v1/attendance/punches
 function isTransactionOwnedMutationRoute(routeKey: string): boolean {
   return (
     transactionOwnedMutationRoutes.has(routeKey) ||
+    routeKey === "POST /api/v1/expenses" ||
+    routeKey === "POST /api/v1/manager-backups" ||
+    /^DELETE \/api\/v1\/manager-backups\/[^/]+$/u.test(routeKey) ||
+    /^POST \/api\/v1\/expenses\/[^/]+\/(?:submit|withdraw|clarifications|manager\/verify|bills)$/u.test(routeKey) ||
     /^POST \/api\/v1\/attendance\/employees\/[^/]+\/(?:assisted-current-punches|historical-corrections)$/u.test(
       routeKey,
     ) ||
     /^POST \/api\/v1\/attendance\/regularizations\/[^/]+\/decision$/u.test(routeKey) ||
-    /^POST \/api\/v1\/attendance\/geofences\/[^/]+\/versions\/[^/]+\/publish$/u.test(routeKey)
+    /^POST \/api\/v1\/attendance\/geofences\/[^/]+\/versions\/[^/]+\/publish$/u.test(routeKey) ||
+    /^POST \/api\/v1\/expenses\/[^/]+\/(?:finance\/(?:approve|payment)|settlement)$/u.test(routeKey) ||
+    routeKey === "POST /api/v1/notifications/read-all" ||
+    /^POST \/api\/v1\/notifications\/[^/]+\/read$/u.test(routeKey)
   );
 }
 

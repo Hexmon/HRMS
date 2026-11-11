@@ -97,19 +97,21 @@ export class NotificationsService {
       type: input.type,
       before: input.before
     });
+    const batch = visible.slice(0, 1000);
     let updatedCount = 0;
-    for (const notification of visible) {
+    for (const notification of batch) {
       const beforeVersion = notification.version;
       this.repository.markRead(notification);
       if (notification.version !== beforeVersion) updatedCount += 1;
     }
     return {
       updated_count: updatedCount,
-      unread_count: this.repository.unreadCount(actor.id).unread_count
+      unread_count: this.repository.unreadCount(actor.id).unread_count,
+      has_more: visible.length > batch.length,
     };
   }
 
-  private present(notification: NotificationRecord) {
+  present(notification: NotificationRecord) {
     const actor = notification.actor_user_id
       ? this.store.users.find((candidate) => candidate.id === notification.actor_user_id)
       : null;

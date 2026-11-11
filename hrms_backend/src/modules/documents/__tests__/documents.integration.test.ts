@@ -246,7 +246,7 @@ describe("document management integration", () => {
     const createExpense = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
+      headers: { ...authHeader(employee.token), "idempotency-key": "documents-expense-create-001" },
       payload: projectTravelPayload
     });
     expect(createExpense.statusCode).toBe(200);

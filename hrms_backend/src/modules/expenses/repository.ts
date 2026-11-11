@@ -140,10 +140,16 @@ export class ExpenseRepository {
     });
   }
 
-  activeManagerBackupAssignment(employeeUserId: UUID, dateIso: string): ManagerBackupAssignment | null {
+  activeManagerBackupAssignment(
+    employeeUserId: UUID,
+    dateIso: string,
+    companyId: UUID,
+  ): ManagerBackupAssignment | null {
     return (
       this.store.managerBackupAssignments.find(
         (assignment) =>
+          assignment.company_id === companyId &&
+          assignment.owner_resolution_status !== "quarantined" &&
           assignment.employee_user_id === employeeUserId &&
           assignment.status === "active" &&
           !assignment.deleted_at &&

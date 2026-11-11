@@ -251,6 +251,13 @@ export interface UserSessionPreferenceRecord {
   version: number;
 }
 
+export interface DurableSessionContext {
+  actor: AuthUser;
+  company: CompanyProfileRecord;
+  preference: UserSessionPreferenceRecord;
+  activeRole: AuthUser["roles"][number];
+}
+
 export interface AssetStateEventRecord {
   id: UUID;
   asset_id: UUID;
@@ -433,6 +440,7 @@ export interface ObjectStoragePort {
 
 export interface DataStorePersistence {
   flush(): Promise<void>;
+  flushInitialSeed?(): Promise<void>;
   flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyLogo?(
@@ -444,9 +452,190 @@ export interface DataStorePersistence {
   ): Promise<void>;
   reload(): Promise<void>;
   attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
+  dashboardExpenseReadContext?(userId: UUID): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    store: DataStore;
+    exactMetrics: DashboardExactMetrics;
+  }>;
+  notificationListContext?(input: {
+    userId: UUID;
+    page: number;
+    pageSize: number;
+    unreadOnly?: boolean;
+    type?: string;
+  }): Promise<{ actor: AuthUser; store: DataStore; total: number }>;
+  notificationUnreadCount?(userId: UUID): Promise<{ unreadCount: number }>;
+  notificationMarkRead?(input: {
+    userId: UUID;
+    notificationId: UUID;
+    expectedVersion?: number;
+  }): Promise<{ notification: NotificationRecord; unreadCount: number }>;
+  notificationMarkAllRead?(input: {
+    userId: UUID;
+    type?: string;
+    before?: string;
+  }): Promise<{ updatedCount: number; unreadCount: number; hasMore: boolean }>;
+  managerBackupListContext?(input: {
+    userId: UUID;
+    page: number;
+    pageSize: number;
+  }): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    assignments: ManagerBackupAssignment[];
+    total: number;
+  }>;
+  managerBackupCommand?(input: {
+    userId: UUID;
+    action: "reviewer-routing.create" | "reviewer-routing.revoke";
+    idempotencyKey: string;
+    requestHash: string;
+    mappingId?: UUID;
+    expectedVersion?: number;
+    create?: {
+      employeeUserId: UUID;
+      backupManagerUserId: UUID;
+      effectiveFrom: string;
+      effectiveTo: string | null;
+    };
+  }): Promise<ManagerBackupAssignment>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseReportReadContext?(userId: UUID, options?: {
+    audience?: "company" | "requester" | "manager_queue" | "manager_history" | "finance_assigned" | "finance_history" | "advance_aging" | "payment_register" | "audit";
+    filters?: {
+      status?: string;
+      expense_type?: string;
+      expense_sub_type?: string;
+      payment_type?: string;
+      department_id?: UUID;
+      requester_user_id?: UUID;
+      manager_user_id?: UUID;
+      finance_user_id?: UUID;
+      date_from?: string;
+      date_to?: string;
+      document_status?: "any" | "complete" | "missing" | "pending" | "not_required";
+    };
+  }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseReadContext?(userId: UUID, ticketId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseMetadataContext?(userId: UUID): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    store: DataStore;
+  }>;
+  expenseFinanceCommand?(input: {
+    userId: UUID;
+    ticketId: UUID;
+    action: "finance.approve" | "finance.payment" | "settlement";
+    idempotencyKey: string;
+    requestHash: string;
+    expectedVersion: number;
+    run: (context: { actor: AuthUser; companyId: UUID; store: DataStore }) => ExpenseTicket;
+  }): Promise<Pick<ExpenseTicket, "id" | "status" | "version">>;
+  expenseMutationCommand?(input: {
+    userId: UUID;
+    ticketId?: UUID;
+    action:
+      | "create"
+      | "submit"
+      | "withdraw"
+      | "clarification"
+      | "manager.verify"
+      | "bills";
+    idempotencyKey: string;
+    requestHash: string;
+    run: (context: {
+      actor: AuthUser;
+      companyId: UUID;
+      store: DataStore;
+    }) => Pick<ExpenseTicket, "id" | "status" | "version">;
+  }): Promise<Pick<ExpenseTicket, "id" | "status" | "version">>;
+  expensePageContext?(userId: UUID, options: {
+    kind: "my" | "manager" | "finance";
+    page: number;
+    pageSize: number;
+    filters?: {
+      status?: string;
+      date_from?: string;
+      date_to?: string;
+      payment_type?: string;
+      expense_type?: string;
+      expense_sub_type?: string;
+      amount_min?: string;
+      amount_max?: string;
+      requester?: string;
+      department?: string;
+      document_status?: "any" | "complete" | "missing";
+      sla_bucket?: string;
+      sort?: string;
+    };
+  }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore; total: number }>;
+  classifyExpenseDocumentAccess?(
+    userId: UUID,
+    documentId: UUID,
+    mode: "metadata" | "raw" | "workflow",
+  ): Promise<"other" | "expense-authorized" | "hidden">;
+  expenseDashboardContext?(userId: UUID, filters: {
+    status?: string;
+    date_from?: string;
+    date_to?: string;
+  }): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    store: DataStore;
+    aggregate: Record<string, string | number>;
+  }>;
   close(): Promise<void>;
+}
+
+export interface DashboardExactMetrics {
+  workforce: {
+    visible_employees: number;
+    active_employees: number;
+    inactive_employees: number;
+    new_joiners_30d: number;
+    departments: Array<{
+      department_id: UUID;
+      department_code: string;
+      name: string;
+      active_employees: number;
+    }>;
+  };
+  expense_manager_pending: number;
+  expense_finance_pending: number;
+  timesheet_pending: number;
+  leave_pending: number;
+  wfh_pending: number;
+  document_verification_pending: number;
+  assets_total: number;
+  assets_assigned: number;
+  assets_recovery_pending: number;
+  notifications_pending: number;
+  outbox_pending: number;
+  workload: {
+    work_segments_total: number;
+    submitted_hours_total: string;
+    timesheet_submissions_total: number;
+    timesheet_submissions_approved: number;
+    timesheet_submissions_returned: number;
+  };
+  attendance_exception_count: number;
+  attendance_evidence_categories: {
+    verified: number;
+    warning: number;
+    provisional: number;
+    review_required: number;
+    rejected: number;
+  };
+  attendance_source_categories: {
+    web: number;
+    geo: number;
+    mobile: number;
+    manual: number;
+    kiosk: number;
+    system: number;
+  };
 }
 
 export type PersistenceDomain =
@@ -1634,6 +1823,9 @@ export function createMemoryDataStore(): MemoryDataStore {
     seedIds.employee3,
   ].map((employeeId) => ({
     id: randomUUID(),
+    company_id: defaultCompanyId,
+    owner_resolution_status: "typed_creation" as const,
+    owner_resolution_reason: null,
     employee_user_id: employeeId,
     backup_manager_user_id: seedIds.executive,
     assigned_by_user_id: seedIds.admin,
@@ -2237,6 +2429,7 @@ export function createMemoryDataStore(): MemoryDataStore {
       target_user_id: seedIds.employee1,
       event_type: "helpdesk.ticket_assigned",
       payload: {
+        company_id: defaultCompanyId,
         title: "High priority ticket update",
         description:
           "TKT-12001 - VPN connectivity issue is assigned and in progress.",
@@ -2255,6 +2448,7 @@ export function createMemoryDataStore(): MemoryDataStore {
       target_user_id: seedIds.manager,
       event_type: "timesheet.submitted",
       payload: {
+        company_id: defaultCompanyId,
         title: "Timesheet submitted",
         description: "Employee E1 submitted the current week for approval.",
         category: "approval",
@@ -2272,6 +2466,7 @@ export function createMemoryDataStore(): MemoryDataStore {
       target_user_id: seedIds.employee2,
       event_type: "expense.payment_released",
       payload: {
+        company_id: defaultCompanyId,
         title: "Expense paid",
         description: "Your reimbursement has been released by Finance.",
         category: "system",
