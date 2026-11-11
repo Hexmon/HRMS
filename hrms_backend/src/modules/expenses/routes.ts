@@ -19,6 +19,7 @@ import {
 } from "#shared";
 import { badRequest, conflict, unauthorized } from "../../platform/errors.js";
 import type { MemoryDataStore } from "../../platform/data-store.js";
+import { BoundedMemoryCommandReplay } from "./memory-command-replay.js";
 import { ExpenseService } from "./service.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
@@ -37,9 +38,10 @@ function commandIdentity(request: { headers: Record<string, unknown> }, ticketId
   return { idempotencyKey, requestHash };
 }
 type ExpenseCommandResponse = ReturnType<typeof expenseCommandResult>;
-type MemoryCommandResult = { requestHash: string; response: ExpenseCommandResponse };
-const memoryCommandResults = new WeakMap<MemoryDataStore, Map<string, MemoryCommandResult>>();
-const MAX_MEMORY_COMMAND_RESULTS_PER_STORE = 10_000;
+const memoryCommandResults = new WeakMap<
+  MemoryDataStore,
+  BoundedMemoryCommandReplay<ExpenseCommandResponse>
+>();
 function runMemoryFinanceCommand(input: {
   store: MemoryDataStore;
   actor: AuthUser;
@@ -51,28 +53,15 @@ function runMemoryFinanceCommand(input: {
     (preference) => preference.user_id === input.actor.id,
   )?.company_id ?? "no-company";
   const resultKey = [companyId, input.actor.id, input.action, input.identity.idempotencyKey].join(":");
-  const results = memoryCommandResults.get(input.store) ?? new Map<string, MemoryCommandResult>();
+  const results = memoryCommandResults.get(input.store)
+    ?? new BoundedMemoryCommandReplay<ExpenseCommandResponse>();
   memoryCommandResults.set(input.store, results);
-  const existing = results.get(resultKey);
-  if (existing) {
-    if (existing.requestHash !== input.identity.requestHash) {
-      throw conflict("Idempotency key was already used with a different request", {
-        action: input.action,
-      });
-    }
-    return existing.response;
-  }
-  // Memory persistence is restricted to local/test runtimes. Fail closed at a
-  // fixed bound instead of evicting a replay record and accidentally executing
-  // an old idempotency key twice.
-  if (results.size >= MAX_MEMORY_COMMAND_RESULTS_PER_STORE) {
-    throw conflict(
-      "Memory expense command replay capacity is exhausted; restart the isolated local/test instance",
-    );
-  }
-  const response = input.run();
-  results.set(resultKey, { requestHash: input.identity.requestHash, response });
-  return response;
+  return results.execute({
+    key: resultKey,
+    requestHash: input.identity.requestHash,
+    action: input.action,
+    run: input.run,
+  });
 }
 const expenseDashboardQuerySchema = z.object({
   date_from: isoDateSchema.optional(),

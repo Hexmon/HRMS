@@ -57,6 +57,11 @@ export interface DashboardSummary {
     outbox_pending: number;
   };
   attendance?: {
+    window?: {
+      date_from: string;
+      date_to: string;
+      max_months: 12;
+    };
     evidence_categories?: Record<string, number>;
     source_categories?: Record<string, number>;
   };

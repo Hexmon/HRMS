@@ -38,6 +38,17 @@ describe("dashboard summary scoping", () => {
       updated_at: "2026-01-01T00:00:00.000Z",
       version: 1
     });
+    const oldAttendance = attendanceDay("company-a", admin.id);
+    oldAttendance.work_date = "2000-01-01";
+    oldAttendance.presence_state = AttendancePresenceStates.Absent;
+    oldAttendance.evidence_state = AttendanceEvidenceStates.Missing;
+    oldAttendance.exception_type = "missing_punch";
+    store.attendanceDayRecords.push(oldAttendance);
+    const foreignAttendance = attendanceDay("company-b", admin.id);
+    foreignAttendance.presence_state = AttendancePresenceStates.Absent;
+    foreignAttendance.evidence_state = AttendanceEvidenceStates.Missing;
+    foreignAttendance.exception_type = "missing_punch";
+    store.attendanceDayRecords.push(foreignAttendance);
 
     const summary = new DashboardService(store).summary(admin);
 
@@ -56,9 +67,22 @@ describe("dashboard summary scoping", () => {
     ]);
     expect(summary.cards.find((card) => card.key === "active_employees")?.value).toBe(1);
     expect(summary.cards.find((card) => card.key === "attendance_exceptions")?.value).toBe(0);
+    expect(summary.attendance.window).toEqual({
+      date_from: expect.any(String),
+      date_to: expect.any(String),
+      max_months: 12,
+    });
     expect(summary.operations.assets_total).toBe(0);
     expect(summary.operations.notifications_pending).toBe(0);
     expect(summary.operations.outbox_pending).toBe(0);
+    expect(summary.unavailable_features.map((feature) => feature.key)).toEqual(
+      expect.arrayContaining([
+        "timesheets_historical_ownership",
+        "leave_wfh_historical_ownership",
+        "assets_historical_ownership",
+        "notifications_historical_ownership",
+      ]),
+    );
   });
 
   it("uses reporting projection semantics for attendance evidence and source counts", () => {

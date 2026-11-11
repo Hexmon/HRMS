@@ -18,6 +18,7 @@ import {
   buildAttendanceReportEvidenceIndex,
   countAttendanceReportSourceCategories,
 } from "../../attendance/reporting-projection.js";
+import { ReportService } from "../../reports/service.js";
 
 describe("expense typed-owner read boundary on PostgreSQL", () => {
   let app: FastifyInstance;
@@ -384,6 +385,52 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       headers: authHeader(admin.token) })).statusCode).toBe(200);
     expect((await app.inject({ method: "GET", url: managerHistoryUrl,
       headers: authHeader(employee.token) })).statusCode).toBe(403);
+    const routeSnapshotFixture = await pool.connect();
+    try {
+      await routeSnapshotFixture.query("BEGIN");
+      await routeSnapshotFixture.query("SELECT set_config('app.expense_command_v1','on',true)");
+      await routeSnapshotFixture.query(
+        "UPDATE expenses.expense_tickets SET route_snapshot=jsonb_build_object('finance_approver_id',$2::text) WHERE id=$1",
+        [ticketId, foreignFinance.user.id],
+      );
+      await routeSnapshotFixture.query("COMMIT");
+      const fullReportContext = await app.store.persistence?.expenseReportReadContext?.(admin.user.id, {});
+      expect(fullReportContext).toBeDefined();
+      if (!fullReportContext) throw new Error("PostgreSQL report context required");
+      for (const filter of [
+        { finance_user_id: foreignFinance.user.id },
+        { document_status: "missing" as const },
+      ]) {
+        const sqlFiltered = await app.store.persistence?.expenseReportReadContext?.(
+          admin.user.id,
+          filter,
+        );
+        expect(sqlFiltered).toBeDefined();
+        if (!sqlFiltered) throw new Error("Filtered PostgreSQL report context required");
+        const canonical = new ReportService(fullReportContext.store).financeDashboard(
+          fullReportContext.actor,
+          { page: 1, page_size: 100, ...filter },
+        );
+        expect(new Set(sqlFiltered.store.tickets.map((candidate) => candidate.id))).toEqual(
+          new Set(canonical.items.map((item) => item.id)),
+        );
+      }
+    } finally {
+      try {
+        await routeSnapshotFixture.query("BEGIN");
+        await routeSnapshotFixture.query("SELECT set_config('app.expense_command_v1','on',true)");
+        await routeSnapshotFixture.query(
+          "UPDATE expenses.expense_tickets SET route_snapshot='{}'::jsonb WHERE id=$1",
+          [ticketId],
+        );
+        await routeSnapshotFixture.query("COMMIT");
+      } catch (error) {
+        await routeSnapshotFixture.query("ROLLBACK");
+        throw error;
+      } finally {
+        routeSnapshotFixture.release();
+      }
+    }
     const managerReviewerRole = await pool.query<{ id: string }>(
       "SELECT id FROM core.user_roles WHERE user_id=$1 AND role_key='Reviewer'",
       [manager.user.id],
@@ -468,7 +515,35 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       const bounded = await app.inject({ method: "GET", url: managerReportUrl,
         headers: authHeader(manager.token) });
       expect(bounded.statusCode, bounded.body).toBe(400);
-      expect(bounded.body).toContain("1,000 current-company tickets");
+      expect(bounded.body).toContain("at most 1,000 matching tickets");
+      const narrowedBoundary = await app.inject({
+        method: "GET",
+        url: `${managerReportUrl}&status=Manager%20Verified`,
+        headers: authHeader(manager.token),
+      });
+      expect(narrowedBoundary.statusCode, narrowedBoundary.body).toBe(200);
+      expect(narrowedBoundary.json().total).toBe(0);
+      const overlongRange = await app.inject({
+        method: "GET",
+        url: `${managerReportUrl}&date_from=2025-01-01&date_to=2026-02-01`,
+        headers: authHeader(manager.token),
+      });
+      expect(overlongRange.statusCode, overlongRange.body).toBe(400);
+      expect(overlongRange.body).toContain("cannot exceed 12 months");
+      const oneSidedRange = await app.inject({
+        method: "GET",
+        url: `${managerReportUrl}&date_from=2026-01-01`,
+        headers: authHeader(manager.token),
+      });
+      expect(oneSidedRange.statusCode, oneSidedRange.body).toBe(400);
+      expect(oneSidedRange.body).toContain("must be provided together");
+      const invalidRange = await app.inject({
+        method: "GET",
+        url: `${managerReportUrl}&date_from=2026-02-31&date_to=2026-03-01`,
+        headers: authHeader(manager.token),
+      });
+      expect(invalidRange.statusCode, invalidRange.body).toBe(400);
+      expect(invalidRange.body).toContain("must be a valid calendar date");
     } finally {
       const cleanup = await pool.connect();
       try {
@@ -502,11 +577,15 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       });
       expect(boundedChildren.statusCode, boundedChildren.body).toBe(400);
       expect(boundedChildren.body).toContain(
-        "more than 10,000 related records",
+        "at most 10,000 related records",
       );
-      expect(boundedChildren.body).toContain(
-        "filters cannot narrow this graph until SQL projection work item #121",
-      );
+      const narrowedChildren = await app.inject({
+        method: "GET",
+        url: `${managerReportUrl}&status=Closed`,
+        headers: authHeader(manager.token),
+      });
+      expect(narrowedChildren.statusCode, narrowedChildren.body).toBe(200);
+      expect(narrowedChildren.json().total).toBe(0);
     } finally {
       try {
         await childBoundary.query("BEGIN");
@@ -770,11 +849,25 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
         next_step: "company_bootstrap",
         company_id: pendingBootstrapCompanyId,
       });
+      const repeatedPendingBootstrapMe = await second.inject({
+        method: "GET",
+        url: "/api/v1/auth/me",
+        headers: authHeader(pendingBootstrapJwt.token),
+      });
+      expect(repeatedPendingBootstrapMe.statusCode, repeatedPendingBootstrapMe.body).toBe(200);
+      expect(repeatedPendingBootstrapMe.json()).toMatchObject({
+        setup_required: true,
+        next_step: "company_bootstrap",
+        company_id: pendingBootstrapCompanyId,
+      });
       expect(Number((await pool.query(
         `SELECT count(*) FROM platform.auth_tokens
          WHERE user_id=$1 AND token_type='company_bootstrap'`,
         [pendingBootstrapUserId],
-      )).rows[0]?.count ?? 0)).toBe(bootstrapTokenCountBefore + 1);
+      )).rows[0]?.count ?? 0)).toBe(bootstrapTokenCountBefore);
+      expect(second.store.authTokens.filter(
+        (token) => token.user_id === pendingBootstrapUserId,
+      )).toHaveLength(0);
       await pool.query(
         "UPDATE core.users SET employment_status='inactive' WHERE id=$1",
         [pendingBootstrapUserId],
@@ -856,6 +949,22 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       expect(genericB.statusCode, genericB.body).toBe(200);
       expect(genericB.json().scope).toMatchObject({ actor_user_id: postStartUserId, primary_role: "Admin" });
       expect(genericB.json().workforce.active_employees).toBe(await companyActiveCount(companyB));
+      expect(genericB.json().approvals.document_verification_pending).toBe(0);
+      const bOutboxBeforeContradiction = genericB.json().operations.outbox_pending;
+      await pool.query(
+        `INSERT INTO platform.outbox_events
+          (aggregate_type,aggregate_id,event_type,payload,idempotency_key)
+         VALUES ('expense_ticket',$1,'expense.contradictory-company',
+           jsonb_build_object('company_id',$2::text),$3)`,
+        [ticketId, companyB, `expense-contradictory-${postStartUserId}`],
+      );
+      const bAfterContradictoryOutbox = await second.inject({
+        method: "GET", url: "/api/v1/dashboard/summary", headers: authHeader(postStartJwt.token),
+      });
+      expect(bAfterContradictoryOutbox.statusCode, bAfterContradictoryOutbox.body).toBe(200);
+      expect(bAfterContradictoryOutbox.json().operations.outbox_pending).toBe(
+        bOutboxBeforeContradiction,
+      );
       const evidenceDates = {
         verified: "2026-10-01",
         warning: "2026-10-02",
@@ -1038,7 +1147,12 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
           canonicalSummaries.map((summary) => summary.source_categories),
         ),
       };
-      expect(evidenceDashboard.json().attendance).toEqual(canonicalAttendance);
+      expect(evidenceDashboard.json().attendance).toMatchObject(canonicalAttendance);
+      expect(evidenceDashboard.json().attendance.window).toEqual({
+        date_from: expect.any(String),
+        date_to: expect.any(String),
+        max_months: 12,
+      });
       expect(canonicalAttendance).toEqual({
         evidence_categories: {
           verified: 1,
@@ -1105,7 +1219,7 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
         headers: authHeader(selfOnlyJwt.token),
       });
       expect(selfOnlyDashboard.statusCode, selfOnlyDashboard.body).toBe(200);
-      expect(selfOnlyDashboard.json().attendance).toEqual({
+      expect(selfOnlyDashboard.json().attendance).toMatchObject({
         evidence_categories: {
           verified: 0,
           warning: 0,
@@ -1133,15 +1247,13 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
            FROM generate_series(0,10000) AS series`,
           [companyB, postStartUserId],
         );
-        const boundedAttendance = await second.inject({
+        const oldHistoryDashboard = await second.inject({
           method: "GET",
           url: "/api/v1/dashboard/summary",
           headers: authHeader(postStartJwt.token),
         });
-        expect(boundedAttendance.statusCode, boundedAttendance.body).toBe(400);
-        expect(boundedAttendance.body).toContain(
-          "at most 10,000 visible days",
-        );
+        expect(oldHistoryDashboard.statusCode, oldHistoryDashboard.body).toBe(200);
+        expect(oldHistoryDashboard.json().attendance).toMatchObject(canonicalAttendance);
       } finally {
         await pool.query(
           `DELETE FROM attendance.daily_records
@@ -1149,6 +1261,66 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
              AND work_date >= date '1980-01-01'
              AND work_date < date '1980-01-01' + 10001`,
           [companyB, postStartUserId],
+        );
+      }
+      const dashboardBoundPrefix = randomUUID().replaceAll("-", "").slice(0, 8);
+      try {
+        await pool.query(
+          `INSERT INTO core.users
+            (id,employee_code,email,full_name,department_id,designation_id,
+             manager_user_id,hierarchy_path,employment_status,email_verified_at,
+             email_verification_status)
+           SELECT gen_random_uuid(),'DBND' || series::text || $1,
+             'dbnd' || series::text || $1 || '@example.test',
+             'Dashboard boundary employee',
+             template.department_id,template.designation_id,template.manager_user_id,
+             template.hierarchy_path || text2ltree('dbnd' || series::text || $1),
+             'active',now(),'verified'
+           FROM generate_series(1,10001) AS series
+           CROSS JOIN LATERAL (
+             SELECT department_id,designation_id,manager_user_id,hierarchy_path
+             FROM core.users WHERE id=$2
+           ) template`,
+          [dashboardBoundPrefix, employee.user.id],
+        );
+        await pool.query(
+          `INSERT INTO platform.user_session_preferences (user_id,active_role,company_id)
+           SELECT id,'Employee',$1 FROM core.users WHERE employee_code LIKE $2`,
+          [companyB, `DBND%${dashboardBoundPrefix}`],
+        );
+        await pool.query(
+          `INSERT INTO attendance.daily_records
+            (company_id,employee_user_id,work_date,status,day_classification,
+             presence_state,punctuality_state,evidence_state,approval_kind,
+             approval_state,payroll_state)
+           SELECT $1,id,CURRENT_DATE,'future','future','not_started','not_applicable',
+             'not_applicable','none','not_required','unprocessed'
+           FROM core.users WHERE employee_code LIKE $2`,
+          [companyB, `DBND%${dashboardBoundPrefix}`],
+        );
+        const boundedAttendance = await second.inject({
+          method: "GET",
+          url: "/api/v1/dashboard/summary",
+          headers: authHeader(postStartJwt.token),
+        });
+        expect(boundedAttendance.statusCode, boundedAttendance.body).toBe(400);
+        expect(boundedAttendance.body).toContain(
+          "at most 10,000 visible days within its rolling 12-month window",
+        );
+      } finally {
+        await pool.query(
+          `DELETE FROM attendance.daily_records WHERE employee_user_id IN
+            (SELECT id FROM core.users WHERE employee_code LIKE $1)`,
+          [`DBND%${dashboardBoundPrefix}`],
+        );
+        await pool.query(
+          `DELETE FROM platform.user_session_preferences WHERE user_id IN
+            (SELECT id FROM core.users WHERE employee_code LIKE $1)`,
+          [`DBND%${dashboardBoundPrefix}`],
+        );
+        await pool.query(
+          "DELETE FROM core.users WHERE employee_code LIKE $1",
+          [`DBND%${dashboardBoundPrefix}`],
         );
       }
       await pool.query(
@@ -1184,10 +1356,45 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       });
       expect(genericA.statusCode, genericA.body).toBe(200);
       expect(genericA.json().workforce.active_employees).toBe(await companyActiveCount(companyA));
+      expect(genericA.json().operations.outbox_pending).toBeGreaterThanOrEqual(1);
+      await pool.query(
+        `INSERT INTO platform.notifications (target_user_id,event_type,payload)
+         VALUES ($1,'legacy.company-a',jsonb_build_object('company_id',$2::text))`,
+        [postStartUserId, companyA],
+      );
       await pool.query(
         "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
         [postStartUserId, companyB],
       );
+
+      const transferredBackDashboard = await second.inject({
+        method: "GET", url: "/api/v1/dashboard/summary", headers: authHeader(postStartJwt.token),
+      });
+      expect(transferredBackDashboard.statusCode, transferredBackDashboard.body).toBe(200);
+      expect(transferredBackDashboard.json()).toMatchObject({
+        approvals: { timesheet_pending: 0, leave_pending: 0, wfh_pending: 0 },
+        operations: {
+          assets_total: 0,
+          assets_assigned: 0,
+          assets_recovery_pending: 0,
+          notifications_pending: 0,
+        },
+        workload: {
+          work_segments_total: 0,
+          submitted_hours_total: "0.00",
+          timesheet_submissions_total: 0,
+          timesheet_submissions_approved: 0,
+          timesheet_submissions_returned: 0,
+        },
+      });
+      expect(transferredBackDashboard.json().unavailable_features.map(
+        (feature: { key: string }) => feature.key,
+      )).toEqual(expect.arrayContaining([
+        "timesheets_historical_ownership",
+        "leave_wfh_historical_ownership",
+        "assets_historical_ownership",
+        "notifications_historical_ownership",
+      ]));
 
       const postStartAdminRole = await pool.query<{ id: string }>(
         "SELECT id FROM core.user_roles WHERE user_id=$1 AND role_key='Admin'",
@@ -1196,6 +1403,42 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       const postStartAdminRoleId = postStartAdminRole.rows[0]?.id;
       expect(postStartAdminRoleId).toBeTruthy();
       if (!postStartAdminRoleId) throw new Error("Post-start Admin role required");
+      await pool.query(
+        "UPDATE platform.user_session_preferences SET active_role='Employee' WHERE user_id=$1",
+        [postStartUserId],
+      );
+      const secondaryAdminCurrent = await second.inject({
+        method: "GET", url: "/api/v1/dashboard/summary", headers: authHeader(postStartJwt.token),
+      });
+      expect(secondaryAdminCurrent.statusCode, secondaryAdminCurrent.body).toBe(200);
+      expect(secondaryAdminCurrent.json().scope).toMatchObject({
+        primary_role: "Employee",
+        visibility: "all",
+      });
+      await pool.query("UPDATE core.user_roles SET status='inactive' WHERE id=$1", [postStartAdminRoleId]);
+      const secondaryAdminRemoved = await second.inject({
+        method: "GET", url: "/api/v1/dashboard/summary", headers: authHeader(postStartJwt.token),
+      });
+      expect(secondaryAdminRemoved.statusCode, secondaryAdminRemoved.body).toBe(200);
+      expect(secondaryAdminRemoved.json().scope).toMatchObject({
+        primary_role: "Employee",
+        roles: ["Employee"],
+        visibility: "self_and_descendants",
+      });
+      expect(secondaryAdminRemoved.json().workforce.active_employees).toBeLessThan(
+        secondaryAdminCurrent.json().workforce.active_employees,
+      );
+      await pool.query(
+        "UPDATE core.user_roles SET status='active',effective_from=CURRENT_DATE,effective_to=NULL WHERE id=$1",
+        [postStartAdminRoleId],
+      );
+      expect((await second.inject({
+        method: "GET", url: "/api/v1/dashboard/summary", headers: authHeader(postStartJwt.token),
+      })).json().scope.visibility).toBe("all");
+      await pool.query(
+        "UPDATE platform.user_session_preferences SET active_role='Admin' WHERE user_id=$1",
+        [postStartUserId],
+      );
       await pool.query("UPDATE core.user_roles SET status='inactive' WHERE id=$1", [postStartAdminRoleId]);
       expect((await second.inject({ method: "GET", url: "/api/v1/auth/me",
         headers: authHeader(postStartJwt.token) })).statusCode).toBe(403);
@@ -1294,6 +1537,51 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     );
     commandReader = await buildRealApp({ reset: false });
     await commandReader.ready();
+    const conflictingLegacyAudit = await pool.connect();
+    try {
+      await conflictingLegacyAudit.query("BEGIN");
+      await conflictingLegacyAudit.query("SELECT set_config('app.expense_command_v1','on',true)");
+      await conflictingLegacyAudit.query(
+        `INSERT INTO expenses.expense_audit_logs
+          (ticket_id,actor_user_id,event_type,remarks,new_value)
+         VALUES ($1,$2,'expense.owner.audited_repair','Typed owner overrides conflicting legacy JSON',
+           jsonb_build_object('company_id',$3::text))`,
+        [ticketId, admin.user.id, companyB],
+      );
+      await conflictingLegacyAudit.query("COMMIT");
+    } catch (error) {
+      await conflictingLegacyAudit.query("ROLLBACK");
+      throw error;
+    } finally {
+      conflictingLegacyAudit.release();
+    }
+    const conflictingLegacyContext = await app.store.persistence?.auditReportReadContext?.(
+      admin.user.id,
+    );
+    expect(conflictingLegacyContext).toBeDefined();
+    if (!conflictingLegacyContext) throw new Error("PostgreSQL audit context required");
+    const conflictingLegacyTicket = conflictingLegacyContext.store.tickets.find(
+      (candidate) => candidate.id === ticketId,
+    );
+    expect(conflictingLegacyTicket).toBeDefined();
+    if (!conflictingLegacyTicket) throw new Error("Typed audit ticket required");
+    conflictingLegacyTicket.context_payload = { company_id: companyB };
+    expect(new ReportService(conflictingLegacyContext.store).auditReport(
+      conflictingLegacyContext.actor,
+      { page: 1, page_size: 50, action: "audited_repair" },
+      conflictingLegacyContext.companyId,
+    ).items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: ticketId, action: "expense.owner.audited_repair" }),
+    ]));
+    const typedAuditReport = await commandReader.inject({
+      method: "GET",
+      url: "/api/v1/reports/audit?page=1&page_size=50&action=audited_repair",
+      headers: authHeader(admin.token),
+    });
+    expect(typedAuditReport.statusCode, typedAuditReport.body).toBe(200);
+    expect(typedAuditReport.json().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: ticketId, action: "expense.owner.audited_repair" }),
+    ]));
     const financeHeaders = { ...authHeader(finance.token), "idempotency-key": `expense-approve-${ticketId}` };
     const approvePayload = { decision: "verify", expected_version: 1 };
     const historyBeforeCommand = await commandReader.inject({
@@ -1833,22 +2121,38 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
        FROM generate_series(1,1001) AS series`,
       [employee.user.id],
     );
+    const bulkCutoff = new Date().toISOString();
     const firstBulkMark = await commandReader.inject({
       method: "POST", url: "/api/v1/notifications/read-all",
-      headers: authHeader(employee.token), payload: { type: "expense.bulk-continuation" },
+      headers: authHeader(employee.token),
+      payload: { type: "expense.bulk-continuation", before: bulkCutoff },
     });
     expect(firstBulkMark.statusCode, firstBulkMark.body).toBe(200);
     expect(firstBulkMark.json()).toMatchObject({ updated_count: 1000, has_more: true });
+    const arrivedAfterCutoff = await pool.query<{ id: string }>(
+      `INSERT INTO platform.notifications
+        (target_user_id,event_type,payload,created_at,updated_at)
+       VALUES ($1,'expense.bulk-continuation','{"fixture":"after-cutoff"}',
+         $2::timestamptz + interval '1 second',$2::timestamptz + interval '1 second')
+       RETURNING id`,
+      [employee.user.id, bulkCutoff],
+    );
+    const arrivedAfterCutoffId = arrivedAfterCutoff.rows[0]?.id;
+    expect(arrivedAfterCutoffId).toBeTruthy();
     const bulkRemaining = await app.inject({
       method: "GET",
       url: "/api/v1/notifications?page=1&page_size=10&type=expense.bulk-continuation&unread_only=true",
       headers: authHeader(employee.token),
     });
     expect(bulkRemaining.statusCode, bulkRemaining.body).toBe(200);
-    expect(bulkRemaining.json().total).toBe(1);
+    expect(bulkRemaining.json().total).toBe(2);
+    expect(bulkRemaining.json().items.map((item: { id: string }) => item.id)).toContain(
+      arrivedAfterCutoffId,
+    );
     const secondBulkMark = await app.inject({
       method: "POST", url: "/api/v1/notifications/read-all",
-      headers: authHeader(employee.token), payload: { type: "expense.bulk-continuation" },
+      headers: authHeader(employee.token),
+      payload: { type: "expense.bulk-continuation", before: bulkCutoff },
     });
     expect(secondBulkMark.statusCode, secondBulkMark.body).toBe(200);
     expect(secondBulkMark.json()).toMatchObject({ updated_count: 1, has_more: false });
@@ -1858,7 +2162,16 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       headers: authHeader(employee.token),
     });
     expect(bulkFinished.statusCode, bulkFinished.body).toBe(200);
-    expect(bulkFinished.json().total).toBe(0);
+    expect(bulkFinished.json().total).toBe(1);
+    expect(bulkFinished.json().items.map((item: { id: string }) => item.id)).toEqual([
+      arrivedAfterCutoffId,
+    ]);
+    const cleanupAfterCutoff = await commandReader.inject({
+      method: "POST", url: "/api/v1/notifications/read-all",
+      headers: authHeader(employee.token), payload: { type: "expense.bulk-continuation" },
+    });
+    expect(cleanupAfterCutoff.statusCode, cleanupAfterCutoff.body).toBe(200);
+    expect(cleanupAfterCutoff.json()).toMatchObject({ updated_count: 1, has_more: false });
     await commandReader.close();
     commandReader = null;
     await pool.query(

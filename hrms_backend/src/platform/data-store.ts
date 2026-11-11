@@ -295,6 +295,11 @@ export interface DashboardSummaryProjection {
     outbox_pending: number;
   };
   attendance: {
+    window: {
+      date_from: string;
+      date_to: string;
+      max_months: 12;
+    };
     evidence_categories: Record<"verified" | "warning" | "provisional" | "review_required" | "rejected", number>;
     source_categories: Record<"web" | "geo" | "mobile" | "manual" | "kiosk" | "system", number>;
     exceptions: number;
@@ -492,7 +497,6 @@ export interface DataStorePersistence {
   flush(): Promise<void>;
   authUser?(userId: UUID): Promise<AuthUser | null>;
   authSessionContext?(userId: UUID): Promise<DurableAuthSessionContext>;
-  persistAuthToken?(token: AuthTokenRecord): Promise<void>;
   flushInitialSeed?(): Promise<void>;
   flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
@@ -522,7 +526,19 @@ export interface DataStorePersistence {
   }): Promise<{ updatedCount: number; unreadCount: number; hasMore: boolean }>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
-  expenseReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseReportReadContext?(userId: UUID, filters?: {
+    status?: string;
+    expense_type?: string;
+    expense_sub_type?: string;
+    payment_type?: string;
+    department_id?: UUID;
+    requester_user_id?: UUID;
+    manager_user_id?: UUID;
+    finance_user_id?: UUID;
+    date_from?: string;
+    date_to?: string;
+    document_status?: "any" | "complete" | "missing" | "pending" | "not_required";
+  }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   expenseReadContext?(userId: UUID, ticketId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   expenseFinanceCommand?(input: {
     userId: UUID;

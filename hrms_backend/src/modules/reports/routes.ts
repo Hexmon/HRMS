@@ -72,9 +72,12 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
     }
     return request.actor;
   };
-  const expenseReportContext = async (actor: AuthUser) => {
+  const expenseReportContext = async (
+    actor: AuthUser,
+    query?: z.infer<typeof reportExpenseQuerySchema>,
+  ) => {
     const context = fastify.store.persistence?.expenseReportReadContext
-      ? await fastify.store.persistence.expenseReportReadContext(actor.id)
+      ? await fastify.store.persistence.expenseReportReadContext(actor.id, query)
       : { actor, companyId: undefined, store: fastify.store };
     return { actor: context.actor, service: new ReportService(context.store) };
   };
@@ -82,69 +85,70 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get("/expenses/my", async (request) => {
     const actor = withActor(request);
     const query = reportExpenseQuerySchema.parse(request.query);
-    const context = await expenseReportContext(actor);
+    const context = await expenseReportContext(actor, query);
     return context.service.myExpenses(context.actor, query);
   });
 
   fastify.get("/expenses/manager-queue", async (request) => {
     const actor = withActor(request);
     const query = reportExpenseQuerySchema.parse(request.query);
-    const context = await expenseReportContext(actor);
+    const context = await expenseReportContext(actor, query);
     return context.service.managerQueue(context.actor, query);
   });
 
   fastify.get("/expenses/manager-history", async (request) => {
     const actor = withActor(request);
     const query = reportExpenseQuerySchema.parse(request.query);
-    const context = await expenseReportContext(actor);
+    const context = await expenseReportContext(actor, query);
     return context.service.managerHistory(context.actor, query);
   });
 
   fastify.get("/expenses/finance-dashboard", async (request) => {
     const actor = withActor(request);
     const query = reportExpenseQuerySchema.parse(request.query);
-    const context = await expenseReportContext(actor);
+    const context = await expenseReportContext(actor, query);
     return context.service.financeDashboard(context.actor, query);
   });
 
   fastify.get("/expenses/finance-history", async (request) => {
     const actor = withActor(request);
     const query = reportExpenseQuerySchema.parse(request.query);
-    const context = await expenseReportContext(actor);
+    const context = await expenseReportContext(actor, query);
     return context.service.financeHistory(context.actor, query);
   });
 
   fastify.get("/expenses/finance-analytics", async (request) => {
     const actor = withActor(request);
-    const context = await expenseReportContext(actor);
+    const query = reportExpenseQuerySchema.parse(request.query);
+    const context = await expenseReportContext(actor, query);
     return context.service.financeAnalytics(context.actor);
   });
 
   fastify.get("/expenses/register", async (request) => {
     const actor = withActor(request);
     const query = reportExpenseQuerySchema.parse(request.query);
-    const context = await expenseReportContext(actor);
+    const context = await expenseReportContext(actor, query);
     return context.service.register(context.actor, query);
   });
 
   fastify.get("/expenses/advance-aging", async (request) => {
     const actor = withActor(request);
-    const query = paginationQuerySchema.parse(request.query);
-    const context = await expenseReportContext(actor);
+    const query = reportExpenseQuerySchema.parse(request.query);
+    const context = await expenseReportContext(actor, query);
     return context.service.advanceAging(context.actor, query.page, query.page_size);
   });
 
   fastify.get("/expenses/payments", async (request) => {
     const actor = withActor(request);
-    const query = paginationQuerySchema.parse(request.query);
-    const context = await expenseReportContext(actor);
+    const query = reportExpenseQuerySchema.parse(request.query);
+    const context = await expenseReportContext(actor, query);
     return context.service.paymentRegister(context.actor, query.page, query.page_size);
   });
 
   fastify.get("/expenses/audit", async (request) => {
     const actor = withActor(request);
-    const query = paginationQuerySchema.parse(request.query);
-    const context = await expenseReportContext(actor);
+    const query = reportExpenseQuerySchema.parse(request.query);
+    const context = await expenseReportContext(actor, query);
     return context.service.audit(context.actor, query.page, query.page_size);
   });
 

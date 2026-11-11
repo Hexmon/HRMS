@@ -88,13 +88,20 @@ describe("dashboard summary API", () => {
     });
     expect(body.workforce.active_employees).toBeGreaterThanOrEqual(3);
     expect(body.approvals.expense_manager_pending).toBeGreaterThanOrEqual(1);
-    expect(body.approvals.timesheet_pending).toBeGreaterThanOrEqual(1);
-    expect(body.workload.submitted_hours_total).toBe("8.00");
+    expect(body.approvals.timesheet_pending).toBe(0);
+    expect(body.workload.submitted_hours_total).toBe("0.00");
     expect(body.cards.map((card: { key: string }) => card.key)).toEqual(
       expect.arrayContaining(["active_employees", "pending_expense_approvals", "pending_timesheet_approvals", "pending_leave_wfh_approvals", "attendance_exceptions"])
     );
     expect(body.unavailable_features.map((feature: { key: string }) => feature.key)).toEqual(
-      expect.arrayContaining(["helpdesk", "projects_utilization"])
+      expect.arrayContaining([
+        "timesheets_historical_ownership",
+        "leave_wfh_historical_ownership",
+        "assets_historical_ownership",
+        "notifications_historical_ownership",
+        "helpdesk",
+        "projects_utilization",
+      ])
     );
     expect(body.unavailable_features.map((feature: { key: string }) => feature.key)).not.toContain("attendance");
     expect(body.unavailable_features.map((feature: { key: string }) => feature.key)).not.toContain("leave_wfh_holidays");

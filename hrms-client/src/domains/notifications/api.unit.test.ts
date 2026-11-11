@@ -39,4 +39,30 @@ describe("notification read-all continuation", () => {
     await expect(notificationsApi.markAllRead({})).rejects.toThrow("made no progress");
     expect(apiRequest).toHaveBeenCalledOnce();
   });
+
+  it("stops after the bounded 100-batch continuation budget", async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      updated_count: 1,
+      unread_count: 1,
+      has_more: true,
+    });
+    await expect(notificationsApi.markAllRead({ type: "approval" })).rejects.toThrow(
+      "Too many notifications",
+    );
+    expect(apiRequest).toHaveBeenCalledTimes(100);
+    const cutoffs = vi
+      .mocked(apiRequest)
+      .mock.calls.map((call) => (call[1]?.body as { before?: string } | undefined)?.before);
+    expect(new Set(cutoffs).size).toBe(1);
+  });
+
+  it("surfaces a later batch failure after an earlier batch made partial progress", async () => {
+    const failure = new Error("network disconnected");
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ updated_count: 1000, unread_count: 1, has_more: true })
+      .mockRejectedValueOnce(failure);
+
+    await expect(notificationsApi.markAllRead({})).rejects.toBe(failure);
+    expect(apiRequest).toHaveBeenCalledTimes(2);
+  });
 });

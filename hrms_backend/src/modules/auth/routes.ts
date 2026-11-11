@@ -104,9 +104,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     if (durable.kind === "membership") {
       return service.sessionContextFromDurableMembership(durable.membership);
     }
-    const bootstrap = service.sessionContextFromDurableBootstrap(durable);
-    await fastify.store.persistence?.persistAuthToken?.(bootstrap.token);
-    return bootstrap.context;
+    return service.sessionContextFromDurableBootstrap(durable);
   });
 
   fastify.patch("/session/preference", async (request) => {

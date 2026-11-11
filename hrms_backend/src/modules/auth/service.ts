@@ -709,25 +709,15 @@ export class AuthService {
   sessionContextFromDurableBootstrap(input: {
     actor: AuthUser;
     company: CompanyProfileRecord;
-  }): { context: SessionContext; token: AuthTokenRecord } {
-    const bootstrap = this.createToken({
-      type: "company_bootstrap",
-      userId: input.actor.id,
-      email: input.actor.email,
-      companyId: input.company.id,
-      ttlSeconds: 24 * 60 * 60,
-      metadata: { reason: "resume_company_bootstrap" },
+  }): SessionContext {
+    return this.buildSessionContext({
+      user: input.actor,
+      company: input.company,
+      preference: null,
+      activeRole: input.actor.roles[0] ?? Roles.Employee,
+      bootstrap: null,
+      bootstrapCompanyId: input.company.id,
     });
-    return {
-      context: this.buildSessionContext({
-        user: input.actor,
-        company: input.company,
-        preference: null,
-        activeRole: input.actor.roles[0] ?? Roles.Employee,
-        bootstrap,
-      }),
-      token: bootstrap.record,
-    };
   }
 
   private buildSessionContext(input: {
@@ -736,6 +726,7 @@ export class AuthService {
     preference: UserSessionPreferenceRecord | null;
     activeRole: RoleKey;
     bootstrap: GeneratedToken | null;
+    bootstrapCompanyId?: UUID | null;
   }): SessionContext {
     const {
       user,
@@ -744,6 +735,8 @@ export class AuthService {
       activeRole: activeRoleKey,
       bootstrap,
     } = input;
+    const bootstrapCompanyId =
+      bootstrap?.record.company_id ?? input.bootstrapCompanyId ?? null;
     const availableRoles = user.roles.map((role) => ({
       key: role,
       label: role,
@@ -791,12 +784,14 @@ export class AuthService {
           use_include_for_nested_data: true,
         },
       },
-      ...(bootstrap
+      ...(bootstrapCompanyId
         ? {
             setup_required: true,
             next_step: "company_bootstrap" as const,
-            company_id: bootstrap.record.company_id,
-            ...devOnly({ company_bootstrap_token: bootstrap.raw }),
+            company_id: bootstrapCompanyId,
+            ...(bootstrap
+              ? devOnly({ company_bootstrap_token: bootstrap.raw })
+              : {}),
           }
         : {}),
     };

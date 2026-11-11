@@ -3579,6 +3579,8 @@ const dashboardSummarySchema = {
         "expense_finance_pending",
         "expense_total_pending",
         "timesheet_pending",
+        "leave_pending",
+        "wfh_pending",
         "document_verification_pending",
       ],
       properties: {
@@ -3586,6 +3588,8 @@ const dashboardSummarySchema = {
         expense_finance_pending: { type: "integer", minimum: 0, example: 0 },
         expense_total_pending: { type: "integer", minimum: 0, example: 1 },
         timesheet_pending: { type: "integer", minimum: 0, example: 1 },
+        leave_pending: { type: "integer", minimum: 0, example: 0 },
+        wfh_pending: { type: "integer", minimum: 0, example: 0 },
         document_verification_pending: {
           type: "integer",
           minimum: 0,
@@ -3614,8 +3618,18 @@ const dashboardSummarySchema = {
     },
     attendance: {
       type: "object",
-      required: ["evidence_categories", "source_categories"],
+      required: ["window", "evidence_categories", "source_categories"],
       properties: {
+        window: {
+          type: "object",
+          required: ["date_from", "date_to", "max_months"],
+          properties: {
+            date_from: date("Inclusive rolling attendance window start"),
+            date_to: date("Inclusive rolling attendance window end"),
+            max_months: { type: "integer", enum: [12], example: 12 },
+          },
+          additionalProperties: false,
+        },
         evidence_categories: {
           type: "object",
           required: ["verified", "warning", "provisional", "review_required", "rejected"],

@@ -576,46 +576,6 @@ class PostgresPersistence {
     }
   }
 
-  async persistAuthToken(token: AuthTokenRecord): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query(
-        `INSERT INTO platform.auth_tokens (
-          id, token_hash, token_type, user_id, email, company_id, status,
-          expires_at, used_at, revoked_at, created_ip_hash, user_agent_hash,
-          last_sent_at, send_count, created_at, metadata
-        ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb
-        )`,
-        [
-          token.id,
-          token.token_hash,
-          token.token_type,
-          token.user_id,
-          token.email,
-          token.company_id,
-          token.status,
-          token.expires_at,
-          token.used_at,
-          token.revoked_at,
-          token.created_ip_hash,
-          token.user_agent_hash,
-          token.last_sent_at,
-          token.send_count,
-          token.created_at,
-          JSON.stringify(token.metadata),
-        ],
-      );
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
   async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore> {
     const client = await this.pool.connect();
     try {
@@ -869,53 +829,122 @@ class PostgresPersistence {
     }
   }
 
-  async expenseReportReadContext(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
+  async expenseReportReadContext(userId: UUID, filters?: {
+    status?: string; expense_type?: string; expense_sub_type?: string;
+    payment_type?: string; department_id?: UUID; requester_user_id?: UUID;
+    manager_user_id?: UUID; finance_user_id?: UUID;
+    date_from?: string; date_to?: string;
+    document_status?: "any" | "complete" | "missing" | "pending" | "not_required";
+  }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const { actor, companyId } = await this.resolveExpenseActor(client, userId);
-      // This is deliberately a narrow current-company projection. Historical
-      // requester access after a transfer is reconciled by report work item
-      // #121 instead of broadening every report through shared hydrated state.
-      // The legacy report service still derives cards from its request-local
-      // graph. Bound that graph explicitly until #121 replaces it with typed
-      // SQL report projections; never silently truncate a tenant report.
-      const count = await client.query<{ total: string }>(
-        `SELECT count(*) AS total FROM expenses.expense_tickets
-         WHERE company_id=$1 AND deleted_at IS NULL`,
-        [companyId],
+      if (Boolean(filters?.date_from) !== Boolean(filters?.date_to)) {
+        throw badRequest("Expense report date_from and date_to must be provided together");
+      }
+      if (filters?.date_from && filters?.date_to) {
+        for (const [name, value] of [["date_from", filters.date_from], ["date_to", filters.date_to]] as const) {
+          const [valueYear, valueMonth, valueDay] = value.split("-").map(Number);
+          const normalized = new Date(Date.UTC(valueYear!, valueMonth! - 1, valueDay!));
+          if (Number.isNaN(normalized.getTime()) || normalized.toISOString().slice(0, 10) !== value) {
+            throw badRequest(`Expense report ${name} must be a valid calendar date`);
+          }
+        }
+        if (filters.date_from > filters.date_to) {
+          throw badRequest("Expense report date range is reversed");
+        }
+        const [year, month, day] = filters.date_from.split("-").map(Number);
+        const maximumYear = year! + 1;
+        const maximumDay = Math.min(
+          day!,
+          new Date(Date.UTC(maximumYear, month!, 0)).getUTCDate(),
+        );
+        const maximum = `${maximumYear.toString().padStart(4, "0")}-${month!
+          .toString()
+          .padStart(2, "0")}-${maximumDay.toString().padStart(2, "0")}`;
+        if (filters.date_to > maximum) {
+          throw badRequest("Expense report date range cannot exceed 12 months");
+        }
+      }
+      const params: unknown[] = [companyId];
+      const bind = (value: unknown): string => {
+        params.push(value);
+        return `$${params.length}`;
+      };
+      const where = ["ticket.company_id=$1::uuid", "ticket.deleted_at IS NULL"];
+      if (filters?.status) where.push(`ticket.status=${bind(filters.status)}`);
+      if (filters?.expense_type) where.push(`ticket.expense_type=${bind(filters.expense_type)}`);
+      if (filters?.expense_sub_type) where.push(`ticket.expense_sub_type=${bind(filters.expense_sub_type)}`);
+      if (filters?.payment_type) where.push(`ticket.payment_type=${bind(filters.payment_type)}`);
+      if (filters?.department_id) where.push(`ticket.department_id=${bind(filters.department_id)}::uuid`);
+      if (filters?.requester_user_id) where.push(`ticket.requester_user_id=${bind(filters.requester_user_id)}::uuid`);
+      if (filters?.manager_user_id) {
+        const manager = bind(filters.manager_user_id);
+        where.push(`(ticket.manager_verifier_id=${manager}::uuid OR ticket.manager_backup_user_id=${manager}::uuid)`);
+      }
+      if (filters?.finance_user_id) {
+        const finance = bind(filters.finance_user_id);
+        where.push(`(ticket.finance_approver_id=${finance}::uuid OR ticket.route_snapshot->>'finance_approver_id'=${finance}::text)`);
+      }
+      if (filters?.date_from) where.push(`ticket.created_at::date>=${bind(filters.date_from)}::date`);
+      if (filters?.date_to) where.push(`ticket.created_at::date<=${bind(filters.date_to)}::date`);
+      if (filters?.document_status && filters.document_status !== "any") {
+        const requiredDocuments = bind(JSON.stringify(RequiredDocumentsByExpenseSubType));
+        const documentStatus = bind(filters.document_status);
+        where.push(`(
+          CASE
+            WHEN jsonb_array_length(COALESCE(${requiredDocuments}::jsonb->ticket.expense_sub_type,'[]'::jsonb))=0
+              THEN 'not_required'
+            WHEN EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(COALESCE(${requiredDocuments}::jsonb->ticket.expense_sub_type,'[]'::jsonb)) required(document_type)
+              WHERE NOT EXISTS (
+                SELECT 1 FROM expenses.expense_documents document
+                WHERE document.ticket_id=ticket.id
+                  AND document.document_type=required.document_type
+                  AND document.verification_status='verified'
+              )
+            ) THEN 'missing'
+            WHEN EXISTS (
+              SELECT 1 FROM expenses.expense_documents document
+              WHERE document.ticket_id=ticket.id AND document.verification_status='pending'
+            ) THEN 'pending'
+            ELSE 'complete'
+          END
+        )=${documentStatus}::text`);
+      }
+      const predicate = where.join(" AND ");
+      const selected = await client.query<{ id: UUID }>(
+        `SELECT ticket.id FROM expenses.expense_tickets ticket
+         WHERE ${predicate}
+         ORDER BY ticket.created_at DESC,ticket.id DESC LIMIT 1001`,
+        params,
       );
-      if (Number(count.rows[0]?.total ?? 0) > 1000) {
+      if (selected.rows.length > 1000) {
         throw badRequest(
-          "Expense report supports at most 1,000 current-company tickets; narrow the report after SQL projection work item #121 is complete",
+          "Expense report supports at most 1,000 matching tickets; add or narrow a date range of at most 12 months or other report filters",
         );
       }
+      const ticketIds = selected.rows.map((row) => row.id);
       const childCount = await client.query<{ total: string }>(
         `SELECT (
-           (SELECT count(*) FROM expenses.expense_line_items child
-             JOIN expenses.expense_tickets ticket ON ticket.id=child.ticket_id
-             WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL)
-           + (SELECT count(*) FROM expenses.expense_approvals child
-             JOIN expenses.expense_tickets ticket ON ticket.id=child.ticket_id
-             WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL)
-           + (SELECT count(*) FROM expenses.expense_audit_logs child
-             JOIN expenses.expense_tickets ticket ON ticket.id=child.ticket_id
-             WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL)
-           + (SELECT count(*) FROM expenses.expense_documents child
-             JOIN expenses.expense_tickets ticket ON ticket.id=child.ticket_id
-             WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL)
-           + (SELECT count(*) FROM expenses.expense_payments child
-             JOIN expenses.expense_tickets ticket ON ticket.id=child.ticket_id
-             WHERE ticket.company_id=$1 AND ticket.deleted_at IS NULL)
+           (SELECT count(*) FROM expenses.expense_line_items child WHERE child.ticket_id=ANY($1::uuid[]))
+           + (SELECT count(*) FROM expenses.expense_approvals child WHERE child.ticket_id=ANY($1::uuid[]))
+           + (SELECT count(*) FROM expenses.expense_audit_logs child WHERE child.ticket_id=ANY($1::uuid[]))
+           + (SELECT count(*) FROM expenses.expense_documents child WHERE child.ticket_id=ANY($1::uuid[]))
+           + (SELECT count(*) FROM expenses.expense_payments child WHERE child.ticket_id=ANY($1::uuid[]))
          )::text AS total`,
-        [companyId],
+        [ticketIds],
       );
       if (Number(childCount.rows[0]?.total ?? 0) > 10_000) {
         throw badRequest(
-          "Expense report cannot load more than 10,000 related records on this legacy endpoint; filters cannot narrow this graph until SQL projection work item #121 is complete",
+          "Expense report supports at most 10,000 related records for the matching tickets; narrow the date range or other report filters",
         );
       }
-      const tickets = await this.loadTickets(client, companyId);
+      const tickets = ticketIds.length
+        ? await this.loadTickets(client, undefined, undefined, undefined, ticketIds)
+        : [];
       const store = await this.loadExpenseReadStore(client, companyId, tickets);
       await client.query("COMMIT");
       return { actor, companyId, store };
@@ -1762,26 +1791,12 @@ class PostgresPersistence {
             OR ticket.manager_backup_user_id = $2::uuid
             OR ticket.finance_approver_id = $2::uuid
           )
-      ), visible_timesheets AS (
-        SELECT submission.*
-        FROM timesheets.timesheet_submissions submission
-        WHERE submission.deleted_at IS NULL
-          AND (submission.employee_user_id IN (SELECT id FROM visible_users)
-               OR submission.current_approver_user_id = $2::uuid)
-      ), visible_leave AS (
-        SELECT request.* FROM leave_wfh.leave_requests request
-        WHERE request.deleted_at IS NULL
-          AND (request.employee_user_id IN (SELECT id FROM visible_users)
-               OR request.current_approver_user_id = $2::uuid)
-      ), visible_wfh AS (
-        SELECT request.* FROM leave_wfh.wfh_requests request
-        WHERE request.deleted_at IS NULL
-          AND (request.employee_user_id IN (SELECT id FROM visible_users)
-               OR request.current_approver_user_id = $2::uuid)
       ), visible_attendance AS (
         SELECT day.* FROM attendance.daily_records day
         WHERE day.company_id = $1::uuid AND day.deleted_at IS NULL
           AND day.employee_user_id IN (SELECT id FROM visible_users)
+          AND day.work_date >= (CURRENT_DATE - INTERVAL '12 months')::date
+          AND day.work_date <= CURRENT_DATE
       )`;
     const aggregate = await client.query<Record<string, string | number>>(
       `${visibilityCte}
@@ -1796,46 +1811,34 @@ class PostgresPersistence {
            ('Manager Verified','Finance Hold','Clarification Required','Finance Approved',
             'Payment Released','Bills Submitted','Pending Adjustment')
            AND (finance_approver_id=$2::uuid OR $5::boolean)) AS expense_finance_pending,
-         (SELECT count(*) FROM visible_timesheets WHERE status='Pending Approval'
-           AND (current_approver_user_id=$2::uuid OR $4::boolean)) AS timesheet_pending,
-         (SELECT count(*) FROM visible_leave WHERE status='pending_manager'
-           AND (current_approver_user_id=$2::uuid OR $4::boolean)) AS leave_pending,
-         (SELECT count(*) FROM visible_wfh WHERE status='pending_manager'
-           AND (current_approver_user_id=$2::uuid OR $4::boolean)) AS wfh_pending,
+         0 AS timesheet_pending,
+         0 AS leave_pending,
+         0 AS wfh_pending,
          (SELECT count(*) FROM expenses.expense_documents document
-           WHERE document.verification_status='pending' AND (
-             document.ticket_id IN (SELECT id FROM visible_tickets)
-             OR document.uploaded_by IN (SELECT id FROM visible_users))) AS document_verification_pending,
-         (SELECT count(*) FROM assets.assets asset WHERE asset.deleted_at IS NULL
-           AND asset.current_assigned_user_id IN (SELECT id FROM visible_users)) AS assets_total,
-         (SELECT count(*) FROM assets.assets asset WHERE asset.deleted_at IS NULL
-           AND asset.status='Assigned'
-           AND asset.current_assigned_user_id IN (SELECT id FROM visible_users)) AS assets_assigned,
-         (SELECT count(*) FROM assets.asset_recovery_tickets recovery
-           WHERE recovery.status<>'closed'
-             AND recovery.employee_user_id IN (SELECT id FROM visible_users)) AS assets_recovery_pending,
-         (SELECT count(*) FROM platform.notifications notification
-           WHERE notification.status='pending'
-             AND notification.target_user_id IN (SELECT id FROM visible_users)) AS notifications_pending,
+           WHERE document.verification_status='pending'
+             AND document.ticket_id IN (SELECT id FROM visible_tickets)) AS document_verification_pending,
+         0 AS assets_total,
+         0 AS assets_assigned,
+         0 AS assets_recovery_pending,
+         0 AS notifications_pending,
          (SELECT count(*) FROM platform.outbox_events event
            WHERE $4::boolean AND event.status IN ('pending','retry') AND (
-             event.payload->>'company_id'=$1::text OR
              (event.aggregate_type='expense_ticket' AND EXISTS (
                SELECT 1 FROM expenses.expense_tickets owner
                WHERE owner.id=event.aggregate_id AND owner.company_id=$1::uuid
-             )))) AS outbox_pending,
-         (SELECT count(*) FROM timesheets.work_segments segment
-           WHERE segment.deleted_at IS NULL
-             AND segment.employee_user_id IN (SELECT id FROM visible_users)) AS work_segments_total,
-         COALESCE((SELECT sum(segment.hours) FROM timesheets.work_segments segment
-           WHERE segment.deleted_at IS NULL
-             AND segment.employee_user_id IN (SELECT id FROM visible_users)),0)::text AS submitted_hours_total,
-         (SELECT count(*) FROM visible_timesheets) AS timesheet_submissions_total,
-         (SELECT count(*) FROM visible_timesheets WHERE status='Approved') AS timesheet_submissions_approved,
-         (SELECT count(*) FROM visible_timesheets WHERE status='Returned') AS timesheet_submissions_returned,
+             )) OR (event.aggregate_type<>'expense_ticket'
+               AND event.payload->>'company_id'=$1::text)
+           )) AS outbox_pending,
+         0 AS work_segments_total,
+         '0.00'::text AS submitted_hours_total,
+         0 AS timesheet_submissions_total,
+         0 AS timesheet_submissions_approved,
+         0 AS timesheet_submissions_returned,
          (SELECT count(*) FROM visible_attendance WHERE
            exception_type IS NOT NULL OR evidence_state IN ('missing','partial','disputed')
-           OR presence_state='absent' OR punctuality_state IN ('late','late_and_early_departure')) AS attendance_exceptions`,
+           OR presence_state='absent' OR punctuality_state IN ('late','late_and_early_departure')) AS attendance_exceptions,
+         (CURRENT_DATE - INTERVAL '12 months')::date::text AS attendance_window_start,
+         CURRENT_DATE::text AS attendance_window_end`,
       params,
     );
     const departments = await client.query<{
@@ -1890,6 +1893,11 @@ class PostgresPersistence {
         outbox_pending: number("outbox_pending"),
       },
       attendance: {
+        window: {
+          date_from: String(row.attendance_window_start),
+          date_to: String(row.attendance_window_end),
+          max_months: 12,
+        },
         exceptions: number("attendance_exceptions"),
         evidence_categories: attendanceEvidence.evidence_categories,
         source_categories: attendanceEvidence.source_categories,
@@ -1934,6 +1942,8 @@ class PostgresPersistence {
        JOIN platform.user_session_preferences pref
          ON pref.user_id=u.id AND pref.company_id=$1
        WHERE day.company_id=$1 AND day.deleted_at IS NULL
+         AND day.work_date >= (CURRENT_DATE - INTERVAL '12 months')::date
+         AND day.work_date <= CURRENT_DATE
          AND ($4::boolean OR u.id=$2 OR u.hierarchy_path <@ $3::ltree)
        ORDER BY day.work_date,day.employee_user_id,day.id
        LIMIT 10001`,
@@ -1941,7 +1951,7 @@ class PostgresPersistence {
     );
     if (dayResult.rows.length > 10_000) {
       throw badRequest(
-        "Dashboard attendance evidence supports at most 10,000 visible days; use the attendance report with a narrower date range",
+        "Dashboard attendance evidence supports at most 10,000 visible days within its rolling 12-month window; use the attendance report with a narrower date range",
       );
     }
     const days: AttendanceDayRecord[] = dayResult.rows.map((row) => ({
@@ -3409,7 +3419,14 @@ class PostgresPersistence {
   private async loadOutbox(client: PoolClient, filter: "all" | "pending" = "all", companyId?: UUID): Promise<OutboxEvent[]> {
     const conditions = [
       ...(filter === "pending" ? ["status IN ('pending', 'retry')"] : []),
-      ...(companyId ? ["payload->>'company_id' = $1"] : []),
+      ...(companyId ? [`(
+        (aggregate_type='expense_ticket' AND EXISTS (
+          SELECT 1 FROM expenses.expense_tickets ticket
+          WHERE ticket.id=platform.outbox_events.aggregate_id
+            AND ticket.company_id=$1::uuid
+        ))
+        OR (aggregate_type<>'expense_ticket' AND payload->>'company_id'=$1::text)
+      )`] : []),
     ];
     const condition = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const { rows } = await client.query(
