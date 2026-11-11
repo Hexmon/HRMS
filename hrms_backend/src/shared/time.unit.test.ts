@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isValidTimeZone, parseStrictIsoInstant, validTimeZoneOrUtc } from "./time.js";
+import { offsetIsoDateTimeSchema } from "./schemas.js";
 
 describe("time validation", () => {
   it("accepts configured IANA timezones and falls back around corrupt values", () => {
@@ -18,5 +19,11 @@ describe("time validation", () => {
     expect(parseStrictIsoInstant("2026-02-31T00:00:00Z")).toBeNull();
     expect(parseStrictIsoInstant("2026-07-20-not-a-date")).toBeNull();
     expect(parseStrictIsoInstant("2026-07-20T00:00:00+14:01")).toBeNull();
+    expect(offsetIsoDateTimeSchema.safeParse("2026-07-20T00:00:00+14:00").success)
+      .toBe(true);
+    expect(offsetIsoDateTimeSchema.safeParse("2026-07-20T00:00:00+14:01").success)
+      .toBe(false);
+    expect(offsetIsoDateTimeSchema.safeParse("2026-07-20T00:00:00+15:00").success)
+      .toBe(false);
   });
 });

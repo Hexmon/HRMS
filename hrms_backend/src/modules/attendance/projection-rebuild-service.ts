@@ -694,6 +694,7 @@ async function computeProjection(
     facts: rawFacts.map((fact) => ({
       id: fact.id,
       session_id: fact.session_id,
+      work_date: fact.work_date,
       event_type: fact.event_type,
       occurred_at: fact.occurred_at.toISOString(),
       work_mode: fact.work_mode,

@@ -31,13 +31,17 @@ import {
   AttendanceHistoricalCorrectionEventTypeValues,
   AttendanceLocationProviderValues,
 } from "./attendance-contract.js";
+import { parseStrictIsoInstant } from "./time.js";
 
 export const uuidSchema = z.uuid();
 export const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
 export const isoDateTimeSchema = z.iso.datetime();
 export const offsetIsoDateTimeSchema = z.iso.datetime({
   offset: true,
-});
+}).refine(
+  (value) => parseStrictIsoInstant(value) !== null,
+  "Timestamp offset must be within ±14:00 and use a valid calendar time.",
+);
 export const moneySchema = z
   .string()
   .regex(/^-?\d{1,12}(\.\d{1,2})?$/u, "Use a fixed precision decimal string");

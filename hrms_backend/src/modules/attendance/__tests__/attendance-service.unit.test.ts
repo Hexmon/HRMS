@@ -978,6 +978,48 @@ describe("AttendanceService.punch", () => {
         target_punch_event_id: target.id,
         occurred_at: "2026-07-09T01:15:00.000Z",
       });
+
+      service.decideRegularization(manager(), request.id, {
+        decision: "approve",
+        expected_version: 1,
+      });
+      const replacement = store.attendancePunches.find(
+        (punch) => punch.origin === "approved_regularization",
+      );
+      expect(replacement).toMatchObject({
+        work_date: "2026-07-08",
+        occurred_at: "2026-07-09T01:15:00.000Z",
+      });
+      expect(store.outbox.find(
+        (event) => event.idempotency_key ===
+          `attendance.punch.recorded:${replacement!.id}`,
+      )?.payload.work_date).toBe("2026-07-08");
+    });
+
+    it("rejects replacement timestamps more than one day from the target", () => {
+      const target = service["repository"].addPunch({
+        company_id: companyId(store),
+        employee_user_id: employee().id,
+        actor_user_id: employee().id,
+        event_type: "check_out",
+        occurred_at: "2026-07-08T12:00:00.000Z",
+        work_mode: "office",
+        source: "web",
+        origin: "employee_manual_now",
+        metadata: {},
+      });
+
+      expect(() => service.createRegularization(employee(), {
+        work_date: "2026-07-08",
+        reason: "Invalid distant correction",
+        items: [{
+          operation: "replace",
+          target_punch_event_id: target.id,
+          event_type: "check_out",
+          occurred_at: "2026-07-10T12:00:01.000Z",
+        }],
+      })).toThrow(/target punch correction window/iu);
+      expect(store.attendanceRegularizations).toHaveLength(0);
     });
 
     it("derives legacy punches from mixed normalized items and omits VOID", () => {

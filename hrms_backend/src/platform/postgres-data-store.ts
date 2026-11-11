@@ -2169,7 +2169,7 @@ class PostgresPersistence {
           END,
           CASE
             WHEN event.payload->>'captured_at' ~
-                   '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$'
+                   '^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,9})?(Z|[+-]((0[0-9]|1[0-3]):[0-5][0-9]|14:00))$'
              AND pg_input_is_valid(
               event.payload->>'captured_at',
               'timestamp with time zone'

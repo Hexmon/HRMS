@@ -867,15 +867,6 @@ function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-function regularizationTimestampWithinWorkDateEnvelope(
-  occurredAt: string,
-  workDate: string,
-  timeZone: string,
-): boolean {
-  const localDate = dateInTimeZone(occurredAt, validTimeZoneOrUtc(timeZone));
-  return localDate >= addDays(workDate, -1) && localDate <= addDays(workDate, 7);
-}
-
 function minutesOfDay(clock: string): number {
   const [hourText, minuteText] = clock.split(":");
   return Number(hourText) * 60 + Number(minuteText);
@@ -4333,6 +4324,7 @@ export class AttendanceService {
     if (Date.parse(input.occurred_at) >= Date.parse(nowIso())) {
       throw badRequest("Historical correction occurrence time must be in the past.");
     }
+    let authoritativeWorkDate: string | undefined;
     if (input.linked_regularization_request_id) {
       const request = this.repository.findRegularization(
         input.linked_regularization_request_id,
@@ -4341,6 +4333,7 @@ export class AttendanceService {
       if (request.employee_user_id !== subject.id) {
         throw forbidden("Linked regularization does not belong to the correction subject.");
       }
+      authoritativeWorkDate = request.work_date;
     }
     if (this.store.kind === "postgres") {
       if (!this.store.pgPool) throw conflict("Attendance command service is unavailable.");
@@ -4355,6 +4348,7 @@ export class AttendanceService {
         timeZone: this.timezoneForUser(subject.id, context.companyId),
         command: input,
         commandKind: "historical_correction",
+        authoritativeWorkDate,
       });
     }
     const requestHash = canonicalAttendanceRequestHash({
@@ -4362,6 +4356,7 @@ export class AttendanceService {
       actor_user_id: actor.id,
       subject_employee_user_id: subject.id,
       command_kind: "historical_correction",
+      authoritative_work_date: authoritativeWorkDate ?? null,
       ...input,
     });
     const key = `attendance.historical_correction:${context.companyId}:${actor.id}:${subject.id}:${idempotencyKey}`;
@@ -4380,6 +4375,7 @@ export class AttendanceService {
       subject.id,
       input,
       "historical_correction",
+      authoritativeWorkDate,
     );
     entries.set(key, { requestHash, response });
     return response;
@@ -4398,9 +4394,10 @@ export class AttendanceService {
       linked_regularization_request_id?: UUID;
     },
     origin: Extract<AttendancePunch["origin"], "historical_correction" | "approved_regularization">,
+    authoritativeWorkDate?: string,
   ): Record<string, unknown> {
     const timeZone = this.timezoneForUser(subjectEmployeeUserId, companyId);
-    const workDate = dateInTimeZone(input.occurred_at, timeZone);
+    const workDate = authoritativeWorkDate ?? dateInTimeZone(input.occurred_at, timeZone);
     const punch = this.repository.addPunch({
       company_id: companyId,
       employee_user_id: subjectEmployeeUserId,
@@ -5128,6 +5125,7 @@ export class AttendanceService {
             linked_regularization_request_id: request.id,
           },
           "approved_regularization",
+          request.work_date,
         );
         replacementPunchEventId = result.punch_id as UUID;
       }
@@ -5195,13 +5193,12 @@ export class AttendanceService {
         if (!([AttendancePunchEventTypes.CheckIn, AttendancePunchEventTypes.CheckOut] as string[]).includes(item.event_type)) {
           throw badRequest("Regularization items support only check-in and check-out events.");
         }
-        if (!regularizationTimestampWithinWorkDateEnvelope(
-          item.occurred_at,
-          workDate,
-          timeZone,
-        )) {
+        if (
+          item.operation === "add" &&
+          dateInTimeZone(item.occurred_at, timeZone) !== workDate
+        ) {
           throw badRequest(
-            "Requested punch timestamp falls outside the supported regularization shift window.",
+            "Requested punch timestamp falls outside the regularization work date.",
           );
         }
         const logicalKey = `${item.event_type}:${item.occurred_at}`;
@@ -5237,6 +5234,15 @@ export class AttendanceService {
         dateInTimeZone(target.occurred_at, timeZone);
       if (targetWorkDate !== workDate) {
         throw badRequest("Target punch must belong to the regularization work_date.");
+      }
+      if (
+        item.operation === "replace" && item.occurred_at &&
+        Math.abs(Date.parse(item.occurred_at) - Date.parse(target.occurred_at)) >
+          24 * 60 * 60 * 1_000
+      ) {
+        throw badRequest(
+          "Replacement punch timestamp falls outside the target punch correction window.",
+        );
       }
       if (this.store.attendanceRegularizationCorrectionApplications.some(
         (application) => application.target_punch_event_id === target.id,
@@ -5365,6 +5371,8 @@ export class AttendanceService {
            ON offline.company_id = event.company_id
           AND offline.attendance_event_id = event.id
           AND offline.sync_status IN ('accepted', 'deferred')
+         LEFT JOIN pg_timezone_names captured_timezone
+           ON captured_timezone.name=(offline.event_payload #>> '{metadata,client_timezone}')
          LEFT JOIN platform.outbox_events provisional
            ON provisional.idempotency_key='attendance.provisional.recorded:' || event.id::text
           AND provisional.event_type='attendance.provisional.recorded'
@@ -5397,6 +5405,14 @@ export class AttendanceService {
               WHEN provisional.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
                AND pg_input_is_valid(provisional.payload->>'work_date', 'date')
                 THEN provisional.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN captured_timezone.name IS NOT NULL
+                THEN to_char(
+                  timezone(captured_timezone.name,event.occurred_at),
+                  'YYYY-MM-DD'
+                )
               ELSE NULL
             END,
             CASE
@@ -5600,6 +5616,12 @@ export class AttendanceService {
           command_decision.evidence_snapshot #>> '{geo_policy,work_site_id}'
         )::uuid AS work_site_id
          FROM attendance.attendance_events event
+         LEFT JOIN attendance.offline_event_inbox offline
+           ON offline.company_id=event.company_id
+          AND offline.attendance_event_id=event.id
+          AND offline.sync_status IN ('accepted','deferred')
+         LEFT JOIN pg_timezone_names captured_timezone
+           ON captured_timezone.name=(offline.event_payload #>> '{metadata,client_timezone}')
          LEFT JOIN platform.outbox_events provisional
            ON provisional.idempotency_key='attendance.provisional.recorded:' || event.id::text
           AND provisional.event_type='attendance.provisional.recorded'
@@ -5625,6 +5647,14 @@ export class AttendanceService {
               WHEN provisional.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
                AND pg_input_is_valid(provisional.payload->>'work_date', 'date')
                 THEN provisional.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN captured_timezone.name IS NOT NULL
+                THEN to_char(
+                  timezone(captured_timezone.name,event.occurred_at),
+                  'YYYY-MM-DD'
+                )
               ELSE NULL
             END,
             CASE
@@ -5714,6 +5744,8 @@ export class AttendanceService {
            ON offline.company_id = event.company_id
           AND offline.attendance_event_id = event.id
           AND offline.sync_status IN ('accepted', 'deferred')
+         LEFT JOIN pg_timezone_names captured_timezone
+           ON captured_timezone.name=(offline.event_payload #>> '{metadata,client_timezone}')
          LEFT JOIN platform.outbox_events provisional
            ON provisional.idempotency_key='attendance.provisional.recorded:' || event.id::text
           AND provisional.event_type='attendance.provisional.recorded'
@@ -5730,6 +5762,14 @@ export class AttendanceService {
               WHEN provisional.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
                AND pg_input_is_valid(provisional.payload->>'work_date', 'date')
                 THEN provisional.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN captured_timezone.name IS NOT NULL
+                THEN to_char(
+                  timezone(captured_timezone.name,event.occurred_at),
+                  'YYYY-MM-DD'
+                )
               ELSE NULL
             END,
             to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD')

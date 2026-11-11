@@ -190,6 +190,99 @@ describe("attendance offline sync ingestion", () => {
     });
   });
 
+  it("uses the captured client timezone for legacy deferred evidence without a persisted work date", async () => {
+    const employee = await loginAs(app, "E1");
+    const companyId = employeeCompanyId(app, employee.user.id);
+    const registeredDeviceId = await insertRegisteredDevice(app, {
+      companyId,
+      userId: employee.user.id,
+    });
+    const attendanceEventId = randomUUID();
+    const capturedAt = "2026-05-20T20:30:00.000Z";
+    const originalWorkDate = workDateInTimeZone(capturedAt, "Asia/Calcutta");
+    const shiftedTimeZone = "Pacific/Honolulu";
+    const shiftedWorkDate = workDateInTimeZone(capturedAt, shiftedTimeZone);
+    expect(shiftedWorkDate).not.toBe(originalWorkDate);
+
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.attendance_events (
+         id, company_id, employee_user_id, actor_user_id, event_type,
+         source, occurred_at, received_at, schema_version, payload, payload_hash
+       ) VALUES (
+         $1,$2,$3,$3,'check_in','mobile_offline',$4,now(),1,'{}'::jsonb,NULL
+       )`,
+      [attendanceEventId, companyId, employee.user.id, capturedAt],
+    );
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.offline_event_inbox (
+         company_id, actor_user_id, employee_user_id, batch_id,
+         registered_device_id, device_snapshot, client_event_id, sequence,
+         event_hash, event_payload, attendance_event_id, sync_status,
+         verification_status, reason_code, server_received_at,
+         processed_at, response_snapshot, payroll_eligible
+       ) VALUES (
+         $1,$2,$2,$3,$4,'{}'::jsonb,$5,1,$6,$7::jsonb,$8,
+         'deferred','review_required','offline_sync.processing_deferred',
+         now(),NULL,'{}'::jsonb,false
+       )`,
+      [
+        companyId,
+        employee.user.id,
+        randomUUID(),
+        registeredDeviceId,
+        randomUUID(),
+        "a".repeat(64),
+        JSON.stringify({
+          captured_at: capturedAt,
+          metadata: { client_timezone: "Asia/Calcutta" },
+        }),
+        attendanceEventId,
+      ],
+    );
+
+    const storedEmployee = app.store.users.find((user) => user.id === employee.user.id)!;
+    const memoryTimeZone = storedEmployee.timezone;
+    const databaseTimeZone = (await app.store.pgPool!.query<{ timezone: string | null }>(
+      "SELECT timezone FROM core.users WHERE id=$1",
+      [employee.user.id],
+    )).rows[0]?.timezone ?? null;
+    storedEmployee.timezone = shiftedTimeZone;
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET timezone=$2 WHERE id=$1",
+      [employee.user.id, shiftedTimeZone],
+    );
+
+    const originalDay = await dailyCalendar(app, employee.token, originalWorkDate);
+    const shiftedDay = await dailyCalendar(app, employee.token, shiftedWorkDate);
+
+    storedEmployee.timezone = memoryTimeZone;
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET timezone=$2 WHERE id=$1",
+      [employee.user.id, databaseTimeZone],
+    );
+    expect(originalDay.statusCode, originalDay.body).toBe(200);
+    expect(shiftedDay.statusCode, shiftedDay.body).toBe(200);
+    expect(originalDay.json().self_evidence.events).toContainEqual(
+      expect.objectContaining({
+        event_type: "check_in",
+        occurred_at: capturedAt,
+        source: "mobile_offline",
+        offline: expect.objectContaining({
+          sync_status: "deferred",
+          reason_code: "offline_sync.processing_deferred",
+        }),
+      }),
+    );
+    expect(shiftedDay.json().self_evidence.events.filter(
+      (item: { source: string }) => item.source === "mobile_offline",
+    )).toHaveLength(0);
+    expect((await app.store.pgPool!.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM platform.outbox_events
+        WHERE aggregate_id=$1 AND event_type='attendance.provisional.recorded'`,
+      [attendanceEventId],
+    )).rows[0]?.count).toBe("0");
+  });
+
   it("exposes selected-day offline evidence to managers without decision or sensitive fields", async () => {
     const employee = await loginAs(app, "E1");
     const manager = await loginAs(app, "D1");

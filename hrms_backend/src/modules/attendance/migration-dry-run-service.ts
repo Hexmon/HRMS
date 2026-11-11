@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import type { UUID } from "#shared";
+import { validTimeZoneOrUtc, type UUID } from "#shared";
 import { canonicalJsonHash } from "./canonical-json.js";
 import {
   AttendanceProjectionReplayError,
@@ -257,7 +257,12 @@ async function loadDryRunContext(
   if (!row) {
     throw new AttendanceProjectionReplayError("projection_context_missing", "Company or employee context is unavailable.");
   }
-  return { employeeTimeZone: row.employee_timezone ?? row.company_timezone ?? "UTC" };
+  return {
+    employeeTimeZone: validTimeZoneOrUtc(
+      row.employee_timezone,
+      row.company_timezone,
+    ),
+  };
 }
 
 async function loadLegacyPunchSources(
