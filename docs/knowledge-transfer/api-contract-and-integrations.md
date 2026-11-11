@@ -58,7 +58,7 @@ pnpm api:docs:verify
 pnpm api:consumer:verify
 ```
 
-`api:docs:generate` builds the Fastify app in memory mode, writes OpenAPI output, generates the endpoint index, and synchronizes all three client-side mirrors. `api:docs:verify` fails when any mirror differs byte-for-byte from its backend source.
+`api:docs:generate` builds the Fastify app in memory mode, writes OpenAPI output, generates the endpoint index, and synchronizes all three client-side mirrors. `api:docs:verify` fails when the canonical file differs from the live Fastify schema or any mirror differs byte-for-byte from its backend source.
 
 ## Frontend Consumption Pattern
 

@@ -1771,6 +1771,44 @@ describe("API contracts", () => {
     }
   });
 
+  it("keeps the runtime OpenAPI contract and every committed mirror byte-identical", async () => {
+    const runtimeContract = `${JSON.stringify(await openApiSpec(app), null, 2)}\n`;
+    const canonicalPath = join(process.cwd(), "docs/api/openapi.json");
+    const canonicalContract = readFileSync(canonicalPath, "utf8");
+
+    expect(
+      canonicalContract,
+      "canonical OpenAPI differs from the runtime contract",
+    ).toBe(runtimeContract);
+
+    const openApiMirrors = [
+      "docs/api/frontend-contract/openapi.json",
+      "../hrms-client/docs/api/openapi.json",
+      "../hrms-client/docs/api/frontend-contract/openapi.json",
+    ];
+    for (const mirrorPath of openApiMirrors) {
+      expect(
+        readFileSync(join(process.cwd(), mirrorPath), "utf8"),
+        `${mirrorPath} is stale`,
+      ).toBe(canonicalContract);
+    }
+
+    const backendEndpointIndex = readFileSync(
+      join(process.cwd(), "docs/api/frontend-contract/ENDPOINT_INDEX.md"),
+      "utf8",
+    );
+    expect(
+      readFileSync(
+        join(
+          process.cwd(),
+          "../hrms-client/docs/api/frontend-contract/ENDPOINT_INDEX.md",
+        ),
+        "utf8",
+      ),
+      "client endpoint index is stale",
+    ).toBe(backendEndpointIndex);
+  });
+
   it("documents attendance reporting evidence fields and hardened export columns", async () => {
     const spec = await openApiSpec(app);
     const reportSerialized = JSON.stringify(

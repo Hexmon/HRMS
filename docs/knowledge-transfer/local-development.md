@@ -152,7 +152,7 @@ This updates:
 - `hrms-client/docs/api/frontend-contract/openapi.json`
 - `hrms-client/docs/api/frontend-contract/ENDPOINT_INDEX.md`
 
-The generator synchronizes the frontend mirrors under `hrms-client/docs/api/`. `pnpm api:docs:verify` fails if any generated mirror is missing or stale.
+The generator synchronizes the frontend mirrors under `hrms-client/docs/api/`. `pnpm api:docs:verify` fails if the canonical file differs from the live Fastify schema or any generated mirror is missing or stale.
 
 ## Local Troubleshooting
 

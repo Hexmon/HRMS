@@ -274,6 +274,7 @@ await app.ready();
 try {
   const spec = app.swagger() as OpenApiDocument;
   verifySpec(spec);
+  verifyGeneratedSpec(spec);
   verifyStandaloneBoundary();
   verifyNoSecrets(spec);
   verifyContractMirrors();
@@ -621,6 +622,19 @@ function verifyNoSecrets(spec: OpenApiDocument): void {
     if (pattern.test(serialized)) {
       failures.push(`OpenAPI examples include forbidden secret-like value matching ${pattern}.`);
     }
+  }
+}
+
+function verifyGeneratedSpec(spec: OpenApiDocument): void {
+  const generatedSpec = `${JSON.stringify(spec, null, 2)}\n`;
+  const canonicalPath = join(process.cwd(), "docs/api/openapi.json");
+  try {
+    if (readFileSync(canonicalPath, "utf8") !== generatedSpec) {
+      failures.push("docs/api/openapi.json is stale; run pnpm api:docs:generate and commit every generated mirror.");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    failures.push(`docs/api/openapi.json cannot be verified against the runtime contract: ${message}`);
   }
 }
 
