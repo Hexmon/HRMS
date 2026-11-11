@@ -1,6 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/shared/api";
 import { AssetsProvider, useAssets } from "./assets-store";
 
 const auth = vi.hoisted(() => ({ current: { id: "employee-a", name: "Employee A" } }));
@@ -17,10 +18,11 @@ vi.mock("@/domains/assets", async (importOriginal) => {
 });
 
 function Snapshot() {
-  const { assets, error, loading } = useAssets();
+  const { assets, requests, error, loading } = useAssets();
   return (
     <>
       <output data-testid="assets">{assets.map((asset) => asset.id).join(",")}</output>
+      <output data-testid="requests">{requests.map((request) => request.id).join(",")}</output>
       <output data-testid="error">{error?.message ?? ""}</output>
       <output data-testid="loading">{String(loading)}</output>
     </>
@@ -92,5 +94,50 @@ describe("API-backed employee asset visibility", () => {
       expect(screen.getByTestId("assets")).not.toHaveTextContent("employee-a-asset"),
     );
     expect(screen.getByTestId("assets")).toHaveTextContent("");
+  });
+
+  it("hides a previously successful asset result after the current fetch is forbidden", async () => {
+    myAssets
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "cached-asset",
+            asset_type: "Laptop",
+            name: "Device",
+            status: "Assigned",
+            assigned_to_user_id: "employee-a",
+          },
+        ],
+      })
+      .mockRejectedValueOnce(
+        new ApiError({ status: 403, code: "FORBIDDEN", message: "Asset access removed" }),
+      );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mount(queryClient);
+    await waitFor(() => expect(screen.getByTestId("assets")).toHaveTextContent("cached-asset"));
+    await queryClient.invalidateQueries({ queryKey: ["api", "assets"] });
+    await waitFor(() =>
+      expect(screen.getByTestId("error")).toHaveTextContent("Asset access removed"),
+    );
+    expect(screen.getByTestId("assets")).toHaveTextContent("");
+  });
+
+  it("hides cached requests when the current request feed is forbidden", async () => {
+    myAssets.mockResolvedValue({ items: [] });
+    myRequests
+      .mockResolvedValueOnce({
+        items: [{ id: "cached-request", status: "pending", requester_user_id: "employee-a" }],
+      })
+      .mockRejectedValueOnce(
+        new ApiError({ status: 403, code: "FORBIDDEN", message: "Request access removed" }),
+      );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mount(queryClient);
+    await waitFor(() => expect(screen.getByTestId("requests")).toHaveTextContent("cached-request"));
+    await queryClient.invalidateQueries({ queryKey: ["api", "assets"] });
+    await waitFor(() =>
+      expect(screen.getByTestId("error")).toHaveTextContent("Request access removed"),
+    );
+    expect(screen.getByTestId("requests")).toHaveTextContent("");
   });
 });

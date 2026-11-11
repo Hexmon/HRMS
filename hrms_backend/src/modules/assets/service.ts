@@ -429,8 +429,10 @@ export class AssetService {
     const asset = this.repository.find(ticket.asset_id);
     const assignment = this.repository.activeAssignment(asset.id);
     if (
+      ticket.assignment_id === null ||
       asset.current_assigned_user_id !== ticket.employee_user_id ||
-      assignment?.assigned_to_user_id !== ticket.employee_user_id
+      assignment?.assigned_to_user_id !== ticket.employee_user_id ||
+      assignment.id !== ticket.assignment_id
     ) {
       throw conflict("Recovery ticket no longer matches the current asset assignment. HR review is required.", { id, asset_id: asset.id });
     }

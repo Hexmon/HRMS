@@ -64899,6 +64899,7 @@
                           "id",
                           "employee_user_id",
                           "asset_id",
+                          "assignment_id",
                           "status",
                           "version",
                           "created_at"
@@ -64921,6 +64922,13 @@
                             "format": "uuid",
                             "description": "Asset UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "assignment_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Custody assignment UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                            "nullable": true
                           },
                           "status": {
                             "type": "string",
@@ -65448,6 +65456,7 @@
                         "id",
                         "employee_user_id",
                         "asset_id",
+                        "assignment_id",
                         "status",
                         "version",
                         "created_at"
@@ -65470,6 +65479,13 @@
                           "format": "uuid",
                           "description": "Asset UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "assignment_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Custody assignment UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
                         },
                         "status": {
                           "type": "string",

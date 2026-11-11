@@ -2166,6 +2166,7 @@ export const assetRecoveryTickets = assets.table("asset_recovery_tickets", {
   id: uuidPk.defaultRandom(),
   employeeUserId: uuid("employee_user_id").notNull(),
   assetId: uuid("asset_id").notNull(),
+  assignmentId: uuid("assignment_id").references(() => assetAssignments.id),
   status: text("status").notNull(),
   settlementStatus: text("settlement_status"),
   settlementAmount: numeric("settlement_amount", { precision: 12, scale: 2 }),

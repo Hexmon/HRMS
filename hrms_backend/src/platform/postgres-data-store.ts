@@ -2156,6 +2156,7 @@ class PostgresPersistence {
       id: row.id,
       employee_user_id: row.employee_user_id,
       asset_id: row.asset_id,
+      assignment_id: row.assignment_id,
       status: row.status,
       settlement_status: row.settlement_status,
       settlement_amount: asMoney(row.settlement_amount),
@@ -4219,12 +4220,13 @@ class PostgresPersistence {
     for (const ticket of source.assetRecoveryTickets) {
       await client.query(
         `INSERT INTO assets.asset_recovery_tickets (
-          id, employee_user_id, asset_id, status, settlement_status, settlement_amount,
+          id, employee_user_id, asset_id, assignment_id, status, settlement_status, settlement_amount,
           settlement_remarks, settled_by_user_id, settled_at, version, created_at, updated_at
         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ON CONFLICT (id) DO UPDATE
-         SET status = EXCLUDED.status,
+         SET assignment_id = EXCLUDED.assignment_id,
+             status = EXCLUDED.status,
              settlement_status = EXCLUDED.settlement_status,
              settlement_amount = EXCLUDED.settlement_amount,
              settlement_remarks = EXCLUDED.settlement_remarks,
@@ -4236,6 +4238,7 @@ class PostgresPersistence {
           ticket.id,
           ticket.employee_user_id,
           ticket.asset_id,
+          ticket.assignment_id,
           ticket.status,
           ticket.settlement_status,
           ticket.settlement_amount,

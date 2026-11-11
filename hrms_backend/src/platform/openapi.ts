@@ -3346,6 +3346,7 @@ const assetRecoveryTicketSchema = {
     "id",
     "employee_user_id",
     "asset_id",
+    "assignment_id",
     "status",
     "version",
     "created_at",
@@ -3354,6 +3355,7 @@ const assetRecoveryTicketSchema = {
     id: uuid("Recovery ticket UUID"),
     employee_user_id: uuid("Employee user UUID"),
     asset_id: uuid("Asset UUID"),
+    assignment_id: { ...uuid("Custody assignment UUID"), nullable: true },
     status: {
       type: "string",
       enum: ["open", "in_progress", "closed"],

@@ -345,6 +345,7 @@ export interface AssetRecoveryTicketRecord {
   id: UUID;
   employee_user_id: UUID;
   asset_id: UUID;
+  assignment_id: UUID | null;
   status: string;
   settlement_status: AssetRecoverySettlementStatus | null;
   settlement_amount: string | null;

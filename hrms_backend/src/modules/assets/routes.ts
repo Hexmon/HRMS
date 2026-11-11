@@ -57,15 +57,23 @@ function authorizeOwnRequest(store: DataStore, actor: AuthUser, id: string): voi
 }
 
 function authorizeAcknowledgement(store: DataStore, actor: AuthUser, id: string, replayBody?: unknown): void {
-  if (!store.assets.some((item) => item.id === id && !item.deleted_at && (item.current_assigned_user_id === actor.id || actor.roles.includes(Roles.Admin)))) {
+  const asset = store.assets.find((item) => item.id === id && !item.deleted_at);
+  if (!asset) throw forbidden("Only the assigned employee can acknowledge this asset.");
+  if (replayBody !== undefined) {
     const body = replayBody && typeof replayBody === "object" ? replayBody as Record<string, unknown> : null;
     const acknowledgement = body?.acknowledgement && typeof body.acknowledgement === "object"
       ? body.acknowledgement as Record<string, unknown> : null;
-    if (
-      acknowledgement?.asset_id === id && acknowledgement.employee_user_id === actor.id &&
-      typeof acknowledgement.id === "string" &&
-      store.assetAcknowledgements.some((item) => item.id === acknowledgement.id && item.asset_id === id && item.employee_user_id === actor.id)
-    ) return;
+    const recorded = store.assetAcknowledgements.find((item) =>
+      item.id === acknowledgement?.id && item.asset_id === id && item.employee_user_id === actor.id
+    );
+    const originalEmployeeAssignment = recorded?.assignment_id && store.assetAssignments.some((assignment) =>
+      assignment.id === recorded.assignment_id && assignment.asset_id === id && assignment.assigned_to_user_id === actor.id
+    );
+    if (acknowledgement?.asset_id === id && recorded &&
+        (actor.roles.includes(Roles.Admin) || originalEmployeeAssignment)) return;
+    throw forbidden("Only the original assigned employee or a current Admin can replay this acknowledgement.");
+  }
+  if (asset.current_assigned_user_id !== actor.id && !actor.roles.includes(Roles.Admin)) {
     throw forbidden("Only the assigned employee can acknowledge this asset.");
   }
 }

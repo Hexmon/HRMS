@@ -309,6 +309,77 @@ describe("asset transaction boundary", () => {
     expect(active.rows).toEqual([{ assigned_to_user_id: seedIds.employee2, status: "active" }]);
   });
 
+  it("binds recovery to the original assignment even when the same employee is assigned again", async () => {
+    const manager = await loginAs(first, "AST");
+    const headers = () => ({ ...authHeader(manager.token), "Idempotency-Key": randomUUID() });
+    const inventory = await first.inject({ method: "GET", url: "/api/v1/assets", headers: authHeader(manager.token) });
+    const original = inventory.json().items[0] as { id: string; version: number };
+    const firstAssignment = await first.inject({ method: "POST", url: `/api/v1/assets/${original.id}/assign`, headers: headers(), payload: { assigned_to_user_id: seedIds.employee1, expected_version: original.version } });
+    expect(firstAssignment.statusCode).toBe(200);
+    const originalAssignment = await first.store.pgPool!.query<{ id: string }>("SELECT id FROM assets.asset_assignments WHERE asset_id = $1 AND status = 'active'", [original.id]);
+    expect((await first.inject({ method: "POST", url: "/api/v1/assets/events/employee-terminated", headers: headers(), payload: { employee_user_id: seedIds.employee1 } })).statusCode).toBe(200);
+    const ticketResult = await first.store.pgPool!.query<{ id: string; assignment_id: string; version: number }>("SELECT id, assignment_id, version FROM assets.asset_recovery_tickets WHERE asset_id = $1 AND status = 'open'", [original.id]);
+    const ticket = ticketResult.rows[0]!;
+    expect(ticket.assignment_id).toBe(originalAssignment.rows[0]!.id);
+    const pending = await first.inject({ method: "GET", url: `/api/v1/assets/${original.id}`, headers: authHeader(manager.token) });
+    const returned = await first.inject({ method: "POST", url: `/api/v1/assets/${original.id}/return`, headers: headers(), payload: { expected_version: pending.json().version } });
+    expect(returned.statusCode).toBe(200);
+    const maintenance = await first.inject({ method: "POST", url: `/api/v1/assets/${original.id}/maintenance`, headers: headers(), payload: { maintenance_type: "inspection", started_on: "2026-11-11", status: "completed", expected_version: returned.json().version } });
+    expect(maintenance.statusCode).toBe(200);
+    const secondAssignment = await first.inject({ method: "POST", url: `/api/v1/assets/${original.id}/assign`, headers: headers(), payload: { assigned_to_user_id: seedIds.employee1, expected_version: maintenance.json().asset.version } });
+    expect(secondAssignment.statusCode).toBe(200);
+    const currentAssignment = await first.store.pgPool!.query<{ id: string }>("SELECT id FROM assets.asset_assignments WHERE asset_id = $1 AND status = 'active'", [original.id]);
+    expect(currentAssignment.rows[0]!.id).not.toBe(ticket.assignment_id);
+    const stale = await first.inject({ method: "POST", url: `/api/v1/assets/recovery-queue/${ticket.id}/settlement`, headers: headers(), payload: { settlement_status: "recovered", expected_version: ticket.version } });
+    expect(stale.statusCode).toBe(409);
+    const durable = await first.store.pgPool!.query<{ status: string; current_assigned_user_id: string; version: number }>("SELECT status, current_assigned_user_id, version FROM assets.assets WHERE id = $1", [original.id]);
+    expect(durable.rows[0]).toMatchObject({ status: "Assigned", current_assigned_user_id: seedIds.employee1, version: secondAssignment.json().version });
+    const ticketAfter = await first.store.pgPool!.query<{ status: string; version: number }>("SELECT status, version FROM assets.asset_recovery_tickets WHERE id = $1", [ticket.id]);
+    expect(ticketAfter.rows[0]).toEqual({ status: "open", version: ticket.version });
+  });
+
+  it("fails closed when a legacy recovery ticket cannot be bound to an assignment", async () => {
+    const manager = await loginAs(first, "AST");
+    const headers = () => ({ ...authHeader(manager.token), "Idempotency-Key": randomUUID() });
+    const inventory = await first.inject({ method: "GET", url: "/api/v1/assets", headers: authHeader(manager.token) });
+    const asset = inventory.json().items[0] as { id: string; version: number };
+    expect((await first.inject({ method: "POST", url: `/api/v1/assets/${asset.id}/assign`, headers: headers(), payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version } })).statusCode).toBe(200);
+    expect((await first.inject({ method: "POST", url: "/api/v1/assets/events/employee-terminated", headers: headers(), payload: { employee_user_id: seedIds.employee1 } })).statusCode).toBe(200);
+    const ticket = await first.store.pgPool!.query<{ id: string; version: number }>("SELECT id, version FROM assets.asset_recovery_tickets WHERE asset_id = $1 AND status = 'open'", [asset.id]);
+    const client = await first.store.pgPool!.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL hrms.asset_writer_v2 = 'on'");
+      await client.query("UPDATE assets.asset_recovery_tickets SET assignment_id = NULL WHERE id = $1", [ticket.rows[0]!.id]);
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+    const rejected = await first.inject({ method: "POST", url: `/api/v1/assets/recovery-queue/${ticket.rows[0]!.id}/settlement`, headers: headers(), payload: { settlement_status: "recovered", expected_version: ticket.rows[0]!.version } });
+    expect(rejected.statusCode).toBe(409);
+    const durable = await first.store.pgPool!.query<{ status: string; current_assigned_user_id: string }>("SELECT status, current_assigned_user_id FROM assets.assets WHERE id = $1", [asset.id]);
+    expect(durable.rows[0]).toEqual({ status: "Return Pending", current_assigned_user_id: seedIds.employee1 });
+    const openTicket = await first.store.pgPool!.query<{ status: string; assignment_id: string | null }>("SELECT status, assignment_id FROM assets.asset_recovery_tickets WHERE id = $1", [ticket.rows[0]!.id]);
+    expect(openTicket.rows[0]).toEqual({ status: "open", assignment_id: null });
+  });
+
+  it("denies historical Admin acknowledgement replay after durable Admin role removal", async () => {
+    const manager = await loginAs(first, "AST");
+    const admin = await loginAs(first, "ADM");
+    const inventory = await first.inject({ method: "GET", url: "/api/v1/assets", headers: authHeader(manager.token) });
+    const asset = inventory.json().items[0] as { id: string; version: number };
+    const assigned = await first.inject({ method: "POST", url: `/api/v1/assets/${asset.id}/assign`, headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() }, payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version } });
+    expect(assigned.statusCode).toBe(200);
+    const acknowledgement = { method: "POST" as const, url: `/api/v1/assets/${asset.id}/acknowledgements`, headers: { ...authHeader(admin.token), "Idempotency-Key": randomUUID() }, payload: { acknowledgement_type: "received", expected_version: assigned.json().version } };
+    const original = await first.inject(acknowledgement);
+    expect(original.statusCode).toBe(200);
+    expect((await first.inject(acknowledgement)).statusCode).toBe(200);
+    await first.store.pgPool!.query("UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = $2", [seedIds.admin, Roles.Admin]);
+    expect((await first.inject(acknowledgement)).statusCode).toBe(403);
+    const durable = await first.store.pgPool!.query<{ count: string }>("SELECT count(*)::text AS count FROM assets.asset_acknowledgements WHERE asset_id = $1", [asset.id]);
+    expect(durable.rows[0]?.count).toBe("1");
+  });
+
   it("replays a historical employee acknowledgement after reassignment without allowing a new one", async () => {
     const manager = await loginAs(first, "AST");
     const employee = await loginAs(first, "E1");

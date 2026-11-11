@@ -2,7 +2,7 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assetsApi, mapApiAssetRequests, mapApiAssets } from "@/domains/assets";
 import { useAuth } from "@/lib/auth";
-import { isUuid, pageItems, useApiRouteEnabled } from "@/shared/api";
+import { ApiError, isUuid, pageItems, useApiRouteEnabled } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import {
   ASSETS as SEED_ASSETS,
@@ -19,6 +19,10 @@ import {
 
 const A_KEY = "hawkaii_assets_v1";
 const R_KEY = "hawkaii_asset_requests_v1";
+
+function authorizationDenied(error: unknown): error is ApiError {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
 
 interface Ctx {
   assets: Asset[];
@@ -251,15 +255,20 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") }),
   });
 
-  const hasApiResult = apiAssetsQuery.data !== undefined;
+  const assetDenied = authorizationDenied(apiAssetsQuery.error);
+  const requestDenied =
+    authorizationDenied(apiMyRequestsQuery.error) ||
+    (isAssetAdmin && authorizationDenied(apiQueueRequestsQuery.error));
+  const hasApiResult = apiAssetsQuery.data !== undefined && !assetDenied;
   const visibleAssets = React.useMemo(() => {
     if (!apiEnabled) return assets;
     if (!hasApiResult) return [];
     return apiAssetsQuery.data ?? [];
   }, [apiAssetsQuery.data, apiEnabled, assets, hasApiResult]);
   const hasRequestApiResult =
-    apiMyRequestsQuery.data !== undefined ||
-    (isAssetAdmin && apiQueueRequestsQuery.data !== undefined);
+    !requestDenied &&
+    (apiMyRequestsQuery.data !== undefined ||
+      (isAssetAdmin && apiQueueRequestsQuery.data !== undefined));
   const visibleRequests = React.useMemo(() => {
     if (!apiEnabled) return requests;
     if (!hasRequestApiResult) return [];
@@ -276,12 +285,16 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     requests,
   ]);
   const apiError =
-    apiEnabled && !hasApiResult && apiAssetsQuery.error instanceof Error
+    apiEnabled && (assetDenied || !hasApiResult) && apiAssetsQuery.error instanceof Error
       ? apiAssetsQuery.error
       : null;
   const requestError =
-    apiEnabled && !hasRequestApiResult && apiMyRequestsQuery.error instanceof Error
-      ? apiMyRequestsQuery.error
+    apiEnabled &&
+    !hasRequestApiResult &&
+    (apiMyRequestsQuery.error instanceof Error || apiQueueRequestsQuery.error instanceof Error)
+      ? apiMyRequestsQuery.error instanceof Error
+        ? apiMyRequestsQuery.error
+        : (apiQueueRequestsQuery.error as Error)
       : null;
   const loading =
     apiEnabled &&
