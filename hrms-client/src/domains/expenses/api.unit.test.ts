@@ -7,13 +7,14 @@ vi.mock("@/shared/api", async (importOriginal) => {
 });
 
 import { apiRequest, setApiAccessToken } from "@/shared/api";
+import type { ApiRecord, ExpectedVersionBody } from "@/shared/api";
 import { expensesApi } from "./api";
 
 function tokenFor(actor: string): string {
   return `header.${btoa(JSON.stringify({ sub: actor }))}.signature`;
 }
 
-describe("expense Finance API adapter", () => {
+describe("expense command API adapter", () => {
   beforeEach(() => {
     vi.mocked(apiRequest)
       .mockReset()
@@ -24,6 +25,23 @@ describe("expense Finance API adapter", () => {
   });
 
   it.each([
+    ["create", { task_title: "Travel" }, "/api/v1/expenses"],
+    ["submit", { expected_version: 1 }, "/api/v1/expenses/ticket-a/submit"],
+    [
+      "withdraw",
+      { expected_version: 1, remarks: "Cancelled" },
+      "/api/v1/expenses/ticket-a/withdraw",
+    ],
+    [
+      "clarification",
+      { expected_version: 1, message: "Receipt attached" },
+      "/api/v1/expenses/ticket-a/clarifications",
+    ],
+    [
+      "manager",
+      { expected_version: 1, decision: "approve" },
+      "/api/v1/expenses/ticket-a/manager/verify",
+    ],
     [
       "approve",
       { expected_version: 1, decision: "verify" },
@@ -39,10 +57,19 @@ describe("expense Finance API adapter", () => {
       { expected_version: 3, actual_amount: "100.00" },
       "/api/v1/expenses/ticket-a/settlement",
     ],
+    ["bills", { expected_version: 4 }, "/api/v1/expenses/ticket-a/bills"],
   ])("wires the %s command route, body, and idempotency header", async (label, body, path) => {
-    if (label === "approve") await expensesApi.financeApprove("ticket-a", body);
-    else if (label === "payment") await expensesApi.recordPayment("ticket-a", body);
-    else await expensesApi.settle("ticket-a", body);
+    const recordBody = body as ApiRecord;
+    const versionBody = body as ExpectedVersionBody;
+    if (label === "create") await expensesApi.create(recordBody);
+    else if (label === "submit") await expensesApi.submit("ticket-a", versionBody);
+    else if (label === "withdraw") await expensesApi.withdraw("ticket-a", versionBody);
+    else if (label === "clarification") await expensesApi.addClarification("ticket-a", recordBody);
+    else if (label === "manager") await expensesApi.managerVerify("ticket-a", versionBody);
+    else if (label === "bills") await expensesApi.submitBills("ticket-a", recordBody);
+    else if (label === "approve") await expensesApi.financeApprove("ticket-a", versionBody);
+    else if (label === "payment") await expensesApi.recordPayment("ticket-a", versionBody);
+    else await expensesApi.settle("ticket-a", versionBody);
     expect(apiRequest).toHaveBeenCalledOnce();
     const [actualPath, options] = vi.mocked(apiRequest).mock.calls[0] ?? [];
     expect(actualPath).toBe(path);

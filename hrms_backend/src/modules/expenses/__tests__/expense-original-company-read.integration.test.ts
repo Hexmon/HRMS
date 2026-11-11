@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { createJwt } from "#auth";
 import { authHeader, loginAs } from "#testing";
-import { buildRealApp } from "../../../__tests__/real-infra.js";
+import { buildRealApp, buildRealAppReplica } from "../../../__tests__/real-infra.js";
 import type {
   AttendanceDayRecord,
   AttendanceGeoFallbackReview,
@@ -76,7 +76,13 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
          VALUES ($1, $2, $3, 'Employee', $4, 'Project', 'Project Travel',
                  'Historical A travel', 'Fixture', CURRENT_DATE, CURRENT_DATE,
                  100, 'Advance', $5, $6, 'Manager Verified',
-                 jsonb_build_object('company_id', $7::text), $7::uuid, 'typed_creation')`,
+                 jsonb_build_object(
+                   'company_id', $7::text,
+                   'requester_snapshot', (
+                     SELECT jsonb_build_object('employee_code',employee_code,'full_name',full_name)
+                     FROM core.users WHERE id=$3
+                   )
+                 ), $7::uuid, 'typed_creation')`,
         [ticketId, `EXP-READ-${ticketId}`, employee.user.id, employee.user.department_id,
           manager.user.id, finance.user.id, companyA],
       );
@@ -149,8 +155,12 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     const filteredFinance = await app.inject({ method: "GET", url: "/api/v1/expenses/queue/finance?page=1&page_size=1&amount_min=200.00", headers: authHeader(finance.token) });
     expect(filteredFinance.statusCode).toBe(200);
     expect(filteredFinance.json().total).toBe(0);
-    expect((await app.inject({ method: "GET", url: "/api/v1/expenses/queue/finance?document_status=missing", headers: authHeader(finance.token) })).statusCode).toBe(409);
-    expect((await app.inject({ method: "GET", url: "/api/v1/expenses/metadata", headers: authHeader(employee.token) })).statusCode).toBe(409);
+    const missingDocumentQueue = await app.inject({ method: "GET", url: "/api/v1/expenses/queue/finance?document_status=missing", headers: authHeader(finance.token) });
+    expect(missingDocumentQueue.statusCode).toBe(200);
+    expect(missingDocumentQueue.json().items.map((item: { id: string }) => item.id)).toEqual([ticketId]);
+    const metadata = await app.inject({ method: "GET", url: "/api/v1/expenses/metadata", headers: authHeader(employee.token) });
+    expect(metadata.statusCode).toBe(200);
+    expect(metadata.json().selectors).toEqual({ projects: [], clients: [] });
     expect((await app.inject({ method: "GET", url: `/api/v1/expenses/${ticketId}`, headers: authHeader(unrelated.token) })).statusCode).toBe(403);
     for (const oversight of [admin, auditor]) {
       expect((await app.inject({ method: "GET", url: `/api/v1/expenses/${ticketId}`, headers: authHeader(oversight.token) })).statusCode).toBe(200);
@@ -185,10 +195,20 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     const audit = await app.inject({ method: "GET", url: `/api/v1/expenses/${ticketId}/audit?page=1&page_size=10`, headers: authHeader(finance.token) });
     expect(audit.statusCode).toBe(200);
     expect(audit.json().total).toBe(1);
-    const blockedMutation = await app.inject({ method: "POST", url: "/api/v1/expenses", headers: authHeader(employee.token), payload: {} });
-    expect(blockedMutation.statusCode).toBe(409);
+    const invalidMutationState = async () => (await pool.query(
+      `SELECT
+        (SELECT count(*)::int FROM expenses.expense_tickets) AS tickets,
+        (SELECT count(*)::int FROM expenses.expense_audit_logs) AS audits,
+        (SELECT count(*)::int FROM platform.outbox_events) AS outbox,
+        (SELECT count(*)::int FROM platform.notifications) AS notifications`,
+    )).rows[0];
+    const invalidMutationBefore = await invalidMutationState();
+    const invalidMutation = await app.inject({ method: "POST", url: "/api/v1/expenses", headers: {
+      ...authHeader(employee.token), "idempotency-key": `invalid-create-${ticketId}`,
+    }, payload: {} });
+    expect(invalidMutation.statusCode).toBe(400);
     expect((await app.inject({ method: "POST", url: "/api/v1/expenses", payload: {} })).statusCode).toBe(401);
-    expect(app.store.tickets).toHaveLength(0);
+    expect(await invalidMutationState()).toEqual(invalidMutationBefore);
     for (const [method, path] of [
       ["GET", `/api/v1/documents/${receiptId}`],
       ["POST", `/api/v1/documents/${receiptId}/download-url`],
@@ -945,13 +965,42 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     const aFinanceQueueAgain = await app.inject({ method: "GET", url: "/api/v1/expenses/queue/finance", headers: authHeader(finance.token) });
     expect(aFinanceQueueAgain.statusCode).toBe(200);
     expect(aFinanceQueueAgain.json().items.map((row: { id: string }) => row.id)).toEqual([ticketId]);
+    const nameCollisionUserId = randomUUID();
+    await pool.query(
+      `INSERT INTO core.users
+        (id,employee_code,email,full_name,hierarchy_path,employment_status,department_id)
+       VALUES ($1,$2,$3,$4,'collision','active',$5)`,
+      [nameCollisionUserId, `COL-${nameCollisionUserId}`, `collision-${nameCollisionUserId}@example.test`,
+        employee.user.full_name, companyBDepartmentId],
+    );
+    await pool.query(
+      `INSERT INTO platform.user_session_preferences
+        (user_id,active_role,company_id,landing_page)
+       VALUES ($1,'Employee',$2,'/dashboard')`,
+      [nameCollisionUserId, companyB],
+    );
+    const historicalRequesterFilter = await app.inject({
+      method: "GET",
+      url: `/api/v1/expenses/queue/finance?requester=${encodeURIComponent(employee.user.full_name.toUpperCase())}&page=1&page_size=1`,
+      headers: authHeader(finance.token),
+    });
+    expect(historicalRequesterFilter.statusCode, historicalRequesterFilter.body).toBe(200);
+    expect(historicalRequesterFilter.json()).toMatchObject({ total: 1, page: 1, page_size: 1 });
+    expect(historicalRequesterFilter.json().items[0].id).toBe(ticketId);
     const scoped = await app.store.persistence?.expenseReadContext?.(employee.user.id, ticketId);
     expect(scoped?.store.tickets.map((row) => row.id)).toEqual([ticketId]);
     expect(scoped?.store.lineItems).toHaveLength(1);
     expect(scoped?.store.users.some((row) => row.id === finance.user.id)).toBe(false);
     expect(scoped?.store.userSessionPreferences).toHaveLength(0);
     expect(scoped?.store.companyProfiles).toHaveLength(0);
-    expect(scoped?.store.documents).toHaveLength(0);
+    expect(scoped?.store.documents.map((document) => document.id).sort()).toEqual(
+      scoped?.store.expenseDocuments.map((document) => document.document_id).sort(),
+    );
+    expect(scoped?.store.documents.every(
+      (document) =>
+        document.business_object_type === "expense_ticket" &&
+        document.business_object_id === ticketId,
+    )).toBe(true);
     const financeAfterTransfer = await app.inject({ method: "GET", url: `/api/v1/expenses/${ticketId}/finance-detail`, headers: authHeader(finance.token) });
     expect(financeAfterTransfer.statusCode).toBe(200);
     expect(financeAfterTransfer.json().ticket.requester_name).toBeNull();
@@ -993,7 +1042,7 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     expect(ownDashboard.statusCode).toBe(200);
     expect(ownDashboard.json().queue_counts.my_tickets).toBe(3);
 
-    const second = await buildRealApp({ reset: false });
+    const second = await buildRealAppReplica(app);
     await second.ready();
     try {
       const pendingBootstrapUserId = randomUUID();
@@ -1979,7 +2028,7 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
       "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=ANY($1::uuid[])",
       [[admin.user.id, auditor.user.id], companyA],
     );
-    commandReader = await buildRealApp({ reset: false });
+    commandReader = await buildRealAppReplica(app);
     await commandReader.ready();
     const conflictingLegacyAudit = await pool.connect();
     try {
@@ -2693,7 +2742,7 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
     } catch (error) {
       await fixture.query("ROLLBACK"); throw error;
     } finally { fixture.release(); }
-    const secondWriter = await buildRealApp({ reset: false });
+    const secondWriter = await buildRealAppReplica(app);
     await secondWriter.ready();
     try {
       const raceUrl = `/api/v1/expenses/${raceTicketId}/finance/approve`;

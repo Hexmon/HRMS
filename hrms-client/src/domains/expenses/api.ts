@@ -2,6 +2,12 @@ import { apiRequest } from "@/shared/api";
 import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } from "@/shared/api";
 import { withExpenseCommandKey } from "./command-key";
 
+export interface ExpenseCommandResult {
+  id: string;
+  status: string;
+  version: number;
+}
+
 export const expensesApi = {
   metadata() {
     return apiRequest<ApiRecord>("/api/v1/expenses/metadata");
@@ -10,7 +16,13 @@ export const expensesApi = {
     return apiRequest<ApiRecord>("/api/v1/expenses/dashboard-summary", { query });
   },
   create(input: ApiRecord) {
-    return apiRequest<ApiRecord>("/api/v1/expenses", { method: "POST", body: input });
+    return withExpenseCommandKey("new", "create", input, (key) =>
+      apiRequest<ExpenseCommandResult>("/api/v1/expenses", {
+        method: "POST",
+        body: input,
+        headers: { "Idempotency-Key": key },
+      }),
+    );
   },
   listMine(query: PageQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/expenses/my", { query });
@@ -22,19 +34,31 @@ export const expensesApi = {
     return apiRequest<ApiRecord>(`/api/v1/expenses/${id}`, { method: "PATCH", body: input });
   },
   submit(id: string, input: ExpectedVersionBody) {
-    return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/submit`, { method: "POST", body: input });
+    return withExpenseCommandKey(id, "submit", input, (key) =>
+      apiRequest<ExpenseCommandResult>(`/api/v1/expenses/${id}/submit`, {
+        method: "POST",
+        body: input,
+        headers: { "Idempotency-Key": key },
+      }),
+    );
   },
   withdraw(id: string, input: ExpectedVersionBody) {
-    return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/withdraw`, {
-      method: "POST",
-      body: input,
-    });
+    return withExpenseCommandKey(id, "withdraw", input, (key) =>
+      apiRequest<ExpenseCommandResult>(`/api/v1/expenses/${id}/withdraw`, {
+        method: "POST",
+        body: input,
+        headers: { "Idempotency-Key": key },
+      }),
+    );
   },
   addClarification(id: string, input: ApiRecord) {
-    return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/clarifications`, {
-      method: "POST",
-      body: input,
-    });
+    return withExpenseCommandKey(id, "clarification", input, (key) =>
+      apiRequest<ExpenseCommandResult>(`/api/v1/expenses/${id}/clarifications`, {
+        method: "POST",
+        body: input,
+        headers: { "Idempotency-Key": key },
+      }),
+    );
   },
   managerQueue(query: PageQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/expenses/queue/manager", { query });
@@ -45,10 +69,13 @@ export const expensesApi = {
     });
   },
   managerVerify(id: string, input: ExpectedVersionBody) {
-    return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/manager/verify`, {
-      method: "POST",
-      body: input,
-    });
+    return withExpenseCommandKey(id, "manager.verify", input, (key) =>
+      apiRequest<ExpenseCommandResult>(`/api/v1/expenses/${id}/manager/verify`, {
+        method: "POST",
+        body: input,
+        headers: { "Idempotency-Key": key },
+      }),
+    );
   },
   financeQueue(query: PageQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/expenses/queue/finance", { query });
@@ -58,7 +85,7 @@ export const expensesApi = {
   },
   financeApprove(id: string, input: ExpectedVersionBody) {
     return withExpenseCommandKey(id, "finance.approve", input, (key) =>
-      apiRequest<ApiRecord>(`/api/v1/expenses/${id}/finance/approve`, {
+      apiRequest<ExpenseCommandResult>(`/api/v1/expenses/${id}/finance/approve`, {
         method: "POST",
         body: input,
         headers: { "Idempotency-Key": key },
@@ -67,7 +94,7 @@ export const expensesApi = {
   },
   recordPayment(id: string, input: ExpectedVersionBody) {
     return withExpenseCommandKey(id, "finance.payment", input, (key) =>
-      apiRequest<ApiRecord>(`/api/v1/expenses/${id}/finance/payment`, {
+      apiRequest<ExpenseCommandResult>(`/api/v1/expenses/${id}/finance/payment`, {
         method: "POST",
         body: input,
         headers: { "Idempotency-Key": key },
@@ -75,7 +102,13 @@ export const expensesApi = {
     );
   },
   submitBills(id: string, input: ApiRecord) {
-    return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/bills`, { method: "POST", body: input });
+    return withExpenseCommandKey(id, "bills", input, (key) =>
+      apiRequest<ExpenseCommandResult>(`/api/v1/expenses/${id}/bills`, {
+        method: "POST",
+        body: input,
+        headers: { "Idempotency-Key": key },
+      }),
+    );
   },
   verifyDocument(id: string, documentId: string, input: ExpectedVersionBody) {
     return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/documents/${documentId}/verify`, {
@@ -85,7 +118,7 @@ export const expensesApi = {
   },
   settle(id: string, input: ExpectedVersionBody) {
     return withExpenseCommandKey(id, "settlement", input, (key) =>
-      apiRequest<ApiRecord>(`/api/v1/expenses/${id}/settlement`, {
+      apiRequest<ExpenseCommandResult>(`/api/v1/expenses/${id}/settlement`, {
         method: "POST",
         body: input,
         headers: { "Idempotency-Key": key },

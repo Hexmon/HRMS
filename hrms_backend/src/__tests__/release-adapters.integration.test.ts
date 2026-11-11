@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { Redis as Valkey } from "iovalkey";
 import { Pool } from "pg";
 import { authHeader, loginAs, projectTravelPayload } from "#testing";
-import { buildRealApp } from "./real-infra.js";
+import { buildRealApp, buildRealAppReplica } from "./real-infra.js";
 import { OutboxWorker, ValkeyStreamPublisher } from "../workers/outbox-worker.js";
 
 describe("release acceptance real adapters", () => {
@@ -25,7 +25,7 @@ describe("release acceptance real adapters", () => {
     const create = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
+      headers: { ...authHeader(employee.token), "idempotency-key": "release-create-001" },
       payload: projectTravelPayload
     });
     expect(create.statusCode).toBe(200);
@@ -34,7 +34,7 @@ describe("release acceptance real adapters", () => {
     const managerVerify = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/manager/verify`,
-      headers: authHeader(manager.token),
+      headers: { ...authHeader(manager.token), "idempotency-key": "release-manager-001" },
       payload: { decision: "approve", expected_version: 1 }
     });
     expect(managerVerify.statusCode).toBe(200);
@@ -50,13 +50,29 @@ describe("release acceptance real adapters", () => {
     );
     expect(persisted.rows[0]).toMatchObject({ line_items: 2, approvals: 1 });
     expect(persisted.rows[0].audits).toBeGreaterThanOrEqual(3);
-    await expect(
-      pool.query("UPDATE expenses.expense_audit_logs SET remarks = 'tamper' WHERE ticket_id = $1", [ticket.id])
-    ).rejects.toThrow(/immutable audit\/log rows/u);
+    const tamperClient = await pool.connect();
+    try {
+      await tamperClient.query("BEGIN");
+      await tamperClient.query(
+        "SELECT set_config('app.expense_command_v1', 'on', true)",
+      );
+      await expect(
+        tamperClient.query(
+          "UPDATE expenses.expense_audit_logs SET remarks = 'tamper' WHERE ticket_id = $1",
+          [ticket.id],
+        ),
+      ).rejects.toThrow(/immutable audit\/log rows/u);
+    } finally {
+      await tamperClient.query("ROLLBACK").catch(() => undefined);
+      tamperClient.release();
+    }
     await pool.end();
 
+    await expect(buildRealApp({ reset: false })).rejects.toThrow(
+      "Use buildRealAppReplica()",
+    );
     await app.close();
-    app = await buildRealApp({ reset: false });
+    app = await buildRealAppReplica(app);
     await app.ready();
     const finance = await loginAs(app, "N1");
     const reloaded = await app.inject({
@@ -74,7 +90,7 @@ describe("release acceptance real adapters", () => {
     const create = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
+      headers: { ...authHeader(employee.token), "idempotency-key": "release-create-002" },
       payload: projectTravelPayload
     });
     expect(create.statusCode).toBe(200);

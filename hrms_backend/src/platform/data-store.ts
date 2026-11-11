@@ -543,6 +543,11 @@ export interface DataStorePersistence {
     };
   }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   expenseReadContext?(userId: UUID, ticketId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseMetadataContext?(userId: UUID): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    store: DataStore;
+  }>;
   expenseFinanceCommand?(input: {
     userId: UUID;
     ticketId: UUID;
@@ -551,6 +556,24 @@ export interface DataStorePersistence {
     requestHash: string;
     expectedVersion: number;
     run: (context: { actor: AuthUser; companyId: UUID; store: DataStore }) => ExpenseTicket;
+  }): Promise<Pick<ExpenseTicket, "id" | "status" | "version">>;
+  expenseMutationCommand?(input: {
+    userId: UUID;
+    ticketId?: UUID;
+    action:
+      | "create"
+      | "submit"
+      | "withdraw"
+      | "clarification"
+      | "manager.verify"
+      | "bills";
+    idempotencyKey: string;
+    requestHash: string;
+    run: (context: {
+      actor: AuthUser;
+      companyId: UUID;
+      store: DataStore;
+    }) => Pick<ExpenseTicket, "id" | "status" | "version">;
   }): Promise<Pick<ExpenseTicket, "id" | "status" | "version">>;
   expensePageContext?(userId: UUID, options: {
     kind: "my" | "manager" | "finance";
@@ -565,6 +588,9 @@ export interface DataStorePersistence {
       expense_sub_type?: string;
       amount_min?: string;
       amount_max?: string;
+      requester?: string;
+      department?: string;
+      document_status?: "any" | "complete" | "missing";
       sla_bucket?: string;
       sort?: string;
     };

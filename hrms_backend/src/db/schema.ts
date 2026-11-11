@@ -2063,6 +2063,10 @@ export const expenseCommandResults = expenses.table(
     createdAt,
   },
   (table) => [
+    check(
+      "expense_command_results_action_check",
+      sql`${table.action} IN ('create','submit','withdraw','clarification','manager.verify','bills','finance.approve','finance.payment','settlement')`,
+    ),
     unique("expense_command_results_company_id_actor_user_id_action_idempotency_key_key")
       .on(table.companyId, table.actorUserId, table.action, table.idempotencyKey),
   ],

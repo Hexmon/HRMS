@@ -267,6 +267,8 @@ const transactionOwnedMutationRoutes = new Set(["POST /api/v1/attendance/punches
 function isTransactionOwnedMutationRoute(routeKey: string): boolean {
   return (
     transactionOwnedMutationRoutes.has(routeKey) ||
+    routeKey === "POST /api/v1/expenses" ||
+    /^POST \/api\/v1\/expenses\/[^/]+\/(?:submit|withdraw|clarifications|manager\/verify|bills)$/u.test(routeKey) ||
     /^POST \/api\/v1\/attendance\/employees\/[^/]+\/(?:assisted-current-punches|historical-corrections)$/u.test(
       routeKey,
     ) ||

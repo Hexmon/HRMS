@@ -7,6 +7,7 @@ import {
   ExpenseTypes,
   PaymentTypes,
   type AuthUser,
+  type ExpenseTicket,
   expenseCreateSchema,
   expenseDecisionSchema,
   financeVerifySchema,
@@ -27,41 +28,43 @@ const documentParamSchema = z.object({ id: z.uuid(), documentId: z.uuid() });
 const mappingIdParamSchema = z.object({ id: z.uuid() });
 const versionQuerySchema = z.object({ expected_version: z.coerce.number().int().min(1).optional() });
 const expenseCommandKeySchema = z.string().min(8).max(200).regex(/^[A-Za-z0-9._:-]+$/u);
-function expenseCommandResult(ticket: { id: string; status: string; version: number }) {
+function expenseCommandResult(
+  ticket: Pick<ExpenseTicket, "id" | "status" | "version">,
+) {
   return { id: ticket.id, status: ticket.status, version: ticket.version };
 }
-function commandIdentity(request: { headers: Record<string, unknown> }, ticketId: string, action: string, body: unknown) {
+function commandIdentity(request: { headers: Record<string, unknown> }, resourceId: string, action: string, body: unknown) {
   const idempotencyKey = expenseCommandKeySchema.parse(request.headers["idempotency-key"]);
   const requestHash = createHash("sha256")
-    .update(JSON.stringify({ ticket_id: ticketId, action, body }))
+    .update(JSON.stringify({ resource_id: resourceId, action, body }))
     .digest("hex");
   return { idempotencyKey, requestHash };
 }
 type ExpenseCommandResponse = ReturnType<typeof expenseCommandResult>;
 const memoryCommandResults = new WeakMap<
   MemoryDataStore,
-  BoundedMemoryCommandReplay<ExpenseCommandResponse>
+  BoundedMemoryCommandReplay<unknown>
 >();
-function runMemoryFinanceCommand(input: {
+function runMemoryExpenseCommand<T>(input: {
   store: MemoryDataStore;
   actor: AuthUser;
-  action: "finance.approve" | "finance.payment" | "settlement";
+  action: string;
   identity: ReturnType<typeof commandIdentity>;
-  run: () => ExpenseCommandResponse;
-}): ExpenseCommandResponse {
+  run: () => T;
+}): T {
   const companyId = input.store.userSessionPreferences.find(
     (preference) => preference.user_id === input.actor.id,
   )?.company_id ?? "no-company";
   const resultKey = [companyId, input.actor.id, input.action, input.identity.idempotencyKey].join(":");
   const results = memoryCommandResults.get(input.store)
-    ?? new BoundedMemoryCommandReplay<ExpenseCommandResponse>();
+    ?? new BoundedMemoryCommandReplay<unknown>();
   memoryCommandResults.set(input.store, results);
   return results.execute({
     key: resultKey,
     requestHash: input.identity.requestHash,
     action: input.action,
     run: input.run,
-  });
+  }) as T;
 }
 const expenseDashboardQuerySchema = z.object({
   date_from: isoDateSchema.optional(),
@@ -90,7 +93,10 @@ const expenseWithdrawSchema = z.object({
 });
 const expenseClarificationSchema = z.object({
   message: z.string().trim().min(1).max(4000),
-  document_ids: z.array(z.uuid()).default([]),
+  document_ids: z.array(z.uuid()).max(20).refine(
+    (ids) => new Set(ids).size === ids.length,
+    { message: "Clarification document IDs must be unique" },
+  ).default([]),
   expected_version: z.number().int().min(1).optional()
 });
 const financeQueueQuerySchema = paginationQuerySchema.extend({
@@ -139,14 +145,60 @@ async function expenseReadService(fastify: FastifyInstance, actor: AuthUser, tic
   };
 }
 
+async function expenseMutation(
+  fastify: FastifyInstance,
+  actor: AuthUser,
+  request: { headers: Record<string, unknown> },
+  action: "create" | "submit" | "withdraw" | "clarification" | "manager.verify" | "bills",
+  ticketId: string | undefined,
+  body: unknown,
+  run: (context: { actor: AuthUser; companyId: string; store: MemoryDataStore }) => ExpenseCommandResponse,
+): Promise<ExpenseCommandResponse> {
+  const identity = commandIdentity(request, ticketId ?? "new", action, body);
+  if (fastify.store.kind !== "postgres") {
+    return runMemoryExpenseCommand({
+      store: fastify.store,
+      actor,
+      action,
+      identity,
+      run: () => run({ actor, companyId: "", store: fastify.store }),
+    });
+  }
+  const persistence = fastify.store.persistence;
+  if (!persistence?.expenseMutationCommand) {
+    throw conflict("Expense command is temporarily unavailable");
+  }
+  return persistence.expenseMutationCommand({
+    userId: actor.id,
+    ...(ticketId ? { ticketId } : {}),
+    action,
+    ...identity,
+    run: ({ actor: currentActor, companyId, store }) =>
+      run({ actor: currentActor, companyId, store }),
+  });
+}
+
+function isTransactionOwnedExpenseRoute(method: string, url: string): boolean {
+  const path = url.split("?")[0] ?? url;
+  if (method === "POST" && path === "/api/v1/expenses") return true;
+  if (
+    method === "POST" &&
+    /^\/api\/v1\/expenses\/[^/]+\/(?:submit|withdraw|clarifications|manager\/verify|bills)$/u.test(path)
+  ) {
+    return true;
+  }
+  return method === "PATCH" && /^\/api\/v1\/expenses\/[^/]+$/u.test(path);
+}
+
 export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook("preHandler", async (request) => {
     if (fastify.store.kind === "postgres" && !["GET", "HEAD", "OPTIONS"].includes(request.method)) {
       if (!request.actor) throw unauthorized();
       if (request.method === "POST" &&
-          /^\/api\/v1\/expenses\/[0-9a-f-]+\/(?:finance\/(?:approve|payment)|settlement)$/iu.test(request.url.split("?")[0] ?? "")) {
+          /^\/api\/v1\/expenses\/[^/]+\/(?:finance\/(?:approve|payment)|settlement)$/u.test(request.url.split("?")[0] ?? "")) {
         return;
       }
+      if (isTransactionOwnedExpenseRoute(request.method, request.url)) return;
       // Until each mutation owns its SQL transaction, running the legacy
       // memory service would create ghost state after the 0068 DB fence rejects
       // its response-end flush. Keep writes visibly unavailable meanwhile.
@@ -159,7 +211,8 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const body = expenseCreateSchema.parse(request.body);
-    return new ExpenseService(fastify.store).createTicket(actor, body);
+    return expenseMutation(fastify, actor, request, "create", undefined, body, ({ actor: currentActor, companyId, store }) =>
+      expenseCommandResult(new ExpenseService(store, companyId || undefined).createTicket(currentActor, body)));
   });
 
   fastify.get("/expenses/my", async (request) => {
@@ -183,7 +236,15 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    if (fastify.store.kind === "postgres") throw conflict("Expense metadata requires company-scoped selectors");
+    if (fastify.store.kind === "postgres") {
+      const context = await fastify.store.persistence?.expenseMetadataContext?.(
+        request.actor.id,
+      );
+      if (!context) throw conflict("Expense metadata is temporarily unavailable");
+      return new ExpenseService(context.store, context.companyId).metadata(
+        context.actor,
+      );
+    }
     return new ExpenseService(fastify.store).metadata(request.actor);
   });
 
@@ -217,7 +278,9 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = z.object({ expected_version: z.number().int().min(1) }).parse(request.body);
-    return new ExpenseService(fastify.store).submitTicket(request.actor, params.id, body.expected_version);
+    return expenseMutation(fastify, request.actor, request, "submit", params.id, body, ({ actor, companyId, store }) =>
+      expenseCommandResult(new ExpenseService(store, companyId || undefined)
+        .submitTicket(actor, params.id, body.expected_version)));
   });
 
   fastify.post("/expenses/:id/withdraw", async (request) => {
@@ -226,7 +289,11 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = expenseWithdrawSchema.parse(request.body);
-    return new ExpenseService(fastify.store).withdrawTicket(request.actor, params.id, body.expected_version, body.remarks);
+    return expenseMutation(fastify, request.actor, request, "withdraw", params.id, body, ({ actor, companyId, store }) => {
+      const service = new ExpenseService(store, companyId || undefined);
+      service.withdrawTicket(actor, params.id, body.expected_version, body.remarks);
+      return expenseCommandResult(store.tickets.find((ticket) => ticket.id === params.id)!);
+    });
   });
 
   fastify.post("/expenses/:id/clarifications", async (request) => {
@@ -235,7 +302,11 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = expenseClarificationSchema.parse(request.body);
-    return new ExpenseService(fastify.store).addClarification(request.actor, params.id, body);
+    return expenseMutation(fastify, request.actor, request, "clarification", params.id, body, ({ actor, companyId, store }) => {
+      const service = new ExpenseService(store, companyId || undefined);
+      service.addClarification(actor, params.id, body);
+      return expenseCommandResult(store.tickets.find((ticket) => ticket.id === params.id)!);
+    });
   });
 
   fastify.get("/expenses/queue/manager", async (request) => {
@@ -261,7 +332,10 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = expenseDecisionSchema.parse(request.body);
-    return new ExpenseService(fastify.store).managerVerify(request.actor, params.id, body.decision, body.remarks, body.expected_version);
+    return expenseMutation(fastify, request.actor, request, "manager.verify", params.id, body, ({ actor, companyId, store }) =>
+      expenseCommandResult(new ExpenseService(store, companyId || undefined).managerVerify(
+        actor, params.id, body.decision, body.remarks, body.expected_version,
+      )));
   });
 
   fastify.get("/expenses/queue/finance", async (request) => {
@@ -270,9 +344,6 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const query = financeQueueQuerySchema.parse(request.query);
     if (fastify.store.kind === "postgres") {
-      if (query.requester || query.department || query.document_status !== "any") {
-        throw conflict("Expense name, department and document filters require historical scoped indexes");
-      }
       const context = await fastify.store.persistence?.expensePageContext?.(request.actor.id, {
         kind: "finance", page: query.page, pageSize: query.page_size,
         filters: {
@@ -284,6 +355,9 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
           expense_sub_type: query.expense_sub_type,
           amount_min: query.amount_min,
           amount_max: query.amount_max,
+          requester: query.requester,
+          department: query.department,
+          document_status: query.document_status,
           sla_bucket: query.sla_bucket,
           sort: query.sort,
         },
@@ -322,7 +396,7 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
           .financeApprove(actor, params.id, body.decision, body.remarks, body.expected_version),
       });
     }
-    return runMemoryFinanceCommand({
+    return runMemoryExpenseCommand({
       store: fastify.store,
       actor: request.actor,
       action,
@@ -352,7 +426,7 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
           .releasePayment(actor, params.id, body),
       });
     }
-    return runMemoryFinanceCommand({
+    return runMemoryExpenseCommand({
       store: fastify.store,
       actor: request.actor,
       action,
@@ -373,7 +447,9 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = z.object({ expected_version: z.number().int().min(1) }).parse(request.body);
-    return new ExpenseService(fastify.store).submitBills(request.actor, params.id, body.expected_version);
+    return expenseMutation(fastify, request.actor, request, "bills", params.id, body, ({ actor, companyId, store }) =>
+      expenseCommandResult(new ExpenseService(store, companyId || undefined)
+        .submitBills(actor, params.id, body.expected_version)));
   });
 
   fastify.post("/expenses/:id/documents/:documentId/verify", async (request) => {
@@ -401,7 +477,7 @@ export const expenseRoutes: FastifyPluginAsync = async (fastify) => {
           .settle(actor, params.id, body.actual_amount, body.remarks, body.expected_version),
       });
     }
-    return runMemoryFinanceCommand({
+    return runMemoryExpenseCommand({
       store: fastify.store,
       actor: request.actor,
       action,

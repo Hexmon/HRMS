@@ -199,7 +199,13 @@ export class ExpenseService {
       closure_remarks: null,
       // Capture the company at creation; the requester's later transfer must
       // not reassign this ticket's historical audit trail.
-      context_payload: { company_id: companyId },
+      context_payload: {
+        company_id: companyId,
+        requester_snapshot: {
+          employee_code: requester.employee_code,
+          full_name: requester.full_name,
+        },
+      },
       route_snapshot: route?.routeSnapshot ?? { reason: "draft_not_routed" },
       policy_snapshot: {
         required_documents:
@@ -628,9 +634,6 @@ export class ExpenseService {
   }
 
   metadata(actor: AuthUser): Record<string, unknown> {
-    if (this.currentCompanyId) {
-      throw conflict("Expense project and approver metadata is temporarily unavailable");
-    }
     const activeProjects = this.store.projects
       .filter(
         (project) =>
@@ -1010,9 +1013,17 @@ export class ExpenseService {
     input: ExpenseClarificationInput,
   ): Record<string, unknown> {
     const ticket = this.repository.findTicket(ticketId);
-    if (!canReadTicket(actor, ticket, this.currentCompanyId)) {
+    const isRequester = ticket.requester_user_id === actor.id;
+    const isAssignedManager =
+      (ticket.manager_verifier_id === actor.id ||
+        ticket.manager_backup_user_id === actor.id) &&
+      actor.roles.includes(Roles.Reviewer);
+    const isAssignedFinance =
+      ticket.finance_approver_id === actor.id &&
+      actor.roles.includes(Roles.FinanceManager);
+    if (!isRequester && !isAssignedManager && !isAssignedFinance) {
       throw forbidden(
-        "You do not have access to this ticket clarification thread",
+        "Only the requester, assigned Manager, or assigned Finance actor can add a clarification",
       );
     }
     if (isTerminalExpenseStatus(ticket.status)) {
@@ -1032,6 +1043,7 @@ export class ExpenseService {
         },
       );
     }
+    this.assertClarificationDocuments(ticket, input.document_ids ?? []);
     ticket.version += 1;
     ticket.updated_at = nowIso();
     const clarification = this.repository.addAudit({
@@ -1054,6 +1066,7 @@ export class ExpenseService {
       eventType: "expense.clarification.added",
       payload: {
         ticket_id: ticket.id,
+        company_id: ticket.company_id,
         actor_user_id: actor.id,
         document_ids: input.document_ids ?? [],
       },
@@ -1071,6 +1084,51 @@ export class ExpenseService {
       thread: this.clarificationThread(ticket.id),
       expense_version: ticket.version,
     };
+  }
+
+  private assertClarificationDocuments(
+    ticket: ExpenseTicket,
+    documentIds: readonly UUID[],
+  ): void {
+    if (documentIds.length > 20 || new Set(documentIds).size !== documentIds.length) {
+      throw badRequest("Clarification may reference at most 20 unique documents");
+    }
+    for (const documentId of documentIds) {
+      const link = this.store.expenseDocuments.find(
+        (candidate) =>
+          candidate.ticket_id === ticket.id &&
+          candidate.document_id === documentId,
+      );
+      const metadata = this.store.documents.find(
+        (candidate) => candidate.id === documentId,
+      );
+      const currentVersion = metadata
+        ? this.store.documentVersions.find(
+            (candidate) =>
+              candidate.document_id === metadata.id &&
+              candidate.version === metadata.current_version,
+          )
+        : undefined;
+      if (
+        !link ||
+        !metadata ||
+        metadata.business_object_type !== "expense_ticket" ||
+        metadata.business_object_id !== ticket.id ||
+        metadata.classification !== "finance" ||
+        metadata.document_type !== link.document_type ||
+        metadata.deleted_at !== null ||
+        metadata.size_bytes <= 0 ||
+        !currentVersion ||
+        currentVersion.storage_key !== metadata.storage_key ||
+        currentVersion.size_bytes !== metadata.size_bytes ||
+        (currentVersion.checksum_sha256 ?? null) !==
+          (metadata.checksum_sha256 ?? null)
+      ) {
+        throw badRequest(
+          "Every clarification document must be a live current document linked to this expense ticket",
+        );
+      }
+    }
   }
 
   managerQueue(
@@ -1486,12 +1544,12 @@ export class ExpenseService {
   ): ExpenseTicket {
     const current = this.repository.findTicket(ticketId);
     const previousStatus = current.status;
-    if (
-      current.requester_user_id !== actor.id &&
-      !actor.roles.includes(Roles.FinanceManager) &&
-      !actor.roles.includes(Roles.Admin)
-    ) {
-      throw forbidden("Only requester or Finance can submit bills");
+    const isRequester = current.requester_user_id === actor.id;
+    const isAssignedFinance =
+      current.finance_approver_id === actor.id &&
+      actor.roles.includes(Roles.FinanceManager);
+    if (!isRequester && !isAssignedFinance) {
+      throw forbidden("Only the requester or current assigned Finance actor can submit bills");
     }
     assertTransition(current.status, ExpenseStatuses.BillsSubmitted);
     const ticket = this.repository.updateTicketVersioned(

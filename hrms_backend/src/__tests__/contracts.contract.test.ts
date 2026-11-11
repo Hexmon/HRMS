@@ -1883,7 +1883,13 @@ describe("API contracts", () => {
 
   it("documents finance bodies, grouping, and OCC 409 responses", async () => {
     const spec = await openApiSpec(app);
-    const durableFinanceCommands = [
+    const durableExpenseCommands = [
+      "POST /api/v1/expenses",
+      "POST /api/v1/expenses/{id}/submit",
+      "POST /api/v1/expenses/{id}/withdraw",
+      "POST /api/v1/expenses/{id}/clarifications",
+      "POST /api/v1/expenses/{id}/manager/verify",
+      "POST /api/v1/expenses/{id}/bills",
       "POST /api/v1/expenses/{id}/finance/approve",
       "POST /api/v1/expenses/{id}/finance/payment",
       "POST /api/v1/expenses/{id}/settlement",
@@ -1902,7 +1908,7 @@ describe("API contracts", () => {
       ).toBeDefined();
     }
 
-    for (const key of durableFinanceCommands) {
+    for (const key of durableExpenseCommands) {
       const command = operation(spec, key) as Record<string, any>;
       expect(command.parameters).toContainEqual(expect.objectContaining({
         name: "idempotency-key",
@@ -1915,6 +1921,10 @@ describe("API contracts", () => {
           pattern: "^[A-Za-z0-9._:-]+$",
         }),
       }));
+    }
+
+    for (const key of durableExpenseCommands) {
+      const command = operation(spec, key) as Record<string, any>;
       expect(command.responses?.["200"]?.content?.["application/json"]?.schema)
         .toMatchObject({
           type: "object",
@@ -1927,6 +1937,15 @@ describe("API contracts", () => {
           },
         });
     }
+
+    const clarification = operation(
+      spec,
+      "POST /api/v1/expenses/{id}/clarifications",
+    ) as Record<string, any>;
+    expect(
+      clarification.requestBody?.content?.["application/json"]?.schema
+        ?.properties?.document_ids,
+    ).toMatchObject({ maxItems: 20, uniqueItems: true });
 
     const notificationReadAll = operation(
       spec,

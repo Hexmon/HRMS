@@ -8495,17 +8495,6 @@ const expenseWithdrawBody = {
   additionalProperties: false,
 };
 
-const expenseWithdrawResponseSchema = {
-  type: "object",
-  required: ["expense", "version", "timeline_event"],
-  properties: {
-    expense: ticketSchema,
-    version: { type: "integer", minimum: 1, example: 2 },
-    timeline_event: expenseTimelineEventSchema,
-  },
-  additionalProperties: true,
-};
-
 const expenseClarificationBody = {
   type: "object",
   required: ["message"],
@@ -8520,24 +8509,12 @@ const expenseClarificationBody = {
       type: "array",
       items: uuid("Document metadata UUID"),
       default: [],
+      maxItems: 20,
+      uniqueItems: true,
     },
     expected_version: { type: "integer", minimum: 1, example: 2 },
   },
   additionalProperties: false,
-};
-
-const expenseClarificationResponseSchema = {
-  type: "object",
-  required: ["clarification", "thread", "expense_version"],
-  properties: {
-    clarification: { type: "object", additionalProperties: true },
-    thread: {
-      type: "array",
-      items: { type: "object", additionalProperties: true },
-    },
-    expense_version: { type: "integer", minimum: 1, example: 3 },
-  },
-  additionalProperties: true,
 };
 
 const projectQuerySchema = {
@@ -11800,7 +11777,11 @@ const routeDocs: Record<string, RouteSchema> = {
     "Expenses / Requester",
     "Create expense",
     "Creates an expense draft or submitted ticket. Business routing and self-approval prevention remain backend-owned.",
-    { body: expenseCreateBody, response200: ticketSchema },
+    {
+      headers: expenseCommandIdempotencyHeaderObject,
+      body: expenseCreateBody,
+      response200: expenseCommandResultSchema,
+    },
   ),
   "GET /api/v1/expenses/my": operation(
     "Expenses / Requester",
@@ -11854,8 +11835,9 @@ const routeDocs: Record<string, RouteSchema> = {
     "Submits a draft or returned expense using OCC expected_version.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: expectedVersionBodySchema,
-      response200: ticketSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "POST /api/v1/expenses/{id}/withdraw": operation(
@@ -11864,18 +11846,20 @@ const routeDocs: Record<string, RouteSchema> = {
     "Withdraws a requester-owned draft, submitted, pending-manager, or manager-returned expense with OCC expected_version. Remarks are required after submission.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: expenseWithdrawBody,
-      response200: expenseWithdrawResponseSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "POST /api/v1/expenses/{id}/clarifications": operation(
     "Expenses / Requester",
     "Add expense clarification",
-    "Appends a durable object-scoped clarification message and returns the current thread. Requester, assigned manager, assigned finance actor, Admin, and Auditor can read according to expense object policy.",
+    "Appends a durable object-scoped clarification message and returns only the committed ticket identity/status/version. Up to 20 unique live documents coherently linked to this ticket may be referenced. Only the requester, currently authorized assigned manager, or currently authorized assigned finance actor may write; Admin/Auditor detail-read authority alone does not grant clarification write authority.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: expenseClarificationBody,
-      response200: expenseClarificationResponseSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "GET /api/v1/expenses/queue/manager": operation(
@@ -11893,8 +11877,9 @@ const routeDocs: Record<string, RouteSchema> = {
     "Manager approve/reject/return decision. Reject/return require remarks; self-processing and OCC conflicts are enforced.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: expenseDecisionBody,
-      response200: ticketSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
 
@@ -11992,11 +11977,12 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/expenses/{id}/bills": operation(
     "Finance Management",
     "Submit bills",
-    "Marks bills as submitted for a paid expense. Used before settlement and closure checks.",
+    "The requester or current assigned Finance actor marks bills as submitted for a paid expense. Admin, Auditor, and unassigned Finance roles do not receive this mutation authority.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: expectedVersionBodySchema,
-      response200: ticketSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "POST /api/v1/expenses/{id}/documents/{documentId}/verify": operation(

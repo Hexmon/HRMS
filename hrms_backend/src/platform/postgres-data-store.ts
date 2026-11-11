@@ -84,7 +84,13 @@ import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
 import { badRequest, companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
-import { assertFinanceActor } from "../modules/expenses/policy.js";
+import { assertFinanceActor, assertManagerActor } from "../modules/expenses/policy.js";
+import {
+  lockExpenseCombinedRoutingWriter,
+  lockExpenseFinanceGovernanceWriter,
+  lockExpenseReviewerRoutingWriter,
+  lockExpenseRoutingReader,
+} from "../modules/expenses/routing-locks.js";
 import {
   countAttendanceReportingEvidenceCategories,
   emptyAttendanceReportingEvidenceCounts,
@@ -105,6 +111,15 @@ type ExpenseReportAudience =
   | "advance_aging"
   | "payment_register"
   | "audit";
+
+type ExpenseMutationAction =
+  | "create"
+  | "submit"
+  | "withdraw"
+  | "clarification"
+  | "manager.verify"
+  | "bills";
+type ExpenseMutationResult = Pick<ExpenseTicket, "id" | "status" | "version">;
 
 function assertExpenseReportAudienceRole(
   actor: AuthUser,
@@ -1046,6 +1061,532 @@ class PostgresPersistence {
     }
   }
 
+  async expenseMutationCommand(input: {
+    userId: UUID;
+    ticketId?: UUID;
+    action: ExpenseMutationAction;
+    idempotencyKey: string;
+    requestHash: string;
+    run: (context: { actor: AuthUser; companyId: UUID; store: DataStore }) => ExpenseMutationResult;
+  }): Promise<ExpenseMutationResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      if (input.action === "create" || input.action === "submit") {
+        // Routing writers use this same global-then-requester order before
+        // touching actor, company or authority rows. Taking it at command
+        // entry avoids a row-lock/advisory-lock inversion with flush writers.
+        await lockExpenseRoutingReader(client, [input.userId]);
+      }
+      await client.query("SELECT 1 FROM core.users WHERE id = $1 FOR SHARE", [input.userId]);
+      const preference = await client.query<{ company_id: UUID | null }>(
+        "SELECT company_id FROM platform.user_session_preferences WHERE user_id = $1 FOR SHARE",
+        [input.userId],
+      );
+      await client.query(
+        `SELECT 1 FROM core.user_roles ur JOIN core.roles role ON role.role_key = ur.role_key
+         WHERE ur.user_id = $1 FOR SHARE OF ur, role`,
+        [input.userId],
+      );
+      if (preference.rows[0]?.company_id) {
+        await client.query(
+          "SELECT 1 FROM platform.company_profiles WHERE id = $1 FOR SHARE",
+          [preference.rows[0].company_id],
+        );
+      }
+      const { actor, companyId } = await this.resolveExpenseActor(client, input.userId);
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
+        [`expense:${companyId}:${actor.id}:${input.action}:${input.idempotencyKey}`],
+      );
+      let original: ExpenseTicket | null = null;
+      if (input.ticketId) {
+        if (input.action === "create") {
+          throw conflict("Expense create command cannot target an existing ticket");
+        }
+        const locked = await client.query<{ id: UUID }>(
+          `SELECT id FROM expenses.expense_tickets
+           WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+          [input.ticketId, companyId],
+        );
+        if (!locked.rows[0]) throw notFound("Expense ticket not found");
+        original = (
+          await this.loadTickets(client, undefined, undefined, undefined, [input.ticketId])
+        )[0] ?? null;
+        if (!original || original.company_id !== companyId) {
+          throw notFound("Expense ticket not found");
+        }
+        this.assertExpenseMutationActor(input.action, actor, original);
+      } else {
+        if (input.action !== "create") {
+          throw conflict("Expense mutation command requires a ticket");
+        }
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('expense-ticket-number', 0))",
+        );
+      }
+      const prior = await client.query<{
+        request_hash: string;
+        ticket_id: UUID;
+        response_body: ExpenseMutationResult;
+      }>(
+        `SELECT request_hash, ticket_id, response_body
+         FROM expenses.expense_command_results
+         WHERE company_id=$1 AND actor_user_id=$2 AND action=$3 AND idempotency_key=$4`,
+        [companyId, actor.id, input.action, input.idempotencyKey],
+      );
+      if (prior.rows[0]) {
+        if (
+          prior.rows[0].request_hash !== input.requestHash ||
+          (input.ticketId && prior.rows[0].ticket_id !== input.ticketId)
+        ) {
+          throw conflict("Idempotency key was already used for a different expense command");
+        }
+        await client.query("COMMIT");
+        return prior.rows[0].response_body;
+      }
+      if (input.action === "create" || input.action === "submit") {
+        await this.lockExpenseRoutingAuthorityRows(
+          client,
+          original?.requester_user_id ?? actor.id,
+        );
+      }
+      const store = await this.loadExpenseCommandStore(
+        client,
+        companyId,
+        original ? [original] : [],
+      );
+      const originalVersion = original?.version ?? null;
+      const originalSnapshot = original ? structuredClone(original) : null;
+      const priorTicketIds = new Set(store.tickets.map((ticket) => ticket.id));
+      const priorLineItemIds = new Set(store.lineItems.map((item) => item.id));
+      const priorApprovalIds = new Set(store.expenseApprovals.map((item) => item.id));
+      const priorAuditIds = new Set(store.auditLogs.map((item) => item.id));
+      const priorNotificationIds = new Set(store.notifications.map((item) => item.id));
+      const priorOutboxIds = new Set(store.outbox.map((item) => item.event_id));
+      const unchangedCollections = JSON.stringify({
+        mappings: store.managerBackupAssignments,
+        documents: store.expenseDocuments,
+        payments: store.payments,
+      });
+      const result = input.run({ actor, companyId, store });
+      if (input.action === "clarification") {
+        const clarificationAudits = store.auditLogs.filter(
+          (audit) =>
+            !priorAuditIds.has(audit.id) &&
+            audit.event_type === "expense.clarification.added",
+        );
+        if (clarificationAudits.length !== 1) {
+          throw conflict("Expense clarification produced an unexpected audit delta");
+        }
+        const documentIds = clarificationAudits[0]?.new_value?.document_ids;
+        if (
+          !Array.isArray(documentIds) ||
+          documentIds.some((id) => typeof id !== "string")
+        ) {
+          throw conflict("Expense clarification document evidence is invalid");
+        }
+        await this.lockExpenseClarificationDocuments(
+          client,
+          input.ticketId!,
+          documentIds as UUID[],
+        );
+      }
+      let changed: ExpenseTicket;
+      if (original) {
+        const candidate = store.tickets.find((ticket) => ticket.id === original!.id);
+        if (
+          !candidate ||
+          store.tickets.length !== 1 ||
+          candidate.company_id !== companyId ||
+          candidate.owner_resolution_status !== "typed_creation" ||
+          originalVersion === null ||
+          candidate.version !== originalVersion + 1
+        ) {
+          throw conflict("Expense command changed an unexpected ticket or owner");
+        }
+        changed = candidate;
+        this.assertExpenseMutationDelta(input.action, originalSnapshot!, changed);
+      } else {
+        const created = store.tickets.filter((ticket) => !priorTicketIds.has(ticket.id));
+        if (
+          created.length !== 1 ||
+          store.tickets.length !== 1 ||
+          created[0]?.company_id !== companyId ||
+          created[0]?.requester_user_id !== actor.id ||
+          created[0]?.owner_resolution_status !== "typed_creation" ||
+          created[0]?.version !== 1
+        ) {
+          throw conflict("Expense create command produced an unexpected ticket or owner");
+        }
+        changed = created[0]!;
+      }
+      if (
+        Object.keys(result).sort().join(",") !== "id,status,version" ||
+        result.id !== changed.id ||
+        result.status !== changed.status ||
+        result.version !== changed.version
+      ) {
+        throw conflict("Expense command result must contain only the committed id, status, and version");
+      }
+      if (
+        unchangedCollections !== JSON.stringify({
+          mappings: store.managerBackupAssignments,
+          documents: store.expenseDocuments,
+          payments: store.payments,
+        }) ||
+        (input.action !== "create" &&
+          store.lineItems.some((item) => !priorLineItemIds.has(item.id)))
+      ) {
+        throw conflict("Expense command changed an unrelated child collection");
+      }
+      await client.query("SELECT set_config('app.expense_command_v1', 'on', true)");
+      if (input.action === "create") {
+        await this.insertExpenseTicket(client, changed);
+        for (const item of store.lineItems.filter((row) => !priorLineItemIds.has(row.id))) {
+          if (item.ticket_id !== changed.id) throw conflict("Expense line-item parent mismatch");
+          await client.query(
+            `INSERT INTO expenses.expense_line_items
+             (id,ticket_id,line_category,description,quantity,unit_cost,line_total,tax_amount,vendor_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [item.id, item.ticket_id, item.line_category, item.description, item.quantity,
+              item.unit_cost, item.line_total, item.tax_amount, item.vendor_name],
+          );
+        }
+      } else {
+        await this.updateExpenseTicketForAction(
+          client,
+          input.action,
+          originalSnapshot!,
+          changed,
+          companyId,
+        );
+      }
+      for (const approval of store.expenseApprovals.filter(
+        (item) => !priorApprovalIds.has(item.id),
+      )) {
+        if (input.action !== "manager.verify" || approval.ticket_id !== changed.id) {
+          throw conflict("Expense approval delta is not valid for this command");
+        }
+        await client.query(
+          `INSERT INTO expenses.expense_approvals
+           (id,ticket_id,approval_stage,approver_user_id,decision,remarks,role_snapshot,
+            designation_snapshot,route_snapshot,action_at,created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)`,
+          [approval.id, approval.ticket_id, approval.approval_stage, approval.approver_user_id,
+            approval.decision, approval.remarks, approval.role_snapshot,
+            approval.designation_snapshot, JSON.stringify(approval.route_snapshot),
+            approval.action_at, approval.created_at],
+        );
+      }
+      for (const audit of store.auditLogs.filter((item) => !priorAuditIds.has(item.id))) {
+        if (audit.ticket_id !== changed.id) throw conflict("Expense audit parent mismatch");
+        await client.query(
+          `INSERT INTO expenses.expense_audit_logs
+           (id,ticket_id,actor_user_id,event_type,old_value,new_value,remarks,payload_hash,created_at)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9)`,
+          [audit.id, audit.ticket_id, audit.actor_user_id, audit.event_type,
+            audit.old_value ? JSON.stringify(audit.old_value) : null,
+            audit.new_value ? JSON.stringify(audit.new_value) : null,
+            audit.remarks, audit.payload_hash, audit.created_at],
+        );
+      }
+      for (const notification of store.notifications.filter(
+        (item) => !priorNotificationIds.has(item.id),
+      )) {
+        await client.query(
+          `INSERT INTO platform.notifications
+           (id,actor_user_id,target_user_id,event_type,payload,status,read_at,version,created_at,updated_at)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10)`,
+          [
+            notification.id,
+            notification.actor_user_id,
+            notification.target_user_id,
+            notification.event_type,
+            JSON.stringify(notification.payload),
+            notification.status,
+            notification.read_at,
+            notification.version,
+            notification.created_at,
+            notification.updated_at,
+          ],
+        );
+      }
+      for (const event of store.outbox.filter(
+        (item) => !priorOutboxIds.has(item.event_id),
+      )) {
+        if (
+          event.aggregate_id !== changed.id ||
+          event.payload.company_id !== companyId
+        ) {
+          throw conflict("Expense event owner mismatch");
+        }
+        await client.query(
+          `INSERT INTO platform.outbox_events
+           (event_id,aggregate_type,aggregate_id,event_type,payload,idempotency_key,status,
+            retry_count,available_at,created_at,published_at,failed_at,last_error)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [event.event_id, event.aggregate_type, event.aggregate_id, event.event_type,
+            JSON.stringify(event.payload), event.idempotency_key, event.status,
+            event.retry_count, event.available_at, event.created_at, event.published_at,
+            event.failed_at, event.last_error],
+        );
+      }
+      await client.query(
+        `INSERT INTO expenses.expense_command_results
+         (company_id,actor_user_id,ticket_id,action,idempotency_key,request_hash,response_body)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+        [companyId, actor.id, changed.id, input.action, input.idempotencyKey,
+          input.requestHash, JSON.stringify(result)],
+      );
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error.code === "40001" || error.code === "40P01")
+      ) {
+        throw conflict("Expense command changed during concurrent processing; refresh and retry");
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async lockExpenseRoutingAuthorityRows(
+    client: PoolClient,
+    requesterUserId: UUID,
+  ): Promise<void> {
+    const requester = await client.query<{ manager_user_id: UUID | null }>(
+      "SELECT manager_user_id FROM core.users WHERE id=$1 FOR SHARE",
+      [requesterUserId],
+    );
+    const mappings = await client.query<{ reviewer_user_id: UUID }>(
+      `SELECT reviewer_user_id FROM expenses.employee_reviewer_mappings
+       WHERE employee_user_id=$1 FOR SHARE`,
+      [requesterUserId],
+    );
+    const governance = await client.query<{
+      primary_finance_manager_user_id: UUID;
+      manager_backup_user_id: UUID | null;
+      finance_approval_backup_user_id: UUID | null;
+      finance_self_request_fallback_user_id: UUID | null;
+    }>(
+      `SELECT primary_finance_manager_user_id,manager_backup_user_id,
+              finance_approval_backup_user_id,finance_self_request_fallback_user_id
+       FROM platform.finance_governance_config
+       WHERE deleted_at IS NULL ORDER BY updated_at DESC,id DESC LIMIT 1 FOR SHARE`,
+    );
+    const userIds = Array.from(new Set([
+      requesterUserId,
+      requester.rows[0]?.manager_user_id,
+      ...mappings.rows.map((row) => row.reviewer_user_id),
+      governance.rows[0]?.primary_finance_manager_user_id,
+      governance.rows[0]?.manager_backup_user_id,
+      governance.rows[0]?.finance_approval_backup_user_id,
+      governance.rows[0]?.finance_self_request_fallback_user_id,
+    ].filter((id): id is UUID => Boolean(id)))).sort();
+    if (!userIds.length) return;
+    await client.query(
+      "SELECT id FROM core.users WHERE id=ANY($1::uuid[]) ORDER BY id FOR SHARE",
+      [userIds],
+    );
+    await client.query(
+      `SELECT user_id FROM platform.user_session_preferences
+       WHERE user_id=ANY($1::uuid[]) ORDER BY user_id FOR SHARE`,
+      [userIds],
+    );
+    await client.query(
+      `SELECT ur.id FROM core.user_roles ur
+       JOIN core.roles role ON role.role_key=ur.role_key
+       WHERE ur.user_id=ANY($1::uuid[])
+       ORDER BY ur.user_id,ur.role_key,ur.id FOR SHARE OF ur,role`,
+      [userIds],
+    );
+  }
+
+  private async lockExpenseClarificationDocuments(
+    client: PoolClient,
+    ticketId: UUID,
+    documentIds: readonly UUID[],
+  ): Promise<void> {
+    if (documentIds.length > 20 || new Set(documentIds).size !== documentIds.length) {
+      throw badRequest("Clarification may reference at most 20 unique documents");
+    }
+    if (documentIds.length === 0) return;
+    const coherent = await client.query<{ document_id: UUID }>(
+      `SELECT link.document_id
+       FROM expenses.expense_documents link
+       JOIN documents.doc_metadata metadata ON metadata.id=link.document_id
+       JOIN documents.doc_versions current_version
+         ON current_version.document_id=metadata.id
+        AND current_version.version=metadata.current_version
+        AND current_version.storage_key=metadata.storage_key
+        AND current_version.size_bytes=metadata.size_bytes
+        AND current_version.checksum_sha256 IS NOT DISTINCT FROM metadata.checksum_sha256
+       WHERE link.ticket_id=$1
+         AND link.document_id=ANY($2::uuid[])
+         AND metadata.business_object_type='expense_ticket'
+         AND metadata.business_object_id=$1
+         AND metadata.classification='finance'
+         AND metadata.document_type=link.document_type
+         AND metadata.deleted_at IS NULL
+         AND metadata.size_bytes>0
+         AND current_version.size_bytes>0
+       ORDER BY link.document_id
+       FOR SHARE OF link,metadata,current_version`,
+      [ticketId, documentIds],
+    );
+    if (coherent.rows.length !== documentIds.length) {
+      throw badRequest(
+        "Every clarification document must be a live current document linked to this expense ticket",
+      );
+    }
+  }
+
+  private assertExpenseMutationActor(
+    action: Exclude<ExpenseMutationAction, "create">,
+    actor: AuthUser,
+    ticket: ExpenseTicket,
+  ): void {
+    if (action === "submit" || action === "withdraw") {
+      if (ticket.requester_user_id !== actor.id) {
+        throw forbidden(`Only the requester can ${action} this ticket`);
+      }
+      return;
+    }
+    if (action === "manager.verify") {
+      assertManagerActor(actor, ticket);
+      return;
+    }
+    if (action === "clarification") {
+      const assignedManager =
+        (ticket.manager_verifier_id === actor.id ||
+          ticket.manager_backup_user_id === actor.id) &&
+        actor.roles.includes(Roles.Reviewer);
+      const assignedFinance =
+        ticket.finance_approver_id === actor.id &&
+        actor.roles.includes(Roles.FinanceManager);
+      if (
+        ticket.requester_user_id !== actor.id &&
+        !assignedManager &&
+        !assignedFinance
+      ) {
+        throw forbidden(
+          "Only the requester, assigned Manager, or assigned Finance actor can add a clarification",
+        );
+      }
+      return;
+    }
+    const assignedFinance =
+      ticket.finance_approver_id === actor.id &&
+      actor.roles.includes(Roles.FinanceManager);
+    if (ticket.requester_user_id !== actor.id && !assignedFinance) {
+      throw forbidden("Only the requester or current assigned Finance actor can submit bills");
+    }
+  }
+
+  private assertExpenseMutationDelta(
+    action: ExpenseMutationAction,
+    original: ExpenseTicket,
+    changed: ExpenseTicket,
+  ): void {
+    const allowed = new Set<string>(["version", "updated_at"]);
+    for (const field of action === "submit"
+      ? ["status", "manager_verifier_id", "manager_backup_user_id", "finance_approver_id", "route_snapshot", "submitted_at"]
+      : action === "withdraw"
+        ? ["status", "closure_remarks", "closed_at"]
+        : action === "manager.verify" || action === "bills"
+          ? ["status"]
+          : []) {
+      allowed.add(field);
+    }
+    for (const key of Object.keys(original) as Array<keyof ExpenseTicket>) {
+      if (allowed.has(key)) continue;
+      if (JSON.stringify(original[key]) !== JSON.stringify(changed[key])) {
+        throw conflict(`Expense ${action} changed protected field ${key}`);
+      }
+    }
+  }
+
+  private async insertExpenseTicket(
+    client: PoolClient,
+    ticket: ExpenseTicket,
+  ): Promise<void> {
+    const inserted = await client.query(
+      `INSERT INTO expenses.expense_tickets (
+        id,ticket_no,requester_user_id,requester_role_snapshot,department_id,expense_type,
+        expense_sub_type,project_code,client_name,task_title,task_description,location,
+        start_date,end_date,estimated_amount,payment_type,advance_amount,advance_justification,
+        assigned_reviewer_id,director_approver_id,finance_manager_id,manager_verifier_id,
+        manager_backup_user_id,finance_approver_id,status,actual_amount,variance_amount,
+        payment_reference_no,closure_remarks,context_payload,route_snapshot,policy_snapshot,
+        version,created_at,updated_at,submitted_at,closed_at,deleted_at,company_id,
+        owner_resolution_status,owner_resolution_reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+         $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30::jsonb,$31::jsonb,$32::jsonb,
+         $33,$34,$35,$36,$37,$38,$39,$40,$41)
+       ON CONFLICT DO NOTHING`,
+      [ticket.id, ticket.ticket_no, ticket.requester_user_id, ticket.requester_role_snapshot,
+        ticket.department_id, ticket.expense_type, ticket.expense_sub_type, ticket.project_code,
+        ticket.client_name, ticket.task_title, ticket.task_description, ticket.location,
+        ticket.start_date, ticket.end_date, ticket.estimated_amount, ticket.payment_type,
+        ticket.advance_amount, ticket.advance_justification, ticket.manager_verifier_id, null,
+        ticket.finance_approver_id, ticket.manager_verifier_id, ticket.manager_backup_user_id,
+        ticket.finance_approver_id, ticket.status, ticket.actual_amount, ticket.variance_amount,
+        ticket.payment_reference_no, ticket.closure_remarks, JSON.stringify(ticket.context_payload),
+        JSON.stringify(ticket.route_snapshot), JSON.stringify(ticket.policy_snapshot), ticket.version,
+        ticket.created_at, ticket.updated_at, ticket.submitted_at, ticket.closed_at,
+        ticket.deleted_at, ticket.company_id, ticket.owner_resolution_status,
+        ticket.owner_resolution_reason ?? null],
+    );
+    if (inserted.rowCount !== 1) throw conflict("Expense ticket already exists");
+  }
+
+  private async updateExpenseTicketForAction(
+    client: PoolClient,
+    action: Exclude<ExpenseMutationAction, "create">,
+    original: ExpenseTicket,
+    changed: ExpenseTicket,
+    companyId: UUID,
+  ): Promise<void> {
+    const common = [changed.version, changed.updated_at, changed.id, companyId, original.version];
+    const result = action === "submit"
+      ? await client.query(
+          `UPDATE expenses.expense_tickets
+           SET status=$1,manager_verifier_id=$2,manager_backup_user_id=$3,
+               finance_approver_id=$4,route_snapshot=$5::jsonb,submitted_at=$6,
+               version=$7,updated_at=$8
+           WHERE id=$9 AND company_id=$10 AND version=$11 AND owner_resolution_status='typed_creation'`,
+          [changed.status, changed.manager_verifier_id, changed.manager_backup_user_id,
+            changed.finance_approver_id, JSON.stringify(changed.route_snapshot), changed.submitted_at,
+            ...common],
+        )
+      : action === "withdraw"
+        ? await client.query(
+            `UPDATE expenses.expense_tickets
+             SET status=$1,closure_remarks=$2,closed_at=$3,version=$4,updated_at=$5
+             WHERE id=$6 AND company_id=$7 AND version=$8 AND owner_resolution_status='typed_creation'`,
+            [changed.status, changed.closure_remarks, changed.closed_at, ...common],
+          )
+        : action === "clarification"
+          ? await client.query(
+              `UPDATE expenses.expense_tickets SET version=$1,updated_at=$2
+               WHERE id=$3 AND company_id=$4 AND version=$5 AND owner_resolution_status='typed_creation'`,
+              common,
+            )
+          : await client.query(
+              `UPDATE expenses.expense_tickets SET status=$1,version=$2,updated_at=$3
+               WHERE id=$4 AND company_id=$5 AND version=$6 AND owner_resolution_status='typed_creation'`,
+              [changed.status, ...common],
+            );
+    if (result.rowCount !== 1) throw conflict("Expense ticket changed during the command");
+  }
+
   async expenseFinanceCommand(input: {
     userId: UUID; ticketId: UUID;
     action: "finance.approve" | "finance.payment" | "settlement";
@@ -1270,6 +1811,29 @@ class PostgresPersistence {
     }
   }
 
+  async expenseMetadataContext(userId: UUID): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    store: DataStore;
+  }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
+      // Project rows do not yet have a durable company owner. Return the
+      // company-safe platform metadata without hydrating ambiguous project or
+      // client selectors; TEN-S25-009 owns project tenant attribution.
+      const store = await this.loadExpenseReadStore(client, companyId, []);
+      await client.query("COMMIT");
+      return { actor, companyId, store };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async expensePageContext(userId: UUID, options: {
     kind: "my" | "manager" | "finance";
     page: number;
@@ -1277,7 +1841,9 @@ class PostgresPersistence {
     filters?: {
       status?: string; date_from?: string; date_to?: string;
       payment_type?: string; expense_type?: string; expense_sub_type?: string;
-      amount_min?: string; amount_max?: string; sla_bucket?: string; sort?: string;
+      amount_min?: string; amount_max?: string; requester?: string;
+      department?: string; document_status?: "any" | "complete" | "missing";
+      sla_bucket?: string; sort?: string;
     };
   }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore; total: number }> {
     const client = await this.pool.connect();
@@ -1327,6 +1893,92 @@ class PostgresPersistence {
       if (filters?.expense_sub_type) where.push(`t.expense_sub_type = ${bind(filters.expense_sub_type)}`);
       if (filters?.amount_min) where.push(`t.estimated_amount >= ${bind(filters.amount_min)}::numeric`);
       if (filters?.amount_max) where.push(`t.estimated_amount <= ${bind(filters.amount_max)}::numeric`);
+      if (filters?.requester) {
+        const requester = bind(filters.requester);
+        where.push(`(
+          strpos(
+            lower(concat_ws(' ',
+              t.context_payload->'requester_snapshot'->>'employee_code',
+              t.context_payload->'requester_snapshot'->>'full_name'
+            )),
+            lower(${requester})
+          ) > 0
+          OR EXISTS (
+            SELECT 1
+            FROM core.users requester_user
+            JOIN platform.user_session_preferences requester_membership
+              ON requester_membership.user_id=requester_user.id
+             AND requester_membership.company_id=t.company_id
+            WHERE requester_user.id=t.requester_user_id
+              AND strpos(
+                lower(concat_ws(' ', requester_user.employee_code, requester_user.full_name)),
+                lower(${requester})
+              ) > 0
+          )
+        )`);
+      }
+      if (filters?.department) {
+        const department = bind(filters.department);
+        where.push(`EXISTS (
+          SELECT 1 FROM core.departments department
+          WHERE department.id=t.department_id
+            AND (
+              department.company_id=t.company_id
+              OR (
+                department.company_id IS NULL
+                AND EXISTS (
+                  SELECT 1 FROM core.users requester_user
+                  JOIN platform.user_session_preferences requester_membership
+                    ON requester_membership.user_id=requester_user.id
+                   AND requester_membership.company_id=t.company_id
+                  WHERE requester_user.id=t.requester_user_id
+                    AND requester_user.department_id=department.id
+                )
+              )
+            )
+            AND strpos(
+              lower(concat_ws(' ', department.department_code, department.name)),
+              lower(${department})
+            ) > 0
+        )`);
+      }
+      if (filters?.document_status && filters.document_status !== "any") {
+        const requiredDocuments = bind(
+          JSON.stringify(RequiredDocumentsByExpenseSubType),
+        );
+        const missingRequiredDocument = `EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(
+            COALESCE(${requiredDocuments}::jsonb->t.expense_sub_type, '[]'::jsonb)
+          ) required(document_type)
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM expenses.expense_documents document
+            JOIN documents.doc_metadata metadata ON metadata.id=document.document_id
+            JOIN documents.doc_versions version
+              ON version.document_id=metadata.id
+             AND version.version=metadata.current_version
+             AND version.storage_key=metadata.storage_key
+             AND version.size_bytes=metadata.size_bytes
+             AND version.checksum_sha256 IS NOT DISTINCT FROM metadata.checksum_sha256
+            WHERE document.ticket_id=t.id
+              AND document.document_type=required.document_type
+              AND document.verification_status='verified'
+              AND metadata.business_object_type='expense_ticket'
+              AND metadata.business_object_id=t.id
+              AND metadata.classification='finance'
+              AND metadata.document_type=document.document_type
+              AND metadata.deleted_at IS NULL
+              AND metadata.size_bytes > 0
+              AND version.size_bytes > 0
+          )
+        )`;
+        where.push(
+          filters.document_status === "missing"
+            ? missingRequiredDocument
+            : `NOT ${missingRequiredDocument}`,
+        );
+      }
       if (filters?.sla_bucket && filters.sla_bucket !== "any") {
         if (filters.sla_bucket === "0-24h") where.push("t.created_at >= now() - interval '24 hours'");
         else if (filters.sla_bucket === "24-72h") where.push("t.created_at < now() - interval '24 hours' AND t.created_at >= now() - interval '72 hours'");
@@ -2336,6 +2988,9 @@ class PostgresPersistence {
       const expenseApprovals = await this.loadExpenseApprovals(client, ticketIds);
       const auditLogs = await this.loadAuditLogs(client, undefined, ticketIds);
       const expenseDocuments = await this.loadExpenseDocuments(client, ticketIds);
+      const documentIds = expenseDocuments.map((document) => document.document_id);
+      const documents = await this.loadDocuments(client, documentIds);
+      const documentVersions = await this.loadDocumentVersions(client, documentIds);
       const payments = await this.loadPayments(client, ticketIds);
       const displayUserIds = Array.from(new Set([
         ...tickets.flatMap((ticket) => [ticket.requester_user_id, ticket.manager_verifier_id, ticket.finance_approver_id]),
@@ -2355,7 +3010,8 @@ class PostgresPersistence {
       return {
           ...this.store,
           ...emptyCollections,
-          tickets, lineItems, expenseApprovals, auditLogs, expenseDocuments, payments,
+          tickets, lineItems, expenseApprovals, auditLogs, expenseDocuments,
+          documents, documentVersions, payments,
           users, departments,
           financeGovernanceConfig: null,
           adminSecuritySettings: buildDefaultAdminSecuritySettings(new Date().toISOString()),
@@ -2368,6 +3024,67 @@ class PostgresPersistence {
           nextOutboxId: 1,
           nextTicketNo: 1,
       };
+  }
+
+  private async loadExpenseCommandStore(
+    client: PoolClient,
+    companyId: UUID,
+    tickets: ExpenseTicket[],
+  ): Promise<DataStore> {
+    const store = await this.loadExpenseReadStore(client, companyId, tickets);
+    const users = await this.loadUsers(client, companyId);
+    const userIds = users.map((user) => user.id);
+    const activeRoleRows = userIds.length
+      ? await client.query<{ user_id: UUID; role_key: RoleKey }>(
+          `SELECT ur.user_id, ur.role_key
+           FROM core.user_roles ur
+           JOIN core.roles role ON role.role_key = ur.role_key
+           WHERE ur.user_id = ANY($1::uuid[])
+             AND ur.status = 'active' AND ur.deleted_at IS NULL
+             AND role.status = 'active' AND role.deleted_at IS NULL
+             AND ur.effective_from <= CURRENT_DATE
+             AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
+           ORDER BY ur.user_id, ur.role_key`,
+          [userIds],
+        )
+      : { rows: [] as Array<{ user_id: UUID; role_key: RoleKey }> };
+    const rolesByUser = new Map<UUID, RoleKey[]>();
+    for (const row of activeRoleRows.rows) {
+      const roles = rolesByUser.get(row.user_id) ?? [];
+      roles.push(row.role_key);
+      rolesByUser.set(row.user_id, roles);
+    }
+    const companyProfiles = await this.loadCompanyProfiles(client, companyId);
+    const userSessionPreferences = await this.loadUserSessionPreferences(
+      client,
+      companyId,
+    );
+    const managerBackupAssignments = (
+      await this.loadManagerBackupAssignments(client)
+    ).filter(
+      (assignment) =>
+        userIds.includes(assignment.employee_user_id) &&
+        userIds.includes(assignment.backup_manager_user_id),
+    );
+    const ticketCounter = await client.query<{ next_ticket_no: number }>(
+      `SELECT COALESCE(MAX(
+         CASE WHEN ticket_no ~ '^EXP-2026-[0-9]+$'
+           THEN substring(ticket_no FROM '([0-9]+)$')::integer ELSE 0 END
+       ), 0) + 1 AS next_ticket_no
+       FROM expenses.expense_tickets`,
+    );
+    return {
+      ...store,
+      users: users.map((user) => ({
+        ...user,
+        roles: rolesByUser.get(user.id) ?? [],
+      })),
+      companyProfiles,
+      userSessionPreferences,
+      financeGovernanceConfig: await this.loadFinanceGovernanceConfig(client),
+      managerBackupAssignments,
+      nextTicketNo: Number(ticketCounter.rows[0]?.next_ticket_no ?? 1),
+    };
   }
 
   async reload(): Promise<void> {
@@ -2472,9 +3189,14 @@ class PostgresPersistence {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      // Routing readers acquire this lock before row locks. A full-store
+      // writer must do the same so it cannot hold a user/preference row
+      // while waiting for the global governance lock.
+      await lockExpenseFinanceGovernanceWriter(client);
       await this.flushCore(client);
-      await this.flushPlatform(client);
-      await this.flushExpenses(client);
+      await this.flushPlatform(client, true);
+      // Expense mutations use request-local transaction commands. A generic
+      // response-end flush must never regain authority over the fenced tables.
       await this.flushDocuments(client);
       await this.flushAssets(client);
       await this.flushTimesheets(client);
@@ -2515,9 +3237,15 @@ class PostgresPersistence {
         throw new Error("Initial seed requires an empty user and expense database");
       }
       await client.query("SELECT set_config('app.expense_command_v1', 'on', true)");
+      await lockExpenseCombinedRoutingWriter(
+        client,
+        this.store.managerBackupAssignments.map(
+          (mapping) => mapping.employee_user_id,
+        ),
+      );
       await this.flushCore(client);
-      await this.flushPlatform(client);
-      await this.flushExpenses(client);
+      await this.flushPlatform(client, true);
+      await this.flushExpenses(client, this.store, true);
       await this.flushDocuments(client);
       await this.flushAssets(client);
       await this.flushTimesheets(client);
@@ -2614,9 +3342,7 @@ class PostgresPersistence {
           await this.flushPlatform(client);
           break;
         case "expenses":
-          await this.flushExpenses(client);
-          await this.flushOutbox(client, aggregateIds);
-          break;
+          throw new Error("Expense mutations require a transaction-owned command");
         case "documents":
           await this.flushDocuments(client, optionalSet(options.documentIds));
           await this.flushOutbox(
@@ -3151,6 +3877,7 @@ class PostgresPersistence {
 
   private async loadCompanyProfiles(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<CompanyProfileRecord[]> {
     const { rows } = await client.query(`
       SELECT id, company_name, company_slug, website, industry, address, timezone, locale, currency,
@@ -3158,8 +3885,9 @@ class PostgresPersistence {
         logo_document_id, logo_url, logo_file_name, logo_mime_type, logo_size_bytes,
         status, bootstrap_completed_at, created_at, updated_at, version
       FROM platform.company_profiles
+      ${companyId ? "WHERE id = $1" : ""}
       ORDER BY created_at, id
-    `);
+    `, companyId ? [companyId] : []);
     return rows.map((row) => ({
       id: row.id,
       company_name: row.company_name,
@@ -3190,12 +3918,14 @@ class PostgresPersistence {
 
   private async loadUserSessionPreferences(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<UserSessionPreferenceRecord[]> {
     const { rows } = await client.query(`
       SELECT id, user_id, active_role, company_id, landing_page, locale, timezone, created_at, updated_at, version
       FROM platform.user_session_preferences
+      ${companyId ? "WHERE company_id = $1" : ""}
       ORDER BY updated_at, id
-    `);
+    `, companyId ? [companyId] : []);
     return rows.map((row) => ({
       id: row.id,
       user_id: row.user_id,
@@ -3439,9 +4169,16 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadDocuments(client: PoolClient): Promise<DocumentMetadata[]> {
+  private async loadDocuments(
+    client: PoolClient,
+    documentIds?: readonly UUID[],
+  ): Promise<DocumentMetadata[]> {
+    if (documentIds?.length === 0) return [];
     const { rows } = await client.query(
-      "SELECT * FROM documents.doc_metadata ORDER BY created_at, id",
+      `SELECT * FROM documents.doc_metadata
+       ${documentIds ? "WHERE id=ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      documentIds ? [documentIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -3466,9 +4203,14 @@ class PostgresPersistence {
 
   private async loadDocumentVersions(
     client: PoolClient,
+    documentIds?: readonly UUID[],
   ): Promise<DocumentVersionRecord[]> {
+    if (documentIds?.length === 0) return [];
     const { rows } = await client.query(
-      "SELECT * FROM documents.doc_versions ORDER BY created_at, id",
+      `SELECT * FROM documents.doc_versions
+       ${documentIds ? "WHERE document_id=ANY($1::uuid[])" : ""}
+       ORDER BY created_at, id`,
+      documentIds ? [documentIds] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -4755,7 +5497,15 @@ class PostgresPersistence {
     }
   }
 
-  private async flushPlatform(client: PoolClient): Promise<void> {
+  private async flushPlatform(
+    client: PoolClient,
+    financeRoutingLockHeld = false,
+  ): Promise<void> {
+    if (!financeRoutingLockHeld) {
+      // Platform-only writers use the same lock-before-row order as routing
+      // commands and the full-store writer.
+      await lockExpenseFinanceGovernanceWriter(client);
+    }
     for (const company of this.store.companyProfiles) {
       await client.query(
         `INSERT INTO platform.company_profiles (
@@ -5323,8 +6073,9 @@ class PostgresPersistence {
   private async flushOutbox(
     client: PoolClient,
     aggregateIds?: ReadonlySet<string>,
+    sourceStore: DataStore = this.store,
   ): Promise<void> {
-    for (const event of this.store.outbox) {
+    for (const event of sourceStore.outbox) {
       if (aggregateIds && !aggregateIds.has(event.aggregate_id)) continue;
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO platform.outbox_events (
@@ -5364,12 +6115,24 @@ class PostgresPersistence {
         throw new Error("Outbox event was not persisted.");
       }
       event.id = Number(persistedId);
-      this.store.nextOutboxId = Math.max(this.store.nextOutboxId, event.id + 1);
+      sourceStore.nextOutboxId = Math.max(sourceStore.nextOutboxId, event.id + 1);
     }
   }
 
-  private async flushExpenses(client: PoolClient): Promise<void> {
-    for (const mapping of this.store.managerBackupAssignments) {
+  private async flushExpenses(
+    client: PoolClient,
+    sourceStore: DataStore = this.store,
+    reviewerRoutingLocksHeld = false,
+  ): Promise<void> {
+    if (!reviewerRoutingLocksHeld) {
+      await lockExpenseReviewerRoutingWriter(
+        client,
+        sourceStore.managerBackupAssignments.map(
+          (mapping) => mapping.employee_user_id,
+        ),
+      );
+    }
+    for (const mapping of sourceStore.managerBackupAssignments) {
       await client.query(
         `INSERT INTO expenses.employee_reviewer_mappings (
           id, employee_user_id, reviewer_user_id, assigned_by_user_id, effective_from,
@@ -5395,7 +6158,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const ticket of this.store.tickets) {
+    for (const ticket of sourceStore.tickets) {
       if (!ticket.company_id || ticket.owner_resolution_status !== "typed_creation") {
         throw new Error("Whole-domain flush cannot persist unowned or historical expense tickets");
       }
@@ -5473,7 +6236,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const item of this.store.lineItems) {
+    for (const item of sourceStore.lineItems) {
       await client.query(
         `INSERT INTO expenses.expense_line_items (
           id, ticket_id, line_category, description, quantity, unit_cost, line_total,
@@ -5498,7 +6261,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const approval of this.store.expenseApprovals) {
+    for (const approval of sourceStore.expenseApprovals) {
       await client.query(
         `INSERT INTO expenses.expense_approvals (
           id, ticket_id, approval_stage, approver_user_id, decision, remarks,
@@ -5521,7 +6284,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const audit of this.store.auditLogs) {
+    for (const audit of sourceStore.auditLogs) {
       await client.query(
         `INSERT INTO expenses.expense_audit_logs (
           id, ticket_id, actor_user_id, event_type, old_value, new_value, remarks, payload_hash, created_at
@@ -5541,7 +6304,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const document of this.store.expenseDocuments) {
+    for (const document of sourceStore.expenseDocuments) {
       await client.query(
         `INSERT INTO expenses.expense_documents (
           id, ticket_id, document_id, document_type, verification_status, uploaded_by, uploaded_at
@@ -5560,7 +6323,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const payment of this.store.payments) {
+    for (const payment of sourceStore.payments) {
       await client.query(
         `INSERT INTO expenses.expense_payments (
           id, ticket_id, payment_type, approved_amount, paid_amount, payment_date,

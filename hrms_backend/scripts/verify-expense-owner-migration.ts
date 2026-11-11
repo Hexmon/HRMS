@@ -118,6 +118,7 @@ try {
   );
 
   await client.query(readFileSync(join(migrationDirectory, "0068_expense_original_company_owner.sql"), "utf8"));
+  await client.query(readFileSync(join(migrationDirectory, "0069_expense_command_replay.sql"), "utf8"));
   const owners = await client.query<{
     id: string; company_id: string | null; owner_resolution_status: string; owner_resolution_reason: string | null
   }>(
@@ -463,11 +464,36 @@ try {
     [companyA, requester, ticketIds.newTyped, "b".repeat(64),
       JSON.stringify({ id: ticketIds.newTyped, status: "Draft", version: 1 })],
   );
+  const genericActions = [
+    "create",
+    "submit",
+    "withdraw",
+    "clarification",
+    "manager.verify",
+    "bills",
+  ] as const;
+  for (const [index, action] of genericActions.entries()) {
+    await client.query(
+      `INSERT INTO expenses.expense_command_results
+       (company_id,actor_user_id,ticket_id,action,idempotency_key,request_hash,response_body)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+      [companyA, requester, ticketIds.newTyped, action,
+        `generic-repeatable-${action}`, String(index).repeat(64).slice(0, 64),
+        JSON.stringify({ id: ticketIds.newTyped, status: "Draft", version: 1 })],
+    );
+  }
+  await assert.rejects(client.query(
+    `INSERT INTO expenses.expense_command_results
+     (company_id,actor_user_id,ticket_id,action,idempotency_key,request_hash,response_body)
+     VALUES ($1,$2,$3,'unsupported','unsupported-action-key',$4,'{}'::jsonb)`,
+    [companyA, requester, ticketIds.newTyped, "d".repeat(64)],
+  ));
   const typedBeforeRepeat = (await client.query(
     `SELECT company_id,owner_resolution_status,status,version FROM expenses.expense_tickets WHERE id=$1`,
     [ticketIds.newTyped],
   )).rows[0];
   await client.query(readFileSync(join(migrationDirectory, "0068_expense_original_company_owner.sql"), "utf8"));
+  await client.query(readFileSync(join(migrationDirectory, "0069_expense_command_replay.sql"), "utf8"));
   assert.deepEqual((await client.query(
     `SELECT company_id,owner_resolution_status,status,version FROM expenses.expense_tickets WHERE id=$1`,
     [ticketIds.newTyped],
@@ -475,7 +501,7 @@ try {
   assert.equal((await client.query(
     `SELECT response_body->>'status' AS status FROM expenses.expense_command_results
      WHERE ticket_id=$1`, [ticketIds.newTyped],
-  )).rows[0]?.status, "Draft");
+  )).rows.every((row) => row.status === "Draft"), true);
   assert.equal(Number((await client.query(
     `SELECT count(*) FROM pg_trigger WHERE tgname LIKE '%_command_guard_trg' AND NOT tgisinternal`,
   )).rows[0]?.count), 8);

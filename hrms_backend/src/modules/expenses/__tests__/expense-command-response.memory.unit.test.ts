@@ -5,7 +5,7 @@ import { authHeader, loginAs, projectTravelPayload } from "#testing";
 import { buildApp } from "../../../app.js";
 import { createMemoryDataStore, nowIso, type DataStore } from "../../../platform/data-store.js";
 
-describe("expense Finance command response contract in memory mode", () => {
+describe("expense command response contract in memory mode", () => {
   let app: FastifyInstance;
   let store: DataStore;
 
@@ -19,26 +19,36 @@ describe("expense Finance command response contract in memory mode", () => {
     await app.close();
   });
 
-  it("returns only id, status and version for approve, payment and settlement", async () => {
+  it("returns only id, status and version for generic and Finance commands", async () => {
     const employee = await loginAs(app, "E1");
     const manager = await loginAs(app, "D1");
     const finance = await loginAs(app, "N1");
     const created = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
+      headers: { ...authHeader(employee.token), "idempotency-key": "memory-create-contract" },
       payload: { ...projectTravelPayload, project_code: "MEMORY-CONTRACT" },
     });
     expect(created.statusCode, created.body).toBe(200);
     const ticketId = created.json().id;
+    expect(created.json()).toEqual({
+      id: ticketId,
+      status: "Pending Manager Verification",
+      version: 1,
+    });
 
     const managerVerified = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticketId}/manager/verify`,
-      headers: authHeader(manager.token),
+      headers: { ...authHeader(manager.token), "idempotency-key": "memory-manager-contract" },
       payload: { decision: "approve", expected_version: 1 },
     });
     expect(managerVerified.statusCode, managerVerified.body).toBe(200);
+    expect(managerVerified.json()).toEqual({
+      id: ticketId,
+      status: "Manager Verified",
+      version: 2,
+    });
 
     const approveHeaders = { ...authHeader(finance.token), "idempotency-key": `memory-approve-${ticketId}` };
     const approvePayload = { decision: "verify", expected_version: 2 };

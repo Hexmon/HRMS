@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs } from "#testing";
-import { buildRealApp } from "../../../__tests__/real-infra.js";
+import { buildRealApp, buildRealAppReplica } from "../../../__tests__/real-infra.js";
 import { recordApprovedRegularizationPayrollAdjustments } from "../payroll-period-service.js";
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -31,9 +31,10 @@ describe("regularization normalized items and actions", () => {
   }
 
   async function reopenWithoutReset(): Promise<void> {
+    const previousApp = app;
     await app.close();
     restoreDatabaseUrl();
-    app = await buildRealApp({ reset: false });
+    app = await buildRealAppReplica(previousApp);
     await app.ready();
   }
 
