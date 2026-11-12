@@ -11,6 +11,7 @@ describe("media command idempotency key", () => {
       file: new Blob(["same-image"], { type: "image/jpeg" }),
       fileName: "photo.jpg",
       mimeType: "image/jpeg",
+      documentType: "identity_proof",
     };
 
     const first = await createMediaIdempotencyKey(base);
@@ -23,6 +24,9 @@ describe("media command idempotency key", () => {
     expect(await createMediaIdempotencyKey({ ...base, expectedVersion: 5 })).not.toBe(first);
     expect(await createMediaIdempotencyKey({ ...base, fileName: "renamed.jpg" })).not.toBe(first);
     expect(await createMediaIdempotencyKey({ ...base, mimeType: "image/png" })).not.toBe(first);
+    expect(await createMediaIdempotencyKey({ ...base, documentType: "address_proof" })).not.toBe(
+      first,
+    );
     expect(first).toMatch(/^media-[0-9a-f]{64}$/u);
   });
 });

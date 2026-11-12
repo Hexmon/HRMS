@@ -27,14 +27,6 @@ WITH candidate_owners AS (
   JOIN platform.user_session_preferences preference
     ON preference.user_id=employee.id AND preference.company_id IS NOT NULL
   UNION ALL
-  SELECT metadata.id, preference.company_id, true
-  FROM documents.doc_metadata metadata
-  JOIN core.users employee
-    ON metadata.business_object_type='employee'
-   AND metadata.business_object_id=employee.id
-  JOIN platform.user_session_preferences preference
-    ON preference.user_id=employee.id AND preference.company_id IS NOT NULL
-  UNION ALL
   SELECT metadata.id, ticket.company_id, true
   FROM documents.doc_metadata metadata
   JOIN expenses.expense_tickets ticket

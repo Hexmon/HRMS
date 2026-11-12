@@ -163,8 +163,22 @@ export class MediaLifecycleService {
       await this.recordContentRead(actorId, documentId, "denied", "storage_integrity_mismatch");
       throw notFound("Document bytes failed integrity verification.");
     }
-    const revalidated = await this.authorizedActiveDocument(actorId, documentId, "raw", false);
-    if (revalidated.storage_key !== document.storage_key) throw notFound("Document not found");
+    let revalidated: DocumentMetadata;
+    try {
+      revalidated = await this.authorizedActiveDocument(actorId, documentId, "raw", false);
+    } catch (error) {
+      await this.recordContentRead(
+        actorId,
+        documentId,
+        "denied",
+        "authorization_or_lifecycle_changed_during_read",
+      );
+      throw error;
+    }
+    if (revalidated.storage_key !== document.storage_key) {
+      await this.recordContentRead(actorId, documentId, "denied", "storage_pointer_changed_during_read");
+      throw notFound("Document not found");
+    }
     await this.recordContentRead(actorId, documentId, "allowed", null);
     return {
       document: revalidated,

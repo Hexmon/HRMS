@@ -40,6 +40,7 @@ import { useAuth } from "@/lib/auth";
 import { isUuid, pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { queryKeys } from "@/shared/query";
 import { prepareDocumentUploadFile, uploadPolicyAccept } from "@/shared/uploads/documents";
+import { missingEmployeeProofs } from "@/shared/uploads/employee-proofs";
 import { createMediaIdempotencyKey } from "@/shared/uploads/media-command";
 
 export const Route = createFileRoute("/_app/ems/documents")({
@@ -55,6 +56,7 @@ interface Doc {
   status: DocStatus;
   uploadedOn?: string;
   remarks?: string;
+  documentType?: string;
 }
 
 const DOCS: Doc[] = [
@@ -128,7 +130,19 @@ function MyDocuments() {
   const uploadPolicyQuery = useDocumentUploadPolicy(apiEnabled);
   const uploadMutation = useEmsDocumentMutation(user?.id);
   const deleteMutation = useDocumentDeleteMutation();
-  const docs = apiEnabled ? mapApiDocuments(pageItems(documentsQuery.data)) : DOCS;
+  const apiDocumentRows = pageItems(documentsQuery.data);
+  const mappedApiDocuments: Doc[] = mapApiDocuments(apiDocumentRows).map((document) => ({
+    ...document,
+    documentType: document.category,
+  }));
+  const docs = apiEnabled
+    ? [
+        ...mappedApiDocuments,
+        ...missingEmployeeProofs(
+          mappedApiDocuments.map(({ documentType }) => documentType ?? ""),
+        ).map((proof): Doc => ({ ...proof, status: "missing" })),
+      ]
+    : DOCS;
   const loading = apiEnabled && documentsQuery.isLoading;
   const error = documentsQuery.error instanceof Error ? documentsQuery.error : null;
 
@@ -214,6 +228,7 @@ function MyDocuments() {
         file: prepared.file,
         fileName: prepared.file.name,
         mimeType: prepared.file.type,
+        documentType,
       });
       await uploadMutation.mutateAsync({ input: formData, idempotencyKey });
       toast.success(target ? "Replacement uploaded" : "Document uploaded", {
@@ -429,6 +444,7 @@ function DeleteDocumentDialog({
 
 function documentTypeFor(document: Doc | null): string | null {
   if (!document) return null;
+  if (document.documentType) return document.documentType;
   const value = `${document.category} ${document.name}`.toLowerCase();
   if (value.includes("address")) return "address_proof";
   if (value.includes("education")) return "education_proof";

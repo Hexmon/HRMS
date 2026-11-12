@@ -397,11 +397,16 @@ describe("TEN-S25-021 durable media lifecycle", () => {
       headers: { authorization: `Bearer ${employee.token}` },
     });
     expect(concurrentRemove.statusCode).toBe(404);
-    const access = await app.store.pgPool!.query<{ decision: string }>(
-      "SELECT decision FROM documents.doc_access_logs WHERE document_id=$1 ORDER BY created_at",
+    const access = await app.store.pgPool!.query<{ action: string; decision: string; reason: string | null }>(
+      "SELECT action,decision,reason FROM documents.doc_access_logs WHERE document_id=$1 ORDER BY created_at,id",
       [response.json().id],
     );
     expect(access.rows.map((row) => row.decision)).toEqual(expect.arrayContaining(["allowed", "denied"]));
+    expect(access.rows).toContainEqual({
+      action: "read-content",
+      decision: "denied",
+      reason: "authorization_or_lifecycle_changed_during_read",
+    });
   });
 
   it("cuts the real EMS proof upload and replacement journey over to durable media", async () => {

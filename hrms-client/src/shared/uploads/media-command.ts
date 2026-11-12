@@ -10,6 +10,7 @@ export interface MediaCommandIdentity {
   file?: Blob;
   fileName?: string;
   mimeType?: string;
+  documentType?: string;
 }
 
 /**
@@ -28,6 +29,7 @@ export async function createMediaIdempotencyKey(identity: MediaCommandIdentity):
       file_digest: fileDigest,
       file_name: identity.fileName ?? null,
       mime_type: identity.mimeType?.trim().toLowerCase() ?? null,
+      document_type: identity.documentType?.trim().toLowerCase() ?? null,
     }),
   );
   return `media-${await sha256(command.buffer)}`;

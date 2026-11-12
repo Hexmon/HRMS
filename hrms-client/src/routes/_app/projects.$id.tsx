@@ -340,11 +340,12 @@ function ProjectDetailPage() {
         <Button
           size="sm"
           variant="ghost"
-          disabled={!isApiBacked}
+          disabled
+          title="Legacy project document ownership has not been verified for secure download."
           onClick={() => downloadDocument(d)}
         >
           <Download className="mr-1.5 h-4 w-4" />
-          Download
+          Download unavailable
         </Button>
       ),
     },

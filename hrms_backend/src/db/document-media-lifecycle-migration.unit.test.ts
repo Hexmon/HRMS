@@ -17,7 +17,15 @@ describe("0071 document ownership migration", () => {
     );
     expect(coreCandidate).toContain("employee.profile_photo_document_id=metadata.id");
     expect(coreCandidate).toContain("metadata.document_type='profile_photo'");
+    expect(migration).not.toContain("metadata.business_object_type='employee'");
     expect(migration).toContain("legacy_company_owner_unverified");
+  });
+
+  it("does not infer historical employee-proof ownership from a current company preference", () => {
+    const preferenceJoins = migration.match(/JOIN platform\.user_session_preferences preference/gu);
+
+    expect(preferenceJoins).toHaveLength(1);
+    expect(migration).not.toMatch(/business_object_type='employee'[\s\S]{0,300}user_session_preferences/u);
   });
 
   it("permits ownerless rows only while quarantined", () => {
