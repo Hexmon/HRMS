@@ -81,8 +81,25 @@ describe("production user-flow smoke", () => {
     });
     expect(timesheet).toMatchObject({ status: "Pending Approval" });
 
-    const expense = await requestJson("POST", "/api/v1/expenses", employee.token, projectTravelPayload);
-    expect(expense).toMatchObject({ requester_user_id: employee.user.id, status: "Pending Manager Verification" });
+    const expenseCreateKey = randomUUID();
+    const expense = await requestJson("POST", "/api/v1/expenses", employee.token, projectTravelPayload, {
+      idempotencyKey: expenseCreateKey,
+    });
+    expect(expense).toMatchObject({
+      id: expect.any(String),
+      status: "Pending Manager Verification",
+      version: expect.any(Number),
+    });
+    const expenseReplay = await requestJson("POST", "/api/v1/expenses", employee.token, projectTravelPayload, {
+      idempotencyKey: expenseCreateKey,
+    });
+    expect(expenseReplay).toEqual(expense);
+    const expenseDetail = await requestJson("GET", `/api/v1/expenses/${expense.id}`, employee.token);
+    expect(expenseDetail).toMatchObject({
+      id: expense.id,
+      requester_user_id: employee.user.id,
+      status: "Pending Manager Verification",
+    });
 
     const dashboard = await requestJson("GET", "/api/v1/dashboard/summary", manager.token);
     expect(dashboard.approvals.expense_manager_pending).toBeGreaterThanOrEqual(1);
@@ -228,8 +245,22 @@ describe("production user-flow smoke", () => {
     return { token: body.access_token, user: body.user };
   }
 
-  async function requestJson(method: "GET" | "POST" | "PATCH" | "PUT", url: string, token: string, payload?: Record<string, unknown>): Promise<any> {
-    const options = {
+  async function requestJson(
+    method: "GET" | "POST" | "PATCH" | "PUT",
+    url: string,
+    token: string,
+    payload?: Record<string, unknown>,
+    requestOptions?: { idempotencyKey?: string },
+  ): Promise<any> {
+    const isExpenseMutation = method !== "GET"
+      && (url === "/api/v1/expenses" || url.startsWith("/api/v1/expenses/"));
+    if (isExpenseMutation && !requestOptions?.idempotencyKey) {
+      throw new Error(`Expense mutation ${method} ${url} requires an explicit stable idempotency key.`);
+    }
+    if (method === "GET" && requestOptions?.idempotencyKey) {
+      throw new Error(`GET ${url} must not send an idempotency key.`);
+    }
+    const injectOptions = {
       method,
       url,
       headers: {
@@ -237,10 +268,13 @@ describe("production user-flow smoke", () => {
         ...(url === "/api/v1/attendance/punches"
           ? { "idempotency-key": randomUUID() }
           : {}),
+        ...(requestOptions?.idempotencyKey
+          ? { "idempotency-key": requestOptions.idempotencyKey }
+          : {}),
       },
       ...(payload === undefined ? {} : { payload })
     };
-    const response = await app.inject(options);
+    const response = await app.inject(injectOptions);
     expectOk(response, `${method} ${url}`);
     return response.json();
   }
