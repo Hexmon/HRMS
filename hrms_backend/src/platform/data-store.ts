@@ -2767,10 +2767,6 @@ function defaultMediaUploadPolicy(): MediaUploadPolicy {
       "image/webp",
       "text/plain",
       "text/csv",
-      "application/msword",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ],
     imageOutputMimeType: "image/jpeg",
   };

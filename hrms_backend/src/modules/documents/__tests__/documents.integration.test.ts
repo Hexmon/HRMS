@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { PDFDocument } from "pdf-lib";
+import sharp from "sharp";
 import { authHeader, loginAs, projectTravelPayload } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
 
@@ -32,7 +34,7 @@ describe("document management integration", () => {
       }
     });
     expect(upload.statusCode).toBe(409);
-    expect(upload.json().message).toMatch(/immutable tenant ownership/u);
+    expect(upload.json().message).toBe("Durable media storage is not configured");
   });
 
   it("fails closed before parsing generic PostgreSQL multipart document uploads", async () => {
@@ -46,7 +48,7 @@ describe("document management integration", () => {
       failOpen: true
     };
 
-    const pdfBody = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n", "utf8");
+    const pdfBody = await validPdf();
     const pdfUpload = await multipartUpload(app, {
       url: "/api/v1/documents",
       token: admin.token,
@@ -64,7 +66,9 @@ describe("document management integration", () => {
       }
     });
     expect(pdfUpload.statusCode).toBe(409);
-    expect(pdfUpload.json().message).toMatch(/immutable tenant ownership/u);
+    expect(pdfUpload.json().message).toBe(
+      "This document parent is not yet supported by the durable media protocol",
+    );
   });
 
   it("exposes and enforces the backend media upload policy", async () => {
@@ -102,17 +106,19 @@ describe("document management integration", () => {
       }
     });
     expect(disallowed.statusCode).toBe(409);
-    expect(disallowed.json().message).toMatch(/immutable tenant ownership/u);
+    expect(disallowed.json().message).toBe(
+      "Uploaded file content does not match its declared type",
+    );
 
     app.store.documentProcessing.mediaUploads.maxBytes = 8;
     const oversized = await multipartUpload(app, {
       url: "/api/v1/documents",
       token: admin.token,
       fields: {
-        business_object_type: "employee",
+        business_object_type: "core_user",
         business_object_id: admin.user.id,
         classification: "normal",
-        document_type: "oversized"
+        document_type: "identity_proof"
       },
       file: {
         fieldName: "file",
@@ -122,7 +128,10 @@ describe("document management integration", () => {
       }
     });
     expect(oversized.statusCode).toBe(409);
-    expect(oversized.json().message).toMatch(/immutable tenant ownership/u);
+    expect(oversized.json()).toMatchObject({
+      message: "File is larger than the configured media upload limit",
+      details: { max_bytes: 8, actual_bytes: 9 },
+    });
   });
 
   it("keeps SQL expense receipt upload fail closed while the EMS wrapper remains available", async () => {
@@ -171,13 +180,15 @@ describe("document management integration", () => {
       putObject.mockRestore();
     }
 
-    const imageBody = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00]);
+    const imageBody = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "white" },
+    }).jpeg().toBuffer();
     const emsUpload = await multipartUpload(app, {
       url: `/api/v1/ems/employees/${employee.user.id}/documents`,
       token: employee.token,
       fields: {
         classification: "normal",
-        document_type: "identity_photo"
+        document_type: "identity_proof"
       },
       file: {
         fieldName: "file",
@@ -188,10 +199,10 @@ describe("document management integration", () => {
     });
     expect(emsUpload.statusCode).toBe(200);
     expect(emsUpload.json().document).toMatchObject({
-      business_object_type: "employee",
+      business_object_type: "core_user",
       business_object_id: employee.user.id,
       owner_user_id: employee.user.id,
-      document_type: "identity_photo",
+      document_type: "identity_proof",
       file_name: "identity-photo.jpg",
       mime_type: "image/jpeg",
       size_bytes: imageBody.length
@@ -212,16 +223,23 @@ describe("document management integration", () => {
       url: `/api/v1/documents/${emsUpload.json().document.id}/download-url`,
       headers: authHeader(employee.token)
     });
-    expect(emsDownload.statusCode).toBe(409);
-    expect(emsDownload.json().message).toMatch(/immutable tenant ownership/u);
+    expect(emsDownload.statusCode).toBe(200);
+    expect(emsDownload.json()).toEqual({
+      document_id: emsUpload.json().document.id,
+      url: `/api/v1/documents/${emsUpload.json().document.id}/content`,
+      expires_in_seconds: 0,
+    });
 
     const emsContent = await app.inject({
       method: "GET",
       url: `/api/v1/documents/${emsUpload.json().document.id}/content`,
       headers: authHeader(employee.token)
     });
-    expect(emsContent.statusCode).toBe(409);
-    expect(emsContent.json().message).toMatch(/immutable tenant ownership/u);
+    expect(emsContent.statusCode).toBe(200);
+    expect(emsContent.headers["content-type"]).toBe("image/jpeg");
+    expect(emsContent.headers["cache-control"]).toBe("private, no-store");
+    expect(emsContent.headers["x-content-type-options"]).toBe("nosniff");
+    expect(emsContent.rawPayload).toEqual(imageBody);
 
     const deleteDocument = await app.inject({
       method: "DELETE",
@@ -278,8 +296,20 @@ function multipartUpload(app: FastifyInstance, input: MultipartUploadInput) {
     url: input.url,
     headers: {
       ...authHeader(input.token),
+      "idempotency-key": "documents-integration-upload-001",
       "content-type": `multipart/form-data; boundary=${boundary}`
     },
     payload: Buffer.concat(chunks)
   });
+}
+
+let pdfFixture: Promise<Buffer> | undefined;
+
+function validPdf(): Promise<Buffer> {
+  pdfFixture ??= (async () => {
+    const document = await PDFDocument.create();
+    document.addPage([100, 100]);
+    return Buffer.from(await document.save());
+  })();
+  return pdfFixture;
 }

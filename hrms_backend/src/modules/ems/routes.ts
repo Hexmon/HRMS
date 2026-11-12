@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
   documentUploadSchema,
@@ -17,6 +17,7 @@ import { conflict, unauthorized } from "../../platform/errors.js";
 import { EmsService, employeeProofDocumentTypes } from "./service.js";
 import { DocumentService, presentDocument } from "../documents/service.js";
 import { MediaLifecycleService } from "../documents/media-lifecycle.js";
+import { parseSingleFileMultipartUpload } from "../documents/multipart-upload.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
 const userIdParamSchema = z.object({ user_id: z.uuid() });
@@ -242,7 +243,7 @@ export const emsRoutes: FastifyPluginAsync = async (fastify) => {
     const params = userIdParamSchema.parse(request.params);
     const service = new EmsService(fastify.store);
     const authorizedActor = await service.assertEmployeeDocumentAccess(request.actor, params.user_id, "write");
-    const upload = await parseEmsDocumentUpload(request);
+    const upload = await parseSingleFileMultipartUpload(request);
     const parsed = emsDocumentUploadSchema.parse(upload.fields);
     if (fastify.store.kind === "postgres") {
       if (!fastify.store.pgPool || !fastify.store.objectStorage || !upload.fileBuffer) {
@@ -293,29 +294,3 @@ export const emsRoutes: FastifyPluginAsync = async (fastify) => {
     );
   });
 };
-
-async function parseEmsDocumentUpload(request: FastifyRequest): Promise<{
-  fields: Record<string, unknown>;
-  fileBuffer?: Buffer;
-}> {
-  if (!request.isMultipart()) {
-    return { fields: request.body as Record<string, unknown> };
-  }
-
-  const fields: Record<string, unknown> = {};
-  let fileBuffer: Buffer | undefined;
-  for await (const part of request.parts()) {
-    if (part.type === "file") {
-      fileBuffer = await part.toBuffer();
-      fields.file_name ??= part.filename;
-      fields.mime_type ??= part.mimetype;
-      fields.size_bytes = fileBuffer.length;
-      continue;
-    }
-    fields[part.fieldname] = part.value;
-  }
-  if (typeof fields.size_bytes === "string") {
-    fields.size_bytes = Number(fields.size_bytes);
-  }
-  return { fields, fileBuffer };
-}

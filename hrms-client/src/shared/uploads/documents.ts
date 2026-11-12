@@ -20,10 +20,6 @@ export const DEFAULT_MEDIA_UPLOAD_POLICY: MediaUploadPolicy = {
     "image/webp",
     "text/plain",
     "text/csv",
-    "application/msword",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ],
   image_output_mime_type: "image/jpeg",
 };

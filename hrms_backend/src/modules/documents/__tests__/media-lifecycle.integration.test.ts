@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { PDFDocument } from "pdf-lib";
 import { authHeader, loginAs } from "#testing";
 import type { ObjectStoragePort } from "../../../platform/data-store.js";
 import { MemoryObjectStorage, ObjectStorageProviderError } from "../../../platform/object-storage.js";
@@ -234,9 +235,7 @@ describe("TEN-S25-021 durable media lifecycle", () => {
       business_object_id: employee.user.id,
       classification: "normal",
       document_type: "identity_proof",
-      file_name: "identity.pdf",
-      mime_type: "application/pdf",
-    }, Buffer.from("%PDF-owner-role-denied"), "media-owner-role-denied-001");
+    }, await validPdf(), "media-owner-role-denied-001");
     expect(response.statusCode).toBe(403);
     expect(put).not.toHaveBeenCalled();
 
@@ -250,9 +249,7 @@ describe("TEN-S25-021 durable media lifecycle", () => {
       business_object_id: employee.user.id,
       classification: "normal",
       document_type: "identity_proof",
-      file_name: "identity.pdf",
-      mime_type: "application/pdf",
-    }, Buffer.from("%PDF-owner-role-denied"), "media-owner-definition-denied-001");
+    }, await validPdf(), "media-owner-definition-denied-001");
     expect(roleDefinitionDenied.statusCode).toBe(403);
     expect(put).not.toHaveBeenCalled();
   });
@@ -316,9 +313,7 @@ describe("TEN-S25-021 durable media lifecycle", () => {
       business_object_id: employee.user.id,
       classification: "normal",
       document_type: "identity_proof",
-      file_name: "identity.pdf",
-      mime_type: "application/pdf",
-    }, Buffer.from("%PDF-synthetic identity proof"), "media-generic-001");
+    }, await validPdf(), "media-generic-001");
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       company_id: expect.any(String),
@@ -419,14 +414,12 @@ describe("TEN-S25-021 durable media lifecycle", () => {
     const fields = {
       classification: "medical",
       document_type: "identity_proof",
-      file_name: "passport.pdf",
-      mime_type: "application/pdf",
     };
     const first = await multipartDocumentUpload(
       app,
       employee.token,
       fields,
-      Buffer.from("%PDF-ems-passport-v1"),
+      await validPdf(),
       "media-ems-proof-001",
       `/api/v1/ems/employees/${employee.user.id}/documents`,
     );
@@ -451,7 +444,7 @@ describe("TEN-S25-021 durable media lifecycle", () => {
       app,
       employee.token,
       { ...fields, replace_document_id: first.json().document.id },
-      Buffer.from("%PDF-ems-passport-v2"),
+      await validPdf(),
       "media-ems-proof-002",
       `/api/v1/ems/employees/${employee.user.id}/documents`,
     );
@@ -630,9 +623,7 @@ describe("TEN-S25-021 durable media lifecycle", () => {
       business_object_id: employee.user.id,
       classification: "medical",
       document_type: "medical_record",
-      file_name: "medical.pdf",
-      mime_type: "application/pdf",
-    }, Buffer.from("%PDF-synthetic medical proof"), "media-restricted-denied-001");
+    }, await validPdf(), "media-restricted-denied-001");
     expect(response.statusCode).toBe(403);
     expect(put).not.toHaveBeenCalled();
   });
@@ -648,9 +639,7 @@ describe("TEN-S25-021 durable media lifecycle", () => {
         business_object_type: "core_user",
         business_object_id: employee.user.id,
         ...fields,
-        file_name: "proof.pdf",
-        mime_type: "application/pdf",
-      }, Buffer.from("%PDF-policy-downgrade"), `media-downgrade-${fields.classification}-${fields.document_type}`);
+      }, await validPdf(), `media-downgrade-${fields.classification}-${fields.document_type}`);
       expect(response.statusCode).toBe(403);
     }
     expect(put).not.toHaveBeenCalled();
@@ -866,4 +855,15 @@ function multipartDocumentUpload(
     },
     payload: Buffer.concat(chunks),
   });
+}
+
+let pdfFixture: Promise<Buffer> | undefined;
+
+function validPdf(): Promise<Buffer> {
+  pdfFixture ??= (async () => {
+    const document = await PDFDocument.create();
+    document.addPage([100, 100]);
+    return Buffer.from(await document.save());
+  })();
+  return pdfFixture;
 }

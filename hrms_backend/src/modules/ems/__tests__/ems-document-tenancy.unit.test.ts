@@ -58,6 +58,31 @@ describe("EMS employee-document tenant boundary", () => {
     expect(putObject).not.toHaveBeenCalled();
   });
 
+  it("rejects a disguised executable on the EMS multipart route before storage I/O", async () => {
+    const employee = await loginAs(app, "E1");
+    enablePostgresClassifier(store, "authorized");
+    const putObject = vi.spyOn(store.objectStorage!, "putObject");
+    const multipart = multipartUpload({
+      fields: { classification: "normal", document_type: "identity_proof" },
+      file: {
+        body: Buffer.from("MZ-disguised-executable"),
+        fileName: "identity.pdf",
+        mimeType: "application/pdf",
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents`,
+      headers: { ...authHeader(employee.token), ...multipart.headers },
+      payload: multipart.body,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ message: "Uploaded file content does not match its declared type" });
+    expect(putObject).not.toHaveBeenCalled();
+  });
+
   it("hides a durable foreign target before parsing or provider I/O", async () => {
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
@@ -301,6 +326,28 @@ function enablePostgresClassifier(
   store.kind = "postgres";
   store.persistence = persistenceWithClassifier(classifier);
   return classifier;
+}
+
+function multipartUpload(input: {
+  fields: Record<string, string>;
+  file: { body: Buffer; fileName: string; mimeType: string };
+}) {
+  const boundary = `----hrms-ems-${randomUUID()}`;
+  const chunks: Buffer[] = [];
+  for (const [name, value] of Object.entries(input.fields)) {
+    chunks.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+    ));
+  }
+  chunks.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${input.file.fileName}"\r\n` +
+      `Content-Type: ${input.file.mimeType}\r\n\r\n`,
+  ));
+  chunks.push(input.file.body, Buffer.from(`\r\n--${boundary}--\r\n`));
+  return {
+    body: Buffer.concat(chunks),
+    headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+  };
 }
 
 function persistenceWithClassifier(

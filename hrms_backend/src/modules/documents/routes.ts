@@ -1,9 +1,10 @@
-import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { documentUploadSchema, paginationQuerySchema } from "#shared";
 import { conflict, notFound, unauthorized } from "../../platform/errors.js";
 import { DocumentService, presentDocument } from "./service.js";
 import { MediaLifecycleService } from "./media-lifecycle.js";
+import { parseSingleFileMultipartUpload } from "./multipart-upload.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
 const idempotencyKeySchema = z.string().trim().min(8).max(200);
@@ -33,7 +34,7 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    const upload = await parseDocumentUpload(request);
+    const upload = await parseSingleFileMultipartUpload(request);
     const body = documentUploadSchema.parse(upload.fields);
     if (fastify.store.kind === "postgres") {
       if (!fastify.store.pgPool || !fastify.store.objectStorage || !upload.fileBuffer) {
@@ -87,7 +88,7 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     if (fastify.store.kind === "postgres") {
       throw conflict("Expense receipt upload requires transaction-owned parent authorization");
     }
-    const upload = await parseDocumentUpload(request);
+    const upload = await parseSingleFileMultipartUpload(request);
     const body = documentUploadSchema
       .omit({ business_object_type: true, business_object_id: true })
       .parse(upload.fields);
@@ -232,32 +233,6 @@ function assertDurableMediaConfigured(fastify: FastifyInstance): void {
   if (!fastify.store.pgPool || !fastify.store.objectStorage) {
     throw conflict("Document access requires immutable tenant ownership");
   }
-}
-
-async function parseDocumentUpload(request: FastifyRequest): Promise<{
-  fields: Record<string, unknown>;
-  fileBuffer?: Buffer;
-}> {
-  if (!request.isMultipart()) {
-    return { fields: request.body as Record<string, unknown> };
-  }
-
-  const fields: Record<string, unknown> = {};
-  let fileBuffer: Buffer | undefined;
-  for await (const part of request.parts()) {
-    if (part.type === "file") {
-      fileBuffer = await part.toBuffer();
-      fields.file_name ??= part.filename;
-      fields.mime_type ??= part.mimetype;
-      fields.size_bytes = fileBuffer.length;
-      continue;
-    }
-    fields[part.fieldname] = part.value;
-  }
-  if (typeof fields.size_bytes === "string") {
-    fields.size_bytes = Number(fields.size_bytes);
-  }
-  return { fields, fileBuffer };
 }
 
 function safeDispositionFileName(fileName: string): string {
