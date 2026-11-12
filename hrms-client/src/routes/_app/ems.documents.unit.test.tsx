@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const employeeId = "11111111-1111-4111-8111-111111111111";
@@ -132,6 +132,53 @@ describe("employee proof upload journey", () => {
     expect(mock.toastSuccess).toHaveBeenCalledWith("Replacement uploaded", {
       description: "replacement.pdf is pending verification.",
     });
+  });
+
+  it("serializes selections while upload preparation or mutation is active", async () => {
+    let finish!: (value: unknown) => void;
+    mock.upload.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<MyDocuments />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Upload" })[0]!);
+    selectFile(new File(["first"], "first.pdf", { type: "application/pdf" }));
+    selectFile(new File(["second"], "second.pdf", { type: "application/pdf" }));
+
+    await waitFor(() => expect(mock.upload).toHaveBeenCalledOnce());
+    expect(
+      screen
+        .getAllByRole("button", { name: "Upload" })
+        .every((button) => button.hasAttribute("disabled")),
+    ).toBe(true);
+    await act(async () => finish({}));
+    await waitFor(() => expect(mock.toastSuccess).toHaveBeenCalledOnce());
+    expect(mock.upload).toHaveBeenCalledOnce();
+  });
+
+  it("shows no false success and allows a same-purpose retry after network failure", async () => {
+    mock.upload.mockRejectedValueOnce(new Error("Network disconnected")).mockResolvedValueOnce({});
+    render(<MyDocuments />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Upload" })[0]!);
+    selectFile(new File(["proof"], "identity.pdf", { type: "application/pdf" }));
+
+    await waitFor(() => expect(mock.toastError).toHaveBeenCalledWith("Network disconnected"));
+    expect(mock.toastSuccess).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("button", { name: "Upload" })[0]).toBeEnabled();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Upload" })[0]!);
+    selectFile(new File(["proof"], "identity.pdf", { type: "application/pdf" }));
+
+    await waitFor(() => expect(mock.upload).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(mock.toastSuccess).toHaveBeenCalledWith("Document uploaded", {
+        description: "identity.pdf is pending verification.",
+      }),
+    );
   });
 });
 

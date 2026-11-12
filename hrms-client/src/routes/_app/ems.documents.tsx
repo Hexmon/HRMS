@@ -124,7 +124,9 @@ export function MyDocuments() {
   const queryClient = useQueryClient();
   const apiEnabled = useApiRouteEnabled(["/ems", "/documents"]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadLockRef = useRef(false);
   const [uploadTarget, setUploadTarget] = useState<Doc | null>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Doc | null>(null);
   const documentsQuery = useEmsEmployeeDocuments(user?.id, { page: 1, page_size: 100 }, apiEnabled);
   const uploadPolicyQuery = useDocumentUploadPolicy(apiEnabled);
@@ -192,6 +194,7 @@ export function MyDocuments() {
       toast.error("User session is not ready.");
       return;
     }
+    if (uploadLockRef.current) return;
     setUploadTarget(document ?? null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -202,6 +205,13 @@ export function MyDocuments() {
   async function uploadSelectedFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (uploadLockRef.current) {
+      event.target.value = "";
+      return;
+    }
+
+    uploadLockRef.current = true;
+    setUploadBusy(true);
 
     const target = uploadTarget;
     try {
@@ -240,6 +250,10 @@ export function MyDocuments() {
       setUploadTarget(null);
     } catch (uploadError) {
       toast.error(uploadError instanceof Error ? uploadError.message : "Document upload failed.");
+    } finally {
+      uploadLockRef.current = false;
+      setUploadBusy(false);
+      event.target.value = "";
     }
   }
 
@@ -250,6 +264,7 @@ export function MyDocuments() {
         type="file"
         accept={uploadPolicyAccept(uploadPolicyQuery.data)}
         className="sr-only"
+        disabled={uploadBusy || uploadMutation.isPending}
         onChange={(event) => void uploadSelectedFile(event)}
       />
 
@@ -311,7 +326,7 @@ export function MyDocuments() {
                       size="sm"
                       className="rounded-full"
                       onClick={() => startUpload(d)}
-                      disabled={apiEnabled && uploadMutation.isPending}
+                      disabled={apiEnabled && (uploadBusy || uploadMutation.isPending)}
                     >
                       <Upload className="mr-1.5 h-3.5 w-3.5" /> Upload
                     </Button>
@@ -338,7 +353,7 @@ export function MyDocuments() {
                         variant="ghost"
                         className="rounded-full"
                         onClick={() => startUpload(d)}
-                        disabled={apiEnabled && uploadMutation.isPending}
+                        disabled={apiEnabled && (uploadBusy || uploadMutation.isPending)}
                       >
                         <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Replace
                       </Button>

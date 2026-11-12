@@ -199,9 +199,11 @@ export function useEmsDocumentMutation(userId: string | undefined) {
       input: EmsDocumentUploadBody | FormData;
       idempotencyKey: string;
     }) => emsApi.attachEmployeeDocument(userId as string, input, idempotencyKey),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") });
-      queryClient.invalidateQueries({ queryKey: queryKeys.domain("documents") });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.domain("documents") }),
+      ]);
     },
   });
 }

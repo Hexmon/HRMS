@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { PoolClient } from "pg";
 import { Roles, type AuthUser, type UUID } from "#shared";
 import {
   assertExpectedParent,
+  assertParentAuthorization,
   durableReadAllowed,
   headMatchesIntent,
   mapDocument,
@@ -100,6 +102,48 @@ function accessRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("durable media lifecycle decisions", () => {
+  it("serializes first proof creation and requires replacement once a proof is active", async () => {
+    const input = uploadInput({
+      actor: { ...actor(), id: parentId },
+      operation: "create",
+      parentType: "core_user",
+      parentId,
+      ownerUserId: parentId,
+      documentType: "identity_proof",
+      mimeType: "application/pdf",
+      expectedParentVersion: undefined,
+      expectedPointerDocumentId: undefined,
+    });
+    const { client, queries } = authorizationClient([{ id: documentId }]);
+
+    await expect(assertParentAuthorization(client, companyId, input, true)).rejects.toThrow(
+      "Employee proof already exists; replace the current document",
+    );
+    expect(queries.find((query) => query.includes("FROM core.users target"))).toContain(
+      "FOR UPDATE OF target,membership",
+    );
+    expect(queries.find((query) => query.includes("FROM documents.doc_metadata"))).toContain(
+      "LIMIT 1 FOR UPDATE",
+    );
+  });
+
+  it("allows first proof creation when the serialized active-purpose lookup is empty", async () => {
+    const input = uploadInput({
+      actor: { ...actor(), id: parentId },
+      operation: "create",
+      parentType: "core_user",
+      parentId,
+      ownerUserId: parentId,
+      documentType: "identity_proof",
+      mimeType: "application/pdf",
+      expectedParentVersion: undefined,
+      expectedPointerDocumentId: undefined,
+    });
+    const { client } = authorizationClient([]);
+
+    await expect(assertParentAuthorization(client, companyId, input, true)).resolves.toBeUndefined();
+  });
+
   it("builds a stable opaque fingerprint and changes it for command-relevant input", () => {
     const input = uploadInput();
     const first = requestFingerprint(input, checksum);
@@ -486,3 +530,25 @@ describe("durable media lifecycle decisions", () => {
     }
   });
 });
+
+function authorizationClient(activeProofRows: Array<{ id: UUID }>) {
+  const queries: string[] = [];
+  const query = async (sql: string) => {
+    queries.push(sql);
+    if (sql.includes("FROM platform.user_session_preferences preference")) {
+      return { rows: [{ company_id: companyId }] };
+    }
+    if (sql.includes("FROM core.user_roles assignment")) {
+      return { rows: [{ role_key: Roles.Employee }] };
+    }
+    if (sql.includes("FROM core.users target")) {
+      return { rows: [{ id: parentId, version: 1, profile_photo_document_id: null }] };
+    }
+    if (sql.includes("FROM documents.doc_metadata")) return { rows: activeProofRows };
+    throw new Error(`Unexpected authorization query: ${sql}`);
+  };
+  return {
+    client: { query } as unknown as PoolClient,
+    queries,
+  };
+}

@@ -650,7 +650,7 @@ async function liveRoles(client: PoolClient, actorId: UUID): Promise<string[]> {
   return result.rows.map((row) => row.role_key);
 }
 
-async function assertParentAuthorization(
+export async function assertParentAuthorization(
   client: PoolClient,
   companyId: UUID,
   input: DurableMediaUploadInput,
@@ -703,6 +703,18 @@ async function assertParentAuthorization(
         );
         if (!replacement.rows[0] || replacement.rows[0].document_type !== input.documentType) {
           throw conflict("Employee proof replacement target changed or has a different purpose");
+        }
+      } else {
+        const currentProof = await client.query<{ id: UUID }>(
+          `SELECT id FROM documents.doc_metadata
+           WHERE company_id=$1 AND business_object_id=$2
+             AND business_object_type IN ('core_user','employee')
+             AND document_type=$3 AND lifecycle_state='active' AND deleted_at IS NULL
+           LIMIT 1 ${lock ? "FOR UPDATE" : ""}`,
+          [companyId, input.parentId, input.documentType],
+        );
+        if (currentProof.rows[0]) {
+          throw conflict("Employee proof already exists; replace the current document");
         }
       }
     } else {
