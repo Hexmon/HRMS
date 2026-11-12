@@ -5,6 +5,24 @@ const restricted = new Set<DocumentClassification>([
   DocumentClassifications.Medical,
   DocumentClassifications.Compensation
 ]);
+const employeeProofDocumentTypes = new Set([
+  "identity_proof",
+  "address_proof",
+  "education_proof",
+  "experience_proof",
+]);
+
+export function isEmployeeProofDocumentType(documentType: string): boolean {
+  return employeeProofDocumentTypes.has(documentType);
+}
+
+export function canAccessEmployeeProofDocument(
+  actor: { id: string; roles: readonly string[] },
+  document: { document_type: string; owner_user_id: string | null },
+): boolean {
+  return isEmployeeProofDocumentType(document.document_type) &&
+    (document.owner_user_id === actor.id || actor.roles.includes(Roles.Admin));
+}
 
 export function canAccessDocument(actor: AuthUser, document: DocumentMetadata, permission: "read" | "write" | "verify" | "audit"): boolean {
   // Old generated exports may carry public storage URLs and have no durable

@@ -13,7 +13,7 @@ This runbook covers the private Cloudflare R2 adapter and TEN-S25-021 durable me
 - Authorized clients fetch bytes from `/api/v1/documents/{id}/content`; the frontend first performs an authenticated byte request and then creates a short-lived browser-local blob URL.
 - The adapter implements bounded PUT/GET/HEAD/DELETE. TEN-S25-021 never calls DELETE: replacement and logical removal retain bytes pending TEN-S25-022 policy.
 - Publication is a second PostgreSQL transaction that locks the intent and parent, revalidates live company/role/version/pointer state, inserts active metadata/version, switches the pointer, marks the old row replaced and commits audit/outbox together.
-- Default proof purpose and classification are server-owned. Raw proof bytes are available only to the employee and company Admin until a durable assigned-HR relationship exists; do not grant every HR user assigned-HR access.
+- Default proof purpose and classification are server-owned. Proof metadata, employee-document lists and raw bytes are available only to the employee and company Admin until a durable assigned-HR relationship exists; do not grant every HR user assigned-HR access. Unassigned HR, Auditor, Finance, Director, Asset Manager and hierarchy-only requests fail closed.
 - A timed-out PUT is resolved by HEAD of the exact preallocated opaque key. Queue/Cron reconciliation leases bounded batches with `SKIP LOCKED`; it does not loop forever or purge bytes.
 - Expense receipt upload remains `409` pending its approved uploader/status matrix. Unsupported generic parent types remain fail closed.
 

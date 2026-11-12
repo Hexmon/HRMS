@@ -4,16 +4,10 @@ import { Roles, type AuthUser, type DocumentClassification, type DocumentMetadat
 import type { ObjectStoragePort } from "../../platform/data-store.js";
 import { conflict, forbidden, notFound } from "../../platform/errors.js";
 import { ObjectStorageProviderError } from "../../platform/object-storage.js";
+import { canAccessEmployeeProofDocument, isEmployeeProofDocumentType } from "./policy.js";
 
 export type MediaOperation = "create" | "replace_company_logo" | "replace_profile_photo";
 export type MediaParentType = "generic" | "company_profile" | "core_user";
-
-const employeeProofDocumentTypes = new Set([
-  "identity_proof",
-  "address_proof",
-  "education_proof",
-  "experience_proof",
-]);
 
 export interface DurableMediaUploadInput {
   actor: AuthUser;
@@ -691,7 +685,7 @@ async function assertParentAuthorization(
       throw forbidden("Profile photo upload denied");
     }
     if (input.operation === "create") {
-      if (!employeeProofDocumentTypes.has(input.documentType) || input.classification !== "normal") {
+      if (!isEmployeeProofDocumentType(input.documentType) || input.classification !== "normal") {
         throw forbidden("Employee proof type or classification is not allowed");
       }
       // Assigned-HR ownership is not represented durably yet. Fail closed to
@@ -837,8 +831,11 @@ export function durableReadAllowed(row: Record<string, any>, mode: "metadata" | 
         String(row.target_hierarchy_path).startsWith(`${row.actor_hierarchy_path}.`),
       );
   }
-  if (employeeProofDocumentTypes.has(row.document_type)) {
-    return row.owner_user_id === row.actor_id || has(Roles.Admin);
+  if (isEmployeeProofDocumentType(row.document_type)) {
+    return canAccessEmployeeProofDocument(
+      { id: row.actor_id, roles },
+      { document_type: row.document_type, owner_user_id: row.owner_user_id },
+    );
   }
   if (row.classification === "medical" || row.classification === "compensation") {
     return has(Roles.Admin) || has(Roles.Auditor) || has(Roles.HRManager);

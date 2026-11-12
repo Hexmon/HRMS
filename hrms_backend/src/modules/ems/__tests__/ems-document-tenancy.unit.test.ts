@@ -109,7 +109,7 @@ describe("EMS employee-document tenant boundary", () => {
     ).resolves.toMatchObject({ total: 0 });
   });
 
-  it("allows same-company privileged reads but limits writes to self or HR/Admin", async () => {
+  it("limits employee-proof list and writes to self or company Admin", async () => {
     const auditor = await loginAs(app, "AUD");
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
@@ -117,17 +117,24 @@ describe("EMS employee-document tenant boundary", () => {
     await expect(
       memoryService.attachEmployeeDocument(auditor.user, employee.user.id, uploadPayload()),
     ).rejects.toMatchObject({ statusCode: 403 });
-    enablePostgresClassifier(store, "authorized");
+    await memoryService.attachEmployeeDocument(admin.user, employee.user.id, uploadPayload());
+    enablePostgresClassifier(store, "authorized", auditor.user);
     const service = new EmsService(store);
-
     await expect(
       service.listEmployeeDocuments(auditor.user, employee.user.id, { page: 1, page_size: 10 }),
     ).resolves.toMatchObject({ total: 0 });
     enablePostgresClassifier(store, "forbidden");
+
+    await expect(
+      service.listEmployeeDocuments(auditor.user, employee.user.id, { page: 1, page_size: 10 }),
+    ).rejects.toMatchObject({ statusCode: 403 });
     await expect(
       service.attachEmployeeDocument(auditor.user, employee.user.id, uploadPayload()),
     ).rejects.toMatchObject({ statusCode: 403 });
     enablePostgresClassifier(store, "authorized");
+    await expect(
+      service.listEmployeeDocuments(admin.user, employee.user.id, { page: 1, page_size: 10 }),
+    ).resolves.toMatchObject({ total: 1 });
     await expect(
       service.attachEmployeeDocument(admin.user, employee.user.id, uploadPayload()),
     ).resolves.toMatchObject({
@@ -206,7 +213,7 @@ describe("EMS employee-document tenant boundary", () => {
     expect(putObject).not.toHaveBeenCalled();
   });
 
-  it("uses the durable actor for restricted document policy after a stale role snapshot", async () => {
+  it("uses the durable actor identity for proof access after a stale role snapshot", async () => {
     const admin = await loginAs(app, "ADM");
     await new EmsService(store).attachEmployeeDocument(admin.user, admin.user.id, {
       ...uploadPayload(),
@@ -220,7 +227,7 @@ describe("EMS employee-document tenant boundary", () => {
 
     await expect(
       service.listEmployeeDocuments(admin.user, admin.user.id, { page: 1, page_size: 10 }),
-    ).resolves.toMatchObject({ total: 0 });
+    ).resolves.toMatchObject({ total: 1 });
     await expect(
       service.attachEmployeeDocument(admin.user, admin.user.id, {
         ...uploadPayload(),

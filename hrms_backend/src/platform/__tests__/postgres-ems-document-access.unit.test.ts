@@ -8,11 +8,12 @@ describe("PostgreSQL EMS employee-document company classifier", () => {
   it.each([
     ["self read", "read", [], "actor", "actor", "authorized"],
     ["self write", "write", [], "actor", "actor", "authorized"],
+    ["Admin read", "read", [Roles.Admin], "actor", "peer", "authorized"],
     ["Admin write", "write", [Roles.Admin], "actor", "peer", "authorized"],
-    ["HR write", "write", [Roles.HRManager], "actor", "peer", "authorized"],
-    ["Auditor read", "read", [Roles.Auditor], "actor", "peer", "authorized"],
+    ["HR write", "write", [Roles.HRManager], "actor", "peer", "forbidden"],
+    ["Auditor read", "read", [Roles.Auditor], "actor", "peer", "forbidden"],
     ["Auditor write", "write", [Roles.Auditor], "actor", "peer", "forbidden"],
-    ["manager read", "read", [], "company.manager", "company.manager.employee", "authorized"],
+    ["manager read", "read", [], "company.manager", "company.manager.employee", "forbidden"],
     ["manager write", "write", [], "company.manager", "company.manager.employee", "forbidden"],
     ["peer read", "read", [], "company.peer", "company.employee", "forbidden"],
   ] as const)("classifies %s from current durable roles and hierarchy", async (

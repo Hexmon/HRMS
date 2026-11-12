@@ -3377,16 +3377,7 @@ class PostgresPersistence {
       const currentTarget = target.rows[0];
       if (!currentTarget) return { decision: "hidden" };
       const isSelf = session.actor.id === currentTarget.id;
-      const canManage = session.actor.roles.some(
-        (role) => role === Roles.Admin || role === Roles.HRManager,
-      );
-      const canAudit = session.actor.roles.includes(Roles.Auditor);
-      const isSubordinate = currentTarget.hierarchy_path.startsWith(
-        `${session.actor.hierarchy_path}.`,
-      );
-      const allowed = permission === "write"
-        ? isSelf || canManage
-        : isSelf || canManage || canAudit || isSubordinate;
+      const allowed = isSelf || session.actor.roles.includes(Roles.Admin);
       return allowed
         ? { decision: "authorized", actor: session.actor }
         : { decision: "forbidden" };

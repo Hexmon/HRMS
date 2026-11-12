@@ -22,7 +22,7 @@ import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
-import { canAccessDocument } from "../documents/policy.js";
+import { canAccessDocument, canAccessEmployeeProofDocument } from "../documents/policy.js";
 import { DocumentService, presentDocument, type DocumentUploadBody } from "../documents/service.js";
 import { appendEmsOutboxEvent, emsEvents } from "./events.js";
 import { assertCanDecideProfileChange, assertCanManageEms, assertCanSeeEmsUser, canManageEms } from "./policy.js";
@@ -489,7 +489,7 @@ export class EmsService {
         document.lifecycle_state !== "quarantined" && document.lifecycle_state !== "replaced" &&
         document.lifecycle_state !== "tombstoned" &&
         employeeProofDocumentTypeSet.has(document.document_type))
-      .filter((document) => canAccessDocument(authorizedActor, document, "read"));
+      .filter((document) => canAccessEmployeeProofDocument(authorizedActor, document));
     const filtered = query.document_type
       ? visible.filter((document) => document.document_type === query.document_type)
       : visible;
@@ -582,8 +582,8 @@ export class EmsService {
       throw notFound("EMS employee not found", { user_id: userId });
     }
     assertCanSeeEmsUser(actor, user);
-    if (permission === "write" && actor.id !== userId && !canManageEms(actor)) {
-      throw forbidden("Only the employee or HR/Admin can attach EMS employee documents.");
+    if (actor.id !== userId && !actor.roles.includes(Roles.Admin)) {
+      throw forbidden("Only the employee or company Admin can access EMS employee documents.");
     }
     return actor;
   }

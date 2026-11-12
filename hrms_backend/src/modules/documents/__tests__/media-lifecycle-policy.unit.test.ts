@@ -422,40 +422,37 @@ describe("durable media lifecycle decisions", () => {
         Roles.Director,
         Roles.AssetManager,
       ]) {
-        expect(
-          durableReadAllowed(
-            accessRow({ document_type: "education_proof", roles: [role] }),
-            mode,
-          ),
-        ).toBe(false);
+        for (const documentType of [
+          "identity_proof",
+          "address_proof",
+          "education_proof",
+          "experience_proof",
+        ]) {
+          expect(
+            durableReadAllowed(
+              accessRow({ document_type: documentType, roles: [role] }),
+              mode,
+            ),
+          ).toBe(false);
+        }
       }
     }
   });
 
   it("applies restricted and general document role policies without broadening peer access", () => {
-    for (const role of [Roles.Admin, Roles.Auditor, Roles.HRManager]) {
+    for (const mode of ["metadata", "raw"] as const) {
+      for (const role of [Roles.Admin, Roles.Auditor, Roles.HRManager]) {
+        expect(
+          durableReadAllowed(
+            accessRow({ classification: "medical", roles: [role] }),
+            mode,
+          ),
+        ).toBe(true);
+      }
       expect(
-        durableReadAllowed(
-          accessRow({ classification: "medical", roles: [role] }),
-          "metadata",
-        ),
-      ).toBe(true);
+        durableReadAllowed(accessRow({ classification: "compensation" }), mode),
+      ).toBe(false);
     }
-    expect(
-      durableReadAllowed(
-        accessRow({ classification: "medical", roles: [Roles.Admin] }),
-        "raw",
-      ),
-    ).toBe(true);
-    expect(
-      durableReadAllowed(
-        accessRow({ classification: "compensation" }),
-        "metadata",
-      ),
-    ).toBe(false);
-    expect(
-      durableReadAllowed(accessRow({ classification: "medical" }), "raw"),
-    ).toBe(false);
 
     expect(
       durableReadAllowed(accessRow({ owner_user_id: actorId }), "raw"),
@@ -466,21 +463,19 @@ describe("durable media lifecycle decisions", () => {
         "metadata",
       ),
     ).toBe(true);
-    for (const role of [
-      Roles.Admin,
-      Roles.Auditor,
-      Roles.FinanceManager,
-      Roles.Director,
-      Roles.AssetManager,
-    ]) {
-      expect(durableReadAllowed(accessRow({ roles: [role] }), "metadata")).toBe(
-        true,
-      );
+    for (const mode of ["metadata", "raw"] as const) {
+      for (const role of [
+        Roles.Admin,
+        Roles.Auditor,
+        Roles.FinanceManager,
+        Roles.Director,
+        Roles.AssetManager,
+      ]) {
+        expect(durableReadAllowed(accessRow({ roles: [role] }), mode)).toBe(
+          true,
+        );
+      }
+      expect(durableReadAllowed(accessRow(), mode)).toBe(false);
     }
-    expect(durableReadAllowed(accessRow({ roles: [Roles.Admin] }), "raw")).toBe(
-      true,
-    );
-    expect(durableReadAllowed(accessRow(), "metadata")).toBe(false);
-    expect(durableReadAllowed(accessRow(), "raw")).toBe(false);
   });
 });
