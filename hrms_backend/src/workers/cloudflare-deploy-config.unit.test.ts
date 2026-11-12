@@ -68,7 +68,9 @@ describe("Cloudflare deployment configuration", () => {
   });
 
   it("rejects invalid command input and Hyperdrive identifiers", () => {
-    expect(() => runPrepareCloudflareConfig([], {}, "/tmp/not-used")).toThrow(/Usage:/);
+    expect(() => runPrepareCloudflareConfig([], {}, "/tmp/not-used")).toThrow(
+      "Usage: tsx src/workers/cloudflare-deploy-config-cli.ts <dev|qa|production> <inactive|active>",
+    );
     expect(() => prepareCloudflareConfig(source(), { ...valid, state: "paused" as "active" })).toThrow(
       /Environment and state/,
     );

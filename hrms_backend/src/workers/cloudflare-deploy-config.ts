@@ -88,7 +88,7 @@ export function runPrepareCloudflareConfig(
 ): string {
   const [environment, state] = args;
   if (!environments.has(environment as Environment) || !states.has(state as WorkerState)) {
-    throw new Error("Usage: tsx src/workers/cloudflare-deploy-config.ts <dev|qa|production> <inactive|active>");
+    throw new Error("Usage: tsx src/workers/cloudflare-deploy-config-cli.ts <dev|qa|production> <inactive|active>");
   }
   return writeCloudflareDeploymentConfig(backendRoot, {
     environment: environment as Environment,
