@@ -812,7 +812,7 @@ test("CLI stamps, passes, and fails on synthetic source and usage errors", () =>
   assert.match(invalidWorker.stderr, /absolute canonical/);
 });
 
-test("type, imports and comments are non-executable but uninstrumented runtime lines fail", () => {
+test("static imports and type syntax are non-executable while dynamic imports remain measured", () => {
   const content = "import type { X } from 'x';\n// a comment\ntype Id = string;\nlet pending: string;\ninterface Shape { value: string }\nexport type { X };\ndeclare const external: string;\nexport const value = 1;\n";
   const result = assessChangedFile("hrms_backend/src/extra.ts", new Set([1, 2, 3, 4, 5, 6, 7, 8]), content, undefined);
   assert.deepEqual(result.nonExecutable, [1, 2, 3, 4, 5, 6, 7]);
@@ -820,11 +820,22 @@ test("type, imports and comments are non-executable but uninstrumented runtime l
   assert.deepEqual(result.uncovered, ["8 (not instrumented)"]);
 
   const sideEffect = assessChangedFile("hrms_backend/src/side-effect.ts", new Set([1]), "import './register.js';\n", undefined);
-  assert.deepEqual(sideEffect.executable, [1]);
-  assert.deepEqual(sideEffect.uncovered, ["1 (not instrumented)"]);
+  assert.deepEqual(sideEffect.nonExecutable, [1]);
+  assert.deepEqual(sideEffect.uncovered, []);
   const valueImport = assessChangedFile("hrms_backend/src/import.ts", new Set([1]), "import { safe } from './unsafe.js';\n", undefined);
-  assert.deepEqual(valueImport.executable, [1]);
-  assert.deepEqual(valueImport.uncovered, ["1 (not instrumented)"]);
+  assert.deepEqual(valueImport.nonExecutable, [1]);
+  assert.deepEqual(valueImport.uncovered, []);
+  const dynamicImport = assessChangedFile("hrms_backend/src/dynamic.ts", new Set([1]),
+    "export const load = () => import('./runtime.js');\n", undefined);
+  assert.deepEqual(dynamicImport.executable, [1]);
+  assert.deepEqual(dynamicImport.uncovered, ["1 (not instrumented)"]);
+  const coveredDynamic = assessChangedFile("hrms_backend/src/dynamic.ts", new Set([1]),
+    "export const load = () => import('./runtime.js');\n", {
+      statementMap: { 0: { start: { line: 1, column: 0 }, end: { line: 1, column: 48 } } },
+      s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
+    });
+  assert.deepEqual(coveredDynamic.executable, [1]);
+  assert.deepEqual(coveredDynamic.uncovered, []);
   assert.equal(instrumentableExternal("node_modules/unsafe.js"), false);
   assert.equal(instrumentableExternal("tools/node_modules/unsafe.js"), false);
 });
@@ -936,9 +947,11 @@ test("sanitized coverage environment excludes ambient and ignored configuration"
   const outputRoot = join(tmpdir(), "hrms-sanitized-output");
   const previousEnvFile = process.env.HRMS_ENV_FILE;
   const previousV8 = process.env.NODE_V8_COVERAGE;
+  const previousPython = process.env.HRMS_COVERAGE_PYTHON;
   process.env.HRMS_UNAPPROVED_SECRET = "must-not-propagate";
   process.env.HRMS_ENV_FILE = ".env.test";
   process.env.NODE_V8_COVERAGE = join(outputRoot, "orchestrator-v8");
+  process.env.HRMS_COVERAGE_PYTHON = join(outputRoot, "pinned", "python3");
   try {
     const environment = sanitizedCoverageEnvironment(outputRoot);
     assert.equal(environment.HRMS_UNAPPROVED_SECRET, undefined);
@@ -949,12 +962,15 @@ test("sanitized coverage environment excludes ambient and ignored configuration"
     assert.equal(environment.NPM_CONFIG_USERCONFIG, join(outputRoot, "no-user-npmrc"));
     assert.equal(environment.PYTHONNOUSERSITE, "1");
     assert.equal(environment.NODE_V8_COVERAGE, join(outputRoot, "orchestrator-v8"));
+    assert.equal(environment.HRMS_COVERAGE_PYTHON, join(outputRoot, "pinned", "python3"));
   } finally {
     delete process.env.HRMS_UNAPPROVED_SECRET;
     if (previousEnvFile === undefined) delete process.env.HRMS_ENV_FILE;
     else process.env.HRMS_ENV_FILE = previousEnvFile;
     if (previousV8 === undefined) delete process.env.NODE_V8_COVERAGE;
     else process.env.NODE_V8_COVERAGE = previousV8;
+    if (previousPython === undefined) delete process.env.HRMS_COVERAGE_PYTHON;
+    else process.env.HRMS_COVERAGE_PYTHON = previousPython;
   }
 });
 
@@ -975,7 +991,7 @@ test("full-suite dependency selection uses either exact injections or every trus
   const trustedBin = mkdtempSync(join(tmpdir(), "hrms-coverage-tools-"));
   roots.push(trustedBin);
   for (const name of ["pnpm", "python3", "bash"]) {
-    write(trustedBin, name, "#!/bin/sh\nexit 0\n");
+    write(trustedBin, name, name === "python3" ? "#!/bin/sh\nprintf '7.11.0\\n'\n" : "#!/bin/sh\nexit 0\n");
     chmodSync(join(trustedBin, name), 0o755);
   }
   const trustedDefaults = selectFullSuiteTools(undefined, { PATH: trustedBin });
@@ -1004,7 +1020,7 @@ test("trusted tool resolution binds an executable realpath and rejects missing t
   const directory = mkdtempSync(join(tmpdir(), "hrms-tools-"));
   roots.push(directory);
   const executable = join(directory, "python3");
-  writeFileSync(executable, "#!/bin/sh\nexit 0\n");
+  writeFileSync(executable, "#!/bin/sh\nprintf '7.11.0\\n'\n");
   chmodSync(executable, 0o755);
   assert.equal(resolveTrustedExecutable("python3", { PATH: directory }), realpathSync(executable));
   assert.equal(resolveTrustedExecutable(executable, { PATH: "" }), realpathSync(executable));
@@ -1021,6 +1037,41 @@ test("trusted tool resolution binds an executable realpath and rejects missing t
   symlinkSync(executable, linked);
   assert.throws(() => validateTrustedExecutable(linked), /symbolic link/);
   assert.throws(() => validateTrustedExecutable(directory), /not a regular file/);
+});
+
+test("pinned coverage Python ignores candidate PATH substitution and requires exact canonical version", () => {
+  const trusted = mkdtempSync(join(tmpdir(), "hrms-pinned-python-"));
+  const candidate = mkdtempSync(join(tmpdir(), "hrms-candidate-python-"));
+  roots.push(trusted, candidate);
+  const trustedPython = join(trusted, "python3");
+  const candidatePython = join(candidate, "python3");
+  writeFileSync(trustedPython, "#!/bin/sh\nprintf '7.11.0\\n'\n");
+  writeFileSync(candidatePython, "#!/bin/sh\nprintf '7.11.0\\n'\n");
+  chmodSync(trustedPython, 0o755);
+  chmodSync(candidatePython, 0o755);
+  assert.equal(resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: trustedPython,
+  }), trustedPython);
+
+  writeFileSync(trustedPython, "#!/bin/sh\nprintf '7.10.0\\n'\n");
+  assert.throws(() => resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: trustedPython,
+  }), /coverage 7\.11\.0 is required, found 7\.10\.0/);
+
+  writeFileSync(trustedPython, "#!/bin/sh\nexit 0\n");
+  assert.throws(() => resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: trustedPython,
+  }), /coverage 7\.11\.0 is required, found no version/);
+
+  const linkedPython = join(trusted, "linked-python3");
+  symlinkSync(candidatePython, linkedPython);
+  assert.throws(() => resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: linkedPython,
+  }), /must not be a symbolic link/);
 });
 
 test("full-suite worker isolates orchestrator V8 output from every coverage child", () => {
@@ -1668,7 +1719,9 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   git(root, "commit", "-qm", "base");
   const base = git(root, "rev-parse", "HEAD");
   const path = "scripts/agent/probe.mjs";
-  write(root, path, "import assert from 'node:assert/strict';\nexport function decide(value) {\n  if (value) return 'yes';\n  return 'no';\n}\nassert.equal(decide(true), 'yes');\nassert.equal(decide(false), 'no');\n");
+  const dependencyPath = "scripts/agent/dependency.mjs";
+  write(root, dependencyPath, "globalThis.__dependencyInitialized = true;\n");
+  write(root, path, "import assert from 'node:assert/strict';\nimport './dependency.mjs';\nexport function decide(value) {\n  if (value) return 'yes';\n  return 'no';\n}\nassert.equal(globalThis.__dependencyInitialized, true);\nassert.equal(decide(true), 'yes');\nassert.equal(decide(false), 'no');\n");
   git(root, "add", ".");
   git(root, "commit", "-qm", "covered probe");
   const rawDirectory = join(dirname(coverageArtifactPath(root, "external")), "raw-node");
@@ -1689,9 +1742,13 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   assert.ok(entry);
   assert.ok(Object.values(entry.s).every((count) => count > 0));
   assert.ok(Object.values(entry.b).flat().every((count) => count > 0));
-  const imported = Object.entries(entry.statementMap).find(([, location]) => location.start.line === 1);
-  assert.ok(imported, "executed static import receives explicit module-evaluation coverage");
-  assert.ok(entry.s[imported[0]] > 0);
+  assert.equal(Object.values(entry.statementMap).some((location) => location.start.line === 1), false,
+    "static import syntax does not receive an invented statement count");
+  assert.equal(Object.values(entry.statementMap).some((location) => location.start.line === 2), false,
+    "side-effect import syntax does not receive an invented statement count");
+  const dependencyEntry = combined[join(root, dependencyPath)];
+  assert.ok(dependencyEntry, "the imported module's actual initialization remains instrumented");
+  assert.ok(Object.values(dependencyEntry.s).every((count) => count > 0));
   stampExternalReport(root);
   assert.equal(verify(root, base, "HEAD").pass, true);
 
@@ -1701,7 +1758,7 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   assert.throws(() => addUniqueRawCoverageEntry(unique, "covered", { path }), /Duplicate raw V8 coverage source/);
 });
 
-test("module-evaluation attribution covers value modules without inventing type-only execution", () => {
+test("module-evaluation attribution excludes static imports without hiding executable expressions", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-module-evaluation-"));
   roots.push(root);
   git(root, "init", "-q");
@@ -1727,7 +1784,7 @@ test("module-evaluation attribution covers value modules without inventing type-
   };
   const attributed = addEvaluatedModuleStatements(root, "scripts/agent/module.ts", baseEntry);
   const attributedLines = Object.values(attributed.statementMap).map((location) => location.start.line).sort((a, b) => a - b);
-  assert.deepEqual(attributedLines, [3, 4, 5, 6]);
+  assert.deepEqual(attributedLines, [4, 5, 6]);
   assert.ok(Object.values(attributed.s).every((count) => count > 0));
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {}, s: {}, fnMap: {}, f: {}, branchMap: {}, b: {} }).statementMap[0], undefined);
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {} }).statementMap[0], undefined);

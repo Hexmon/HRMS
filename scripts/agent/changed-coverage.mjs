@@ -17,6 +17,7 @@ const packages = {
   frontend: { root: "hrms-client", output: "frontend" },
   external: { root: ".", output: "external" },
 };
+const expectedCoverageVersion = "7.11.0";
 
 export function coverageOutputRoot(root) {
   return resolve(process.env.HRMS_COVERAGE_OUTPUT_DIR ?? join(dirname(resolve(root)), `${basename(resolve(root))}-coverage-output`));
@@ -292,6 +293,23 @@ export function validateTrustedExecutable(path) {
 }
 
 export function resolveCoveragePython(environment = process.env) {
+  const validateCoveragePython = (executable) => {
+    validateTrustedExecutable(executable);
+    const version = execFileSync(executable,
+      ["-c", "import coverage; print(coverage.__version__)"],
+      { env: environment, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (version !== expectedCoverageVersion) {
+      throw new Error(`coverage ${expectedCoverageVersion} is required, found ${version || "no version"}`);
+    }
+    return executable;
+  };
+  if (environment.HRMS_COVERAGE_PYTHON !== undefined) {
+    try {
+      return validateCoveragePython(environment.HRMS_COVERAGE_PYTHON);
+    } catch (error) {
+      throw new Error(`Pinned Python coverage runner is invalid (${error.message})`);
+    }
+  }
   const failures = [];
   for (const name of ["python3", "python"]) {
     try {
@@ -301,8 +319,7 @@ export function resolveCoveragePython(environment = process.env) {
           try { validateTrustedExecutable(candidate); return true; } catch { return false; }
         });
       if (!executable) throw new Error("not found on sanitized PATH");
-      execFileSync(executable, ["-c", "import coverage"], { env: environment, stdio: "ignore" });
-      return executable;
+      return validateCoveragePython(executable);
     } catch (error) {
       failures.push(`${name}: ${error.message}`);
     }
@@ -424,12 +441,9 @@ export function addEvaluatedModuleStatements(root, path, entry) {
     location.start.line <= line && line <= location.end.line);
   let nextId = Object.keys(statementMap).reduce((maximum, id) => Math.max(maximum, Number(id) + 1), 0);
   for (const node of source.statements) {
-    const staticModule = ts.isImportDeclaration(node) ||
-      (ts.isExportDeclaration(node) && Boolean(node.moduleSpecifier));
-    const typeOnly = ts.isImportDeclaration(node)
-      ? node.importClause?.isTypeOnly === true
-      : ts.isExportDeclaration(node) && node.isTypeOnly;
-    if ((!staticModule || typeOnly) && !ts.isExpressionStatement(node)) continue;
+    const staticExport = ts.isExportDeclaration(node) && Boolean(node.moduleSpecifier);
+    const typeOnly = ts.isExportDeclaration(node) && node.isTypeOnly;
+    if ((!staticExport || typeOnly) && !ts.isExpressionStatement(node)) continue;
     const start = source.getLineAndCharacterOfPosition(node.getStart(source));
     const end = source.getLineAndCharacterOfPosition(node.end);
     const line = start.line + 1;
@@ -709,7 +723,7 @@ export function removeExactCommitCheckout(root, checkout) {
 export function sanitizedCoverageEnvironment(outputRoot) {
   const allowed = ["PATH", "USER", "LOGNAME", "SHELL", "TMPDIR", "TEMP", "TMP", "CI", "GITHUB_ACTIONS",
     "RUNNER_OS", "RUNNER_ARCH", "PNPM_HOME", "COREPACK_HOME", "NO_COLOR", "FORCE_COLOR",
-    "NODE_V8_COVERAGE"];
+    "NODE_V8_COVERAGE", "HRMS_COVERAGE_PYTHON"];
   const environment = Object.fromEntries(allowed.flatMap((name) => process.env[name] === undefined ? [] : [[name, process.env[name]]]));
   return {
     ...environment,
@@ -1009,7 +1023,7 @@ function nonExecutableLines(path, content) {
     for (let line = first; line <= last; line++) excluded.add(line);
   };
   const visit = (node) => {
-    if ((ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) ||
+    if (ts.isImportDeclaration(node) ||
         ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) ||
         (ts.isExportDeclaration(node) && node.isTypeOnly) || node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)) {
       mark(node);

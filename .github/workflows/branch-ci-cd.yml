@@ -267,12 +267,24 @@ jobs:
           pnpm --dir hrms_backend install --frozen-lockfile
           pnpm --dir hrms-client install --frozen-lockfile
 
-      - name: Install Python coverage runner
-        run: python -m pip install coverage==7.11.0
+      - name: Install pinned Python coverage runner
+        shell: bash
+        env:
+          HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3
+        run: |
+          coverage_venv="$(dirname "$(dirname "$HRMS_COVERAGE_PYTHON")")"
+          python -m venv --copies "$coverage_venv"
+          "$HRMS_COVERAGE_PYTHON" -m pip install --disable-pip-version-check coverage==7.11.0
+          test "$(realpath "$HRMS_COVERAGE_PYTHON")" = "$HRMS_COVERAGE_PYTHON"
+          test -f "$HRMS_COVERAGE_PYTHON"
+          test ! -L "$HRMS_COVERAGE_PYTHON"
+          test -x "$HRMS_COVERAGE_PYTHON"
+          test "$("$HRMS_COVERAGE_PYTHON" -c 'import coverage; print(coverage.__version__)')" = "7.11.0"
 
       - name: Generate exact-commit reports and require changed coverage
         env:
           COVERAGE_BASE: ${{ github.event.pull_request.base.sha || steps.push-baseline.outputs.base }}
+          HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3
         run: |
           if [[ -z "$COVERAGE_BASE" ]]; then
             echo "Missing validated coverage baseline." >&2
