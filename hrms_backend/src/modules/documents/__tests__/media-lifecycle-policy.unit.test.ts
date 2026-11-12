@@ -166,6 +166,160 @@ describe("durable media lifecycle decisions", () => {
     await expect(assertParentAuthorization(client, companyId, input, true)).resolves.toBeUndefined();
   });
 
+  it("fails closed when the actor's active company changes", async () => {
+    const otherCompanyId = "66666666-6666-4666-8666-666666666666" as UUID;
+    const { client, calls } = policyClient({ currentCompanyId: otherCompanyId });
+
+    await expect(assertParentAuthorization(client, companyId, uploadInput(), true)).rejects.toMatchObject({
+      statusCode: 403,
+      message: "Media tenant context changed",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("allows only an active Admin to update the selected company logo", async () => {
+    const logoInput = uploadInput({
+      operation: "replace_company_logo",
+      parentType: "company_profile",
+      parentId: companyId,
+      documentType: "company_logo",
+      expectedPointerDocumentId: null,
+    });
+    const denied = policyClient({ roles: [Roles.Employee] });
+    await expect(assertParentAuthorization(denied.client, companyId, logoInput, true)).rejects.toMatchObject({
+      statusCode: 403,
+      message: "Company logo upload denied",
+    });
+
+    const wrongParent = policyClient({ roles: [Roles.Admin] });
+    await expect(assertParentAuthorization(
+      wrongParent.client,
+      companyId,
+      { ...logoInput, parentId },
+      true,
+    )).rejects.toMatchObject({ statusCode: 403, message: "Company logo upload denied" });
+
+    const allowed = policyClient({
+      roles: [Roles.Admin],
+      companyRows: [{ id: companyId, version: 7, logo_document_id: null }],
+    });
+    await expect(assertParentAuthorization(allowed.client, companyId, logoInput, true)).resolves.toBeUndefined();
+    assertLiveAuthorityQueries(allowed.calls, actorId);
+    const companyQuery = allowed.calls.find(({ sql }) => sql.includes("FROM platform.company_profiles WHERE"));
+    expect(companyQuery?.sql).toContain("FOR UPDATE");
+    expect(companyQuery?.params).toEqual([companyId]);
+  });
+
+  it("denies missing or unauthorized profile-photo parents and allows an Admin manager", async () => {
+    const missing = policyClient({ userRows: [] });
+    await expect(assertParentAuthorization(missing.client, companyId, uploadInput(), true)).rejects.toMatchObject({
+      statusCode: 404,
+      message: "Media parent not found",
+    });
+
+    const employee = policyClient({ roles: [Roles.Employee] });
+    await expect(assertParentAuthorization(employee.client, companyId, uploadInput(), true)).rejects.toMatchObject({
+      statusCode: 403,
+      message: "Profile photo upload denied",
+    });
+    const lockedUserQuery = employee.calls.find(({ sql }) => sql.includes("FROM core.users target"));
+    expect(lockedUserQuery?.sql).toContain("JOIN platform.user_session_preferences membership");
+    expect(lockedUserQuery?.sql).toContain("membership.company_id=$2");
+    expect(lockedUserQuery?.sql).toContain("target.deleted_at IS NULL");
+    expect(lockedUserQuery?.sql).toContain("FOR UPDATE OF target,membership");
+    expect(lockedUserQuery?.params).toEqual([parentId, companyId]);
+
+    const self = policyClient({ roles: [Roles.Employee] });
+    await expect(assertParentAuthorization(
+      self.client,
+      companyId,
+      uploadInput({ actor: { ...actor(), id: parentId } }),
+      true,
+    )).resolves.toBeUndefined();
+    assertLiveAuthorityQueries(self.calls, parentId);
+
+    const hrManager = policyClient({ roles: [Roles.HRManager] });
+    await expect(assertParentAuthorization(hrManager.client, companyId, uploadInput(), true)).resolves.toBeUndefined();
+
+    const admin = policyClient({ roles: [Roles.Admin] });
+    await expect(assertParentAuthorization(admin.client, companyId, uploadInput(), false)).resolves.toBeUndefined();
+    const userQuery = admin.calls.find(({ sql }) => sql.includes("FROM core.users target"));
+    expect(userQuery?.sql).not.toContain("FOR UPDATE");
+    expect(userQuery?.params).toEqual([parentId, companyId]);
+  });
+
+  it.each([
+    ["generic", "normal"],
+    ["identity_proof", "medical"],
+  ] as const)("rejects employee-proof purpose/classification pair %s/%s", async (documentType, classification) => {
+    const { client } = policyClient();
+    await expect(assertParentAuthorization(client, companyId, uploadInput({
+      actor: { ...actor(), id: parentId },
+      operation: "create",
+      documentType,
+      classification,
+      expectedParentVersion: undefined,
+      expectedPointerDocumentId: undefined,
+    }), true)).rejects.toMatchObject({
+      statusCode: 403,
+      message: "Employee proof type or classification is not allowed",
+    });
+  });
+
+  it("requires Admin authority and a same-purpose active document for proof replacement", async () => {
+    const replacementInput = uploadInput({
+      operation: "create",
+      documentType: "identity_proof",
+      mimeType: "application/pdf",
+      expectedParentVersion: undefined,
+      expectedPointerDocumentId: documentId,
+    });
+    const denied = policyClient({ roles: [Roles.Employee] });
+    await expect(assertParentAuthorization(denied.client, companyId, replacementInput, true)).rejects.toMatchObject({
+      statusCode: 403,
+      message: "Employee proof upload denied",
+    });
+
+    const wrongPurpose = policyClient({
+      roles: [Roles.Admin],
+      replacementRows: [{ id: documentId, document_type: "address_proof" }],
+    });
+    await expect(assertParentAuthorization(
+      wrongPurpose.client,
+      companyId,
+      replacementInput,
+      true,
+    )).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Employee proof replacement target changed or has a different purpose",
+    });
+
+    const allowed = policyClient({
+      roles: [Roles.Admin],
+      replacementRows: [{ id: documentId, document_type: "identity_proof" }],
+    });
+    await expect(assertParentAuthorization(allowed.client, companyId, replacementInput, true)).resolves.toBeUndefined();
+    const replacementQuery = allowed.calls.find(({ sql }) => sql.includes("WHERE id=$1 AND company_id=$2"));
+    expect(replacementQuery?.sql).toContain("FOR UPDATE");
+    expect(replacementQuery?.sql).toContain("business_object_id=$3");
+    expect(replacementQuery?.sql).toContain("business_object_type IN ('core_user','employee')");
+    expect(replacementQuery?.sql).toContain("lifecycle_state='active'");
+    expect(replacementQuery?.sql).toContain("deleted_at IS NULL");
+    expect(replacementQuery?.params).toEqual([documentId, companyId, parentId]);
+  });
+
+  it("rejects unsupported durable parent types after tenant and role revalidation", async () => {
+    const { client } = policyClient();
+
+    await expect(assertParentAuthorization(client, companyId, uploadInput({
+      parentType: "generic",
+      operation: "create",
+    }), true)).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Unsupported durable media parent type",
+    });
+  });
+
   it("builds a stable opaque fingerprint and changes it for command-relevant input", () => {
     const input = uploadInput();
     const first = requestFingerprint(input, checksum);
@@ -573,4 +727,66 @@ function authorizationClient(activeProofRows: Array<{ id: UUID }>) {
     client: { query } as unknown as PoolClient,
     queries,
   };
+}
+
+function policyClient(options: {
+  currentCompanyId?: UUID;
+  roles?: string[];
+  companyRows?: Array<Record<string, unknown>>;
+  userRows?: Array<Record<string, unknown>>;
+  replacementRows?: Array<{ id: UUID; document_type: string }>;
+  currentProofRows?: Array<{ id: UUID }>;
+} = {}) {
+  const calls: Array<{ sql: string; params: unknown[] }> = [];
+  const query = async (sql: string, params: unknown[] = []) => {
+    calls.push({ sql, params });
+    if (sql.includes("FROM platform.user_session_preferences preference")) {
+      return { rows: [{ company_id: options.currentCompanyId ?? companyId }], rowCount: 1 };
+    }
+    if (sql.includes("FROM core.user_roles assignment")) {
+      const roles = options.roles ?? [Roles.Employee];
+      return { rows: roles.map((role_key) => ({ role_key })), rowCount: roles.length };
+    }
+    if (sql.includes("FROM platform.company_profiles WHERE")) {
+      const rows = options.companyRows ?? [{ id: companyId, version: 7, logo_document_id: null }];
+      return { rows, rowCount: rows.length };
+    }
+    if (sql.includes("FROM core.users target")) {
+      const rows = options.userRows ?? [{ id: parentId, version: 7, profile_photo_document_id: null }];
+      return { rows, rowCount: rows.length };
+    }
+    if (sql.includes("WHERE id=$1 AND company_id=$2")) {
+      const rows = options.replacementRows ?? [];
+      return { rows, rowCount: rows.length };
+    }
+    if (sql.includes("FROM documents.doc_metadata")) {
+      const rows = options.currentProofRows ?? [];
+      return { rows, rowCount: rows.length };
+    }
+    throw new Error(`Unexpected policy query: ${sql}`);
+  };
+  return { client: { query } as unknown as PoolClient, calls };
+}
+
+function assertLiveAuthorityQueries(
+  calls: Array<{ sql: string; params: unknown[] }>,
+  expectedActorId: UUID,
+): void {
+  const companyQuery = calls.find(({ sql }) => sql.includes("FROM platform.user_session_preferences preference"));
+  expect(companyQuery?.sql).toContain("assignment.role_key=preference.active_role");
+  expect(companyQuery?.sql).toContain("assignment.status='active'");
+  expect(companyQuery?.sql).toContain("assignment.deleted_at IS NULL");
+  expect(companyQuery?.sql).toContain("assignment.effective_from<=current_date");
+  expect(companyQuery?.sql).toContain("assignment.effective_to IS NULL OR assignment.effective_to>=current_date");
+  expect(companyQuery?.sql).toContain("role.status='active' AND role.deleted_at IS NULL");
+  expect(companyQuery?.sql).toContain("actor.deleted_at IS NULL AND actor.employment_status='active'");
+  expect(companyQuery?.sql).toContain("company.status='active'");
+  expect(companyQuery?.params).toEqual([expectedActorId]);
+
+  const roleQuery = calls.find(({ sql }) => sql.includes("FROM core.user_roles assignment"));
+  expect(roleQuery?.sql).toContain("role.status='active' AND role.deleted_at IS NULL");
+  expect(roleQuery?.sql).toContain("assignment.status='active' AND assignment.deleted_at IS NULL");
+  expect(roleQuery?.sql).toContain("assignment.effective_from <= current_date");
+  expect(roleQuery?.sql).toContain("assignment.effective_to IS NULL OR assignment.effective_to >= current_date");
+  expect(roleQuery?.params).toEqual([expectedActorId]);
 }
