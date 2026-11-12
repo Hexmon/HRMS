@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
@@ -392,6 +392,7 @@ describe("core hierarchy API", () => {
   it("uploads employee profile photos through the document storage policy", async () => {
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
+    const peer = await loginAs(app, "E2");
 
     const policy = await app.inject({
       method: "GET",
@@ -443,6 +444,23 @@ describe("core hierarchy API", () => {
     expect(content.statusCode).toBe(200);
     expect(content.headers["content-type"]).toBe("image/jpeg");
     expect(content.rawPayload).toEqual(body);
+
+    const getObject = vi.spyOn(app.store.objectStorage!, "getObject");
+    const callsBeforeDeniedReads = getObject.mock.calls.length;
+    const peerRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${document!.id}/content`,
+      headers: authHeader(peer.token)
+    });
+    const unknownRead = await app.inject({
+      method: "GET",
+      url: "/api/v1/documents/00000000-0000-4000-8000-000000000099/content",
+      headers: authHeader(peer.token)
+    });
+    expect(peerRead.statusCode).toBe(404);
+    expect(peerRead.json().code).toBe(unknownRead.json().code);
+    expect(peerRead.json().message).toBe(unknownRead.json().message);
+    expect(getObject.mock.calls).toHaveLength(callsBeforeDeniedReads);
 
     const remove = await app.inject({
       method: "DELETE",

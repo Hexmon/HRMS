@@ -60,4 +60,4 @@ Legacy reviewer/director approval vocabulary is not an active frontend contract.
 - Expense documents stay linked through backend document metadata and expense document APIs.
 - Manager document verification is distinct from generic document verification.
 - Settlement/closure can be blocked when required documents are missing or unverified.
-- Document download URLs are sensitive and short-lived; do not put them into analytics events or persistent local storage.
+- Document content URLs require current backend authorization; do not put them into analytics events or persistent local storage.

@@ -6271,7 +6271,7 @@ Success body highlights:
 - Display backend `message` and retain `request_id` for support.
 - Treat `401` as authentication failure and `403` as real permission denial.
 - Use backend document APIs only; never expose object-storage credentials or direct bucket paths.
-- Download URLs are short-lived sensitive values; do not log or persist them.
+- The returned backend content URL is not a bearer capability; fetch it with current authentication and do not log or persist it.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
 ### GET /api/v1/documents/{id}/content

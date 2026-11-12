@@ -29,6 +29,12 @@ interface StorageErrorShape {
   $metadata?: { httpStatusCode?: unknown };
 }
 
+interface ProviderObjectBody {
+  transformToByteArray?: () => Promise<Uint8Array>;
+  destroy?: (error?: Error) => void;
+  [Symbol.asyncIterator]?: () => AsyncIterator<Uint8Array | Buffer | string>;
+}
+
 export class ObjectStorageProviderError extends Error {
   readonly code: "timeout" | "unavailable";
 
@@ -138,7 +144,7 @@ export class R2ObjectStorage implements ObjectStoragePort {
     assertObjectKey(key);
     const deadline = Date.now() + this.options.requestTimeoutMs;
     let result: {
-      Body?: { transformToByteArray?: () => Promise<Uint8Array>; destroy?: (error?: Error) => void };
+      Body?: ProviderObjectBody;
       ContentLength?: number;
       ContentType?: string;
     };
@@ -153,7 +159,7 @@ export class R2ObjectStorage implements ObjectStoragePort {
       if (isMissingObjectError(error)) return null;
       throw error;
     }
-    if (!result.Body?.transformToByteArray) {
+    if (!result.Body?.transformToByteArray && !result.Body?.[Symbol.asyncIterator]) {
       throw new ObjectStorageProviderError("unavailable", "Private object storage returned an unreadable body.");
     }
     const maxObjectBytes = this.options.maxObjectBytes ?? 64 * 1024 * 1024;
@@ -164,7 +170,7 @@ export class R2ObjectStorage implements ObjectStoragePort {
     let bytes: Uint8Array;
     try {
       bytes = await this.withDeadline(
-        result.Body.transformToByteArray(),
+        this.readBoundedBody(result.Body, maxObjectBytes),
         "read object body",
         Math.max(1, deadline - Date.now()),
       );
@@ -185,6 +191,31 @@ export class R2ObjectStorage implements ObjectStoragePort {
       contentType: result.ContentType,
       size: result.ContentLength ?? body.length,
     };
+  }
+
+  private async readBoundedBody(
+    body: ProviderObjectBody,
+    maxObjectBytes: number,
+  ): Promise<Uint8Array> {
+    const iterator = body[Symbol.asyncIterator];
+    if (iterator) {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      const iterable: AsyncIterable<Uint8Array | Buffer | string> = {
+        [Symbol.asyncIterator]: () => iterator.call(body),
+      };
+      for await (const chunk of iterable) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        size += buffer.length;
+        if (size > maxObjectBytes) {
+          body.destroy?.();
+          throw new ObjectStorageProviderError("unavailable", "Private object storage returned an oversized object body.");
+        }
+        chunks.push(buffer);
+      }
+      return Buffer.concat(chunks, size);
+    }
+    return body.transformToByteArray!();
   }
 
   async statObject(key: string): Promise<{ size: number } | null> {

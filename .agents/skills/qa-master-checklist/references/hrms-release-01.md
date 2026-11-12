@@ -4,7 +4,7 @@
 
 ## Exact product type and topology — code/doc evidence
 
-- **Modular monolith, not proven microservices:** one Fastify API assembled in `hrms_backend/src/app.ts`, modular services in `src/modules/*`, shared PostgreSQL/Drizzle schemas/SQL migrations, plus separately running workers; `hrms-client/` is TanStack Start/React. `docs/architecture/system-architecture.md` describes Vercel browser/SSR → Render API → Postgres/Valkey/Cloudinary/Resend.
+- **Modular monolith, not proven microservices:** one Fastify API assembled in `hrms_backend/src/app.ts`, modular services in `src/modules/*`, shared PostgreSQL/Drizzle schemas/SQL migrations, plus separately running workers; `hrms-client/` is TanStack Start/React. `docs/architecture/system-architecture.md` describes Vercel browser/SSR → Render API → Postgres/Valkey/private Cloudflare R2/Resend.
 - **Domains:** core HR, authentication/onboarding, admin policy/RBAC, dashboard, attendance and geo/offline, leave/WFH, EMS, expenses/finance, documents/media, projects, timesheets, assets, helpdesk, notifications, reports, locations and webhooks.
 - **Roles:** Admin, HR Manager, Employee, Reviewer/Manager, Director, Finance Manager, Asset Manager, Auditor, Helpdesk Agent, project-related roles; UI role names differ from backend role constants. `hrms_backend/src/shared/constants.ts`, `hrms_backend/src/modules/auth/service.ts`, `hrms-client/src/lib/auth.tsx`, root `README.md`.
 - **Data:** schema-per-domain PostgreSQL, Drizzle ORM, raw SQL migrations. No cross-schema FKs is intentional; verify cross-domain consistency via `hrms_backend/src/db/migrations/0063_cross_schema_reference_integrity.sql` and related script/tests.

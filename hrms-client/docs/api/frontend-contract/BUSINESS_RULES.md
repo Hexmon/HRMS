@@ -57,7 +57,7 @@ Always keep `request_id` visible in logs/support views. Show field validation fr
 ## Documents
 
 - Document APIs store metadata and authorize object access. The frontend never receives object storage credentials.
-- Download URLs are short-lived sensitive values. Do not log or persist them longer than needed.
+- The document content URL is an authenticated backend endpoint, not a bearer capability. Fetch it with current authorization and do not log or persist it.
 - Restricted classifications are backend enforced; hide UI controls when possible, but expect `403`.
 
 ## Expenses And Finance

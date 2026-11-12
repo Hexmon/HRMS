@@ -3260,12 +3260,15 @@ class PostgresPersistence {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const { companyId } = await this.resolveExpenseActor(client, userId);
+      const { actor, companyId } = await this.resolveExpenseActor(client, userId);
       const result = await client.query<{
         metadata_id: UUID | null;
+        metadata_document_type: string | null;
         media_kind: "company_logo" | "profile_photo" | null;
+        target_user_id: UUID | null;
+        target_hierarchy_path: string | null;
       }>(
-        `SELECT metadata.id AS metadata_id,
+        `SELECT metadata.id AS metadata_id, metadata.document_type AS metadata_document_type,
                 CASE
                   WHEN company.logo_document_id = metadata.id
                     AND metadata.document_type = 'company_logo'
@@ -3277,7 +3280,8 @@ class PostgresPersistence {
                     AND metadata.business_object_type = 'core_user'
                     AND metadata.business_object_id = target.id THEN 'profile_photo'
                   ELSE NULL
-                END AS media_kind
+                END AS media_kind,
+                target.id AS target_user_id, target.hierarchy_path AS target_hierarchy_path
          FROM (SELECT $1::uuid AS document_id) requested
          LEFT JOIN documents.doc_metadata metadata
            ON metadata.id = requested.document_id AND metadata.deleted_at IS NULL
@@ -3291,8 +3295,22 @@ class PostgresPersistence {
       const row = result.rows[0];
       await client.query("COMMIT");
       if (!row?.metadata_id) return "hidden";
-      if (!row.media_kind) return "other";
-      return mode === "workflow" ? "hidden" : "media-authorized";
+      if (!row.media_kind) {
+        return row.metadata_document_type === "company_logo" || row.metadata_document_type === "profile_photo"
+          ? "hidden"
+          : "other";
+      }
+      if (mode === "workflow") return "hidden";
+      if (row.media_kind === "company_logo") return "media-authorized";
+      const privileged = actor.roles.some((role) =>
+        role === Roles.Admin || role === Roles.Auditor || role === Roles.HRManager,
+      );
+      const subordinate = Boolean(
+        row.target_hierarchy_path?.startsWith(`${actor.hierarchy_path}.`),
+      );
+      return row.target_user_id === actor.id || privileged || subordinate
+        ? "media-authorized"
+        : "hidden";
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;

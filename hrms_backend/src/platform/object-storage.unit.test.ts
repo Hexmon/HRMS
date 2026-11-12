@@ -95,7 +95,27 @@ describe("private R2 object storage", () => {
       })),
     });
     await expect(storage.getObject("opaque/data.bin")).rejects.toMatchObject({ code: "unavailable" });
-    expect(destroy).toHaveBeenCalledOnce();
+    expect(destroy).toHaveBeenCalled();
+  });
+
+  it("stops streaming before an unreported object can exceed the memory cap", async () => {
+    const destroy = vi.fn();
+    const transformToByteArray = vi.fn();
+    const body = {
+      transformToByteArray,
+      destroy,
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from([1, 2]);
+        yield Buffer.from([3]);
+        throw new Error("must not consume beyond the cap");
+      },
+    };
+    const storage = new R2ObjectStorage({ ...options, maxObjectBytes: 2 }, {
+      send: vi.fn(async () => ({ Body: body })),
+    });
+    await expect(storage.getObject("opaque/data.bin")).rejects.toMatchObject({ code: "unavailable" });
+    expect(destroy).toHaveBeenCalled();
+    expect(transformToByteArray).not.toHaveBeenCalled();
   });
 
   it("enforces a deadline even when the command client ignores abort signals", async () => {
