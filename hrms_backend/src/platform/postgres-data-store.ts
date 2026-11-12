@@ -595,7 +595,7 @@ export async function createPostgresDataStore(
   return store;
 }
 
-class PostgresPersistence {
+export class PostgresPersistence {
   constructor(
     private readonly pool: Pool,
     private readonly store: DataStore,
