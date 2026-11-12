@@ -21,6 +21,7 @@ def run(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 class VerificationScriptTests(unittest.TestCase):
     def test_trusted_coverage_workflow_uses_pinned_source_without_privileged_trigger(self) -> None:
         workflow = (SOURCE.parents[1] / ".github" / "workflows" / "trusted-changed-coverage.yml").read_text(encoding="utf-8")
+        root_ignore = (SOURCE.parents[1] / ".gitignore").read_text(encoding="utf-8").splitlines()
         self.assertIn("pull_request: {}", workflow)
         self.assertIn("merge_group: {}", workflow)
         self.assertNotIn("pull_request_target", workflow)
@@ -40,6 +41,7 @@ class VerificationScriptTests(unittest.TestCase):
             self.assertIn("--ignore-pnpmfile", command)
         self.assertIn('python3 -m venv --copies "$RUNNER_TEMP/hrms-coverage-python"', workflow)
         self.assertIn('export PATH="$RUNNER_TEMP/hrms-coverage-python/bin:$PATH"', workflow)
+        self.assertIn("node_modules", root_ignore)
 
     def test_change_plan_keeps_unrelated_suites_out_of_each_path_class(self) -> None:
         cases = (
