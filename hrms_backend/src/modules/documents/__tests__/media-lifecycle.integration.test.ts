@@ -92,6 +92,41 @@ describe("TEN-S25-021 durable media lifecycle", () => {
     expect(stat).toHaveBeenCalledTimes(1);
   });
 
+  it("retries a definite failed PUT with the same key and publishes the original intent", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const memory = new MemoryObjectStorage();
+    let attempts = 0;
+    const storage: ObjectStoragePort = {
+      kind: "memory",
+      bucket: "definite-retry-test",
+      async putObject(key, body, metadata) {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new ObjectStorageProviderError("unavailable", "synthetic definite failure");
+        }
+        return memory.putObject(key, body, metadata);
+      },
+      getObject: (key) => memory.getObject(key),
+      statObject: (key) => memory.statObject(key),
+      removeObject: (key) => memory.removeObject(key),
+    };
+    const service = new MediaLifecycleService(app.store.pgPool!, storage);
+    const input = logoInput(admin.user, parent, "media-definite-retry-001", Buffer.from("retry-logo"));
+
+    await expect(service.upload(input)).rejects.toMatchObject({ code: "unavailable" });
+    const result = await service.upload(input);
+
+    expect(result.state).toBe("finalized");
+    expect(attempts).toBe(2);
+    const intents = await app.store.pgPool!.query(
+      `SELECT id,state,attempt_count FROM documents.media_upload_intents
+       WHERE idempotency_key='media-definite-retry-001'`,
+    );
+    expect(intents.rows).toHaveLength(1);
+    expect(intents.rows[0]).toMatchObject({ state: "finalized", attempt_count: 2 });
+  });
+
   it("retains an uploaded object when final SQL publication loses its version race", async () => {
     const admin = await loginAs(app, "ADM");
     const parent = await companyParent(app, admin.user.id);
@@ -295,7 +330,19 @@ describe("TEN-S25-021 durable media lifecycle", () => {
     expect([403, 404]).toContain(revoked.statusCode);
 
     const originalGet = app.store.objectStorage!.getObject.bind(app.store.objectStorage!);
-    vi.spyOn(app.store.objectStorage!, "getObject").mockImplementationOnce(async (key) => {
+    const getObject = vi.spyOn(app.store.objectStorage!, "getObject");
+    getObject.mockImplementationOnce(async (key) => {
+      const stored = await originalGet(key);
+      return stored ? { ...stored, body: Buffer.alloc(stored.body.length, 0) } : null;
+    });
+    const corrupted = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${response.json().id}/content`,
+      headers: { authorization: `Bearer ${employee.token}` },
+    });
+    expect(corrupted.statusCode).toBe(404);
+
+    getObject.mockImplementationOnce(async (key) => {
       const bytes = await originalGet(key);
       await app.store.pgPool!.query(
         "UPDATE documents.doc_metadata SET lifecycle_state='tombstoned' WHERE id=$1",

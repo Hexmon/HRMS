@@ -32,6 +32,7 @@ import {
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
 import { usePrivateDocumentUrl } from "@/shared/uploads/private-document";
+import { createMediaIdempotencyKey } from "@/shared/uploads/media-command";
 
 export const Route = createFileRoute("/_app/admin-settings/company")({
   component: CompanyProfileScreen,
@@ -138,9 +139,16 @@ function CompanyProfileScreen() {
       const formData = new FormData();
       formData.set("file", prepared.file);
       if (!companyQuery.data) throw new Error("Company profile has not loaded yet.");
+      const idempotencyKey = await createMediaIdempotencyKey({
+        operation: "replace_company_logo",
+        parentId: companyQuery.data.id,
+        expectedVersion: companyQuery.data.version,
+        expectedPointerDocumentId: companyQuery.data.logo_document_id,
+        file: prepared.file,
+      });
       const response = await uploadLogoMutation.mutateAsync({
         formData,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey,
         expectedVersion: companyQuery.data.version,
         expectedPointerDocumentId: companyQuery.data.logo_document_id,
       });

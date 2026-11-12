@@ -23,13 +23,13 @@
 
 | Status | Step | Evidence/notes |
 | --- | --- | --- |
-| Complete | 1. Map current write/read paths, PostgreSQL persistence, migrations and worker scheduling. | Existing implementation was preserved from exact old parent `19fe3220389ac034c33a866af5879027fd1bb882`; exact current parent is `4e2bf2cf2bd58f10c16aec98befbfbbdba922b85` and reconciliation remains pending. |
+| Complete | 1. Map current write/read paths, PostgreSQL persistence, migrations and worker scheduling. | Existing implementation was preserved in `14634c61476ec97e1d81ed55ca7f9beaea9b4d30`, then merged without history rewriting onto exact parent `4e2bf2cf2bd58f10c16aec98befbfbbdba922b85` in `37e57fbf3e3f92bfcb0ac33cbe8d96dd98282237`. |
 | Implemented; review pending | 2. Add append-only lifecycle/upload-intent migration and matching schema/types. | Migration `0071` and matching schema/types exist. No cross-schema FK; ambiguous legacy ownership quarantines. Disposable PostgreSQL migration evidence is still required. |
-| Implemented; review pending | 3. Implement transaction-owned prepare/finalize/remove commands and storage ambiguity handling. | Intent commits before PUT; finalize owns publication/audit/outbox. Provider/SQL failure semantics require independent review and executable integration proof. |
+| Implemented; review pending | 3. Implement transaction-owned prepare/finalize/remove commands and storage ambiguity handling. | Intent commits before PUT; finalize owns publication/audit/outbox. Review added an API lease/claim so a definite failed PUT can retry the original intent with the same stable client key, and content reads now verify committed size/checksum. Executable PostgreSQL proof remains pending. |
 | Implemented; review pending | 4. Cut over company logo, profile photo and generic document routes/contracts. | Backend/frontend typechecks and generated API verification pass. Existing media should remain current until finalize; expense upload remains 409. |
 | Implemented; review pending | 5. Add bounded lease-based media reconciliation and Cloudflare Queue/Cron dispatch. | Unit coverage exists; boundedness, delayed retry and duplicate-worker behavior require deeper review/integration. No purge is implemented. |
-| In progress | 6. Add focused unit, disposable PostgreSQL, restart/two-instance/provider/concurrency tests. | Focused migration/worker unit tests pass 6/6. Docker Desktop socket is absent, so PostgreSQL, restart/two-instance and concurrency cases remain Not Tested. |
-| In progress | 7. Update OpenAPI/frontend/runbook/rollback docs and run verification gates. | Backend/frontend typechecks, backend lint (513 files), frontend lint (0 errors/44 existing warnings), API-doc verification and diff-check pass. Exact-parent reconciliation, full coverage and independent QA remain. |
+| In progress | 6. Add focused unit, disposable PostgreSQL, restart/two-instance/provider/concurrency tests. | Focused migration/worker unit tests pass 6/6 and frontend private-download/stable-command tests pass 31/31. PostgreSQL regression cases now include definite failed-PUT same-key recovery and corrupt-byte denial, but Docker Desktop socket is absent, so PostgreSQL, restart/two-instance and concurrency cases remain Not Tested. |
+| In progress | 7. Update OpenAPI/frontend/runbook/rollback docs and run verification gates. | Exact-parent reconciliation is complete. Backend/frontend typechecks, backend lint (513 files), frontend lint (0 errors/44 existing warnings), API-doc verification and diff-check pass. Full changed coverage and independent exact-head QA/security remain. |
 
 ## Test Design And Shared Tracker
 
@@ -53,7 +53,7 @@
 | Pending | Existing image remains until finalize; second instance sees finalized only | API integration |
 | Pending | Logical remove and generic delete never call provider delete | unit + PostgreSQL integration |
 | Pending | Duplicate bounded reconcile and lease recovery | worker integration |
-| Partial pass | Repository changed/full verification gates | Backend/frontend typechecks passed; backend lint passed for 513 files; frontend lint passed with 0 errors and 44 existing warnings; API docs verification and diff-check passed; focused unit tests 6/6. Full/integration/coverage gates remain pending. |
+| Partial pass | Repository changed/full verification gates | Backend/frontend typechecks passed; backend lint passed for 513 files; frontend lint passed with 0 errors and 44 existing warnings; API docs verification and diff-check passed; focused backend unit tests 6/6 and frontend tests 31/31. Full PostgreSQL integration/changed-coverage gates remain pending. |
 
 ## Risks, Compatibility And Recovery
 
@@ -66,6 +66,6 @@
 ## Handoff
 
 - Files/artifacts: this plan plus implementation/tests/runbook to be listed at completion.
-- Commands and results: `pnpm typecheck` passed in both packages; backend `pnpm lint` and `pnpm api:docs:verify` passed; frontend `pnpm lint` passed with 44 existing warnings; focused migration/worker unit tests passed 6/6 using a synthetic non-secret test URL. Initial unit invocation without test environment failed before discovery because `.env.test` was absent; it is not counted as a product failure. Docker inspection failed because `/home/hexmon/.docker/desktop/docker.sock` is absent, so PostgreSQL integration remains Not Tested.
+- Commands and results: `pnpm typecheck` passed in both packages; backend `pnpm lint` and `pnpm api:docs:verify` passed; frontend `pnpm lint` passed with 44 existing warnings; focused migration/worker unit tests passed 6/6 using a synthetic non-secret test URL; frontend stable-media-command/private-download tests passed 31/31. An explicit integration attempt reached test setup but PostgreSQL refused `127.0.0.1:5432`; its 14 cases are not counted as product failures. Docker inspection failed because `/home/hexmon/.docker/desktop/docker.sock` is absent, so PostgreSQL integration remains Not Tested.
 - Remaining blockers or human actions: owner decisions for TEN-S25-022 purge and expense upload; independent review/QA; parent branch reconciliation before PR.
-- Commit/PR/deployment references: local branch `sprint-25/ten-s25-021-media-lifecycle`; no push/PR/deployment authorized yet.
+- Commit/PR/deployment references: local branch `sprint-25/ten-s25-021-media-lifecycle`; preservation commit `14634c61476ec97e1d81ed55ca7f9beaea9b4d30`; parent reconciliation merge `37e57fbf3e3f92bfcb0ac33cbe8d96dd98282237`; review correction commit pending. No push/PR/deployment yet.

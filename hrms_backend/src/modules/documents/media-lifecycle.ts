@@ -78,21 +78,22 @@ export class MediaLifecycleService {
     if (intent.state === "quarantined" || intent.state === "failed") {
       throw conflict("Media upload intent is not retryable", { intent_id: intent.id, state: intent.state });
     }
-    if (!prepared.created) {
+    let claimed = await this.claimIntentForPut(intent.id);
+    if (!claimed) {
       intent = await this.awaitConcurrentIntent(intent.id);
       if (intent.state === "finalized") return this.finalizedResult(intent);
       if (intent.state === "object_confirmed") return this.finalize(intent.id);
-      throw conflict("An identical media upload is still in progress; retry with the same idempotency key", {
-        intent_id: intent.id,
-      });
+      if (intent.state === "quarantined" || intent.state === "failed") {
+        throw conflict("Media upload intent is not retryable", { intent_id: intent.id, state: intent.state });
+      }
+      claimed = await this.claimIntentForPut(intent.id);
+      if (!claimed) {
+        throw conflict("An identical media upload is still in progress; retry with the same idempotency key", {
+          intent_id: intent.id,
+        });
+      }
     }
-
-    await this.pool.query(
-      `UPDATE documents.media_upload_intents
-       SET state='uploading',attempt_count=attempt_count+1,last_safe_error=NULL,updated_at=now()
-       WHERE id=$1 AND state IN ('prepared','uploading','retry_wait','object_confirmed')`,
-      [intent.id],
-    );
+    intent = claimed;
     let evidence: Awaited<ReturnType<ObjectStoragePort["statObject"]>>;
     try {
       const stored = await this.storage.putObject(intent.object_key, input.body, {
@@ -116,7 +117,12 @@ export class MediaLifecycleService {
         await this.recordSafeFailure(intent.id, "object_put_failed");
         throw error;
       }
-      evidence = await this.storage.statObject(intent.object_key);
+      try {
+        evidence = await this.storage.statObject(intent.object_key);
+      } catch (headError) {
+        await this.recordSafeFailure(intent.id, "object_head_failed_after_ambiguous_put");
+        throw headError;
+      }
       if (!evidence || !headMatchesIntent(evidence, intent)) {
         await this.recordSafeFailure(intent.id, "object_put_outcome_unconfirmed");
         throw conflict("Media provider outcome could not be confirmed; retry with the same idempotency key", {
@@ -140,12 +146,16 @@ export class MediaLifecycleService {
     const document = await this.authorizedActiveDocument(actorId, documentId, "raw", true);
     const object = await this.storage.getObject(document.storage_key);
     if (!object) throw notFound("Document bytes are not available in private object storage.");
+    if (object.size !== document.size_bytes || object.body.length !== document.size_bytes ||
+        (document.checksum_sha256 !== null && sha256(object.body) !== document.checksum_sha256)) {
+      throw notFound("Document bytes failed integrity verification.");
+    }
     const revalidated = await this.authorizedActiveDocument(actorId, documentId, "raw", false);
     if (revalidated.storage_key !== document.storage_key) throw notFound("Document not found");
     return {
       document: revalidated,
       body: object.body,
-      contentType: object.contentType || document.mime_type || "application/octet-stream",
+      contentType: document.mime_type || "application/octet-stream",
       size: object.size,
     };
   }
@@ -382,6 +392,20 @@ export class MediaLifecycleService {
     return result.rows[0]!;
   }
 
+  private async claimIntentForPut(intentId: UUID): Promise<IntentRow | null> {
+    const leaseOwner = `api:${randomUUID()}`;
+    const result = await this.pool.query<IntentRow>(
+      `UPDATE documents.media_upload_intents
+       SET state='uploading',lease_owner=$2,lease_expires_at=now()+interval '2 minutes',
+           attempt_count=attempt_count+1,last_safe_error=NULL,updated_at=now()
+       WHERE id=$1 AND state IN ('prepared','retry_wait')
+         AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now())
+       RETURNING *`,
+      [intentId, leaseOwner],
+    );
+    return result.rows[0] ?? null;
+  }
+
   private async confirmObject(
     intentId: UUID,
     evidence: NonNullable<Awaited<ReturnType<ObjectStoragePort["statObject"]>>>,
@@ -389,7 +413,8 @@ export class MediaLifecycleService {
     await this.pool.query(
       `UPDATE documents.media_upload_intents
        SET state='object_confirmed',provider_etag=$2,provider_size_bytes=$3,
-           provider_metadata=$4::jsonb,last_safe_error=NULL,updated_at=now()
+           provider_metadata=$4::jsonb,lease_owner=NULL,lease_expires_at=NULL,
+           last_safe_error=NULL,updated_at=now()
        WHERE id=$1 AND state IN ('prepared','uploading','retry_wait','object_confirmed')`,
       [intentId, evidence.etag ?? null, evidence.size, JSON.stringify({
         content_type: evidence.contentType ?? null,
@@ -518,7 +543,8 @@ export class MediaLifecycleService {
   private async recordSafeFailure(intentId: UUID, reason: string): Promise<void> {
     await this.pool.query(
       `UPDATE documents.media_upload_intents
-       SET state='retry_wait',last_safe_error=$2,updated_at=now()
+       SET state='retry_wait',lease_owner=NULL,lease_expires_at=NULL,
+           last_safe_error=$2,updated_at=now()
        WHERE id=$1 AND state IN ('prepared','uploading','retry_wait','object_confirmed')`,
       [intentId, reason],
     );
