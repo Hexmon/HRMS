@@ -472,6 +472,78 @@ describe("TEN-S25-021 durable media lifecycle", () => {
     expect(listedIds).not.toContain(first.json().document.id);
   });
 
+  it("serializes distinct-key stale-tab proof uploads to one active document", async () => {
+    const employee = await loginAs(app, "E1");
+    const storage = concurrentProofStorage();
+    const outcomes = await Promise.allSettled([
+      new MediaLifecycleService(app.store.pgPool!, storage).upload(
+        employeeProofInput(employee.user, employee.user.id, "media-proof-stale-a-001", Buffer.from("%PDF-proof-a")),
+      ),
+      new MediaLifecycleService(app.store.pgPool!, storage).upload(
+        employeeProofInput(employee.user, employee.user.id, "media-proof-stale-b-001", Buffer.from("%PDF-proof-b")),
+      ),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    const rejected = outcomes.find((outcome) => outcome.status === "rejected");
+    expect(rejected).toMatchObject({
+      reason: {
+        statusCode: 409,
+        message: "Employee proof already exists; replace the current document",
+      },
+    });
+    const company = await companyParent(app, employee.user.id);
+    const active = await app.store.pgPool!.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM documents.doc_metadata
+       WHERE company_id=$1 AND business_object_id=$2 AND document_type='identity_proof'
+         AND lifecycle_state='active' AND deleted_at IS NULL`,
+      [company.companyId, employee.user.id],
+    );
+    expect(active.rows[0]?.count).toBe(1);
+    const intents = await app.store.pgPool!.query<{ state: string; last_safe_error: string | null }>(
+      `SELECT state,last_safe_error FROM documents.media_upload_intents
+       WHERE idempotency_key IN ('media-proof-stale-a-001','media-proof-stale-b-001')
+       ORDER BY state`,
+    );
+    expect(intents.rows).toEqual([
+      { state: "failed", last_safe_error: "active_employee_proof_exists" },
+      { state: "finalized", last_safe_error: null },
+    ]);
+  });
+
+  it("serializes employee and Admin proof uploads without a lock-upgrade deadlock", async () => {
+    const employee = await loginAs(app, "E1");
+    const admin = await loginAs(app, "ADM");
+    const storage = concurrentProofStorage();
+    const outcomes = await Promise.allSettled([
+      new MediaLifecycleService(app.store.pgPool!, storage).upload(
+        employeeProofInput(employee.user, employee.user.id, "media-proof-self-001", Buffer.from("%PDF-proof-self")),
+      ),
+      new MediaLifecycleService(app.store.pgPool!, storage).upload(
+        employeeProofInput(admin.user, employee.user.id, "media-proof-admin-001", Buffer.from("%PDF-proof-admin")),
+      ),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(1);
+    expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
+      reason: { statusCode: 409 },
+    });
+    const company = await companyParent(app, employee.user.id);
+    const result = await app.store.pgPool!.query<{ active: number; failed: number; finalized: number }>(
+      `SELECT
+         count(*) FILTER (WHERE metadata.lifecycle_state='active')::int AS active,
+         count(*) FILTER (WHERE intent.state='failed')::int AS failed,
+         count(*) FILTER (WHERE intent.state='finalized')::int AS finalized
+       FROM documents.media_upload_intents intent
+       LEFT JOIN documents.doc_metadata metadata ON metadata.id=intent.document_id
+       WHERE intent.company_id=$1 AND intent.parent_id=$2
+         AND intent.idempotency_key IN ('media-proof-self-001','media-proof-admin-001')`,
+      [company.companyId, employee.user.id],
+    );
+    expect(result.rows[0]).toEqual({ active: 1, failed: 1, finalized: 1 });
+  });
+
   it("quarantines provider objects whose HEAD omits durable identity markers", async () => {
     const admin = await loginAs(app, "ADM");
     const parent = await companyParent(app, admin.user.id);
@@ -666,6 +738,49 @@ function logoInput(
     idempotencyKey,
     expectedParentVersion: parent.version,
     expectedPointerDocumentId: parent.pointer,
+  };
+}
+
+function employeeProofInput(
+  actor: Awaited<ReturnType<typeof loginAs>>["user"],
+  employeeId: string,
+  idempotencyKey: string,
+  body: Buffer,
+): DurableMediaUploadInput {
+  return {
+    actor,
+    operation: "create",
+    parentType: "core_user",
+    parentId: employeeId,
+    businessObjectType: "core_user",
+    ownerUserId: employeeId,
+    classification: "normal",
+    documentType: "identity_proof",
+    fileName: "identity.pdf",
+    mimeType: "application/pdf",
+    body,
+    idempotencyKey,
+  };
+}
+
+function concurrentProofStorage(): ObjectStoragePort {
+  const memory = new MemoryObjectStorage();
+  let arrivals = 0;
+  let release!: () => void;
+  const bothStored = new Promise<void>((resolve) => { release = resolve; });
+  return {
+    kind: "memory",
+    bucket: "concurrent-proof-test",
+    async putObject(key, body, metadata) {
+      const stored = await memory.putObject(key, body, metadata);
+      arrivals += 1;
+      if (arrivals === 2) release();
+      await bothStored;
+      return stored;
+    },
+    getObject: (key) => memory.getObject(key),
+    statObject: (key) => memory.statObject(key),
+    removeObject: (key) => memory.removeObject(key),
   };
 }
 

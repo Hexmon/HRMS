@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { Roles, type AuthUser, type DocumentClassification, type DocumentMetadata, type UUID } from "#shared";
 import type { ObjectStoragePort } from "../../platform/data-store.js";
-import { conflict, forbidden, notFound } from "../../platform/errors.js";
+import { AppError, conflict, forbidden, notFound } from "../../platform/errors.js";
 import { ObjectStorageProviderError } from "../../platform/object-storage.js";
 import { canAccessEmployeeProofDocument, isEmployeeProofDocumentType } from "./policy.js";
 
@@ -280,7 +280,8 @@ export class MediaLifecycleService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const companyId = await currentCompanyForActor(client, input.actor.id);
+      const companyId = await selectedCompanyIdForActor(client, input.actor.id);
+      await lockMediaAuthorizationRows(client, companyId, input.actor.id, "core_user", input.userId);
       const replayKey = `media-remove:${companyId}:${input.actor.id}:${input.idempotencyKey}`;
       const replay = await client.query<{ payload: { document_id?: string; parent_id?: string; expected_version?: number } }>(
         "SELECT payload FROM platform.outbox_events WHERE idempotency_key=$1",
@@ -502,6 +503,13 @@ export class MediaLifecycleService {
         employment_status: "active",
         hierarchy_path: "",
       };
+      await lockMediaAuthorizationRows(
+        client,
+        intent.company_id,
+        intent.actor_user_id,
+        intent.parent_type,
+        intent.parent_id,
+      );
       await assertParentAuthorization(client, intent.company_id, {
         actor: liveActor,
         operation: intent.operation,
@@ -576,6 +584,15 @@ export class MediaLifecycleService {
       return this.finalizedResult({ ...intent, state: "finalized" });
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
+      if (isActiveEmployeeProofConflict(error)) {
+        await client.query(
+          `UPDATE documents.media_upload_intents
+           SET state='failed',lease_owner=NULL,lease_expires_at=NULL,
+               last_safe_error='active_employee_proof_exists',updated_at=now()
+           WHERE id=$1 AND state='object_confirmed'`,
+          [intentId],
+        );
+      }
       throw error;
     } finally {
       client.release();
@@ -612,6 +629,54 @@ export class MediaLifecycleService {
       [intentId, reason, leaseOwner],
     );
   }
+}
+
+async function selectedCompanyIdForActor(client: PoolClient, actorId: UUID): Promise<UUID> {
+  const result = await client.query<{ company_id: UUID }>(
+    `SELECT company_id FROM platform.user_session_preferences
+     WHERE user_id=$1 AND company_id IS NOT NULL`,
+    [actorId],
+  );
+  if (!result.rows[0]) throw forbidden("Active company context is required for media upload");
+  return result.rows[0].company_id;
+}
+
+/**
+ * Acquire every row that media authorization may later upgrade in one stable
+ * order. Company is always first, followed by sorted users and their selected
+ * company preferences. This prevents two self/Admin uploads from each holding
+ * a shared actor lock while waiting to upgrade the other's parent row.
+ */
+async function lockMediaAuthorizationRows(
+  client: PoolClient,
+  companyId: UUID,
+  actorId: UUID,
+  parentType: MediaParentType,
+  parentId: UUID,
+): Promise<void> {
+  await client.query(
+    `SELECT id FROM platform.company_profiles WHERE id=$1
+     ${parentType === "company_profile" ? "FOR UPDATE" : "FOR SHARE"}`,
+    [companyId],
+  );
+  const userIds = [...new Set([
+    actorId,
+    ...(parentType === "core_user" ? [parentId] : []),
+  ])].sort();
+  await client.query(
+    `SELECT id FROM core.users WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
+    [userIds],
+  );
+  await client.query(
+    `SELECT user_id FROM platform.user_session_preferences
+     WHERE user_id=ANY($1::uuid[]) ORDER BY user_id FOR UPDATE`,
+    [userIds],
+  );
+}
+
+function isActiveEmployeeProofConflict(error: unknown): error is AppError {
+  return error instanceof AppError && error.statusCode === 409 &&
+    (error.details as { reason?: unknown } | undefined)?.reason === "active_employee_proof_exists";
 }
 
 async function currentCompanyForActor(client: PoolClient, actorId: UUID): Promise<UUID> {
@@ -714,7 +779,10 @@ export async function assertParentAuthorization(
           [companyId, input.parentId, input.documentType],
         );
         if (currentProof.rows[0]) {
-          throw conflict("Employee proof already exists; replace the current document");
+          throw conflict(
+            "Employee proof already exists; replace the current document",
+            { reason: "active_employee_proof_exists" },
+          );
         }
       }
     } else {
