@@ -12167,7 +12167,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/expenses/my": operation(
     "Reports & Analytics",
     "My expense report",
-    "Paginated requester-owned expense report with filters, dashboard cards, totals, document summary, payment summary, and workflow action hints for compact frontend list/cards.",
+    "Paginated requester-owned expense history across its persisted original companies, with filters, dashboard cards, totals, document summary, payment summary, and workflow action hints. It never grants access to another requester ticket.",
     {
       querystring: expenseReportQuerySchema,
       response200: expenseReportListSchema,

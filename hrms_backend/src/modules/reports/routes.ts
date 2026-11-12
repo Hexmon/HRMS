@@ -97,6 +97,28 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
     };
     return { actor, service: new ReportService(store) };
   };
+  const ownExpenseRead = async (actor: AuthUser) => {
+    if (fastify.store.persistence?.expenseSelfHistoryReadContext) {
+      const context = await fastify.store.persistence.expenseSelfHistoryReadContext(actor.id);
+      return { actor: context.actor, service: new ReportService(context.store) };
+    }
+    resolveActiveCompanyMembershipContext(fastify.store, {
+      userId: actor.id,
+      operation: "reports.expenses.self_history",
+      requireActiveEmployment: true,
+    });
+    const tickets = fastify.store.tickets.filter((ticket) => ticket.requester_user_id === actor.id);
+    const ticketIds = new Set(tickets.map((ticket) => ticket.id));
+    const store = {
+      ...fastify.store,
+      tickets,
+      auditLogs: fastify.store.auditLogs.filter((row) => ticketIds.has(row.ticket_id)),
+      expenseApprovals: fastify.store.expenseApprovals.filter((row) => ticketIds.has(row.ticket_id)),
+      expenseDocuments: fastify.store.expenseDocuments.filter((row) => ticketIds.has(row.ticket_id)),
+      payments: fastify.store.payments.filter((row) => ticketIds.has(row.ticket_id)),
+    };
+    return { actor, service: new ReportService(store) };
+  };
   const currentContext = async (actor: AuthUser, operation: string) => {
     if (fastify.store.persistence?.reportActorContext) {
       return fastify.store.persistence.reportActorContext(actor.id, operation);
@@ -117,7 +139,7 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get("/expenses/my", async (request) => {
     const actor = withActor(request);
     const query = reportExpenseQuerySchema.parse(request.query);
-    const scoped = await expenseRead(actor);
+    const scoped = await ownExpenseRead(actor);
     return scoped.service.myExpenses(scoped.actor, query);
   });
 

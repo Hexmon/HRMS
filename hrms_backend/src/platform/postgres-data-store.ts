@@ -1027,6 +1027,38 @@ class PostgresPersistence {
     }
   }
 
+  async expenseSelfHistoryReadContext(userId: UUID): Promise<{ actor: AuthUser; store: DataStore }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { actor } = await this.loadReportActorContext(client, userId, "reports.expenses.self_history");
+      // Persisted requester identity, not the current company preference,
+      // owns this narrowly scoped historical-self view after a transfer.
+      const tickets = await this.loadTickets(client, undefined, userId);
+      const auditLogs = await this.loadAuditLogs(client, undefined, userId);
+      const expenseApprovals = await this.loadExpenseApprovals(client, undefined, userId);
+      const expenseDocuments = await this.loadExpenseDocuments(client, undefined, userId);
+      const payments = await this.loadPayments(client, undefined, userId);
+      await client.query("COMMIT");
+      return {
+        actor,
+        store: {
+          ...this.store,
+          tickets,
+          auditLogs,
+          expenseApprovals,
+          expenseDocuments,
+          payments,
+        },
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async auditReportReadContext(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }> {
     const client = await this.pool.connect();
     try {
@@ -1972,12 +2004,18 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadTickets(client: PoolClient, companyId?: UUID): Promise<ExpenseTicket[]> {
+  private async loadTickets(client: PoolClient, companyId?: UUID, requesterUserId?: UUID): Promise<ExpenseTicket[]> {
+    const where = companyId
+      ? "WHERE context_payload->>'company_id' = $1"
+      : requesterUserId
+        ? "WHERE requester_user_id = $1"
+        : "";
+    const parameters = companyId ? [companyId] : requesterUserId ? [requesterUserId] : [];
     const { rows } = await client.query(
       `SELECT * FROM expenses.expense_tickets
-       ${companyId ? "WHERE context_payload->>'company_id' = $1" : ""}
+       ${where}
        ORDER BY created_at, ticket_no`,
-      companyId ? [companyId] : [],
+      parameters,
     );
     return rows.map((row) => ({
       id: row.id,
@@ -2041,12 +2079,19 @@ class PostgresPersistence {
   private async loadExpenseApprovals(
     client: PoolClient,
     companyId?: UUID,
+    requesterUserId?: UUID,
   ): Promise<ExpenseApprovalRecord[]> {
+    const join = companyId || requesterUserId ? "JOIN expenses.expense_tickets ticket ON ticket.id = approval.ticket_id" : "";
+    const where = companyId
+      ? "WHERE ticket.context_payload->>'company_id' = $1"
+      : requesterUserId
+        ? "WHERE ticket.requester_user_id = $1"
+        : "";
     const { rows } = await client.query(
       `SELECT approval.* FROM expenses.expense_approvals approval
-       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = approval.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ${join} ${where}
        ORDER BY approval.created_at, approval.id`,
-      companyId ? [companyId] : [],
+      companyId ? [companyId] : requesterUserId ? [requesterUserId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -2063,12 +2108,18 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadAuditLogs(client: PoolClient, companyId?: UUID): Promise<ExpenseAuditLog[]> {
+  private async loadAuditLogs(client: PoolClient, companyId?: UUID, requesterUserId?: UUID): Promise<ExpenseAuditLog[]> {
+    const join = companyId || requesterUserId ? "JOIN expenses.expense_tickets ticket ON ticket.id = log.ticket_id" : "";
+    const where = companyId
+      ? "WHERE ticket.context_payload->>'company_id' = $1"
+      : requesterUserId
+        ? "WHERE ticket.requester_user_id = $1"
+        : "";
     const { rows } = await client.query(
       `SELECT log.* FROM expenses.expense_audit_logs log
-       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = log.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ${join} ${where}
        ORDER BY log.created_at, log.id`,
-      companyId ? [companyId] : [],
+      companyId ? [companyId] : requesterUserId ? [requesterUserId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -2086,22 +2137,35 @@ class PostgresPersistence {
   private async loadExpenseDocuments(
     client: PoolClient,
     companyId?: UUID,
+    requesterUserId?: UUID,
   ): Promise<ExpenseDocument[]> {
+    const join = companyId || requesterUserId ? "JOIN expenses.expense_tickets ticket ON ticket.id = document.ticket_id" : "";
+    const where = companyId
+      ? "WHERE ticket.context_payload->>'company_id' = $1"
+      : requesterUserId
+        ? "WHERE ticket.requester_user_id = $1"
+        : "";
     const { rows } = await client.query(
       `SELECT document.* FROM expenses.expense_documents document
-       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = document.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ${join} ${where}
        ORDER BY document.uploaded_at, document.id`,
-      companyId ? [companyId] : [],
+      companyId ? [companyId] : requesterUserId ? [requesterUserId] : [],
     );
     return rows.map((row) => ({ ...row, uploaded_at: asIso(row.uploaded_at) }));
   }
 
-  private async loadPayments(client: PoolClient, companyId?: UUID): Promise<ExpensePayment[]> {
+  private async loadPayments(client: PoolClient, companyId?: UUID, requesterUserId?: UUID): Promise<ExpensePayment[]> {
+    const join = companyId || requesterUserId ? "JOIN expenses.expense_tickets ticket ON ticket.id = payment.ticket_id" : "";
+    const where = companyId
+      ? "WHERE ticket.context_payload->>'company_id' = $1"
+      : requesterUserId
+        ? "WHERE ticket.requester_user_id = $1"
+        : "";
     const { rows } = await client.query(
       `SELECT payment.* FROM expenses.expense_payments payment
-       ${companyId ? "JOIN expenses.expense_tickets ticket ON ticket.id = payment.ticket_id WHERE ticket.context_payload->>'company_id' = $1" : ""}
+       ${join} ${where}
        ORDER BY payment.created_at, payment.id`,
-      companyId ? [companyId] : [],
+      companyId ? [companyId] : requesterUserId ? [requesterUserId] : [],
     );
     return rows.map((row) => ({
       id: row.id,

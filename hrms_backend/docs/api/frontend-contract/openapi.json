@@ -40754,7 +40754,7 @@
         "tags": [
           "Reports & Analytics"
         ],
-        "description": "Paginated requester-owned expense report with filters, dashboard cards, totals, document summary, payment summary, and workflow action hints for compact frontend list/cards.",
+        "description": "Paginated requester-owned expense history across its persisted original companies, with filters, dashboard cards, totals, document summary, payment summary, and workflow action hints. It never grants access to another requester ticket.",
         "parameters": [
           {
             "schema": {

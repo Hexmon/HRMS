@@ -338,6 +338,7 @@ describe("non-expense reports", () => {
 
   it("keeps a transferred employee's old expense in the original Finance report without new-employer profile labels", async () => {
     const employee = await loginAs(app, "E1");
+    const otherEmployee = await loginAs(app, "E2");
     const manager = await loginAs(app, "D1");
     const finance = await loginAs(app, "N1");
     const auditor = await loginAs(app, "AUD");
@@ -348,6 +349,10 @@ describe("non-expense reports", () => {
     });
     expect(created.statusCode).toBe(200);
     expect(created.json().context_payload.company_id).toBe(oldCompanyId);
+    const otherEmployeeTicket = await app.inject({
+      method: "POST", url: "/api/v1/expenses", headers: authHeader(otherEmployee.token), payload: projectTravelPayload,
+    });
+    expect(otherEmployeeTicket.statusCode).toBe(200);
     const verified = await app.inject({
       method: "POST", url: `/api/v1/expenses/${created.json().id}/manager/verify`,
       headers: authHeader(manager.token), payload: { decision: "approve", expected_version: 1 },
@@ -376,6 +381,14 @@ describe("non-expense reports", () => {
       "UPDATE core.users SET full_name = 'New Employer Secret Name' WHERE id = $1",
       [employee.user.id],
     );
+
+    const ownHistoricalReport = await app.inject({
+      method: "GET", url: "/api/v1/reports/expenses/my?page=1&page_size=10",
+      headers: authHeader(employee.token),
+    });
+    expect(ownHistoricalReport.statusCode).toBe(200);
+    expect(ownHistoricalReport.json().items.map((row: { id: string }) => row.id)).toContain(created.json().id);
+    expect(ownHistoricalReport.json().items.map((row: { id: string }) => row.id)).not.toContain(otherEmployeeTicket.json().id);
 
     const originalFinance = await app.inject({
       method: "GET", url: "/api/v1/reports/expenses/finance-dashboard?page=1&page_size=10",
