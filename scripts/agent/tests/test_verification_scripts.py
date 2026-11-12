@@ -41,6 +41,9 @@ class VerificationScriptTests(unittest.TestCase):
             self.assertIn("--ignore-pnpmfile", command)
         self.assertIn('python3 -m venv --copies "$RUNNER_TEMP/hrms-coverage-python"', workflow)
         self.assertIn('export PATH="$RUNNER_TEMP/hrms-coverage-python/bin:$PATH"', workflow)
+        self.assertIn("exec corepack pnpm@10.25.0", workflow)
+        self.assertIn('chmod 0555 "$pinned_pnpm"', workflow)
+        self.assertIn('>> "$GITHUB_PATH"', workflow)
         self.assertIn("node_modules", root_ignore)
 
     def test_change_plan_keeps_unrelated_suites_out_of_each_path_class(self) -> None:
