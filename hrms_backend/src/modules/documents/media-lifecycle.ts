@@ -97,24 +97,16 @@ export class MediaLifecycleService {
     }
     intent = claimed;
     if (!intent.lease_owner) throw conflict("Media upload lease is unavailable", { intent_id: intent.id });
-    let evidence: Awaited<ReturnType<ObjectStoragePort["statObject"]>>;
+    let evidence: Awaited<ReturnType<ObjectStoragePort["statObject"]>> = null;
+    let putCompleted = false;
     try {
-      const stored = await this.storage.putObject(intent.object_key, input.body, {
+      await this.storage.putObject(intent.object_key, input.body, {
         "content-type": intent.mime_type,
         "x-hrms-intent-id": intent.id,
         "x-hrms-document-id": intent.document_id,
         "x-hrms-checksum-sha256": intent.checksum_sha256,
       });
-      evidence = {
-        size: stored.size,
-        ...(stored.etag ? { etag: stored.etag } : {}),
-        contentType: intent.mime_type,
-        metadata: {
-          "x-hrms-intent-id": intent.id,
-          "x-hrms-document-id": intent.document_id,
-          "x-hrms-checksum-sha256": intent.checksum_sha256,
-        },
-      };
+      putCompleted = true;
     } catch (error) {
       if (!(error instanceof ObjectStorageProviderError) || error.code !== "timeout") {
         await this.recordSafeFailure(intent.id, intent.lease_owner, "object_put_failed");
@@ -131,6 +123,14 @@ export class MediaLifecycleService {
         throw conflict("Media provider outcome could not be confirmed; retry with the same idempotency key", {
           intent_id: intent.id,
         });
+      }
+    }
+    if (putCompleted) {
+      try {
+        evidence = await this.storage.statObject(intent.object_key);
+      } catch (headError) {
+        await this.recordSafeFailure(intent.id, intent.lease_owner, "object_head_failed_after_put");
+        throw headError;
       }
     }
     if (!evidence || !headMatchesIntent(evidence, intent)) {
@@ -439,7 +439,9 @@ export class MediaLifecycleService {
       "SELECT * FROM documents.media_upload_intents WHERE id=$1",
       [intentId],
     );
-    return result.rows[0]!;
+    const intent = result.rows[0];
+    if (!intent) throw conflict("Concurrent media upload intent disappeared");
+    return intent;
   }
 
   private async claimIntentForPut(intentId: UUID): Promise<IntentRow | null> {
