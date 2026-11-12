@@ -182,7 +182,10 @@ describe("asset transaction boundary", () => {
     expect(dashboard.json().operations.assets_assigned).toBeGreaterThanOrEqual(1);
     const report = await second.inject({ method: "GET", url: "/api/v1/reports/assets/summary?page=1&page_size=10", headers: authHeader(admin.token) });
     expect(report.statusCode).toBe(409);
-    expect(report.json().message).toContain("historical company ownership");
+    expect(report.json()).toMatchObject({
+      message: "Report unavailable until historical company ownership is verified",
+    });
+    expect(report.json().items).toBeUndefined();
   });
 
   it("uses the bounded indexed public QR lookup for valid and invalid tokens", async () => {
