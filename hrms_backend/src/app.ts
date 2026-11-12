@@ -269,7 +269,7 @@ const transactionOwnedMutationRoutes = new Set([
   "POST /api/v1/admin/company-profile/logo",
 ]);
 
-function isTransactionOwnedMutationRoute(routeKey: string): boolean {
+export function isTransactionOwnedMutationRoute(routeKey: string): boolean {
   return (
     transactionOwnedMutationRoutes.has(routeKey) ||
     routeKey === "POST /api/v1/expenses" ||

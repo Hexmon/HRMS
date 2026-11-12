@@ -188,6 +188,26 @@ describe("private R2 object storage", () => {
     await expect(malformed.statObject("opaque/data.bin")).rejects.toMatchObject({ code: "unavailable" });
   });
 
+  it("returns optional HEAD identity metadata without sharing provider objects", async () => {
+    const providerMetadata = { "x-hrms-intent-id": "intent-1" };
+    const storage = new R2ObjectStorage(options, { send: vi.fn(async () => ({
+      ContentLength: 7,
+      ETag: "etag-7",
+      ContentType: "image/png",
+      Metadata: providerMetadata,
+    })) });
+
+    const head = await storage.statObject("opaque/data.png");
+    expect(head).toEqual({
+      size: 7,
+      etag: "etag-7",
+      contentType: "image/png",
+      metadata: { "x-hrms-intent-id": "intent-1" },
+    });
+    providerMetadata["x-hrms-intent-id"] = "mutated";
+    expect(head?.metadata).toEqual({ "x-hrms-intent-id": "intent-1" });
+  });
+
   it("uses bounded readiness and delete commands without listing", async () => {
     const send = vi.fn(async (_command: unknown, _options?: { abortSignal?: AbortSignal }) => ({}));
     const storage = new R2ObjectStorage(options, { send });
@@ -261,5 +281,25 @@ describe("memory object storage parity", () => {
     await storage.removeObject("opaque/data.txt");
     await storage.removeObject("opaque/data.txt");
     await expect(storage.getObject("opaque/data.txt")).resolves.toBeNull();
+  });
+
+  it("returns copied HEAD metadata and a truthful missing-object result", async () => {
+    const storage = new MemoryObjectStorage();
+    const metadata = { "content-type": "image/png", "x-hrms-intent-id": "intent-1" };
+    await storage.putObject("opaque/image.png", Buffer.from("image"), metadata);
+    metadata["x-hrms-intent-id"] = "caller-mutated";
+
+    const first = await storage.statObject("opaque/image.png");
+    expect(first).toEqual({ size: 5, contentType: "image/png", metadata: {
+      "content-type": "image/png",
+      "x-hrms-intent-id": "intent-1",
+    } });
+    first!.metadata!["x-hrms-intent-id"] = "result-mutated";
+    await expect(storage.statObject("opaque/image.png")).resolves.toEqual({
+      size: 5,
+      contentType: "image/png",
+      metadata: { "content-type": "image/png", "x-hrms-intent-id": "intent-1" },
+    });
+    await expect(storage.statObject("opaque/missing.png")).resolves.toBeNull();
   });
 });
