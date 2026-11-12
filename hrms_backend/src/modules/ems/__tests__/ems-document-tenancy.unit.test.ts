@@ -24,7 +24,7 @@ describe("EMS employee-document tenant boundary", () => {
     vi.restoreAllMocks();
   });
 
-  it("allows a current-company employee through the memory and durable route paths", async () => {
+  it("allows a durable read but fails upload closed without the PostgreSQL coordinator", async () => {
     const employee = await loginAs(app, "E1");
     await expect(
       new EmsService(store).listEmployeeDocuments(employee.user, employee.user.id, {
@@ -48,10 +48,10 @@ describe("EMS employee-document tenant boundary", () => {
       headers: authHeader(employee.token),
       payload: uploadPayload(),
     });
-    expect(upload.statusCode).toBe(200);
+    expect(upload.statusCode).toBe(409);
     expect(classifier).toHaveBeenCalledWith(employee.user.id, employee.user.id, "read");
     expect(classifier).toHaveBeenCalledWith(employee.user.id, employee.user.id, "write");
-    expect(putObject).toHaveBeenCalledTimes(1);
+    expect(putObject).not.toHaveBeenCalled();
   });
 
   it("hides a durable foreign target before parsing or provider I/O", async () => {

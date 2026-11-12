@@ -113096,7 +113096,7 @@
         "tags": [
           "EMS"
         ],
-        "description": "Uploads employee-scoped EMS document metadata using the existing backend object-storage adapter. Employees can attach their own allowed documents; HR/Admin can attach official or restricted employee documents.",
+        "description": "Durably uploads or replaces one of the closed employee proof purposes. Employees can attach their own proofs and company Admin can attach proofs for an employee. Assigned-HR upload remains fail-closed until an assigned-HR relationship is represented durably.",
         "requestBody": {
           "required": true,
           "content": {
@@ -113114,19 +113114,18 @@
                   "classification": {
                     "type": "string",
                     "enum": [
-                      "normal",
-                      "finance",
-                      "medical",
-                      "compensation",
-                      "legal",
-                      "audit"
+                      "normal"
                     ],
-                    "example": "finance"
+                    "description": "Server-enforced for employee proof uploads."
                   },
                   "document_type": {
                     "type": "string",
-                    "minLength": 1,
-                    "example": "receipt"
+                    "enum": [
+                      "identity_proof",
+                      "address_proof",
+                      "education_proof",
+                      "experience_proof"
+                    ]
                   },
                   "file_name": {
                     "type": "string",
@@ -113154,11 +113153,11 @@
                     "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                   }
                 },
-                "description": "EMS employee document upload metadata. The path employee user id is used as the business object id; binary storage is handled by the backend object-storage adapter."
+                "description": "Durable EMS employee-proof upload. The path employee user id is the immutable owner; the server accepts only the closed default proof purposes and enforces normal classification."
               }
             }
           },
-          "description": "EMS employee document upload metadata. The path employee user id is used as the business object id; binary storage is handled by the backend object-storage adapter."
+          "description": "Durable EMS employee-proof upload. The path employee user id is the immutable owner; the server accepts only the closed default proof purposes and enforces normal classification."
         },
         "parameters": [
           {
@@ -113171,6 +113170,17 @@
             "name": "user_id",
             "required": true,
             "description": "Employee user UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Stable key for one logical media upload. Reuse it only with the exact same payload after a timeout or lost response."
           }
         ],
         "security": [

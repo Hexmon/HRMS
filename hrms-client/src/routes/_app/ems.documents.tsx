@@ -40,6 +40,7 @@ import { useAuth } from "@/lib/auth";
 import { isUuid, pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { queryKeys } from "@/shared/query";
 import { prepareDocumentUploadFile, uploadPolicyAccept } from "@/shared/uploads/documents";
+import { createMediaIdempotencyKey } from "@/shared/uploads/media-command";
 
 export const Route = createFileRoute("/_app/ems/documents")({
   component: MyDocuments,
@@ -192,14 +193,29 @@ function MyDocuments() {
       const formData = new FormData();
       formData.set("file", prepared.file);
       formData.set("classification", classificationFor(target));
-      formData.set("document_type", documentTypeFor(target));
+      const documentType = documentTypeFor(target);
+      if (!documentType) {
+        throw new Error(
+          "This document purpose is not enabled for secure employee-proof upload yet.",
+        );
+      }
+      formData.set("document_type", documentType);
       formData.set("file_name", prepared.file.name);
       formData.set("mime_type", prepared.file.type || "application/octet-stream");
       formData.set("size_bytes", String(prepared.file.size));
       if (target && isUuid(target.id)) {
         formData.set("replace_document_id", target.id);
       }
-      await uploadMutation.mutateAsync(formData);
+      const idempotencyKey = await createMediaIdempotencyKey({
+        operation: "create_employee_document",
+        parentId: user!.id,
+        expectedVersion: null,
+        expectedPointerDocumentId: target && isUuid(target.id) ? target.id : null,
+        file: prepared.file,
+        fileName: prepared.file.name,
+        mimeType: prepared.file.type,
+      });
+      await uploadMutation.mutateAsync({ input: formData, idempotencyKey });
       toast.success(target ? "Replacement uploaded" : "Document uploaded", {
         description: `${prepared.file.name} is pending verification.`,
       });
@@ -226,11 +242,16 @@ function MyDocuments() {
         <Button
           size="sm"
           className="rounded-full"
+          disabled={apiEnabled}
           onClick={() => startUpload()}
-          disabled={apiEnabled && uploadMutation.isPending}
+          title={
+            apiEnabled
+              ? "Choose a required proof card so its purpose is server-validated."
+              : undefined
+          }
         >
           <Upload className="mr-1.5 h-3.5 w-3.5" />
-          {apiEnabled && uploadMutation.isPending ? "Uploading" : "Upload document"}
+          {apiEnabled ? "Choose a proof below" : "Upload document"}
         </Button>
       </div>
 
@@ -310,13 +331,11 @@ function MyDocuments() {
                       size="sm"
                       variant="ghost"
                       className="rounded-full text-destructive hover:text-destructive"
-                      onClick={() => requestDeleteDocument(d)}
-                      disabled={deleteMutation.isPending}
+                      disabled
+                      title="Logical proof removal is not enabled until the retention policy is approved."
                     >
                       <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                      {deleteMutation.isPending && deleteMutation.variables === d.id
-                        ? "Deleting"
-                        : "Delete"}
+                      Removal unavailable
                     </Button>
                   )}
                 </div>
@@ -408,8 +427,20 @@ function DeleteDocumentDialog({
   );
 }
 
-function documentTypeFor(document: Doc | null): string {
-  return slug(document?.category || document?.name || "employee_document");
+function documentTypeFor(document: Doc | null): string | null {
+  if (!document) return null;
+  const value = `${document.category} ${document.name}`.toLowerCase();
+  if (value.includes("address")) return "address_proof";
+  if (value.includes("education")) return "education_proof";
+  if (value.includes("experience")) return "experience_proof";
+  if (
+    value.includes("identity") ||
+    value.includes("passport") ||
+    value.includes("pan card") ||
+    value.includes("aadhaar")
+  )
+    return "identity_proof";
+  return null;
 }
 
 function classificationFor(document: Doc | null): EmsDocumentUploadBody["classification"] {

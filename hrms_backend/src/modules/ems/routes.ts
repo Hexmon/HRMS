@@ -13,11 +13,20 @@ import {
   emsServiceRequestDecisionSchema,
   paginationQuerySchema
 } from "#shared";
-import { unauthorized } from "../../platform/errors.js";
+import { conflict, unauthorized } from "../../platform/errors.js";
 import { EmsService } from "./service.js";
+import { DocumentService, presentDocument } from "../documents/service.js";
+import { MediaLifecycleService } from "../documents/media-lifecycle.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
 const userIdParamSchema = z.object({ user_id: z.uuid() });
+const mediaIdempotencyKeySchema = z.string().trim().min(8).max(200);
+const employeeProofTypeSchema = z.enum([
+  "identity_proof",
+  "address_proof",
+  "education_proof",
+  "experience_proof",
+]);
 
 const emsQuerySchema = paginationQuerySchema.extend({
   status: z.string().max(64).optional(),
@@ -237,13 +246,53 @@ export const emsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) throw unauthorized();
     const params = userIdParamSchema.parse(request.params);
     const service = new EmsService(fastify.store);
-    await service.assertEmployeeDocumentAccess(request.actor, params.user_id, "write");
+    const authorizedActor = await service.assertEmployeeDocumentAccess(request.actor, params.user_id, "write");
     const upload = await parseEmsDocumentUpload(request);
+    const parsed = emsDocumentUploadSchema.parse(upload.fields);
+    if (fastify.store.kind === "postgres") {
+      if (!fastify.store.pgPool || !fastify.store.objectStorage || !upload.fileBuffer) {
+        throw conflict("Durable employee-proof storage is not configured");
+      }
+      const documentType = employeeProofTypeSchema.parse(parsed.document_type);
+      const policy = new DocumentService(fastify.store).uploadPolicy();
+      const mimeType = parsed.mime_type.trim().toLowerCase();
+      if (!policy.allowed_mime_types.includes(mimeType) || upload.fileBuffer.length > policy.max_bytes) {
+        throw conflict("Employee proof does not meet the configured upload policy");
+      }
+      const result = await new MediaLifecycleService(
+        fastify.store.pgPool,
+        fastify.store.objectStorage,
+      ).upload({
+        actor: authorizedActor,
+        operation: "create",
+        parentType: "core_user",
+        parentId: params.user_id,
+        businessObjectType: "core_user",
+        ownerUserId: params.user_id,
+        classification: "normal",
+        documentType,
+        fileName: parsed.file_name,
+        mimeType,
+        body: upload.fileBuffer,
+        idempotencyKey: mediaIdempotencyKeySchema.parse(request.headers["idempotency-key"]),
+        expectedPointerDocumentId: parsed.replace_document_id,
+      });
+      await fastify.store.persistence?.reload();
+      return {
+        document: presentDocument(result.document),
+        access_policy: {
+          business_object_type: "core_user",
+          business_object_id: params.user_id,
+          owner_user_id: params.user_id,
+          classification: "normal",
+        },
+      };
+    }
     return service.attachEmployeeDocument(
-      request.actor,
+      authorizedActor,
       params.user_id,
       {
-        ...emsDocumentUploadSchema.parse(upload.fields),
+        ...parsed,
         file_buffer: upload.fileBuffer
       }
     );

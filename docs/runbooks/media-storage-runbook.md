@@ -2,7 +2,7 @@
 
 Last updated from the repository: 2026-11-12.
 
-This runbook covers the private Cloudflare R2 adapter and TEN-S25-021 durable media lifecycle used for generic employee documents, profile photos and active-company logos. It does not authorize a deployment. Expense receipts and physical purge remain separately blocked.
+This runbook covers the private Cloudflare R2 adapter and TEN-S25-021 durable media lifecycle used for the closed identity/address/education/experience employee proofs, profile photos and active-company logos. It does not authorize a deployment. Expense receipts, project/helpdesk attachments and physical purge remain separately blocked.
 
 ## Architecture Summary
 
@@ -13,6 +13,7 @@ This runbook covers the private Cloudflare R2 adapter and TEN-S25-021 durable me
 - Authorized clients fetch bytes from `/api/v1/documents/{id}/content`; the frontend first performs an authenticated byte request and then creates a short-lived browser-local blob URL.
 - The adapter implements bounded PUT/GET/HEAD/DELETE. TEN-S25-021 never calls DELETE: replacement and logical removal retain bytes pending TEN-S25-022 policy.
 - Publication is a second PostgreSQL transaction that locks the intent and parent, revalidates live company/role/version/pointer state, inserts active metadata/version, switches the pointer, marks the old row replaced and commits audit/outbox together.
+- Default proof purpose and classification are server-owned. Raw proof bytes are available only to the employee and company Admin until a durable assigned-HR relationship exists; do not grant every HR user assigned-HR access.
 - A timed-out PUT is resolved by HEAD of the exact preallocated opaque key. Queue/Cron reconciliation leases bounded batches with `SKIP LOCKED`; it does not loop forever or purge bytes.
 - Expense receipt upload remains `409` pending its approved uploader/status matrix. Unsupported generic parent types remain fail closed.
 
@@ -54,7 +55,7 @@ Use synthetic data only after the tenant-owned document route for that class is 
 6. Remove through the logical lifecycle, then verify the pointer is cleared, metadata is tombstoned, bytes are retained and immutable audit evidence exists. Do not expect provider deletion.
 7. Inspect API JSON, browser network/DOM and logs for absence of bucket, key, endpoint, credential and provider URL.
 
-Use only the supported `core_user` generic parent, active-company logo and profile-photo paths. Expense receipts and untyped generic parents intentionally return `409`.
+Use only the four supported employee-proof purposes, active-company logo and profile-photo paths. Expense receipts and untyped generic parents intentionally return `409`; project/helpdesk upload controls remain disabled until their tenant-owned parent policies are implemented.
 
 ## Troubleshooting
 

@@ -192,8 +192,13 @@ export function useEmsProbationDecisionMutation() {
 export function useEmsDocumentMutation(userId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: EmsDocumentUploadBody | FormData) =>
-      emsApi.attachEmployeeDocument(userId as string, input),
+    mutationFn: ({
+      input,
+      idempotencyKey,
+    }: {
+      input: EmsDocumentUploadBody | FormData;
+      idempotencyKey: string;
+    }) => emsApi.attachEmployeeDocument(userId as string, input, idempotencyKey),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") });
       queryClient.invalidateQueries({ queryKey: queryKeys.domain("documents") });

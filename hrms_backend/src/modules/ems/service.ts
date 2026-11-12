@@ -475,7 +475,10 @@ export class EmsService {
   async listEmployeeDocuments(actor: AuthUser, userId: UUID, query: EmsDocumentQuery) {
     const authorizedActor = await this.assertEmployeeDocumentAccess(actor, userId, "read");
     const visible = this.store.documents
-      .filter((document) => document.business_object_type === "employee" && document.business_object_id === userId && !document.deleted_at)
+      .filter((document) => ["employee", "core_user"].includes(document.business_object_type) &&
+        document.business_object_id === userId && !document.deleted_at &&
+        document.lifecycle_state !== "quarantined" && document.lifecycle_state !== "replaced" &&
+        document.lifecycle_state !== "tombstoned")
       .filter((document) => canAccessDocument(authorizedActor, document, "read"));
     const filtered = query.document_type
       ? visible.filter((document) => document.document_type === query.document_type)

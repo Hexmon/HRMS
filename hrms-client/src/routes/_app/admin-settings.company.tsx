@@ -145,6 +145,8 @@ function CompanyProfileScreen() {
         expectedVersion: companyQuery.data.version,
         expectedPointerDocumentId: companyQuery.data.logo_document_id,
         file: prepared.file,
+        fileName: prepared.file.name,
+        mimeType: prepared.file.type,
       });
       const response = await uploadLogoMutation.mutateAsync({
         formData,

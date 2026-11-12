@@ -391,6 +391,8 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
         expectedVersion: current.version ?? 1,
         expectedPointerDocumentId: current.profilePhotoDocumentId ?? null,
         file,
+        fileName: file.name,
+        mimeType: file.type,
       });
       const response = await profilePhotoMutation.mutateAsync({
         userId: apiUserId,

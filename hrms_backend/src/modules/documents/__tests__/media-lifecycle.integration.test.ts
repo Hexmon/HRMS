@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { loginAs } from "#testing";
+import { authHeader, loginAs } from "#testing";
 import type { ObjectStoragePort } from "../../../platform/data-store.js";
 import { MemoryObjectStorage, ObjectStorageProviderError } from "../../../platform/object-storage.js";
 import { buildRealApp, buildRealAppReplica } from "../../../__tests__/real-infra.js";
@@ -215,6 +215,44 @@ describe("TEN-S25-021 durable media lifecycle", () => {
     expect(published.rows[0]?.count).toBe(0);
   });
 
+  it("denies owner media operations when the selected role or role definition is inactive", async () => {
+    const employee = await loginAs(app, "E1");
+    const put = vi.spyOn(app.store.objectStorage!, "putObject");
+    await app.store.pgPool!.query(
+      `UPDATE core.user_roles assignment SET status='inactive'
+       FROM platform.user_session_preferences preference
+       WHERE assignment.user_id=$1 AND preference.user_id=assignment.user_id
+         AND assignment.role_key=preference.active_role`,
+      [employee.user.id],
+    );
+    const response = await multipartDocumentUpload(app, employee.token, {
+      business_object_type: "core_user",
+      business_object_id: employee.user.id,
+      classification: "normal",
+      document_type: "identity_proof",
+      file_name: "identity.pdf",
+      mime_type: "application/pdf",
+    }, Buffer.from("%PDF-owner-role-denied"), "media-owner-role-denied-001");
+    expect(response.statusCode).toBe(403);
+    expect(put).not.toHaveBeenCalled();
+
+    await app.store.pgPool!.query(
+      "UPDATE core.user_roles SET status='active' WHERE user_id=$1 AND role_key='Employee'",
+      [employee.user.id],
+    );
+    await app.store.pgPool!.query("UPDATE core.roles SET status='inactive' WHERE role_key='Employee'");
+    const roleDefinitionDenied = await multipartDocumentUpload(app, employee.token, {
+      business_object_type: "core_user",
+      business_object_id: employee.user.id,
+      classification: "normal",
+      document_type: "identity_proof",
+      file_name: "identity.pdf",
+      mime_type: "application/pdf",
+    }, Buffer.from("%PDF-owner-role-denied"), "media-owner-definition-denied-001");
+    expect(roleDefinitionDenied.statusCode).toBe(403);
+    expect(put).not.toHaveBeenCalled();
+  });
+
   it("recovers retryable bytes once across duplicate workers and respects a live lease", async () => {
     const admin = await loginAs(app, "ADM");
     const parent = await companyParent(app, admin.user.id);
@@ -237,7 +275,10 @@ describe("TEN-S25-021 durable media lifecycle", () => {
       "SELECT id FROM documents.media_upload_intents WHERE idempotency_key='media-reconcile-001'",
     );
     await app.store.pgPool!.query(
-      "UPDATE documents.media_upload_intents SET lease_owner='crashed-worker',lease_expires_at=now()+interval '5 minutes' WHERE id=$1",
+      `UPDATE documents.media_upload_intents
+       SET state='object_confirmed',attempt_count=5,expires_at=now()-interval '1 second',
+           lease_owner='crashed-worker',lease_expires_at=now()+interval '5 minutes'
+       WHERE id=$1`,
       [intent.rows[0]!.id],
     );
     const bucket: MediaBucket = { head: async (key) => {
@@ -312,12 +353,12 @@ describe("TEN-S25-021 durable media lifecycle", () => {
     });
     expect(foreign.statusCode).toBe(404);
 
-    const financeAllowed = await app.inject({
+    const financeDenied = await app.inject({
       method: "GET",
       url: `/api/v1/documents/${response.json().id}/content`,
       headers: { authorization: `Bearer ${finance.token}` },
     });
-    expect(financeAllowed.statusCode).toBe(200);
+    expect(financeDenied.statusCode).toBe(404);
     await app.store.pgPool!.query(
       "UPDATE core.user_roles SET status='inactive' WHERE user_id=$1 AND role_key='Finance Manager'",
       [finance.user.id],
@@ -361,6 +402,69 @@ describe("TEN-S25-021 durable media lifecycle", () => {
       [response.json().id],
     );
     expect(access.rows.map((row) => row.decision)).toEqual(expect.arrayContaining(["allowed", "denied"]));
+  });
+
+  it("cuts the real EMS proof upload and replacement journey over to durable media", async () => {
+    const employee = await loginAs(app, "E1");
+    const finance = await loginAs(app, "N1");
+    const fields = {
+      classification: "medical",
+      document_type: "identity_proof",
+      file_name: "passport.pdf",
+      mime_type: "application/pdf",
+    };
+    const first = await multipartDocumentUpload(
+      app,
+      employee.token,
+      fields,
+      Buffer.from("%PDF-ems-passport-v1"),
+      "media-ems-proof-001",
+      `/api/v1/ems/employees/${employee.user.id}/documents`,
+    );
+    expect(first.statusCode).toBe(200);
+    expect(first.json().document).toMatchObject({
+      business_object_type: "core_user",
+      business_object_id: employee.user.id,
+      owner_user_id: employee.user.id,
+      classification: "normal",
+      document_type: "identity_proof",
+      lifecycle_state: "active",
+    });
+
+    const financeRaw = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${first.json().document.id}/content`,
+      headers: authHeader(finance.token),
+    });
+    expect(financeRaw.statusCode).toBe(404);
+
+    const replacement = await multipartDocumentUpload(
+      app,
+      employee.token,
+      { ...fields, replace_document_id: first.json().document.id },
+      Buffer.from("%PDF-ems-passport-v2"),
+      "media-ems-proof-002",
+      `/api/v1/ems/employees/${employee.user.id}/documents`,
+    );
+    expect(replacement.statusCode).toBe(200);
+    const lifecycle = await app.store.pgPool!.query(
+      "SELECT id,lifecycle_state,replaced_by_document_id FROM documents.doc_metadata WHERE id=ANY($1::uuid[]) ORDER BY id",
+      [[first.json().document.id, replacement.json().document.id]],
+    );
+    expect(lifecycle.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: first.json().document.id, lifecycle_state: "replaced",
+        replaced_by_document_id: replacement.json().document.id }),
+      expect.objectContaining({ id: replacement.json().document.id, lifecycle_state: "active" }),
+    ]));
+    const listed = await app.inject({
+      method: "GET",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents?page=1&page_size=10`,
+      headers: authHeader(employee.token),
+    });
+    expect(listed.statusCode).toBe(200);
+    const listedIds = listed.json().items.map((item: { id: string }) => item.id);
+    expect(listedIds).toContain(replacement.json().document.id);
+    expect(listedIds).not.toContain(first.json().document.id);
   });
 
   it("quarantines provider objects whose HEAD omits durable identity markers", async () => {
@@ -413,6 +517,25 @@ describe("TEN-S25-021 durable media lifecycle", () => {
       mime_type: "application/pdf",
     }, Buffer.from("%PDF-synthetic medical proof"), "media-restricted-denied-001");
     expect(response.statusCode).toBe(403);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("denies self-target purpose or classification downgrade before provider I/O", async () => {
+    const employee = await loginAs(app, "E1");
+    const put = vi.spyOn(app.store.objectStorage!, "putObject");
+    for (const fields of [
+      { classification: "medical", document_type: "identity_proof" },
+      { classification: "normal", document_type: "medical_record" },
+    ]) {
+      const response = await multipartDocumentUpload(app, employee.token, {
+        business_object_type: "core_user",
+        business_object_id: employee.user.id,
+        ...fields,
+        file_name: "proof.pdf",
+        mime_type: "application/pdf",
+      }, Buffer.from("%PDF-policy-downgrade"), `media-downgrade-${fields.classification}-${fields.document_type}`);
+      expect(response.statusCode).toBe(403);
+    }
     expect(put).not.toHaveBeenCalled();
   });
 
@@ -547,6 +670,7 @@ function multipartDocumentUpload(
   fields: Record<string, string>,
   body: Buffer,
   idempotencyKey: string,
+  url = "/api/v1/documents",
 ) {
   const boundary = `----media-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const chunks: Buffer[] = [];
@@ -559,7 +683,7 @@ function multipartDocumentUpload(
   chunks.push(body, Buffer.from(`\r\n--${boundary}--\r\n`));
   return target.inject({
     method: "POST",
-    url: "/api/v1/documents",
+    url,
     headers: {
       authorization: `Bearer ${token}`,
       "idempotency-key": idempotencyKey,

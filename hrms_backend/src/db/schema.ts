@@ -2129,13 +2129,45 @@ export const docMetadata = documents.table(
     lifecycleReason: text("lifecycle_reason")
   },
   (table) => [
+    check(
+      "documents_metadata_lifecycle_state_ck",
+      sql`${table.lifecycleState} IN ('staged','active','replaced','tombstoned','quarantined')`,
+    ),
+    check(
+      "documents_metadata_tenant_state_company_ck",
+      sql`${table.lifecycleState} = 'quarantined' OR (${table.companyId} IS NOT NULL AND ${table.lifecycleState} IN ('staged','active','replaced','tombstoned'))`,
+    ),
+    foreignKey({
+      columns: [table.replacedByDocumentId],
+      foreignColumns: [table.id],
+      name: "documents_metadata_replaced_by_fk",
+    }),
     index("documents_metadata_business_object_idx").on(table.businessObjectType, table.businessObjectId),
     index("documents_metadata_owner_classification_idx").on(table.ownerUserId, table.classification),
     index("documents_metadata_type_created_idx").on(table.documentType, table.createdAt),
     uniqueIndex("documents_metadata_storage_key_uq").on(table.storageKey),
-    index("documents_metadata_company_lifecycle_idx").on(table.companyId, table.lifecycleState, table.createdAt),
-    index("documents_metadata_replacement_idx").on(table.replacedByDocumentId)
+    index("documents_metadata_company_lifecycle_idx")
+      .on(table.companyId, table.lifecycleState, table.createdAt.desc(), table.id.desc()),
+    index("documents_metadata_replacement_idx")
+      .on(table.replacedByDocumentId)
+      .where(sql`${table.replacedByDocumentId} IS NOT NULL`)
   ]
+);
+
+export const documentOwnerRepairAudit = documents.table(
+  "document_owner_repair_audit",
+  {
+    documentId: uuid("document_id").primaryKey(),
+    repairedCompanyId: uuid("repaired_company_id").notNull(),
+    evidenceReference: text("evidence_reference").notNull(),
+    evidenceSha256: text("evidence_sha256").notNull(),
+    reviewedBy: text("reviewed_by").notNull(),
+    appliedBy: text("applied_by").notNull(),
+    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check("document_owner_repair_audit_evidence_sha256_ck", sql`${table.evidenceSha256} ~ '^[0-9a-f]{64}$'`),
+  ],
 );
 
 export const mediaUploadIntents = documents.table(
@@ -2175,13 +2207,26 @@ export const mediaUploadIntents = documents.table(
     updatedAt,
   },
   (table) => [
+    check("media_upload_intents_operation_ck", sql`${table.operation} IN ('create','replace_company_logo','replace_profile_photo')`),
+    check("media_upload_intents_parent_type_ck", sql`${table.parentType} IN ('generic','company_profile','core_user')`),
+    check("media_upload_intents_request_fingerprint_ck", sql`${table.requestFingerprint} ~ '^[0-9a-f]{64}$'`),
+    check("media_upload_intents_measured_size_bytes_ck", sql`${table.measuredSizeBytes} > 0`),
+    check("media_upload_intents_checksum_sha256_ck", sql`${table.checksumSha256} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "media_upload_intents_state_ck",
+      sql`${table.state} IN ('prepared','uploading','retry_wait','object_confirmed','finalized','quarantined','failed')`,
+    ),
+    check("media_upload_intents_attempt_count_ck", sql`${table.attemptCount} >= 0`),
     uniqueIndex("media_upload_intents_scope_key_uq").on(
       table.companyId, table.actorUserId, table.operation, table.idempotencyKey,
     ),
     uniqueIndex("media_upload_intents_object_key_uq").on(table.objectKey),
     uniqueIndex("media_upload_intents_document_id_uq").on(table.documentId),
-    index("media_upload_intents_reconcile_idx").on(table.state, table.leaseExpiresAt, table.createdAt, table.id),
-    index("media_upload_intents_parent_idx").on(table.companyId, table.parentType, table.parentId, table.createdAt),
+    index("media_upload_intents_reconcile_idx")
+      .on(table.state, table.leaseExpiresAt, table.createdAt, table.id)
+      .where(sql`${table.state} IN ('prepared','uploading','retry_wait','object_confirmed')`),
+    index("media_upload_intents_parent_idx")
+      .on(table.companyId, table.parentType, table.parentId, table.createdAt.desc()),
   ],
 );
 

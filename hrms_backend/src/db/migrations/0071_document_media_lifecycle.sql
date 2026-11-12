@@ -27,6 +27,14 @@ WITH candidate_owners AS (
   JOIN platform.user_session_preferences preference
     ON preference.user_id=employee.id AND preference.company_id IS NOT NULL
   UNION ALL
+  SELECT metadata.id, preference.company_id, true
+  FROM documents.doc_metadata metadata
+  JOIN core.users employee
+    ON metadata.business_object_type='employee'
+   AND metadata.business_object_id=employee.id
+  JOIN platform.user_session_preferences preference
+    ON preference.user_id=employee.id AND preference.company_id IS NOT NULL
+  UNION ALL
   SELECT metadata.id, ticket.company_id, true
   FROM documents.doc_metadata metadata
   JOIN expenses.expense_tickets ticket
@@ -101,7 +109,8 @@ CREATE TABLE IF NOT EXISTS documents.document_owner_repair_audit (
   document_id uuid PRIMARY KEY,
   repaired_company_id uuid NOT NULL,
   evidence_reference text NOT NULL,
-  evidence_sha256 text NOT NULL CHECK (evidence_sha256 ~ '^[0-9a-f]{64}$'),
+  evidence_sha256 text NOT NULL CONSTRAINT document_owner_repair_audit_evidence_sha256_ck
+    CHECK (evidence_sha256 ~ '^[0-9a-f]{64}$'),
   reviewed_by text NOT NULL,
   applied_by text NOT NULL,
   applied_at timestamptz NOT NULL DEFAULT now()
@@ -146,39 +155,50 @@ CREATE TABLE IF NOT EXISTS documents.media_upload_intents (
   id uuid PRIMARY KEY,
   company_id uuid NOT NULL,
   actor_user_id uuid NOT NULL,
-  operation text NOT NULL CHECK (operation IN ('create','replace_company_logo','replace_profile_photo')),
-  parent_type text NOT NULL CHECK (parent_type IN ('generic','company_profile','core_user')),
+  operation text NOT NULL CONSTRAINT media_upload_intents_operation_ck
+    CHECK (operation IN ('create','replace_company_logo','replace_profile_photo')),
+  parent_type text NOT NULL CONSTRAINT media_upload_intents_parent_type_ck
+    CHECK (parent_type IN ('generic','company_profile','core_user')),
   parent_id uuid NOT NULL,
   business_object_type text NOT NULL,
   idempotency_key text NOT NULL,
-  request_fingerprint text NOT NULL CHECK (request_fingerprint ~ '^[0-9a-f]{64}$'),
-  object_key text NOT NULL UNIQUE,
-  document_id uuid NOT NULL UNIQUE,
+  request_fingerprint text NOT NULL CONSTRAINT media_upload_intents_request_fingerprint_ck
+    CHECK (request_fingerprint ~ '^[0-9a-f]{64}$'),
+  object_key text NOT NULL,
+  document_id uuid NOT NULL,
   expected_pointer_document_id uuid,
   expected_parent_version integer,
   file_name text NOT NULL,
   mime_type text NOT NULL,
-  measured_size_bytes bigint NOT NULL CHECK (measured_size_bytes > 0),
-  checksum_sha256 text NOT NULL CHECK (checksum_sha256 ~ '^[0-9a-f]{64}$'),
+  measured_size_bytes bigint NOT NULL CONSTRAINT media_upload_intents_measured_size_bytes_ck
+    CHECK (measured_size_bytes > 0),
+  checksum_sha256 text NOT NULL CONSTRAINT media_upload_intents_checksum_sha256_ck
+    CHECK (checksum_sha256 ~ '^[0-9a-f]{64}$'),
   classification text NOT NULL,
   document_type text NOT NULL,
   owner_user_id uuid,
-  state text NOT NULL DEFAULT 'prepared'
+  state text NOT NULL DEFAULT 'prepared' CONSTRAINT media_upload_intents_state_ck
     CHECK (state IN ('prepared','uploading','retry_wait','object_confirmed','finalized','quarantined','failed')),
   provider_etag text,
   provider_size_bytes bigint,
   provider_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   lease_owner text,
   lease_expires_at timestamptz,
-  attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  attempt_count integer NOT NULL DEFAULT 0 CONSTRAINT media_upload_intents_attempt_count_ck
+    CHECK (attempt_count >= 0),
   last_safe_error text,
   expires_at timestamptz NOT NULL,
   finalized_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (company_id,actor_user_id,operation,idempotency_key)
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS media_upload_intents_scope_key_uq
+  ON documents.media_upload_intents (company_id,actor_user_id,operation,idempotency_key);
+CREATE UNIQUE INDEX IF NOT EXISTS media_upload_intents_object_key_uq
+  ON documents.media_upload_intents (object_key);
+CREATE UNIQUE INDEX IF NOT EXISTS media_upload_intents_document_id_uq
+  ON documents.media_upload_intents (document_id);
 CREATE INDEX IF NOT EXISTS media_upload_intents_reconcile_idx
   ON documents.media_upload_intents (state,lease_expires_at,created_at,id)
   WHERE state IN ('prepared','uploading','retry_wait','object_confirmed');

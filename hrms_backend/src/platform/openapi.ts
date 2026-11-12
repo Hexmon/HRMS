@@ -9538,10 +9538,15 @@ const emsDocumentUploadBody = {
   ...expenseDocumentUploadBody,
   properties: {
     ...(expenseDocumentUploadBody.properties as RouteSchema),
+    classification: { type: "string", enum: ["normal"], description: "Server-enforced for employee proof uploads." },
+    document_type: {
+      type: "string",
+      enum: ["identity_proof", "address_proof", "education_proof", "experience_proof"],
+    },
     replace_document_id: uuid("Existing EMS document UUID to replace"),
   },
   description:
-    "EMS employee document upload metadata. The path employee user id is used as the business object id; binary storage is handled by the backend object-storage adapter.",
+    "Durable EMS employee-proof upload. The path employee user id is the immutable owner; the server accepts only the closed default proof purposes and enforces normal classification.",
 };
 
 const routeDocs: Record<string, RouteSchema> = {
@@ -11304,9 +11309,10 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/ems/employees/{user_id}/documents": operation(
     "EMS",
     "Attach employee EMS document",
-    "Uploads employee-scoped EMS document metadata using the existing backend object-storage adapter. Employees can attach their own allowed documents; HR/Admin can attach official or restricted employee documents.",
+    "Durably uploads or replaces one of the closed employee proof purposes. Employees can attach their own proofs and company Admin can attach proofs for an employee. Assigned-HR upload remains fail-closed until an assigned-HR relationship is represented durably.",
     {
       params: userIdParamSchema,
+      headers: mediaIdempotencyHeaderObject,
       body: emsDocumentUploadBody,
       response200: {
         type: "object",

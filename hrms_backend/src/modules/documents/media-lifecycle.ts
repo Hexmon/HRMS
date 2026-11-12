@@ -8,6 +8,13 @@ import { ObjectStorageProviderError } from "../../platform/object-storage.js";
 export type MediaOperation = "create" | "replace_company_logo" | "replace_profile_photo";
 export type MediaParentType = "generic" | "company_profile" | "core_user";
 
+const employeeProofDocumentTypes = new Set([
+  "identity_proof",
+  "address_proof",
+  "education_proof",
+  "experience_proof",
+]);
+
 export interface DurableMediaUploadInput {
   actor: AuthUser;
   operation: MediaOperation;
@@ -48,6 +55,7 @@ interface IntentRow {
   state: "prepared" | "uploading" | "retry_wait" | "object_confirmed" | "finalized" | "quarantined" | "failed";
   provider_etag: string | null;
   provider_size_bytes: string | number | null;
+  lease_owner: string | null;
 }
 
 export interface DurableMediaUploadResult {
@@ -94,6 +102,7 @@ export class MediaLifecycleService {
       }
     }
     intent = claimed;
+    if (!intent.lease_owner) throw conflict("Media upload lease is unavailable", { intent_id: intent.id });
     let evidence: Awaited<ReturnType<ObjectStoragePort["statObject"]>>;
     try {
       const stored = await this.storage.putObject(intent.object_key, input.body, {
@@ -114,27 +123,27 @@ export class MediaLifecycleService {
       };
     } catch (error) {
       if (!(error instanceof ObjectStorageProviderError) || error.code !== "timeout") {
-        await this.recordSafeFailure(intent.id, "object_put_failed");
+        await this.recordSafeFailure(intent.id, intent.lease_owner, "object_put_failed");
         throw error;
       }
       try {
         evidence = await this.storage.statObject(intent.object_key);
       } catch (headError) {
-        await this.recordSafeFailure(intent.id, "object_head_failed_after_ambiguous_put");
+        await this.recordSafeFailure(intent.id, intent.lease_owner, "object_head_failed_after_ambiguous_put");
         throw headError;
       }
       if (!evidence || !headMatchesIntent(evidence, intent)) {
-        await this.recordSafeFailure(intent.id, "object_put_outcome_unconfirmed");
+        await this.recordSafeFailure(intent.id, intent.lease_owner, "object_put_outcome_unconfirmed");
         throw conflict("Media provider outcome could not be confirmed; retry with the same idempotency key", {
           intent_id: intent.id,
         });
       }
     }
     if (!evidence || !headMatchesIntent(evidence, intent)) {
-      await this.quarantine(intent.id, "provider_evidence_mismatch");
+      await this.quarantine(intent.id, intent.lease_owner, "provider_evidence_mismatch");
       throw conflict("Stored media does not match the prepared upload", { intent_id: intent.id });
     }
-    await this.confirmObject(intent.id, evidence);
+    await this.confirmObject(intent.id, intent.lease_owner, evidence);
     return this.finalize(intent.id);
   }
 
@@ -145,13 +154,18 @@ export class MediaLifecycleService {
   async activeContent(actorId: UUID, documentId: UUID): Promise<{ document: DocumentMetadata; body: Buffer; contentType: string; size: number }> {
     const document = await this.authorizedActiveDocument(actorId, documentId, "raw", true);
     const object = await this.storage.getObject(document.storage_key);
-    if (!object) throw notFound("Document bytes are not available in private object storage.");
+    if (!object) {
+      await this.recordContentRead(actorId, documentId, "denied", "storage_object_missing");
+      throw notFound("Document bytes are not available in private object storage.");
+    }
     if (object.size !== document.size_bytes || object.body.length !== document.size_bytes ||
         (document.checksum_sha256 !== null && sha256(object.body) !== document.checksum_sha256)) {
+      await this.recordContentRead(actorId, documentId, "denied", "storage_integrity_mismatch");
       throw notFound("Document bytes failed integrity verification.");
     }
     const revalidated = await this.authorizedActiveDocument(actorId, documentId, "raw", false);
     if (revalidated.storage_key !== document.storage_key) throw notFound("Document not found");
+    await this.recordContentRead(actorId, documentId, "allowed", null);
     return {
       document: revalidated,
       body: object.body,
@@ -172,16 +186,29 @@ export class MediaLifecycleService {
       const result = await client.query(
         `WITH actor_context AS (
            SELECT actor.id,actor.hierarchy_path,preference.company_id,
-                  array_remove(array_agg(role.role_key),NULL) AS roles
+                  ARRAY(
+                    SELECT assignment.role_key
+                    FROM core.user_roles assignment
+                    JOIN core.roles definition ON definition.role_key=assignment.role_key
+                    WHERE assignment.user_id=actor.id AND assignment.status='active'
+                      AND assignment.deleted_at IS NULL AND definition.status='active'
+                      AND definition.deleted_at IS NULL
+                      AND assignment.effective_from<=current_date
+                      AND (assignment.effective_to IS NULL OR assignment.effective_to>=current_date)
+                  ) AS roles
            FROM core.users actor
            JOIN platform.user_session_preferences preference ON preference.user_id=actor.id
            JOIN platform.company_profiles company
              ON company.id=preference.company_id AND company.status='active'
-           LEFT JOIN core.user_roles role ON role.user_id=actor.id AND role.status='active'
-             AND role.deleted_at IS NULL AND role.effective_from<=current_date
-             AND (role.effective_to IS NULL OR role.effective_to>=current_date)
+           JOIN core.user_roles selected_assignment
+             ON selected_assignment.user_id=actor.id
+            AND selected_assignment.role_key=preference.active_role
+            AND selected_assignment.status='active' AND selected_assignment.deleted_at IS NULL
+            AND selected_assignment.effective_from<=current_date
+            AND (selected_assignment.effective_to IS NULL OR selected_assignment.effective_to>=current_date)
+           JOIN core.roles selected_role ON selected_role.role_key=selected_assignment.role_key
+            AND selected_role.status='active' AND selected_role.deleted_at IS NULL
            WHERE actor.id=$1 AND actor.deleted_at IS NULL AND actor.employment_status='active'
-           GROUP BY actor.id,actor.hierarchy_path,preference.company_id
          )
          SELECT metadata.*,
                 company.logo_document_id=metadata.id AS current_logo,
@@ -195,18 +222,18 @@ export class MediaLifecycleService {
           AND metadata.lifecycle_state='active' AND metadata.deleted_at IS NULL
          LEFT JOIN platform.company_profiles company ON company.id=actor.company_id
          LEFT JOIN core.users target ON target.id=metadata.business_object_id
-           AND metadata.business_object_type='core_user' AND target.deleted_at IS NULL
+           AND metadata.business_object_type IN ('core_user','employee') AND target.deleted_at IS NULL
          LEFT JOIN platform.user_session_preferences target_pref ON target_pref.user_id=target.id`,
         [actorId, documentId],
       );
       const row = result.rows[0];
-      const authorized = row ? durableReadAllowed(row) : false;
+      const authorized = row ? durableReadAllowed(row, mode) : false;
       if (recordAccess) {
         await client.query(
           `INSERT INTO documents.doc_access_logs
             (id,document_id,actor_user_id,action,decision,reason,created_at)
            VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,now())`,
-          [documentId, actorId, mode === "raw" ? "download-content" : "metadata",
+          [documentId, actorId, mode === "raw" ? "authorize-content" : "metadata",
             authorized ? "allowed" : "denied", authorized ? null : "tenant_or_lifecycle_policy"],
         );
       }
@@ -219,6 +246,20 @@ export class MediaLifecycleService {
     } finally {
       client.release();
     }
+  }
+
+  private async recordContentRead(
+    actorId: UUID,
+    documentId: UUID,
+    decision: "allowed" | "denied",
+    reason: string | null,
+  ): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO documents.doc_access_logs
+        (id,document_id,actor_user_id,action,decision,reason,created_at)
+       VALUES (gen_random_uuid(),$1,$2,'read-content',$3,$4,now())`,
+      [documentId, actorId, decision, reason],
+    );
   }
 
   async removeProfilePhoto(input: {
@@ -408,19 +449,23 @@ export class MediaLifecycleService {
 
   private async confirmObject(
     intentId: UUID,
+    leaseOwner: string,
     evidence: NonNullable<Awaited<ReturnType<ObjectStoragePort["statObject"]>>>,
   ): Promise<void> {
-    await this.pool.query(
+    const updated = await this.pool.query(
       `UPDATE documents.media_upload_intents
        SET state='object_confirmed',provider_etag=$2,provider_size_bytes=$3,
            provider_metadata=$4::jsonb,lease_owner=NULL,lease_expires_at=NULL,
            last_safe_error=NULL,updated_at=now()
-       WHERE id=$1 AND state IN ('prepared','uploading','retry_wait','object_confirmed')`,
+       WHERE id=$1 AND state='uploading' AND lease_owner=$5`,
       [intentId, evidence.etag ?? null, evidence.size, JSON.stringify({
         content_type: evidence.contentType ?? null,
         intent_marker_present: evidence.metadata?.["x-hrms-intent-id"] === intentId,
-      })],
+      }), leaseOwner],
     );
+    if (updated.rowCount !== 1) {
+      throw conflict("Media upload lease changed before object confirmation", { intent_id: intentId });
+    }
   }
 
   async finalize(intentId: UUID): Promise<DurableMediaUploadResult> {
@@ -540,23 +585,23 @@ export class MediaLifecycleService {
     return { intent_id: intent.id, state: "finalized", document: mapDocument(row) };
   }
 
-  private async recordSafeFailure(intentId: UUID, reason: string): Promise<void> {
+  private async recordSafeFailure(intentId: UUID, leaseOwner: string, reason: string): Promise<void> {
     await this.pool.query(
       `UPDATE documents.media_upload_intents
        SET state='retry_wait',lease_owner=NULL,lease_expires_at=NULL,
            last_safe_error=$2,updated_at=now()
-       WHERE id=$1 AND state IN ('prepared','uploading','retry_wait','object_confirmed')`,
-      [intentId, reason],
+       WHERE id=$1 AND state='uploading' AND lease_owner=$3`,
+      [intentId, reason, leaseOwner],
     );
   }
 
-  private async quarantine(intentId: UUID, reason: string): Promise<void> {
+  private async quarantine(intentId: UUID, leaseOwner: string, reason: string): Promise<void> {
     await this.pool.query(
       `UPDATE documents.media_upload_intents
        SET state='quarantined',attempt_count=attempt_count+1,last_safe_error=$2,
            lease_owner=NULL,lease_expires_at=NULL,updated_at=now()
-       WHERE id=$1 AND state <> 'finalized'`,
-      [intentId, reason],
+       WHERE id=$1 AND state='uploading' AND lease_owner=$3`,
+      [intentId, reason, leaseOwner],
     );
   }
 }
@@ -567,9 +612,16 @@ async function currentCompanyForActor(client: PoolClient, actorId: UUID): Promis
      FROM platform.user_session_preferences preference
      JOIN core.users actor ON actor.id=preference.user_id
      JOIN platform.company_profiles company ON company.id=preference.company_id
+     JOIN core.user_roles assignment ON assignment.user_id=actor.id
+       AND assignment.role_key=preference.active_role AND assignment.status='active'
+       AND assignment.deleted_at IS NULL AND assignment.effective_from<=current_date
+       AND (assignment.effective_to IS NULL OR assignment.effective_to>=current_date)
+     JOIN core.roles role ON role.role_key=assignment.role_key
+       AND role.status='active' AND role.deleted_at IS NULL
      WHERE preference.user_id=$1 AND preference.company_id IS NOT NULL
        AND actor.deleted_at IS NULL AND actor.employment_status='active'
-       AND company.status='active'`,
+       AND company.status='active'
+     FOR SHARE OF preference,actor,company,assignment,role`,
     [actorId],
   );
   if (!result.rows[0]) throw forbidden("Active company context is required for media upload");
@@ -578,9 +630,13 @@ async function currentCompanyForActor(client: PoolClient, actorId: UUID): Promis
 
 async function liveRoles(client: PoolClient, actorId: UUID): Promise<string[]> {
   const result = await client.query<{ role_key: string }>(
-    `SELECT role_key FROM core.user_roles
-     WHERE user_id=$1 AND status='active' AND deleted_at IS NULL
-       AND effective_from <= current_date AND (effective_to IS NULL OR effective_to >= current_date)`,
+    `SELECT assignment.role_key FROM core.user_roles assignment
+     JOIN core.roles role ON role.role_key=assignment.role_key
+       AND role.status='active' AND role.deleted_at IS NULL
+     WHERE assignment.user_id=$1 AND assignment.status='active' AND assignment.deleted_at IS NULL
+       AND assignment.effective_from <= current_date
+       AND (assignment.effective_to IS NULL OR assignment.effective_to >= current_date)
+     FOR SHARE OF assignment,role`,
     [actorId],
   );
   return result.rows.map((row) => row.role_key);
@@ -611,7 +667,7 @@ async function assertParentAuthorization(
        FROM core.users target
        JOIN platform.user_session_preferences membership ON membership.user_id=target.id
        WHERE target.id=$1 AND membership.company_id=$2 AND target.deleted_at IS NULL
-       ${lock ? "FOR UPDATE OF target" : ""}`,
+       ${lock ? "FOR UPDATE OF target,membership" : ""}`,
       [input.parentId, companyId],
     );
     if (!row.rows[0]) throw notFound("Media parent not found");
@@ -620,15 +676,30 @@ async function assertParentAuthorization(
     if (input.operation === "replace_profile_photo" && !ownsParent && !peopleManager) {
       throw forbidden("Profile photo upload denied");
     }
-    if (input.operation === "create" && !ownsParent) {
-      const restricted = input.classification === "medical" || input.classification === "compensation";
-      const allowed = restricted
-        ? role(Roles.Admin) || role(Roles.Auditor) || role(Roles.HRManager)
-        : peopleManager || role(Roles.Auditor) || role(Roles.FinanceManager) ||
-          role(Roles.Director) || role(Roles.AssetManager);
-      if (!allowed) throw forbidden("Document upload denied");
+    if (input.operation === "create") {
+      if (!employeeProofDocumentTypes.has(input.documentType) || input.classification !== "normal") {
+        throw forbidden("Employee proof type or classification is not allowed");
+      }
+      // Assigned-HR ownership is not represented durably yet. Fail closed to
+      // employee self-service and company Admin rather than treating every HR
+      // assignment as the employee's assigned HR.
+      if (!ownsParent && !role(Roles.Admin)) throw forbidden("Employee proof upload denied");
+      if (input.expectedPointerDocumentId) {
+        const replacement = await client.query<{ id: UUID; document_type: string }>(
+          `SELECT id,document_type FROM documents.doc_metadata
+           WHERE id=$1 AND company_id=$2 AND business_object_id=$3
+             AND business_object_type IN ('core_user','employee')
+             AND lifecycle_state='active' AND deleted_at IS NULL
+           ${lock ? "FOR UPDATE" : ""}`,
+          [input.expectedPointerDocumentId, companyId, input.parentId],
+        );
+        if (!replacement.rows[0] || replacement.rows[0].document_type !== input.documentType) {
+          throw conflict("Employee proof replacement target changed or has a different purpose");
+        }
+      }
+    } else {
+      assertExpectedParent(row.rows[0], input);
     }
-    assertExpectedParent(row.rows[0], input);
     return;
   }
   throw conflict("Unsupported durable media parent type");
@@ -649,6 +720,9 @@ function assertExpectedParent(
 }
 
 async function publishParentPointer(client: PoolClient, intent: IntentRow): Promise<UUID | null> {
+  if (intent.parent_type === "core_user" && intent.operation === "create") {
+    return intent.expected_pointer_document_id;
+  }
   if (intent.parent_type === "company_profile") {
     const result = await client.query<{ previous_document_id: UUID | null }>(
       `UPDATE platform.company_profiles
@@ -737,7 +811,7 @@ function mapDocument(row: Record<string, any>): DocumentMetadata {
   };
 }
 
-function durableReadAllowed(row: Record<string, any>): boolean {
+function durableReadAllowed(row: Record<string, any>, mode: "metadata" | "raw"): boolean {
   const roles = Array.isArray(row.roles) ? row.roles as string[] : [];
   const has = (role: string) => roles.includes(role);
   if (row.document_type === "company_logo") return row.current_logo === true;
@@ -748,6 +822,9 @@ function durableReadAllowed(row: Record<string, any>): boolean {
         row.target_hierarchy_path && row.actor_hierarchy_path &&
         String(row.target_hierarchy_path).startsWith(`${row.actor_hierarchy_path}.`),
       );
+  }
+  if (mode === "raw" && employeeProofDocumentTypes.has(row.document_type)) {
+    return row.owner_user_id === row.actor_id || has(Roles.Admin);
   }
   if (row.classification === "medical" || row.classification === "compensation") {
     return has(Roles.Admin) || has(Roles.Auditor) || has(Roles.HRManager);

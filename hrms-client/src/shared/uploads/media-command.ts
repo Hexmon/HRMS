@@ -1,9 +1,15 @@
 export interface MediaCommandIdentity {
-  operation: "replace_company_logo" | "replace_profile_photo" | "remove_profile_photo";
+  operation:
+    | "replace_company_logo"
+    | "replace_profile_photo"
+    | "remove_profile_photo"
+    | "create_employee_document";
   parentId: string;
-  expectedVersion: number;
+  expectedVersion: number | null;
   expectedPointerDocumentId: string | null;
   file?: Blob;
+  fileName?: string;
+  mimeType?: string;
 }
 
 /**
@@ -20,6 +26,8 @@ export async function createMediaIdempotencyKey(identity: MediaCommandIdentity):
       expected_version: identity.expectedVersion,
       expected_pointer_document_id: identity.expectedPointerDocumentId,
       file_digest: fileDigest,
+      file_name: identity.fileName ?? null,
+      mime_type: identity.mimeType?.trim().toLowerCase() ?? null,
     }),
   );
   return `media-${await sha256(command.buffer)}`;

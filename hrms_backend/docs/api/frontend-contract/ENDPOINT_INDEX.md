@@ -13727,10 +13727,11 @@ Success body highlights:
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `user_id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8 |
 
 **Request body**
 
-EMS employee document upload metadata. The path employee user id is used as the business object id; binary storage is handled by the backend object-storage adapter.
+Durable EMS employee-proof upload. The path employee user id is the immutable owner; the server accepts only the closed default proof purposes and enforces normal classification.
 
 Content type: `application/json`
 
@@ -13738,8 +13739,8 @@ Required: yes
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `classification` | string enum("normal", "finance", "medical", "compensation", "legal", "audit") | required | - |
-| `document_type` | string | required | minLength 1 |
+| `classification` | string enum("normal") | required | Server-enforced for employee proof uploads. |
+| `document_type` | string enum("identity_proof", "address_proof", "education_proof", "experience_proof") | required | - |
 | `file_name` | string | required | minLength 1 |
 | `mime_type` | string | required | minLength 1 |
 | `size_bytes` | integer | required | minimum 1 |

@@ -151,6 +151,7 @@ export async function reconcileMedia(
   const client = await pool.connect();
   let rows: Array<{
     id: string;
+    state: "prepared" | "uploading" | "retry_wait" | "object_confirmed";
     object_key: string;
     document_id: string;
     measured_size_bytes: string;
@@ -161,19 +162,17 @@ export async function reconcileMedia(
   try {
     await client.query("BEGIN");
     const selected = await client.query<typeof rows[number] & { expires_at: Date; attempt_count: number }>(
-      `SELECT id,object_key,document_id,measured_size_bytes,checksum_sha256,expires_at,attempt_count
+      `SELECT id,state,object_key,document_id,measured_size_bytes,checksum_sha256,expires_at,attempt_count
        FROM documents.media_upload_intents
        WHERE state IN ('prepared','uploading','retry_wait','object_confirmed')
-         AND (
-           expires_at <= now() OR attempt_count >= 5
-           OR lease_expires_at IS NULL OR lease_expires_at <= now()
-         )
+         AND (lease_expires_at IS NULL OR lease_expires_at <= now())
        ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT $1`,
       [limit],
     );
     selectedCount = selected.rows.length;
     const now = Date.now();
-    const terminal = selected.rows.filter((row) => new Date(row.expires_at).getTime() <= now || row.attempt_count >= 5);
+    const terminal = selected.rows.filter((row) => row.state !== "object_confirmed" &&
+      (new Date(row.expires_at).getTime() <= now || row.attempt_count >= 5));
     rows = selected.rows.filter((row) => !terminal.includes(row));
     if (terminal.length) {
       const expiredIds = terminal.filter((row) => new Date(row.expires_at).getTime() <= now).map((row) => row.id);
@@ -278,7 +277,8 @@ export async function reconcileMedia(
 async function releaseMediaLease(pool: Pool, intentId: string, leaseOwner: string, safeError: string): Promise<void> {
   await pool.query(
     `UPDATE documents.media_upload_intents
-     SET state='retry_wait',lease_owner=NULL,
+     SET state=CASE WHEN state='object_confirmed' THEN 'object_confirmed' ELSE 'retry_wait' END,
+         lease_owner=NULL,
          lease_expires_at=now() + make_interval(secs => LEAST(300, 5 * (2 ^ LEAST(attempt_count, 6)))),
          attempt_count=attempt_count+1,last_safe_error=$3,updated_at=now()
      WHERE id=$1 AND lease_owner=$2 AND state IN ('prepared','uploading','retry_wait','object_confirmed')`,

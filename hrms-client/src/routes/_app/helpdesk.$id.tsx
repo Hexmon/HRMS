@@ -388,11 +388,11 @@ function TicketDetailScreen() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadAttachment.isPending}
+                      disabled
+                      title="Secure helpdesk attachment ownership is not enabled yet."
                     >
                       <Upload className="mr-1 h-3.5 w-3.5" />
-                      {uploadAttachment.isPending ? "Uploading" : "Upload file"}
+                      Upload unavailable
                     </Button>
                   </>
                 ) : (

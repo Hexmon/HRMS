@@ -76,7 +76,9 @@ function ProjectDetailPage() {
   const isPM = activeRole === "project_manager" && project?.manager === user?.name;
   const isFinance = activeRole === "finance_manager";
   const canEdit = project?.permissions?.can_edit ?? (isMain || isPM);
-  const canManageDocuments = canEdit && isApiBacked;
+  // Project-document ownership is not cut over to the durable tenant policy yet.
+  // Hide mutation controls instead of presenting an operation the backend rejects.
+  const canManageDocuments = false;
   const uploadPolicyQuery = useDocumentUploadPolicy(canManageDocuments);
 
   const uploadDocument = useMutation({

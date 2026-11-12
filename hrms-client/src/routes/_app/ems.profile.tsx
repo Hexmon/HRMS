@@ -321,6 +321,8 @@ function MyProfile() {
         expectedVersion: profile.version,
         expectedPointerDocumentId: profile.user.profilePhotoDocumentId ?? null,
         file: prepared.file,
+        fileName: prepared.file.name,
+        mimeType: prepared.file.type,
       });
       await uploadPhotoMutation.mutateAsync({
         userId: profile.user.id,
