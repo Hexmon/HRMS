@@ -107,16 +107,52 @@ describe("durable media lifecycle decisions", () => {
       { ...input, body: Buffer.from(input.body) },
       checksum,
     );
-    const changedPointer = requestFingerprint(
-      { ...input, expectedPointerDocumentId: documentId },
-      checksum,
-    );
-    const changedChecksum = requestFingerprint(input, "c".repeat(64));
+    const mutations: Array<{
+      name: string;
+      input: DurableMediaUploadInput;
+      checksum?: string;
+    }> = [
+      { name: "operation", input: { ...input, operation: "create" } },
+      { name: "parent type", input: { ...input, parentType: "generic" } },
+      { name: "parent id", input: { ...input, parentId: actorId } },
+      {
+        name: "business object type",
+        input: { ...input, businessObjectType: "employee" },
+      },
+      { name: "owner", input: { ...input, ownerUserId: actorId } },
+      {
+        name: "classification",
+        input: { ...input, classification: "medical" },
+      },
+      {
+        name: "document type",
+        input: { ...input, documentType: "identity_proof" },
+      },
+      { name: "file name", input: { ...input, fileName: "changed.png" } },
+      { name: "MIME type", input: { ...input, mimeType: "image/jpeg" } },
+      {
+        name: "measured size",
+        input: { ...input, body: Buffer.from("different-size") },
+      },
+      { name: "checksum", input, checksum: "c".repeat(64) },
+      {
+        name: "expected version",
+        input: { ...input, expectedParentVersion: 8 },
+      },
+      {
+        name: "expected pointer",
+        input: { ...input, expectedPointerDocumentId: documentId },
+      },
+    ];
 
     expect(first).toMatch(/^[0-9a-f]{64}$/u);
     expect(second).toBe(first);
-    expect(changedPointer).not.toBe(first);
-    expect(changedChecksum).not.toBe(first);
+    for (const mutation of mutations) {
+      expect(
+        requestFingerprint(mutation.input, mutation.checksum ?? checksum),
+        mutation.name,
+      ).not.toBe(first);
+    }
     expect(first).not.toContain(input.fileName);
   });
 
@@ -239,11 +275,25 @@ describe("durable media lifecycle decisions", () => {
       deleted_at: deletedAt,
     });
 
-    expect(mapped).toMatchObject({
+    expect(mapped).toEqual({
       id: documentId,
       company_id: companyId,
+      business_object_type: "core_user",
+      business_object_id: parentId,
+      owner_user_id: parentId,
+      classification: "normal",
+      document_type: "profile_photo",
+      current_version: 1,
+      file_name: "profile.png",
+      storage_key: "opaque-key",
+      mime_type: "image/png",
       size_bytes: 13,
+      checksum_sha256: checksum,
       metadata: {},
+      created_by_user_id: actorId,
+      lifecycle_state: "tombstoned",
+      replaced_by_document_id: null,
+      lifecycle_reason: "removed",
       created_at: createdAt.toISOString(),
       updated_at: updatedAt.toISOString(),
       deleted_at: deletedAt.toISOString(),
@@ -292,6 +342,16 @@ describe("durable media lifecycle decisions", () => {
         accessRow({
           document_type: "profile_photo",
           current_profile: true,
+          target_hierarchy_path: "root.manager2.report",
+        }),
+        "metadata",
+      ),
+    ).toBe(false);
+    expect(
+      durableReadAllowed(
+        accessRow({
+          document_type: "profile_photo",
+          current_profile: true,
           roles: [Roles.Admin],
         }),
         "raw",
@@ -335,43 +395,41 @@ describe("durable media lifecycle decisions", () => {
     ).toBe(false);
   });
 
-  it("limits raw employee proofs to self and Admin while keeping metadata policy explicit", () => {
-    expect(
-      durableReadAllowed(
-        accessRow({
-          document_type: "identity_proof",
-          owner_user_id: actorId,
-        }),
-        "raw",
-      ),
-    ).toBe(true);
-    expect(
-      durableReadAllowed(
-        accessRow({
-          document_type: "address_proof",
-          roles: [Roles.Admin],
-        }),
-        "raw",
-      ),
-    ).toBe(true);
-    expect(
-      durableReadAllowed(
-        accessRow({
-          document_type: "education_proof",
-          roles: [Roles.HRManager],
-        }),
-        "raw",
-      ),
-    ).toBe(false);
-    expect(
-      durableReadAllowed(
-        accessRow({
-          document_type: "experience_proof",
-          roles: [Roles.Auditor],
-        }),
-        "metadata",
-      ),
-    ).toBe(true);
+  it("limits employee-proof metadata and bytes to self and Admin", () => {
+    for (const mode of ["metadata", "raw"] as const) {
+      expect(
+        durableReadAllowed(
+          accessRow({
+            document_type: "identity_proof",
+            owner_user_id: actorId,
+          }),
+          mode,
+        ),
+      ).toBe(true);
+      expect(
+        durableReadAllowed(
+          accessRow({
+            document_type: "address_proof",
+            roles: [Roles.Admin],
+          }),
+          mode,
+        ),
+      ).toBe(true);
+      for (const role of [
+        Roles.HRManager,
+        Roles.Auditor,
+        Roles.FinanceManager,
+        Roles.Director,
+        Roles.AssetManager,
+      ]) {
+        expect(
+          durableReadAllowed(
+            accessRow({ document_type: "education_proof", roles: [role] }),
+            mode,
+          ),
+        ).toBe(false);
+      }
+    }
   });
 
   it("applies restricted and general document role policies without broadening peer access", () => {
@@ -385,9 +443,18 @@ describe("durable media lifecycle decisions", () => {
     }
     expect(
       durableReadAllowed(
+        accessRow({ classification: "medical", roles: [Roles.Admin] }),
+        "raw",
+      ),
+    ).toBe(true);
+    expect(
+      durableReadAllowed(
         accessRow({ classification: "compensation" }),
         "metadata",
       ),
+    ).toBe(false);
+    expect(
+      durableReadAllowed(accessRow({ classification: "medical" }), "raw"),
     ).toBe(false);
 
     expect(
@@ -410,6 +477,10 @@ describe("durable media lifecycle decisions", () => {
         true,
       );
     }
+    expect(durableReadAllowed(accessRow({ roles: [Roles.Admin] }), "raw")).toBe(
+      true,
+    );
     expect(durableReadAllowed(accessRow(), "metadata")).toBe(false);
+    expect(durableReadAllowed(accessRow(), "raw")).toBe(false);
   });
 });

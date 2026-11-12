@@ -837,7 +837,7 @@ export function durableReadAllowed(row: Record<string, any>, mode: "metadata" | 
         String(row.target_hierarchy_path).startsWith(`${row.actor_hierarchy_path}.`),
       );
   }
-  if (mode === "raw" && employeeProofDocumentTypes.has(row.document_type)) {
+  if (employeeProofDocumentTypes.has(row.document_type)) {
     return row.owner_user_id === row.actor_id || has(Roles.Admin);
   }
   if (row.classification === "medical" || row.classification === "compensation") {
