@@ -355,6 +355,7 @@ export interface ExpensePayment {
 
 export interface DocumentMetadata {
   id: UUID;
+  company_id?: UUID | null;
   business_object_type: string;
   business_object_id: UUID;
   owner_user_id: UUID | null;
@@ -371,6 +372,9 @@ export interface DocumentMetadata {
   created_at: ISODateTime;
   updated_at: ISODateTime;
   deleted_at: ISODateTime | null;
+  lifecycle_state?: "staged" | "active" | "replaced" | "tombstoned" | "quarantined";
+  replaced_by_document_id?: UUID | null;
+  lifecycle_reason?: string | null;
 }
 
 export interface AssetRecord {

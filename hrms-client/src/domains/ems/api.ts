@@ -192,10 +192,15 @@ export const emsApi = {
       { query },
     );
   },
-  attachEmployeeDocument(userId: string, input: EmsDocumentUploadBody | FormData) {
+  attachEmployeeDocument(
+    userId: string,
+    input: EmsDocumentUploadBody | FormData,
+    idempotencyKey: string,
+  ) {
     return apiRequest<ApiRecord>(`/api/v1/ems/employees/${userId}/documents`, {
       method: "POST",
       body: input,
+      headers: { "Idempotency-Key": idempotencyKey },
     });
   },
 };

@@ -24,8 +24,12 @@ describe("EMS employee-document tenant boundary", () => {
     vi.restoreAllMocks();
   });
 
-  it("allows a current-company employee through the memory and durable route paths", async () => {
+  it("allows a durable read but fails upload closed without the PostgreSQL coordinator", async () => {
     const employee = await loginAs(app, "E1");
+    await new EmsService(store).attachEmployeeDocument(employee.user, employee.user.id, {
+      ...uploadPayload(),
+      document_type: "profile_photo",
+    });
     await expect(
       new EmsService(store).listEmployeeDocuments(employee.user, employee.user.id, {
         page: 1,
@@ -48,10 +52,35 @@ describe("EMS employee-document tenant boundary", () => {
       headers: authHeader(employee.token),
       payload: uploadPayload(),
     });
-    expect(upload.statusCode).toBe(200);
+    expect(upload.statusCode).toBe(409);
     expect(classifier).toHaveBeenCalledWith(employee.user.id, employee.user.id, "read");
     expect(classifier).toHaveBeenCalledWith(employee.user.id, employee.user.id, "write");
-    expect(putObject).toHaveBeenCalledTimes(1);
+    expect(putObject).not.toHaveBeenCalled();
+  });
+
+  it("rejects a disguised executable on the EMS multipart route before storage I/O", async () => {
+    const employee = await loginAs(app, "E1");
+    enablePostgresClassifier(store, "authorized");
+    const putObject = vi.spyOn(store.objectStorage!, "putObject");
+    const multipart = multipartUpload({
+      fields: { classification: "normal", document_type: "identity_proof" },
+      file: {
+        body: Buffer.from("MZ-disguised-executable"),
+        fileName: "identity.pdf",
+        mimeType: "application/pdf",
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents`,
+      headers: { ...authHeader(employee.token), ...multipart.headers },
+      payload: multipart.body,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ message: "Uploaded file content does not match its declared type" });
+    expect(putObject).not.toHaveBeenCalled();
   });
 
   it("hides a durable foreign target before parsing or provider I/O", async () => {
@@ -105,7 +134,7 @@ describe("EMS employee-document tenant boundary", () => {
     ).resolves.toMatchObject({ total: 0 });
   });
 
-  it("allows same-company privileged reads but limits writes to self or HR/Admin", async () => {
+  it("limits employee-proof list and writes to self or company Admin", async () => {
     const auditor = await loginAs(app, "AUD");
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
@@ -113,17 +142,24 @@ describe("EMS employee-document tenant boundary", () => {
     await expect(
       memoryService.attachEmployeeDocument(auditor.user, employee.user.id, uploadPayload()),
     ).rejects.toMatchObject({ statusCode: 403 });
-    enablePostgresClassifier(store, "authorized");
+    await memoryService.attachEmployeeDocument(admin.user, employee.user.id, uploadPayload());
+    enablePostgresClassifier(store, "authorized", auditor.user);
     const service = new EmsService(store);
-
     await expect(
       service.listEmployeeDocuments(auditor.user, employee.user.id, { page: 1, page_size: 10 }),
     ).resolves.toMatchObject({ total: 0 });
     enablePostgresClassifier(store, "forbidden");
+
+    await expect(
+      service.listEmployeeDocuments(auditor.user, employee.user.id, { page: 1, page_size: 10 }),
+    ).rejects.toMatchObject({ statusCode: 403 });
     await expect(
       service.attachEmployeeDocument(auditor.user, employee.user.id, uploadPayload()),
     ).rejects.toMatchObject({ statusCode: 403 });
     enablePostgresClassifier(store, "authorized");
+    await expect(
+      service.listEmployeeDocuments(admin.user, employee.user.id, { page: 1, page_size: 10 }),
+    ).resolves.toMatchObject({ total: 1 });
     await expect(
       service.attachEmployeeDocument(admin.user, employee.user.id, uploadPayload()),
     ).resolves.toMatchObject({
@@ -202,7 +238,7 @@ describe("EMS employee-document tenant boundary", () => {
     expect(putObject).not.toHaveBeenCalled();
   });
 
-  it("uses the durable actor for restricted document policy after a stale role snapshot", async () => {
+  it("keeps self proof access when a stale Admin snapshot resolves to the employee", async () => {
     const admin = await loginAs(app, "ADM");
     await new EmsService(store).attachEmployeeDocument(admin.user, admin.user.id, {
       ...uploadPayload(),
@@ -216,17 +252,17 @@ describe("EMS employee-document tenant boundary", () => {
 
     await expect(
       service.listEmployeeDocuments(admin.user, admin.user.id, { page: 1, page_size: 10 }),
-    ).resolves.toMatchObject({ total: 0 });
+    ).resolves.toMatchObject({ total: 1 });
     await expect(
       service.attachEmployeeDocument(admin.user, admin.user.id, {
         ...uploadPayload(),
         classification: "medical",
       }),
-    ).rejects.toMatchObject({ statusCode: 403 });
-    expect(putObject).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ access_policy: { owner_user_id: admin.user.id } });
+    expect(putObject).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the durable actor for replacement authorization and audit metadata", async () => {
+  it("denies another employee's replacement when the durable actor is HR only", async () => {
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
     const staleEmployee = await loginAs(app, "E2");
@@ -238,26 +274,26 @@ describe("EMS employee-document tenant boundary", () => {
     const durableActor: AuthUser = { ...staleEmployee.user, roles: [Roles.HRManager] };
     enablePostgresClassifier(store, "authorized", durableActor);
 
-    const replacement = await new EmsService(store).attachEmployeeDocument(
-      staleEmployee.user,
-      employee.user.id,
-      {
-        ...uploadPayload(),
-        classification: "medical",
-        file_name: "identity-replacement.pdf",
-        replace_document_id: original.document.id,
-      },
-    );
+    const putObject = vi.spyOn(store.objectStorage!, "putObject");
+    putObject.mockClear();
 
-    expect(replacement.document.metadata).not.toHaveProperty("replaces_document_id");
-    expect(store.documents.find((document) => document.id === replacement.document.id)?.metadata)
-      .toMatchObject({ replaces_document_id: original.document.id });
+    await expect(
+      new EmsService(store).attachEmployeeDocument(
+        staleEmployee.user,
+        employee.user.id,
+        {
+          ...uploadPayload(),
+          classification: "medical",
+          file_name: "identity-replacement.pdf",
+          replace_document_id: original.document.id,
+        },
+      ),
+    ).rejects.toMatchObject({ statusCode: 403 });
+
+    expect(putObject).not.toHaveBeenCalled();
     expect(store.documents.find((document) => document.id === original.document.id)).toMatchObject({
-      deleted_at: expect.any(String),
-      metadata: {
-        replaced_by_document_id: replacement.document.id,
-        replaced_by_user_id: durableActor.id,
-      },
+      deleted_at: null,
+      metadata: expect.not.objectContaining({ replaced_by_document_id: expect.anything() }),
     });
   });
 
@@ -290,6 +326,28 @@ function enablePostgresClassifier(
   store.kind = "postgres";
   store.persistence = persistenceWithClassifier(classifier);
   return classifier;
+}
+
+function multipartUpload(input: {
+  fields: Record<string, string>;
+  file: { body: Buffer; fileName: string; mimeType: string };
+}) {
+  const boundary = `----hrms-ems-${randomUUID()}`;
+  const chunks: Buffer[] = [];
+  for (const [name, value] of Object.entries(input.fields)) {
+    chunks.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+    ));
+  }
+  chunks.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${input.file.fileName}"\r\n` +
+      `Content-Type: ${input.file.mimeType}\r\n\r\n`,
+  ));
+  chunks.push(input.file.body, Buffer.from(`\r\n--${boundary}--\r\n`));
+  return {
+    body: Buffer.concat(chunks),
+    headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+  };
 }
 
 function persistenceWithClassifier(

@@ -5,10 +5,6 @@ export const defaultMediaMimeTypes = [
   "image/webp",
   "text/plain",
   "text/csv",
-  "application/msword",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ] as const;
 
 export const runtimeDefaults = {

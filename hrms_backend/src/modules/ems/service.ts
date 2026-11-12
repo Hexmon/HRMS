@@ -22,7 +22,7 @@ import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
-import { canAccessDocument } from "../documents/policy.js";
+import { canAccessDocument, canAccessEmployeeProofDocument } from "../documents/policy.js";
 import { DocumentService, presentDocument, type DocumentUploadBody } from "../documents/service.js";
 import { appendEmsOutboxEvent, emsEvents } from "./events.js";
 import { assertCanDecideProfileChange, assertCanManageEms, assertCanSeeEmsUser, canManageEms } from "./policy.js";
@@ -44,6 +44,15 @@ export interface EmsDocumentQuery extends Pick<EmsQuery, "page" | "page_size"> {
 export type EmsDocumentUploadInput = Omit<DocumentUploadBody, "business_object_type" | "business_object_id"> & {
   replace_document_id?: UUID;
 };
+
+export const employeeProofDocumentTypes = [
+  "identity_proof",
+  "address_proof",
+  "education_proof",
+  "experience_proof",
+] as const;
+
+const employeeProofDocumentTypeSet = new Set<string>(employeeProofDocumentTypes);
 
 const FIELD_LABELS: Record<string, string> = {
   personal_email: "Personal email",
@@ -475,8 +484,12 @@ export class EmsService {
   async listEmployeeDocuments(actor: AuthUser, userId: UUID, query: EmsDocumentQuery) {
     const authorizedActor = await this.assertEmployeeDocumentAccess(actor, userId, "read");
     const visible = this.store.documents
-      .filter((document) => document.business_object_type === "employee" && document.business_object_id === userId && !document.deleted_at)
-      .filter((document) => canAccessDocument(authorizedActor, document, "read"));
+      .filter((document) => ["employee", "core_user"].includes(document.business_object_type) &&
+        document.business_object_id === userId && !document.deleted_at &&
+        document.lifecycle_state !== "quarantined" && document.lifecycle_state !== "replaced" &&
+        document.lifecycle_state !== "tombstoned" &&
+        employeeProofDocumentTypeSet.has(document.document_type))
+      .filter((document) => canAccessEmployeeProofDocument(authorizedActor, document));
     const filtered = query.document_type
       ? visible.filter((document) => document.document_type === query.document_type)
       : visible;
@@ -569,8 +582,8 @@ export class EmsService {
       throw notFound("EMS employee not found", { user_id: userId });
     }
     assertCanSeeEmsUser(actor, user);
-    if (permission === "write" && actor.id !== userId && !canManageEms(actor)) {
-      throw forbidden("Only the employee or HR/Admin can attach EMS employee documents.");
+    if (actor.id !== userId && !actor.roles.includes(Roles.Admin)) {
+      throw forbidden("Only the employee or company Admin can access EMS employee documents.");
     }
     return actor;
   }

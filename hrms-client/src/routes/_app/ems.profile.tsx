@@ -47,6 +47,7 @@ import {
   prepareProfilePhotoUploadFile,
 } from "@/shared/uploads/profile-photo";
 import { formatBytes } from "@/shared/uploads/documents";
+import { createMediaIdempotencyKey } from "@/shared/uploads/media-command";
 import {
   User,
   Phone,
@@ -146,8 +147,24 @@ function MyProfile() {
   const changeMutation = useEmsProfileChangeMutation();
   const revokeDeviceMutation = useRevokeRegisteredDeviceMutation();
   const uploadPhotoMutation = useMutation({
-    mutationFn: ({ userId, formData }: { userId: string; formData: FormData }) =>
-      coreApi.uploadProfilePhoto(userId, formData),
+    mutationFn: ({
+      userId,
+      formData,
+      version,
+      pointer,
+      idempotencyKey,
+    }: {
+      userId: string;
+      formData: FormData;
+      version: number;
+      pointer?: string;
+      idempotencyKey: string;
+    }) =>
+      coreApi.uploadProfilePhoto(userId, formData, {
+        idempotencyKey,
+        expectedVersion: version,
+        expectedPointerDocumentId: pointer ?? null,
+      }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
@@ -157,7 +174,22 @@ function MyProfile() {
     },
   });
   const removePhotoMutation = useMutation({
-    mutationFn: (userId: string) => coreApi.deleteProfilePhoto(userId),
+    mutationFn: ({
+      userId,
+      version,
+      pointer,
+      idempotencyKey,
+    }: {
+      userId: string;
+      version: number;
+      pointer: string;
+      idempotencyKey: string;
+    }) =>
+      coreApi.deleteProfilePhoto(userId, {
+        idempotencyKey,
+        expectedVersion: version,
+        expectedPointerDocumentId: pointer,
+      }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.domain("ems") }),
@@ -283,7 +315,22 @@ function MyProfile() {
       const prepared = await prepareProfilePhotoUploadFile(file, photoPolicy);
       const formData = new FormData();
       formData.set("file", prepared.file);
-      await uploadPhotoMutation.mutateAsync({ userId: profile.user.id, formData });
+      const idempotencyKey = await createMediaIdempotencyKey({
+        operation: "replace_profile_photo",
+        parentId: profile.user.id,
+        expectedVersion: profile.version,
+        expectedPointerDocumentId: profile.user.profilePhotoDocumentId ?? null,
+        file: prepared.file,
+        fileName: prepared.file.name,
+        mimeType: prepared.file.type,
+      });
+      await uploadPhotoMutation.mutateAsync({
+        userId: profile.user.id,
+        formData,
+        version: profile.version,
+        pointer: profile.user.profilePhotoDocumentId,
+        idempotencyKey,
+      });
       toast.success("Profile photo updated", {
         description: prepared.compressed
           ? `Compressed from ${formatBytes(prepared.originalSize)} to ${formatBytes(prepared.file.size)} before upload.`
@@ -299,7 +346,19 @@ function MyProfile() {
   const handleRemovePhoto = async () => {
     if (!apiEnabled || !canRemovePhoto) return;
     try {
-      await removePhotoMutation.mutateAsync(profile.user.id);
+      if (!profile.user.profilePhotoDocumentId) return;
+      const idempotencyKey = await createMediaIdempotencyKey({
+        operation: "remove_profile_photo",
+        parentId: profile.user.id,
+        expectedVersion: profile.version,
+        expectedPointerDocumentId: profile.user.profilePhotoDocumentId,
+      });
+      await removePhotoMutation.mutateAsync({
+        userId: profile.user.id,
+        version: profile.version,
+        pointer: profile.user.profilePhotoDocumentId,
+        idempotencyKey,
+      });
       toast.success("Profile photo removed");
     } catch (error) {
       toastApiError(error, "Profile photo could not be removed.");

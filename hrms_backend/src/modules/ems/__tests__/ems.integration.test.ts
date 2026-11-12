@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { PDFDocument } from "pdf-lib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { EmploymentStatuses, Roles } from "#shared";
@@ -351,21 +352,20 @@ describe("employee self-service", () => {
     const admin = await loginAs(app, "ADM");
     const otherEmployee = await loginAs(app, "E2");
 
-    const employeeUpload = await app.inject({
-      method: "POST",
+    const employeeUpload = await multipartUpload(app, {
       url: `/api/v1/ems/employees/${employee.user.id}/documents`,
-      headers: authHeader(employee.token),
-      payload: {
+      token: employee.token,
+      idempotencyKey: "ems-employee-document-001",
+      fields: {
         classification: "normal",
         document_type: "identity_proof",
-        file_name: "passport.pdf",
-        mime_type: "application/pdf",
-        size_bytes: 1024
-      }
+      },
+      fileName: "passport.pdf",
+      fileBody: await validPdf(),
     });
     expect(employeeUpload.statusCode).toBe(200);
     expect(employeeUpload.json().document).toMatchObject({
-      business_object_type: "employee",
+      business_object_type: "core_user",
       business_object_id: employee.user.id,
       owner_user_id: employee.user.id,
       document_type: "identity_proof"
@@ -378,20 +378,19 @@ describe("employee self-service", () => {
       size: expect.any(Number)
     });
 
-    const restrictedUpload = await app.inject({
-      method: "POST",
+    const addressProofUpload = await multipartUpload(app, {
       url: `/api/v1/ems/employees/${employee.user.id}/documents`,
-      headers: authHeader(admin.token),
-      payload: {
-        classification: "medical",
-        document_type: "medical_record",
-        file_name: "medical.pdf",
-        mime_type: "application/pdf",
-        size_bytes: 2048
-      }
+      token: admin.token,
+      idempotencyKey: "ems-admin-address-document-001",
+      fields: {
+        classification: "normal",
+        document_type: "address_proof",
+      },
+      fileName: "address.pdf",
+      fileBody: await validPdf(),
     });
-    expect(restrictedUpload.statusCode).toBe(200);
-    expect(restrictedUpload.json().document.owner_user_id).toBe(employee.user.id);
+    expect(addressProofUpload.statusCode).toBe(200);
+    expect(addressProofUpload.json().document.owner_user_id).toBe(employee.user.id);
 
     const ownList = await app.inject({
       method: "GET",
@@ -400,37 +399,41 @@ describe("employee self-service", () => {
     });
     expect(ownList.statusCode).toBe(200);
     expect(ownList.json()).toMatchObject({
-      total: 1,
-      document_summary: { total: 1, pending_verification: 1, restricted: 0 }
+      total: 2,
+      document_summary: { total: 2, pending_verification: 2, restricted: 0 }
     });
-    expect(ownList.json().items[0]).toMatchObject({ id: employeeUpload.json().document.id });
+    expect(ownList.json().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: employeeUpload.json().document.id }),
+      expect.objectContaining({ id: addressProofUpload.json().document.id }),
+    ]));
     expect(JSON.stringify(ownList.json().items)).not.toMatch(/storage_key|storage_adapter|storage_etag|bucket|endpoint/iu);
 
-    const replacementUpload = await app.inject({
-      method: "POST",
+    const replacementUpload = await multipartUpload(app, {
       url: `/api/v1/ems/employees/${employee.user.id}/documents`,
-      headers: authHeader(employee.token),
-      payload: {
+      token: employee.token,
+      idempotencyKey: "ems-employee-document-replacement-001",
+      fields: {
         classification: "normal",
         document_type: "identity_proof",
-        file_name: "passport-replacement.pdf",
-        mime_type: "application/pdf",
-        size_bytes: 1536,
-        replace_document_id: employeeUpload.json().document.id
-      }
+        replace_document_id: employeeUpload.json().document.id,
+      },
+      fileName: "passport-replacement.pdf",
+      fileBody: await validPdf(),
     });
     expect(replacementUpload.statusCode).toBe(200);
     expect(replacementUpload.json().document).toMatchObject({
-      business_object_type: "employee",
+      business_object_type: "core_user",
       business_object_id: employee.user.id,
       owner_user_id: employee.user.id,
       document_type: "identity_proof",
       file_name: "passport-replacement.pdf"
     });
     expect(replacementUpload.json().document.metadata).not.toHaveProperty("replaces_document_id");
-    expect(app.store.documents.find((document) => document.id === replacementUpload.json().document.id)?.metadata)
-      .toMatchObject({ replaces_document_id: employeeUpload.json().document.id });
-    expect(app.store.documents.find((document) => document.id === employeeUpload.json().document.id)?.deleted_at).toEqual(expect.any(String));
+    expect(app.store.documents.find((document) => document.id === employeeUpload.json().document.id))
+      .toMatchObject({
+        lifecycle_state: "replaced",
+        replaced_by_document_id: replacementUpload.json().document.id,
+      });
 
     const replacedList = await app.inject({
       method: "GET",
@@ -439,22 +442,25 @@ describe("employee self-service", () => {
     });
     expect(replacedList.statusCode).toBe(200);
     expect(replacedList.json()).toMatchObject({
-      total: 1,
-      document_summary: { total: 1, pending_verification: 1, restricted: 0 }
+      total: 2,
+      document_summary: { total: 2, pending_verification: 2, restricted: 0 }
     });
-    expect(replacedList.json().items[0]).toMatchObject({ id: replacementUpload.json().document.id });
+    expect(replacedList.json().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: replacementUpload.json().document.id }),
+      expect.objectContaining({ id: addressProofUpload.json().document.id }),
+    ]));
 
     const hrList = await app.inject({
       method: "GET",
-      url: `/api/v1/ems/employees/${employee.user.id}/documents?page=1&page_size=10&document_type=medical_record`,
+      url: `/api/v1/ems/employees/${employee.user.id}/documents?page=1&page_size=10&document_type=address_proof`,
       headers: authHeader(admin.token)
     });
     expect(hrList.statusCode).toBe(200);
     expect(hrList.json()).toMatchObject({
       total: 1,
-      document_summary: { total: 2, restricted: 1 }
+      document_summary: { total: 2, restricted: 0 }
     });
-    expect(hrList.json().items[0]).toMatchObject({ id: restrictedUpload.json().document.id });
+    expect(hrList.json().items[0]).toMatchObject({ id: addressProofUpload.json().document.id });
     expect(JSON.stringify(hrList.json().items)).not.toMatch(/storage_key|storage_adapter|storage_etag|bucket|endpoint/iu);
 
     const crossEmployeeList = await app.inject({
@@ -572,3 +578,46 @@ describe("employee self-service", () => {
     expect(putObject).not.toHaveBeenCalled();
   });
 });
+
+function multipartUpload(app: FastifyInstance, input: {
+  fields: Record<string, string>;
+  fileBody: Buffer;
+  fileName: string;
+  idempotencyKey: string;
+  token: string;
+  url: string;
+}) {
+  const boundary = `----hawkaii-ems-${randomUUID()}`;
+  const chunks: Buffer[] = [];
+  for (const [name, value] of Object.entries(input.fields)) {
+    chunks.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+    ));
+  }
+  chunks.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${input.fileName}"\r\n` +
+      "Content-Type: application/pdf\r\n\r\n",
+  ));
+  chunks.push(input.fileBody, Buffer.from(`\r\n--${boundary}--\r\n`));
+  return app.inject({
+    method: "POST",
+    url: input.url,
+    headers: {
+      ...authHeader(input.token),
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+      "idempotency-key": input.idempotencyKey,
+    },
+    payload: Buffer.concat(chunks),
+  });
+}
+
+let pdfFixture: Promise<Buffer> | undefined;
+
+function validPdf(): Promise<Buffer> {
+  pdfFixture ??= (async () => {
+    const document = await PDFDocument.create();
+    document.addPage([100, 100]);
+    return Buffer.from(await document.save());
+  })();
+  return pdfFixture;
+}

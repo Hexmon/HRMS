@@ -3,6 +3,8 @@ import type { FastifyRequest } from "fastify";
 import { z } from "zod";
 import { badRequest, unauthorized } from "../../platform/errors.js";
 import { AdminService } from "./service.js";
+import { MediaLifecycleService } from "../documents/media-lifecycle.js";
+import { DocumentService, presentDocument } from "../documents/service.js";
 import {
   adminAuditLogQuerySchema,
   adminEmailTemplatesQuerySchema,
@@ -52,6 +54,46 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/company-profile/logo", async (request) => {
     if (!request.actor) throw unauthorized();
     const upload = await parseCompanyLogoUpload(request);
+    if (fastify.store.kind === "postgres") {
+      if (!fastify.store.pgPool || !fastify.store.objectStorage) {
+        throw badRequest("Durable media storage is not configured");
+      }
+      const current = new AdminService(fastify.store).getCompanyProfile(request.actor);
+      const policy = new DocumentService(fastify.store).uploadPolicy().company_logo;
+      const normalizedMime = upload.mime_type.trim().toLowerCase();
+      if (!policy.allowed_mime_types.includes(normalizedMime)) {
+        throw badRequest("This file type is not allowed for company logos");
+      }
+      if (upload.file_buffer.length > policy.max_bytes) {
+        throw badRequest("File is larger than the configured media upload limit", {
+          max_bytes: policy.max_bytes,
+          actual_bytes: upload.file_buffer.length,
+        });
+      }
+      const expectedVersion = expectedVersionHeader(request);
+      const expectedPointer = expectedPointerHeader(request);
+      const result = await new MediaLifecycleService(fastify.store.pgPool, fastify.store.objectStorage).upload({
+        actor: request.actor,
+        operation: "replace_company_logo",
+        parentType: "company_profile",
+        parentId: current.id,
+        businessObjectType: "company_profile",
+        ownerUserId: request.actor.id,
+        classification: "normal",
+        documentType: "company_logo",
+        fileName: upload.file_name,
+        mimeType: normalizedMime,
+        body: upload.file_buffer,
+        idempotencyKey: z.string().trim().min(8).max(200).parse(request.headers["idempotency-key"]),
+        expectedParentVersion: expectedVersion,
+        expectedPointerDocumentId: expectedPointer,
+      });
+      await fastify.store.persistence?.reload();
+      return {
+        company: new AdminService(fastify.store).getCompanyProfile(request.actor),
+        document: presentDocument(result.document),
+      };
+    }
     return new AdminService(fastify.store).uploadCompanyLogo(request.actor, upload);
   });
 
@@ -273,6 +315,15 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
     );
   });
 };
+
+function expectedVersionHeader(request: FastifyRequest): number {
+  return z.coerce.number().int().min(1).parse(request.headers["x-expected-version"]);
+}
+
+function expectedPointerHeader(request: FastifyRequest): string | null {
+  const raw = z.string().trim().parse(request.headers["x-expected-pointer-document-id"]);
+  return raw === "none" ? null : z.uuid().parse(raw);
+}
 
 async function parseCompanyLogoUpload(request: FastifyRequest) {
   if (!request.isMultipart()) {

@@ -53,6 +53,7 @@
     "test:contracts": "vitest run --project contracts",
     "test:e2e": "vitest run --project e2e",
     "verify:cloudflare-queue-dlq": "tsx scripts/verify-cloudflare-queue-dlq.ts",
+    "verify:cloudflare-config": "TEST_DATABASE_URL=postgresql://unit:unit@127.0.0.1:5432/hrms_unit_test vitest run --project unit src/workers/cloudflare-deploy-config.unit.test.ts src/workers/cloudflare-deploy-config-cli.unit.test.ts",
     "api:docs:generate": "tsx scripts/api-docs-generate.ts && pnpm api:frontend-contract:generate",
     "api:docs:verify": "tsx scripts/api-docs-verify.ts",
     "api:consumer:verify": "tsx scripts/api-consumer-verify.ts",
@@ -117,8 +118,10 @@
     "fastify": "^5.6.2",
     "fastify-plugin": "^5.1.0",
     "iovalkey": "^0.3.3",
+    "pdf-lib": "1.17.1",
     "pg": "^8.16.3",
     "pino": "^10.1.0",
+    "sharp": "0.35.5",
     "zod": "^4.1.13"
   },
   "devDependencies": {

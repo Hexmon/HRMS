@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
   documentUploadSchema,
@@ -13,11 +13,16 @@ import {
   emsServiceRequestDecisionSchema,
   paginationQuerySchema
 } from "#shared";
-import { unauthorized } from "../../platform/errors.js";
-import { EmsService } from "./service.js";
+import { conflict, unauthorized } from "../../platform/errors.js";
+import { EmsService, employeeProofDocumentTypes } from "./service.js";
+import { DocumentService, presentDocument } from "../documents/service.js";
+import { MediaLifecycleService } from "../documents/media-lifecycle.js";
+import { parseSingleFileMultipartUpload } from "../documents/multipart-upload.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
 const userIdParamSchema = z.object({ user_id: z.uuid() });
+const mediaIdempotencyKeySchema = z.string().trim().min(8).max(200);
+const employeeProofTypeSchema = z.enum(employeeProofDocumentTypes);
 
 const emsQuerySchema = paginationQuerySchema.extend({
   status: z.string().max(64).optional(),
@@ -26,7 +31,7 @@ const emsQuerySchema = paginationQuerySchema.extend({
   department_id: z.uuid().optional()
 });
 const emsDocumentQuerySchema = paginationQuerySchema.extend({
-  document_type: z.string().max(80).optional()
+  document_type: employeeProofTypeSchema.optional()
 });
 const emsDocumentUploadSchema = documentUploadSchema.omit({
   business_object_type: true,
@@ -237,41 +242,55 @@ export const emsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) throw unauthorized();
     const params = userIdParamSchema.parse(request.params);
     const service = new EmsService(fastify.store);
-    await service.assertEmployeeDocumentAccess(request.actor, params.user_id, "write");
-    const upload = await parseEmsDocumentUpload(request);
+    const authorizedActor = await service.assertEmployeeDocumentAccess(request.actor, params.user_id, "write");
+    const upload = await parseSingleFileMultipartUpload(request);
+    const parsed = emsDocumentUploadSchema.parse(upload.fields);
+    if (fastify.store.kind === "postgres") {
+      if (!fastify.store.pgPool || !fastify.store.objectStorage || !upload.fileBuffer) {
+        throw conflict("Durable employee-proof storage is not configured");
+      }
+      const documentType = employeeProofTypeSchema.parse(parsed.document_type);
+      const policy = new DocumentService(fastify.store).uploadPolicy();
+      const mimeType = parsed.mime_type.trim().toLowerCase();
+      if (!policy.allowed_mime_types.includes(mimeType) || upload.fileBuffer.length > policy.max_bytes) {
+        throw conflict("Employee proof does not meet the configured upload policy");
+      }
+      const result = await new MediaLifecycleService(
+        fastify.store.pgPool,
+        fastify.store.objectStorage,
+      ).upload({
+        actor: authorizedActor,
+        operation: "create",
+        parentType: "core_user",
+        parentId: params.user_id,
+        businessObjectType: "core_user",
+        ownerUserId: params.user_id,
+        classification: "normal",
+        documentType,
+        fileName: parsed.file_name,
+        mimeType,
+        body: upload.fileBuffer,
+        idempotencyKey: mediaIdempotencyKeySchema.parse(request.headers["idempotency-key"]),
+        expectedPointerDocumentId: parsed.replace_document_id,
+      });
+      await fastify.store.persistence?.reload();
+      return {
+        document: presentDocument(result.document),
+        access_policy: {
+          business_object_type: "core_user",
+          business_object_id: params.user_id,
+          owner_user_id: params.user_id,
+          classification: "normal",
+        },
+      };
+    }
     return service.attachEmployeeDocument(
-      request.actor,
+      authorizedActor,
       params.user_id,
       {
-        ...emsDocumentUploadSchema.parse(upload.fields),
+        ...parsed,
         file_buffer: upload.fileBuffer
       }
     );
   });
 };
-
-async function parseEmsDocumentUpload(request: FastifyRequest): Promise<{
-  fields: Record<string, unknown>;
-  fileBuffer?: Buffer;
-}> {
-  if (!request.isMultipart()) {
-    return { fields: request.body as Record<string, unknown> };
-  }
-
-  const fields: Record<string, unknown> = {};
-  let fileBuffer: Buffer | undefined;
-  for await (const part of request.parts()) {
-    if (part.type === "file") {
-      fileBuffer = await part.toBuffer();
-      fields.file_name ??= part.filename;
-      fields.mime_type ??= part.mimetype;
-      fields.size_bytes = fileBuffer.length;
-      continue;
-    }
-    fields[part.fieldname] = part.value;
-  }
-  if (typeof fields.size_bytes === "string") {
-    fields.size_bytes = Number(fields.size_bytes);
-  }
-  return { fields, fileBuffer };
-}

@@ -1,0 +1,869 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { FastifyInstance } from "fastify";
+import { PDFDocument } from "pdf-lib";
+import { authHeader, loginAs } from "#testing";
+import type { ObjectStoragePort } from "../../../platform/data-store.js";
+import { MemoryObjectStorage, ObjectStorageProviderError } from "../../../platform/object-storage.js";
+import { buildRealApp, buildRealAppReplica } from "../../../__tests__/real-infra.js";
+import {
+  lockMediaAuthorizationRows,
+  MediaLifecycleService,
+  type DurableMediaUploadInput,
+} from "../media-lifecycle.js";
+import { reconcileMedia, type JobQueue, type MediaBucket } from "../../../workers/cloudflare-jobs.js";
+
+describe("TEN-S25-021 durable media lifecycle", () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    app = await buildRealApp();
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("replays a lost response and rejects changed payload without another provider call", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const put = vi.spyOn(app.store.objectStorage!, "putObject");
+    const service = new MediaLifecycleService(app.store.pgPool!, app.store.objectStorage!);
+    const input = logoInput(admin.user, parent, "media-logo-replay-001", Buffer.from("logo-one"));
+
+    const first = await service.upload(input);
+    const replay = await service.upload(input);
+    expect(replay.document.id).toBe(first.document.id);
+    expect(put).toHaveBeenCalledTimes(1);
+
+    await expect(service.upload({ ...input, body: Buffer.from("changed") })).rejects.toMatchObject({ statusCode: 409 });
+    expect(put).toHaveBeenCalledTimes(1);
+    const rows = await app.store.pgPool!.query(
+      "SELECT state,count(*)::int AS count FROM documents.media_upload_intents GROUP BY state",
+    );
+    expect(rows.rows).toContainEqual({ state: "finalized", count: 1 });
+  });
+
+  it("converges concurrent identical prepare requests on one intent and one PUT", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const base = new MemoryObjectStorage();
+    const put = vi.fn(async (key: string, body: Buffer, metadata?: Record<string, string>) => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return base.putObject(key, body, metadata);
+    });
+    const storage: ObjectStoragePort = {
+      kind: "memory",
+      bucket: "concurrent-key-test",
+      putObject: put,
+      getObject: (key) => base.getObject(key),
+      statObject: (key) => base.statObject(key),
+      removeObject: (key) => base.removeObject(key),
+    };
+    const input = logoInput(admin.user, parent, "media-concurrent-key-001", Buffer.from("same-logo"));
+    const [left, right] = await Promise.all([
+      new MediaLifecycleService(app.store.pgPool!, storage).upload(input),
+      new MediaLifecycleService(app.store.pgPool!, storage).upload(input),
+    ]);
+    expect(left.document.id).toBe(right.document.id);
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers an ambiguous PUT timeout by HEADing the fixed opaque key", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const memory = new MemoryObjectStorage();
+    let first = true;
+    const storage: ObjectStoragePort = {
+      kind: "memory",
+      bucket: "ambiguous-test",
+      async putObject(key, body, metadata) {
+        const result = await memory.putObject(key, body, metadata);
+        if (first) {
+          first = false;
+          throw new ObjectStorageProviderError("timeout", "synthetic ambiguous timeout");
+        }
+        return result;
+      },
+      getObject: (key) => memory.getObject(key),
+      statObject: (key) => memory.statObject(key),
+      removeObject: (key) => memory.removeObject(key),
+    };
+    const stat = vi.spyOn(storage, "statObject");
+    const result = await new MediaLifecycleService(app.store.pgPool!, storage).upload(
+      logoInput(admin.user, parent, "media-logo-timeout-001", Buffer.from("timeout-logo")),
+    );
+    expect(result.state).toBe("finalized");
+    expect(stat).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a definite failed PUT with the same key and publishes the original intent", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const memory = new MemoryObjectStorage();
+    let attempts = 0;
+    const storage: ObjectStoragePort = {
+      kind: "memory",
+      bucket: "definite-retry-test",
+      async putObject(key, body, metadata) {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new ObjectStorageProviderError("unavailable", "synthetic definite failure");
+        }
+        return memory.putObject(key, body, metadata);
+      },
+      getObject: (key) => memory.getObject(key),
+      statObject: (key) => memory.statObject(key),
+      removeObject: (key) => memory.removeObject(key),
+    };
+    const service = new MediaLifecycleService(app.store.pgPool!, storage);
+    const input = logoInput(admin.user, parent, "media-definite-retry-001", Buffer.from("retry-logo"));
+
+    await expect(service.upload(input)).rejects.toMatchObject({ code: "unavailable" });
+    const result = await service.upload(input);
+
+    expect(result.state).toBe("finalized");
+    expect(attempts).toBe(2);
+    const intents = await app.store.pgPool!.query(
+      `SELECT id,state,attempt_count FROM documents.media_upload_intents
+       WHERE idempotency_key='media-definite-retry-001'`,
+    );
+    expect(intents.rows).toHaveLength(1);
+    expect(intents.rows[0]).toMatchObject({ state: "finalized", attempt_count: 2 });
+  });
+
+  it("retains an uploaded object when final SQL publication loses its version race", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const memory = new MemoryObjectStorage();
+    let uploadedKey = "";
+    const storage: ObjectStoragePort = {
+      kind: "memory",
+      bucket: "rollback-test",
+      async putObject(key, body, metadata) {
+        uploadedKey = key;
+        const stored = await memory.putObject(key, body, metadata);
+        await app.store.pgPool!.query(
+          "UPDATE platform.company_profiles SET version=version+1 WHERE id=$1",
+          [parent.companyId],
+        );
+        return stored;
+      },
+      getObject: (key) => memory.getObject(key),
+      statObject: (key) => memory.statObject(key),
+      removeObject: (key) => memory.removeObject(key),
+    };
+    await expect(new MediaLifecycleService(app.store.pgPool!, storage).upload(
+      logoInput(admin.user, parent, "media-logo-rollback-001", Buffer.from("rollback-logo")),
+    )).rejects.toMatchObject({ statusCode: 409 });
+    expect(await memory.statObject(uploadedKey)).toMatchObject({ size: 13 });
+    const intent = await app.store.pgPool!.query(
+      "SELECT state FROM documents.media_upload_intents WHERE idempotency_key='media-logo-rollback-001'",
+    );
+    expect(intent.rows[0]?.state).toBe("object_confirmed");
+    const metadata = await app.store.pgPool!.query(
+      "SELECT count(*)::int AS count FROM documents.doc_metadata WHERE storage_key=$1",
+      [uploadedKey],
+    );
+    expect(metadata.rows[0]?.count).toBe(0);
+  });
+
+  it("allows only one simultaneous replacement to publish and never removes either object", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const remove = vi.spyOn(app.store.objectStorage!, "removeObject");
+    const serviceA = new MediaLifecycleService(app.store.pgPool!, app.store.objectStorage!);
+    const serviceB = new MediaLifecycleService(app.store.pgPool!, app.store.objectStorage!);
+    const outcomes = await Promise.allSettled([
+      serviceA.upload(logoInput(admin.user, parent, "media-race-a-001", Buffer.from("logo-a"))),
+      serviceB.upload(logoInput(admin.user, parent, "media-race-b-001", Buffer.from("logo-b"))),
+    ]);
+    expect(outcomes.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter((item) => item.status === "rejected")).toHaveLength(1);
+    expect(remove).not.toHaveBeenCalled();
+    const active = await app.store.pgPool!.query(
+      "SELECT count(*)::int AS count FROM documents.doc_metadata WHERE company_id=$1 AND lifecycle_state='active' AND document_type='company_logo'",
+      [parent.companyId],
+    );
+    expect(active.rows[0]?.count).toBe(1);
+  });
+
+  it("revalidates live role before finalize and leaves bytes unrenderable", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const memory = new MemoryObjectStorage();
+    let uploadedKey = "";
+    const storage: ObjectStoragePort = {
+      kind: "memory",
+      bucket: "role-change-test",
+      async putObject(key, body, metadata) {
+        uploadedKey = key;
+        const stored = await memory.putObject(key, body, metadata);
+        await app.store.pgPool!.query(
+          "UPDATE core.user_roles SET status='inactive' WHERE user_id=$1 AND role_key='Admin'",
+          [admin.user.id],
+        );
+        return stored;
+      },
+      getObject: (key) => memory.getObject(key),
+      statObject: (key) => memory.statObject(key),
+      removeObject: (key) => memory.removeObject(key),
+    };
+    await expect(new MediaLifecycleService(app.store.pgPool!, storage).upload(
+      logoInput(admin.user, parent, "media-role-change-001", Buffer.from("role-logo")),
+    )).rejects.toMatchObject({ statusCode: 403 });
+    expect(await memory.statObject(uploadedKey)).not.toBeNull();
+    const published = await app.store.pgPool!.query(
+      "SELECT count(*)::int AS count FROM documents.doc_metadata WHERE storage_key=$1",
+      [uploadedKey],
+    );
+    expect(published.rows[0]?.count).toBe(0);
+  });
+
+  it("denies owner media operations when the selected role or role definition is inactive", async () => {
+    const employee = await loginAs(app, "E1");
+    const put = vi.spyOn(app.store.objectStorage!, "putObject");
+    await app.store.pgPool!.query(
+      `UPDATE core.user_roles assignment SET status='inactive'
+       FROM platform.user_session_preferences preference
+       WHERE assignment.user_id=$1 AND preference.user_id=assignment.user_id
+         AND assignment.role_key=preference.active_role`,
+      [employee.user.id],
+    );
+    const response = await multipartDocumentUpload(app, employee.token, {
+      business_object_type: "core_user",
+      business_object_id: employee.user.id,
+      classification: "normal",
+      document_type: "identity_proof",
+    }, await validPdf(), "media-owner-role-denied-001");
+    expect(response.statusCode).toBe(403);
+    expect(put).not.toHaveBeenCalled();
+
+    await app.store.pgPool!.query(
+      "UPDATE core.user_roles SET status='active' WHERE user_id=$1 AND role_key='Employee'",
+      [employee.user.id],
+    );
+    await app.store.pgPool!.query("UPDATE core.roles SET status='inactive' WHERE role_key='Employee'");
+    const roleDefinitionDenied = await multipartDocumentUpload(app, employee.token, {
+      business_object_type: "core_user",
+      business_object_id: employee.user.id,
+      classification: "normal",
+      document_type: "identity_proof",
+    }, await validPdf(), "media-owner-definition-denied-001");
+    expect(roleDefinitionDenied.statusCode).toBe(403);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("recovers retryable bytes once across duplicate workers and respects a live lease", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const memory = new MemoryObjectStorage();
+    const storage: ObjectStoragePort = {
+      kind: "memory",
+      bucket: "reconcile-test",
+      async putObject(key, body, metadata) {
+        await memory.putObject(key, body, metadata);
+        throw new ObjectStorageProviderError("unavailable", "synthetic lost provider response");
+      },
+      getObject: (key) => memory.getObject(key),
+      statObject: (key) => memory.statObject(key),
+      removeObject: (key) => memory.removeObject(key),
+    };
+    await expect(new MediaLifecycleService(app.store.pgPool!, storage).upload(
+      logoInput(admin.user, parent, "media-reconcile-001", Buffer.from("reconcile-logo")),
+    )).rejects.toMatchObject({ code: "unavailable" });
+    const intent = await app.store.pgPool!.query<{ id: string }>(
+      "SELECT id FROM documents.media_upload_intents WHERE idempotency_key='media-reconcile-001'",
+    );
+    await app.store.pgPool!.query(
+      `UPDATE documents.media_upload_intents
+       SET state='object_confirmed',attempt_count=5,expires_at=now()-interval '1 second',
+           lease_owner='crashed-worker',lease_expires_at=now()+interval '5 minutes'
+       WHERE id=$1`,
+      [intent.rows[0]!.id],
+    );
+    const bucket: MediaBucket = { head: async (key) => {
+      const head = await memory.statObject(key);
+      return head ? { size: head.size, customMetadata: head.metadata } : null;
+    } };
+    const jobs: JobQueue = { send: async () => undefined };
+    expect((await reconcileMedia(app.store.pgPool!, bucket, jobs)).leased).toBe(0);
+    await app.store.pgPool!.query(
+      "UPDATE documents.media_upload_intents SET lease_expires_at=now()-interval '1 second' WHERE id=$1",
+      [intent.rows[0]!.id],
+    );
+    const outcomes = await Promise.all([
+      reconcileMedia(app.store.pgPool!, bucket, jobs),
+      reconcileMedia(app.store.pgPool!, bucket, jobs),
+    ]);
+    expect(outcomes.reduce((sum, item) => sum + item.finalized, 0)).toBe(1);
+    const state = await app.store.pgPool!.query(
+      "SELECT state FROM documents.media_upload_intents WHERE id=$1",
+      [intent.rows[0]!.id],
+    );
+    expect(state.rows[0]?.state).toBe("finalized");
+  });
+
+  it("publishes a typed generic document atomically for a second API instance", async () => {
+    const employee = await loginAs(app, "E1");
+    const finance = await loginAs(app, "N1");
+    const other = await loginAs(app, "E2");
+    const response = await multipartDocumentUpload(app, employee.token, {
+      business_object_type: "core_user",
+      business_object_id: employee.user.id,
+      classification: "normal",
+      document_type: "identity_proof",
+    }, await validPdf(), "media-generic-001");
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      company_id: expect.any(String),
+      lifecycle_state: "active",
+      business_object_id: employee.user.id,
+    });
+    expect(response.json()).not.toHaveProperty("storage_key");
+
+    const replica = await buildRealAppReplica(app);
+    await replica.ready();
+    try {
+      const metadata = await replica.inject({
+        method: "GET",
+        url: `/api/v1/documents/${response.json().id}`,
+        headers: { authorization: `Bearer ${employee.token}` },
+      });
+      expect(metadata.statusCode).toBe(200);
+      expect(metadata.json()).toMatchObject({ id: response.json().id, lifecycle_state: "active" });
+    } finally {
+      await replica.close();
+    }
+
+    const companyB = crypto.randomUUID();
+    await app.store.pgPool!.query(
+      "INSERT INTO platform.company_profiles (id,company_name,company_slug,status) VALUES ($1,'Company B',$2,'active')",
+      [companyB, `company-b-${companyB}`],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
+      [other.user.id, companyB],
+    );
+    const foreign = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${response.json().id}`,
+      headers: { authorization: `Bearer ${other.token}` },
+    });
+    expect(foreign.statusCode).toBe(404);
+
+    const financeDenied = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${response.json().id}/content`,
+      headers: { authorization: `Bearer ${finance.token}` },
+    });
+    expect(financeDenied.statusCode).toBe(404);
+    await app.store.pgPool!.query(
+      "UPDATE core.user_roles SET status='inactive' WHERE user_id=$1 AND role_key='Finance Manager'",
+      [finance.user.id],
+    );
+    const revoked = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${response.json().id}/content`,
+      headers: { authorization: `Bearer ${finance.token}` },
+    });
+    expect([403, 404]).toContain(revoked.statusCode);
+
+    const originalGet = app.store.objectStorage!.getObject.bind(app.store.objectStorage!);
+    const getObject = vi.spyOn(app.store.objectStorage!, "getObject");
+    getObject.mockImplementationOnce(async (key) => {
+      const stored = await originalGet(key);
+      return stored ? { ...stored, body: Buffer.alloc(stored.body.length, 0) } : null;
+    });
+    const corrupted = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${response.json().id}/content`,
+      headers: { authorization: `Bearer ${employee.token}` },
+    });
+    expect(corrupted.statusCode).toBe(404);
+
+    getObject.mockImplementationOnce(async (key) => {
+      const bytes = await originalGet(key);
+      await app.store.pgPool!.query(
+        "UPDATE documents.doc_metadata SET lifecycle_state='tombstoned' WHERE id=$1",
+        [response.json().id],
+      );
+      return bytes;
+    });
+    const concurrentRemove = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${response.json().id}/content`,
+      headers: { authorization: `Bearer ${employee.token}` },
+    });
+    expect(concurrentRemove.statusCode).toBe(404);
+    const access = await app.store.pgPool!.query<{ action: string; decision: string; reason: string | null }>(
+      "SELECT action,decision,reason FROM documents.doc_access_logs WHERE document_id=$1 ORDER BY created_at,id",
+      [response.json().id],
+    );
+    expect(access.rows.map((row) => row.decision)).toEqual(expect.arrayContaining(["allowed", "denied"]));
+    expect(access.rows).toContainEqual({
+      action: "read-content",
+      decision: "denied",
+      reason: "authorization_or_lifecycle_changed_during_read",
+    });
+  });
+
+  it("cuts the real EMS proof upload and replacement journey over to durable media", async () => {
+    const employee = await loginAs(app, "E1");
+    const finance = await loginAs(app, "N1");
+    const fields = {
+      classification: "medical",
+      document_type: "identity_proof",
+    };
+    const first = await multipartDocumentUpload(
+      app,
+      employee.token,
+      fields,
+      await validPdf(),
+      "media-ems-proof-001",
+      `/api/v1/ems/employees/${employee.user.id}/documents`,
+    );
+    expect(first.statusCode).toBe(200);
+    expect(first.json().document).toMatchObject({
+      business_object_type: "core_user",
+      business_object_id: employee.user.id,
+      owner_user_id: employee.user.id,
+      classification: "normal",
+      document_type: "identity_proof",
+      lifecycle_state: "active",
+    });
+
+    const financeRaw = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${first.json().document.id}/content`,
+      headers: authHeader(finance.token),
+    });
+    expect(financeRaw.statusCode).toBe(404);
+
+    const replacement = await multipartDocumentUpload(
+      app,
+      employee.token,
+      { ...fields, replace_document_id: first.json().document.id },
+      await validPdf(),
+      "media-ems-proof-002",
+      `/api/v1/ems/employees/${employee.user.id}/documents`,
+    );
+    expect(replacement.statusCode).toBe(200);
+    const lifecycle = await app.store.pgPool!.query(
+      "SELECT id,lifecycle_state,replaced_by_document_id FROM documents.doc_metadata WHERE id=ANY($1::uuid[]) ORDER BY id",
+      [[first.json().document.id, replacement.json().document.id]],
+    );
+    expect(lifecycle.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: first.json().document.id, lifecycle_state: "replaced",
+        replaced_by_document_id: replacement.json().document.id }),
+      expect.objectContaining({ id: replacement.json().document.id, lifecycle_state: "active" }),
+    ]));
+    const listed = await app.inject({
+      method: "GET",
+      url: `/api/v1/ems/employees/${employee.user.id}/documents?page=1&page_size=10`,
+      headers: authHeader(employee.token),
+    });
+    expect(listed.statusCode).toBe(200);
+    const listedIds = listed.json().items.map((item: { id: string }) => item.id);
+    expect(listedIds).toContain(replacement.json().document.id);
+    expect(listedIds).not.toContain(first.json().document.id);
+  });
+
+  it("serializes distinct-key stale-tab proof uploads to one active document", async () => {
+    const employee = await loginAs(app, "E1");
+    const storage = concurrentProofStorage();
+    const outcomes = await Promise.allSettled([
+      new MediaLifecycleService(app.store.pgPool!, storage).upload(
+        employeeProofInput(employee.user, employee.user.id, "media-proof-stale-a-001", Buffer.from("%PDF-proof-a")),
+      ),
+      new MediaLifecycleService(app.store.pgPool!, storage).upload(
+        employeeProofInput(employee.user, employee.user.id, "media-proof-stale-b-001", Buffer.from("%PDF-proof-b")),
+      ),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    const rejected = outcomes.find((outcome) => outcome.status === "rejected");
+    expect(rejected).toMatchObject({
+      reason: {
+        statusCode: 409,
+        message: "Employee proof already exists; replace the current document",
+      },
+    });
+    const company = await companyParent(app, employee.user.id);
+    const active = await app.store.pgPool!.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM documents.doc_metadata
+       WHERE company_id=$1 AND business_object_id=$2 AND document_type='identity_proof'
+         AND lifecycle_state='active' AND deleted_at IS NULL`,
+      [company.companyId, employee.user.id],
+    );
+    expect(active.rows[0]?.count).toBe(1);
+    const intents = await app.store.pgPool!.query<{ state: string; last_safe_error: string | null }>(
+      `SELECT state,last_safe_error FROM documents.media_upload_intents
+       WHERE idempotency_key IN ('media-proof-stale-a-001','media-proof-stale-b-001')
+       ORDER BY state`,
+    );
+    expect(intents.rows).toEqual([
+      { state: "failed", last_safe_error: "active_employee_proof_exists" },
+      { state: "finalized", last_safe_error: null },
+    ]);
+  });
+
+  it("serializes employee and Admin proof uploads without a lock-upgrade deadlock", async () => {
+    const employee = await loginAs(app, "E1");
+    const admin = await loginAs(app, "ADM");
+    const storage = concurrentProofStorage();
+    const outcomes = await Promise.allSettled([
+      new MediaLifecycleService(app.store.pgPool!, storage).upload(
+        employeeProofInput(employee.user, employee.user.id, "media-proof-self-001", Buffer.from("%PDF-proof-self")),
+      ),
+      new MediaLifecycleService(app.store.pgPool!, storage).upload(
+        employeeProofInput(admin.user, employee.user.id, "media-proof-admin-001", Buffer.from("%PDF-proof-admin")),
+      ),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(1);
+    expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
+      reason: { statusCode: 409 },
+    });
+    const company = await companyParent(app, employee.user.id);
+    const result = await app.store.pgPool!.query<{ active: number; failed: number; finalized: number }>(
+      `SELECT
+         count(*) FILTER (WHERE metadata.lifecycle_state='active')::int AS active,
+         count(*) FILTER (WHERE intent.state='failed')::int AS failed,
+         count(*) FILTER (WHERE intent.state='finalized')::int AS finalized
+       FROM documents.media_upload_intents intent
+       LEFT JOIN documents.doc_metadata metadata ON metadata.id=intent.document_id
+       WHERE intent.company_id=$1 AND intent.parent_id=$2
+         AND intent.idempotency_key IN ('media-proof-self-001','media-proof-admin-001')`,
+      [company.companyId, employee.user.id],
+    );
+    expect(result.rows[0]).toEqual({ active: 1, failed: 1, finalized: 1 });
+  });
+
+  it("matches the auth user-company lock order under a real PostgreSQL barrier", async () => {
+    const employee = await loginAs(app, "E1");
+    const company = await companyParent(app, employee.user.id);
+    const authWriter = await app.store.pgPool!.connect();
+    const mediaWriter = await app.store.pgPool!.connect();
+    try {
+      await authWriter.query("BEGIN");
+      await mediaWriter.query("BEGIN");
+      await authWriter.query("SET LOCAL statement_timeout='5s'");
+      await mediaWriter.query("SET LOCAL application_name='media-lock-order-regression'");
+      await authWriter.query("SELECT id FROM core.users WHERE id=$1 FOR UPDATE", [employee.user.id]);
+
+      const mediaLocks = lockMediaAuthorizationRows(
+        mediaWriter,
+        company.companyId,
+        employee.user.id,
+        "core_user",
+        employee.user.id,
+      );
+      await waitForDatabaseLock(app, "media-lock-order-regression");
+
+      await authWriter.query(
+        "SELECT id FROM platform.company_profiles WHERE id=$1 FOR UPDATE",
+        [company.companyId],
+      );
+      await authWriter.query("COMMIT");
+      await mediaLocks;
+      await mediaWriter.query("COMMIT");
+    } finally {
+      await authWriter.query("ROLLBACK").catch(() => undefined);
+      await mediaWriter.query("ROLLBACK").catch(() => undefined);
+      authWriter.release();
+      mediaWriter.release();
+    }
+  });
+
+  it("quarantines provider objects whose HEAD omits durable identity markers", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const memory = new MemoryObjectStorage();
+    const storage: ObjectStoragePort = {
+      kind: "memory",
+      bucket: "missing-marker-test",
+      async putObject(key, body) {
+        await memory.putObject(key, body);
+        throw new ObjectStorageProviderError("timeout", "ambiguous markerless write");
+      },
+      getObject: (key) => memory.getObject(key),
+      statObject: (key) => memory.statObject(key),
+      removeObject: (key) => memory.removeObject(key),
+    };
+    await expect(new MediaLifecycleService(app.store.pgPool!, storage).upload(
+      logoInput(admin.user, parent, "media-missing-markers-001", Buffer.from("markerless")),
+    )).rejects.toMatchObject({ statusCode: 409 });
+    const before = await app.store.pgPool!.query(
+      "SELECT state,last_safe_error FROM documents.media_upload_intents WHERE idempotency_key='media-missing-markers-001'",
+    );
+    expect(before.rows[0]).toEqual({ state: "retry_wait", last_safe_error: "object_put_outcome_unconfirmed" });
+    await app.store.pgPool!.query(
+      "UPDATE documents.media_upload_intents SET lease_expires_at=now()-interval '1 second' WHERE idempotency_key='media-missing-markers-001'",
+    );
+    await reconcileMedia(app.store.pgPool!, {
+      head: async (key) => {
+        const head = await memory.statObject(key);
+        return head ? { size: head.size, customMetadata: head.metadata } : null;
+      },
+    }, { send: async () => undefined });
+    const after = await app.store.pgPool!.query(
+      "SELECT state,last_safe_error FROM documents.media_upload_intents WHERE idempotency_key='media-missing-markers-001'",
+    );
+    expect(after.rows[0]).toEqual({ state: "quarantined", last_safe_error: "provider_evidence_mismatch" });
+  });
+
+  it("denies restricted generic uploads before provider I/O for non-HR finance actors", async () => {
+    const finance = await loginAs(app, "N1");
+    const employee = await loginAs(app, "E1");
+    const put = vi.spyOn(app.store.objectStorage!, "putObject");
+    const response = await multipartDocumentUpload(app, finance.token, {
+      business_object_type: "core_user",
+      business_object_id: employee.user.id,
+      classification: "medical",
+      document_type: "medical_record",
+    }, await validPdf(), "media-restricted-denied-001");
+    expect(response.statusCode).toBe(403);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("denies self-target purpose or classification downgrade before provider I/O", async () => {
+    const employee = await loginAs(app, "E1");
+    const put = vi.spyOn(app.store.objectStorage!, "putObject");
+    for (const fields of [
+      { classification: "medical", document_type: "identity_proof" },
+      { classification: "normal", document_type: "medical_record" },
+    ]) {
+      const response = await multipartDocumentUpload(app, employee.token, {
+        business_object_type: "core_user",
+        business_object_id: employee.user.id,
+        ...fields,
+      }, await validPdf(), `media-downgrade-${fields.classification}-${fields.document_type}`);
+      expect(response.statusCode).toBe(403);
+    }
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("backs off a no-progress batch, does not self-requeue, and terminalizes expiry", async () => {
+    const admin = await loginAs(app, "ADM");
+    const parent = await companyParent(app, admin.user.id);
+    const unavailable: ObjectStoragePort = {
+      kind: "memory",
+      bucket: "missing-object-test",
+      putObject: async () => { throw new ObjectStorageProviderError("unavailable", "synthetic outage"); },
+      getObject: async () => null,
+      statObject: async () => null,
+      removeObject: async () => undefined,
+    };
+    await expect(new MediaLifecycleService(app.store.pgPool!, unavailable).upload(
+      logoInput(admin.user, parent, "media-no-progress-001", Buffer.from("missing")),
+    )).rejects.toMatchObject({ code: "unavailable" });
+    const sent: unknown[] = [];
+    const jobs: JobQueue = { send: async (message) => { sent.push(message); } };
+    const result = await reconcileMedia(app.store.pgPool!, { head: async () => null }, jobs, 1);
+    expect(result).toMatchObject({ leased: 1, finalized: 0, pending: 1 });
+    expect(sent).toEqual([]);
+    const backedOff = await app.store.pgPool!.query(
+      `SELECT state,attempt_count,lease_expires_at > now() AS backed_off
+       FROM documents.media_upload_intents WHERE idempotency_key='media-no-progress-001'`,
+    );
+    expect(backedOff.rows[0]).toMatchObject({ state: "retry_wait", backed_off: true });
+    await app.store.pgPool!.query(
+      "UPDATE documents.media_upload_intents SET expires_at=now()-interval '1 second' WHERE idempotency_key='media-no-progress-001'",
+    );
+    expect((await reconcileMedia(app.store.pgPool!, { head: async () => null }, jobs, 1)).leased).toBe(0);
+    const terminal = await app.store.pgPool!.query(
+      "SELECT state,last_safe_error FROM documents.media_upload_intents WHERE idempotency_key='media-no-progress-001'",
+    );
+    expect(terminal.rows[0]).toEqual({ state: "quarantined", last_safe_error: "intent_expired" });
+
+    await app.store.pgPool!.query(
+      `INSERT INTO documents.media_upload_intents
+        (id,company_id,actor_user_id,operation,parent_type,parent_id,business_object_type,
+         idempotency_key,request_fingerprint,object_key,document_id,expected_pointer_document_id,
+         expected_parent_version,file_name,mime_type,measured_size_bytes,checksum_sha256,
+         classification,document_type,owner_user_id,state,expires_at)
+       SELECT gen_random_uuid(),company_id,actor_user_id,operation,parent_type,parent_id,business_object_type,
+              idempotency_key||'-expired-'||n,request_fingerprint,gen_random_uuid()::text,
+              gen_random_uuid(),expected_pointer_document_id,expected_parent_version,file_name,mime_type,
+              measured_size_bytes,checksum_sha256,classification,document_type,owner_user_id,
+              'retry_wait',now()-interval '1 second'
+       FROM documents.media_upload_intents CROSS JOIN generate_series(1,3) n
+       WHERE idempotency_key='media-no-progress-001'`,
+    );
+    sent.length = 0;
+    const boundedFirst = await reconcileMedia(app.store.pgPool!, { head: async () => null }, jobs, 2);
+    expect(boundedFirst).toMatchObject({ leased: 0, quarantined: 2 });
+    expect(sent).toEqual([{ kind: "media" }]);
+    const remaining = await app.store.pgPool!.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM documents.media_upload_intents WHERE state='retry_wait' AND idempotency_key LIKE 'media-no-progress-001-expired-%'",
+    );
+    expect(remaining.rows[0]?.count).toBe(1);
+    sent.length = 0;
+    expect((await reconcileMedia(app.store.pgPool!, { head: async () => null }, jobs, 2)).quarantined).toBe(1);
+    expect(sent).toEqual([]);
+  });
+
+  it("enforces tenant ownership on every non-quarantined lifecycle transition", async () => {
+    const admin = await loginAs(app, "ADM");
+    const id = crypto.randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO documents.doc_metadata
+        (id,business_object_type,business_object_id,classification,document_type,current_version,
+         file_name,storage_key,mime_type,size_bytes,created_by_user_id,lifecycle_state,lifecycle_reason)
+       VALUES ($1,'core_user',$2,'normal','legacy_generic',1,'legacy.pdf',$3,'application/pdf',1,$2,
+               'quarantined','legacy_company_owner_unverified')`,
+      [id, admin.user.id, `legacy/${id}`],
+    );
+    await expect(app.store.pgPool!.query(
+      "UPDATE documents.doc_metadata SET lifecycle_state='replaced' WHERE id=$1",
+      [id],
+    )).rejects.toMatchObject({ code: "23514" });
+    await expect(app.store.pgPool!.query(
+      `INSERT INTO documents.doc_metadata
+        (id,business_object_type,business_object_id,classification,document_type,current_version,
+         file_name,storage_key,mime_type,size_bytes,created_by_user_id,lifecycle_state)
+       VALUES (gen_random_uuid(),'core_user',$1,'normal','invalid',1,'bad.pdf',$2,'application/pdf',1,$1,'staged')`,
+      [admin.user.id, `invalid/${crypto.randomUUID()}`],
+    )).rejects.toMatchObject({ code: "23514" });
+  });
+});
+
+async function companyParent(app: FastifyInstance, actorId: string) {
+  const result = await app.store.pgPool!.query<{
+    company_id: string;
+    version: number;
+    logo_document_id: string | null;
+  }>(
+    `SELECT preference.company_id,company.version,company.logo_document_id
+     FROM platform.user_session_preferences preference
+     JOIN platform.company_profiles company ON company.id=preference.company_id
+     WHERE preference.user_id=$1`,
+    [actorId],
+  );
+  const row = result.rows[0]!;
+  return { companyId: row.company_id, version: row.version, pointer: row.logo_document_id };
+}
+
+function logoInput(
+  actor: Awaited<ReturnType<typeof loginAs>>["user"],
+  parent: { companyId: string; version: number; pointer: string | null },
+  idempotencyKey: string,
+  body: Buffer,
+): DurableMediaUploadInput {
+  return {
+    actor,
+    operation: "replace_company_logo",
+    parentType: "company_profile",
+    parentId: parent.companyId,
+    businessObjectType: "company_profile",
+    ownerUserId: actor.id,
+    classification: "normal",
+    documentType: "company_logo",
+    fileName: "company-logo.png",
+    mimeType: "image/png",
+    body,
+    idempotencyKey,
+    expectedParentVersion: parent.version,
+    expectedPointerDocumentId: parent.pointer,
+  };
+}
+
+function employeeProofInput(
+  actor: Awaited<ReturnType<typeof loginAs>>["user"],
+  employeeId: string,
+  idempotencyKey: string,
+  body: Buffer,
+): DurableMediaUploadInput {
+  return {
+    actor,
+    operation: "create",
+    parentType: "core_user",
+    parentId: employeeId,
+    businessObjectType: "core_user",
+    ownerUserId: employeeId,
+    classification: "normal",
+    documentType: "identity_proof",
+    fileName: "identity.pdf",
+    mimeType: "application/pdf",
+    body,
+    idempotencyKey,
+  };
+}
+
+function concurrentProofStorage(): ObjectStoragePort {
+  const memory = new MemoryObjectStorage();
+  let arrivals = 0;
+  let release!: () => void;
+  const bothStored = new Promise<void>((resolve) => { release = resolve; });
+  return {
+    kind: "memory",
+    bucket: "concurrent-proof-test",
+    async putObject(key, body, metadata) {
+      const stored = await memory.putObject(key, body, metadata);
+      arrivals += 1;
+      if (arrivals === 2) release();
+      await bothStored;
+      return stored;
+    },
+    getObject: (key) => memory.getObject(key),
+    statObject: (key) => memory.statObject(key),
+    removeObject: (key) => memory.removeObject(key),
+  };
+}
+
+async function waitForDatabaseLock(app: FastifyInstance, applicationName: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const waiting = await app.store.pgPool!.query<{ waiting: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM pg_stat_activity
+         WHERE application_name=$1 AND wait_event_type='Lock'
+       ) AS waiting`,
+      [applicationName],
+    );
+    if (waiting.rows[0]?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Media writer did not reach the PostgreSQL lock barrier");
+}
+
+function multipartDocumentUpload(
+  target: FastifyInstance,
+  token: string,
+  fields: Record<string, string>,
+  body: Buffer,
+  idempotencyKey: string,
+  url = "/api/v1/documents",
+) {
+  const boundary = `----media-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const chunks: Buffer[] = [];
+  for (const [name, value] of Object.entries(fields)) {
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+  }
+  chunks.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="identity.pdf"\r\nContent-Type: application/pdf\r\n\r\n`,
+  ));
+  chunks.push(body, Buffer.from(`\r\n--${boundary}--\r\n`));
+  return target.inject({
+    method: "POST",
+    url,
+    headers: {
+      authorization: `Bearer ${token}`,
+      "idempotency-key": idempotencyKey,
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+    },
+    payload: Buffer.concat(chunks),
+  });
+}
+
+let pdfFixture: Promise<Buffer> | undefined;
+
+function validPdf(): Promise<Buffer> {
+  pdfFixture ??= (async () => {
+    const document = await PDFDocument.create();
+    document.addPage([100, 100]);
+    return Buffer.from(await document.save());
+  })();
+  return pdfFixture;
+}

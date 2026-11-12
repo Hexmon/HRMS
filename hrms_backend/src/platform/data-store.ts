@@ -432,7 +432,12 @@ export interface ObjectStoragePort {
     metadata?: Record<string, string>,
   ): Promise<ObjectStoragePutResult>;
   getObject(key: string): Promise<ObjectStorageGetResult | null>;
-  statObject(key: string): Promise<{ size: number } | null>;
+  statObject(key: string): Promise<{
+    size: number;
+    etag?: string;
+    contentType?: string;
+    metadata?: Record<string, string>;
+  } | null>;
   removeObject(key: string): Promise<void>;
 }
 
@@ -2762,10 +2767,6 @@ function defaultMediaUploadPolicy(): MediaUploadPolicy {
       "image/webp",
       "text/plain",
       "text/csv",
-      "application/msword",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ],
     imageOutputMimeType: "image/jpeg",
   };

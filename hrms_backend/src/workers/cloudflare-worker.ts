@@ -1,11 +1,12 @@
 import { Pool } from "pg";
-import { drainOutbox, purgeCoordinates, readOperationalLag, readPublishedEvent, sweepAttendance, type JobMessage, type JobQueue } from "./cloudflare-jobs.js";
+import { drainOutbox, purgeCoordinates, readOperationalLag, readPublishedEvent, reconcileMedia, sweepAttendance, type JobMessage, type JobQueue, type MediaBucket } from "./cloudflare-jobs.js";
 import { safeOutboxLastError } from "./safe-error.js";
 
 interface Env {
   HYPERDRIVE: { connectionString: string };
   JOBS: JobQueue;
   EVENTS: JobQueue;
+  MEDIA_BUCKET?: MediaBucket;
   OUTBOX_SIGNAL_TOKEN: string;
   JOBS_QUEUE_NAME?: string;
   EVENTS_QUEUE_NAME?: string;
@@ -35,7 +36,7 @@ function isActive(env: Env): boolean {
 function isJob(value: unknown): value is JobMessage {
   if (!value || typeof value !== "object") return false;
   const job = value as Record<string, unknown>;
-  if (job.kind === "outbox" || job.kind === "purge") return true;
+  if (job.kind === "outbox" || job.kind === "purge" || job.kind === "media") return true;
   return job.kind === "attendance" && typeof job.referenceIso === "string" &&
     Number.isFinite(Date.parse(job.referenceIso)) &&
     (job.cursor === undefined || (
@@ -98,7 +99,10 @@ export default {
     if (!isActive(env)) return;
     const time = new Date(controller.scheduledTime).toISOString();
     if (controller.cron === "* * * * *") await env.JOBS.send({ kind: "outbox" });
-    if (controller.cron === "*/5 * * * *") await env.JOBS.send({ kind: "attendance", referenceIso: time });
+    if (controller.cron === "*/5 * * * *") {
+      await env.JOBS.send({ kind: "attendance", referenceIso: time });
+      await env.JOBS.send({ kind: "media" });
+    }
     if (controller.cron === "0 * * * *") await env.JOBS.send({ kind: "purge" });
   },
 
@@ -120,7 +124,9 @@ export default {
               ? await drainOutbox(pool, env.EVENTS, env.JOBS)
               : job.kind === "attendance"
                 ? await sweepAttendance(pool, env.JOBS, job)
-                : await purgeCoordinates(pool, env.JOBS);
+                : job.kind === "media"
+                  ? await reconcileMedia(pool, requireMediaBucket(env), env.JOBS)
+                  : await purgeCoordinates(pool, env.JOBS);
             console.log(JSON.stringify({ job: job.kind, result }));
           } else if (batch.queue === (env.EVENTS_QUEUE_NAME ?? "hrms-business-events")) {
             if (!isEvent(message.body)) throw new Error("invalid event message");
@@ -149,3 +155,8 @@ export default {
     });
   },
 };
+
+function requireMediaBucket(env: Env): MediaBucket {
+  if (!env.MEDIA_BUCKET) throw new Error("MEDIA_BUCKET binding is required for media reconciliation");
+  return env.MEDIA_BUCKET;
+}

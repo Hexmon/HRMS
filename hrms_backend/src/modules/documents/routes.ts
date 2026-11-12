@@ -1,10 +1,13 @@
-import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { documentUploadSchema, paginationQuerySchema } from "#shared";
 import { conflict, notFound, unauthorized } from "../../platform/errors.js";
 import { DocumentService, presentDocument } from "./service.js";
+import { MediaLifecycleService } from "./media-lifecycle.js";
+import { parseSingleFileMultipartUpload } from "./multipart-upload.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
+const idempotencyKeySchema = z.string().trim().min(8).max(200);
 const documentListQuerySchema = paginationQuerySchema.extend({
   business_object_type: z.string().optional(),
   business_object_id: z.uuid().optional()
@@ -26,27 +29,51 @@ async function assertNoExpenseDocumentAccess(
   if (access !== "other") throw notFound("Document not found");
 }
 
-async function tenantMediaAuthorized(
-  fastify: FastifyInstance,
-  actorId: string,
-  documentId: string,
-  mode: "metadata" | "raw" | "workflow",
-): Promise<boolean> {
-  if (fastify.store.kind !== "postgres") return false;
-  const access = await fastify.store.persistence?.classifyTenantMediaAccess?.(actorId, documentId, mode);
-  if (access === "media-authorized") return true;
-  if (access === "hidden") throw notFound("Document not found");
-  return false;
-}
-
 export const documentRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/documents", async (request) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    assertTenantOwnedDocumentBoundary(fastify);
-    const upload = await parseDocumentUpload(request);
+    const upload = await parseSingleFileMultipartUpload(request);
     const body = documentUploadSchema.parse(upload.fields);
+    if (fastify.store.kind === "postgres") {
+      if (!fastify.store.pgPool || !fastify.store.objectStorage || !upload.fileBuffer) {
+        throw conflict("Durable media storage is not configured");
+      }
+      if (body.business_object_type === "expense_ticket") {
+        throw conflict("Expense receipt upload requires transaction-owned parent authorization");
+      }
+      if (body.business_object_type !== "core_user") {
+        throw conflict("This document parent is not yet supported by the durable media protocol");
+      }
+      const policy = new DocumentService(fastify.store).uploadPolicy();
+      const normalizedMime = body.mime_type.trim().toLowerCase();
+      if (!policy.allowed_mime_types.includes(normalizedMime)) {
+        throw conflict("This file type is not allowed for media uploads");
+      }
+      if (upload.fileBuffer.length > policy.max_bytes) {
+        throw conflict("File is larger than the configured media upload limit", {
+          max_bytes: policy.max_bytes,
+          actual_bytes: upload.fileBuffer.length,
+        });
+      }
+      const result = await new MediaLifecycleService(fastify.store.pgPool, fastify.store.objectStorage).upload({
+        actor: request.actor,
+        operation: "create",
+        parentType: "core_user",
+        parentId: body.business_object_id,
+        businessObjectType: body.business_object_type,
+        ownerUserId: body.business_object_id,
+        classification: body.classification,
+        documentType: body.document_type,
+        fileName: body.file_name,
+        mimeType: normalizedMime,
+        body: upload.fileBuffer,
+        idempotencyKey: idempotencyKeySchema.parse(request.headers["idempotency-key"]),
+      });
+      return presentDocument(result.document);
+    }
+    assertTenantOwnedDocumentBoundary(fastify);
     return presentDocument(await new DocumentService(fastify.store).upload(request.actor, {
       ...body,
       file_buffer: upload.fileBuffer
@@ -61,7 +88,7 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     if (fastify.store.kind === "postgres") {
       throw conflict("Expense receipt upload requires transaction-owned parent authorization");
     }
-    const upload = await parseDocumentUpload(request);
+    const upload = await parseSingleFileMultipartUpload(request);
     const body = documentUploadSchema
       .omit({ business_object_type: true, business_object_id: true })
       .parse(upload.fields);
@@ -98,11 +125,13 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "metadata");
-    const service = new DocumentService(fastify.store);
-    if (await tenantMediaAuthorized(fastify, request.actor.id, params.id, "metadata")) {
-      return presentDocument(service.tenantMediaMetadata(request.actor, params.id));
+    if (fastify.store.kind === "postgres") {
+      assertDurableMediaConfigured(fastify);
+      return presentDocument(await new MediaLifecycleService(
+        fastify.store.pgPool!, fastify.store.objectStorage!,
+      ).activeDocument(request.actor.id, params.id));
     }
-    assertTenantOwnedDocumentBoundary(fastify);
+    const service = new DocumentService(fastify.store);
     return presentDocument(service.metadata(request.actor, params.id));
   });
 
@@ -112,11 +141,13 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "raw");
-    const service = new DocumentService(fastify.store);
-    if (await tenantMediaAuthorized(fastify, request.actor.id, params.id, "raw")) {
-      return service.tenantMediaDownloadUrl(request.actor, params.id, fastify.config.API_BASE_URL);
+    if (fastify.store.kind === "postgres") {
+      assertDurableMediaConfigured(fastify);
+      await new MediaLifecycleService(fastify.store.pgPool!, fastify.store.objectStorage!)
+        .activeDocument(request.actor.id, params.id);
+      return { document_id: params.id, url: `/api/v1/documents/${params.id}/content`, expires_in_seconds: 0 };
     }
-    assertTenantOwnedDocumentBoundary(fastify);
+    const service = new DocumentService(fastify.store);
     return service.downloadUrl(request.actor, params.id, fastify.config.API_BASE_URL);
   });
 
@@ -126,10 +157,19 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "raw");
+    if (fastify.store.kind === "postgres") {
+      assertDurableMediaConfigured(fastify);
+      const content = await durableMediaContent(fastify, request.actor.id, params.id);
+      reply
+        .header("content-type", content.contentType)
+        .header("content-length", String(content.size))
+        .header("content-disposition", `attachment; filename="${safeDispositionFileName(content.fileName)}"`)
+        .header("cache-control", "private, no-store")
+        .header("x-content-type-options", "nosniff");
+      return reply.send(content.body);
+    }
     const service = new DocumentService(fastify.store);
-    const content = await tenantMediaAuthorized(fastify, request.actor.id, params.id, "raw")
-      ? await service.tenantMediaContent(request.actor, params.id)
-      : (assertTenantOwnedDocumentBoundary(fastify), await service.downloadContent(request.actor, params.id));
+    const content = await service.downloadContent(request.actor, params.id);
     reply
       .header("content-type", content.contentType)
       .header("content-length", String(content.size))
@@ -171,36 +211,28 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
   });
 };
 
+async function durableMediaContent(fastify: FastifyInstance, actorId: string, documentId: string) {
+  const content = await new MediaLifecycleService(
+    fastify.store.pgPool!, fastify.store.objectStorage!,
+  ).activeContent(actorId, documentId);
+  return {
+    body: content.body,
+    contentType: content.contentType,
+    fileName: content.document.file_name,
+    size: content.size,
+  };
+}
+
 function assertTenantOwnedDocumentBoundary(fastify: FastifyInstance): void {
   if (fastify.store.kind === "postgres") {
     throw conflict("Document access requires immutable tenant ownership");
   }
 }
 
-async function parseDocumentUpload(request: FastifyRequest): Promise<{
-  fields: Record<string, unknown>;
-  fileBuffer?: Buffer;
-}> {
-  if (!request.isMultipart()) {
-    return { fields: request.body as Record<string, unknown> };
+function assertDurableMediaConfigured(fastify: FastifyInstance): void {
+  if (!fastify.store.pgPool || !fastify.store.objectStorage) {
+    throw conflict("Document access requires immutable tenant ownership");
   }
-
-  const fields: Record<string, unknown> = {};
-  let fileBuffer: Buffer | undefined;
-  for await (const part of request.parts()) {
-    if (part.type === "file") {
-      fileBuffer = await part.toBuffer();
-      fields.file_name ??= part.filename;
-      fields.mime_type ??= part.mimetype;
-      fields.size_bytes = fileBuffer.length;
-      continue;
-    }
-    fields[part.fieldname] = part.value;
-  }
-  if (typeof fields.size_bytes === "string") {
-    fields.size_bytes = Number(fields.size_bytes);
-  }
-  return { fields, fileBuffer };
 }
 
 function safeDispositionFileName(fileName: string): string {

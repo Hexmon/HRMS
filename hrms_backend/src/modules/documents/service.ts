@@ -9,7 +9,12 @@ import { compressPdfBuffer, isPdfUpload, type PdfCompressionResult } from "../..
 import { appendOutboxEvent } from "../expenses/events.js";
 import { ExpenseService } from "../expenses/service.js";
 import { isTerminalExpenseStatus } from "../expenses/state-machine.js";
-import { canAccessDocument } from "./policy.js";
+import {
+  canAccessDocument,
+  canAccessEmployeeProofDocument,
+  isEmployeeProofDocumentType,
+  isLegacyGeneratedDocument,
+} from "./policy.js";
 import { DocumentRepository } from "./repository.js";
 
 export type DocumentUploadInput = z.infer<typeof documentUploadSchema>;
@@ -105,7 +110,30 @@ export class DocumentService {
 
   private mayReadDocument(actor: AuthUser, document: DocumentMetadata, rawBytes: boolean): boolean {
     return this.expenseReceiptReadDecision(actor, document, rawBytes) ??
+      this.employeeProofAccessDecision(actor, document, "read") ??
       canAccessDocument(actor, document, "read");
+  }
+
+  private employeeProofAccessDecision(
+    actor: AuthUser,
+    document: DocumentMetadata,
+    permission: "read" | "write" | "verify" | "audit",
+  ): boolean | null {
+    if (!isEmployeeProofDocumentType(document.document_type)) return null;
+    if (isLegacyGeneratedDocument(document)) return false;
+    if (!canAccessEmployeeProofDocument(actor, document, permission)) return false;
+    if (document.owner_user_id === actor.id && (permission === "read" || permission === "write")) {
+      return true;
+    }
+    const actorCompanyId = this.store.userSessionPreferences.find(
+      (preference) => preference.user_id === actor.id,
+    )?.company_id;
+    return Boolean(
+      actor.roles.includes(Roles.Admin) &&
+      actorCompanyId &&
+      document.company_id &&
+      actorCompanyId === document.company_id,
+    );
   }
 
   private assertExpenseReceiptUpload(actor: AuthUser, input: DocumentUploadBody): void {
@@ -168,6 +196,9 @@ export class DocumentService {
     });
     const document: DocumentMetadata = {
       id: randomUUID(),
+      company_id: this.store.userSessionPreferences.find(
+        (preference) => preference.user_id === actor.id,
+      )?.company_id ?? null,
       business_object_type: input.business_object_type,
       business_object_id: input.business_object_id,
       owner_user_id: input.owner_user_id ?? (input.business_object_type === "expense_ticket" ? null : actor.id),
@@ -390,11 +421,15 @@ export class DocumentService {
   }
 
   async delete(actor: AuthUser, id: UUID): Promise<DocumentDeleteResult> {
+    if (this.store.kind === "postgres") {
+      throw conflict("Physical document deletion is disabled until the retention and legal-hold policy is implemented");
+    }
     const document = this.repository.find(id);
     if (this.expenseReceiptReadDecision(actor, document, false) !== null) {
       throw conflict("Expense receipt deletion requires a parent-authorized workflow");
     }
-    if (!canAccessDocument(actor, document, "write")) {
+    if (!(this.employeeProofAccessDecision(actor, document, "write") ??
+      canAccessDocument(actor, document, "write"))) {
       this.log(actor, id, "delete", "denied", "classification_policy");
       throw forbidden("Document delete denied");
     }
@@ -512,7 +547,8 @@ export class DocumentService {
     if (this.expenseReceiptReadDecision(actor, document, false) !== null) {
       throw conflict("Expense receipt verification requires the expense workflow");
     }
-    if (!canAccessDocument(actor, document, "verify")) {
+    if (!(this.employeeProofAccessDecision(actor, document, "verify") ??
+      canAccessDocument(actor, document, "verify"))) {
       this.log(actor, id, "verify", "denied", "classification_policy");
       throw forbidden("Document verification denied");
     }
@@ -540,6 +576,7 @@ export class DocumentService {
   accessLog(actor: AuthUser, id: UUID, page: number, pageSize: number) {
     const document = this.repository.find(id);
     if (!(this.expenseReceiptReadDecision(actor, document, false) ??
+      this.employeeProofAccessDecision(actor, document, "audit") ??
       canAccessDocument(actor, document, "audit"))) {
       throw forbidden("Document access log denied");
     }

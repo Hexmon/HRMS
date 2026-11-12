@@ -12328,7 +12328,7 @@
         "tags": [
           "Core / Employees & Hierarchy"
         ],
-        "description": "Uploads a compressed employee profile photo through the private document storage pipeline. Admin/HR can update employee photos; employees can update their own.",
+        "description": "Durably replaces an employee profile photo. The previous image remains current until object evidence and the PostgreSQL finalize transaction commit. Admin/HR can update employee photos; employees can update their own.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12361,6 +12361,36 @@
             "name": "id",
             "required": true,
             "description": "Resource UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Stable key for one logical media upload. Reuse it only with the exact same payload after a timeout or lost response."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "in": "header",
+            "name": "x-expected-version",
+            "required": true,
+            "description": "Parent version from the latest company/user read."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-expected-pointer-document-id",
+            "required": true,
+            "description": "Current document UUID from the latest read, or the literal `none` when no media is attached."
           }
         ],
         "security": [
@@ -13019,7 +13049,7 @@
         "tags": [
           "Core / Employees & Hierarchy"
         ],
-        "description": "Deletes the current profile-photo document when one exists and clears profile photo metadata. Admin/HR can remove employee photos; employees can remove their own.",
+        "description": "Logically removes the current profile photo and tombstones its metadata. Object bytes are retained pending the approved retention/legal-hold policy; no provider DELETE occurs.",
         "parameters": [
           {
             "schema": {
@@ -13031,6 +13061,36 @@
             "name": "id",
             "required": true,
             "description": "Resource UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Stable key for one logical media upload. Reuse it only with the exact same payload after a timeout or lost response."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "in": "header",
+            "name": "x-expected-version",
+            "required": true,
+            "description": "Parent version from the latest company/user read."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-expected-pointer-document-id",
+            "required": true,
+            "description": "Current document UUID from the latest read, or the literal `none` when no media is attached."
           }
         ],
         "security": [
@@ -35505,7 +35565,7 @@
         "tags": [
           "Documents"
         ],
-        "description": "Creates secure document metadata and stores the file through the backend object storage adapter. Object-storage credentials are never exposed.",
+        "description": "Creates a durable upload intent, stores bytes at a fixed opaque key and publishes tenant-owned metadata only after finalize. PostgreSQL currently accepts only the typed core_user parent; expense receipts remain blocked.",
         "requestBody": {
           "required": true,
           "content": {
@@ -35575,6 +35635,19 @@
           },
           "description": "Document binary is handled through the backend object-storage adapter. Do not send object-storage credentials."
         },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Stable key for one logical media upload. Reuse it only with the exact same payload after a timeout or lost response."
+          }
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -113023,7 +113096,7 @@
         "tags": [
           "EMS"
         ],
-        "description": "Uploads employee-scoped EMS document metadata using the existing backend object-storage adapter. Employees can attach their own allowed documents; HR/Admin can attach official or restricted employee documents.",
+        "description": "Durably uploads or replaces one of the closed employee proof purposes. Employees can attach their own proofs and company Admin can attach proofs for an employee. Assigned-HR upload remains fail-closed until an assigned-HR relationship is represented durably.",
         "requestBody": {
           "required": true,
           "content": {
@@ -113041,19 +113114,18 @@
                   "classification": {
                     "type": "string",
                     "enum": [
-                      "normal",
-                      "finance",
-                      "medical",
-                      "compensation",
-                      "legal",
-                      "audit"
+                      "normal"
                     ],
-                    "example": "finance"
+                    "description": "Server-enforced for employee proof uploads."
                   },
                   "document_type": {
                     "type": "string",
-                    "minLength": 1,
-                    "example": "receipt"
+                    "enum": [
+                      "identity_proof",
+                      "address_proof",
+                      "education_proof",
+                      "experience_proof"
+                    ]
                   },
                   "file_name": {
                     "type": "string",
@@ -113081,11 +113153,11 @@
                     "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                   }
                 },
-                "description": "EMS employee document upload metadata. The path employee user id is used as the business object id; binary storage is handled by the backend object-storage adapter."
+                "description": "Durable EMS employee-proof upload. The path employee user id is the immutable owner; the server accepts only the closed default proof purposes and enforces normal classification."
               }
             }
           },
-          "description": "EMS employee document upload metadata. The path employee user id is used as the business object id; binary storage is handled by the backend object-storage adapter."
+          "description": "Durable EMS employee-proof upload. The path employee user id is the immutable owner; the server accepts only the closed default proof purposes and enforces normal classification."
         },
         "parameters": [
           {
@@ -113098,6 +113170,17 @@
             "name": "user_id",
             "required": true,
             "description": "Employee user UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Stable key for one logical media upload. Reuse it only with the exact same payload after a timeout or lost response."
           }
         ],
         "security": [
@@ -133453,7 +133536,7 @@
         "tags": [
           "Admin / Configuration"
         ],
-        "description": "Uploads or replaces the active company logo through the backend private document storage adapter. The company-logo upload policy is returned from /api/v1/documents/upload-policy and uses stricter image-only size and compression limits.",
+        "description": "Durably replaces the active-company logo. The old logo remains current until object evidence and the PostgreSQL finalize transaction commit. The upload policy is returned from /api/v1/documents/upload-policy.",
         "requestBody": {
           "required": true,
           "content": {
@@ -133475,6 +133558,38 @@
             }
           }
         },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Stable key for one logical media upload. Reuse it only with the exact same payload after a timeout or lost response."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "in": "header",
+            "name": "x-expected-version",
+            "required": true,
+            "description": "Parent version from the latest company/user read."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-expected-pointer-document-id",
+            "required": true,
+            "description": "Current document UUID from the latest read, or the literal `none` when no media is attached."
+          }
+        ],
         "security": [
           {
             "sessionCookie": []

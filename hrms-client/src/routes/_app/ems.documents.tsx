@@ -40,6 +40,8 @@ import { useAuth } from "@/lib/auth";
 import { isUuid, pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { queryKeys } from "@/shared/query";
 import { prepareDocumentUploadFile, uploadPolicyAccept } from "@/shared/uploads/documents";
+import { isEmployeeProofPurpose, missingEmployeeProofs } from "@/shared/uploads/employee-proofs";
+import { createMediaIdempotencyKey } from "@/shared/uploads/media-command";
 
 export const Route = createFileRoute("/_app/ems/documents")({
   component: MyDocuments,
@@ -54,6 +56,7 @@ interface Doc {
   status: DocStatus;
   uploadedOn?: string;
   remarks?: string;
+  documentType?: string;
 }
 
 const DOCS: Doc[] = [
@@ -116,18 +119,34 @@ function statusToBadge(s: DocStatus) {
   return <StatusBadge status={m.status} label={m.label} />;
 }
 
-function MyDocuments() {
+export function MyDocuments() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const apiEnabled = useApiRouteEnabled(["/ems", "/documents"]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadLockRef = useRef(false);
   const [uploadTarget, setUploadTarget] = useState<Doc | null>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Doc | null>(null);
   const documentsQuery = useEmsEmployeeDocuments(user?.id, { page: 1, page_size: 100 }, apiEnabled);
   const uploadPolicyQuery = useDocumentUploadPolicy(apiEnabled);
   const uploadMutation = useEmsDocumentMutation(user?.id);
   const deleteMutation = useDocumentDeleteMutation();
-  const docs = apiEnabled ? mapApiDocuments(pageItems(documentsQuery.data)) : DOCS;
+  const apiDocumentRows = pageItems(documentsQuery.data);
+  const mappedApiDocuments: Doc[] = mapApiDocuments(apiDocumentRows)
+    .filter((document) => isEmployeeProofPurpose(document.category))
+    .map((document) => ({
+      ...document,
+      documentType: document.category,
+    }));
+  const docs = apiEnabled
+    ? [
+        ...mappedApiDocuments,
+        ...missingEmployeeProofs(
+          mappedApiDocuments.map(({ documentType }) => documentType ?? ""),
+        ).map((proof): Doc => ({ ...proof, status: "missing" })),
+      ]
+    : DOCS;
   const loading = apiEnabled && documentsQuery.isLoading;
   const error = documentsQuery.error instanceof Error ? documentsQuery.error : null;
 
@@ -175,6 +194,7 @@ function MyDocuments() {
       toast.error("User session is not ready.");
       return;
     }
+    if (uploadLockRef.current) return;
     setUploadTarget(document ?? null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -185,6 +205,13 @@ function MyDocuments() {
   async function uploadSelectedFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (uploadLockRef.current) {
+      event.target.value = "";
+      return;
+    }
+
+    uploadLockRef.current = true;
+    setUploadBusy(true);
 
     const target = uploadTarget;
     try {
@@ -192,20 +219,41 @@ function MyDocuments() {
       const formData = new FormData();
       formData.set("file", prepared.file);
       formData.set("classification", classificationFor(target));
-      formData.set("document_type", documentTypeFor(target));
+      const documentType = documentTypeFor(target);
+      if (!documentType) {
+        throw new Error(
+          "This document purpose is not enabled for secure employee-proof upload yet.",
+        );
+      }
+      formData.set("document_type", documentType);
       formData.set("file_name", prepared.file.name);
       formData.set("mime_type", prepared.file.type || "application/octet-stream");
       formData.set("size_bytes", String(prepared.file.size));
-      if (target && isUuid(target.id)) {
-        formData.set("replace_document_id", target.id);
+      const isReplacement = Boolean(target && isUuid(target.id));
+      if (isReplacement) {
+        formData.set("replace_document_id", target!.id);
       }
-      await uploadMutation.mutateAsync(formData);
-      toast.success(target ? "Replacement uploaded" : "Document uploaded", {
+      const idempotencyKey = await createMediaIdempotencyKey({
+        operation: "create_employee_document",
+        parentId: user!.id,
+        expectedVersion: null,
+        expectedPointerDocumentId: isReplacement ? target!.id : null,
+        file: prepared.file,
+        fileName: prepared.file.name,
+        mimeType: prepared.file.type,
+        documentType,
+      });
+      await uploadMutation.mutateAsync({ input: formData, idempotencyKey });
+      toast.success(isReplacement ? "Replacement uploaded" : "Document uploaded", {
         description: `${prepared.file.name} is pending verification.`,
       });
       setUploadTarget(null);
     } catch (uploadError) {
       toast.error(uploadError instanceof Error ? uploadError.message : "Document upload failed.");
+    } finally {
+      uploadLockRef.current = false;
+      setUploadBusy(false);
+      event.target.value = "";
     }
   }
 
@@ -216,6 +264,7 @@ function MyDocuments() {
         type="file"
         accept={uploadPolicyAccept(uploadPolicyQuery.data)}
         className="sr-only"
+        disabled={uploadBusy || uploadMutation.isPending}
         onChange={(event) => void uploadSelectedFile(event)}
       />
 
@@ -226,11 +275,16 @@ function MyDocuments() {
         <Button
           size="sm"
           className="rounded-full"
+          disabled={apiEnabled}
           onClick={() => startUpload()}
-          disabled={apiEnabled && uploadMutation.isPending}
+          title={
+            apiEnabled
+              ? "Choose a required proof card so its purpose is server-validated."
+              : undefined
+          }
         >
           <Upload className="mr-1.5 h-3.5 w-3.5" />
-          {apiEnabled && uploadMutation.isPending ? "Uploading" : "Upload document"}
+          {apiEnabled ? "Choose a proof below" : "Upload document"}
         </Button>
       </div>
 
@@ -272,7 +326,7 @@ function MyDocuments() {
                       size="sm"
                       className="rounded-full"
                       onClick={() => startUpload(d)}
-                      disabled={apiEnabled && uploadMutation.isPending}
+                      disabled={apiEnabled && (uploadBusy || uploadMutation.isPending)}
                     >
                       <Upload className="mr-1.5 h-3.5 w-3.5" /> Upload
                     </Button>
@@ -299,7 +353,7 @@ function MyDocuments() {
                         variant="ghost"
                         className="rounded-full"
                         onClick={() => startUpload(d)}
-                        disabled={apiEnabled && uploadMutation.isPending}
+                        disabled={apiEnabled && (uploadBusy || uploadMutation.isPending)}
                       >
                         <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Replace
                       </Button>
@@ -310,13 +364,11 @@ function MyDocuments() {
                       size="sm"
                       variant="ghost"
                       className="rounded-full text-destructive hover:text-destructive"
-                      onClick={() => requestDeleteDocument(d)}
-                      disabled={deleteMutation.isPending}
+                      disabled
+                      title="Logical proof removal is not enabled until the retention policy is approved."
                     >
                       <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                      {deleteMutation.isPending && deleteMutation.variables === d.id
-                        ? "Deleting"
-                        : "Delete"}
+                      Removal unavailable
                     </Button>
                   )}
                 </div>
@@ -408,8 +460,21 @@ function DeleteDocumentDialog({
   );
 }
 
-function documentTypeFor(document: Doc | null): string {
-  return slug(document?.category || document?.name || "employee_document");
+function documentTypeFor(document: Doc | null): string | null {
+  if (!document) return null;
+  if (document.documentType) return document.documentType;
+  const value = `${document.category} ${document.name}`.toLowerCase();
+  if (value.includes("address")) return "address_proof";
+  if (value.includes("education")) return "education_proof";
+  if (value.includes("experience")) return "experience_proof";
+  if (
+    value.includes("identity") ||
+    value.includes("passport") ||
+    value.includes("pan card") ||
+    value.includes("aadhaar")
+  )
+    return "identity_proof";
+  return null;
 }
 
 function classificationFor(document: Doc | null): EmsDocumentUploadBody["classification"] {

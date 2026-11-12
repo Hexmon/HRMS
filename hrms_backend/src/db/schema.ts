@@ -2107,6 +2107,7 @@ export const docMetadata = documents.table(
   "doc_metadata",
   {
     id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id"),
     businessObjectType: text("business_object_type").notNull(),
     businessObjectId: uuid("business_object_id").notNull(),
     ownerUserId: uuid("owner_user_id"),
@@ -2122,14 +2123,132 @@ export const docMetadata = documents.table(
     createdByUserId: uuid("created_by_user_id").notNull(),
     createdAt,
     updatedAt,
-    deletedAt
+    deletedAt,
+    lifecycleState: text("lifecycle_state").notNull().default("quarantined"),
+    replacedByDocumentId: uuid("replaced_by_document_id"),
+    lifecycleReason: text("lifecycle_reason")
   },
   (table) => [
+    check(
+      "documents_metadata_lifecycle_state_ck",
+      sql`${table.lifecycleState} IN ('staged','active','replaced','tombstoned','quarantined')`,
+    ),
+    check(
+      "documents_metadata_tenant_state_company_ck",
+      sql`${table.lifecycleState} = 'quarantined' OR (${table.companyId} IS NOT NULL AND ${table.lifecycleState} IN ('staged','active','replaced','tombstoned'))`,
+    ),
+    foreignKey({
+      columns: [table.replacedByDocumentId],
+      foreignColumns: [table.id],
+      name: "documents_metadata_replaced_by_fk",
+    }),
     index("documents_metadata_business_object_idx").on(table.businessObjectType, table.businessObjectId),
     index("documents_metadata_owner_classification_idx").on(table.ownerUserId, table.classification),
     index("documents_metadata_type_created_idx").on(table.documentType, table.createdAt),
-    uniqueIndex("documents_metadata_storage_key_uq").on(table.storageKey)
+    uniqueIndex("documents_metadata_storage_key_uq").on(table.storageKey),
+    index("documents_metadata_company_lifecycle_idx")
+      .on(table.companyId, table.lifecycleState, table.createdAt.desc(), table.id.desc()),
+    index("documents_metadata_replacement_idx")
+      .on(table.replacedByDocumentId)
+      .where(sql`${table.replacedByDocumentId} IS NOT NULL`)
   ]
+);
+
+export const documentOwnerRepairAudit = documents.table(
+  "document_owner_repair_audit",
+  {
+    documentId: uuid("document_id").primaryKey(),
+    repairedCompanyId: uuid("repaired_company_id").notNull(),
+    evidenceReference: text("evidence_reference").notNull(),
+    evidenceSha256: text("evidence_sha256").notNull(),
+    reviewedBy: text("reviewed_by").notNull(),
+    appliedBy: text("applied_by").notNull(),
+    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check("document_owner_repair_audit_evidence_sha256_ck", sql`${table.evidenceSha256} ~ '^[0-9a-f]{64}$'`),
+  ],
+);
+
+export const mediaUploadIntents = documents.table(
+  "media_upload_intents",
+  {
+    id: uuidPk,
+    companyId: uuid("company_id").notNull(),
+    actorUserId: uuid("actor_user_id").notNull(),
+    operation: text("operation").notNull(),
+    parentType: text("parent_type").notNull(),
+    parentId: uuid("parent_id").notNull(),
+    businessObjectType: text("business_object_type").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestFingerprint: text("request_fingerprint").notNull(),
+    objectKey: text("object_key").notNull(),
+    documentId: uuid("document_id").notNull(),
+    expectedPointerDocumentId: uuid("expected_pointer_document_id"),
+    expectedParentVersion: integer("expected_parent_version"),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    measuredSizeBytes: bigint("measured_size_bytes", { mode: "number" }).notNull(),
+    checksumSha256: text("checksum_sha256").notNull(),
+    classification: text("classification").notNull(),
+    documentType: text("document_type").notNull(),
+    ownerUserId: uuid("owner_user_id"),
+    state: text("state").notNull().default("prepared"),
+    providerEtag: text("provider_etag"),
+    providerSizeBytes: bigint("provider_size_bytes", { mode: "number" }),
+    providerMetadata: jsonb("provider_metadata").notNull().default({}),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastSafeError: text("last_safe_error"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    check("media_upload_intents_operation_ck", sql`${table.operation} IN ('create','replace_company_logo','replace_profile_photo')`),
+    check("media_upload_intents_parent_type_ck", sql`${table.parentType} IN ('generic','company_profile','core_user')`),
+    check("media_upload_intents_request_fingerprint_ck", sql`${table.requestFingerprint} ~ '^[0-9a-f]{64}$'`),
+    check("media_upload_intents_measured_size_bytes_ck", sql`${table.measuredSizeBytes} > 0`),
+    check("media_upload_intents_checksum_sha256_ck", sql`${table.checksumSha256} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "media_upload_intents_state_ck",
+      sql`${table.state} IN ('prepared','uploading','retry_wait','object_confirmed','finalized','quarantined','failed')`,
+    ),
+    check("media_upload_intents_attempt_count_ck", sql`${table.attemptCount} >= 0`),
+    uniqueIndex("media_upload_intents_scope_key_uq").on(
+      table.companyId, table.actorUserId, table.operation, table.idempotencyKey,
+    ),
+    uniqueIndex("media_upload_intents_object_key_uq").on(table.objectKey),
+    uniqueIndex("media_upload_intents_document_id_uq").on(table.documentId),
+    index("media_upload_intents_reconcile_idx")
+      .on(table.state, table.leaseExpiresAt, table.createdAt, table.id)
+      .where(sql`${table.state} IN ('prepared','uploading','retry_wait','object_confirmed')`),
+    index("media_upload_intents_parent_idx")
+      .on(table.companyId, table.parentType, table.parentId, table.createdAt.desc()),
+  ],
+);
+
+export const mediaLifecycleAudit = documents.table(
+  "media_lifecycle_audit",
+  {
+    id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
+    documentId: uuid("document_id").notNull(),
+    intentId: uuid("intent_id"),
+    actorUserId: uuid("actor_user_id").notNull(),
+    action: text("action").notNull(),
+    previousState: text("previous_state"),
+    newState: text("new_state").notNull(),
+    evidence: jsonb("evidence").notNull().default({}),
+    createdAt,
+  },
+  (table) => [
+    index("media_lifecycle_audit_company_document_idx").on(
+      table.companyId, table.documentId, table.createdAt, table.id,
+    ),
+  ],
 );
 
 export const docVersions = documents.table(

@@ -16,6 +16,7 @@ import { EMPLOYEES, type Employee, type AuditEntry, type RoleHistoryEntry } from
 import { DEPARTMENTS as SEED_DEPTS, type Department } from "./mock/departments";
 import { DESIGNATIONS as SEED_DESIGS, type Designation } from "./mock/designations";
 import type { ProfilePhotoPolicy } from "@/shared/uploads/profile-photo";
+import { createMediaIdempotencyKey } from "@/shared/uploads/media-command";
 
 const EMP_KEY = "hawkaii_employees_v2";
 const DEPT_KEY = "hawkaii_departments_v1";
@@ -337,10 +338,24 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
   });
 
   const profilePhotoMutation = useMutation({
-    mutationFn: ({ userId, file }: { userId: string; file: File }) => {
+    mutationFn: ({
+      userId,
+      file,
+      employee,
+      idempotencyKey,
+    }: {
+      userId: string;
+      file: File;
+      employee: Employee;
+      idempotencyKey: string;
+    }) => {
       const formData = new FormData();
       formData.set("file", file);
-      return coreApi.uploadProfilePhoto(userId, formData);
+      return coreApi.uploadProfilePhoto(userId, formData, {
+        idempotencyKey,
+        expectedVersion: employee.version ?? 1,
+        expectedPointerDocumentId: employee.profilePhotoDocumentId ?? null,
+      });
     },
     onSuccess: invalidateCoreUsers,
   });
@@ -368,7 +383,23 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
       if (!apiUserId) {
         throw new Error("Employee must be saved before uploading a profile photo.");
       }
-      const response = await profilePhotoMutation.mutateAsync({ userId: apiUserId, file });
+      if (!current)
+        throw new Error("Employee state is unavailable for a safe profile photo replacement.");
+      const idempotencyKey = await createMediaIdempotencyKey({
+        operation: "replace_profile_photo",
+        parentId: apiUserId,
+        expectedVersion: current.version ?? 1,
+        expectedPointerDocumentId: current.profilePhotoDocumentId ?? null,
+        file,
+        fileName: file.name,
+        mimeType: file.type,
+      });
+      const response = await profilePhotoMutation.mutateAsync({
+        userId: apiUserId,
+        file,
+        employee: current,
+        idempotencyKey,
+      });
       return mapApiUserToEmployee(response, current);
     }
     const previewUrl = URL.createObjectURL(file);

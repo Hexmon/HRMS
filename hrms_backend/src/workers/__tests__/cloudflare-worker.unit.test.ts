@@ -60,6 +60,7 @@ describe("Cloudflare Worker cutover gate and schedules", () => {
       { kind: "outbox" },
       { kind: "outbox" },
       { kind: "attendance", referenceIso: "2026-05-20T14:00:00.000Z" },
+      { kind: "media" },
       { kind: "purge" },
     ]);
   });

@@ -11,6 +11,13 @@ Do not commit real secret values. Store hosted secrets in GitHub, Render, Vercel
 - `PROD_RENDER_API_DEPLOY_HOOK_URL`
 - `PROD_RENDER_WORKER_DEPLOY_HOOK_URL`
 
+## Cloudflare Worker Bindings Per Environment
+
+- GitHub environment variable `R2_BUCKET_NAME` — exact private R2 bucket name used to generate the Worker `MEDIA_BUCKET` binding; it must match the corresponding Render API value and differ across dev, QA and production.
+- `HYPERDRIVE` — environment-specific PostgreSQL binding used for durable intent leases/finalization.
+
+These are provider bindings, not values to paste into source or chat. Keep the R2 bucket public development URL and custom domains disabled.
+
 ## Render Backend Secrets Per Environment
 
 - `DATABASE_URL`

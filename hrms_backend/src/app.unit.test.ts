@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp, isTransactionOwnedMutationRoute } from "./app.js";
 import { createMemoryDataStore, type DataStorePersistence, type MemoryDataStore } from "./platform/data-store.js";
 import { authHeader, loginAs } from "#testing";
 
@@ -18,6 +18,20 @@ describe("app persistence flushing", () => {
     } else {
       process.env.APP_ENV = originalAppEnv;
     }
+  });
+
+  it("keeps every durable media mutation outside legacy persistence flushing", () => {
+    expect([
+      "POST /api/v1/documents",
+      "POST /api/v1/admin/company-profile/logo",
+      "POST /api/v1/ems/employees/user-1/documents",
+      "POST /api/v1/core/users/user-1/profile-photo",
+      "DELETE /api/v1/core/users/user-1/profile-photo",
+    ].every(isTransactionOwnedMutationRoute)).toBe(true);
+    expect(isTransactionOwnedMutationRoute("DELETE /api/v1/documents/document-1")).toBe(false);
+    expect(isTransactionOwnedMutationRoute("POST /api/v1/ems/employees/user-1/documents/extra")).toBe(false);
+    expect(isTransactionOwnedMutationRoute("PUT /api/v1/ems/employees/user-1/documents")).toBe(false);
+    expect(isTransactionOwnedMutationRoute("POST /api/v1/core/users/user-1/profile-photo/extra")).toBe(false);
   });
 
   it("uses auth-only persistence for signup, email verification, and password setup mutations", async () => {
