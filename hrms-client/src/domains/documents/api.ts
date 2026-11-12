@@ -1,4 +1,4 @@
-import { apiRequest } from "@/shared/api";
+import { apiBlobRequest, apiRequest } from "@/shared/api";
 import type { ApiRecord, PageQuery, PaginatedResponse } from "@/shared/api";
 
 export const documentsApi = {
@@ -23,8 +23,11 @@ export const documentsApi = {
   deleteDocument(id: string) {
     return apiRequest<ApiRecord>(`/api/v1/documents/${id}`, { method: "DELETE" });
   },
-  createDownloadUrl(id: string) {
-    return apiRequest<ApiRecord>(`/api/v1/documents/${id}/download-url`, { method: "POST" });
+  async createDownloadUrl(id: string) {
+    const blob = await apiBlobRequest(`/api/v1/documents/${id}/content`);
+    const url = URL.createObjectURL(blob);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return { document_id: id, url, expires_in_seconds: 60 };
   },
   verify(id: string, input: ApiRecord) {
     return apiRequest<ApiRecord>(`/api/v1/documents/${id}/verify`, { method: "POST", body: input });
@@ -43,7 +46,6 @@ export interface DocumentUploadPolicy {
   image_jpeg_quality: number;
   allowed_mime_types: string[];
   image_output_mime_type: "image/jpeg";
-  cloudinary_transformation: string;
   company_logo?: {
     max_bytes: number;
     image_max_width: number;
@@ -51,6 +53,5 @@ export interface DocumentUploadPolicy {
     image_jpeg_quality: number;
     allowed_mime_types: string[];
     image_output_mime_type: "image/jpeg";
-    cloudinary_transformation: string;
   };
 }

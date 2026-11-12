@@ -303,7 +303,6 @@ function profilePhotoPolicyFromConfig(config: FastifyInstance["config"]): Profil
       .map((value) => value.trim().toLowerCase())
       .filter(Boolean),
     output_mime_type: "image/jpeg",
-    cloudinary_transformation: config.PROFILE_PHOTO_CLOUDINARY_TRANSFORMATION
   };
 }
 

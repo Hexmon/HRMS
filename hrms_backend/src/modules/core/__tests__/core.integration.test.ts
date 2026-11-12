@@ -432,7 +432,6 @@ describe("core hierarchy API", () => {
       mime_type: "image/jpeg"
     });
     expect(document?.metadata).toMatchObject({
-      cloudinary_upload_compressed: app.store.objectStorage?.kind === "cloudinary",
       stored_size_bytes: body.length
     });
 

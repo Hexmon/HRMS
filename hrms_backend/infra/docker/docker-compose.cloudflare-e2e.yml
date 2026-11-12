@@ -13,10 +13,7 @@ x-backend-environment: &backend-environment
   TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform_test
   VALKEY_URL: redis://valkey:6379
   HRMS_DATA_STORE: postgres
-  CLOUDINARY_MOCK_UPLOADS: "true"
-  CLOUDINARY_CLOUD_NAME: local-cloudinary-mock
-  CLOUDINARY_API_KEY: local-cloudinary-key
-  CLOUDINARY_API_SECRET: local-cloudinary-secret
+  OBJECT_STORAGE_DRIVER: memory
   JWT_ACCESS_SECRET: local-e2e-access-secret-change-me
   JWT_REFRESH_SECRET: local-e2e-refresh-secret-change-me
   LOCAL_DEMO_PASSWORD: LocalDev@123

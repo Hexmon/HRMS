@@ -414,10 +414,7 @@ export interface LicenseActivation {
 
 export interface ObjectStoragePutResult {
   size: number;
-  url?: string;
-  publicId?: string;
-  resourceType?: "image" | "raw" | "video";
-  compressed?: boolean;
+  etag?: string;
 }
 
 export interface ObjectStorageGetResult {
@@ -427,14 +424,13 @@ export interface ObjectStorageGetResult {
 }
 
 export interface ObjectStoragePort {
-  readonly kind: "memory" | "cloudinary";
+  readonly kind: "memory" | "r2";
   readonly bucket: string;
   putObject(
     key: string,
     body: Buffer,
     metadata?: Record<string, string>,
   ): Promise<ObjectStoragePutResult>;
-  presignedGetUrl(key: string, expiresInSeconds: number): Promise<string>;
   getObject(key: string): Promise<ObjectStorageGetResult | null>;
   statObject(key: string): Promise<{ size: number } | null>;
   removeObject(key: string): Promise<void>;
@@ -722,7 +718,6 @@ export interface MediaUploadPolicy {
   imageJpegQuality: number;
   allowedMimeTypes: string[];
   imageOutputMimeType: "image/jpeg";
-  cloudinaryTransformation: string;
 }
 
 export interface DataStore {
@@ -2760,7 +2755,6 @@ function defaultMediaUploadPolicy(): MediaUploadPolicy {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ],
     imageOutputMimeType: "image/jpeg",
-    cloudinaryTransformation: "q_auto:eco,f_auto",
   };
 }
 
@@ -2772,7 +2766,6 @@ function defaultCompanyLogoUploadPolicy(): MediaUploadPolicy {
     imageJpegQuality: 0.82,
     allowedMimeTypes: ["image/jpeg", "image/png", "image/webp"],
     imageOutputMimeType: "image/jpeg",
-    cloudinaryTransformation: "c_fit,w_512,h_512,q_auto:eco,f_auto",
   };
 }
 
@@ -2801,8 +2794,7 @@ export function makeStorageKey(input: {
 }): string {
   const safe = sanitizeFilename(input.fileName);
   const ext = safe.includes(".") ? (safe.split(".").at(-1) ?? "bin") : "bin";
-  const date = new Date().toISOString().slice(0, 10);
-  return `${date}_${input.actor.employee_code}_${sanitizeFilename(input.documentType).replace(/\.[^.]+$/u, "")}_v${input.version}_${randomUUID()}.${ext}`;
+  return `${randomUUID()}/${randomUUID()}.${ext}`;
 }
 
 export function getRequiredDocuments(

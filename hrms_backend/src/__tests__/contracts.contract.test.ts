@@ -1213,10 +1213,11 @@ describe("API contracts", () => {
     const previousAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
     const previousLogLevel = process.env.LOG_LEVEL;
     const previousEmailMode = process.env.EMAIL_DELIVERY_MODE;
-    const previousCloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const previousCloudinaryApiKey = process.env.CLOUDINARY_API_KEY;
-    const previousCloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET;
-    const previousCloudinaryMockUploads = process.env.CLOUDINARY_MOCK_UPLOADS;
+    const previousObjectStorageDriver = process.env.OBJECT_STORAGE_DRIVER;
+    const previousR2AccountId = process.env.R2_ACCOUNT_ID;
+    const previousR2AccessKeyId = process.env.R2_ACCESS_KEY_ID;
+    const previousR2SecretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+    const previousR2BucketName = process.env.R2_BUCKET_NAME;
     const previousResendApiKey = process.env.RESEND_API_KEY;
     const previousResendFromEmail = process.env.RESEND_FROM_EMAIL;
     const previousResendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
@@ -1225,10 +1226,11 @@ describe("API contracts", () => {
     process.env.CORS_ALLOWED_ORIGINS = "https://hrms.example.com";
     process.env.LOG_LEVEL = "warn";
     process.env.EMAIL_DELIVERY_MODE = "send";
-    process.env.CLOUDINARY_CLOUD_NAME = "prod-contract-cloud";
-    process.env.CLOUDINARY_API_KEY = "prod-contract-cloudinary-key";
-    process.env.CLOUDINARY_API_SECRET = "prod-contract-cloudinary-secret";
-    process.env.CLOUDINARY_MOCK_UPLOADS = "false";
+    process.env.OBJECT_STORAGE_DRIVER = "r2";
+    process.env.R2_ACCOUNT_ID = "0123456789abcdef0123456789abcdef";
+    process.env.R2_ACCESS_KEY_ID = "prod-contract-access-key";
+    process.env.R2_SECRET_ACCESS_KEY = "prod-contract-secret-key";
+    process.env.R2_BUCKET_NAME = "prod-contract-private-bucket";
     process.env.RESEND_API_KEY = "test-resend-api-key";
     process.env.RESEND_FROM_EMAIL = "verify@example.test";
     process.env.RESEND_WEBHOOK_SECRET = "test-resend-webhook-secret";
@@ -1301,25 +1303,30 @@ describe("API contracts", () => {
       } else {
         process.env.EMAIL_DELIVERY_MODE = previousEmailMode;
       }
-      if (previousCloudinaryCloudName === undefined) {
-        delete process.env.CLOUDINARY_CLOUD_NAME;
+      if (previousObjectStorageDriver === undefined) {
+        delete process.env.OBJECT_STORAGE_DRIVER;
       } else {
-        process.env.CLOUDINARY_CLOUD_NAME = previousCloudinaryCloudName;
+        process.env.OBJECT_STORAGE_DRIVER = previousObjectStorageDriver;
       }
-      if (previousCloudinaryApiKey === undefined) {
-        delete process.env.CLOUDINARY_API_KEY;
+      if (previousR2AccountId === undefined) {
+        delete process.env.R2_ACCOUNT_ID;
       } else {
-        process.env.CLOUDINARY_API_KEY = previousCloudinaryApiKey;
+        process.env.R2_ACCOUNT_ID = previousR2AccountId;
       }
-      if (previousCloudinaryApiSecret === undefined) {
-        delete process.env.CLOUDINARY_API_SECRET;
+      if (previousR2AccessKeyId === undefined) {
+        delete process.env.R2_ACCESS_KEY_ID;
       } else {
-        process.env.CLOUDINARY_API_SECRET = previousCloudinaryApiSecret;
+        process.env.R2_ACCESS_KEY_ID = previousR2AccessKeyId;
       }
-      if (previousCloudinaryMockUploads === undefined) {
-        delete process.env.CLOUDINARY_MOCK_UPLOADS;
+      if (previousR2SecretAccessKey === undefined) {
+        delete process.env.R2_SECRET_ACCESS_KEY;
       } else {
-        process.env.CLOUDINARY_MOCK_UPLOADS = previousCloudinaryMockUploads;
+        process.env.R2_SECRET_ACCESS_KEY = previousR2SecretAccessKey;
+      }
+      if (previousR2BucketName === undefined) {
+        delete process.env.R2_BUCKET_NAME;
+      } else {
+        process.env.R2_BUCKET_NAME = previousR2BucketName;
       }
       if (previousResendApiKey === undefined) {
         delete process.env.RESEND_API_KEY;
@@ -2027,7 +2034,7 @@ describe("API contracts", () => {
     const serialized = JSON.stringify(spec);
 
     expect(serialized).not.toMatch(/JWT_(ACCESS|REFRESH)_SECRET/iu);
-    expect(serialized).not.toMatch(/CLOUDINARY_API_SECRET|VALKEY_PASSWORD/iu);
+    expect(serialized).not.toMatch(/R2_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY)|VALKEY_PASSWORD/iu);
     expect(serialized).not.toMatch(/postgres:\/\/postgres:postgres/iu);
 
     const packageJson = readFileSync(

@@ -44,7 +44,7 @@ If local readiness fails:
 1. Confirm Docker Postgres and Valkey are running.
 2. Confirm `DATABASE_URL` points to local DB.
 3. Run `pnpm db:migrate`.
-4. Check Cloudinary/mock upload config.
+4. Check private R2/memory object-storage config for the target environment.
 
 ## Frontend Smoke
 

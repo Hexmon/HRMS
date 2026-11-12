@@ -38,7 +38,7 @@ import type {
   EmailDeliveryMode,
   EmailDeliveryStatus,
 } from "../../platform/email/types.js";
-import { DocumentService } from "../documents/service.js";
+import { DocumentService, presentDocument } from "../documents/service.js";
 import { AuthRepository } from "./repository.js";
 import type {
   CompanyBootstrapInput,
@@ -602,17 +602,10 @@ export class AuthService {
       mime_type: input.mime_type.trim().toLowerCase(),
       size_bytes: input.size_bytes,
       file_buffer: input.file_buffer,
-      storage_metadata: {
-        "x-cloudinary-transformation":
-          this.store.documentProcessing.mediaUploads.cloudinaryTransformation,
-      },
+      storage_metadata: { "x-hrms-company-logo": "true" },
     });
-    const objectUrl =
-      stringFromMetadata(document.metadata.cloudinary_url) ??
-      stringFromMetadata(document.metadata.object_url);
     company.logo_document_id = document.id;
-    company.logo_url =
-      objectUrl && /^https?:\/\//iu.test(objectUrl) ? objectUrl : null;
+    company.logo_url = `/api/v1/documents/${document.id}/content`;
     company.logo_file_name = document.file_name;
     company.logo_mime_type = document.mime_type;
     company.logo_size_bytes = document.size_bytes;
@@ -621,7 +614,7 @@ export class AuthService {
 
     return {
       company: presentCompany(company),
-      document,
+      document: presentDocument(document),
     };
   }
 

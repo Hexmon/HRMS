@@ -992,14 +992,12 @@ const adminCompanyProfileSchema = {
     logo_url: {
       type: "string",
       nullable: true,
-      example:
-        "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg",
+      example: "/api/v1/documents/00000000-0000-4000-8000-000000000001/content",
     },
     logoUrl: {
       type: "string",
       nullable: true,
-      example:
-        "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg",
+      example: "/api/v1/documents/00000000-0000-4000-8000-000000000001/content",
     },
     logo_file_name: {
       type: "string",
@@ -2240,7 +2238,7 @@ const coreUserListItemSchema = {
     profile_photo_url: {
       type: "string",
       nullable: true,
-      example: "https://res.cloudinary.com/example/image/upload/profile.jpg",
+      example: "/api/v1/documents/00000000-0000-4000-8000-000000000001/content",
     },
   },
   additionalProperties: true,
@@ -2448,7 +2446,6 @@ const coreProfilePhotoPolicySchema = {
     "jpeg_quality",
     "allowed_mime_types",
     "output_mime_type",
-    "cloudinary_transformation",
   ],
   properties: {
     max_bytes: { type: "integer", minimum: 1, example: 2097152 },
@@ -2466,10 +2463,6 @@ const coreProfilePhotoPolicySchema = {
       example: ["image/jpeg", "image/png", "image/webp"],
     },
     output_mime_type: { type: "string", example: "image/jpeg" },
-    cloudinary_transformation: {
-      type: "string",
-      example: "c_fill,g_face,w_512,h_512,q_auto:eco,f_auto",
-    },
   },
   additionalProperties: false,
 };
@@ -3446,23 +3439,46 @@ const documentSchema = {
     "business_object_id",
     "classification",
     "document_type",
+    "current_version",
+    "file_name",
+    "mime_type",
+    "size_bytes",
+    "metadata",
+    "created_by_user_id",
+    "created_at",
+    "updated_at",
   ],
   properties: {
     id: uuid("Document metadata UUID"),
     business_object_type: { type: "string", example: "expense_ticket" },
     business_object_id: uuid("Business object UUID"),
+    owner_user_id: { ...uuid("Document owner user UUID"), nullable: true },
     classification: {
       type: "string",
       enum: ["normal", "finance", "medical", "compensation", "legal", "audit"],
       example: "finance",
     },
     document_type: { type: "string", example: "receipt" },
+    current_version: { type: "integer", minimum: 1, example: 1 },
     file_name: { type: "string", example: "receipt.pdf" },
     mime_type: { type: "string", example: "application/pdf" },
     size_bytes: { type: "integer", minimum: 1, example: 2000 },
-    verification_status: { type: "string", example: "pending" },
+    checksum_sha256: { type: "string", nullable: true },
+    metadata: {
+      type: "object",
+      properties: {
+        verified_at: { ...dateTime("Verification timestamp"), nullable: true },
+        verified_by: { ...uuid("Verification actor UUID"), nullable: true },
+        rejection_reason: { type: "string", nullable: true },
+      },
+      additionalProperties: false,
+    },
+    created_by_user_id: uuid("Uploader user UUID"),
+    created_at: dateTime("Created timestamp"),
+    updated_at: dateTime("Updated timestamp"),
+    deleted_at: { ...dateTime("Deleted timestamp"), nullable: true },
   },
-  additionalProperties: true,
+  additionalProperties: false,
 };
 
 const dashboardMetricSchema = {
@@ -6284,7 +6300,7 @@ const attendanceExportResponseSchema = {
       nullable: true,
     },
     download_url: { type: "string", nullable: true },
-    adapter: { type: "string", example: "cloudinary-generated-csv" },
+    adapter: { type: "string", example: "private-object-storage" },
     file_name: {
       type: "string",
       nullable: true,
@@ -6671,7 +6687,7 @@ const leaveWfhExportResponseSchema = {
       nullable: true,
     },
     download_url: { type: "string", nullable: true },
-    adapter: { type: "string", example: "cloudinary-generated-csv" },
+    adapter: { type: "string", example: "private-object-storage" },
     file_name: {
       type: "string",
       nullable: true,
@@ -7763,7 +7779,7 @@ const reportExportJobSchema = {
       nullable: true,
     },
     download_url: { type: "string", nullable: true },
-    adapter: { type: "string", example: "cloudinary-generated-csv" },
+    adapter: { type: "string", example: "private-object-storage" },
     file_name: {
       type: "string",
       nullable: true,
@@ -9417,7 +9433,6 @@ const documentUploadPolicySchema = {
     "image_jpeg_quality",
     "allowed_mime_types",
     "image_output_mime_type",
-    "cloudinary_transformation",
     "company_logo",
   ],
   properties: {
@@ -9440,7 +9455,6 @@ const documentUploadPolicySchema = {
       enum: ["image/jpeg"],
       example: "image/jpeg",
     },
-    cloudinary_transformation: { type: "string", example: "q_auto:eco,f_auto" },
     company_logo: {
       type: "object",
       required: [
@@ -9450,7 +9464,6 @@ const documentUploadPolicySchema = {
         "image_jpeg_quality",
         "allowed_mime_types",
         "image_output_mime_type",
-        "cloudinary_transformation",
       ],
       properties: {
         max_bytes: { type: "integer", minimum: 51200, example: 2097152 },
@@ -9471,10 +9484,6 @@ const documentUploadPolicySchema = {
           type: "string",
           enum: ["image/jpeg"],
           example: "image/jpeg",
-        },
-        cloudinary_transformation: {
-          type: "string",
-          example: "c_fit,w_512,h_512,q_auto:eco,f_auto",
         },
       },
       additionalProperties: false,
@@ -9621,7 +9630,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/onboarding/company-logo": operation(
     "Auth & Sessions",
     "Upload onboarding company logo",
-    "Uploads the pending company logo through the backend object-storage adapter using an active company bootstrap token. Images follow the global media upload policy and are transformed by Cloudinary when real storage is configured.",
+    "Uploads the pending company logo through the backend private object-storage adapter using an active company bootstrap token.",
     {
       body: companyLogoUploadBodySchema,
       response200: {
@@ -9844,7 +9853,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/core/users/profile-photo-policy": operation(
     "Core / Employees & Hierarchy",
     "Get profile photo upload policy",
-    "Returns backend-owned profile photo upload limits, allowed image MIME types, compression dimensions, and Cloudinary upload transformation so clients can compress before upload.",
+    "Returns backend-owned profile photo upload limits, allowed image MIME types, and compression dimensions.",
     { response200: coreProfilePhotoPolicySchema },
   ),
   "GET /api/v1/core/users/{id}": operation(
@@ -9866,7 +9875,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/core/users/{id}/profile-photo": operation(
     "Core / Employees & Hierarchy",
     "Upload profile photo",
-    "Uploads a compressed employee profile photo through the document storage pipeline. Admin/HR can update employee photos; employees can update their own. Real storage uses Cloudinary with a profile-specific transformation.",
+    "Uploads a compressed employee profile photo through the private document storage pipeline. Admin/HR can update employee photos; employees can update their own.",
     {
       params: idParamSchema,
       body: coreProfilePhotoUploadBodySchema,
@@ -11299,7 +11308,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/admin/company-profile/logo": operation(
     "Admin / Configuration",
     "Upload company logo",
-    "Uploads or replaces the active company logo through the backend document storage adapter. The company-logo upload policy is returned from /api/v1/documents/upload-policy and uses stricter image-only size and compression limits before Cloudinary upload.",
+    "Uploads or replaces the active company logo through the backend private document storage adapter. The company-logo upload policy is returned from /api/v1/documents/upload-policy and uses stricter image-only size and compression limits.",
     {
       body: adminCompanyLogoUploadBodySchema,
       response200: {
@@ -12119,7 +12128,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/documents/upload-policy": operation(
     "Documents",
     "Get media upload policy",
-    "Returns backend-owned media upload limits, allowed MIME types, image compression settings, and Cloudinary transformation used by EMS, expenses, projects, helpdesk, and document uploads.",
+    "Returns backend-owned media upload limits, allowed MIME types, and image compression settings used by EMS, expenses, projects, helpdesk, and document uploads.",
     { response200: documentUploadPolicySchema },
   ),
   "GET /api/v1/documents/{id}": operation(
@@ -12152,15 +12161,16 @@ const routeDocs: Record<string, RouteSchema> = {
       params: idParamSchema,
       response200: {
         type: "object",
-        required: ["url", "expires_at"],
+        required: ["document_id", "url", "expires_in_seconds"],
         properties: {
+          document_id: uuid("Document metadata UUID"),
           url: {
             type: "string",
             format: "uri",
             example:
-              "http://localhost:3001/api/v1/documents/downloads/local-token",
+              "http://localhost:3001/api/v1/documents/00000000-0000-4000-8000-000000000001/content",
           },
-          expires_at: dateTime("Download URL expiration"),
+          expires_in_seconds: { type: "integer", minimum: 0, example: 0 },
         },
       },
     },
@@ -12168,7 +12178,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/documents/{id}/content": operation(
     "Documents",
     "Download local document content",
-    "Streams permitted document bytes through the backend after policy checks. Generated export documents fail closed pending private storage migration; ordinary Cloudinary document policy is a separate prelaunch dependency.",
+    "Streams permitted document bytes through the authenticated backend after policy checks. Generated exports and tenant-unowned document classes remain fail closed pending their dedicated ownership and lifecycle work.",
     {
       params: idParamSchema,
       response200: { type: "string", format: "binary" },

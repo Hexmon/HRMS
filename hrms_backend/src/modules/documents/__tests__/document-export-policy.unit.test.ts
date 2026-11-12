@@ -23,7 +23,7 @@ describe("generated and public document policy", () => {
   });
 
   it("denies legacy generated exports on metadata, URL and byte paths", () => {
-    const publicDocument = { ...document, document_type: "report_export", metadata: { generated: true, storage_adapter: "cloudinary", object_url: "https://example.invalid/public" } };
+    const publicDocument = { ...document, document_type: "report_export", metadata: { generated: true, storage_adapter: "legacy-public", object_url: "https://example.invalid/public" } };
     for (const permission of ["read", "write", "verify", "audit"] as const) {
       expect(canAccessDocument(admin, publicDocument, permission)).toBe(false);
     }

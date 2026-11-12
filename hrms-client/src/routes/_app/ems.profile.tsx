@@ -287,7 +287,7 @@ function MyProfile() {
       toast.success("Profile photo updated", {
         description: prepared.compressed
           ? `Compressed from ${formatBytes(prepared.originalSize)} to ${formatBytes(prepared.file.size)} before upload.`
-          : "Uploaded through Cloudinary-backed document storage.",
+          : "Uploaded through private document storage.",
       });
     } catch (error) {
       toastApiError(error, "Profile photo could not be uploaded.");

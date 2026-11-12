@@ -12,7 +12,7 @@ Standalone Fastify backend for Hawkaii HRMS. This project is extracted from the 
 
 ```bash
 # Keep real local values in .env.local.
-# The tracked .env.dev.example is for hosted dev; if you copy it, replace hosted URLs, Neon, Valkey, and Cloudinary values with local ones.
+# The tracked .env.dev.example is for hosted dev; if you copy it, replace hosted URLs, Neon, Valkey, and R2 values with local ones.
 pnpm install
 pnpm dev:infra:up
 pnpm db:migrate
@@ -20,28 +20,24 @@ pnpm release:seed
 pnpm dev
 ```
 
-Local, QA, and production document/media uploads use the Cloudinary storage adapter. Local `.env.local` may use `CLOUDINARY_MOCK_UPLOADS=true` for developer-only flows, but the tracked dev/QA/production examples are hosted templates and set real Cloudinary persistence with `CLOUDINARY_MOCK_UPLOADS=false`.
+Hosted development, QA, and production use a private Cloudflare R2 bucket. Local development and tests may use the process-local memory adapter; hosted QA and production reject that driver.
 
 ```env
-CLOUDINARY_CLOUD_NAME=local-cloudinary-mock
-CLOUDINARY_API_KEY=local-cloudinary-key
-CLOUDINARY_API_SECRET=local-cloudinary-secret
-CLOUDINARY_FOLDER=hawkaii-hrms-dev
-CLOUDINARY_RESOURCE_TYPE=auto
-CLOUDINARY_UPLOAD_TRANSFORMATION=q_auto:eco,f_auto
-CLOUDINARY_MOCK_UPLOADS=true
+OBJECT_STORAGE_DRIVER=memory
 ```
 
-For real Cloudinary uploads, replace the dashboard values and disable mock mode:
+For hosted private R2 storage, configure environment-owned bucket credentials:
 
 ```env
-CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_api_key
-CLOUDINARY_API_SECRET=your_api_secret
-CLOUDINARY_MOCK_UPLOADS=false
+OBJECT_STORAGE_DRIVER=r2
+R2_ACCOUNT_ID=your_cloudflare_account_id
+R2_ACCESS_KEY_ID=your_r2_access_key_id
+R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
+R2_BUCKET_NAME=your_private_environment_bucket
+R2_REQUEST_TIMEOUT_MS=10000
 ```
 
-Do not expose `CLOUDINARY_API_SECRET` or any object-storage credential to the frontend. Files are uploaded to the backend first; the backend stores them through Cloudinary and returns a backend-issued download URL.
+Do not expose R2 credentials, bucket names, endpoints, or object keys to the frontend. Files go through the backend, and authorized clients fetch bytes through the authenticated content endpoint. Generic PostgreSQL document routes remain fail closed until immutable tenant ownership is implemented.
 
 Image uploads are compressed in the frontend before they reach the backend. PDF uploads are compressed server-side before object storage when `PDF_COMPRESSION_ENABLED=true`; this uses Ghostscript (`PDF_COMPRESSION_BINARY`, default `gs`) and defaults to fail-open behavior so uploads continue if local Ghostscript is not installed. The production Docker image installs Ghostscript for this path.
 
@@ -123,4 +119,4 @@ pnpm verify:scalability
 pnpm verify:regression
 ```
 
-Integration tests require PostgreSQL, Valkey, and object storage. Use `pnpm test:infra:up` before `pnpm test:integration` or point `TEST_DATABASE_URL` in your untracked env file to your own services. The dev example keeps mock Cloudinary available so tests do not require external Cloudinary credentials.
+Integration tests require PostgreSQL, Valkey, and applicable object storage. Use `pnpm test:infra:up` before `pnpm test:integration` or point `TEST_DATABASE_URL` in your untracked env file to isolated services. Adapter integration can use a disposable S3-compatible service; no hosted R2 credentials are required for local unit tests.

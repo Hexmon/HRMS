@@ -1122,7 +1122,6 @@ Success body highlights:
 | `jpeg_quality` | number | required | minimum 0.5 |
 | `allowed_mime_types` | array of string | required | - |
 | `output_mime_type` | string | required | - |
-| `cloudinary_transformation` | string | required | - |
 
 **Frontend behavior notes**
 
@@ -5985,12 +5984,19 @@ Success body highlights:
 | `id` | string<uuid> | required | Document metadata UUID |
 | `business_object_type` | string | required | - |
 | `business_object_id` | string<uuid> | required | Business object UUID |
+| `owner_user_id` | string<uuid> | optional, nullable | Document owner user UUID |
 | `classification` | string enum("normal", "finance", "medical", "compensation", "legal", "audit") | required | - |
 | `document_type` | string | required | - |
-| `file_name` | string | optional | - |
-| `mime_type` | string | optional | - |
-| `size_bytes` | integer | optional | minimum 1 |
-| `verification_status` | string | optional | - |
+| `current_version` | integer | required | minimum 1 |
+| `file_name` | string | required | - |
+| `mime_type` | string | required | - |
+| `size_bytes` | integer | required | minimum 1 |
+| `checksum_sha256` | string | optional, nullable | - |
+| `metadata` | object | required | - |
+| `created_by_user_id` | string<uuid> | required | Uploader user UUID |
+| `created_at` | string<date-time> | required | Created timestamp |
+| `updated_at` | string<date-time> | required | Updated timestamp |
+| `deleted_at` | string<date-time> | optional, nullable | Deleted timestamp |
 
 **Frontend behavior notes**
 
@@ -6049,12 +6055,19 @@ Success body highlights:
 | `id` | string<uuid> | required | Document metadata UUID |
 | `business_object_type` | string | required | - |
 | `business_object_id` | string<uuid> | required | Business object UUID |
+| `owner_user_id` | string<uuid> | optional, nullable | Document owner user UUID |
 | `classification` | string enum("normal", "finance", "medical", "compensation", "legal", "audit") | required | - |
 | `document_type` | string | required | - |
-| `file_name` | string | optional | - |
-| `mime_type` | string | optional | - |
-| `size_bytes` | integer | optional | minimum 1 |
-| `verification_status` | string | optional | - |
+| `current_version` | integer | required | minimum 1 |
+| `file_name` | string | required | - |
+| `mime_type` | string | required | - |
+| `size_bytes` | integer | required | minimum 1 |
+| `checksum_sha256` | string | optional, nullable | - |
+| `metadata` | object | required | - |
+| `created_by_user_id` | string<uuid> | required | Uploader user UUID |
+| `created_at` | string<date-time> | required | Created timestamp |
+| `updated_at` | string<date-time> | required | Updated timestamp |
+| `deleted_at` | string<date-time> | optional, nullable | Deleted timestamp |
 
 **Frontend behavior notes**
 
@@ -6104,7 +6117,6 @@ Success body highlights:
 | `image_jpeg_quality` | number | required | minimum 0.5 |
 | `allowed_mime_types` | array of string | required | - |
 | `image_output_mime_type` | string enum("image/jpeg") | required | - |
-| `cloudinary_transformation` | string | required | - |
 | `company_logo` | object | required | - |
 
 **Frontend behavior notes**
@@ -6151,12 +6163,19 @@ Success body highlights:
 | `id` | string<uuid> | required | Document metadata UUID |
 | `business_object_type` | string | required | - |
 | `business_object_id` | string<uuid> | required | Business object UUID |
+| `owner_user_id` | string<uuid> | optional, nullable | Document owner user UUID |
 | `classification` | string enum("normal", "finance", "medical", "compensation", "legal", "audit") | required | - |
 | `document_type` | string | required | - |
-| `file_name` | string | optional | - |
-| `mime_type` | string | optional | - |
-| `size_bytes` | integer | optional | minimum 1 |
-| `verification_status` | string | optional | - |
+| `current_version` | integer | required | minimum 1 |
+| `file_name` | string | required | - |
+| `mime_type` | string | required | - |
+| `size_bytes` | integer | required | minimum 1 |
+| `checksum_sha256` | string | optional, nullable | - |
+| `metadata` | object | required | - |
+| `created_by_user_id` | string<uuid> | required | Uploader user UUID |
+| `created_at` | string<date-time> | required | Created timestamp |
+| `updated_at` | string<date-time> | required | Updated timestamp |
+| `deleted_at` | string<date-time> | optional, nullable | Deleted timestamp |
 
 **Frontend behavior notes**
 
@@ -6243,8 +6262,9 @@ Success body highlights:
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
+| `document_id` | string<uuid> | required | Document metadata UUID |
 | `url` | string<uri> | required | - |
-| `expires_at` | string<date-time> | required | Download URL expiration |
+| `expires_in_seconds` | integer | required | minimum 0 |
 
 **Frontend behavior notes**
 
@@ -6332,12 +6352,19 @@ Success body highlights:
 | `id` | string<uuid> | required | Document metadata UUID |
 | `business_object_type` | string | required | - |
 | `business_object_id` | string<uuid> | required | Business object UUID |
+| `owner_user_id` | string<uuid> | optional, nullable | Document owner user UUID |
 | `classification` | string enum("normal", "finance", "medical", "compensation", "legal", "audit") | required | - |
 | `document_type` | string | required | - |
-| `file_name` | string | optional | - |
-| `mime_type` | string | optional | - |
-| `size_bytes` | integer | optional | minimum 1 |
-| `verification_status` | string | optional | - |
+| `current_version` | integer | required | minimum 1 |
+| `file_name` | string | required | - |
+| `mime_type` | string | required | - |
+| `size_bytes` | integer | required | minimum 1 |
+| `checksum_sha256` | string | optional, nullable | - |
+| `metadata` | object | required | - |
+| `created_by_user_id` | string<uuid> | required | Uploader user UUID |
+| `created_at` | string<date-time> | required | Created timestamp |
+| `updated_at` | string<date-time> | required | Updated timestamp |
+| `deleted_at` | string<date-time> | optional, nullable | Deleted timestamp |
 
 **Frontend behavior notes**
 

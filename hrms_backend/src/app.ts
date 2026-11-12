@@ -577,13 +577,14 @@ async function createRuntimeStore(config: FastifyInstance["config"], options: Bu
 
 function objectStorageOptions(config: FastifyInstance["config"]): PostgresObjectStorageOptions {
   return {
-    cloudName: config.CLOUDINARY_CLOUD_NAME,
-    apiKey: config.CLOUDINARY_API_KEY,
-    apiSecret: config.CLOUDINARY_API_SECRET,
-    folder: config.CLOUDINARY_FOLDER,
-    resourceType: config.CLOUDINARY_RESOURCE_TYPE,
-    uploadTransformation: config.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION || config.CLOUDINARY_UPLOAD_TRANSFORMATION,
-    mockUploads: config.CLOUDINARY_MOCK_UPLOADS
+    driver: config.OBJECT_STORAGE_DRIVER,
+    accountId: config.R2_ACCOUNT_ID,
+    accessKeyId: config.R2_ACCESS_KEY_ID,
+    secretAccessKey: config.R2_SECRET_ACCESS_KEY,
+    bucket: config.R2_BUCKET_NAME,
+    endpoint: config.R2_ENDPOINT,
+    requestTimeoutMs: config.R2_REQUEST_TIMEOUT_MS,
+    forcePathStyle: config.R2_FORCE_PATH_STYLE,
   };
 }
 
@@ -598,7 +599,6 @@ function mediaUploadPolicyFromConfig(config: FastifyInstance["config"]) {
       .map((value) => value.trim().toLowerCase())
       .filter(Boolean),
     imageOutputMimeType: "image/jpeg" as const,
-    cloudinaryTransformation: config.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION
   };
 }
 
@@ -613,7 +613,6 @@ function companyLogoUploadPolicyFromConfig(config: FastifyInstance["config"]) {
       .map((value) => value.trim().toLowerCase())
       .filter(Boolean),
     imageOutputMimeType: "image/jpeg" as const,
-    cloudinaryTransformation: config.COMPANY_LOGO_CLOUDINARY_TRANSFORMATION
   };
 }
 

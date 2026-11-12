@@ -146,10 +146,9 @@ describe("admin company profile", () => {
       logo_mime_type: "image/jpeg",
       logo_size_bytes: 7
     });
-    expect(upload.json().document.metadata).toMatchObject({
-      media_upload_policy_max_bytes: 2 * 1024 * 1024,
-      cloudinary_upload_compressed: true
-    });
+    expect(upload.json().document.metadata).toEqual({});
+    expect(upload.json().document).not.toHaveProperty("storage_key");
+    expect(upload.json().document).not.toHaveProperty("provider_url");
 
     const oversized = await multipartUpload(app, {
       url: "/api/v1/admin/company-profile/logo",

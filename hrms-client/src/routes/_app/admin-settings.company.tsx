@@ -141,8 +141,8 @@ function CompanyProfileScreen() {
       setDraft(next);
       toast.success("Company logo updated", {
         description: prepared.compressed
-          ? `Compressed from ${formatBytes(prepared.originalSize)} to ${formatBytes(prepared.file.size)} before Cloudinary upload.`
-          : "Uploaded through Cloudinary-backed document storage.",
+          ? `Compressed from ${formatBytes(prepared.originalSize)} to ${formatBytes(prepared.file.size)} before private upload.`
+          : "Uploaded through private document storage.",
       });
     } catch (error) {
       toastApiError(error, "Company logo could not be uploaded.");
@@ -181,7 +181,7 @@ function CompanyProfileScreen() {
             {logoPolicy.allowed_mime_types
               .map((type) => type.replace("image/", "").toUpperCase())
               .join(", ")}
-            , up to {formatBytes(logoPolicy.max_bytes)}. Images are compressed before Cloudinary
+            , up to {formatBytes(logoPolicy.max_bytes)}. Images are compressed before private
             upload.
           </p>
           {draft.logoFileName ? (

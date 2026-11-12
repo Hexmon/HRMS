@@ -7,7 +7,7 @@ const local = {
   VALKEY_URL: "redis://127.0.0.1:56379",
   APP_ENV: "local",
   EMAIL_DELIVERY_MODE: "log",
-  CLOUDINARY_MOCK_UPLOADS: "true"
+  OBJECT_STORAGE_DRIVER: "memory"
 };
 
 describe("disposable asset probe guard", () => {

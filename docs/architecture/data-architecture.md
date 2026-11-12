@@ -56,7 +56,7 @@ Cross-domain consistency must be enforced in services/repositories.
 
 ## Object Storage Boundary
 
-Document metadata is stored in PostgreSQL. File content is stored through the backend object-storage adapter. Clients must not write directly to Cloudinary or receive Cloudinary secrets.
+Document metadata is stored in PostgreSQL. File content is stored through the backend private object-storage adapter. Hosted environments use Cloudflare R2; clients must not receive provider credentials, endpoints, bucket names, object keys, or persistent provider URLs.
 
 Document-related tables:
 

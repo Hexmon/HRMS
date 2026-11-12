@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Redis as Valkey } from "iovalkey";
-import { CloudinaryObjectStorage } from "../src/platform/object-storage.js";
+import { R2ObjectStorage } from "../src/platform/object-storage.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 import { fail } from "./lib.js";
 
@@ -68,14 +68,14 @@ if (failures.length > 0) {
 
 console.log("Valkey and object-storage release verification passed.");
 
-function objectStorage(): CloudinaryObjectStorage {
-  return new CloudinaryObjectStorage({
-    cloudName: requireEnv("CLOUDINARY_CLOUD_NAME"),
-    apiKey: requireEnv("CLOUDINARY_API_KEY"),
-    apiSecret: requireEnv("CLOUDINARY_API_SECRET"),
-    folder: process.env.CLOUDINARY_FOLDER ?? "hawkaii-hrms",
-    resourceType: (process.env.CLOUDINARY_RESOURCE_TYPE as "auto" | "image" | "raw" | "video" | undefined) ?? "auto",
-    uploadTransformation: process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
-    mockUploads: process.env.CLOUDINARY_MOCK_UPLOADS === "true"
+function objectStorage(): R2ObjectStorage {
+  return new R2ObjectStorage({
+    accountId: requireEnv("R2_ACCOUNT_ID"),
+    accessKeyId: requireEnv("R2_ACCESS_KEY_ID"),
+    secretAccessKey: requireEnv("R2_SECRET_ACCESS_KEY"),
+    bucket: requireEnv("R2_BUCKET_NAME"),
+    endpoint: process.env.R2_ENDPOINT,
+    requestTimeoutMs: Number(process.env.R2_REQUEST_TIMEOUT_MS ?? 10_000),
+    forcePathStyle: process.env.R2_FORCE_PATH_STYLE === "true",
   });
 }

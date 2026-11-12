@@ -37,7 +37,7 @@ function redactText(text: string): string {
   return text
     .replace(/postgres:\/\/postgres:postgres/giu, "postgres://[REDACTED]")
     .replace(/(JWT_(?:ACCESS|REFRESH)_SECRET=)[^\s]+/giu, "$1[REDACTED]")
-    .replace(/(CLOUDINARY_API_SECRET=)[^\s]+/giu, "$1[REDACTED]");
+    .replace(/(R2_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY)=)[^\s]+/giu, "$1[REDACTED]");
 }
 
 function command(args: string[]): { status: number | null; output: string } {

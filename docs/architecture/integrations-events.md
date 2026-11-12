@@ -10,7 +10,7 @@ This document describes external integrations and event flow boundaries.
 | --- | --- | --- |
 | PostgreSQL / Neon | Relational domain persistence. | `hrms_backend/src/platform/postgres-data-store.ts` |
 | Valkey | Session/runtime state, rate-limit state, outbox stream publishing. | `hrms_backend/src/auth/index.ts`, `hrms_backend/src/workers/outbox-worker.ts` |
-| Cloudinary | Backend-owned media/document/object storage. | `hrms_backend/src/platform/object-storage.ts` |
+| Private Cloudflare R2 | Backend-owned media/document/object storage through the S3 API. | `hrms_backend/src/platform/object-storage.ts` |
 | Resend | Transactional email transport for verification and reset. | `hrms_backend/src/platform/email/` |
 | Vercel | Frontend hosting. | `hrms-client/vercel.json`, `hrms-client/scripts/build-vercel.mjs` |
 | Render | Backend API and worker hosting. | `render.yaml`, `infra/render/*.yaml` |
@@ -53,7 +53,9 @@ Document uploads are backend mediated:
 3. Backend may compress images/PDFs according to policy.
 4. Backend writes to object storage.
 5. Backend stores metadata/version/access records.
-6. Client receives backend-owned metadata or download URL.
+6. Client receives provider-neutral metadata and retrieves allowed bytes through the authenticated backend content route.
+
+The adapter does not authorize documents. PostgreSQL document routes remain fail closed until immutable tenant ownership and parent authorization are available for each document class. Generated exports also remain fail closed pending their durable materializer/lifecycle work.
 
 ## Generated Exports
 

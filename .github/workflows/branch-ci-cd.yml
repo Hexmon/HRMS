@@ -74,7 +74,7 @@ jobs:
       BUILD_SHA: ${{ github.sha }}
       TEST_DATABASE_URL: postgresql://hrms_ci:ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/hrms_ci_test
       VALKEY_URL: redis://127.0.0.1:6379
-      CLOUDINARY_MOCK_UPLOADS: "true"
+      OBJECT_STORAGE_DRIVER: memory
       EMAIL_DELIVERY_MODE: log
       LOCAL_DEMO_PASSWORD: ci-demo-${{ github.run_id }}-${{ github.run_attempt }}-A1!
       JWT_ACCESS_SECRET: ci-access-${{ github.run_id }}-${{ github.run_attempt }}-secret

@@ -22,7 +22,7 @@ import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
 import { canAccessDocument } from "../documents/policy.js";
-import { DocumentService, type DocumentUploadBody } from "../documents/service.js";
+import { DocumentService, presentDocument, type DocumentUploadBody } from "../documents/service.js";
 import { appendEmsOutboxEvent, emsEvents } from "./events.js";
 import { assertCanDecideProfileChange, assertCanManageEms, assertCanSeeEmsUser, canManageEms } from "./policy.js";
 import { EmsRepository } from "./repository.js";
@@ -519,7 +519,7 @@ export class EmsService {
       };
     }
     return {
-      document,
+      document: presentDocument(document),
       access_policy: {
         business_object_type: "employee",
         business_object_id: userId,

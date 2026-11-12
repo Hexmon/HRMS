@@ -9039,7 +9039,7 @@
         "tags": [
           "Auth & Sessions"
         ],
-        "description": "Uploads the pending company logo through the backend object-storage adapter using an active company bootstrap token. Images follow the global media upload policy and are transformed by Cloudinary when real storage is configured.",
+        "description": "Uploads the pending company logo through the backend private object-storage adapter using an active company bootstrap token.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9195,12 +9195,12 @@
                         "logo_url": {
                           "type": "string",
                           "nullable": true,
-                          "example": "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg"
+                          "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                         },
                         "logoUrl": {
                           "type": "string",
                           "nullable": true,
-                          "example": "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg"
+                          "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                         },
                         "logo_file_name": {
                           "type": "string",
@@ -9255,7 +9255,15 @@
                         "business_object_type",
                         "business_object_id",
                         "classification",
-                        "document_type"
+                        "document_type",
+                        "current_version",
+                        "file_name",
+                        "mime_type",
+                        "size_bytes",
+                        "metadata",
+                        "created_by_user_id",
+                        "created_at",
+                        "updated_at"
                       ],
                       "properties": {
                         "id": {
@@ -9274,6 +9282,13 @@
                           "description": "Business object UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
+                        "owner_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Document owner user UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
                         "classification": {
                           "type": "string",
                           "enum": [
@@ -9290,6 +9305,11 @@
                           "type": "string",
                           "example": "receipt"
                         },
+                        "current_version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        },
                         "file_name": {
                           "type": "string",
                           "example": "receipt.pdf"
@@ -9303,12 +9323,61 @@
                           "minimum": 1,
                           "example": 2000
                         },
-                        "verification_status": {
+                        "checksum_sha256": {
                           "type": "string",
-                          "example": "pending"
+                          "nullable": true
+                        },
+                        "metadata": {
+                          "type": "object",
+                          "properties": {
+                            "verified_at": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "Verification timestamp",
+                              "example": "2026-05-04T10:00:00.000Z",
+                              "nullable": true
+                            },
+                            "verified_by": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Verification actor UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                              "nullable": true
+                            },
+                            "rejection_reason": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "created_by_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Uploader user UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Created timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Updated timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "deleted_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Deleted timestamp",
+                          "example": "2026-05-04T10:00:00.000Z",
+                          "nullable": true
                         }
                       },
-                      "additionalProperties": true
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": true
@@ -10786,7 +10855,7 @@
                           "profile_photo_url": {
                             "type": "string",
                             "nullable": true,
-                            "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                            "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                           }
                         },
                         "additionalProperties": true
@@ -11488,7 +11557,7 @@
                     "profile_photo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "reporting_line": {
                       "type": "array",
@@ -11910,7 +11979,7 @@
         "tags": [
           "Core / Employees & Hierarchy"
         ],
-        "description": "Returns backend-owned profile photo upload limits, allowed image MIME types, compression dimensions, and Cloudinary upload transformation so clients can compress before upload.",
+        "description": "Returns backend-owned profile photo upload limits, allowed image MIME types, and compression dimensions.",
         "security": [
           {
             "sessionCookie": []
@@ -11932,8 +12001,7 @@
                     "max_height",
                     "jpeg_quality",
                     "allowed_mime_types",
-                    "output_mime_type",
-                    "cloudinary_transformation"
+                    "output_mime_type"
                   ],
                   "properties": {
                     "max_bytes": {
@@ -11971,10 +12039,6 @@
                     "output_mime_type": {
                       "type": "string",
                       "example": "image/jpeg"
-                    },
-                    "cloudinary_transformation": {
-                      "type": "string",
-                      "example": "c_fill,g_face,w_512,h_512,q_auto:eco,f_auto"
                     }
                   },
                   "additionalProperties": false
@@ -12264,7 +12328,7 @@
         "tags": [
           "Core / Employees & Hierarchy"
         ],
-        "description": "Uploads a compressed employee profile photo through the document storage pipeline. Admin/HR can update employee photos; employees can update their own. Real storage uses Cloudinary with a profile-specific transformation.",
+        "description": "Uploads a compressed employee profile photo through the private document storage pipeline. Admin/HR can update employee photos; employees can update their own.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12535,7 +12599,7 @@
                     "profile_photo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "reporting_line": {
                       "type": "array",
@@ -13205,7 +13269,7 @@
                     "profile_photo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "reporting_line": {
                       "type": "array",
@@ -13877,7 +13941,7 @@
                     "profile_photo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "reporting_line": {
                       "type": "array",
@@ -14589,7 +14653,7 @@
                     "profile_photo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "reporting_line": {
                       "type": "array",
@@ -15307,7 +15371,7 @@
                     "profile_photo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "reporting_line": {
                       "type": "array",
@@ -16025,7 +16089,7 @@
                     "profile_photo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "reporting_line": {
                       "type": "array",
@@ -16727,7 +16791,7 @@
                     "profile_photo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "reporting_line": {
                       "type": "array",
@@ -17429,7 +17493,7 @@
                     "profile_photo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "reporting_line": {
                       "type": "array",
@@ -18150,7 +18214,7 @@
                     "profile_photo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/profile.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "reporting_line": {
                       "type": "array",
@@ -35531,7 +35595,15 @@
                     "business_object_type",
                     "business_object_id",
                     "classification",
-                    "document_type"
+                    "document_type",
+                    "current_version",
+                    "file_name",
+                    "mime_type",
+                    "size_bytes",
+                    "metadata",
+                    "created_by_user_id",
+                    "created_at",
+                    "updated_at"
                   ],
                   "properties": {
                     "id": {
@@ -35550,6 +35622,13 @@
                       "description": "Business object UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
+                    "owner_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Document owner user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
                     "classification": {
                       "type": "string",
                       "enum": [
@@ -35566,6 +35645,11 @@
                       "type": "string",
                       "example": "receipt"
                     },
+                    "current_version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    },
                     "file_name": {
                       "type": "string",
                       "example": "receipt.pdf"
@@ -35579,12 +35663,61 @@
                       "minimum": 1,
                       "example": 2000
                     },
-                    "verification_status": {
+                    "checksum_sha256": {
                       "type": "string",
-                      "example": "pending"
+                      "nullable": true
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "properties": {
+                        "verified_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Verification timestamp",
+                          "example": "2026-05-04T10:00:00.000Z",
+                          "nullable": true
+                        },
+                        "verified_by": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Verification actor UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "rejection_reason": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "created_by_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Uploader user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Created timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Updated timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "deleted_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Deleted timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
+                      "nullable": true
                     }
                   },
-                  "additionalProperties": true
+                  "additionalProperties": false
                 }
               }
             }
@@ -35956,7 +36089,15 @@
                           "business_object_type",
                           "business_object_id",
                           "classification",
-                          "document_type"
+                          "document_type",
+                          "current_version",
+                          "file_name",
+                          "mime_type",
+                          "size_bytes",
+                          "metadata",
+                          "created_by_user_id",
+                          "created_at",
+                          "updated_at"
                         ],
                         "properties": {
                           "id": {
@@ -35975,6 +36116,13 @@
                             "description": "Business object UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                           },
+                          "owner_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Document owner user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                            "nullable": true
+                          },
                           "classification": {
                             "type": "string",
                             "enum": [
@@ -35991,6 +36139,11 @@
                             "type": "string",
                             "example": "receipt"
                           },
+                          "current_version": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                          },
                           "file_name": {
                             "type": "string",
                             "example": "receipt.pdf"
@@ -36004,12 +36157,61 @@
                             "minimum": 1,
                             "example": 2000
                           },
-                          "verification_status": {
+                          "checksum_sha256": {
                             "type": "string",
-                            "example": "pending"
+                            "nullable": true
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "properties": {
+                              "verified_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Verification timestamp",
+                                "example": "2026-05-04T10:00:00.000Z",
+                                "nullable": true
+                              },
+                              "verified_by": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Verification actor UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                                "nullable": true
+                              },
+                              "rejection_reason": {
+                                "type": "string",
+                                "nullable": true
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "created_by_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Uploader user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Created timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Updated timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          },
+                          "deleted_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Deleted timestamp",
+                            "example": "2026-05-04T10:00:00.000Z",
+                            "nullable": true
                           }
                         },
-                        "additionalProperties": true
+                        "additionalProperties": false
                       }
                     },
                     "page": {
@@ -36406,7 +36608,15 @@
                     "business_object_type",
                     "business_object_id",
                     "classification",
-                    "document_type"
+                    "document_type",
+                    "current_version",
+                    "file_name",
+                    "mime_type",
+                    "size_bytes",
+                    "metadata",
+                    "created_by_user_id",
+                    "created_at",
+                    "updated_at"
                   ],
                   "properties": {
                     "id": {
@@ -36425,6 +36635,13 @@
                       "description": "Business object UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
+                    "owner_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Document owner user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
                     "classification": {
                       "type": "string",
                       "enum": [
@@ -36441,6 +36658,11 @@
                       "type": "string",
                       "example": "receipt"
                     },
+                    "current_version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    },
                     "file_name": {
                       "type": "string",
                       "example": "receipt.pdf"
@@ -36454,12 +36676,61 @@
                       "minimum": 1,
                       "example": 2000
                     },
-                    "verification_status": {
+                    "checksum_sha256": {
                       "type": "string",
-                      "example": "pending"
+                      "nullable": true
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "properties": {
+                        "verified_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Verification timestamp",
+                          "example": "2026-05-04T10:00:00.000Z",
+                          "nullable": true
+                        },
+                        "verified_by": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Verification actor UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "rejection_reason": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "created_by_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Uploader user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Created timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Updated timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "deleted_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Deleted timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
+                      "nullable": true
                     }
                   },
-                  "additionalProperties": true
+                  "additionalProperties": false
                 }
               }
             }
@@ -36746,7 +37017,7 @@
         "tags": [
           "Documents"
         ],
-        "description": "Returns backend-owned media upload limits, allowed MIME types, image compression settings, and Cloudinary transformation used by EMS, expenses, projects, helpdesk, and document uploads.",
+        "description": "Returns backend-owned media upload limits, allowed MIME types, and image compression settings used by EMS, expenses, projects, helpdesk, and document uploads.",
         "security": [
           {
             "sessionCookie": []
@@ -36769,7 +37040,6 @@
                     "image_jpeg_quality",
                     "allowed_mime_types",
                     "image_output_mime_type",
-                    "cloudinary_transformation",
                     "company_logo"
                   ],
                   "properties": {
@@ -36813,10 +37083,6 @@
                       ],
                       "example": "image/jpeg"
                     },
-                    "cloudinary_transformation": {
-                      "type": "string",
-                      "example": "q_auto:eco,f_auto"
-                    },
                     "company_logo": {
                       "type": "object",
                       "required": [
@@ -36825,8 +37091,7 @@
                         "image_max_height",
                         "image_jpeg_quality",
                         "allowed_mime_types",
-                        "image_output_mime_type",
-                        "cloudinary_transformation"
+                        "image_output_mime_type"
                       ],
                       "properties": {
                         "max_bytes": {
@@ -36867,10 +37132,6 @@
                             "image/jpeg"
                           ],
                           "example": "image/jpeg"
-                        },
-                        "cloudinary_transformation": {
-                          "type": "string",
-                          "example": "c_fit,w_512,h_512,q_auto:eco,f_auto"
                         }
                       },
                       "additionalProperties": false
@@ -37197,7 +37458,15 @@
                     "business_object_type",
                     "business_object_id",
                     "classification",
-                    "document_type"
+                    "document_type",
+                    "current_version",
+                    "file_name",
+                    "mime_type",
+                    "size_bytes",
+                    "metadata",
+                    "created_by_user_id",
+                    "created_at",
+                    "updated_at"
                   ],
                   "properties": {
                     "id": {
@@ -37216,6 +37485,13 @@
                       "description": "Business object UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
+                    "owner_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Document owner user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
                     "classification": {
                       "type": "string",
                       "enum": [
@@ -37232,6 +37508,11 @@
                       "type": "string",
                       "example": "receipt"
                     },
+                    "current_version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    },
                     "file_name": {
                       "type": "string",
                       "example": "receipt.pdf"
@@ -37245,12 +37526,61 @@
                       "minimum": 1,
                       "example": 2000
                     },
-                    "verification_status": {
+                    "checksum_sha256": {
                       "type": "string",
-                      "example": "pending"
+                      "nullable": true
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "properties": {
+                        "verified_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Verification timestamp",
+                          "example": "2026-05-04T10:00:00.000Z",
+                          "nullable": true
+                        },
+                        "verified_by": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Verification actor UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "rejection_reason": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "created_by_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Uploader user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Created timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Updated timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "deleted_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Deleted timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
+                      "nullable": true
                     }
                   },
-                  "additionalProperties": true
+                  "additionalProperties": false
                 }
               }
             }
@@ -37896,20 +38226,26 @@
                 "schema": {
                   "type": "object",
                   "required": [
+                    "document_id",
                     "url",
-                    "expires_at"
+                    "expires_in_seconds"
                   ],
                   "properties": {
+                    "document_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Document metadata UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
                     "url": {
                       "type": "string",
                       "format": "uri",
-                      "example": "http://localhost:3001/api/v1/documents/downloads/local-token"
+                      "example": "http://localhost:3001/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
-                    "expires_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Download URL expiration",
-                      "example": "2026-05-04T10:00:00.000Z"
+                    "expires_in_seconds": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 0
                     }
                   }
                 }
@@ -38198,7 +38534,7 @@
         "tags": [
           "Documents"
         ],
-        "description": "Streams permitted document bytes through the backend after policy checks. Generated export documents fail closed pending private storage migration; ordinary Cloudinary document policy is a separate prelaunch dependency.",
+        "description": "Streams permitted document bytes through the authenticated backend after policy checks. Generated exports and tenant-unowned document classes remain fail closed pending their dedicated ownership and lifecycle work.",
         "parameters": [
           {
             "schema": {
@@ -38548,7 +38884,15 @@
                     "business_object_type",
                     "business_object_id",
                     "classification",
-                    "document_type"
+                    "document_type",
+                    "current_version",
+                    "file_name",
+                    "mime_type",
+                    "size_bytes",
+                    "metadata",
+                    "created_by_user_id",
+                    "created_at",
+                    "updated_at"
                   ],
                   "properties": {
                     "id": {
@@ -38567,6 +38911,13 @@
                       "description": "Business object UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
+                    "owner_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Document owner user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                      "nullable": true
+                    },
                     "classification": {
                       "type": "string",
                       "enum": [
@@ -38583,6 +38934,11 @@
                       "type": "string",
                       "example": "receipt"
                     },
+                    "current_version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "example": 1
+                    },
                     "file_name": {
                       "type": "string",
                       "example": "receipt.pdf"
@@ -38596,12 +38952,61 @@
                       "minimum": 1,
                       "example": 2000
                     },
-                    "verification_status": {
+                    "checksum_sha256": {
                       "type": "string",
-                      "example": "pending"
+                      "nullable": true
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "properties": {
+                        "verified_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Verification timestamp",
+                          "example": "2026-05-04T10:00:00.000Z",
+                          "nullable": true
+                        },
+                        "verified_by": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Verification actor UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "rejection_reason": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "created_by_user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Uploader user UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Created timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Updated timestamp",
+                      "example": "2026-05-04T10:00:00.000Z"
+                    },
+                    "deleted_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Deleted timestamp",
+                      "example": "2026-05-04T10:00:00.000Z",
+                      "nullable": true
                     }
                   },
-                  "additionalProperties": true
+                  "additionalProperties": false
                 }
               }
             }
@@ -51806,7 +52211,7 @@
                           },
                           "adapter": {
                             "type": "string",
-                            "example": "cloudinary-generated-csv"
+                            "example": "private-object-storage"
                           },
                           "file_name": {
                             "type": "string",
@@ -52325,7 +52730,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "cloudinary-generated-csv"
+                      "example": "private-object-storage"
                     },
                     "file_name": {
                       "type": "string",
@@ -52757,7 +53162,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "cloudinary-generated-csv"
+                      "example": "private-object-storage"
                     },
                     "file_name": {
                       "type": "string",
@@ -96621,7 +97026,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "cloudinary-generated-csv"
+                      "example": "private-object-storage"
                     },
                     "file_name": {
                       "type": "string",
@@ -102509,7 +102914,7 @@
                     },
                     "adapter": {
                       "type": "string",
-                      "example": "cloudinary-generated-csv"
+                      "example": "private-object-storage"
                     },
                     "file_name": {
                       "type": "string",
@@ -112157,7 +112562,15 @@
                           "business_object_type",
                           "business_object_id",
                           "classification",
-                          "document_type"
+                          "document_type",
+                          "current_version",
+                          "file_name",
+                          "mime_type",
+                          "size_bytes",
+                          "metadata",
+                          "created_by_user_id",
+                          "created_at",
+                          "updated_at"
                         ],
                         "properties": {
                           "id": {
@@ -112176,6 +112589,13 @@
                             "description": "Business object UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                           },
+                          "owner_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Document owner user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                            "nullable": true
+                          },
                           "classification": {
                             "type": "string",
                             "enum": [
@@ -112192,6 +112612,11 @@
                             "type": "string",
                             "example": "receipt"
                           },
+                          "current_version": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                          },
                           "file_name": {
                             "type": "string",
                             "example": "receipt.pdf"
@@ -112205,12 +112630,61 @@
                             "minimum": 1,
                             "example": 2000
                           },
-                          "verification_status": {
+                          "checksum_sha256": {
                             "type": "string",
-                            "example": "pending"
+                            "nullable": true
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "properties": {
+                              "verified_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Verification timestamp",
+                                "example": "2026-05-04T10:00:00.000Z",
+                                "nullable": true
+                              },
+                              "verified_by": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Verification actor UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                                "nullable": true
+                              },
+                              "rejection_reason": {
+                                "type": "string",
+                                "nullable": true
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "created_by_user_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Uploader user UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Created timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Updated timestamp",
+                            "example": "2026-05-04T10:00:00.000Z"
+                          },
+                          "deleted_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Deleted timestamp",
+                            "example": "2026-05-04T10:00:00.000Z",
+                            "nullable": true
                           }
                         },
-                        "additionalProperties": true
+                        "additionalProperties": false
                       }
                     },
                     "page": {
@@ -112653,7 +113127,15 @@
                         "business_object_type",
                         "business_object_id",
                         "classification",
-                        "document_type"
+                        "document_type",
+                        "current_version",
+                        "file_name",
+                        "mime_type",
+                        "size_bytes",
+                        "metadata",
+                        "created_by_user_id",
+                        "created_at",
+                        "updated_at"
                       ],
                       "properties": {
                         "id": {
@@ -112672,6 +113154,13 @@
                           "description": "Business object UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
+                        "owner_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Document owner user UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
                         "classification": {
                           "type": "string",
                           "enum": [
@@ -112688,6 +113177,11 @@
                           "type": "string",
                           "example": "receipt"
                         },
+                        "current_version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        },
                         "file_name": {
                           "type": "string",
                           "example": "receipt.pdf"
@@ -112701,12 +113195,61 @@
                           "minimum": 1,
                           "example": 2000
                         },
-                        "verification_status": {
+                        "checksum_sha256": {
                           "type": "string",
-                          "example": "pending"
+                          "nullable": true
+                        },
+                        "metadata": {
+                          "type": "object",
+                          "properties": {
+                            "verified_at": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "Verification timestamp",
+                              "example": "2026-05-04T10:00:00.000Z",
+                              "nullable": true
+                            },
+                            "verified_by": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Verification actor UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                              "nullable": true
+                            },
+                            "rejection_reason": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "created_by_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Uploader user UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Created timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Updated timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "deleted_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Deleted timestamp",
+                          "example": "2026-05-04T10:00:00.000Z",
+                          "nullable": true
                         }
                       },
-                      "additionalProperties": true
+                      "additionalProperties": false
                     },
                     "access_policy": {
                       "type": "object",
@@ -132020,12 +132563,12 @@
                     "logo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "logoUrl": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "logo_file_name": {
                       "type": "string",
@@ -132572,12 +133115,12 @@
                     "logo_url": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "logoUrl": {
                       "type": "string",
                       "nullable": true,
-                      "example": "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg"
+                      "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                     },
                     "logo_file_name": {
                       "type": "string",
@@ -132910,7 +133453,7 @@
         "tags": [
           "Admin / Configuration"
         ],
-        "description": "Uploads or replaces the active company logo through the backend document storage adapter. The company-logo upload policy is returned from /api/v1/documents/upload-policy and uses stricter image-only size and compression limits before Cloudinary upload.",
+        "description": "Uploads or replaces the active company logo through the backend private document storage adapter. The company-logo upload policy is returned from /api/v1/documents/upload-policy and uses stricter image-only size and compression limits.",
         "requestBody": {
           "required": true,
           "content": {
@@ -133067,12 +133610,12 @@
                         "logo_url": {
                           "type": "string",
                           "nullable": true,
-                          "example": "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg"
+                          "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                         },
                         "logoUrl": {
                           "type": "string",
                           "nullable": true,
-                          "example": "https://res.cloudinary.com/example/image/upload/hawkaii-hrms/company-logo.jpg"
+                          "example": "/api/v1/documents/00000000-0000-4000-8000-000000000001/content"
                         },
                         "logo_file_name": {
                           "type": "string",
@@ -133127,7 +133670,15 @@
                         "business_object_type",
                         "business_object_id",
                         "classification",
-                        "document_type"
+                        "document_type",
+                        "current_version",
+                        "file_name",
+                        "mime_type",
+                        "size_bytes",
+                        "metadata",
+                        "created_by_user_id",
+                        "created_at",
+                        "updated_at"
                       ],
                       "properties": {
                         "id": {
@@ -133146,6 +133697,13 @@
                           "description": "Business object UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
+                        "owner_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Document owner user UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
                         "classification": {
                           "type": "string",
                           "enum": [
@@ -133162,6 +133720,11 @@
                           "type": "string",
                           "example": "receipt"
                         },
+                        "current_version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        },
                         "file_name": {
                           "type": "string",
                           "example": "receipt.pdf"
@@ -133175,12 +133738,61 @@
                           "minimum": 1,
                           "example": 2000
                         },
-                        "verification_status": {
+                        "checksum_sha256": {
                           "type": "string",
-                          "example": "pending"
+                          "nullable": true
+                        },
+                        "metadata": {
+                          "type": "object",
+                          "properties": {
+                            "verified_at": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "Verification timestamp",
+                              "example": "2026-05-04T10:00:00.000Z",
+                              "nullable": true
+                            },
+                            "verified_by": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Verification actor UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                              "nullable": true
+                            },
+                            "rejection_reason": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "created_by_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Uploader user UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Created timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Updated timestamp",
+                          "example": "2026-05-04T10:00:00.000Z"
+                        },
+                        "deleted_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Deleted timestamp",
+                          "example": "2026-05-04T10:00:00.000Z",
+                          "nullable": true
                         }
                       },
-                      "additionalProperties": true
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": true

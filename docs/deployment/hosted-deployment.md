@@ -7,7 +7,7 @@ This guide describes the recommended hosted deployment shape for Hawkaii HRMS us
 - Worker: transitional Render polling worker, to be replaced by Cloudflare Queues/Cron after the gated cutover in [cloudflare-worker-cutover.md](cloudflare-worker-cutover.md).
 - Database: Neon Postgres.
 - Session/rate state: Upstash Redis (Valkey/Redis TCP protocol); legacy outbox Streams are retained only until the Cloudflare cutover.
-- Media storage: Cloudinary.
+- Media storage: private Cloudflare R2 bucket per environment.
 - Transactional email: Resend.
 
 ## Recommended Domains
@@ -107,11 +107,12 @@ Frontend setup requirement:
 | `API_BASE_URL` | `https://api.hawkaii.in` |
 | `FRONTEND_URL` | `https://hawkaii.in` |
 | `CORS_ALLOWED_ORIGINS` | `https://hawkaii.in` |
-| `CLOUDINARY_FOLDER` | `hawkaii-hrms/prod` or your preferred folder |
+| `OBJECT_STORAGE_DRIVER` | `r2` |
+| `R2_BUCKET_NAME` | Private production bucket |
 | `RESEND_FROM_EMAIL` | Verified sender, for example `Hawkaii HRMS <verify@hawkaii.in>` |
 | `RESEND_REPLY_TO_EMAIL` | Support mailbox |
 
-Render prompts for all `sync: false` values during setup. Use the same `DATABASE_URL`, `VALKEY_URL`, Cloudinary credentials, and JWT secrets for the API and worker where applicable.
+Render prompts for all `sync: false` values during setup. Use the same environment-scoped `DATABASE_URL`, `VALKEY_URL`, private R2 credentials, and JWT secrets for the API and worker where applicable.
 
 ## Environment Isolation Decision
 
@@ -120,7 +121,7 @@ Use isolated hosted resources for dev, QA, and production. The recommended defau
 | Resource | Best choice | Why |
 | --- | --- | --- |
 | PostgreSQL / Neon | One Neon project with long-lived `main`/production, `qa`, and `dev` branches. Use separate connection strings per branch. | Neon branches are isolated copy-on-write clones. Neon documents that branch changes are independent and do not affect the parent branch, and that branches are intended for development and testing. This gives three database endpoints without manually maintaining three unrelated schemas. |
-| Cloudinary | Separate Cloudinary product environments for prod/QA/dev if the plan supports it. Fallback: one product environment with strict folders `hawkaii-hrms/prod`, `hawkaii-hrms/qa`, `hawkaii-hrms/dev`. | Cloudinary states API credentials are product-environment-specific and paid accounts can have multiple product environments for production/staging or similar separation. The repo already supports different Cloudinary credentials and folders per env. |
+| Cloudflare R2 | Separate private bucket and bucket-scoped S3 credentials for prod/QA/dev; keep public development URLs and public custom domains disabled. | Separate buckets and credentials prevent cross-environment reads/deletes and let each Render environment use least privilege. |
 | Redis / Valkey | Separate Upstash Redis database per environment. | Redis stores sessions, rate-limit counters, and outbox streams. Separate databases prevent state collisions and make per-environment usage visible. |
 | Render API/worker | Separate API and worker services per environment. | Render Blueprints can define web services, workers, and Key Value services. Separate services keep deploys, logs, scaling, and env vars isolated. |
 
@@ -129,7 +130,6 @@ Use separate Neon projects instead of branches only if compliance, billing owner
 Evidence:
 
 - Neon branching docs: https://neon.com/docs/introduction/branching
-- Cloudinary product environment docs: https://cloudinary.com/documentation/solution_overview
 - Upstash Redis connection docs: https://upstash.com/docs/redis/howto/connect-client
 - Upstash Redis pricing and limits: https://upstash.com/pricing/redis
 - Render Blueprint docs: https://render.com/docs/blueprint-spec
@@ -168,25 +168,29 @@ extensions and `SELECT PostGIS_Version();` succeeds. Stop the deploy if `CREATE 
 restore from backup or roll forward after operator review. Apply and verify the migration independently for each branch
 database and production database instead of assuming one hosted environment proves another.
 
-## Cloudinary
+## Private Cloudflare R2
 
 Preferred setup:
 
-| Environment | Cloudinary isolation | Folder |
+| Environment | R2 isolation |
 | --- | --- | --- |
-| Production | Production product environment | `hawkaii-hrms/prod` |
-| QA/UAT | QA/staging product environment | `hawkaii-hrms/qa` |
-| Hosted dev | Dev product environment | `hawkaii-hrms/dev` |
+| Production | Private production bucket and production-only credentials |
+| QA/UAT | Private QA bucket and QA-only credentials |
+| Hosted dev | Private development bucket and development-only credentials |
 
-If the Cloudinary account has only one product environment, use the same cloud credentials but keep strict environment folders and never run QA/dev cleanup against `hawkaii-hrms/prod`.
+Do not use one bucket with prefixes as the default isolation boundary. Never run QA/dev cleanup against the production bucket.
 
 All hosted environments should use:
 
 ```env
-CLOUDINARY_MOCK_UPLOADS=false
+OBJECT_STORAGE_DRIVER=r2
+R2_ACCOUNT_ID=replace-with-cloudflare-account-id
+R2_ACCESS_KEY_ID=replace-with-environment-access-key
+R2_SECRET_ACCESS_KEY=replace-with-environment-secret-key
+R2_BUCKET_NAME=replace-with-private-environment-bucket
 ```
 
-Local development may still use mock uploads if the developer is not testing media persistence.
+Local development may use `OBJECT_STORAGE_DRIVER=memory` or an explicitly isolated S3-compatible endpoint. Hosted QA and production reject memory storage and endpoint overrides.
 
 ## Upstash Redis / Valkey
 
@@ -245,7 +249,7 @@ Important production/hosted values:
 ```env
 TRUST_PROXY=true
 COOKIE_SECURE=true
-CLOUDINARY_MOCK_UPLOADS=false
+OBJECT_STORAGE_DRIVER=r2
 OPENAPI_PUBLIC=false
 ```
 
@@ -334,9 +338,10 @@ Do not enable a separate GitHub Actions frontend deploy unless Vercel Git deploy
    - `DATABASE_URL`
    - `JWT_ACCESS_SECRET`
    - `JWT_REFRESH_SECRET`
-   - `CLOUDINARY_CLOUD_NAME`
-   - `CLOUDINARY_API_KEY`
-   - `CLOUDINARY_API_SECRET`
+   - `R2_ACCOUNT_ID`
+   - `R2_ACCESS_KEY_ID`
+   - `R2_SECRET_ACCESS_KEY`
+   - `R2_BUCKET_NAME`
    - `RESEND_API_KEY` only when `EMAIL_DELIVERY_MODE=send`
    - `RESEND_WEBHOOK_SECRET` only when `EMAIL_DELIVERY_MODE=send`
 4. Add Render custom domain:
@@ -371,7 +376,7 @@ Production should use:
 COOKIE_SECURE=true
 TRUST_PROXY=true
 OPENAPI_PUBLIC=false
-CLOUDINARY_MOCK_UPLOADS=false
+OBJECT_STORAGE_DRIVER=r2
 EMAIL_DELIVERY_MODE=disabled  # switch to send after Resend secrets are configured
 VITE_API_MOCK_FALLBACK=false
 ```

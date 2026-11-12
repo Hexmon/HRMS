@@ -85,7 +85,7 @@ import {
 } from "./data-store.js";
 import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
-import { CloudinaryObjectStorage } from "./object-storage.js";
+import { MemoryObjectStorage, R2ObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
 import { badRequest, companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
 import { assertFinanceActor, assertManagerActor } from "../modules/expenses/policy.js";
@@ -209,13 +209,14 @@ function isSqlLockTimeout(error: unknown): boolean {
 }
 
 export interface PostgresObjectStorageOptions {
-  cloudName: string;
-  apiKey: string;
-  apiSecret: string;
-  folder: string;
-  resourceType: "auto" | "image" | "raw" | "video";
-  uploadTransformation?: string;
-  mockUploads: boolean;
+  driver: "memory" | "r2";
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  endpoint?: string;
+  requestTimeoutMs: number;
+  forcePathStyle: boolean;
 }
 
 export interface PostgresDataStoreOptions {
@@ -553,8 +554,12 @@ export async function createPostgresDataStore(
   options: PostgresDataStoreOptions,
 ): Promise<DataStore> {
   const pool = new Pool({ connectionString: options.databaseUrl });
-  const objectStorage = new CloudinaryObjectStorage(options.objectStorage);
-  await objectStorage.ensureReady();
+  const objectStorage = options.objectStorage.driver === "memory"
+    ? new MemoryObjectStorage()
+    : new R2ObjectStorage(options.objectStorage);
+  if (objectStorage instanceof R2ObjectStorage) {
+    await objectStorage.ensureReady();
+  }
   const documentProcessing = options.documentProcessing;
   const valkey = createValkeyClient(options.valkeyUrl);
 

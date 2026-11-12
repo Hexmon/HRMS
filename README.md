@@ -67,7 +67,7 @@ Reference docs:
 
 - Employee CRUD and profile details.
 - Department, designation, manager hierarchy, employment status, joining details, roles, history, and audit visibility.
-- Employee profile photos are uploaded through the backend media pipeline and stored through Cloudinary-compatible object storage.
+- Employee profile photos use the backend media pipeline and private object storage. Hosted delivery stays behind backend authorization.
 
 ### Attendance
 
@@ -86,7 +86,7 @@ Reference docs:
 
 - Employee profile self-service.
 - Change requests, HR approvals, onboarding, probation, exits, policies, letters, and employee documents.
-- EMS documents use backend document upload and Cloudinary-backed storage.
+- EMS documents use backend document upload and private object storage.
 
 ### Expense Management
 
@@ -105,9 +105,9 @@ Reference docs:
 ### Documents And Media
 
 - Document upload, replace, download-url, verification, access log, and deletion flows are backend-backed.
-- Cloudinary is the active object storage direction.
+- Private Cloudflare R2 is the hosted object-storage direction; local tests use the in-memory adapter or an isolated S3-compatible fixture.
 - Media upload limits, compression behavior, and allowed MIME types are backend-configured.
-- Mock Cloudinary mode is for local/demo behavior only and should not be used as production storage.
+- Memory object storage is for local/test behavior only and is rejected in hosted QA and production.
 
 ### Projects And Utilization
 
@@ -196,7 +196,7 @@ For product behavior and user journeys, start here:
 
 - Production must use real backend APIs, not mock fallback.
 - Production must not run seed/demo data.
-- Production media uploads must use configured Cloudinary credentials with mock uploads disabled.
+- Production media uploads must use an environment-specific private R2 bucket and least-privilege credentials.
 - Production email delivery must use verified Resend sender/domain configuration.
 - Backend validation, OpenAPI docs, contract checks, route coverage, frontend build, and targeted E2E coverage should pass before release.
 - User-facing actions should show success only after a confirmed backend success response.

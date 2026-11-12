@@ -9,13 +9,7 @@ x-backend-environment: &backend-environment
   DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform_qa
   TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform_test
   VALKEY_URL: redis://valkey:6379
-  CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-local-cloudinary-mock}
-  CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-local-cloudinary-key}
-  CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-local-cloudinary-secret}
-  CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-hawkaii-hrms-qa}
-  CLOUDINARY_RESOURCE_TYPE: ${CLOUDINARY_RESOURCE_TYPE:-auto}
-  CLOUDINARY_UPLOAD_TRANSFORMATION: ${CLOUDINARY_UPLOAD_TRANSFORMATION:-q_auto:eco,f_auto}
-  CLOUDINARY_MOCK_UPLOADS: ${CLOUDINARY_MOCK_UPLOADS:-true}
+  OBJECT_STORAGE_DRIVER: memory
   PDF_COMPRESSION_ENABLED: ${PDF_COMPRESSION_ENABLED:-false}
   PDF_COMPRESSION_BINARY: ${PDF_COMPRESSION_BINARY:-gs}
   PDF_COMPRESSION_QUALITY: ${PDF_COMPRESSION_QUALITY:-ebook}

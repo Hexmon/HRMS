@@ -35,6 +35,26 @@ export interface DocumentDeleteResult {
   status: "deleted";
 }
 
+export type PublicDocumentMetadata = Omit<DocumentMetadata, "storage_key" | "metadata"> & {
+  metadata: {
+    verified_at?: string;
+    verified_by?: UUID;
+    rejection_reason?: string;
+  };
+};
+
+export function presentDocument(document: DocumentMetadata): PublicDocumentMetadata {
+  const { storage_key: _storageKey, metadata, ...publicFields } = document;
+  return {
+    ...publicFields,
+    metadata: {
+      ...(typeof metadata.verified_at === "string" ? { verified_at: metadata.verified_at } : {}),
+      ...(typeof metadata.verified_by === "string" ? { verified_by: metadata.verified_by as UUID } : {}),
+      ...(typeof metadata.rejection_reason === "string" ? { rejection_reason: metadata.rejection_reason } : {}),
+    },
+  };
+}
+
 export interface DocumentUploadPolicyResponse {
   max_bytes: number;
   image_max_width: number;
@@ -42,7 +62,6 @@ export interface DocumentUploadPolicyResponse {
   image_jpeg_quality: number;
   allowed_mime_types: string[];
   image_output_mime_type: "image/jpeg";
-  cloudinary_transformation: string;
   company_logo: {
     max_bytes: number;
     image_max_width: number;
@@ -50,7 +69,6 @@ export interface DocumentUploadPolicyResponse {
     image_jpeg_quality: number;
     allowed_mime_types: string[];
     image_output_mime_type: "image/jpeg";
-    cloudinary_transformation: string;
   };
 }
 
@@ -125,7 +143,6 @@ export class DocumentService {
       image_jpeg_quality: policy.imageJpegQuality,
       allowed_mime_types: [...policy.allowedMimeTypes],
       image_output_mime_type: policy.imageOutputMimeType,
-      cloudinary_transformation: policy.cloudinaryTransformation,
       company_logo: {
         max_bytes: companyLogoPolicy.maxBytes,
         image_max_width: companyLogoPolicy.imageMaxWidth,
@@ -133,7 +150,6 @@ export class DocumentService {
         image_jpeg_quality: companyLogoPolicy.imageJpegQuality,
         allowed_mime_types: [...companyLogoPolicy.allowedMimeTypes],
         image_output_mime_type: companyLogoPolicy.imageOutputMimeType,
-        cloudinary_transformation: companyLogoPolicy.cloudinaryTransformation
       }
     };
   }
@@ -198,19 +214,11 @@ export class DocumentService {
     const stored = await this.store.objectStorage.putObject(document.storage_key, uploadBody, {
       "content-type": document.mime_type,
       "x-hrms-document-id": document.id,
-      "x-cloudinary-transformation": uploadPolicy.cloudinaryTransformation,
       ...input.storage_metadata
     });
     document.metadata = {
       ...document.metadata,
-      object_public_id: stored.publicId ?? null,
-      object_resource_type: stored.resourceType ?? null,
-      object_url: stored.url ?? null,
-      object_upload_compressed: stored.compressed ?? false,
-      cloudinary_public_id: this.store.objectStorage.kind === "cloudinary" ? stored.publicId ?? null : null,
-      cloudinary_resource_type: this.store.objectStorage.kind === "cloudinary" ? stored.resourceType ?? null : null,
-      cloudinary_url: this.store.objectStorage.kind === "cloudinary" ? stored.url ?? null : null,
-      cloudinary_upload_compressed: this.store.objectStorage.kind === "cloudinary" ? stored.compressed ?? false : false,
+      storage_etag: stored.etag ?? null,
       pdf_compression_attempted: pdfCompression?.attempted ?? false,
       pdf_compressed: pdfCompression?.compressed ?? false,
       pdf_compression_reason: pdfCompression?.reason ?? null,
@@ -317,13 +325,10 @@ export class DocumentService {
     if (!this.store.objectStorage) {
       throw forbidden("Document object storage adapter is not configured for release acceptance");
     }
-    const objectUrl = typeof document.metadata.object_url === "string" ? document.metadata.object_url : "";
-    const cloudinaryUrl = typeof document.metadata.cloudinary_url === "string" ? document.metadata.cloudinary_url : "";
-    const candidateUrl = objectUrl || cloudinaryUrl || await this.store.objectStorage.presignedGetUrl(document.storage_key, 900);
     return {
       document_id: id,
-      url: isBrowserOpenableUrl(candidateUrl) ? candidateUrl : documentContentUrl(apiBaseUrl, id),
-      expires_in_seconds: 900
+      url: documentContentUrl(apiBaseUrl, id),
+      expires_in_seconds: 0
     };
   }
 
@@ -339,7 +344,7 @@ export class DocumentService {
     const object = await this.store.objectStorage.getObject(document.storage_key);
     if (!object) {
       this.log(actor, id, "download-content", "denied", "object_not_available");
-      throw notFound("Document bytes are not available in the local object-storage adapter. Re-upload the file or disable mock uploads to use real Cloudinary storage.");
+      throw notFound("Document bytes are not available in private object storage.");
     }
     this.log(actor, id, "download-content", "allowed", null);
     return {
@@ -530,10 +535,6 @@ export class DocumentService {
       created_at: nowIso()
     });
   }
-}
-
-function isBrowserOpenableUrl(url: string): boolean {
-  return /^https?:\/\//iu.test(url);
 }
 
 function documentContentUrl(apiBaseUrl: string, id: UUID): string {

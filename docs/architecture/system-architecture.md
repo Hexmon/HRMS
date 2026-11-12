@@ -22,7 +22,7 @@ Vercel / local Vite frontend
   v
 Render / local Fastify API
   |
-  | PostgreSQL queries, Valkey session/outbox state, Cloudinary media writes,
+  | PostgreSQL queries, Valkey session/outbox state, private R2 media writes,
   | Resend email sends and webhooks
   v
 External/runtime services

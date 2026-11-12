@@ -38,7 +38,7 @@ The example files already use placeholders. Do not put real Resend API keys, web
 
 ## Local Development
 
-Use `.env.local` for local development. The tracked `.env.dev.example` is a hosted dev template, so do not copy it directly unless you replace hosted URLs, Neon, Valkey, and Cloudinary values with local ones.
+Use `.env.local` for local development. The tracked `.env.dev.example` is a hosted dev template, so do not copy it directly unless you replace hosted URLs, Neon, Valkey, and R2 values with local ones.
 
 ```bash
 cd hrms_backend
