@@ -441,9 +441,12 @@ export function addEvaluatedModuleStatements(root, path, entry) {
     location.start.line <= line && line <= location.end.line);
   let nextId = Object.keys(statementMap).reduce((maximum, id) => Math.max(maximum, Number(id) + 1), 0);
   for (const node of source.statements) {
-    const staticExport = ts.isExportDeclaration(node) && Boolean(node.moduleSpecifier);
-    const typeOnly = ts.isExportDeclaration(node) && node.isTypeOnly;
-    if ((!staticExport || typeOnly) && !ts.isExpressionStatement(node)) continue;
+    const staticModule = ts.isImportDeclaration(node) ||
+      (ts.isExportDeclaration(node) && Boolean(node.moduleSpecifier));
+    const typeOnly = ts.isImportDeclaration(node)
+      ? node.importClause?.isTypeOnly === true
+      : ts.isExportDeclaration(node) && node.isTypeOnly;
+    if ((!staticModule || typeOnly) && !ts.isExpressionStatement(node)) continue;
     const start = source.getLineAndCharacterOfPosition(node.getStart(source));
     const end = source.getLineAndCharacterOfPosition(node.end);
     const line = start.line + 1;
@@ -535,7 +538,10 @@ function readReport(root, packageName, head) {
     throw new Error(`${packageName}: malformed coverage report`);
   }
   const entries = validatedCoverageEntries(root, data, packageName);
-  return entries;
+  return new Map([...entries].map(([path, entry]) => [
+    path,
+    addEvaluatedModuleStatements(root, path, entry),
+  ]));
 }
 
 function pythonCoverageToIstanbul(root, data) {
@@ -1023,7 +1029,7 @@ function nonExecutableLines(path, content) {
     for (let line = first; line <= last; line++) excluded.add(line);
   };
   const visit = (node) => {
-    if (ts.isImportDeclaration(node) ||
+    if ((ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) ||
         ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) ||
         (ts.isExportDeclaration(node) && node.isTypeOnly) || node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)) {
       mark(node);

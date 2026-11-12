@@ -812,7 +812,7 @@ test("CLI stamps, passes, and fails on synthetic source and usage errors", () =>
   assert.match(invalidWorker.stderr, /absolute canonical/);
 });
 
-test("static imports and type syntax are non-executable while dynamic imports remain measured", () => {
+test("type-only imports are non-executable while runtime imports remain measured", () => {
   const content = "import type { X } from 'x';\n// a comment\ntype Id = string;\nlet pending: string;\ninterface Shape { value: string }\nexport type { X };\ndeclare const external: string;\nexport const value = 1;\n";
   const result = assessChangedFile("hrms_backend/src/extra.ts", new Set([1, 2, 3, 4, 5, 6, 7, 8]), content, undefined);
   assert.deepEqual(result.nonExecutable, [1, 2, 3, 4, 5, 6, 7]);
@@ -820,11 +820,11 @@ test("static imports and type syntax are non-executable while dynamic imports re
   assert.deepEqual(result.uncovered, ["8 (not instrumented)"]);
 
   const sideEffect = assessChangedFile("hrms_backend/src/side-effect.ts", new Set([1]), "import './register.js';\n", undefined);
-  assert.deepEqual(sideEffect.nonExecutable, [1]);
-  assert.deepEqual(sideEffect.uncovered, []);
+  assert.deepEqual(sideEffect.executable, [1]);
+  assert.deepEqual(sideEffect.uncovered, ["1 (not instrumented)"]);
   const valueImport = assessChangedFile("hrms_backend/src/import.ts", new Set([1]), "import { safe } from './unsafe.js';\n", undefined);
-  assert.deepEqual(valueImport.nonExecutable, [1]);
-  assert.deepEqual(valueImport.uncovered, []);
+  assert.deepEqual(valueImport.executable, [1]);
+  assert.deepEqual(valueImport.uncovered, ["1 (not instrumented)"]);
   const dynamicImport = assessChangedFile("hrms_backend/src/dynamic.ts", new Set([1]),
     "export const load = () => import('./runtime.js');\n", undefined);
   assert.deepEqual(dynamicImport.executable, [1]);
@@ -1742,10 +1742,10 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   assert.ok(entry);
   assert.ok(Object.values(entry.s).every((count) => count > 0));
   assert.ok(Object.values(entry.b).flat().every((count) => count > 0));
-  assert.equal(Object.values(entry.statementMap).some((location) => location.start.line === 1), false,
-    "static import syntax does not receive an invented statement count");
-  assert.equal(Object.values(entry.statementMap).some((location) => location.start.line === 2), false,
-    "side-effect import syntax does not receive an invented statement count");
+  assert.equal(Object.values(entry.statementMap).some((location) => location.start.line === 1), true,
+    "executed importer attributes its static value import");
+  assert.equal(Object.values(entry.statementMap).some((location) => location.start.line === 2), true,
+    "executed importer attributes its static side-effect import");
   const dependencyEntry = combined[join(root, dependencyPath)];
   assert.ok(dependencyEntry, "the imported module's actual initialization remains instrumented");
   assert.ok(Object.values(dependencyEntry.s).every((count) => count > 0));
@@ -1758,7 +1758,7 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   assert.throws(() => addUniqueRawCoverageEntry(unique, "covered", { path }), /Duplicate raw V8 coverage source/);
 });
 
-test("module-evaluation attribution excludes static imports without hiding executable expressions", () => {
+test("module-evaluation attribution covers runtime imports only from positive importer evidence", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-module-evaluation-"));
   roots.push(root);
   git(root, "init", "-q");
@@ -1784,7 +1784,7 @@ test("module-evaluation attribution excludes static imports without hiding execu
   };
   const attributed = addEvaluatedModuleStatements(root, "scripts/agent/module.ts", baseEntry);
   const attributedLines = Object.values(attributed.statementMap).map((location) => location.start.line).sort((a, b) => a - b);
-  assert.deepEqual(attributedLines, [4, 5, 6]);
+  assert.deepEqual(attributedLines, [3, 4, 5, 6]);
   assert.ok(Object.values(attributed.s).every((count) => count > 0));
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {}, s: {}, fnMap: {}, f: {}, branchMap: {}, b: {} }).statementMap[0], undefined);
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {} }).statementMap[0], undefined);
@@ -1793,6 +1793,108 @@ test("module-evaluation attribution excludes static imports without hiding execu
     const value = addEvaluatedModuleStatements(root, path, { ...baseEntry, path: join(root, path) });
     assert.equal(value.s[0], 1);
   }
+});
+
+test("module-evaluation attribution handles runtime import forms and multiline declarations", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-import-forms-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms_backend/src/import-forms.ts";
+  write(root, path, [
+    "import defaultValue, {",
+    "  namedValue,",
+    "} from './dependency.js';",
+    "import * as namespaceValue from './dependency.js';",
+    "import './register.js';",
+    "import type { TypeOnly } from './types.js';",
+    "export const local = defaultValue + namedValue + namespaceValue.value;",
+    "",
+  ].join("\n"));
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "import forms");
+  const entry = addEvaluatedModuleStatements(root, path, {
+    path: join(root, path),
+    statementMap: { 0: { start: { line: 7, column: 0 }, end: { line: 7, column: 72 } } },
+    s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
+  });
+  const locations = Object.values(entry.statementMap);
+  assert.ok(locations.some((location) => location.start.line === 1 && location.end.line === 3));
+  assert.ok(locations.some((location) => location.start.line === 4));
+  assert.ok(locations.some((location) => location.start.line === 5));
+  assert.equal(locations.some((location) => location.start.line === 6), false);
+  assert.ok(Object.values(entry.s).every((count) => count > 0));
+});
+
+test("package coverage requires positive importer evidence for changed runtime imports", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-package-import-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const routePath = "hrms_backend/src/route.ts";
+  const unsafePath = "hrms_backend/src/unsafe.ts";
+  write(root, routePath, "import './safe.js';\nexport const loaded = true;\n");
+  write(root, "hrms_backend/src/safe.ts", "export const effect = 'safe';\n");
+  write(root, unsafePath, "export const effect = 'unsafe';\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "safe import");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, routePath, "import './unsafe.js';\nexport const loaded = true;\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "unsafe import");
+
+  const entry = (path, line, count) => ({
+    path: join(root, path),
+    statementMap: { 0: { start: { line, column: 0 }, end: { line, column: 32 } } },
+    s: { 0: count }, fnMap: {}, f: {}, branchMap: {}, b: {},
+  });
+  const writePackageReport = (data) => {
+    writeCoverage(root, "backend", JSON.stringify(data));
+    stampReport(root, "backend");
+  };
+
+  writePackageReport({ [join(root, unsafePath)]: entry(unsafePath, 1, 1) });
+  const importedOnly = verify(root, base, "HEAD");
+  assert.equal(importedOnly.pass, false);
+  assert.ok(importedOnly.totals.uncovered.some((item) => item.includes(`${routePath}:1`)));
+
+  writePackageReport({
+    [join(root, routePath)]: entry(routePath, 2, 0),
+    [join(root, unsafePath)]: entry(unsafePath, 1, 1),
+  });
+  const zeroImporter = verify(root, base, "HEAD");
+  assert.equal(zeroImporter.pass, false);
+  assert.ok(zeroImporter.totals.uncovered.some((item) => item.includes(`${routePath}:1`)));
+
+  writePackageReport({
+    [join(root, routePath)]: entry(routePath, 2, 1),
+    [join(root, unsafePath)]: entry(unsafePath, 1, 1),
+  });
+  const executedImporter = verify(root, base, "HEAD");
+  assert.equal(executedImporter.pass, true, executedImporter.lines.join("\n"));
+});
+
+test("frontend package coverage attributes an executed importing module", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-frontend-import-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const routePath = "hrms-client/src/route.ts";
+  write(root, routePath, "import './safe.js';\nexport const loaded = true;\n");
+  write(root, "hrms-client/src/safe.ts", "export const effect = 'safe';\n");
+  write(root, "hrms-client/src/unsafe.ts", "export const effect = 'unsafe';\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "safe frontend import");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, routePath, "import './unsafe.js';\nexport const loaded = true;\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "unsafe frontend import");
+  const absolute = join(root, routePath);
+  writeCoverage(root, "frontend", JSON.stringify({ [absolute]: {
+    path: absolute,
+    statementMap: { 0: { start: { line: 2, column: 0 }, end: { line: 2, column: 27 } } },
+    s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
+  } }));
+  stampReport(root, "frontend");
+  const result = verify(root, base, "HEAD");
+  assert.equal(result.pass, true, result.lines.join("\n"));
 });
 
 test("Python line and arc coverage is converted without inventing executable lines", async () => {
