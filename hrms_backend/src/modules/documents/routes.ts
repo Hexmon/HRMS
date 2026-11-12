@@ -124,9 +124,10 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "metadata");
-    if (fastify.store.kind === "postgres" && fastify.store.pgPool && fastify.store.objectStorage) {
+    if (fastify.store.kind === "postgres") {
+      assertDurableMediaConfigured(fastify);
       return presentDocument(await new MediaLifecycleService(
-        fastify.store.pgPool, fastify.store.objectStorage,
+        fastify.store.pgPool!, fastify.store.objectStorage!,
       ).activeDocument(request.actor.id, params.id));
     }
     const service = new DocumentService(fastify.store);
@@ -139,8 +140,9 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "raw");
-    if (fastify.store.kind === "postgres" && fastify.store.pgPool && fastify.store.objectStorage) {
-      await new MediaLifecycleService(fastify.store.pgPool, fastify.store.objectStorage)
+    if (fastify.store.kind === "postgres") {
+      assertDurableMediaConfigured(fastify);
+      await new MediaLifecycleService(fastify.store.pgPool!, fastify.store.objectStorage!)
         .activeDocument(request.actor.id, params.id);
       return { document_id: params.id, url: `/api/v1/documents/${params.id}/content`, expires_in_seconds: 0 };
     }
@@ -154,7 +156,8 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "raw");
-    if (fastify.store.kind === "postgres" && fastify.store.pgPool && fastify.store.objectStorage) {
+    if (fastify.store.kind === "postgres") {
+      assertDurableMediaConfigured(fastify);
       const content = await durableMediaContent(fastify, request.actor.id, params.id);
       reply
         .header("content-type", content.contentType)
@@ -221,6 +224,12 @@ async function durableMediaContent(fastify: FastifyInstance, actorId: string, do
 
 function assertTenantOwnedDocumentBoundary(fastify: FastifyInstance): void {
   if (fastify.store.kind === "postgres") {
+    throw conflict("Document access requires immutable tenant ownership");
+  }
+}
+
+function assertDurableMediaConfigured(fastify: FastifyInstance): void {
+  if (!fastify.store.pgPool || !fastify.store.objectStorage) {
     throw conflict("Document access requires immutable tenant ownership");
   }
 }
