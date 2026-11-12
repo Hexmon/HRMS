@@ -67,7 +67,12 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@10.25.0 --activate
-          test "$(pnpm --version)" = "10.25.0"
+          pinned_pnpm="$RUNNER_TEMP/hrms-pnpm-bin/pnpm"
+          mkdir -p "$(dirname "$pinned_pnpm")"
+          printf '%s\n' '#!/usr/bin/env bash' 'exec corepack pnpm@10.25.0 "$@"' > "$pinned_pnpm"
+          chmod 0555 "$pinned_pnpm"
+          test "$("$pinned_pnpm" --version)" = "10.25.0"
+          printf '%s\n' "$(dirname "$pinned_pnpm")" >> "$GITHUB_PATH"
 
       - name: Install immutable validator dependencies
         run: pnpm --dir trusted/hrms_backend install --frozen-lockfile --ignore-scripts
