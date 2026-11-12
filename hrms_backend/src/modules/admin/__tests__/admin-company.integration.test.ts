@@ -150,6 +150,15 @@ describe("admin company profile", () => {
     expect(upload.json().document).not.toHaveProperty("storage_key");
     expect(upload.json().document).not.toHaveProperty("provider_url");
 
+    const content = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${upload.json().company.logo_document_id}/content`,
+      headers: authHeader(employee.token)
+    });
+    expect(content.statusCode).toBe(200);
+    expect(content.headers["content-type"]).toBe("image/jpeg");
+    expect(content.rawPayload).toEqual(Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00]));
+
     const oversized = await multipartUpload(app, {
       url: "/api/v1/admin/company-profile/logo",
       token: admin.token,

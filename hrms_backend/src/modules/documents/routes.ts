@@ -26,6 +26,19 @@ async function assertNoExpenseDocumentAccess(
   if (access !== "other") throw notFound("Document not found");
 }
 
+async function tenantMediaAuthorized(
+  fastify: FastifyInstance,
+  actorId: string,
+  documentId: string,
+  mode: "metadata" | "raw" | "workflow",
+): Promise<boolean> {
+  if (fastify.store.kind !== "postgres") return false;
+  const access = await fastify.store.persistence?.classifyTenantMediaAccess?.(actorId, documentId, mode);
+  if (access === "media-authorized") return true;
+  if (access === "hidden") throw notFound("Document not found");
+  return false;
+}
+
 export const documentRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/documents", async (request) => {
     if (!request.actor) {
@@ -85,8 +98,12 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "metadata");
+    const service = new DocumentService(fastify.store);
+    if (await tenantMediaAuthorized(fastify, request.actor.id, params.id, "metadata")) {
+      return presentDocument(service.tenantMediaMetadata(request.actor, params.id));
+    }
     assertTenantOwnedDocumentBoundary(fastify);
-    return presentDocument(new DocumentService(fastify.store).metadata(request.actor, params.id));
+    return presentDocument(service.metadata(request.actor, params.id));
   });
 
   fastify.post("/documents/:id/download-url", async (request) => {
@@ -95,8 +112,12 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "raw");
+    const service = new DocumentService(fastify.store);
+    if (await tenantMediaAuthorized(fastify, request.actor.id, params.id, "raw")) {
+      return service.tenantMediaDownloadUrl(request.actor, params.id, fastify.config.API_BASE_URL);
+    }
     assertTenantOwnedDocumentBoundary(fastify);
-    return new DocumentService(fastify.store).downloadUrl(request.actor, params.id, fastify.config.API_BASE_URL);
+    return service.downloadUrl(request.actor, params.id, fastify.config.API_BASE_URL);
   });
 
   fastify.get("/documents/:id/content", async (request, reply) => {
@@ -105,8 +126,10 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "raw");
-    assertTenantOwnedDocumentBoundary(fastify);
-    const content = await new DocumentService(fastify.store).downloadContent(request.actor, params.id);
+    const service = new DocumentService(fastify.store);
+    const content = await tenantMediaAuthorized(fastify, request.actor.id, params.id, "raw")
+      ? await service.tenantMediaContent(request.actor, params.id)
+      : (assertTenantOwnedDocumentBoundary(fastify), await service.downloadContent(request.actor, params.id));
     reply
       .header("content-type", content.contentType)
       .header("content-length", String(content.size))

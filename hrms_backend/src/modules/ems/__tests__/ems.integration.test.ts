@@ -368,7 +368,11 @@ describe("employee self-service", () => {
       owner_user_id: employee.user.id,
       document_type: "identity_proof"
     });
-    await expect(app.store.objectStorage?.statObject(employeeUpload.json().document.storage_key)).resolves.toMatchObject({
+    expect(employeeUpload.json().document).not.toHaveProperty("storage_key");
+    const storedEmployeeDocument = app.store.documents.find(
+      (document) => document.id === employeeUpload.json().document.id,
+    );
+    await expect(app.store.objectStorage?.statObject(storedEmployeeDocument!.storage_key)).resolves.toMatchObject({
       size: expect.any(Number)
     });
 
@@ -398,6 +402,7 @@ describe("employee self-service", () => {
       document_summary: { total: 1, pending_verification: 1, restricted: 0 }
     });
     expect(ownList.json().items[0]).toMatchObject({ id: employeeUpload.json().document.id });
+    expect(JSON.stringify(ownList.json().items)).not.toMatch(/storage_key|storage_adapter|storage_etag|bucket|endpoint/iu);
 
     const replacementUpload = await app.inject({
       method: "POST",
@@ -420,9 +425,9 @@ describe("employee self-service", () => {
       document_type: "identity_proof",
       file_name: "passport-replacement.pdf"
     });
-    expect(replacementUpload.json().document.metadata).toMatchObject({
-      replaces_document_id: employeeUpload.json().document.id
-    });
+    expect(replacementUpload.json().document.metadata).not.toHaveProperty("replaces_document_id");
+    expect(app.store.documents.find((document) => document.id === replacementUpload.json().document.id)?.metadata)
+      .toMatchObject({ replaces_document_id: employeeUpload.json().document.id });
     expect(app.store.documents.find((document) => document.id === employeeUpload.json().document.id)?.deleted_at).toEqual(expect.any(String));
 
     const replacedList = await app.inject({
@@ -448,6 +453,7 @@ describe("employee self-service", () => {
       document_summary: { total: 2, restricted: 1 }
     });
     expect(hrList.json().items[0]).toMatchObject({ id: restrictedUpload.json().document.id });
+    expect(JSON.stringify(hrList.json().items)).not.toMatch(/storage_key|storage_adapter|storage_etag|bucket|endpoint/iu);
 
     const crossEmployeeList = await app.inject({
       method: "GET",

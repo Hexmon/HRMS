@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { usePrivateDocumentUrl } from "@/shared/uploads/private-document";
 
 interface Props {
   name: string;
@@ -34,6 +35,7 @@ export function UserAvatar({
   subtitle,
   tone = "primary",
 }: Props) {
+  const resolvedSrc = usePrivateDocumentUrl(src);
   const initials = name
     .split(" ")
     .map((n) => n[0])
@@ -42,7 +44,7 @@ export function UserAvatar({
     .toUpperCase();
   const avatar = (
     <Avatar className={SIZES[size]}>
-      {src && <AvatarImage src={src} alt={name} />}
+      {resolvedSrc && <AvatarImage src={resolvedSrc} alt={name} />}
       <AvatarFallback className={cn("font-semibold", TONE[tone])}>{initials}</AvatarFallback>
     </Avatar>
   );

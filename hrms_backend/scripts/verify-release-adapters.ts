@@ -90,15 +90,15 @@ try {
     failures.push(`Unsupported HRMS_EVENT_TRANSPORT: ${eventTransport}`);
   }
 
-  const missingObjects: string[] = [];
+  let missingObjectCount = 0;
   for (const document of store.documents) {
     const stat = await store.objectStorage?.statObject(document.storage_key);
     if (!stat) {
-      missingObjects.push(document.storage_key);
+      missingObjectCount += 1;
     }
   }
-  if (missingObjects.length > 0) {
-    failures.push(`document metadata without object-storage object: ${missingObjects.join(", ")}`);
+  if (missingObjectCount > 0) {
+    failures.push(`document metadata without object-storage object: count=${missingObjectCount}`);
   }
 
   notes.push(`data_store=${store.kind}`);

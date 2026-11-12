@@ -435,6 +435,15 @@ describe("core hierarchy API", () => {
       stored_size_bytes: body.length
     });
 
+    const content = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${document!.id}/content`,
+      headers: authHeader(employee.token)
+    });
+    expect(content.statusCode).toBe(200);
+    expect(content.headers["content-type"]).toBe("image/jpeg");
+    expect(content.rawPayload).toEqual(body);
+
     const remove = await app.inject({
       method: "DELETE",
       url: `/api/v1/core/users/${employee.user.id}/profile-photo`,

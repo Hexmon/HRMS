@@ -311,6 +311,40 @@ export class DocumentService {
     return document;
   }
 
+  tenantMediaMetadata(actor: AuthUser, id: UUID): DocumentMetadata {
+    const document = this.requireTenantMedia(id);
+    this.log(actor, id, "metadata", "allowed", null);
+    return document;
+  }
+
+  async tenantMediaDownloadUrl(actor: AuthUser, id: UUID, apiBaseUrl = "") {
+    this.requireTenantMedia(id);
+    this.log(actor, id, "download-url", "allowed", null);
+    return { document_id: id, url: documentContentUrl(apiBaseUrl, id), expires_in_seconds: 0 };
+  }
+
+  async tenantMediaContent(actor: AuthUser, id: UUID): Promise<DocumentContentResult> {
+    const document = this.requireTenantMedia(id);
+    if (!this.store.objectStorage) throw forbidden("Document object storage adapter is not configured for release acceptance");
+    const object = await this.store.objectStorage.getObject(document.storage_key);
+    if (!object) throw notFound("Document bytes are not available in private object storage.");
+    this.log(actor, id, "download-content", "allowed", null);
+    return {
+      body: object.body,
+      contentType: object.contentType || document.mime_type || "application/octet-stream",
+      fileName: document.file_name,
+      size: object.size,
+    };
+  }
+
+  private requireTenantMedia(id: UUID): DocumentMetadata {
+    const document = this.repository.find(id);
+    if (document.document_type !== "company_logo" && document.document_type !== "profile_photo") {
+      throw notFound("Document not found");
+    }
+    return document;
+  }
+
   async downloadUrl(
     actor: AuthUser,
     id: UUID,

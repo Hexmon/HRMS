@@ -7,8 +7,13 @@ const endpoint = process.env.R2_INTEGRATION_ENDPOINT;
 const bucket = process.env.R2_INTEGRATION_BUCKET ?? "hrms-private-integration";
 const accessKeyId = process.env.R2_INTEGRATION_ACCESS_KEY_ID ?? "";
 const secretAccessKey = process.env.R2_INTEGRATION_SECRET_ACCESS_KEY ?? "";
+const requested = Boolean(endpoint || accessKeyId || secretAccessKey || process.env.R2_INTEGRATION_BUCKET);
+const disposable = isDisposableIntegrationTarget(endpoint, bucket);
+if (requested && !disposable) {
+  throw new Error("Refusing private object-storage integration outside the disposable loopback target.");
+}
 
-const suite = describe.runIf(Boolean(endpoint && accessKeyId && secretAccessKey));
+const suite = describe.runIf(Boolean(disposable && accessKeyId && secretAccessKey));
 
 suite("R2 adapter against disposable S3-compatible storage", () => {
   const options = {
@@ -60,3 +65,14 @@ suite("R2 adapter against disposable S3-compatible storage", () => {
     await expect(second.removeObject(key)).resolves.toBeUndefined();
   });
 });
+
+function isDisposableIntegrationTarget(value: string | undefined, targetBucket: string): boolean {
+  if (!value || targetBucket !== "hrms-private-integration") return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" && parsed.hostname === "127.0.0.1" && parsed.port === "59000" &&
+      parsed.pathname === "/" && !parsed.username && !parsed.password && !parsed.search && !parsed.hash;
+  } catch {
+    return false;
+  }
+}

@@ -38192,11 +38192,11 @@
     },
     "/api/v1/documents/{id}/download-url": {
       "post": {
-        "summary": "Create download URL",
+        "summary": "Create authenticated content URL",
         "tags": [
           "Documents"
         ],
-        "description": "Returns a short-lived backend-generated download URL for allowed actors. Does not expose storage credentials.",
+        "description": "Returns the backend content endpoint for an allowed actor. The URL is not a bearer capability: every byte request requires current authentication and authorization, and no storage credentials are exposed.",
         "parameters": [
           {
             "schema": {

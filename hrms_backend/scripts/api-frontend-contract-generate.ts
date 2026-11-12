@@ -247,7 +247,7 @@ function businessNotes(row: OperationRow): string[] {
   if (row.path.includes("manager/verify")) notes.push("Manager return/reject require remarks; requester self-verification is blocked server-side.");
   if (row.path.includes("finance/approve")) notes.push("Finance approval starts only after manager verification; hold/clarification-style decisions require remarks.");
   if (row.path.includes("documents")) notes.push("Use backend document APIs only; never expose object-storage credentials or direct bucket paths.");
-  if (row.path.includes("download-url")) notes.push("Download URLs are short-lived sensitive values; do not log or persist them.");
+  if (row.path.includes("download-url")) notes.push("The returned backend content URL is not a bearer capability; fetch it with current authentication and do not log or persist it.");
   if (row.tag === "Outbox / Platform Events") notes.push("Runtime integration route; do not expose as a normal user-facing frontend action.");
   notes.push(`Respect ${code("429")} and ${code("Retry-After")}; never build tight retry loops.`);
   return notes;

@@ -57,8 +57,12 @@ const store = await createPostgresDataStore({
 });
 
 function objectStorageOptions() {
+  const driver = process.env.OBJECT_STORAGE_DRIVER as "memory" | "r2" | undefined;
+  if (process.env.NODE_ENV === "production" && driver !== "r2") {
+    throw new Error("Hosted outbox workers require OBJECT_STORAGE_DRIVER=r2.");
+  }
   return {
-    driver: (process.env.OBJECT_STORAGE_DRIVER as "memory" | "r2" | undefined) ?? "memory",
+    driver: driver ?? "memory",
     accountId: process.env.R2_ACCOUNT_ID ?? "local-r2-account",
     accessKeyId: process.env.R2_ACCESS_KEY_ID ?? "local-r2-access-key",
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? "local-r2-secret-key",

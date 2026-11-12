@@ -1,6 +1,6 @@
 ---
 name: deployment-readiness
-description: Assess and prepare Hawkaii HRMS changes for safe dev, QA, or production deployment across Vercel, Render, Neon, Upstash, Cloudinary, Resend, and Cloudflare Workers. Use for deployment/configuration/cutover work; it does not authorize deployment.
+description: Assess and prepare Hawkaii HRMS changes for safe dev, QA, or production deployment across Vercel, Render, Neon, Upstash, private Cloudflare R2, Resend, and Cloudflare Workers. Use for deployment/configuration/cutover work; it does not authorize deployment.
 ---
 
 # Deployment Readiness

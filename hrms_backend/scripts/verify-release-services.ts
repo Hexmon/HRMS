@@ -48,9 +48,9 @@ try {
   const stat = await storage.statObject(key);
   if (!stat) failures.push("Object-storage smoke object was not readable after upload");
   await storage.removeObject(key);
-  notes.push(`${storage.kind} bucket ${storage.bucket} put/stat/delete passed`);
-} catch (error) {
-  failures.push(`Object storage verification failed: ${error instanceof Error ? error.message : String(error)}`);
+  notes.push("Private object storage put/stat/delete passed");
+} catch {
+  failures.push("Private object storage verification failed");
 }
 
 const result = {

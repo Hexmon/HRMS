@@ -12155,8 +12155,8 @@ const routeDocs: Record<string, RouteSchema> = {
   ),
   "POST /api/v1/documents/{id}/download-url": operation(
     "Documents",
-    "Create download URL",
-    "Returns a short-lived backend-generated download URL for allowed actors. Does not expose storage credentials.",
+    "Create authenticated content URL",
+    "Returns the backend content endpoint for an allowed actor. The URL is not a bearer capability: every byte request requires current authentication and authorization, and no storage credentials are exposed.",
     {
       params: idParamSchema,
       response200: {

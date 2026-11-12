@@ -574,6 +574,11 @@ export interface DataStorePersistence {
     documentId: UUID,
     mode: "metadata" | "raw" | "workflow",
   ): Promise<"other" | "expense-authorized" | "hidden">;
+  classifyTenantMediaAccess?(
+    userId: UUID,
+    documentId: UUID,
+    mode: "metadata" | "raw" | "workflow",
+  ): Promise<"other" | "media-authorized" | "hidden">;
   expenseDashboardContext?(userId: UUID, filters: {
     status?: string;
     date_from?: string;

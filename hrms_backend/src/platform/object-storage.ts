@@ -17,6 +17,7 @@ export interface R2ObjectStorageOptions {
   endpoint?: string;
   requestTimeoutMs: number;
   forcePathStyle?: boolean;
+  maxObjectBytes?: number;
 }
 
 interface ObjectStorageCommandClient {
@@ -89,6 +90,10 @@ export class R2ObjectStorage implements ObjectStoragePort {
     if (!Number.isInteger(options.requestTimeoutMs) || options.requestTimeoutMs < 500 || options.requestTimeoutMs > 60_000) {
       throw new Error("R2_REQUEST_TIMEOUT_MS must be an integer between 500 and 60000.");
     }
+    if (options.maxObjectBytes !== undefined &&
+        (!Number.isSafeInteger(options.maxObjectBytes) || options.maxObjectBytes < 1)) {
+      throw new Error("R2 maxObjectBytes must be a positive safe integer.");
+    }
     const accountId = requireConfigValue("R2_ACCOUNT_ID", options.accountId);
     if (!/^[a-f0-9]{32}$/iu.test(accountId) && !options.endpoint) {
       throw new Error("R2_ACCOUNT_ID must be a 32-character Cloudflare account identifier.");
@@ -131,13 +136,19 @@ export class R2ObjectStorage implements ObjectStoragePort {
 
   async getObject(key: string): Promise<ObjectStorageGetResult | null> {
     assertObjectKey(key);
+    const deadline = Date.now() + this.options.requestTimeoutMs;
     let result: {
-      Body?: { transformToByteArray?: () => Promise<Uint8Array> };
+      Body?: { transformToByteArray?: () => Promise<Uint8Array>; destroy?: (error?: Error) => void };
       ContentLength?: number;
       ContentType?: string;
     };
     try {
-      result = await this.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }), "read object", true) as typeof result;
+      result = await this.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+        "read object",
+        true,
+        Math.max(1, deadline - Date.now()),
+      ) as typeof result;
     } catch (error) {
       if (isMissingObjectError(error)) return null;
       throw error;
@@ -145,8 +156,27 @@ export class R2ObjectStorage implements ObjectStoragePort {
     if (!result.Body?.transformToByteArray) {
       throw new ObjectStorageProviderError("unavailable", "Private object storage returned an unreadable body.");
     }
-    const bytes = await this.withDeadline(result.Body.transformToByteArray(), "read object body");
+    const maxObjectBytes = this.options.maxObjectBytes ?? 64 * 1024 * 1024;
+    if (result.ContentLength !== undefined && result.ContentLength > maxObjectBytes) {
+      result.Body.destroy?.();
+      throw new ObjectStorageProviderError("unavailable", "Private object storage returned an oversized object body.");
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = await this.withDeadline(
+        result.Body.transformToByteArray(),
+        "read object body",
+        Math.max(1, deadline - Date.now()),
+      );
+    } catch (error) {
+      result.Body.destroy?.(error instanceof Error ? error : undefined);
+      throw error;
+    }
     const body = Buffer.from(bytes);
+    if (body.length > maxObjectBytes) {
+      result.Body.destroy?.();
+      throw new ObjectStorageProviderError("unavailable", "Private object storage returned an oversized object body.");
+    }
     if (result.ContentLength !== undefined && result.ContentLength !== body.length) {
       throw new ObjectStorageProviderError("unavailable", "Private object storage returned an incomplete object body.");
     }
@@ -184,11 +214,21 @@ export class R2ObjectStorage implements ObjectStoragePort {
     }
   }
 
-  private async send(command: unknown, operation: string, allowMissing = false): Promise<unknown> {
+  private async send(
+    command: unknown,
+    operation: string,
+    allowMissing = false,
+    timeoutMs = this.options.requestTimeoutMs,
+  ): Promise<unknown> {
     try {
-      return await this.client.send(command, { abortSignal: AbortSignal.timeout(this.options.requestTimeoutMs) });
+      return await this.withDeadline(
+        this.client.send(command, { abortSignal: AbortSignal.timeout(timeoutMs) }),
+        operation,
+        timeoutMs,
+      );
     } catch (error) {
       if (allowMissing && isMissingObjectError(error)) throw error;
+      if (error instanceof ObjectStorageProviderError) throw error;
       if (isAbortError(error)) {
         throw new ObjectStorageProviderError("timeout", `Private object storage timed out while attempting to ${operation}.`);
       }
@@ -196,12 +236,12 @@ export class R2ObjectStorage implements ObjectStoragePort {
     }
   }
 
-  private async withDeadline<T>(promise: Promise<T>, operation: string): Promise<T> {
+  private async withDeadline<T>(promise: Promise<T>, operation: string, timeoutMs: number): Promise<T> {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeout = setTimeout(() => {
         reject(new ObjectStorageProviderError("timeout", `Private object storage timed out while attempting to ${operation}.`));
-      }, this.options.requestTimeoutMs);
+      }, timeoutMs);
     });
     try {
       return await Promise.race([promise, timeoutPromise]);

@@ -12,7 +12,7 @@ code_topology:
   frontend_stack: TanStack Start / React / TypeScript
   backend_stack: Fastify / TypeScript / Drizzle / PostgreSQL
   background_processing: separate worker processes / Valkey streams
-  hosted_design: Vercel frontend / Render backend and worker / PostgreSQL / Valkey / Cloudinary / Resend
+  hosted_design: Vercel frontend / Render backend and worker / PostgreSQL / Valkey / private Cloudflare R2 / Resend
   live_deployment_status: TBD_REQUIRES_OPERATOR_CONFIRMATION
 multi_tenancy:
   intended: company-scoped per README and membership code

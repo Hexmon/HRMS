@@ -480,8 +480,10 @@ export class EmsService {
     const filtered = query.document_type
       ? visible.filter((document) => document.document_type === query.document_type)
       : visible;
+    const result = page(filtered, query.page, query.page_size);
     return {
-      ...page(filtered, query.page, query.page_size),
+      ...result,
+      items: result.items.map(presentDocument),
       document_summary: this.documentSummary(visible)
     };
   }

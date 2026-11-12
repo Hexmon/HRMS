@@ -31,6 +31,7 @@ import {
 } from "@/shared/uploads/documents";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
+import { usePrivateDocumentUrl } from "@/shared/uploads/private-document";
 
 export const Route = createFileRoute("/_app/admin-settings/company")({
   component: CompanyProfileScreen,
@@ -93,6 +94,7 @@ function CompanyProfileScreen() {
   );
   const [draft, setDraft] = useState<CompanyProfile>(apiCompany ?? company);
   const logoPolicy = companyLogoPolicy(uploadPolicyQuery.data);
+  const privateLogoUrl = usePrivateDocumentUrl(draft.logoUrl);
 
   useEffect(() => {
     setDraft(apiCompany ?? company);
@@ -164,9 +166,9 @@ function CompanyProfileScreen() {
         </div>
       ) : null}
       <div className="mb-6 flex items-center gap-4">
-        {draft.logoUrl ? (
+        {privateLogoUrl ? (
           <img
-            src={draft.logoUrl}
+            src={privateLogoUrl}
             alt={`${draft.name || "Company"} logo`}
             className="h-16 w-16 rounded-2xl border border-border/60 object-contain p-2 shadow-md"
           />

@@ -86,6 +86,33 @@ describe("private R2 object storage", () => {
     });
   });
 
+  it("destroys and rejects object bodies above the configured cap", async () => {
+    const destroy = vi.fn();
+    const storage = new R2ObjectStorage({ ...options, maxObjectBytes: 2 }, {
+      send: vi.fn(async () => ({
+        Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]), destroy },
+        ContentLength: 3,
+      })),
+    });
+    await expect(storage.getObject("opaque/data.bin")).rejects.toMatchObject({ code: "unavailable" });
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it("enforces a deadline even when the command client ignores abort signals", async () => {
+    vi.useFakeTimers();
+    try {
+      const storage = new R2ObjectStorage(options, {
+        send: vi.fn(() => new Promise(() => undefined)),
+      });
+      const pending = storage.ensureReady();
+      const expectation = expect(pending).rejects.toMatchObject({ code: "timeout" });
+      await vi.advanceTimersByTimeAsync(501);
+      await expectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("distinguishes missing objects from bucket and provider failures", async () => {
     const objectMissing = new R2ObjectStorage(options, { send: vi.fn(async () => { throw missing(); }) });
     await expect(objectMissing.getObject("opaque/missing.bin")).resolves.toBeNull();

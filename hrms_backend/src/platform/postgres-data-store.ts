@@ -3252,6 +3252,55 @@ class PostgresPersistence {
     }
   }
 
+  async classifyTenantMediaAccess(
+    userId: UUID,
+    documentId: UUID,
+    mode: "metadata" | "raw" | "workflow",
+  ): Promise<"other" | "media-authorized" | "hidden"> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const { companyId } = await this.resolveExpenseActor(client, userId);
+      const result = await client.query<{
+        metadata_id: UUID | null;
+        media_kind: "company_logo" | "profile_photo" | null;
+      }>(
+        `SELECT metadata.id AS metadata_id,
+                CASE
+                  WHEN company.logo_document_id = metadata.id
+                    AND metadata.document_type = 'company_logo'
+                    AND metadata.business_object_type = 'company_profile'
+                    AND metadata.business_object_id = company.id THEN 'company_logo'
+                  WHEN target.profile_photo_document_id = metadata.id
+                    AND target_pref.company_id = $2::uuid
+                    AND metadata.document_type = 'profile_photo'
+                    AND metadata.business_object_type = 'core_user'
+                    AND metadata.business_object_id = target.id THEN 'profile_photo'
+                  ELSE NULL
+                END AS media_kind
+         FROM (SELECT $1::uuid AS document_id) requested
+         LEFT JOIN documents.doc_metadata metadata
+           ON metadata.id = requested.document_id AND metadata.deleted_at IS NULL
+         LEFT JOIN platform.company_profiles company
+           ON company.id = $2::uuid AND company.status = 'active'
+          AND company.logo_document_id = metadata.id
+         LEFT JOIN core.users target ON target.profile_photo_document_id = metadata.id
+         LEFT JOIN platform.user_session_preferences target_pref ON target_pref.user_id = target.id`,
+        [documentId, companyId],
+      );
+      const row = result.rows[0];
+      await client.query("COMMIT");
+      if (!row?.metadata_id) return "hidden";
+      if (!row.media_kind) return "other";
+      return mode === "workflow" ? "hidden" : "media-authorized";
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async expenseDashboardContext(userId: UUID, filters: {
     status?: string; date_from?: string; date_to?: string;
   }): Promise<{

@@ -230,7 +230,8 @@ const companyBootstrapMutationRoutes = new Set([
 ]);
 
 const companyLogoMutationRoutes = new Set([
-  "POST /api/v1/onboarding/company-logo"
+  "POST /api/v1/onboarding/company-logo",
+  "POST /api/v1/admin/company-profile/logo",
 ]);
 
 type PersistenceFlushTarget =
@@ -335,7 +336,12 @@ function corePersistenceFlushOptions(record: Record<string, unknown>): DomainPer
   const document = nestedPayloadRecord(record.document);
   const userIds = uniqueStrings([record.user_id, record.id, user?.id]);
   const companyIds = uniqueStrings([record.company_id, user?.company_id]);
-  const documentIds = uniqueStrings([record.document_id, document?.id, user?.profile_photo_document_id]);
+  const documentIds = uniqueStrings([
+    record.document_id,
+    record.profile_photo_document_id,
+    document?.id,
+    user?.profile_photo_document_id,
+  ]);
   const aggregateIds = uniqueStrings([record.aggregate_id, record.user_id, user?.id, record.id]);
   if (!userIds.length && !companyIds.length && !documentIds.length && !aggregateIds.length) return undefined;
   return {
