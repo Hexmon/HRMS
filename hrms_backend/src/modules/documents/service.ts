@@ -390,6 +390,9 @@ export class DocumentService {
   }
 
   async delete(actor: AuthUser, id: UUID): Promise<DocumentDeleteResult> {
+    if (this.store.kind === "postgres") {
+      throw conflict("Physical document deletion is disabled until the retention and legal-hold policy is implemented");
+    }
     const document = this.repository.find(id);
     if (this.expenseReceiptReadDecision(actor, document, false) !== null) {
       throw conflict("Expense receipt deletion requires a parent-authorized workflow");

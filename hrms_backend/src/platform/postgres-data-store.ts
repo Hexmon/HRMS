@@ -296,6 +296,9 @@ const resetTables = [
   "assets.software_products",
   "assets.software_vendors",
   "assets.assets",
+  "documents.media_lifecycle_audit",
+  "documents.media_upload_intents",
+  "documents.document_owner_repair_audit",
   "documents.doc_access_logs",
   "documents.doc_permissions",
   "documents.doc_versions",
@@ -3278,6 +3281,9 @@ class PostgresPersistence {
         metadata_id: UUID | null;
         metadata_document_type: string | null;
         media_kind: "company_logo" | "profile_photo" | null;
+        owner_user_id: UUID | null;
+        created_by_user_id: UUID | null;
+        classification: string | null;
         target_user_id: UUID | null;
         target_hierarchy_path: string | null;
       }>(
@@ -3294,10 +3300,12 @@ class PostgresPersistence {
                     AND metadata.business_object_id = target.id THEN 'profile_photo'
                   ELSE NULL
                 END AS media_kind,
-                target.id AS target_user_id, target.hierarchy_path AS target_hierarchy_path
+                target.id AS target_user_id, target.hierarchy_path AS target_hierarchy_path,
+                metadata.owner_user_id,metadata.created_by_user_id,metadata.classification
          FROM (SELECT $1::uuid AS document_id) requested
          LEFT JOIN documents.doc_metadata metadata
            ON metadata.id = requested.document_id AND metadata.deleted_at IS NULL
+          AND metadata.company_id = $2::uuid AND metadata.lifecycle_state = 'active'
          LEFT JOIN platform.company_profiles company
            ON company.id = $2::uuid AND company.status = 'active'
           AND company.logo_document_id = metadata.id
@@ -3310,9 +3318,19 @@ class PostgresPersistence {
       await client.query("COMMIT");
       if (!row?.metadata_id) return "hidden";
       if (!row.media_kind) {
-        return row.metadata_document_type === "company_logo" || row.metadata_document_type === "profile_photo"
-          ? "hidden"
-          : "other";
+        if (row.metadata_document_type === "company_logo" || row.metadata_document_type === "profile_photo") {
+          return "hidden";
+        }
+        if (mode === "workflow") return "hidden";
+        const privileged = actor.roles.some((role) =>
+          role === Roles.Admin || role === Roles.Auditor || role === Roles.FinanceManager ||
+          role === Roles.Director || role === Roles.AssetManager,
+        );
+        const restrictedAllowed = !["medical", "compensation"].includes(row.classification ?? "") ||
+          actor.roles.includes(Roles.HRManager);
+        return restrictedAllowed && (privileged || row.owner_user_id === actor.id || row.created_by_user_id === actor.id)
+          ? "media-authorized"
+          : "hidden";
       }
       if (mode === "workflow") return "hidden";
       if (row.media_kind === "company_logo") return "media-authorized";
@@ -4898,6 +4916,7 @@ class PostgresPersistence {
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id,
       business_object_type: row.business_object_type,
       business_object_id: row.business_object_id,
       owner_user_id: row.owner_user_id,
@@ -4914,6 +4933,9 @@ class PostgresPersistence {
       created_at: asIso(row.created_at),
       updated_at: asIso(row.updated_at),
       deleted_at: asIsoOrNull(row.deleted_at),
+      lifecycle_state: row.lifecycle_state,
+      replaced_by_document_id: row.replaced_by_document_id,
+      lifecycle_reason: row.lifecycle_reason,
     }));
   }
 

@@ -21,15 +21,17 @@ export const coreApi = {
   profilePhotoPolicy() {
     return apiRequest<ProfilePhotoPolicy>("/api/v1/core/users/profile-photo-policy");
   },
-  uploadProfilePhoto(id: string, input: FormData) {
+  uploadProfilePhoto(id: string, input: FormData, command: MediaCommand) {
     return apiRequest<ApiRecord>(`/api/v1/core/users/${id}/profile-photo`, {
       method: "POST",
       body: input,
+      headers: mediaCommandHeaders(command),
     });
   },
-  deleteProfilePhoto(id: string) {
+  deleteProfilePhoto(id: string, command: MediaCommand & { expectedPointerDocumentId: string }) {
     return apiRequest<ApiRecord>(`/api/v1/core/users/${id}/profile-photo`, {
       method: "DELETE",
+      headers: mediaCommandHeaders(command),
     });
   },
   activateUser(id: string, input: ExpectedVersionBody) {
@@ -83,3 +85,17 @@ export const coreApi = {
     return apiRequest<ApiRecord>(`/api/v1/core/users/${id}/subtree`);
   },
 };
+
+export interface MediaCommand {
+  idempotencyKey: string;
+  expectedVersion: number;
+  expectedPointerDocumentId?: string | null;
+}
+
+function mediaCommandHeaders(command: MediaCommand): Record<string, string> {
+  return {
+    "Idempotency-Key": command.idempotencyKey,
+    "X-Expected-Version": String(command.expectedVersion),
+    "X-Expected-Pointer-Document-Id": command.expectedPointerDocumentId ?? "none",
+  };
+}

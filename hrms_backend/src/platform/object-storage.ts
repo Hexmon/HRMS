@@ -48,7 +48,7 @@ export class ObjectStorageProviderError extends Error {
 export class MemoryObjectStorage implements ObjectStoragePort {
   readonly kind = "memory";
   readonly bucket = "memory";
-  private readonly objects = new Map<string, { body: Buffer; contentType?: string }>();
+  private readonly objects = new Map<string, { body: Buffer; contentType?: string; metadata: Record<string, string> }>();
 
   async putObject(
     key: string,
@@ -59,6 +59,7 @@ export class MemoryObjectStorage implements ObjectStoragePort {
     this.objects.set(key, {
       body: Buffer.from(body),
       contentType: metadata["content-type"],
+      metadata: { ...metadata },
     });
     return { size: body.length };
   }
@@ -71,10 +72,14 @@ export class MemoryObjectStorage implements ObjectStoragePort {
       : null;
   }
 
-  async statObject(key: string): Promise<{ size: number } | null> {
+  async statObject(key: string): Promise<{ size: number; contentType?: string; metadata?: Record<string, string> } | null> {
     assertObjectKey(key);
     const object = this.objects.get(key);
-    return object ? { size: object.body.length } : null;
+    return object ? {
+      size: object.body.length,
+      contentType: object.contentType,
+      metadata: { ...object.metadata },
+    } : null;
   }
 
   async removeObject(key: string): Promise<void> {
@@ -218,18 +223,28 @@ export class R2ObjectStorage implements ObjectStoragePort {
     return body.transformToByteArray!();
   }
 
-  async statObject(key: string): Promise<{ size: number } | null> {
+  async statObject(key: string): Promise<{
+    size: number;
+    etag?: string;
+    contentType?: string;
+    metadata?: Record<string, string>;
+  } | null> {
     assertObjectKey(key);
     try {
       const result = await this.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
         "inspect object",
         true,
-      ) as { ContentLength?: number };
+      ) as { ContentLength?: number; ETag?: string; ContentType?: string; Metadata?: Record<string, string> };
       if (!Number.isSafeInteger(result.ContentLength) || (result.ContentLength ?? -1) < 0) {
         throw new ObjectStorageProviderError("unavailable", "Private object storage returned invalid object metadata.");
       }
-      return { size: result.ContentLength! };
+      return {
+        size: result.ContentLength!,
+        ...(result.ETag ? { etag: result.ETag } : {}),
+        ...(result.ContentType ? { contentType: result.ContentType } : {}),
+        ...(result.Metadata ? { metadata: { ...result.Metadata } } : {}),
+      };
     } catch (error) {
       if (isMissingObjectError(error)) return null;
       throw error;

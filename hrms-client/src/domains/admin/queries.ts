@@ -40,7 +40,12 @@ export function useUpdateCompanyProfileMutation() {
 export function useUploadCompanyLogoMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: FormData) => adminApi.uploadCompanyLogo(input),
+    mutationFn: (input: {
+      formData: FormData;
+      idempotencyKey: string;
+      expectedVersion: number;
+      expectedPointerDocumentId: string | null;
+    }) => adminApi.uploadCompanyLogo(input.formData, input),
     onSuccess: (response) => {
       queryClient.setQueryData(
         queryKeys.detail("admin", "company-profile", "current"),

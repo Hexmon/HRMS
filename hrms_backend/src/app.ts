@@ -263,7 +263,11 @@ const domainMutationPrefixes: Array<{ prefix: string; domain: PersistenceDomain 
 // This command owns its PostgreSQL transaction (including outbox).  Keeping
 // this list exact prevents accidentally bypassing persistence for unmigrated
 // attendance mutations such as regularization.
-const transactionOwnedMutationRoutes = new Set(["POST /api/v1/attendance/punches"]);
+const transactionOwnedMutationRoutes = new Set([
+  "POST /api/v1/attendance/punches",
+  "POST /api/v1/documents",
+  "POST /api/v1/admin/company-profile/logo",
+]);
 
 function isTransactionOwnedMutationRoute(routeKey: string): boolean {
   return (
@@ -280,7 +284,8 @@ function isTransactionOwnedMutationRoute(routeKey: string): boolean {
     /^POST \/api\/v1\/attendance\/geofences\/[^/]+\/versions\/[^/]+\/publish$/u.test(routeKey) ||
     /^POST \/api\/v1\/expenses\/[^/]+\/(?:finance\/(?:approve|payment)|settlement)$/u.test(routeKey) ||
     routeKey === "POST /api/v1/notifications/read-all" ||
-    /^POST \/api\/v1\/notifications\/[^/]+\/read$/u.test(routeKey)
+    /^POST \/api\/v1\/notifications\/[^/]+\/read$/u.test(routeKey) ||
+    /^(?:POST|DELETE) \/api\/v1\/core\/users\/[^/]+\/profile-photo$/u.test(routeKey)
   );
 }
 

@@ -1142,6 +1142,9 @@ Success body highlights:
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8 |
+| `x-expected-version` | header | yes | string | pattern ^[1-9][0-9]*$ |
+| `x-expected-pointer-document-id` | header | yes | string | - |
 
 **Request body**
 
@@ -1221,6 +1224,9 @@ Only the first 30 top-level fields are listed here; use `openapi.json` for the f
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8 |
+| `x-expected-version` | header | yes | string | pattern ^[1-9][0-9]*$ |
+| `x-expected-pointer-document-id` | header | yes | string | - |
 
 **Request body**
 
@@ -3034,8 +3040,11 @@ Success body highlights:
 | Roles/scope | Admin/configuration persona only unless backend grants narrower operational permission. |
 
 **Path/query parameters**
-
-No path or query parameters.
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `idempotency-key` | header | yes | string | minLength 8 |
+| `x-expected-version` | header | yes | string | pattern ^[1-9][0-9]*$ |
+| `x-expected-pointer-document-id` | header | yes | string | - |
 
 **Request body**
 
@@ -5943,8 +5952,9 @@ Success body highlights:
 | Roles/scope | Classification and business-object policy apply; storage credentials are never exposed. |
 
 **Path/query parameters**
-
-No path or query parameters.
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `idempotency-key` | header | yes | string | minLength 8 |
 
 **Request body**
 

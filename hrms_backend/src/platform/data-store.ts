@@ -432,7 +432,12 @@ export interface ObjectStoragePort {
     metadata?: Record<string, string>,
   ): Promise<ObjectStoragePutResult>;
   getObject(key: string): Promise<ObjectStorageGetResult | null>;
-  statObject(key: string): Promise<{ size: number } | null>;
+  statObject(key: string): Promise<{
+    size: number;
+    etag?: string;
+    contentType?: string;
+    metadata?: Record<string, string>;
+  } | null>;
   removeObject(key: string): Promise<void>;
 }
 

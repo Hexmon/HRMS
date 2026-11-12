@@ -137,7 +137,13 @@ function CompanyProfileScreen() {
       const prepared = await prepareDocumentUploadFile(file, logoPolicy);
       const formData = new FormData();
       formData.set("file", prepared.file);
-      const response = await uploadLogoMutation.mutateAsync(formData);
+      if (!companyQuery.data) throw new Error("Company profile has not loaded yet.");
+      const response = await uploadLogoMutation.mutateAsync({
+        formData,
+        idempotencyKey: crypto.randomUUID(),
+        expectedVersion: companyQuery.data.version,
+        expectedPointerDocumentId: companyQuery.data.logo_document_id,
+      });
       const next = mapApiCompanyProfile(response.company);
       setCompany(next);
       setDraft(next);

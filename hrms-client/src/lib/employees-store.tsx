@@ -337,10 +337,24 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
   });
 
   const profilePhotoMutation = useMutation({
-    mutationFn: ({ userId, file }: { userId: string; file: File }) => {
+    mutationFn: ({
+      userId,
+      file,
+      employee,
+      idempotencyKey,
+    }: {
+      userId: string;
+      file: File;
+      employee: Employee;
+      idempotencyKey: string;
+    }) => {
       const formData = new FormData();
       formData.set("file", file);
-      return coreApi.uploadProfilePhoto(userId, formData);
+      return coreApi.uploadProfilePhoto(userId, formData, {
+        idempotencyKey,
+        expectedVersion: employee.version ?? 1,
+        expectedPointerDocumentId: employee.profilePhotoDocumentId ?? null,
+      });
     },
     onSuccess: invalidateCoreUsers,
   });
@@ -368,7 +382,14 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
       if (!apiUserId) {
         throw new Error("Employee must be saved before uploading a profile photo.");
       }
-      const response = await profilePhotoMutation.mutateAsync({ userId: apiUserId, file });
+      if (!current)
+        throw new Error("Employee state is unavailable for a safe profile photo replacement.");
+      const response = await profilePhotoMutation.mutateAsync({
+        userId: apiUserId,
+        file,
+        employee: current,
+        idempotencyKey: crypto.randomUUID(),
+      });
       return mapApiUserToEmployee(response, current);
     }
     const previewUrl = URL.createObjectURL(file);

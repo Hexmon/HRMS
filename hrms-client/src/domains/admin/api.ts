@@ -448,10 +448,22 @@ export const adminApi = {
       body: input,
     });
   },
-  uploadCompanyLogo(input: FormData) {
+  uploadCompanyLogo(
+    input: FormData,
+    command: {
+      idempotencyKey: string;
+      expectedVersion: number;
+      expectedPointerDocumentId: string | null;
+    },
+  ) {
     return apiRequest<AdminCompanyLogoUploadResponse>("/api/v1/admin/company-profile/logo", {
       method: "POST",
       body: input,
+      headers: {
+        "Idempotency-Key": command.idempotencyKey,
+        "X-Expected-Version": String(command.expectedVersion),
+        "X-Expected-Pointer-Document-Id": command.expectedPointerDocumentId ?? "none",
+      },
     });
   },
   listDepartments(

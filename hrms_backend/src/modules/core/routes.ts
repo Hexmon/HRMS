@@ -4,6 +4,7 @@ import { EmploymentStatuses, Roles } from "#shared";
 import { paginationQuerySchema } from "#shared";
 import { badRequest, unauthorized } from "../../platform/errors.js";
 import { CoreService, type ProfilePhotoPolicy, type ProfilePhotoUploadInput } from "./service.js";
+import { MediaLifecycleService } from "../documents/media-lifecycle.js";
 
 const roleValues = [
   Roles.Employee,
@@ -146,6 +147,37 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = z.object({ id: z.uuid() }).parse(request.params);
     const upload = await parseProfilePhotoUpload(request);
+    if (fastify.store.kind === "postgres") {
+      if (!fastify.store.pgPool || !fastify.store.objectStorage) {
+        throw badRequest("Durable media storage is not configured");
+      }
+      const policy = profilePhotoPolicyFromConfig(fastify.config);
+      const normalizedMime = upload.mime_type.trim().toLowerCase();
+      if (!policy.allowed_mime_types.includes(normalizedMime)) {
+        throw badRequest("Profile photo must be a JPEG, PNG, or WebP image.");
+      }
+      if (upload.file_buffer.length > policy.max_bytes) {
+        throw badRequest("Profile photo is larger than the configured upload limit.");
+      }
+      await new MediaLifecycleService(fastify.store.pgPool, fastify.store.objectStorage).upload({
+        actor: request.actor,
+        operation: "replace_profile_photo",
+        parentType: "core_user",
+        parentId: params.id,
+        businessObjectType: "core_user",
+        ownerUserId: params.id,
+        classification: "normal",
+        documentType: "profile_photo",
+        fileName: upload.file_name,
+        mimeType: normalizedMime,
+        body: upload.file_buffer,
+        idempotencyKey: z.string().trim().min(8).max(200).parse(request.headers["idempotency-key"]),
+        expectedParentVersion: z.coerce.number().int().min(1).parse(request.headers["x-expected-version"]),
+        expectedPointerDocumentId: expectedPointerHeader(request),
+      });
+      await fastify.store.persistence?.reload();
+      return new CoreService(fastify.store).getUser(request.actor, params.id);
+    }
     const service = new CoreService(fastify.store);
     return service.uploadProfilePhoto(
       request.actor,
@@ -160,6 +192,22 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = z.object({ id: z.uuid() }).parse(request.params);
+    if (fastify.store.kind === "postgres") {
+      if (!fastify.store.pgPool || !fastify.store.objectStorage) {
+        throw badRequest("Durable media storage is not configured");
+      }
+      const pointer = expectedPointerHeader(request);
+      if (!pointer) throw badRequest("Current profile photo document is required");
+      await new MediaLifecycleService(fastify.store.pgPool, fastify.store.objectStorage).removeProfilePhoto({
+        actor: request.actor,
+        userId: params.id,
+        expectedVersion: z.coerce.number().int().min(1).parse(request.headers["x-expected-version"]),
+        expectedPointerDocumentId: pointer,
+        idempotencyKey: z.string().trim().min(8).max(200).parse(request.headers["idempotency-key"]),
+      });
+      await fastify.store.persistence?.reload();
+      return new CoreService(fastify.store).getUser(request.actor, params.id);
+    }
     const service = new CoreService(fastify.store);
     return service.removeProfilePhoto(request.actor, params.id);
   });
@@ -304,6 +352,11 @@ function profilePhotoPolicyFromConfig(config: FastifyInstance["config"]): Profil
       .filter(Boolean),
     output_mime_type: "image/jpeg",
   };
+}
+
+function expectedPointerHeader(request: FastifyRequest): string | null {
+  const raw = z.string().trim().parse(request.headers["x-expected-pointer-document-id"]);
+  return raw === "none" ? null : z.uuid().parse(raw);
 }
 
 async function parseProfilePhotoUpload(request: FastifyRequest): Promise<ProfilePhotoUploadInput> {

@@ -132,6 +132,11 @@ describe("admin company profile", () => {
     const upload = await multipartUpload(app, {
       url: "/api/v1/admin/company-profile/logo",
       token: admin.token,
+      headers: {
+        "idempotency-key": "admin-logo-initial-001",
+        "x-expected-version": "1",
+        "x-expected-pointer-document-id": "none",
+      },
       fields: {},
       file: {
         fieldName: "file",
@@ -199,6 +204,7 @@ interface MultipartUploadInput {
   url: string;
   token: string;
   fields: Record<string, string>;
+  headers?: Record<string, string>;
   file: {
     fieldName: string;
     fileName: string;
@@ -230,6 +236,7 @@ function multipartUpload(app: FastifyInstance, input: MultipartUploadInput) {
     url: input.url,
     headers: {
       ...authHeader(input.token),
+      ...input.headers,
       "content-type": `multipart/form-data; boundary=${boundary}`
     },
     payload: Buffer.concat(chunks)

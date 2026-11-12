@@ -412,6 +412,11 @@ describe("core hierarchy API", () => {
     const upload = await multipartUpload(app, {
       url: `/api/v1/core/users/${employee.user.id}/profile-photo`,
       token: admin.token,
+      headers: {
+        "idempotency-key": "profile-photo-initial-001",
+        "x-expected-version": "1",
+        "x-expected-pointer-document-id": "none",
+      },
       file: {
         fieldName: "file",
         fileName: "employee-profile.jpg",
@@ -525,7 +530,12 @@ describe("core hierarchy API", () => {
     const remove = await app.inject({
       method: "DELETE",
       url: `/api/v1/core/users/${employee.user.id}/profile-photo`,
-      headers: authHeader(employee.token)
+      headers: {
+        ...authHeader(employee.token),
+        "idempotency-key": "profile-photo-remove-001",
+        "x-expected-version": "2",
+        "x-expected-pointer-document-id": document!.id,
+      }
     });
     expect(remove.statusCode).toBe(200);
     expect(remove.json()).toMatchObject({
@@ -534,7 +544,9 @@ describe("core hierarchy API", () => {
       profile_photo_url: null,
       version: 3
     });
-    expect(app.store.documents.find((candidate) => candidate.id === document?.id)).toBeUndefined();
+    expect(app.store.documents.find((candidate) => candidate.id === document?.id)).toMatchObject({
+      lifecycle_state: "tombstoned",
+    });
 
     const oversized = await multipartUpload(app, {
       url: `/api/v1/core/users/${employee.user.id}/profile-photo`,
@@ -555,6 +567,7 @@ describe("core hierarchy API", () => {
 interface MultipartUploadInput {
   url: string;
   token: string;
+  headers?: Record<string, string>;
   file: {
     fieldName: string;
     fileName: string;
@@ -581,6 +594,7 @@ function multipartUpload(app: FastifyInstance, input: MultipartUploadInput) {
     url: input.url,
     headers: {
       ...authHeader(input.token),
+      ...input.headers,
       "content-type": `multipart/form-data; boundary=${boundary}`
     },
     payload: Buffer.concat(chunks)

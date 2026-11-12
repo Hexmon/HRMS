@@ -230,6 +230,34 @@ const idempotencyKeyHeaderObject = {
     },
   },
 };
+const mediaIdempotencyHeaderObject = {
+  type: "object",
+  required: ["idempotency-key"],
+  properties: {
+    "idempotency-key": {
+      type: "string",
+      minLength: 8,
+      maxLength: 200,
+      description: "Stable key for one logical media upload. Reuse it only with the exact same payload after a timeout or lost response.",
+    },
+  },
+};
+const mediaReplacementHeadersObject = {
+  type: "object",
+  required: ["idempotency-key", "x-expected-version", "x-expected-pointer-document-id"],
+  properties: {
+    ...mediaIdempotencyHeaderObject.properties,
+    "x-expected-version": {
+      type: "string",
+      pattern: "^[1-9][0-9]*$",
+      description: "Parent version from the latest company/user read.",
+    },
+    "x-expected-pointer-document-id": {
+      type: "string",
+      description: "Current document UUID from the latest read, or the literal `none` when no media is attached.",
+    },
+  },
+};
 const idempotencyReplayResponseHeader = {
   description:
     "Present with value `true` only when the business response is replayed from a stored idempotency result or durable client_event_id command. The current HTTP response keeps the current x-request-id; replay is semantic business-response replay, not byte-for-byte transport-envelope replay.",
@@ -9875,9 +9903,10 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/core/users/{id}/profile-photo": operation(
     "Core / Employees & Hierarchy",
     "Upload profile photo",
-    "Uploads a compressed employee profile photo through the private document storage pipeline. Admin/HR can update employee photos; employees can update their own.",
+    "Durably replaces an employee profile photo. The previous image remains current until object evidence and the PostgreSQL finalize transaction commit. Admin/HR can update employee photos; employees can update their own.",
     {
       params: idParamSchema,
+      headers: mediaReplacementHeadersObject,
       body: coreProfilePhotoUploadBodySchema,
       response200: coreUserMutationResponseSchema,
     },
@@ -9885,8 +9914,8 @@ const routeDocs: Record<string, RouteSchema> = {
   "DELETE /api/v1/core/users/{id}/profile-photo": operation(
     "Core / Employees & Hierarchy",
     "Remove profile photo",
-    "Deletes the current profile-photo document when one exists and clears profile photo metadata. Admin/HR can remove employee photos; employees can remove their own.",
-    { params: idParamSchema, response200: coreUserMutationResponseSchema },
+    "Logically removes the current profile photo and tombstones its metadata. Object bytes are retained pending the approved retention/legal-hold policy; no provider DELETE occurs.",
+    { params: idParamSchema, headers: mediaReplacementHeadersObject, response200: coreUserMutationResponseSchema },
   ),
   "POST /api/v1/core/users/{id}/activate": operation(
     "Core / Employees & Hierarchy",
@@ -11308,8 +11337,9 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/admin/company-profile/logo": operation(
     "Admin / Configuration",
     "Upload company logo",
-    "Uploads or replaces the active company logo through the backend private document storage adapter. The company-logo upload policy is returned from /api/v1/documents/upload-policy and uses stricter image-only size and compression limits.",
+    "Durably replaces the active-company logo. The old logo remains current until object evidence and the PostgreSQL finalize transaction commit. The upload policy is returned from /api/v1/documents/upload-policy.",
     {
+      headers: mediaReplacementHeadersObject,
       body: adminCompanyLogoUploadBodySchema,
       response200: {
         type: "object",
@@ -12096,8 +12126,8 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/documents": operation(
     "Documents",
     "Upload document metadata",
-    "Creates secure document metadata and stores the file through the backend object storage adapter. Object-storage credentials are never exposed.",
-    { body: documentUploadBody, response200: documentSchema },
+    "Creates a durable upload intent, stores bytes at a fixed opaque key and publishes tenant-owned metadata only after finalize. PostgreSQL currently accepts only the typed core_user parent; expense receipts remain blocked.",
+    { headers: mediaIdempotencyHeaderObject, body: documentUploadBody, response200: documentSchema },
   ),
   "POST /api/v1/expenses/{id}/documents": operation(
     "Documents",

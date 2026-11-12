@@ -11,6 +11,13 @@ Do not commit real secret values. Store hosted secrets in GitHub, Render, Vercel
 - `PROD_RENDER_API_DEPLOY_HOOK_URL`
 - `PROD_RENDER_WORKER_DEPLOY_HOOK_URL`
 
+## Cloudflare Worker Bindings Per Environment
+
+- `MEDIA_BUCKET` — private R2 bucket binding used only for exact-key HEAD recovery; use a different bucket for dev, QA and production.
+- `HYPERDRIVE` — environment-specific PostgreSQL binding used for durable intent leases/finalization.
+
+These are provider bindings, not values to paste into source or chat. Keep the R2 bucket public development URL and custom domains disabled.
+
 ## Render Backend Secrets Per Environment
 
 - `DATABASE_URL`
