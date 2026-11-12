@@ -76,6 +76,7 @@ describe("bounded Cloudflare media reconciliation", () => {
     expect(poolQuery).toHaveBeenCalledOnce();
     expect(String(poolQuery.mock.calls[0]?.[0])).toContain("state=CASE WHEN state='object_confirmed'");
     expectLeaseGuard(poolQuery.mock.calls[0], row.id);
+    expectMutableStateGuard(poolQuery.mock.calls[0]);
     expect(poolQuery.mock.calls[0]?.[1]).toEqual([row.id, leaseOwner, "object_not_visible"]);
     expect(jobs.send).not.toHaveBeenCalled();
   });
@@ -141,6 +142,7 @@ describe("bounded Cloudflare media reconciliation", () => {
     expect(leaseUpdate?.[1]).toEqual([leaseOwner, [row.id]]);
     expect(String(poolQuery.mock.calls[0]?.[0])).toContain("state='object_confirmed'");
     expectLeaseGuard(poolQuery.mock.calls[0], row.id);
+    expectMutableStateGuard(poolQuery.mock.calls[0]);
     expect(poolQuery.mock.calls[0]?.[1]).toEqual([
       row.id,
       leaseOwner,
@@ -195,6 +197,7 @@ describe("bounded Cloudflare media reconciliation", () => {
     expect(poolQuery).toHaveBeenCalledTimes(2);
     expect(String(poolQuery.mock.calls[1]?.[0])).toContain("state=CASE WHEN state='object_confirmed'");
     expectLeaseGuard(poolQuery.mock.calls[1], row.id);
+    expectMutableStateGuard(poolQuery.mock.calls[1]);
     expect(poolQuery.mock.calls[1]?.[1]?.[1]).toBe(leaseOwner);
     expect(poolQuery.mock.calls[1]?.[1]?.[2]).toBe("Error: worker operation failed");
     expect(jobs.send).not.toHaveBeenCalled();
@@ -323,4 +326,10 @@ function expectLeaseGuard(call: [string, unknown[]?] | undefined, intentId: stri
   expect(String(call?.[0])).toContain("WHERE id=$1 AND lease_owner=$2");
   expect(call?.[1]?.[0]).toBe(intentId);
   expect(call?.[1]?.[1]).toBe(leaseOwner);
+}
+
+function expectMutableStateGuard(call: [string, unknown[]?] | undefined) {
+  expect(String(call?.[0])).toContain(
+    "AND state IN ('prepared','uploading','retry_wait','object_confirmed')",
+  );
 }
