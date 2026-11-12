@@ -69,19 +69,19 @@ At exact correction revision `380f0708`:
 
 ## Coverage gate — failed
 
-Coverage report generation itself passed at `c44a01bb`:
+Coverage report generation itself passed at final evidence head `0b6ea636`:
 
 - backend coverage run: 54 files/560 tests passed;
-- frontend coverage run: 5 files/21 tests passed;
+- frontend coverage run: 5 files/27 tests passed;
 - changed-coverage gate regression tests: 25/25 passed, with 100% line coverage for the gate scripts.
 
 Mandatory changed coverage remains red:
 
 | Diff | Changed executable lines | Changed branches | Unmeasured/deletion/config paths |
 | --- | ---: | ---: | ---: |
-| PR `release-01..c44a01bb` | 841/4,484 | 109/640 | 40 |
+| `origin/release-01` merge base `6881d9db..0b6ea636` | 841/4,484 | 109/640 | 30 |
 
-This is not clearance. Coverage exclusions were not weakened and no manual evidence was used as a bypass. The test-only correction still requires a fresh exact-head CI coverage result after push.
+This is not clearance. Coverage exclusions were not weakened and no manual evidence was used as a bypass. GitHub CI must reproduce the exact-head result after push.
 
 ## Remaining hard gates
 
