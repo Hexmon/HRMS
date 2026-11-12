@@ -6,7 +6,12 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { describe, expect, it, vi } from "vitest";
-import { MemoryObjectStorage, ObjectStorageProviderError, R2ObjectStorage } from "./object-storage.js";
+import {
+  assertHostedR2EndpointPolicy,
+  MemoryObjectStorage,
+  ObjectStorageProviderError,
+  R2ObjectStorage,
+} from "./object-storage.js";
 
 const options = {
   accountId: "0123456789abcdef0123456789abcdef",
@@ -24,6 +29,29 @@ function missing(name = "NoSuchKey") {
 }
 
 describe("private R2 object storage", () => {
+  it.each([
+    { APP_ENV: "qa" },
+    { APP_ENV: "production" },
+    { NODE_ENV: "production" },
+  ])("rejects endpoint overrides before hosted credentials can leave the process: %o", (environment) => {
+    expect(() => assertHostedR2EndpointPolicy(
+      { endpoint: "https://attacker.example" },
+      environment,
+    )).toThrow(/R2_ENDPOINT is local-integration only/u);
+  });
+
+  it("allows the endpoint override only for local integration", () => {
+    expect(() => assertHostedR2EndpointPolicy({})).not.toThrow();
+    expect(() => assertHostedR2EndpointPolicy(
+      { endpoint: "http://127.0.0.1:9000" },
+      { APP_ENV: "development", NODE_ENV: "test" },
+    )).not.toThrow();
+    expect(() => assertHostedR2EndpointPolicy(
+      {},
+      { APP_ENV: "qa", NODE_ENV: "test" },
+    )).not.toThrow();
+  });
+
   it("writes private bytes and approved metadata without a public URL", async () => {
     const send = vi.fn(async (_command: unknown, _options?: { abortSignal?: AbortSignal }) => ({ ETag: "etag-1" }));
     const storage = new R2ObjectStorage(options, { send });

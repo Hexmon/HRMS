@@ -473,10 +473,10 @@ export class EmsService {
   }
 
   async listEmployeeDocuments(actor: AuthUser, userId: UUID, query: EmsDocumentQuery) {
-    await this.assertEmployeeDocumentAccess(actor, userId, "read");
+    const authorizedActor = await this.assertEmployeeDocumentAccess(actor, userId, "read");
     const visible = this.store.documents
       .filter((document) => document.business_object_type === "employee" && document.business_object_id === userId && !document.deleted_at)
-      .filter((document) => canAccessDocument(actor, document, "read"));
+      .filter((document) => canAccessDocument(authorizedActor, document, "read"));
     const filtered = query.document_type
       ? visible.filter((document) => document.document_type === query.document_type)
       : visible;
@@ -489,11 +489,11 @@ export class EmsService {
   }
 
   async attachEmployeeDocument(actor: AuthUser, userId: UUID, input: EmsDocumentUploadInput) {
-    await this.assertEmployeeDocumentAccess(actor, userId, "write");
+    const authorizedActor = await this.assertEmployeeDocumentAccess(actor, userId, "write");
     const replaceTarget = input.replace_document_id
-      ? this.requireReplaceTarget(actor, userId, input.replace_document_id)
+      ? this.requireReplaceTarget(authorizedActor, userId, input.replace_document_id)
       : null;
-    const document = await new DocumentService(this.store).upload(actor, {
+    const document = await new DocumentService(this.store).upload(authorizedActor, {
       ...input,
       business_object_type: "employee",
       business_object_id: userId
@@ -512,7 +512,7 @@ export class EmsService {
       replaceTarget.metadata = {
         ...replaceTarget.metadata,
         replaced_by_document_id: document.id,
-        replaced_by_user_id: actor.id,
+        replaced_by_user_id: authorizedActor.id,
         replaced_at: now
       };
     }
@@ -541,12 +541,20 @@ export class EmsService {
     return document;
   }
 
-  async assertEmployeeDocumentAccess(actor: AuthUser, userId: UUID, permission: "read" | "write"): Promise<void> {
+  async assertEmployeeDocumentAccess(actor: AuthUser, userId: UUID, permission: "read" | "write"): Promise<AuthUser> {
     if (this.store.kind === "postgres") {
-      const durableAccess = await this.store.persistence?.classifyEmsEmployeeDocumentAccess?.(actor.id, userId);
-      if (durableAccess !== "authorized") {
+      const durableAccess = await this.store.persistence?.classifyEmsEmployeeDocumentAccess?.(
+        actor.id,
+        userId,
+        permission,
+      );
+      if (durableAccess === undefined || durableAccess.decision === "hidden") {
         throw notFound("EMS employee not found", { user_id: userId });
       }
+      if (durableAccess.decision !== "authorized") {
+        throw forbidden("EMS employee document access denied.");
+      }
+      return durableAccess.actor;
     }
     const user = this.requireUser(userId);
     const companyId = resolveActiveCompanyMembershipContext(this.store, {
@@ -564,6 +572,7 @@ export class EmsService {
     if (permission === "write" && actor.id !== userId && !canManageEms(actor)) {
       throw forbidden("Only the employee or HR/Admin can attach EMS employee documents.");
     }
+    return actor;
   }
 
   private profileFor(actor: AuthUser, userId: UUID) {

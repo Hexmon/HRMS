@@ -45,8 +45,9 @@ export function usePrivateDocumentUrl(source: string | null | undefined): string
     }
     let active = true;
     let objectUrl: string | undefined;
+    const controller = new AbortController();
     setResolved(undefined);
-    void apiBlobRequest(privatePath)
+    void apiBlobRequest(privatePath, { signal: controller.signal })
       .then((blob) => {
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
@@ -57,6 +58,7 @@ export function usePrivateDocumentUrl(source: string | null | undefined): string
       });
     return () => {
       active = false;
+      controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [privatePath]);

@@ -68,7 +68,10 @@ describe("usePrivateDocumentUrl", () => {
       expect(view.getByRole("img")).toHaveAttribute("src", "blob:authenticated-private-image");
     });
     expect(apiBlobRequest).toHaveBeenCalledTimes(1);
-    expect(apiBlobRequest).toHaveBeenCalledWith(firstPath);
+    expect(apiBlobRequest).toHaveBeenCalledWith(
+      firstPath,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(createObjectURL).toHaveBeenCalledWith(blob);
 
@@ -123,9 +126,21 @@ describe("usePrivateDocumentUrl", () => {
       { initialProps: { source: firstPath } },
     );
 
-    await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith(firstPath));
+    await waitFor(() =>
+      expect(apiBlobRequest).toHaveBeenCalledWith(
+        firstPath,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    const firstSignal = apiBlobRequest.mock.calls[0]![1].signal as AbortSignal;
     rerender({ source: secondPath });
-    await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith(secondPath));
+    await waitFor(() =>
+      expect(apiBlobRequest).toHaveBeenCalledWith(
+        secondPath,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    expect(firstSignal.aborted).toBe(true);
     await act(async () => first.resolve(new Blob(["stale"])));
     expect(result.current).toBeUndefined();
     expect(createObjectURL).not.toHaveBeenCalled();
@@ -142,7 +157,9 @@ describe("usePrivateDocumentUrl", () => {
     apiBlobRequest.mockReturnValue(pending.promise);
     const { unmount } = renderHook(() => usePrivateDocumentUrl(firstPath));
     await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledTimes(1));
+    const signal = apiBlobRequest.mock.calls[0]![1].signal as AbortSignal;
     unmount();
+    expect(signal.aborted).toBe(true);
     await act(async () => pending.resolve(new Blob(["late"])));
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(revokeObjectURL).not.toHaveBeenCalled();

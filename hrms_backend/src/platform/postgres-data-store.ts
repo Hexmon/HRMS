@@ -3336,13 +3336,17 @@ class PostgresPersistence {
   async classifyEmsEmployeeDocumentAccess(
     userId: UUID,
     targetUserId: UUID,
-  ): Promise<"authorized" | "hidden"> {
+    permission: "read" | "write",
+  ): Promise<
+    | { decision: "authorized"; actor: AuthUser }
+    | { decision: "forbidden" | "hidden" }
+  > {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const session = await this.resolveDurableSessionContext(client, userId, "ems.employee_documents");
-      const target = await client.query<{ id: UUID }>(
-        `SELECT target.id
+      const target = await client.query<{ id: UUID; hierarchy_path: string }>(
+        `SELECT target.id, target.hierarchy_path::text AS hierarchy_path
          FROM core.users target
          JOIN platform.user_session_preferences target_pref ON target_pref.user_id = target.id
          JOIN platform.company_profiles company
@@ -3352,7 +3356,22 @@ class PostgresPersistence {
         [targetUserId, session.company.id],
       );
       await client.query("COMMIT");
-      return target.rows.length === 1 ? "authorized" : "hidden";
+      const currentTarget = target.rows[0];
+      if (!currentTarget) return { decision: "hidden" };
+      const isSelf = session.actor.id === currentTarget.id;
+      const canManage = session.actor.roles.some(
+        (role) => role === Roles.Admin || role === Roles.HRManager,
+      );
+      const canAudit = session.actor.roles.includes(Roles.Auditor);
+      const isSubordinate = currentTarget.hierarchy_path.startsWith(
+        `${session.actor.hierarchy_path}.`,
+      );
+      const allowed = permission === "write"
+        ? isSelf || canManage
+        : isSelf || canManage || canAudit || isSubordinate;
+      return allowed
+        ? { decision: "authorized", actor: session.actor }
+        : { decision: "forbidden" };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;

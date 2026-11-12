@@ -582,7 +582,11 @@ export interface DataStorePersistence {
   classifyEmsEmployeeDocumentAccess?(
     userId: UUID,
     targetUserId: UUID,
-  ): Promise<"authorized" | "hidden">;
+    permission: "read" | "write",
+  ): Promise<
+    | { decision: "authorized"; actor: AuthUser }
+    | { decision: "forbidden" | "hidden" }
+  >;
   expenseDashboardContext?(userId: UUID, filters: {
     status?: string;
     date_from?: string;
