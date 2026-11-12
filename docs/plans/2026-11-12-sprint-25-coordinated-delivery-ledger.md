@@ -63,7 +63,7 @@ These fencing migrations are forward-recovery cutovers. Do not roll back to old 
 
 - Work-date sprint and task/artifact IDs: Sprint 25 (`2026-11-07` through `2026-11-13`); QA-S25-003, TEN-S25-001/007/008/016 and R2-S25-001 remain the active coordination set.
 - Live workbook schema: Task, Project, Owner Name, Role, Domain, Priority, Story Points, Status, Start date, End date, Deliverable, Notes, Remarks, Commit / QA Artifact, Test cases and QA completion gate.
-- Live snapshot on 2026-11-12: 140 Sprint 25 task rows (81 Planned, 48 Needs decision, 11 Completed) and 482 test-case rows, all marked Not Tested.
+- Live snapshot on 2026-11-12: 140 populated Sprint 25 task rows (69 `Planned`, 48 `Needs decision`, 11 `Completed` and 12 blank-status parent/epic/workstream rows) and 482 test-case rows, all marked `Not Tested`.
 - Pending row 57 (QA-S25-003): retain the current `Planned` status unless the workbook validation list is inspected and confirms another supported value; add PR #117, exact head `8c2eb3263a9f4c814bbb34d8e11d57b98e5bacc7`, numeric result 1,334/1,334 lines and 395/395 branches, the ten intentional nonnumeric bootstrap blockers and the owner required-workflow action. Keep its four cases `Not Tested` until exact case evidence is published and independently accepted.
 - Pending row 79 (R2-S25-001): retain the current `Planned` status unless the workbook validation list is inspected and confirms an exact supported in-progress value; set start date 2026-11-12 and leave end date blank; add PR #125 and exact head `ea6549c1bedf328ba4475573bb5c9de7090b10d1`; record the failed cumulative trusted result 2,912/8,925 lines, 652/1,552 branches and 85 unmeasured paths in Notes/Remarks, Commit / QA Artifact and QA completion gate; name #124, hosted R2, lifecycle and human/browser QA as blockers. Keep S25-079-U/P/N/F `Not Tested`; partial local evidence belongs in Actual Result, not Passed.
 - Pending rows 80-82 (R2-S25-002, R2-S25-003, QA-R2-S25-001): retain Planned/Not Tested. Required scanner/crop/limits, durable audit/failure policy, retention and independent QA are unresolved or unexecuted.
@@ -77,7 +77,7 @@ These fencing migrations are forward-recovery cutovers. Do not roll back to old 
 | Passed | Remote release and PR head/dependency inspection | Read-only Git/GitHub inspection on 2026-11-12 |
 | Passed | PR #117 numerical changed coverage | Hosted trusted job at exact `8c2eb326`: 1,334/1,334 lines and 395/395 branches |
 | Passed | PR #117 bootstrap procedure publication | PR comment records the one-time owner/admin procedure; PR remains draft |
-| Pending | PR #121 backend correction | Implementer assigned; exact-head result must replace this row |
+| Partially passed; CI/review pending | PR #121 backend correction | Correction pushed at `a52d24141bfa6cdc84991092d0f726c338417188`; focused PostgreSQL/Valkey integration 17/17, backend lint and typecheck passed locally; exact-head CI and independent review remain pending |
 | Pending | PR #124 backend correction | Not started; do not infer from #121 |
 | Pending | Shared tracker publication/readback | Google Drive connector not installed |
 | Pending | Owner merges, post-merge regressions and deep integrated release regression | Owner-only merge sequence has not started after PR #116 |
