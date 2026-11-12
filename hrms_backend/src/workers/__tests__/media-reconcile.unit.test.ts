@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const lifecycle = vi.hoisted(() => ({
   finalize: vi.fn(async (_intentId: string) => undefined),
@@ -25,11 +25,16 @@ type IntentRow = {
   attempt_count: number;
 };
 
+const leaseOwner = "99999999-9999-4999-8999-999999999999";
+
 describe("bounded Cloudflare media reconciliation", () => {
   beforeEach(() => {
     lifecycle.finalize.mockReset();
     lifecycle.finalize.mockResolvedValue(undefined);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(leaseOwner);
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   it("terminalizes expired and exhausted intents, then continues a full batch", async () => {
     const expired = intent({ expires_at: new Date("2000-01-01T00:00:00.000Z") });
@@ -49,6 +54,7 @@ describe("bounded Cloudflare media reconciliation", () => {
     );
     expect(terminalUpdate?.[1]).toEqual([[expired.id, exhausted.id], [expired.id]]);
     expect(jobs.send).toHaveBeenCalledWith({ kind: "media" });
+    expect(jobs.send).toHaveBeenCalledOnce();
     expect(lifecycle.finalize).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledOnce();
   });
@@ -69,15 +75,25 @@ describe("bounded Cloudflare media reconciliation", () => {
     expect(mediaBucket.head).toHaveBeenCalledWith(row.object_key);
     expect(poolQuery).toHaveBeenCalledOnce();
     expect(String(poolQuery.mock.calls[0]?.[0])).toContain("state=CASE WHEN state='object_confirmed'");
-    expect(poolQuery.mock.calls[0]?.[1]?.[2]).toBe("object_not_visible");
+    expectLeaseGuard(poolQuery.mock.calls[0], row.id);
+    expect(poolQuery.mock.calls[0]?.[1]).toEqual([row.id, leaseOwner, "object_not_visible"]);
     expect(jobs.send).not.toHaveBeenCalled();
   });
 
-  it("quarantines mismatched provider evidence and requeues after terminal progress", async () => {
+  it.each([
+    "size",
+    "missing-metadata",
+    "missing-intent",
+    "wrong-intent",
+    "missing-document",
+    "wrong-document",
+    "missing-checksum",
+    "wrong-checksum",
+  ] as const)("quarantines %s provider evidence and requeues after terminal progress", async (variant) => {
     const row = intent();
     const { pool, poolQuery } = fakePool([row]);
     const jobs = queue();
-    const mediaBucket = bucket(providerHead(row, { size: 99 }));
+    const mediaBucket = bucket(mismatchedHead(row, variant));
 
     await expect(reconcileMedia(pool, mediaBucket, jobs, 1)).resolves.toEqual({
       leased: 1,
@@ -87,9 +103,12 @@ describe("bounded Cloudflare media reconciliation", () => {
     });
 
     expect(String(poolQuery.mock.calls[0]?.[0])).toContain("provider_evidence_mismatch");
-    expect(poolQuery.mock.calls[0]?.[1]).toEqual([row.id, expect.any(String)]);
+    expectLeaseGuard(poolQuery.mock.calls[0], row.id);
+    expect(poolQuery.mock.calls[0]?.[1]).toEqual([row.id, leaseOwner]);
+    expect(String(poolQuery.mock.calls[0]?.[0])).not.toContain("state='object_confirmed'");
     expect(lifecycle.finalize).not.toHaveBeenCalled();
     expect(jobs.send).toHaveBeenCalledWith({ kind: "media" });
+    expect(jobs.send).toHaveBeenCalledOnce();
   });
 
   it("keeps an old confirmed intent eligible, records matching HEAD evidence and finalizes once", async () => {
@@ -110,10 +129,21 @@ describe("bounded Cloudflare media reconciliation", () => {
     });
 
     expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("last_safe_error=CASE"))).toBe(false);
+    const selectionSql = String(clientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes("SELECT id,state,object_key"),
+    )?.[0]);
+    expect(selectionSql).toContain("lease_expires_at IS NULL OR lease_expires_at <= now()");
+    expect(selectionSql).toContain("lease_owner IS NULL AND expires_at <= now()");
+    expect(selectionSql).toContain("FOR UPDATE SKIP LOCKED");
+    const leaseUpdate = clientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes("SET lease_owner=$1"),
+    );
+    expect(leaseUpdate?.[1]).toEqual([leaseOwner, [row.id]]);
     expect(String(poolQuery.mock.calls[0]?.[0])).toContain("state='object_confirmed'");
+    expectLeaseGuard(poolQuery.mock.calls[0], row.id);
     expect(poolQuery.mock.calls[0]?.[1]).toEqual([
       row.id,
-      expect.any(String),
+      leaseOwner,
       "etag-1",
       Number(row.measured_size_bytes),
       JSON.stringify({
@@ -126,6 +156,7 @@ describe("bounded Cloudflare media reconciliation", () => {
     expect(lifecycle.finalize).toHaveBeenCalledOnce();
     expect(lifecycle.finalize).toHaveBeenCalledWith(row.id);
     expect(jobs.send).toHaveBeenCalledWith({ kind: "media" });
+    expect(jobs.send).toHaveBeenCalledOnce();
   });
 
   it.each([403, 404, 409])("quarantines a terminal %s finalization error", async (statusCode) => {
@@ -142,6 +173,9 @@ describe("bounded Cloudflare media reconciliation", () => {
 
     expect(poolQuery).toHaveBeenCalledTimes(2);
     expect(String(poolQuery.mock.calls[1]?.[0])).toContain("state='quarantined'");
+    expect(String(poolQuery.mock.calls[1]?.[0])).toContain("state <> 'finalized'");
+    expectLeaseGuard(poolQuery.mock.calls[1], row.id);
+    expect(poolQuery.mock.calls[1]?.[1]?.[1]).toBe(leaseOwner);
     expect(poolQuery.mock.calls[1]?.[1]?.[2]).toBe("Error: worker operation failed");
   });
 
@@ -160,6 +194,8 @@ describe("bounded Cloudflare media reconciliation", () => {
 
     expect(poolQuery).toHaveBeenCalledTimes(2);
     expect(String(poolQuery.mock.calls[1]?.[0])).toContain("state=CASE WHEN state='object_confirmed'");
+    expectLeaseGuard(poolQuery.mock.calls[1], row.id);
+    expect(poolQuery.mock.calls[1]?.[1]?.[1]).toBe(leaseOwner);
     expect(poolQuery.mock.calls[1]?.[1]?.[2]).toBe("Error: worker operation failed");
     expect(jobs.send).not.toHaveBeenCalled();
   });
@@ -167,10 +203,29 @@ describe("bounded Cloudflare media reconciliation", () => {
   it("rolls back and releases the connection when lease selection fails", async () => {
     const failure = new Error("selection failed");
     const { pool, clientQuery, release } = fakePool([], failure);
+    const mediaBucket = bucket();
+    const jobs = queue();
 
-    await expect(reconcileMedia(pool, bucket(), queue())).rejects.toBe(failure);
+    await expect(reconcileMedia(pool, mediaBucket, jobs)).rejects.toBe(failure);
     expect(clientQuery).toHaveBeenLastCalledWith("ROLLBACK");
     expect(release).toHaveBeenCalledOnce();
+    expect(mediaBucket.head).not.toHaveBeenCalled();
+    expect(lifecycle.finalize).not.toHaveBeenCalled();
+    expect(jobs.send).not.toHaveBeenCalled();
+  });
+
+  it("preserves the selection failure when rollback also fails", async () => {
+    const failure = new Error("selection failed");
+    const { pool, clientQuery, release } = fakePool([], failure, new Error("rollback failed"));
+    const mediaBucket = bucket();
+    const jobs = queue();
+
+    await expect(reconcileMedia(pool, mediaBucket, jobs)).rejects.toBe(failure);
+    expect(clientQuery).toHaveBeenLastCalledWith("ROLLBACK");
+    expect(release).toHaveBeenCalledOnce();
+    expect(mediaBucket.head).not.toHaveBeenCalled();
+    expect(lifecycle.finalize).not.toHaveBeenCalled();
+    expect(jobs.send).not.toHaveBeenCalled();
   });
 
   it("returns an empty bounded result without queue recursion", async () => {
@@ -216,6 +271,25 @@ function providerHead(row: IntentRow, overrides: Record<string, unknown> = {}) {
   };
 }
 
+function mismatchedHead(
+  row: IntentRow,
+  variant: "size" | "missing-metadata" | "missing-intent" | "wrong-intent" |
+    "missing-document" | "wrong-document" | "missing-checksum" | "wrong-checksum",
+) {
+  const head = providerHead(row);
+  if (variant === "size") return { ...head, size: 99 };
+  if (variant === "missing-metadata") return { ...head, customMetadata: undefined };
+  const customMetadata: Record<string, string> = { ...head.customMetadata };
+  const field = variant.includes("intent")
+    ? "x-hrms-intent-id"
+    : variant.includes("document")
+      ? "x-hrms-document-id"
+      : "x-hrms-checksum-sha256";
+  if (variant.startsWith("missing")) delete customMetadata[field];
+  else customMetadata[field] = randomUUID();
+  return { ...head, customMetadata };
+}
+
 function bucket(head: Awaited<ReturnType<MediaBucket["head"]>> = null): MediaBucket & { head: ReturnType<typeof vi.fn> } {
   return { head: vi.fn(async () => head) };
 }
@@ -224,8 +298,9 @@ function queue(): JobQueue & { send: ReturnType<typeof vi.fn> } {
   return { send: vi.fn(async () => undefined) };
 }
 
-function fakePool(rows: IntentRow[], selectFailure?: Error) {
+function fakePool(rows: IntentRow[], selectFailure?: Error, rollbackFailure?: Error) {
   const clientQuery = vi.fn(async (sql: string, _params?: unknown[]) => {
+    if (sql === "ROLLBACK" && rollbackFailure) throw rollbackFailure;
     if (sql.includes("SELECT id,state,object_key")) {
       if (selectFailure) throw selectFailure;
       return { rows };
@@ -241,4 +316,11 @@ function fakePool(rows: IntentRow[], selectFailure?: Error) {
     poolQuery,
     release,
   };
+}
+
+function expectLeaseGuard(call: [string, unknown[]?] | undefined, intentId: string) {
+  expect(call).toBeDefined();
+  expect(String(call?.[0])).toContain("WHERE id=$1 AND lease_owner=$2");
+  expect(call?.[1]?.[0]).toBe(intentId);
+  expect(call?.[1]?.[1]).toBe(leaseOwner);
 }
