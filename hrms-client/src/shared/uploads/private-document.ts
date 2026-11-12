@@ -2,15 +2,18 @@ import { useEffect, useState } from "react";
 import { apiBlobRequest } from "@/shared/api/client";
 import { apiConfig } from "@/shared/api/config";
 
-const PRIVATE_DOCUMENT_PATH =
-  /^\/api\/v1\/documents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/content$/iu;
+function isPrivateDocumentPath(value: string): boolean {
+  return /^\/api\/v1\/documents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/content$/iu.test(
+    value,
+  );
+}
 
 export function privateDocumentApiPath(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
     const apiBase = new URL(apiConfig.baseUrl);
     const relative = value.startsWith("/") && !value.startsWith("//");
-    if (relative && !PRIVATE_DOCUMENT_PATH.test(value)) {
+    if (relative && !isPrivateDocumentPath(value)) {
       return null;
     }
     const candidate = new URL(value, apiBase.origin);
@@ -20,7 +23,7 @@ export function privateDocumentApiPath(value: string | null | undefined): string
       candidate.password ||
       candidate.search ||
       candidate.hash ||
-      !PRIVATE_DOCUMENT_PATH.test(candidate.pathname) ||
+      !isPrivateDocumentPath(candidate.pathname) ||
       (!relative && !/^https?:\/\//iu.test(value))
     ) {
       return null;

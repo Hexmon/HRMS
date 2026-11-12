@@ -595,7 +595,20 @@ export async function createPostgresDataStore(
   return store;
 }
 
-export class PostgresPersistence {
+export type PostgresEmsDocumentAccessTestPort = Pick<
+  NonNullable<DataStore["persistence"]>,
+  "classifyEmsEmployeeDocumentAccess"
+>;
+
+/** @internal Narrow constructor seam for deterministic persistence unit tests. */
+export function createPostgresPersistenceForTesting(
+  pool: Pool,
+  store: DataStore,
+): Required<PostgresEmsDocumentAccessTestPort> {
+  return new PostgresPersistence(pool, store);
+}
+
+class PostgresPersistence {
   constructor(
     private readonly pool: Pool,
     private readonly store: DataStore,
