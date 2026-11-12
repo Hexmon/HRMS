@@ -55,11 +55,15 @@ describe("Cloudflare deployment configuration", () => {
     expect(config.$schema).toBe("../node_modules/wrangler/config-schema.json");
   });
 
-  it("rejects absent, placeholder and invalid bucket names", () => {
-    for (const bucketName of [undefined, "replace-with-private-development-bucket", "Invalid_Bucket", "ab"]) {
+  it("enforces the exact 3-63 character bucket-name boundary", () => {
+    for (const bucketName of [undefined, "replace-with-private-development-bucket", "Invalid_Bucket", "a", "ab", "a".repeat(64)]) {
       expect(() => prepareCloudflareConfig(source(), { ...valid, bucketName })).toThrow(
         /R2_BUCKET_NAME must be the real/,
       );
+    }
+    for (const bucketName of ["abc", "a".repeat(63)]) {
+      expect((prepareCloudflareConfig(source(), { ...valid, bucketName }) as any)
+        .env.dev.r2_buckets[0].bucket_name).toBe(bucketName);
     }
   });
 
@@ -76,10 +80,34 @@ describe("Cloudflare deployment configuration", () => {
     );
   });
 
-  it("requires complete target configuration and exactly one MEDIA_BUCKET binding", () => {
+  it("requires exact named Hyperdrive and MEDIA_BUCKET bindings", () => {
     const incomplete = source();
     delete incomplete.env.dev.vars;
     expect(() => prepareCloudflareConfig(incomplete, valid)).toThrow(/Missing Wrangler configuration/);
+
+    const missingHyperdrive = source();
+    missingHyperdrive.env.dev.hyperdrive = [];
+    expect(() => prepareCloudflareConfig(missingHyperdrive, valid)).toThrow(/exactly one HYPERDRIVE/);
+
+    const absentHyperdrive = source();
+    delete absentHyperdrive.env.dev.hyperdrive;
+    expect(() => prepareCloudflareConfig(absentHyperdrive, valid)).toThrow(/exactly one HYPERDRIVE/);
+
+    const misnamedHyperdrive = source();
+    misnamedHyperdrive.env.dev.hyperdrive[0].binding = "OTHER";
+    expect(() => prepareCloudflareConfig(misnamedHyperdrive, valid)).toThrow(/exactly one HYPERDRIVE/);
+
+    const duplicateHyperdrive = source();
+    duplicateHyperdrive.env.dev.hyperdrive.push({ ...duplicateHyperdrive.env.dev.hyperdrive[0] });
+    expect(() => prepareCloudflareConfig(duplicateHyperdrive, valid)).toThrow(/exactly one HYPERDRIVE/);
+
+    const reorderedHyperdrive = source();
+    reorderedHyperdrive.env.dev.hyperdrive.unshift({ binding: "OTHER", id: "preserve-me" });
+    const reorderedResult: any = prepareCloudflareConfig(reorderedHyperdrive, valid);
+    expect(reorderedResult.env.dev.hyperdrive).toEqual([
+      { binding: "OTHER", id: "preserve-me" },
+      { binding: "HYPERDRIVE", id: valid.hyperdriveId },
+    ]);
 
     const missing = source();
     missing.env.dev.r2_buckets = [];

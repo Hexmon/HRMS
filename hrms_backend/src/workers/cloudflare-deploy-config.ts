@@ -1,6 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
 
 type Environment = "dev" | "qa" | "production";
 type WorkerState = "inactive" | "active";
@@ -32,7 +31,7 @@ interface PrepareOptions {
 
 const environments = new Set<Environment>(["dev", "qa", "production"]);
 const states = new Set<WorkerState>(["inactive", "active"]);
-const bucketNamePattern = /^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$/u;
+const bucketNamePattern = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
 
 export function prepareCloudflareConfig(config: WranglerConfig, options: PrepareOptions): WranglerConfig {
   const { environment, state, hyperdriveId, bucketName } = options;
@@ -43,19 +42,24 @@ export function prepareCloudflareConfig(config: WranglerConfig, options: Prepare
       hyperdriveId === "00000000-0000-0000-0000-000000000000") {
     throw new Error("HRMS_HYPERDRIVE_ID must be the real cache-disabled Hyperdrive configuration ID.");
   }
-  if (!bucketName || !bucketNamePattern.test(bucketName) || bucketName.startsWith("replace-with-")) {
+  if (!bucketName || bucketName.length < 3 || bucketName.length > 63 ||
+      !bucketNamePattern.test(bucketName) || bucketName.startsWith("replace-with-")) {
     throw new Error("R2_BUCKET_NAME must be the real 3-63 character lowercase environment bucket name.");
   }
 
   const target = config.env?.[environment];
-  if (!target?.hyperdrive?.[0] || !target.queues?.producers?.length || !target.vars) {
+  if (!target?.queues?.producers?.length || !target.vars) {
     throw new Error(`Missing Wrangler configuration for ${environment}.`);
+  }
+  const hyperdriveBindings = target.hyperdrive?.filter((binding) => binding.binding === "HYPERDRIVE") ?? [];
+  if (hyperdriveBindings.length !== 1) {
+    throw new Error(`Wrangler ${environment} must declare exactly one HYPERDRIVE binding.`);
   }
   const mediaBindings = target.r2_buckets?.filter((binding) => binding.binding === "MEDIA_BUCKET") ?? [];
   if (mediaBindings.length !== 1) {
     throw new Error(`Wrangler ${environment} must declare exactly one MEDIA_BUCKET binding.`);
   }
-  target.hyperdrive[0].id = hyperdriveId;
+  hyperdriveBindings[0]!.id = hyperdriveId;
   mediaBindings[0]!.bucket_name = bucketName;
   target.vars.WORKER_ACTIVE = state === "active" ? "true" : "false";
   return config;
@@ -80,7 +84,7 @@ export function writeCloudflareDeploymentConfig(
 export function runPrepareCloudflareConfig(
   args = process.argv.slice(2),
   environmentVariables: NodeJS.ProcessEnv = process.env,
-  backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+  backendRoot: string,
 ): string {
   const [environment, state] = args;
   if (!environments.has(environment as Environment) || !states.has(state as WorkerState)) {
@@ -92,10 +96,4 @@ export function runPrepareCloudflareConfig(
     hyperdriveId: environmentVariables.HRMS_HYPERDRIVE_ID,
     bucketName: environmentVariables.R2_BUCKET_NAME,
   });
-}
-
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  const [environment, state] = process.argv.slice(2);
-  runPrepareCloudflareConfig();
-  console.log(`Prepared ${environment} Worker deployment in ${state} state.`);
 }
