@@ -58,6 +58,18 @@ export interface DurableMediaUploadResult {
   document: DocumentMetadata;
 }
 
+export interface MediaLifecycleDiagnostic {
+  event: "media_lifecycle_finalize_rollback_failed" | "media_lifecycle_terminalization_failed";
+  intent_id: UUID;
+  failure_kind: "database_operation_failed";
+}
+
+export type MediaLifecycleDiagnosticSink = (diagnostic: MediaLifecycleDiagnostic) => void;
+
+const defaultMediaLifecycleDiagnosticSink: MediaLifecycleDiagnosticSink = (diagnostic) => {
+  console.error(JSON.stringify(diagnostic));
+};
+
 /**
  * PostgreSQL is the publication coordinator. Object storage is deliberately
  * outside the SQL transaction; the durable intent makes every intermediate
@@ -67,6 +79,7 @@ export class MediaLifecycleService {
   constructor(
     private readonly pool: Pool,
     private readonly storage: ObjectStoragePort,
+    private readonly reportDiagnostic: MediaLifecycleDiagnosticSink = defaultMediaLifecycleDiagnosticSink,
   ) {}
 
   async upload(input: DurableMediaUploadInput): Promise<DurableMediaUploadResult> {
@@ -487,6 +500,7 @@ export class MediaLifecycleService {
 
   async finalize(intentId: UUID): Promise<DurableMediaUploadResult> {
     const client = await this.pool.connect();
+    let clientReleaseError: Error | boolean | undefined;
     try {
       await client.query("BEGIN");
       const result = await client.query<IntentRow>(
@@ -496,8 +510,9 @@ export class MediaLifecycleService {
       const intent = result.rows[0];
       if (!intent) throw notFound("Media upload intent not found");
       if (intent.state === "finalized") {
+        const finalized = await this.finalizedResult(intent, client);
         await client.query("COMMIT");
-        return this.finalizedResult(intent, client);
+        return finalized;
       }
       if (intent.state !== "object_confirmed") throw conflict("Media object is not confirmed", { intent_id: intent.id });
       const liveActor: AuthUser = {
@@ -588,22 +603,45 @@ export class MediaLifecycleService {
              last_safe_error=NULL,updated_at=now() WHERE id=$1`,
         [intent.id],
       );
+      const finalized = await this.finalizedResult({ ...intent, state: "finalized" }, client);
       await client.query("COMMIT");
-      return this.finalizedResult({ ...intent, state: "finalized" });
+      return finalized;
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      if (isActiveEmployeeProofConflict(error)) {
-        await client.query(
-          `UPDATE documents.media_upload_intents
-           SET state='failed',lease_owner=NULL,lease_expires_at=NULL,
-               last_safe_error='active_employee_proof_exists',updated_at=now()
-           WHERE id=$1 AND state='object_confirmed'`,
-          [intentId],
-        );
+      let rollbackError: unknown;
+      try {
+        await client.query("ROLLBACK");
+      } catch (caught) {
+        rollbackError = caught;
+        clientReleaseError = caught instanceof Error ? caught : true;
+        attachDiagnosticCause(error, caught);
+        emitDiagnostic(this.reportDiagnostic, {
+          event: "media_lifecycle_finalize_rollback_failed",
+          intent_id: intentId,
+          failure_kind: "database_operation_failed",
+        });
+      }
+      if (isActiveEmployeeProofConflict(error) && rollbackError === undefined) {
+        try {
+          await client.query(
+            `UPDATE documents.media_upload_intents
+             SET state='failed',lease_owner=NULL,lease_expires_at=NULL,
+                 last_safe_error='active_employee_proof_exists',updated_at=now()
+             WHERE id=$1 AND state='object_confirmed'`,
+            [intentId],
+          );
+        } catch (terminalizationError) {
+          attachDiagnosticCause(error, terminalizationError);
+          emitDiagnostic(this.reportDiagnostic, {
+            event: "media_lifecycle_terminalization_failed",
+            intent_id: intentId,
+            failure_kind: "database_operation_failed",
+          });
+        }
       }
       throw error;
     } finally {
-      client.release();
+      if (clientReleaseError === undefined) client.release();
+      else client.release(clientReleaseError);
     }
   }
 
@@ -636,6 +674,25 @@ export class MediaLifecycleService {
        WHERE id=$1 AND state='uploading' AND lease_owner=$3`,
       [intentId, reason, leaseOwner],
     );
+  }
+}
+
+function attachDiagnosticCause(error: unknown, cause: unknown): void {
+  if (!(error instanceof Error)) return;
+  Object.defineProperty(error, "cause", {
+    configurable: true,
+    value: cause,
+  });
+}
+
+function emitDiagnostic(
+  sink: MediaLifecycleDiagnosticSink,
+  diagnostic: MediaLifecycleDiagnostic,
+): void {
+  try {
+    sink(diagnostic);
+  } catch {
+    // Diagnostics must never replace the business error being preserved.
   }
 }
 
