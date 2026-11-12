@@ -165,7 +165,10 @@ export async function reconcileMedia(
       `SELECT id,state,object_key,document_id,measured_size_bytes,checksum_sha256,expires_at,attempt_count
        FROM documents.media_upload_intents
        WHERE state IN ('prepared','uploading','retry_wait','object_confirmed')
-         AND (lease_expires_at IS NULL OR lease_expires_at <= now())
+         AND (
+           lease_expires_at IS NULL OR lease_expires_at <= now()
+           OR (lease_owner IS NULL AND expires_at <= now())
+         )
        ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT $1`,
       [limit],
     );
