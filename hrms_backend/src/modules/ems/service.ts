@@ -21,6 +21,7 @@ import {
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { canAccessDocument } from "../documents/policy.js";
 import { DocumentService, presentDocument, type DocumentUploadBody } from "../documents/service.js";
 import { appendEmsOutboxEvent, emsEvents } from "./events.js";
@@ -471,9 +472,8 @@ export class EmsService {
     return { policy: this.presentPolicy(policy, actor.id), status: policy.status, version: policy.version };
   }
 
-  listEmployeeDocuments(actor: AuthUser, userId: UUID, query: EmsDocumentQuery) {
-    const user = this.requireUser(userId);
-    assertCanSeeEmsUser(actor, user);
+  async listEmployeeDocuments(actor: AuthUser, userId: UUID, query: EmsDocumentQuery) {
+    await this.assertEmployeeDocumentAccess(actor, userId, "read");
     const visible = this.store.documents
       .filter((document) => document.business_object_type === "employee" && document.business_object_id === userId && !document.deleted_at)
       .filter((document) => canAccessDocument(actor, document, "read"));
@@ -489,11 +489,7 @@ export class EmsService {
   }
 
   async attachEmployeeDocument(actor: AuthUser, userId: UUID, input: EmsDocumentUploadInput) {
-    const user = this.requireUser(userId);
-    assertCanSeeEmsUser(actor, user);
-    if (actor.id !== userId && !canManageEms(actor)) {
-      throw forbidden("Only the employee or HR/Admin can attach EMS employee documents.");
-    }
+    await this.assertEmployeeDocumentAccess(actor, userId, "write");
     const replaceTarget = input.replace_document_id
       ? this.requireReplaceTarget(actor, userId, input.replace_document_id)
       : null;
@@ -543,6 +539,31 @@ export class EmsService {
       throw forbidden("Document replacement denied");
     }
     return document;
+  }
+
+  async assertEmployeeDocumentAccess(actor: AuthUser, userId: UUID, permission: "read" | "write"): Promise<void> {
+    if (this.store.kind === "postgres") {
+      const durableAccess = await this.store.persistence?.classifyEmsEmployeeDocumentAccess?.(actor.id, userId);
+      if (durableAccess !== "authorized") {
+        throw notFound("EMS employee not found", { user_id: userId });
+      }
+    }
+    const user = this.requireUser(userId);
+    const companyId = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: `ems.employee_documents.${permission}`,
+      requireActiveEmployment: true,
+    }).companyId;
+    const targetCompanyId = this.store.userSessionPreferences.find(
+      (preference) => preference.user_id === user.id,
+    )?.company_id;
+    if (targetCompanyId !== companyId) {
+      throw notFound("EMS employee not found", { user_id: userId });
+    }
+    assertCanSeeEmsUser(actor, user);
+    if (permission === "write" && actor.id !== userId && !canManageEms(actor)) {
+      throw forbidden("Only the employee or HR/Admin can attach EMS employee documents.");
+    }
   }
 
   private profileFor(actor: AuthUser, userId: UUID) {

@@ -2,17 +2,30 @@ import { useEffect, useState } from "react";
 import { apiBlobRequest } from "@/shared/api/client";
 import { apiConfig } from "@/shared/api/config";
 
-const PRIVATE_DOCUMENT_PATH = /^\/api\/v1\/documents\/[0-9a-f-]+\/content$/iu;
+const PRIVATE_DOCUMENT_PATH =
+  /^\/api\/v1\/documents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/content$/iu;
 
 export function privateDocumentApiPath(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
     const apiBase = new URL(apiConfig.baseUrl);
-    const candidate = new URL(value, apiBase.origin);
-    if (candidate.origin !== apiBase.origin || !PRIVATE_DOCUMENT_PATH.test(candidate.pathname)) {
+    const relative = value.startsWith("/") && !value.startsWith("//");
+    if (relative && !PRIVATE_DOCUMENT_PATH.test(value)) {
       return null;
     }
-    return `${candidate.pathname}${candidate.search}`;
+    const candidate = new URL(value, apiBase.origin);
+    if (
+      candidate.origin !== apiBase.origin ||
+      candidate.username ||
+      candidate.password ||
+      candidate.search ||
+      candidate.hash ||
+      !PRIVATE_DOCUMENT_PATH.test(candidate.pathname) ||
+      (!relative && !/^https?:\/\//iu.test(value))
+    ) {
+      return null;
+    }
+    return candidate.pathname;
   } catch {
     return null;
   }
@@ -20,13 +33,11 @@ export function privateDocumentApiPath(value: string | null | undefined): string
 
 export function usePrivateDocumentUrl(source: string | null | undefined): string | undefined {
   const privatePath = privateDocumentApiPath(source);
-  const [resolved, setResolved] = useState<string | undefined>(() =>
-    privatePath ? undefined : source || undefined,
-  );
+  const [resolved, setResolved] = useState<string | undefined>();
 
   useEffect(() => {
     if (!privatePath) {
-      setResolved(source || undefined);
+      setResolved(undefined);
       return;
     }
     let active = true;
@@ -45,7 +56,7 @@ export function usePrivateDocumentUrl(source: string | null | undefined): string
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [privatePath, source]);
+  }, [privatePath]);
 
   return resolved;
 }

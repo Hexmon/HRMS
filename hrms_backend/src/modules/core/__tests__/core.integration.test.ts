@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs } from "#testing";
@@ -477,6 +478,48 @@ describe("core hierarchy API", () => {
     await app.store.pgPool!.query(
       "UPDATE core.users SET deleted_at=NULL WHERE id=$1",
       [employee.user.id],
+    );
+
+    const companyA = app.store.userSessionPreferences.find(
+      (preference) => preference.user_id === employee.user.id,
+    )!.company_id!;
+    const companyB = randomUUID();
+    await app.store.pgPool!.query(
+      "INSERT INTO platform.company_profiles (id, company_name, company_slug, status, bootstrap_completed_at) VALUES ($1, 'Profile Company B', $2, 'active', now())",
+      [companyB, `profile-company-b-${companyB}`],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
+      [admin.user.id, companyB],
+    );
+    const callsBeforeForeignCompanyRead = getObject.mock.calls.length;
+    const foreignCompanyRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${document!.id}/content`,
+      headers: authHeader(admin.token),
+    });
+    expect(foreignCompanyRead.statusCode).toBe(404);
+    expect(getObject.mock.calls).toHaveLength(callsBeforeForeignCompanyRead);
+
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
+      [admin.user.id, companyA],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET employment_status='inactive' WHERE id=$1",
+      [admin.user.id],
+    );
+    const callsBeforeInactiveActorRead = getObject.mock.calls.length;
+    const inactiveActorRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${document!.id}/content`,
+      headers: authHeader(admin.token),
+    });
+    expect(inactiveActorRead.statusCode).toBe(401);
+    expect(getObject.mock.calls).toHaveLength(callsBeforeInactiveActorRead);
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET employment_status='active' WHERE id=$1",
+      [admin.user.id],
     );
 
     const remove = await app.inject({

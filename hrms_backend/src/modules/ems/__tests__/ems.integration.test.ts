@@ -1,5 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { EmploymentStatuses, Roles } from "#shared";
 import { authHeader, loginAs } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
 
@@ -475,5 +477,98 @@ describe("employee self-service", () => {
       }
     });
     expect(crossEmployeeUpload.statusCode).toBe(403);
+  });
+
+  it("hides Company A EMS documents from Company B privileged roles before storage I/O", async () => {
+    const target = await loginAs(app, "E1");
+    const admin = await loginAs(app, "ADM");
+    const auditor = await loginAs(app, "AUD");
+    const hr = await loginAs(app, "E2");
+    const companyA = app.store.userSessionPreferences.find(
+      (preference) => preference.user_id === target.user.id,
+    )!.company_id!;
+    const companyB = randomUUID();
+    await app.store.pgPool!.query(
+      "INSERT INTO platform.company_profiles (id, company_name, company_slug, status, bootstrap_completed_at) VALUES ($1, 'EMS Company B', $2, 'active', now())",
+      [companyB, `ems-company-b-${companyB}`],
+    );
+    app.store.companyProfiles.push({
+      ...app.store.companyProfiles.find((company) => company.id === companyA)!,
+      id: companyB,
+      company_name: "EMS Company B",
+      company_slug: `ems-company-b-${companyB}`,
+    });
+    await app.store.pgPool!.query(
+      "INSERT INTO core.user_roles (user_id, role_key, status, effective_from) VALUES ($1, $2, 'active', CURRENT_DATE)",
+      [hr.user.id, Roles.HRManager],
+    );
+    hr.user.roles.push(Roles.HRManager);
+
+    for (const actor of [admin, auditor, hr]) {
+      const activeRole = actor.user.id === hr.user.id
+        ? Roles.HRManager
+        : actor.user.roles[0]!;
+      await app.store.pgPool!.query(
+        "UPDATE platform.user_session_preferences SET company_id=$2, active_role=$3 WHERE user_id=$1",
+        [actor.user.id, companyB, activeRole],
+      );
+      const preference = app.store.userSessionPreferences.find(
+        (candidate) => candidate.user_id === actor.user.id,
+      )!;
+      preference.company_id = companyB;
+      preference.active_role = activeRole;
+    }
+
+    expect(app.store.objectStorage).toBeDefined();
+    const putObject = vi.spyOn(app.store.objectStorage!, "putObject");
+    const targetRecord = app.store.users.find((user) => user.id === target.user.id)!;
+    const before = {
+      documents: app.store.documents.length,
+      versions: app.store.documentVersions.length,
+      outbox: app.store.outbox.length,
+      targetVersion: targetRecord.version,
+    };
+
+    for (const actor of [admin, auditor, hr]) {
+      const list = await app.inject({
+        method: "GET",
+        url: `/api/v1/ems/employees/${target.user.id}/documents?page=1&page_size=10`,
+        headers: authHeader(actor.token),
+      });
+      expect(list.statusCode, `${actor.user.employee_code}: ${list.body}`).toBe(404);
+
+      const upload = await app.inject({
+        method: "POST",
+        url: `/api/v1/ems/employees/${target.user.id}/documents`,
+        headers: authHeader(actor.token),
+        payload: {
+          classification: "normal",
+          document_type: "identity_proof",
+          file_name: "foreign.pdf",
+          mime_type: "application/pdf",
+          size_bytes: 1024,
+        },
+      });
+      expect(upload.statusCode, `${actor.user.employee_code}: ${upload.body}`).toBe(404);
+    }
+
+    expect(putObject).not.toHaveBeenCalled();
+    expect(app.store.documents).toHaveLength(before.documents);
+    expect(app.store.documentVersions).toHaveLength(before.versions);
+    expect(app.store.outbox).toHaveLength(before.outbox);
+    expect(targetRecord.version).toBe(before.targetVersion);
+
+    admin.user.employment_status = EmploymentStatuses.Inactive;
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET employment_status=$2 WHERE id=$1",
+      [admin.user.id, EmploymentStatuses.Inactive],
+    );
+    const inactiveActorList = await app.inject({
+      method: "GET",
+      url: `/api/v1/ems/employees/${target.user.id}/documents?page=1&page_size=10`,
+      headers: authHeader(admin.token),
+    });
+    expect(inactiveActorList.statusCode).toBe(401);
+    expect(putObject).not.toHaveBeenCalled();
   });
 });

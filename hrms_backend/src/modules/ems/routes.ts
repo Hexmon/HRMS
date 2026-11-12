@@ -236,8 +236,10 @@ export const emsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/ems/employees/:user_id/documents", async (request) => {
     if (!request.actor) throw unauthorized();
     const params = userIdParamSchema.parse(request.params);
+    const service = new EmsService(fastify.store);
+    await service.assertEmployeeDocumentAccess(request.actor, params.user_id, "write");
     const upload = await parseEmsDocumentUpload(request);
-    return new EmsService(fastify.store).attachEmployeeDocument(
+    return service.attachEmployeeDocument(
       request.actor,
       params.user_id,
       {

@@ -3320,6 +3320,34 @@ class PostgresPersistence {
     }
   }
 
+  async classifyEmsEmployeeDocumentAccess(
+    userId: UUID,
+    targetUserId: UUID,
+  ): Promise<"authorized" | "hidden"> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const session = await this.resolveDurableSessionContext(client, userId, "ems.employee_documents");
+      const target = await client.query<{ id: UUID }>(
+        `SELECT target.id
+         FROM core.users target
+         JOIN platform.user_session_preferences target_pref ON target_pref.user_id = target.id
+         JOIN platform.company_profiles company
+           ON company.id = target_pref.company_id AND company.status = 'active'
+         WHERE target.id = $1 AND target.deleted_at IS NULL
+           AND target_pref.company_id = $2`,
+        [targetUserId, session.company.id],
+      );
+      await client.query("COMMIT");
+      return target.rows.length === 1 ? "authorized" : "hidden";
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async expenseDashboardContext(userId: UUID, filters: {
     status?: string; date_from?: string; date_to?: string;
   }): Promise<{

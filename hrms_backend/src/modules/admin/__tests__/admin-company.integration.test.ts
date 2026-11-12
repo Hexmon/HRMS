@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
@@ -158,6 +159,25 @@ describe("admin company profile", () => {
     expect(content.statusCode).toBe(200);
     expect(content.headers["content-type"]).toBe("image/jpeg");
     expect(content.rawPayload).toEqual(Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00]));
+
+    const companyB = randomUUID();
+    await app.store.pgPool!.query(
+      "INSERT INTO platform.company_profiles (id, company_name, company_slug, status, bootstrap_completed_at) VALUES ($1, 'Logo Company B', $2, 'active', now())",
+      [companyB, `logo-company-b-${companyB}`],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
+      [employee.user.id, companyB],
+    );
+    const getObject = vi.spyOn(app.store.objectStorage!, "getObject");
+    const objectCallsBeforeForeignRead = getObject.mock.calls.length;
+    const foreignCompanyRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${upload.json().company.logo_document_id}/content`,
+      headers: authHeader(employee.token),
+    });
+    expect(foreignCompanyRead.statusCode).toBe(404);
+    expect(getObject.mock.calls).toHaveLength(objectCallsBeforeForeignRead);
 
     const oversized = await multipartUpload(app, {
       url: "/api/v1/admin/company-profile/logo",

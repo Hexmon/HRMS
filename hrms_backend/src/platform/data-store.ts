@@ -579,6 +579,10 @@ export interface DataStorePersistence {
     documentId: UUID,
     mode: "metadata" | "raw" | "workflow",
   ): Promise<"other" | "media-authorized" | "hidden">;
+  classifyEmsEmployeeDocumentAccess?(
+    userId: UUID,
+    targetUserId: UUID,
+  ): Promise<"authorized" | "hidden">;
   expenseDashboardContext?(userId: UUID, filters: {
     status?: string;
     date_from?: string;
