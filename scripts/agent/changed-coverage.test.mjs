@@ -538,6 +538,15 @@ test("in-source test additions pass only when production module loads cannot rea
     { name: "glob", route: "export const route = import.meta.glob('./test/*.ts');\n" },
     { name: "createRequire", route: "import { createRequire } from 'node:module';\nexport const route = createRequire(import.meta.url);\n" },
     { name: "safe type import", route: "import type { Policy } from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "safe inline type import", route: "import { type Policy } from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "safe inline type re-export", route: "export { type Policy } from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "safe multiline inline type import", route: "import {\n  type Policy,\n  type OtherPolicy,\n} from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "safe multiline inline type re-export", route: "export {\n  type Policy,\n  type OtherPolicy,\n} from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "mixed inline import", route: "import { type Policy, allow } from './test/policy';\nexport const route = allow;\n" },
+    { name: "mixed inline re-export", route: "export { type Policy, allow as route } from './test/policy';\n" },
+    { name: "mixed multiline inline import", route: "import {\n  type Policy,\n  allow,\n} from './test/policy';\nexport const route = allow;\n" },
+    { name: "default with inline type import", route: "import policy, { type Policy } from './test/policy';\nexport const route = policy;\n" },
+    { name: "namespace import", route: "import * as policy from './test/policy';\nexport const route = policy;\n" },
     { name: "safe production import", route: "import { value } from './safe';\nexport const route = value;\n", safe: true, emptyConfig: true },
     { name: "safe unresolved package without aliases", route: "import 'missing-package';\nexport const route = true;\n", safe: true, emptyConfig: true },
     { name: "safe asset import", route: "import './styles.css?url';\nexport const route = true;\n", safe: true },
@@ -562,7 +571,8 @@ test("in-source test additions pass only when production module loads cannot rea
     assert.equal(result.pass, Boolean(scenario.safe), `${scenario.name}: ${result.lines.join("\n")}`);
     assert.equal(diff.outside.includes(testPath), !scenario.safe, scenario.name);
     assert.equal(diff.testSource.includes(testPath), Boolean(scenario.safe), scenario.name);
-    if (!scenario.safe) assert.ok(diff.importRisks.length > 0, scenario.name);
+    if (scenario.safe) assert.deepEqual(diff.importRisks, [], scenario.name);
+    else assert.ok(diff.importRisks.length > 0, scenario.name);
   }
 });
 
@@ -812,7 +822,7 @@ test("CLI stamps, passes, and fails on synthetic source and usage errors", () =>
   assert.match(invalidWorker.stderr, /absolute canonical/);
 });
 
-test("type, imports and comments are non-executable but uninstrumented runtime lines fail", () => {
+test("type-only imports are non-executable while runtime imports remain measured", () => {
   const content = "import type { X } from 'x';\n// a comment\ntype Id = string;\nlet pending: string;\ninterface Shape { value: string }\nexport type { X };\ndeclare const external: string;\nexport const value = 1;\n";
   const result = assessChangedFile("hrms_backend/src/extra.ts", new Set([1, 2, 3, 4, 5, 6, 7, 8]), content, undefined);
   assert.deepEqual(result.nonExecutable, [1, 2, 3, 4, 5, 6, 7]);
@@ -825,8 +835,42 @@ test("type, imports and comments are non-executable but uninstrumented runtime l
   const valueImport = assessChangedFile("hrms_backend/src/import.ts", new Set([1]), "import { safe } from './unsafe.js';\n", undefined);
   assert.deepEqual(valueImport.executable, [1]);
   assert.deepEqual(valueImport.uncovered, ["1 (not instrumented)"]);
+  const dynamicImport = assessChangedFile("hrms_backend/src/dynamic.ts", new Set([1]),
+    "export const load = () => import('./runtime.js');\n", undefined);
+  assert.deepEqual(dynamicImport.executable, [1]);
+  assert.deepEqual(dynamicImport.uncovered, ["1 (not instrumented)"]);
+  const coveredDynamic = assessChangedFile("hrms_backend/src/dynamic.ts", new Set([1]),
+    "export const load = () => import('./runtime.js');\n", {
+      statementMap: { 0: { start: { line: 1, column: 0 }, end: { line: 1, column: 48 } } },
+      s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
+    });
+  assert.deepEqual(coveredDynamic.executable, [1]);
+  assert.deepEqual(coveredDynamic.uncovered, []);
   assert.equal(instrumentableExternal("node_modules/unsafe.js"), false);
   assert.equal(instrumentableExternal("tools/node_modules/unsafe.js"), false);
+});
+
+test("inline all-type imports and exports are non-executable without hiding mixed runtime forms", () => {
+  const cases = [
+    { source: "import { type Foo } from './types.js';\n", executable: false },
+    { source: "import {\n  type Foo,\n  type Bar,\n} from './types.js';\n", executable: false },
+    { source: "import type * as Types from './types.js';\n", executable: false },
+    { source: "export { type Foo } from './types.js';\n", executable: false },
+    { source: "export {\n  type Foo,\n  type Bar,\n} from './types.js';\n", executable: false },
+    { source: "export { type Foo };\n", executable: false },
+    { source: "import { type Foo, runtime } from './runtime.js';\n", executable: true },
+    { source: "import DefaultValue, { type Foo } from './runtime.js';\n", executable: true },
+    { source: "import * as Runtime from './runtime.js';\n", executable: true },
+    { source: "export { type Foo, runtime } from './runtime.js';\n", executable: true },
+    { source: "export * from './runtime.js';\n", executable: true },
+  ];
+  for (const [index, item] of cases.entries()) {
+    const lines = new Set(Array.from({ length: item.source.trimEnd().split("\n").length }, (_, line) => line + 1));
+    const result = assessChangedFile(`hrms_backend/src/inline-types-${index}.ts`, lines, item.source, undefined);
+    assert.equal(result.executable.length > 0, item.executable, item.source);
+    assert.equal(result.uncovered.length > 0, item.executable, item.source);
+    assert.equal(result.nonExecutable.length > 0, !item.executable, item.source);
+  }
 });
 
 test("full-suite launcher finalizes only after worker success and restores and removes temporary state", async () => {
@@ -936,9 +980,11 @@ test("sanitized coverage environment excludes ambient and ignored configuration"
   const outputRoot = join(tmpdir(), "hrms-sanitized-output");
   const previousEnvFile = process.env.HRMS_ENV_FILE;
   const previousV8 = process.env.NODE_V8_COVERAGE;
+  const previousPython = process.env.HRMS_COVERAGE_PYTHON;
   process.env.HRMS_UNAPPROVED_SECRET = "must-not-propagate";
   process.env.HRMS_ENV_FILE = ".env.test";
   process.env.NODE_V8_COVERAGE = join(outputRoot, "orchestrator-v8");
+  process.env.HRMS_COVERAGE_PYTHON = join(outputRoot, "pinned", "python3");
   try {
     const environment = sanitizedCoverageEnvironment(outputRoot);
     assert.equal(environment.HRMS_UNAPPROVED_SECRET, undefined);
@@ -949,12 +995,15 @@ test("sanitized coverage environment excludes ambient and ignored configuration"
     assert.equal(environment.NPM_CONFIG_USERCONFIG, join(outputRoot, "no-user-npmrc"));
     assert.equal(environment.PYTHONNOUSERSITE, "1");
     assert.equal(environment.NODE_V8_COVERAGE, join(outputRoot, "orchestrator-v8"));
+    assert.equal(environment.HRMS_COVERAGE_PYTHON, join(outputRoot, "pinned", "python3"));
   } finally {
     delete process.env.HRMS_UNAPPROVED_SECRET;
     if (previousEnvFile === undefined) delete process.env.HRMS_ENV_FILE;
     else process.env.HRMS_ENV_FILE = previousEnvFile;
     if (previousV8 === undefined) delete process.env.NODE_V8_COVERAGE;
     else process.env.NODE_V8_COVERAGE = previousV8;
+    if (previousPython === undefined) delete process.env.HRMS_COVERAGE_PYTHON;
+    else process.env.HRMS_COVERAGE_PYTHON = previousPython;
   }
 });
 
@@ -975,7 +1024,7 @@ test("full-suite dependency selection uses either exact injections or every trus
   const trustedBin = mkdtempSync(join(tmpdir(), "hrms-coverage-tools-"));
   roots.push(trustedBin);
   for (const name of ["pnpm", "python3", "bash"]) {
-    write(trustedBin, name, "#!/bin/sh\nexit 0\n");
+    write(trustedBin, name, name === "python3" ? "#!/bin/sh\nprintf '7.11.0\\n'\n" : "#!/bin/sh\nexit 0\n");
     chmodSync(join(trustedBin, name), 0o755);
   }
   const trustedDefaults = selectFullSuiteTools(undefined, { PATH: trustedBin });
@@ -1004,7 +1053,7 @@ test("trusted tool resolution binds an executable realpath and rejects missing t
   const directory = mkdtempSync(join(tmpdir(), "hrms-tools-"));
   roots.push(directory);
   const executable = join(directory, "python3");
-  writeFileSync(executable, "#!/bin/sh\nexit 0\n");
+  writeFileSync(executable, "#!/bin/sh\nprintf '7.11.0\\n'\n");
   chmodSync(executable, 0o755);
   assert.equal(resolveTrustedExecutable("python3", { PATH: directory }), realpathSync(executable));
   assert.equal(resolveTrustedExecutable(executable, { PATH: "" }), realpathSync(executable));
@@ -1021,6 +1070,41 @@ test("trusted tool resolution binds an executable realpath and rejects missing t
   symlinkSync(executable, linked);
   assert.throws(() => validateTrustedExecutable(linked), /symbolic link/);
   assert.throws(() => validateTrustedExecutable(directory), /not a regular file/);
+});
+
+test("pinned coverage Python ignores candidate PATH substitution and requires exact canonical version", () => {
+  const trusted = mkdtempSync(join(tmpdir(), "hrms-pinned-python-"));
+  const candidate = mkdtempSync(join(tmpdir(), "hrms-candidate-python-"));
+  roots.push(trusted, candidate);
+  const trustedPython = join(trusted, "python3");
+  const candidatePython = join(candidate, "python3");
+  writeFileSync(trustedPython, "#!/bin/sh\nprintf '7.11.0\\n'\n");
+  writeFileSync(candidatePython, "#!/bin/sh\nprintf '7.11.0\\n'\n");
+  chmodSync(trustedPython, 0o755);
+  chmodSync(candidatePython, 0o755);
+  assert.equal(resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: trustedPython,
+  }), trustedPython);
+
+  writeFileSync(trustedPython, "#!/bin/sh\nprintf '7.10.0\\n'\n");
+  assert.throws(() => resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: trustedPython,
+  }), /coverage 7\.11\.0 is required, found 7\.10\.0/);
+
+  writeFileSync(trustedPython, "#!/bin/sh\nexit 0\n");
+  assert.throws(() => resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: trustedPython,
+  }), /coverage 7\.11\.0 is required, found no version/);
+
+  const linkedPython = join(trusted, "linked-python3");
+  symlinkSync(candidatePython, linkedPython);
+  assert.throws(() => resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: linkedPython,
+  }), /must not be a symbolic link/);
 });
 
 test("full-suite worker isolates orchestrator V8 output from every coverage child", () => {
@@ -1668,7 +1752,9 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   git(root, "commit", "-qm", "base");
   const base = git(root, "rev-parse", "HEAD");
   const path = "scripts/agent/probe.mjs";
-  write(root, path, "import assert from 'node:assert/strict';\nexport function decide(value) {\n  if (value) return 'yes';\n  return 'no';\n}\nassert.equal(decide(true), 'yes');\nassert.equal(decide(false), 'no');\n");
+  const dependencyPath = "scripts/agent/dependency.mjs";
+  write(root, dependencyPath, "globalThis.__dependencyInitialized = true;\n");
+  write(root, path, "import assert from 'node:assert/strict';\nimport './dependency.mjs';\nexport function decide(value) {\n  if (value) return 'yes';\n  return 'no';\n}\nassert.equal(globalThis.__dependencyInitialized, true);\nassert.equal(decide(true), 'yes');\nassert.equal(decide(false), 'no');\n");
   git(root, "add", ".");
   git(root, "commit", "-qm", "covered probe");
   const rawDirectory = join(dirname(coverageArtifactPath(root, "external")), "raw-node");
@@ -1689,9 +1775,13 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   assert.ok(entry);
   assert.ok(Object.values(entry.s).every((count) => count > 0));
   assert.ok(Object.values(entry.b).flat().every((count) => count > 0));
-  const imported = Object.entries(entry.statementMap).find(([, location]) => location.start.line === 1);
-  assert.ok(imported, "executed static import receives explicit module-evaluation coverage");
-  assert.ok(entry.s[imported[0]] > 0);
+  assert.equal(Object.values(entry.statementMap).some((location) => location.start.line === 1), true,
+    "executed importer attributes its static value import");
+  assert.equal(Object.values(entry.statementMap).some((location) => location.start.line === 2), true,
+    "executed importer attributes its static side-effect import");
+  const dependencyEntry = combined[join(root, dependencyPath)];
+  assert.ok(dependencyEntry, "the imported module's actual initialization remains instrumented");
+  assert.ok(Object.values(dependencyEntry.s).every((count) => count > 0));
   stampExternalReport(root);
   assert.equal(verify(root, base, "HEAD").pass, true);
 
@@ -1701,7 +1791,7 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   assert.throws(() => addUniqueRawCoverageEntry(unique, "covered", { path }), /Duplicate raw V8 coverage source/);
 });
 
-test("module-evaluation attribution covers value modules without inventing type-only execution", () => {
+test("module-evaluation attribution covers only static runtime modules from positive importer evidence", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-module-evaluation-"));
   roots.push(root);
   git(root, "init", "-q");
@@ -1709,9 +1799,15 @@ test("module-evaluation attribution covers value modules without inventing type-
   const source = [
     "import type { TypeOnly } from './types.js';",
     "export type { OtherType } from './types.js';",
+    "import { type InlineType } from './types.js';",
+    "export { type InlineExport } from './types.js';",
+    "export { type InlineLocal };",
     "import { dependency } from './dependency.js';",
     "export { dependency } from './dependency.js';",
-    "dependency + 1;",
+    "import { type InlineType, dependency as mixedDependency } from './dependency.js';",
+    "export { type InlineExport, dependency as mixedExport } from './dependency.js';",
+    "void import('./unsafe.js');",
+    "arbitraryTopLevelCall();",
     "export const local = dependency;",
     "",
   ].join("\n");
@@ -1722,13 +1818,18 @@ test("module-evaluation attribution covers value modules without inventing type-
   git(root, "commit", "-qm", "module sources");
   const baseEntry = {
     path: join(root, "scripts/agent/module.ts"),
-    statementMap: { 0: { start: { line: 6, column: 0 }, end: { line: 6, column: 32 } } },
-    s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
+    statementMap: {
+      0: { start: { line: 12, column: 0 }, end: { line: 12, column: 32 } },
+      1: { start: { line: 6, column: 0 }, end: { line: 6, column: 56 } },
+    },
+    s: { 0: 1, 1: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
   };
   const attributed = addEvaluatedModuleStatements(root, "scripts/agent/module.ts", baseEntry);
   const attributedLines = Object.values(attributed.statementMap).map((location) => location.start.line).sort((a, b) => a - b);
-  assert.deepEqual(attributedLines, [3, 4, 5, 6]);
+  assert.deepEqual(attributedLines, [6, 7, 8, 9, 12]);
   assert.ok(Object.values(attributed.s).every((count) => count > 0));
+  const unattributedExpressions = assessChangedFile("scripts/agent/module.ts", new Set([10, 11]), source, attributed);
+  assert.deepEqual(unattributedExpressions.uncovered, ["10 (not instrumented)", "11 (not instrumented)"]);
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {}, s: {}, fnMap: {}, f: {}, branchMap: {}, b: {} }).statementMap[0], undefined);
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {} }).statementMap[0], undefined);
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/check.py", baseEntry), baseEntry);
@@ -1736,6 +1837,130 @@ test("module-evaluation attribution covers value modules without inventing type-
     const value = addEvaluatedModuleStatements(root, path, { ...baseEntry, path: join(root, path) });
     assert.equal(value.s[0], 1);
   }
+});
+
+test("module-evaluation attribution handles runtime import forms and multiline declarations", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-import-forms-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms_backend/src/import-forms.ts";
+  write(root, path, [
+    "import defaultValue, {",
+    "  namedValue,",
+    "} from './dependency.js';",
+    "import * as namespaceValue from './dependency.js';",
+    "import './register.js';",
+    "import {",
+    "  type PureOne,",
+    "  type PureTwo,",
+    "} from './types.js';",
+    "import {",
+    "  type MixedType,",
+    "  namedValue as mixedValue,",
+    "} from './dependency.js';",
+    "import DefaultWithType, { type PureOne as InlineType } from './dependency.js';",
+    "import type * as TypeNamespace from './types.js';",
+    "export {",
+    "  type PureOne,",
+    "  type PureTwo,",
+    "} from './types.js';",
+    "export {",
+    "  type PureOne,",
+    "  namedValue as mixedExport,",
+    "} from './dependency.js';",
+    "export const local = defaultValue + namedValue + namespaceValue.value + mixedValue + DefaultWithType;",
+    "",
+  ].join("\n"));
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "import forms");
+  const entry = addEvaluatedModuleStatements(root, path, {
+    path: join(root, path),
+    statementMap: { 0: { start: { line: 24, column: 0 }, end: { line: 24, column: 110 } } },
+    s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
+  });
+  const locations = Object.values(entry.statementMap);
+  assert.ok(locations.some((location) => location.start.line === 1 && location.end.line === 3));
+  assert.ok(locations.some((location) => location.start.line === 4));
+  assert.ok(locations.some((location) => location.start.line === 5));
+  assert.equal(locations.some((location) => location.start.line === 6), false);
+  assert.ok(locations.some((location) => location.start.line === 10 && location.end.line === 13));
+  assert.ok(locations.some((location) => location.start.line === 14));
+  assert.equal(locations.some((location) => location.start.line === 15), false);
+  assert.equal(locations.some((location) => location.start.line === 16), false);
+  assert.ok(locations.some((location) => location.start.line === 20 && location.end.line === 23));
+  assert.ok(Object.values(entry.s).every((count) => count > 0));
+});
+
+test("package coverage requires positive importer evidence for changed runtime imports", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-package-import-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const routePath = "hrms_backend/src/route.ts";
+  const unsafePath = "hrms_backend/src/unsafe.ts";
+  write(root, routePath, "import './safe.js';\nexport const loaded = true;\n");
+  write(root, "hrms_backend/src/safe.ts", "export const effect = 'safe';\n");
+  write(root, unsafePath, "export const effect = 'unsafe';\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "safe import");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, routePath, "import './unsafe.js';\nexport const loaded = true;\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "unsafe import");
+
+  const entry = (path, line, count) => ({
+    path: join(root, path),
+    statementMap: { 0: { start: { line, column: 0 }, end: { line, column: 32 } } },
+    s: { 0: count }, fnMap: {}, f: {}, branchMap: {}, b: {},
+  });
+  const writePackageReport = (data) => {
+    writeCoverage(root, "backend", JSON.stringify(data));
+    stampReport(root, "backend");
+  };
+
+  writePackageReport({ [join(root, unsafePath)]: entry(unsafePath, 1, 1) });
+  const importedOnly = verify(root, base, "HEAD");
+  assert.equal(importedOnly.pass, false);
+  assert.ok(importedOnly.totals.uncovered.some((item) => item.includes(`${routePath}:1`)));
+
+  writePackageReport({
+    [join(root, routePath)]: entry(routePath, 2, 0),
+    [join(root, unsafePath)]: entry(unsafePath, 1, 1),
+  });
+  const zeroImporter = verify(root, base, "HEAD");
+  assert.equal(zeroImporter.pass, false);
+  assert.ok(zeroImporter.totals.uncovered.some((item) => item.includes(`${routePath}:1`)));
+
+  writePackageReport({
+    [join(root, routePath)]: entry(routePath, 2, 1),
+    [join(root, unsafePath)]: entry(unsafePath, 1, 1),
+  });
+  const executedImporter = verify(root, base, "HEAD");
+  assert.equal(executedImporter.pass, true, executedImporter.lines.join("\n"));
+});
+
+test("frontend package coverage attributes an executed importing module", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-frontend-import-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const routePath = "hrms-client/src/route.ts";
+  write(root, routePath, "import './safe.js';\nexport const loaded = true;\n");
+  write(root, "hrms-client/src/safe.ts", "export const effect = 'safe';\n");
+  write(root, "hrms-client/src/unsafe.ts", "export const effect = 'unsafe';\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "safe frontend import");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, routePath, "import './unsafe.js';\nexport const loaded = true;\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "unsafe frontend import");
+  const absolute = join(root, routePath);
+  writeCoverage(root, "frontend", JSON.stringify({ [absolute]: {
+    path: absolute,
+    statementMap: { 0: { start: { line: 2, column: 0 }, end: { line: 2, column: 27 } } },
+    s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
+  } }));
+  stampReport(root, "frontend");
+  const result = verify(root, base, "HEAD");
+  assert.equal(result.pass, true, result.lines.join("\n"));
 });
 
 test("Python line and arc coverage is converted without inventing executable lines", async () => {

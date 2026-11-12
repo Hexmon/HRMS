@@ -97,6 +97,7 @@ export class R2ObjectStorage implements ObjectStoragePort {
     private readonly options: R2ObjectStorageOptions,
     client?: ObjectStorageCommandClient,
   ) {
+    assertHostedR2EndpointPolicy(options);
     this.bucket = requireConfigValue("R2_BUCKET_NAME", options.bucket);
     if (!Number.isInteger(options.requestTimeoutMs) || options.requestTimeoutMs < 500 || options.requestTimeoutMs > 60_000) {
       throw new Error("R2_REQUEST_TIMEOUT_MS must be an integer between 500 and 60000.");
@@ -294,6 +295,21 @@ export class R2ObjectStorage implements ObjectStoragePort {
     } finally {
       if (timeout) clearTimeout(timeout);
     }
+  }
+}
+
+export function assertHostedR2EndpointPolicy(
+  options: Pick<R2ObjectStorageOptions, "endpoint">,
+  environment?: Record<string, string | undefined>,
+): void {
+  const currentEnvironment = environment ?? process.env;
+  const appEnvironment = currentEnvironment.APP_ENV?.trim().toLowerCase();
+  const hosted = currentEnvironment.NODE_ENV === "production" ||
+    appEnvironment === "qa" || appEnvironment === "production";
+  if (hosted && options.endpoint?.trim()) {
+    throw new Error(
+      "Hosted environments derive the Cloudflare R2 endpoint from R2_ACCOUNT_ID; R2_ENDPOINT is local-integration only.",
+    );
   }
 }
 

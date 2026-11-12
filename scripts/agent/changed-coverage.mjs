@@ -17,6 +17,7 @@ const packages = {
   frontend: { root: "hrms-client", output: "frontend" },
   external: { root: ".", output: "external" },
 };
+const expectedCoverageVersion = "7.11.0";
 
 export function coverageOutputRoot(root) {
   return resolve(process.env.HRMS_COVERAGE_OUTPUT_DIR ?? join(dirname(resolve(root)), `${basename(resolve(root))}-coverage-output`));
@@ -108,8 +109,8 @@ export function productionImportRisks(root) {
       }
     };
     const visit = (node) => {
-      if (ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
-      if (ts.isExportDeclaration(node) && !node.isTypeOnly && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
+      if (ts.isImportDeclaration(node) && !isPureTypeImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
+      if (ts.isExportDeclaration(node) && !isPureTypeExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
       if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference) && node.moduleReference.expression && ts.isStringLiteralLike(node.moduleReference.expression)) inspect(node.moduleReference.expression.text);
       if (ts.isCallExpression(node)) {
         const callee = node.expression.getText(source);
@@ -125,6 +126,24 @@ export function productionImportRisks(root) {
     visit(source);
   }
   return [...risks];
+}
+
+function isPureTypeImportDeclaration(node) {
+  if (!ts.isImportDeclaration(node)) return false;
+  const clause = node.importClause;
+  if (!clause) return false;
+  if (clause.isTypeOnly) return true;
+  if (clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) return false;
+  return clause.namedBindings.elements.length > 0 &&
+    clause.namedBindings.elements.every((element) => element.isTypeOnly);
+}
+
+function isPureTypeExportDeclaration(node) {
+  if (!ts.isExportDeclaration(node)) return false;
+  if (node.isTypeOnly) return true;
+  return Boolean(node.exportClause && ts.isNamedExports(node.exportClause) &&
+    node.exportClause.elements.length > 0 &&
+    node.exportClause.elements.every((element) => element.isTypeOnly));
 }
 
 export function sourceDigest(root, packageName) {
@@ -292,6 +311,23 @@ export function validateTrustedExecutable(path) {
 }
 
 export function resolveCoveragePython(environment = process.env) {
+  const validateCoveragePython = (executable) => {
+    validateTrustedExecutable(executable);
+    const version = execFileSync(executable,
+      ["-c", "import coverage; print(coverage.__version__)"],
+      { env: environment, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (version !== expectedCoverageVersion) {
+      throw new Error(`coverage ${expectedCoverageVersion} is required, found ${version || "no version"}`);
+    }
+    return executable;
+  };
+  if (environment.HRMS_COVERAGE_PYTHON !== undefined) {
+    try {
+      return validateCoveragePython(environment.HRMS_COVERAGE_PYTHON);
+    } catch (error) {
+      throw new Error(`Pinned Python coverage runner is invalid (${error.message})`);
+    }
+  }
   const failures = [];
   for (const name of ["python3", "python"]) {
     try {
@@ -301,8 +337,7 @@ export function resolveCoveragePython(environment = process.env) {
           try { validateTrustedExecutable(candidate); return true; } catch { return false; }
         });
       if (!executable) throw new Error("not found on sanitized PATH");
-      execFileSync(executable, ["-c", "import coverage"], { env: environment, stdio: "ignore" });
-      return executable;
+      return validateCoveragePython(executable);
     } catch (error) {
       failures.push(`${name}: ${error.message}`);
     }
@@ -426,10 +461,8 @@ export function addEvaluatedModuleStatements(root, path, entry) {
   for (const node of source.statements) {
     const staticModule = ts.isImportDeclaration(node) ||
       (ts.isExportDeclaration(node) && Boolean(node.moduleSpecifier));
-    const typeOnly = ts.isImportDeclaration(node)
-      ? node.importClause?.isTypeOnly === true
-      : ts.isExportDeclaration(node) && node.isTypeOnly;
-    if ((!staticModule || typeOnly) && !ts.isExpressionStatement(node)) continue;
+    const typeOnly = isPureTypeImportDeclaration(node) || isPureTypeExportDeclaration(node);
+    if (!staticModule || typeOnly) continue;
     const start = source.getLineAndCharacterOfPosition(node.getStart(source));
     const end = source.getLineAndCharacterOfPosition(node.end);
     const line = start.line + 1;
@@ -521,7 +554,10 @@ function readReport(root, packageName, head) {
     throw new Error(`${packageName}: malformed coverage report`);
   }
   const entries = validatedCoverageEntries(root, data, packageName);
-  return entries;
+  return new Map([...entries].map(([path, entry]) => [
+    path,
+    addEvaluatedModuleStatements(root, path, entry),
+  ]));
 }
 
 function pythonCoverageToIstanbul(root, data) {
@@ -709,7 +745,7 @@ export function removeExactCommitCheckout(root, checkout) {
 export function sanitizedCoverageEnvironment(outputRoot) {
   const allowed = ["PATH", "USER", "LOGNAME", "SHELL", "TMPDIR", "TEMP", "TMP", "CI", "GITHUB_ACTIONS",
     "RUNNER_OS", "RUNNER_ARCH", "PNPM_HOME", "COREPACK_HOME", "NO_COLOR", "FORCE_COLOR",
-    "NODE_V8_COVERAGE"];
+    "NODE_V8_COVERAGE", "HRMS_COVERAGE_PYTHON"];
   const environment = Object.fromEntries(allowed.flatMap((name) => process.env[name] === undefined ? [] : [[name, process.env[name]]]));
   return {
     ...environment,
@@ -1009,9 +1045,9 @@ function nonExecutableLines(path, content) {
     for (let line = first; line <= last; line++) excluded.add(line);
   };
   const visit = (node) => {
-    if ((ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) ||
+    if (isPureTypeImportDeclaration(node) ||
         ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) ||
-        (ts.isExportDeclaration(node) && node.isTypeOnly) || node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)) {
+        isPureTypeExportDeclaration(node) || node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)) {
       mark(node);
       return;
     }

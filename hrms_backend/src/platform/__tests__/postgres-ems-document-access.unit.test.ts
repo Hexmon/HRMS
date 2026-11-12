@@ -1,32 +1,72 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { Roles } from "#shared";
 import { createMemoryDataStore } from "../data-store.js";
 import { createPostgresPersistenceForTesting } from "../postgres-data-store.js";
 
 describe("PostgreSQL EMS employee-document company classifier", () => {
   it.each([
-    ["authorized", [{ id: randomUUID() }]],
-    ["hidden", []],
-  ] as const)("returns %s from the current actor-company target query", async (expected, rows) => {
+    ["self read", "read", [], "actor", "actor", "authorized"],
+    ["self write", "write", [], "actor", "actor", "authorized"],
+    ["Admin write", "write", [Roles.Admin], "actor", "peer", "authorized"],
+    ["HR write", "write", [Roles.HRManager], "actor", "peer", "authorized"],
+    ["Auditor read", "read", [Roles.Auditor], "actor", "peer", "authorized"],
+    ["Auditor write", "write", [Roles.Auditor], "actor", "peer", "forbidden"],
+    ["manager read", "read", [], "company.manager", "company.manager.employee", "authorized"],
+    ["manager write", "write", [], "company.manager", "company.manager.employee", "forbidden"],
+    ["peer read", "read", [], "company.peer", "company.employee", "forbidden"],
+  ] as const)("classifies %s from current durable roles and hierarchy", async (
+    _case,
+    permission,
+    roles,
+    actorPath,
+    targetPath,
+    expected,
+  ) => {
     const companyId = randomUUID();
-    const actorId = randomUUID();
-    const targetId = randomUUID();
+    const actorId = actorPath === "actor" ? randomUUID() : randomUUID();
+    const targetId = targetPath === "actor" ? actorId : randomUUID();
+    const rows = [{ id: targetId, hierarchy_path: targetPath }];
     const query = vi.fn()
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows })
       .mockResolvedValueOnce({});
     const release = vi.fn();
     const persistence = persistenceWithClient(query, release);
-    durableSessionResolver(persistence).mockResolvedValue({ company: { id: companyId } });
+    const durableActor = { id: actorId, hierarchy_path: actorPath, roles };
+    durableSessionResolver(persistence).mockResolvedValue({
+      company: { id: companyId },
+      actor: durableActor,
+    });
 
-    await expect(
-      persistence.classifyEmsEmployeeDocumentAccess(actorId, targetId),
-    ).resolves.toBe(expected);
+    const result = await persistence.classifyEmsEmployeeDocumentAccess(actorId, targetId, permission);
+    expect(result).toEqual(expected === "authorized"
+      ? { decision: "authorized", actor: durableActor }
+      : { decision: expected });
     expect(query).toHaveBeenNthCalledWith(1, "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     expect(query.mock.calls[1]?.[0]).toContain("target_pref.company_id = $2");
     expect(query.mock.calls[1]?.[1]).toEqual([targetId, companyId]);
     expect(query).toHaveBeenNthCalledWith(3, "COMMIT");
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides a target outside the actor's current company", async () => {
+    const actorId = randomUUID();
+    const targetId = randomUUID();
+    const query = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({});
+    const release = vi.fn();
+    const persistence = persistenceWithClient(query, release);
+    durableSessionResolver(persistence).mockResolvedValue({
+      company: { id: randomUUID() },
+      actor: { id: actorId, hierarchy_path: "company.actor", roles: [Roles.Admin] },
+    });
+
+    await expect(
+      persistence.classifyEmsEmployeeDocumentAccess(actorId, targetId, "read"),
+    ).resolves.toEqual({ decision: "hidden" });
   });
 
   it("rolls back, releases, and preserves a database failure", async () => {
@@ -40,7 +80,7 @@ describe("PostgreSQL EMS employee-document company classifier", () => {
     durableSessionResolver(persistence).mockResolvedValue({ company: { id: randomUUID() } });
 
     await expect(
-      persistence.classifyEmsEmployeeDocumentAccess(randomUUID(), randomUUID()),
+      persistence.classifyEmsEmployeeDocumentAccess(randomUUID(), randomUUID(), "read"),
     ).rejects.toBe(failure);
     expect(query).toHaveBeenLastCalledWith("ROLLBACK");
     expect(release).toHaveBeenCalledTimes(1);
@@ -57,7 +97,7 @@ describe("PostgreSQL EMS employee-document company classifier", () => {
     durableSessionResolver(persistence).mockResolvedValue({ company: { id: randomUUID() } });
 
     await expect(
-      persistence.classifyEmsEmployeeDocumentAccess(randomUUID(), randomUUID()),
+      persistence.classifyEmsEmployeeDocumentAccess(randomUUID(), randomUUID(), "write"),
     ).rejects.toBe(failure);
     expect(query).toHaveBeenLastCalledWith("ROLLBACK");
     expect(release).toHaveBeenCalledTimes(1);

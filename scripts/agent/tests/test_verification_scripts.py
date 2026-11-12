@@ -46,6 +46,18 @@ class VerificationScriptTests(unittest.TestCase):
         self.assertIn('>> "$GITHUB_PATH"', workflow)
         self.assertIn("node_modules", root_ignore)
 
+    def test_branch_coverage_workflow_uses_canonical_pinned_python(self) -> None:
+        workflow = (SOURCE.parents[1] / ".github" / "workflows" / "branch-ci-cd.yml").read_text(encoding="utf-8")
+        self.assertIn('HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3', workflow)
+        self.assertEqual(workflow.count('HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3'), 2)
+        self.assertIn('python -m venv --copies "$coverage_venv"', workflow)
+        self.assertIn('coverage==7.11.0', workflow)
+        self.assertIn('test "$(realpath "$HRMS_COVERAGE_PYTHON")" = "$HRMS_COVERAGE_PYTHON"', workflow)
+        self.assertIn('test ! -L "$HRMS_COVERAGE_PYTHON"', workflow)
+        self.assertIn("print(coverage.__version__)", workflow)
+        coverage_step = workflow.split("- name: Install pinned Python coverage runner", 1)[1].split("- name:", 1)[0]
+        self.assertNotIn('>> "$GITHUB_PATH"', coverage_step)
+
     def test_change_plan_keeps_unrelated_suites_out_of_each_path_class(self) -> None:
         cases = (
             ("docs/README.md", ("Agent setup and documentation references",), ("Backend unit tests", "Frontend lint", "Disposable database preflight")),
