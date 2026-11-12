@@ -35,6 +35,7 @@ import type {
   ExpenseSubType,
   ExpenseTicket,
   Holiday,
+  HolidayUpsertInput,
   LeaveRequest,
   ManagerBackupAssignment,
   OutboxEvent,
@@ -345,6 +346,7 @@ export interface AssetRecoveryTicketRecord {
   id: UUID;
   employee_user_id: UUID;
   asset_id: UUID;
+  assignment_id: UUID | null;
   status: string;
   settlement_status: AssetRecoverySettlementStatus | null;
   settlement_amount: string | null;
@@ -448,7 +450,37 @@ export interface DataStorePersistence {
   reportExportReadContext?(userId: UUID, exportId?: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   reportActorContext?(userId: UUID, operation: string): Promise<{ actor: AuthUser; companyId: UUID }>;
+  /** Transaction-owned holiday command; current actor/company/role are read from SQL. */
+  upsertHoliday?(actorUserId: UUID, id: UUID, input: HolidayUpsertInput): Promise<Holiday>;
+  /** Request-local company-scoped read, not a hydrated startup snapshot. */
+  holidaysForActor?(actorUserId: UUID, year: number): Promise<Holiday[]>;
+  assetReadStore?(baseStore?: DataStore): Promise<DataStore>;
+  assetPublicScan?(qrHash: string): Promise<PublicAssetScan | null>;
+  assetAssignees?(actorUserId: UUID, companyId: UUID, search?: string): Promise<{ items: Array<{ id: UUID; full_name: string }>; has_more: boolean }>;
+  assetCommand?<T>(
+    input: AssetCommandInput,
+    authorize: (store: DataStore, actor: AuthUser, replayBody?: T) => void,
+    execute: (store: DataStore, actor: AuthUser) => T,
+  ): Promise<T>;
   close(): Promise<void>;
+}
+
+export interface PublicAssetScan {
+  qr_hash: string;
+  asset_code: string;
+  asset_type: string;
+  name: string;
+  status: string;
+  assigned: "assigned" | "unassigned";
+}
+
+export interface AssetCommandInput {
+  companyId: UUID;
+  actorUserId: UUID;
+  actionKey: string;
+  idempotencyKey: string;
+  requestHash: string;
+  assigneeUserId?: UUID;
 }
 
 export type PersistenceDomain =

@@ -1,7 +1,9 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
+import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { ValkeySessionStore } from "#auth";
-import { EmploymentStatuses, type AuthUser, type RoleKey } from "#shared";
+import { EmploymentStatuses, Roles, type AuthUser, type RoleKey } from "#shared";
 import type {
   AssetRecord,
   AttendanceDayRecord,
@@ -35,6 +37,7 @@ import type {
   HelpdeskTicketComment,
   HelpdeskTicketEvent,
   Holiday,
+  HolidayUpsertInput,
   LeaveRequest,
   ManagerBackupAssignment,
   OutboxEvent,
@@ -53,6 +56,7 @@ import type {
 } from "#shared";
 import {
   type AssetAssignmentRecord,
+  type AssetCommandInput,
   type AssetStateEventRecord,
   type AdminMasterDataItemRecord,
   type AuthPersistenceFlushOptions,
@@ -69,6 +73,7 @@ import {
   type LicenseEntitlement,
   type NotificationRecord,
   type PersistenceDomain,
+  type PublicAssetScan,
   type UserSessionPreferenceRecord,
   type WorkSegment,
   type WorkflowDefinitionRecord,
@@ -80,7 +85,7 @@ import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
-import { companyContextRequired, forbidden, unauthorized } from "./errors.js";
+import { companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
 
 function optionalSet(
   values: readonly string[] | undefined,
@@ -111,6 +116,46 @@ function shouldFlushId(
   filtered: boolean,
 ): boolean {
   return filtered ? Boolean(filter?.has(id)) : true;
+}
+
+const assetCollections = [
+  "assets", "assetAssignments", "assetStateEvents", "assetRequests",
+  "assetAcknowledgements", "assetMaintenanceRecords", "assetVendors",
+  "assetRecoveryTickets", "licenseEntitlements", "licenseActivations",
+  "compromisedKeys",
+] as const;
+
+type AssetCollection = (typeof assetCollections)[number];
+
+function assetMutationStore(before: DataStore, actor: AuthUser): DataStore {
+  const staged = { ...before, outbox: [] as OutboxEvent[], nextOutboxId: 1 };
+  for (const collection of assetCollections) {
+    // The service/repository layer mutates objects in place. Keep the SQL
+    // snapshot and the process-wide hydrated store untouched until commit.
+    (staged as unknown as Record<AssetCollection, unknown>)[collection] = structuredClone(before[collection]);
+  }
+  staged.users = before.users.map((user) => user.id === actor.id ? { ...user, roles: actor.roles, employment_status: actor.employment_status } : user);
+  return staged;
+}
+
+function assetDeltaStore(before: DataStore, after: DataStore): DataStore {
+  const changed = { ...after };
+  for (const collection of assetCollections) {
+    const oldRows = before[collection] as Array<{ id: string }>;
+    const newRows = after[collection] as Array<{ id: string }>;
+    const oldById = new Map(oldRows.map((row) => [row.id, row]));
+    if (oldRows.some((row) => !newRows.some((candidate) => candidate.id === row.id))) {
+      throw new Error(`Asset command removed a ${collection} row without a durable deletion.`);
+    }
+    (changed as unknown as Record<AssetCollection, unknown>)[collection] = newRows.filter(
+      (row) => !isDeepStrictEqual(oldById.get(row.id), row),
+    );
+  }
+  return changed;
+}
+
+function isSqlLockTimeout(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "55P03");
 }
 
 export interface PostgresObjectStorageOptions {
@@ -187,6 +232,7 @@ const resetTables = [
   "timesheets.timesheet_submissions",
   "timesheets.workflow_definitions",
   "timesheets.work_segments",
+  "assets.asset_command_results",
   "assets.compromised_keys",
   "assets.license_activations",
   "assets.license_entitlements",
@@ -196,6 +242,7 @@ const resetTables = [
   "assets.asset_recovery_tickets",
   "assets.asset_state_events",
   "assets.asset_assignments",
+  "assets.software_products",
   "assets.software_vendors",
   "assets.assets",
   "documents.doc_access_logs",
@@ -259,6 +306,21 @@ function asDate(value: unknown): string {
 
 function asDateOrNull(value: unknown): string | null {
   return value === null || value === undefined ? null : asDate(value);
+}
+
+function mapHolidayRow(row: Record<string, unknown>): Holiday {
+  return {
+    id: String(row.id),
+    company_id: String(row.company_id),
+    name: String(row.name),
+    holiday_date: asDate(row.holiday_date),
+    region: String(row.region),
+    optional: Boolean(row.optional),
+    version: Number(row.version),
+    created_at: asIso(row.created_at),
+    updated_at: asIso(row.updated_at),
+    deleted_at: asIsoOrNull(row.deleted_at),
+  };
 }
 
 function asMoney(value: unknown): string | null {
@@ -381,6 +443,7 @@ function migrationSql(): string {
 export async function resetPostgresDatabase(
   databaseUrl: string,
 ): Promise<void> {
+  assertDisposableResetTarget(databaseUrl);
   const pool = new Pool({ connectionString: databaseUrl });
   const client = await pool.connect();
   let schemaLockAcquired = false;
@@ -406,6 +469,24 @@ export async function resetPostgresDatabase(
     }
     client.release();
     await pool.end();
+  }
+}
+
+export function assertDisposableResetTarget(databaseUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(databaseUrl);
+  } catch {
+    throw new Error("Refusing database reset outside a local disposable test database.");
+  }
+  const database = decodeURIComponent(url.pathname.slice(1));
+  if (
+    !["postgres:", "postgresql:"].includes(url.protocol) ||
+    !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
+    url.search || url.hash || database.includes("/") ||
+    !/(?:^|[_-])test(?:$|[_-])/i.test(database)
+  ) {
+    throw new Error("Refusing database reset outside a local disposable test database.");
   }
 }
 
@@ -443,6 +524,7 @@ export async function createPostgresDataStore(
     }
     store.persistence = new PostgresPersistence(pool, store);
     await store.persistence.flush();
+    await (store.persistence as PostgresPersistence).flushInitialAssetSeed();
     await store.persistence.reload();
   }
 
@@ -454,6 +536,402 @@ class PostgresPersistence {
     private readonly pool: Pool,
     private readonly store: DataStore,
   ) {}
+
+  async flushInitialAssetSeed(): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('hrms_asset_command'))");
+      const existing = await client.query<{ populated: boolean }>(`
+        SELECT EXISTS (
+          SELECT 1 FROM assets.assets UNION ALL
+          SELECT 1 FROM assets.asset_assignments UNION ALL
+          SELECT 1 FROM assets.asset_state_events UNION ALL
+          SELECT 1 FROM assets.asset_requests UNION ALL
+          SELECT 1 FROM assets.asset_acknowledgements UNION ALL
+          SELECT 1 FROM assets.asset_maintenance_records UNION ALL
+          SELECT 1 FROM assets.software_vendors UNION ALL
+          SELECT 1 FROM assets.software_products UNION ALL
+          SELECT 1 FROM assets.asset_recovery_tickets UNION ALL
+          SELECT 1 FROM assets.license_entitlements UNION ALL
+          SELECT 1 FROM assets.license_activations UNION ALL
+          SELECT 1 FROM assets.compromised_keys UNION ALL
+          SELECT 1 FROM assets.asset_command_results
+        ) AS populated`);
+      if (existing.rows[0]?.populated) {
+        throw new Error("Initial asset seed requires empty asset tables.");
+      }
+      await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
+      await this.flushAssets(client, this.store);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async assetReadStore(baseStore: DataStore = this.store): Promise<DataStore> {
+    const client = await this.pool.connect();
+    try {
+      // Every asset collection in this request must come from one committed
+      // snapshot. A concurrent command may commit between individual SELECTs.
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const snapshot = await this.loadAssetSnapshot(client, baseStore);
+      await client.query("COMMIT");
+      return snapshot;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async assetPublicScan(qrHash: string): Promise<PublicAssetScan | null> {
+    const result = await this.pool.query<{
+      qr_hash: string;
+      asset_code: string;
+      asset_type: string;
+      name: string;
+      status: string;
+      current_assigned_user_id: UUID | null;
+    }>(
+      `SELECT qr_hash, asset_code, asset_type, name, status, current_assigned_user_id
+         FROM assets.assets
+        WHERE qr_hash = $1
+          AND deleted_at IS NULL
+        LIMIT 1`,
+      [qrHash],
+    );
+    const asset = result.rows[0];
+    if (!asset) return null;
+    return {
+      qr_hash: asset.qr_hash,
+      asset_code: asset.asset_code,
+      asset_type: asset.asset_type,
+      name: asset.name,
+      status: asset.status,
+      assigned: asset.current_assigned_user_id ? "assigned" : "unassigned",
+    };
+  }
+
+  async assetAssignees(actorUserId: UUID, companyId: UUID, search = ""): Promise<{ items: Array<{ id: UUID; full_name: string }>; has_more: boolean }> {
+    const client = await this.pool.connect();
+    const literalSearch = search.replace(/[\\%_]/gu, (character) => `\\${character}`);
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const actor = await this.loadCurrentAssetActor(client, { actorUserId, companyId, actionKey: "assets.assignees" });
+      if (!actor.roles.includes(Roles.AssetManager) && !actor.roles.includes(Roles.Admin)) {
+        throw forbidden("Asset Manager role required");
+      }
+      const rows = await client.query<{ id: UUID; full_name: string }>(
+        `SELECT u.id, u.full_name FROM core.users u
+         JOIN platform.user_session_preferences p ON p.user_id = u.id
+         WHERE p.company_id = $1 AND u.deleted_at IS NULL AND u.employment_status = 'active'
+           AND ($2 = '' OR u.full_name ILIKE '%' || $2 || '%' ESCAPE '\\')
+         ORDER BY u.full_name, u.id LIMIT 51`, [companyId, literalSearch],
+      );
+      await client.query("COMMIT");
+      return { items: rows.rows.slice(0, 50), has_more: rows.rows.length > 50 };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async assetCommand<T>(
+    input: AssetCommandInput,
+    authorize: (store: DataStore, actor: AuthUser, replayBody?: T) => void,
+    execute: (store: DataStore, actor: AuthUser) => T,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '5s'");
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('hrms_asset_command'))",
+      );
+      // The migration fence checks a transaction-local marker. No pooled
+      // connection can carry this authority into a later request.
+      await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
+      const actor = await this.loadCurrentAssetActor(client, input);
+      const before = await this.loadAssetSnapshot(client);
+
+      const previous = await client.query<{
+        request_hash: string;
+        response_body: T;
+      }>(
+        `SELECT request_hash, response_body
+         FROM assets.asset_command_results
+         WHERE company_id = $1 AND actor_user_id = $2
+           AND action_key = $3 AND idempotency_key = $4`,
+        [input.companyId, input.actorUserId, input.actionKey, input.idempotencyKey],
+      );
+      // Authorize against current SQL actor state and resource visibility
+      // before either replaying or revealing a key/hash conflict.
+      authorize(before, actor, previous.rows[0]?.response_body);
+      if (previous.rows[0]) {
+        if (previous.rows[0].request_hash !== input.requestHash) {
+          throw conflict("Idempotency-Key was already used for a different asset command.");
+        }
+        await client.query("COMMIT");
+        return previous.rows[0].response_body;
+      }
+
+      // A committed assignment remains replayable if its assignee later
+      // leaves. Eligibility is a transition precondition, not replay policy.
+      if (input.assigneeUserId) {
+        const target = await client.query(
+          `SELECT 1 FROM core.users u
+           JOIN platform.user_session_preferences p ON p.user_id = u.id
+           WHERE u.id = $1 AND p.company_id = $2
+             AND u.deleted_at IS NULL AND u.employment_status = 'active'
+           FOR SHARE OF u, p`,
+          [input.assigneeUserId, input.companyId],
+        );
+        if (target.rowCount !== 1) throw forbidden("Assignee is not an active employee in the actor's company.");
+      }
+
+      const staged = assetMutationStore(before, actor);
+      const result = execute(staged, actor);
+      const changed = assetDeltaStore(before, staged);
+      await this.flushAssets(client, changed);
+      await this.flushOutbox(client, undefined, staged);
+      const replayBody = JSON.parse(JSON.stringify(result)) as T;
+      await client.query(
+        `INSERT INTO assets.asset_command_results (
+           company_id, actor_user_id, action_key, idempotency_key,
+           request_hash, response_status, response_body
+         ) VALUES ($1, $2, $3, $4, $5, 200, $6::jsonb)`,
+        [
+          input.companyId,
+          input.actorUserId,
+          input.actionKey,
+          input.idempotencyKey,
+          input.requestHash,
+          JSON.stringify(replayBody),
+        ],
+      );
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      if (isSqlLockTimeout(error)) {
+        throw conflict("Asset command is busy; retry with the same Idempotency-Key.");
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async loadCurrentAssetActor(client: PoolClient, input: Pick<AssetCommandInput, "actorUserId" | "companyId" | "actionKey">): Promise<AuthUser> {
+    const cached = this.store.users.find((user) => user.id === input.actorUserId);
+    if (!cached) throw unauthorized("User no longer exists");
+    const actorRows = await client.query<{
+      employment_status: AuthUser["employment_status"];
+      deleted_at: Date | null;
+      roles: RoleKey[];
+    }>(
+      `SELECT u.employment_status, u.deleted_at,
+              COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
+                WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL
+                  AND ur.effective_from <= current_date
+                  AND (ur.effective_to IS NULL OR ur.effective_to >= current_date)
+                  AND r.status = 'active' AND r.deleted_at IS NULL
+              ), '{}') AS roles
+       FROM core.users u
+       LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+       LEFT JOIN core.roles r ON r.role_key = ur.role_key
+       WHERE u.id = $1 GROUP BY u.id`,
+      [input.actorUserId],
+    );
+    const current = actorRows.rows[0];
+    if (!current || current.deleted_at || current.employment_status !== EmploymentStatuses.Active) {
+      throw unauthorized("User account is inactive or blocked");
+    }
+    const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
+      "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
+      [input.actorUserId],
+    );
+    if (preference.rows[0]?.company_id !== input.companyId) {
+      throw companyContextRequired({ user_id: input.actorUserId, operation: input.actionKey });
+    }
+    if (!current.roles.includes(preference.rows[0].active_role)) {
+      throw forbidden("Selected role is not assigned to this user.");
+    }
+    const company = await client.query<{ status: string }>(
+      "SELECT status FROM platform.company_profiles WHERE id = $1",
+      [input.companyId],
+    );
+    if (company.rows[0]?.status !== "active") {
+      throw companyContextRequired({ user_id: input.actorUserId, company_id: input.companyId, operation: input.actionKey });
+    }
+    return { ...cached, roles: current.roles, employment_status: current.employment_status };
+  }
+
+  private async loadAssetSnapshot(client: PoolClient, baseStore: DataStore = this.store): Promise<DataStore> {
+    return {
+      ...baseStore,
+      assets: await this.loadAssets(client),
+      assetAssignments: await this.loadAssetAssignments(client),
+      assetStateEvents: await this.loadAssetStateEvents(client),
+      assetRequests: await this.loadAssetRequests(client),
+      assetAcknowledgements: await this.loadAssetAcknowledgements(client),
+      assetMaintenanceRecords: await this.loadAssetMaintenanceRecords(client),
+      assetVendors: await this.loadAssetVendors(client),
+      assetRecoveryTickets: await this.loadAssetRecoveryTickets(client),
+      licenseEntitlements: await this.loadLicenseEntitlements(client),
+      licenseActivations: await this.loadLicenseActivations(client),
+      compromisedKeys: await this.loadCompromisedKeys(client),
+    };
+  }
+
+  private async holidayCompanyForActor(client: PoolClient, actorUserId: UUID, forWrite: boolean): Promise<UUID> {
+    const lock = forWrite ? " FOR SHARE" : "";
+    const user = await client.query<{ employment_status: string; deleted_at: Date | null }>(
+      `SELECT employment_status, deleted_at FROM core.users WHERE id = $1${lock}`,
+      [actorUserId],
+    );
+    if (!user.rows[0] || user.rows[0].deleted_at || user.rows[0].employment_status !== EmploymentStatuses.Active) {
+      throw unauthorized("User account is inactive or blocked");
+    }
+    const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
+      `SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1${lock}`,
+      [actorUserId],
+    );
+    const assignment = preference.rows[0];
+    if (!assignment?.company_id) {
+      throw companyContextRequired({ user_id: actorUserId, operation: forWrite ? "holidays.upsert" : "holidays.list" });
+    }
+    const roles = await client.query<{ role_key: RoleKey }>(
+      `SELECT ur.role_key FROM core.user_roles ur
+       JOIN core.roles role ON role.role_key = ur.role_key
+       WHERE ur.user_id = $1 AND ur.status = 'active' AND ur.deleted_at IS NULL
+         AND ur.effective_from <= CURRENT_DATE AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
+         AND role.status = 'active' AND role.deleted_at IS NULL${forWrite ? " FOR SHARE OF ur, role" : ""}`,
+      [actorUserId],
+    );
+    const assignedRoles = new Set(roles.rows.map((row) => row.role_key));
+    if (!assignedRoles.has(assignment.active_role)) {
+      throw forbidden("Selected role is not assigned to this user.");
+    }
+    const company = await client.query<{ status: string }>(
+      `SELECT status FROM platform.company_profiles WHERE id = $1${lock}`,
+      [assignment.company_id],
+    );
+    if (company.rows[0]?.status !== "active") {
+      throw companyContextRequired({ user_id: actorUserId, company_id: assignment.company_id, operation: forWrite ? "holidays.upsert" : "holidays.list" });
+    }
+    if (forWrite && !assignedRoles.has(Roles.Admin) && !assignedRoles.has(Roles.HRManager)) {
+      throw forbidden("Only HR Manager or Admin users can create or update holidays.");
+    }
+    return assignment.company_id;
+  }
+
+  async holidaysForActor(actorUserId: UUID, year: number): Promise<Holiday[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const companyId = await this.holidayCompanyForActor(client, actorUserId, false);
+      const holidays = await this.loadHolidays(client, { companyId, year });
+      await client.query("COMMIT");
+      return holidays;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async upsertHoliday(actorUserId: UUID, id: UUID, input: HolidayUpsertInput): Promise<Holiday> {
+    const client = await this.pool.connect();
+    let saved: Holiday;
+    try {
+      await client.query("BEGIN");
+      const companyId = await this.holidayCompanyForActor(client, actorUserId, true);
+      // Serialize the name/date uniqueness check and update for one company.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [companyId]);
+      const existing = await client.query<Record<string, unknown> & { company_id: UUID | null; version: number; deleted_at: Date | null; name: string; region: string; optional: boolean }>(
+        "SELECT * FROM leave_wfh.holidays WHERE id = $1 FOR UPDATE",
+        [id],
+      );
+      const row = existing.rows[0];
+      if (row && (row.company_id !== companyId || row.deleted_at)) {
+        throw notFound("Holiday not found");
+      }
+      if (!row && input.expected_version !== undefined) {
+        throw notFound("Holiday not found");
+      }
+      const name = input.name.trim();
+      const region = input.region.trim();
+      const unchanged = row && row.name === name && asDate(row.holiday_date) === input.date &&
+        row.region === region && row.optional === input.optional;
+      if (unchanged) {
+        // A lost response can be retried with the same UUID and body. Return
+        // the committed result without changing its version or event stream.
+        saved = mapHolidayRow(row);
+      } else {
+        if (row && input.expected_version === undefined) {
+          throw conflict("expected_version is required to change an existing holiday.", { aggregate: "holiday", id });
+        }
+        if (row && row.version !== input.expected_version) {
+          throw conflict("Holiday was modified by another actor.", { aggregate: "holiday", id });
+        }
+        const duplicate = await client.query<{ id: UUID }>(
+          `SELECT id FROM leave_wfh.holidays
+           WHERE company_id = $1 AND region = $2 AND holiday_date = $3::date
+             AND lower(name) = lower($4) AND deleted_at IS NULL AND id <> $5 LIMIT 1`,
+          [companyId, region, input.date, name, id],
+        );
+        if (duplicate.rows[0]) {
+          throw conflict("Holiday with the same name, date, and region already exists.", { holiday_id: duplicate.rows[0].id });
+        }
+        const changed = row
+          ? await client.query(
+              `UPDATE leave_wfh.holidays SET name = $3, holiday_date = $4::date, region = $5,
+                 optional = $6, version = version + 1, updated_at = now()
+               WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL RETURNING *`,
+              [id, companyId, name, input.date, region, input.optional],
+            )
+          : await client.query(
+              `INSERT INTO leave_wfh.holidays (id, company_id, name, holiday_date, region, optional, version)
+               VALUES ($1, $2, $3, $4::date, $5, $6, 1) RETURNING *`,
+              [id, companyId, name, input.date, region, input.optional],
+            );
+        if (!changed.rows[0]) throw notFound("Holiday not found");
+        saved = mapHolidayRow(changed.rows[0]);
+        await client.query(
+          `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+           VALUES ($1, 'holiday', $2, 'holiday.upserted', $3::jsonb, $4)`,
+          [randomUUID(), id, JSON.stringify({ holiday_id: id, actor_user_id: actorUserId, company_id: companyId, date: saved.holiday_date, region: saved.region }), `holiday.upserted:${id}:${saved.version}`],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      if ((error as { code?: string }).code === "23505") {
+        // A uniqueness conflict can come from the holiday row or its outbox
+        // idempotency key. The entire transaction has rolled back either way.
+        throw conflict("Holiday update conflicted with an existing record or event.");
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+    // Never mutate the shared process snapshot before SQL and outbox commit.
+    // Other instances use the request-local SQL holiday read; their older
+    // snapshots cannot replace this version through the guarded legacy flush.
+    const index = this.store.holidays.findIndex((holiday) => holiday.id === id);
+    if (index < 0) this.store.holidays.push(saved);
+    else if (this.store.holidays[index]!.company_id === saved.company_id && this.store.holidays[index]!.version <= saved.version) {
+      this.store.holidays[index] = saved;
+    }
+    return saved;
+  }
 
   async attendanceReadStore(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean; includeReportEvidence?: boolean }): Promise<DataStore> {
     const client = await this.pool.connect();
@@ -741,7 +1219,6 @@ class PostgresPersistence {
       await this.flushPlatform(client);
       await this.flushExpenses(client);
       await this.flushDocuments(client);
-      await this.flushAssets(client);
       await this.flushTimesheets(client);
       await this.flushProjects(client);
       await this.flushHelpdesk(client);
@@ -847,9 +1324,7 @@ class PostgresPersistence {
           );
           break;
         case "assets":
-          await this.flushAssets(client);
-          await this.flushOutbox(client, aggregateIds);
-          break;
+          throw new Error("Asset writes require an assetCommand transaction.");
         case "timesheets":
           await this.flushTimesheets(client);
           await this.flushOutbox(client, aggregateIds);
@@ -1973,6 +2448,7 @@ class PostgresPersistence {
       id: row.id,
       employee_user_id: row.employee_user_id,
       asset_id: row.asset_id,
+      assignment_id: row.assignment_id,
       status: row.status,
       settlement_status: row.settlement_status,
       settlement_amount: asMoney(row.settlement_amount),
@@ -2595,22 +3071,15 @@ class PostgresPersistence {
     }));
   }
 
-  private async loadHolidays(client: PoolClient): Promise<Holiday[]> {
-    const { rows } = await client.query(
-      "SELECT * FROM leave_wfh.holidays ORDER BY holiday_date, name",
-    );
-    return rows.map((row) => ({
-      id: row.id,
-      company_id: row.company_id,
-      name: row.name,
-      holiday_date: asDate(row.holiday_date),
-      region: row.region,
-      optional: Boolean(row.optional),
-      version: row.version,
-      created_at: asIso(row.created_at),
-      updated_at: asIso(row.updated_at),
-      deleted_at: asIsoOrNull(row.deleted_at),
-    }));
+  private async loadHolidays(client: PoolClient, scope?: { companyId: UUID; year: number }): Promise<Holiday[]> {
+    const { rows } = scope
+      ? await client.query(
+          `SELECT * FROM leave_wfh.holidays WHERE company_id = $1 AND deleted_at IS NULL
+           AND holiday_date >= $2::date AND holiday_date < $3::date ORDER BY holiday_date, name`,
+          [scope.companyId, `${scope.year}-01-01`, `${scope.year + 1}-01-01`],
+        )
+      : await client.query("SELECT * FROM leave_wfh.holidays ORDER BY holiday_date, name");
+    return rows.map(mapHolidayRow);
   }
 
   private async loadEmsEmployeeProfiles(
@@ -3549,8 +4018,9 @@ class PostgresPersistence {
   private async flushOutbox(
     client: PoolClient,
     aggregateIds?: ReadonlySet<string>,
+    source: DataStore = this.store,
   ): Promise<void> {
-    for (const event of this.store.outbox) {
+    for (const event of source.outbox) {
       if (aggregateIds && !aggregateIds.has(event.aggregate_id)) continue;
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO platform.outbox_events (
@@ -3562,7 +4032,7 @@ class PostgresPersistence {
         -- The API's hydrated outbox snapshot can be older than a separately
         -- running publisher. Only insert new events here; delivery state is
         -- owned by the publisher's direct PostgreSQL transaction.
-        ON CONFLICT (event_id) DO NOTHING
+        ON CONFLICT DO NOTHING
         RETURNING id`,
         [
           event.event_id,
@@ -3580,17 +4050,21 @@ class PostgresPersistence {
           event.last_error,
         ],
       );
-      const persistedId = inserted.rows[0]?.id ?? (
-        await client.query<{ id: string }>(
-          "SELECT id FROM platform.outbox_events WHERE event_id = $1",
-          [event.event_id],
+      const existing = inserted.rows[0] ? null : (
+        await client.query<{ id: string; aggregate_type: string; aggregate_id: string; event_type: string; payload: unknown }>(
+          "SELECT id, aggregate_type, aggregate_id, event_type, payload FROM platform.outbox_events WHERE event_id = $1 OR idempotency_key = $2",
+          [event.event_id, event.idempotency_key],
         )
-      ).rows[0]?.id;
+      ).rows[0];
+      if (existing && (existing.aggregate_type !== event.aggregate_type || existing.aggregate_id !== event.aggregate_id || existing.event_type !== event.event_type || !isDeepStrictEqual(existing.payload, event.payload))) {
+        throw conflict("Outbox idempotency key was already used for a different event.");
+      }
+      const persistedId = inserted.rows[0]?.id ?? existing?.id;
       if (!persistedId) {
         throw new Error("Outbox event was not persisted.");
       }
       event.id = Number(persistedId);
-      this.store.nextOutboxId = Math.max(this.store.nextOutboxId, event.id + 1);
+      source.nextOutboxId = Math.max(source.nextOutboxId, event.id + 1);
     }
   }
 
@@ -3886,8 +4360,8 @@ class PostgresPersistence {
     }
   }
 
-  private async flushAssets(client: PoolClient): Promise<void> {
-    for (const asset of this.store.assets) {
+  private async flushAssets(client: PoolClient, source: DataStore): Promise<void> {
+    for (const asset of source.assets) {
       await client.query(
         `INSERT INTO assets.assets (
           id, asset_code, qr_hash, asset_type, name, serial_no, status,
@@ -3917,7 +4391,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const assignment of this.store.assetAssignments) {
+    for (const assignment of source.assetAssignments) {
       await client.query(
         `INSERT INTO assets.asset_assignments (
           id, asset_id, assigned_to_user_id, assigned_by_user_id, assigned_at, returned_at,
@@ -3939,7 +4413,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const event of this.store.assetStateEvents) {
+    for (const event of source.assetStateEvents) {
       await client.query(
         `INSERT INTO assets.asset_state_events (id, asset_id, actor_user_id, event_type, payload, created_at)
          VALUES ($1, $2, $3, $4, $5::jsonb, $6)
@@ -3954,7 +4428,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const request of this.store.assetRequests) {
+    for (const request of source.assetRequests) {
       await client.query(
         `INSERT INTO assets.asset_requests (
           id, request_code, requester_user_id, request_type, asset_type, asset_id, reason, priority,
@@ -3990,7 +4464,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const acknowledgement of this.store.assetAcknowledgements) {
+    for (const acknowledgement of source.assetAcknowledgements) {
       await client.query(
         `INSERT INTO assets.asset_acknowledgements (
           id, asset_id, employee_user_id, assignment_id, acknowledgement_type, status,
@@ -4014,7 +4488,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const maintenance of this.store.assetMaintenanceRecords) {
+    for (const maintenance of source.assetMaintenanceRecords) {
       await client.query(
         `INSERT INTO assets.asset_maintenance_records (
           id, asset_id, maintenance_type, vendor_id, cost, started_on, completed_on,
@@ -4041,7 +4515,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const vendor of this.store.assetVendors) {
+    for (const vendor of source.assetVendors) {
       await client.query(
         `INSERT INTO assets.software_vendors (
           id, name, status, contact_email, phone, metadata, version, created_at, updated_at, deleted_at
@@ -4065,15 +4539,16 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const ticket of this.store.assetRecoveryTickets) {
+    for (const ticket of source.assetRecoveryTickets) {
       await client.query(
         `INSERT INTO assets.asset_recovery_tickets (
-          id, employee_user_id, asset_id, status, settlement_status, settlement_amount,
+          id, employee_user_id, asset_id, assignment_id, status, settlement_status, settlement_amount,
           settlement_remarks, settled_by_user_id, settled_at, version, created_at, updated_at
         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ON CONFLICT (id) DO UPDATE
-         SET status = EXCLUDED.status,
+         SET assignment_id = EXCLUDED.assignment_id,
+             status = EXCLUDED.status,
              settlement_status = EXCLUDED.settlement_status,
              settlement_amount = EXCLUDED.settlement_amount,
              settlement_remarks = EXCLUDED.settlement_remarks,
@@ -4085,6 +4560,7 @@ class PostgresPersistence {
           ticket.id,
           ticket.employee_user_id,
           ticket.asset_id,
+          ticket.assignment_id,
           ticket.status,
           ticket.settlement_status,
           ticket.settlement_amount,
@@ -4097,7 +4573,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const entitlement of this.store.licenseEntitlements) {
+    for (const entitlement of source.licenseEntitlements) {
       await client.query(
         `INSERT INTO assets.license_entitlements (id, product_id, seat_count, status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -4113,7 +4589,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const activation of this.store.licenseActivations) {
+    for (const activation of source.licenseActivations) {
       await client.query(
         `INSERT INTO assets.license_activations (
           id, product_id, entitlement_id, hardware_fingerprint_hash, status, created_at, updated_at
@@ -4132,7 +4608,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const key of this.store.compromisedKeys) {
+    for (const key of source.compromisedKeys) {
       await client.query(
         `INSERT INTO assets.compromised_keys (id, key_hash, status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $4)
@@ -4939,7 +5415,11 @@ class PostgresPersistence {
             optional = EXCLUDED.optional,
             version = EXCLUDED.version,
             updated_at = EXCLUDED.updated_at,
-            deleted_at = EXCLUDED.deleted_at`,
+            deleted_at = EXCLUDED.deleted_at
+        -- Unrelated legacy domain flushes carry startup snapshots. They must
+        -- never replace a newer direct-SQL command or a different tenant's ID.
+        WHERE leave_wfh.holidays.company_id IS NOT DISTINCT FROM EXCLUDED.company_id
+          AND leave_wfh.holidays.version < EXCLUDED.version`,
         [
           holiday.id,
           holiday.company_id,

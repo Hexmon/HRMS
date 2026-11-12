@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useEmployees } from "@/lib/employees-store";
 import { useAssets, warrantyDaysLeft, fmtMoney, ASSET_ADMIN_ROLES } from "@/lib/assets-store";
-import { assetsApi, mapApiAsset } from "@/domains/assets";
-import { isUuid, toastApiError, userFacingErrorMessage, withApiFallback } from "@/shared/api";
+import { assetOverviewMetadata, assetsApi, mapApiAsset } from "@/domains/assets";
+import { isUuid, toastApiError, userFacingErrorMessage } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import { DataCard, StatusBadge } from "@/components/ui-kit";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -46,7 +46,7 @@ export const Route = createFileRoute("/_app/assets/$id")({ component: AssetDetai
 
 function AssetDetail() {
   const { id } = useParams({ from: "/_app/assets/$id" });
-  const { activeRole } = useAuth();
+  const { activeRole, user } = useAuth();
   const {
     assets,
     assignAsset,
@@ -60,17 +60,26 @@ function AssetDetail() {
   const { employees } = useEmployees();
   const listAsset = assets.find((a) => a.id === id);
   const detailQuery = useQuery({
-    queryKey: queryKeys.detail("assets", "asset", id),
-    queryFn: () =>
-      withApiFallback(
-        async () => mapApiAsset(await assetsApi.get(id), listAsset),
-        () => listAsset as NonNullable<typeof listAsset>,
-      ),
-    enabled: isUuid(id),
+    queryKey: queryKeys.detail("assets", "asset", id, { actor_id: user?.id }),
+    queryFn: async () => mapApiAsset(await assetsApi.get(id)),
+    enabled: isApiBacked && isUuid(id),
     staleTime: queryTimings.detailStaleMs,
   });
-  const asset = detailQuery.data ?? listAsset;
+  const asset = isApiBacked && detailQuery.isError ? undefined : (detailQuery.data ?? listAsset);
   const isAdmin = !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
+  const [assigneeSearch, setAssigneeSearch] = useState("");
+  const assigneesQuery = useQuery({
+    queryKey: queryKeys.list("assets", "assignees", { actor_id: user?.id, q: assigneeSearch }),
+    queryFn: () => assetsApi.assignees(assigneeSearch),
+    enabled: isAdmin && isApiBacked,
+    staleTime: queryTimings.referenceStaleMs,
+  });
+  const assignableEmployees = isApiBacked
+    ? (assigneesQuery.data?.items ?? []).map((person) => ({
+        id: person.id,
+        name: person.full_name,
+      }))
+    : employees.map((person) => ({ id: person.apiId ?? person.id, name: person.name }));
 
   if (!asset) {
     return (
@@ -94,7 +103,9 @@ function AssetDetail() {
   }
 
   const days = warrantyDaysLeft(asset.warrantyExpiry);
-  const expired = days < 0;
+  const hasWarranty = !!asset.warrantyExpiry;
+  const expired = hasWarranty && days < 0;
+  const overview = assetOverviewMetadata(asset, days);
 
   return (
     <div className="space-y-4">
@@ -108,7 +119,7 @@ function AssetDetail() {
           </Button>
           <div className="min-w-0">
             <h2 className="break-words text-xl font-semibold tracking-tight">
-              {asset.brand} {asset.model}
+              {asset.brand === "—" ? asset.model : `${asset.brand} ${asset.model}`}
             </h2>
             <p className="break-words text-xs text-muted-foreground">
               {asset.id} · {asset.serial} · {asset.type}
@@ -119,20 +130,31 @@ function AssetDetail() {
           <StatusBadge status={asset.status} />
           {isAdmin && asset.status !== "assigned" && (
             <AssignDialog
-              employees={employees.map((e) => ({ id: e.apiId ?? e.id, name: e.name }))}
+              employees={assignableEmployees}
+              search={assigneeSearch}
+              onSearch={setAssigneeSearch}
+              hasMore={assigneesQuery.data?.has_more ?? false}
+              showDetails={!isApiBacked}
               onAssign={(emp, eid, on, ret, cond, rem) => {
-                void assignAsset(asset.id, emp, eid, on, ret, cond, rem)
+                return assignAsset(asset.id, emp, eid, on, ret, cond, rem)
                   .then(() => toast.success(`Assigned to ${emp}`))
-                  .catch((error) => toastApiError(error, "Asset could not be assigned."));
+                  .catch((error) => {
+                    toastApiError(error, "Asset could not be assigned.");
+                    throw error;
+                  });
               }}
             />
           )}
           {isAdmin && asset.status === "assigned" && (
             <ReturnDialog
+              showDetails={!isApiBacked}
               onReturn={(d, c, r) => {
-                void returnAsset(asset.id, d, c, r)
+                return returnAsset(asset.id, d, c, r)
                   .then(() => toast.success("Asset returned to inventory"))
-                  .catch((error) => toastApiError(error, "Asset could not be returned."));
+                  .catch((error) => {
+                    toastApiError(error, "Asset could not be returned.");
+                    throw error;
+                  });
               }}
             />
           )}
@@ -183,14 +205,20 @@ function AssetDetail() {
                 <Info k="Serial" v={asset.serial} />
                 <Info k="Vendor" v={asset.vendor} />
                 <Info k="Invoice #" v={asset.invoiceNumber} />
-                <Info k="Purchased" v={asset.purchaseDate} />
-                <Info
-                  k="Warranty"
-                  v={`${asset.warrantyExpiry} (${days < 0 ? "expired" : days + "d left"})`}
-                />
-                <Info k="Cost" v={fmtMoney(asset.cost)} />
+                <Info k="Purchased" v={overview.purchaseDate} />
+                <Info k="Warranty" v={overview.warranty} />
+                <Info k="Cost" v={overview.cost === null ? "—" : fmtMoney(overview.cost)} />
                 <Info k="Location" v={asset.location} />
-                <Info k="Condition" v={<span className="uppercase">{asset.condition}</span>} />
+                <Info
+                  k="Condition"
+                  v={
+                    overview.condition === null ? (
+                      "—"
+                    ) : (
+                      <span className="uppercase">{overview.condition}</span>
+                    )
+                  }
+                />
               </dl>
             </DataCard>
             <DataCard title="Current assignment">
@@ -249,7 +277,7 @@ function AssetDetail() {
                     <div>
                       <p className="text-xs text-muted-foreground">Condition</p>
                       <p className="text-sm uppercase">
-                        {h.conditionAtHandover}
+                        {asset.apiMissing?.condition ? "—" : h.conditionAtHandover}
                         {h.conditionAtReturn ? ` → ${h.conditionAtReturn}` : ""}
                       </p>
                     </div>
@@ -310,7 +338,11 @@ function AssetDetail() {
 
         <TabsContent value="documents" className="mt-4">
           <DataCard title="Documents">
-            {asset.documents.length === 0 ? (
+            {isApiBacked ? (
+              <p className="text-sm text-muted-foreground">
+                Asset documents are not available in this view.
+              </p>
+            ) : asset.documents.length === 0 ? (
               <p className="text-sm text-muted-foreground">No documents uploaded for this asset.</p>
             ) : (
               <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -330,22 +362,28 @@ function AssetDetail() {
 
         <TabsContent value="audit" className="mt-4">
           <DataCard title="Audit trail" padded={false}>
-            <ul className="divide-y">
-              {asset.audit.map((a) => (
-                <li key={a.id} className="px-5 py-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium">{a.action}</p>
+            {isApiBacked ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">
+                Asset audit history is not available in this view.
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {asset.audit.map((a) => (
+                  <li key={a.id} className="px-5 py-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium">{a.action}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(a.at).toLocaleString()}
+                      </p>
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(a.at).toLocaleString()}
+                      {a.actor}
+                      {a.remarks ? ` · ${a.remarks}` : ""}
                     </p>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {a.actor}
-                    {a.remarks ? ` · ${a.remarks}` : ""}
-                  </p>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+            )}
           </DataCard>
         </TabsContent>
       </Tabs>
@@ -364,9 +402,17 @@ function Info({ k, v }: { k: string; v: React.ReactNode }) {
 
 function AssignDialog({
   employees,
+  search,
+  onSearch,
+  hasMore,
+  showDetails,
   onAssign,
 }: {
   employees: { id: string; name: string }[];
+  search: string;
+  onSearch: (value: string) => void;
+  hasMore: boolean;
+  showDetails: boolean;
   onAssign: (
     emp: string,
     eid: string,
@@ -374,25 +420,43 @@ function AssignDialog({
     ret: string,
     cond: AssetCondition,
     rem: string,
-  ) => void;
+  ) => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
   const [eid, setEid] = useState(employees[0]?.id ?? "");
   const today = new Date().toISOString().slice(0, 10);
   const [on, setOn] = useState(today);
   const [ret, setRet] = useState("");
   const [cond, setCond] = useState<AssetCondition>("good");
   const [rem, setRem] = useState("");
-  const submit = () => {
-    const emp = employees.find((e) => e.id === eid);
+  const selectedEmployeeId = employees.some((employee) => employee.id === eid)
+    ? eid
+    : (employees[0]?.id ?? "");
+  const submit = async () => {
+    if (pending) return;
+    const emp = employees.find((e) => e.id === selectedEmployeeId);
     if (!emp) return;
-    onAssign(emp.name, emp.id, on, ret, cond, rem);
-    setOpen(false);
+    setPending(true);
+    try {
+      await onAssign(emp.name, emp.id, on, ret, cond, rem);
+      setOpen(false);
+    } catch {
+      /* The caller displays the API error; keep the form for retry. */
+    } finally {
+      setPending(false);
+    }
   };
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!pending) setOpen(next);
+      }}
+    >
       <DialogTrigger asChild>
         <Button
+          disabled={employees.length === 0}
           className="rounded-full text-primary-foreground"
           style={{ background: "var(--gradient-primary)" }}
         >
@@ -404,13 +468,28 @@ function AssignDialog({
         <DialogHeader>
           <DialogTitle>Assign asset</DialogTitle>
           <DialogDescription>
-            Hand over to an employee with condition & return date.
+            {showDetails
+              ? "Hand over to an employee with condition and return date."
+              : "Choose an employee to assign this asset."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2 space-y-1">
+            <Label>Search employees</Label>
+            <Input
+              value={search}
+              onChange={(event) => onSearch(event.target.value)}
+              placeholder="Search by name"
+            />
+            {hasMore && (
+              <p className="text-xs text-muted-foreground">
+                More employees match. Refine the search to select the correct person.
+              </p>
+            )}
+          </div>
+          <div className="sm:col-span-2 space-y-1">
             <Label>Employee</Label>
-            <Select value={eid} onValueChange={setEid}>
+            <Select value={selectedEmployeeId} onValueChange={setEid}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -423,43 +502,53 @@ function AssignDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
-            <Label>Assignment date</Label>
-            <Input type="date" value={on} onChange={(e) => setOn(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label>Expected return</Label>
-            <Input type="date" value={ret} onChange={(e) => setRet(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label>Condition at handover</Label>
-            <Select value={cond} onValueChange={(v) => setCond(v as AssetCondition)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(["new", "good", "fair", "poor"] as AssetCondition[]).map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="sm:col-span-2 space-y-1">
-            <Label>Remarks</Label>
-            <Textarea rows={2} value={rem} onChange={(e) => setRem(e.target.value)} />
-          </div>
+          {showDetails && (
+            <>
+              <div className="space-y-1">
+                <Label>Assignment date</Label>
+                <Input type="date" value={on} onChange={(e) => setOn(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Expected return</Label>
+                <Input type="date" value={ret} onChange={(e) => setRet(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Condition at handover</Label>
+                <Select value={cond} onValueChange={(v) => setCond(v as AssetCondition)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(["new", "good", "fair", "poor"] as AssetCondition[]).map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="sm:col-span-2 space-y-1">
+                <Label>Remarks</Label>
+                <Textarea rows={2} value={rem} onChange={(e) => setRem(e.target.value)} />
+              </div>
+            </>
+          )}
           <Card className="sm:col-span-2 rounded-xl border-dashed bg-muted/20 p-3 text-xs text-muted-foreground">
-            Employee acknowledgement will be requested in their EMS inbox after handover.
+            The employee can acknowledge receipt from My Assets after assignment.
           </Card>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-full">
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() => setOpen(false)}
+            className="rounded-full"
+          >
             Cancel
           </Button>
           <Button
             onClick={submit}
+            disabled={pending || employees.length === 0}
             className="rounded-full text-primary-foreground"
             style={{ background: "var(--gradient-primary)" }}
           >
@@ -473,16 +562,24 @@ function AssignDialog({
 
 function ReturnDialog({
   onReturn,
+  showDetails,
 }: {
-  onReturn: (d: string, c: AssetCondition, r: string) => void;
+  onReturn: (d: string, c: AssetCondition, r: string) => Promise<unknown>;
+  showDetails: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
   const [d, setD] = useState(today);
   const [c, setC] = useState<AssetCondition>("good");
   const [r, setR] = useState("");
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!pending) setOpen(next);
+      }}
+    >
       <DialogTrigger asChild>
         <Button variant="outline" className="rounded-full">
           <Undo2 className="mr-1.5 h-4 w-4" />
@@ -492,42 +589,60 @@ function ReturnDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Return asset</DialogTitle>
-          <DialogDescription>Reclaim and set condition at return.</DialogDescription>
+          <DialogDescription>
+            {showDetails ? "Reclaim and set condition at return." : "Mark this asset as returned."}
+          </DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <Label>Return date</Label>
-            <Input type="date" value={d} onChange={(e) => setD(e.target.value)} />
+        {showDetails && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label>Return date</Label>
+              <Input type="date" value={d} onChange={(e) => setD(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>Condition</Label>
+              <Select value={c} onValueChange={(v) => setC(v as AssetCondition)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(["new", "good", "fair", "poor"] as AssetCondition[]).map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Recovery remarks</Label>
+              <Textarea rows={2} value={r} onChange={(e) => setR(e.target.value)} />
+            </div>
           </div>
-          <div className="space-y-1">
-            <Label>Condition</Label>
-            <Select value={c} onValueChange={(v) => setC(v as AssetCondition)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(["new", "good", "fair", "poor"] as AssetCondition[]).map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1 sm:col-span-2">
-            <Label>Recovery remarks</Label>
-            <Textarea rows={2} value={r} onChange={(e) => setR(e.target.value)} />
-          </div>
-        </div>
+        )}
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-full">
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() => setOpen(false)}
+            className="rounded-full"
+          >
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              onReturn(d, c, r);
-              setOpen(false);
+            onClick={async () => {
+              if (pending) return;
+              setPending(true);
+              try {
+                await onReturn(d, c, r);
+                setOpen(false);
+              } catch {
+                /* The caller displays the API error; keep the form for retry. */
+              } finally {
+                setPending(false);
+              }
             }}
+            disabled={pending}
             className="rounded-full"
           >
             Confirm

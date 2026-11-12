@@ -41,6 +41,7 @@ export interface AssetAuditEntry {
 export interface Asset {
   id: string;
   version?: number;
+  apiMissing?: Partial<Record<"purchaseDate" | "warrantyExpiry" | "cost" | "condition", true>>;
   type: string; // Laptop, Monitor, Phone, Accessory, Software License...
   category: string; // Hardware / Software / Accessory
   brand: string;

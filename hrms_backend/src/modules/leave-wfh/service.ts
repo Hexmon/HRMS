@@ -424,10 +424,15 @@ export class LeaveWfhService {
     };
   }
 
-  listHolidays(actor: AuthUser, query: LeaveWfhQuery) {
-    const companyId = this.requireCompanyId(actor.id);
+  async listHolidays(actor: AuthUser, query: LeaveWfhQuery) {
     const year = query.year ?? currentYear();
-    const holidays = this.repository.listHolidays(companyId, year).map((holiday) => this.presentHoliday(holiday));
+    if (this.store.persistence && !this.store.persistence.holidaysForActor) {
+      throw new Error("Holiday SQL read is unavailable.");
+    }
+    const rows = this.store.persistence
+      ? await this.store.persistence.holidaysForActor!(actor.id, year)
+      : this.repository.listHolidays(this.requireCompanyId(actor.id), year);
+    const holidays = rows.map((holiday) => this.presentHoliday(holiday));
     return {
       holidays,
       calendar_metadata: {
@@ -438,9 +443,17 @@ export class LeaveWfhService {
     };
   }
 
-  upsertHoliday(actor: AuthUser, id: UUID, input: HolidayUpsertInput) {
+  async upsertHoliday(actor: AuthUser, id: UUID, input: HolidayUpsertInput) {
+    if (this.store.persistence) {
+      if (!this.store.persistence.upsertHoliday) {
+        throw new Error("Holiday SQL write is unavailable.");
+      }
+      const holiday = await this.store.persistence.upsertHoliday(actor.id, id, input);
+      return { holiday: this.presentHoliday(holiday), version: holiday.version };
+    }
     assertCanMutateHolidays(actor);
     const companyId = this.requireCompanyId(actor.id);
+    const previousVersion = this.repository.findHoliday(id, companyId)?.version;
     const holiday = this.repository.upsertHoliday(id, {
       company_id: companyId,
       name: input.name.trim(),
@@ -449,13 +462,15 @@ export class LeaveWfhService {
       optional: input.optional,
       expected_version: input.expected_version
     });
-    appendLeaveWfhOutboxEvent(this.store, {
-      aggregateType: "holiday",
-      aggregateId: holiday.id,
-      eventType: leaveWfhEvents.HolidayUpserted,
-      payload: { holiday_id: holiday.id, actor_user_id: actor.id, date: holiday.holiday_date, region: holiday.region },
-      idempotencyKey: `holiday.upserted:${holiday.id}:${holiday.version}`
-    });
+    if (previousVersion !== holiday.version) {
+      appendLeaveWfhOutboxEvent(this.store, {
+        aggregateType: "holiday",
+        aggregateId: holiday.id,
+        eventType: leaveWfhEvents.HolidayUpserted,
+        payload: { holiday_id: holiday.id, actor_user_id: actor.id, company_id: companyId, date: holiday.holiday_date, region: holiday.region },
+        idempotencyKey: `holiday.upserted:${holiday.id}:${holiday.version}`
+      });
+    }
     return { holiday: this.presentHoliday(holiday), version: holiday.version };
   }
 
