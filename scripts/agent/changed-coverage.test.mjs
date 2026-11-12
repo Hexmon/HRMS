@@ -17,6 +17,8 @@ import {
   coverageArtifactPath,
   instrumentableExternal,
   outsideExecutableOrConfig,
+  prepareCoverageIntegrationServices,
+  verifyCoverageIntegrationServiceClaim,
   removeExactCommitCheckout,
   runFullCoverageGate,
   runFullCoverageWorker,
@@ -83,6 +85,7 @@ const fixtureTools = { node: realpathSync(process.execPath), pnpm: "/trusted/pnp
 const fixtureCheckout = {
   prepareCheckout: async (root) => root,
   cleanupCheckout: () => {},
+  prepareServices: async () => async () => {},
   tools: fixtureTools,
 };
 
@@ -498,13 +501,37 @@ test("documentation-only changes are explicitly N/A without package reports", ()
   assert.equal(result.totals.uncovered.length, 0);
 });
 
+test("unimported src __tests__ helpers are test source rather than product code", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-test-helper-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  write(root, "hrms_backend/src/__tests__/real-infra.ts", "export const buildFixture = () => 'base';\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "add test helper");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, "hrms_backend/src/__tests__/real-infra.ts", "export const buildFixture = () => 'changed';\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "change test helper");
+  const diff = changedLines(root, base, "HEAD");
+  assert.deepEqual(diff.testSource, ["hrms_backend/src/__tests__/real-infra.ts"]);
+  assert.deepEqual(diff.outside, []);
+  assert.deepEqual(diff.external, []);
+});
+
 test("product imports from test-looking and generated runtime paths cannot hide changed behavior", () => {
-  for (const path of ["hrms_backend/src/test/policy.ts", "hrms_backend/src/policy.test.ts", "hrms-client/src/routeTree.gen.ts"]) {
+  for (const path of [
+    "hrms_backend/src/test/policy.ts",
+    "hrms_backend/src/__tests__/policy.ts",
+    "hrms_backend/src/policy.test.ts",
+    "hrms-client/src/routeTree.gen.ts",
+  ]) {
     const root = mkdtempSync(join(tmpdir(), "hrms-coverage-imported-exclusion-"));
     roots.push(root);
     git(root, "init", "-q");
     const route = path.startsWith("hrms-client/") ? "hrms-client/src/router.tsx" : "hrms_backend/src/route.ts";
-    const importPath = path.includes("/src/test/") ? "./test/policy" : path.includes("routeTree") ? "./routeTree.gen" : "./policy.test";
+    const importPath = path.includes("/src/test/") ? "./test/policy" :
+      path.includes("/src/__tests__/") ? "./__tests__/policy" :
+      path.includes("routeTree") ? "./routeTree.gen" : "./policy.test";
     write(root, route, `import { allow } from '${importPath}';\nexport const route = () => allow();\n`);
     write(root, path, "export const allow = () => false;\n");
     git(root, "add", ".");
@@ -753,6 +780,19 @@ test("workflow disablement and an untraced dangerous shell branch remain red", (
   assert.ok(result.totals.uncovered.some((item) => item.includes("scripts/agent/verify-change.sh")));
 });
 
+test("branch workflow keeps backend and coverage service ports aligned with their clients", () => {
+  const workflow = readFileSync(new URL("../../.github/workflows/branch-ci-cd.yml", import.meta.url), "utf8");
+  const backend = workflow.split("  backend-checks:")[1]?.split("  frontend-checks:")[0] ?? "";
+  const coverage = workflow.split("  changed-coverage:")[1]?.split("  deploy-backend:")[0] ?? "";
+  assert.match(backend, /TEST_DATABASE_URL: postgresql:\/\/hrms_ci:[^\n]+@127\.0\.0\.1:5432\/hrms_ci_test/);
+  assert.match(backend, /VALKEY_URL: redis:\/\/127\.0\.0\.1:6379/);
+  assert.match(backend, /- 5432:5432/);
+  assert.match(backend, /- 6379:6379/);
+  assert.match(coverage, /- 55433:5432/);
+  assert.match(coverage, /- 56380:6379/);
+  assert.match(coverage, /--confirm-disposable-services/);
+});
+
 test("a PR-authored approval JSON cannot clear unmeasured paths", () => {
   const { root, base, head } = fixture();
   write(root, "hrms_backend/package.json", "{\"scripts\":{\"start\":\"node unsafe.js\"}}\n");
@@ -813,7 +853,7 @@ test("CLI stamps, passes, and fails on synthetic source and usage errors", () =>
   assert.equal(usage.status, 1);
   assert.match(usage.stderr, /Usage:/);
   write(root, "dirty.txt", "dirty\n");
-  const dirtyFullSuite = spawnSync(process.execPath, [executable, "--run-full-suite", "--base", base], { cwd: root, env, encoding: "utf8" });
+  const dirtyFullSuite = spawnSync(process.execPath, [executable, "--run-full-suite", "--confirm-disposable-services", "--base", base], { cwd: root, env, encoding: "utf8" });
   assert.equal(dirtyFullSuite.status, 1);
   assert.match(dirtyFullSuite.stderr, /worktree and index must be completely clean/);
   rmSync(join(root, "dirty.txt"));
@@ -899,7 +939,8 @@ test("full-suite launcher finalizes only after worker success and restores and r
         assert.equal(args[0], trustedValidator);
         assert.equal(options.env.HRMS_COVERAGE_REPO_ROOT, root);
         assert.equal(options.env.UNTRUSTED_IGNORED_VALUE, undefined);
-        assert.equal(options.env.TEST_DATABASE_URL, "postgresql://unused:unused@127.0.0.1:5432/hrms_coverage_unit_only");
+        assert.equal(options.env.TEST_DATABASE_URL, "postgresql://hrms_coverage:coverage@127.0.0.1:55433/hrms_coverage_test");
+        assert.equal(options.env.VALKEY_URL, "redis://127.0.0.1:56380/15");
         assert.equal(options.env.HRMS_ENV_FILE, join(temporaryOutput, "no-env-file"));
         assert.equal(existsSync(options.env.HRMS_ENV_FILE), false);
         workerFinished = true;
@@ -940,6 +981,23 @@ test("full-suite launcher cleans temporary output and restores environment when 
     if (original === undefined) delete process.env.HRMS_COVERAGE_OUTPUT_DIR;
     else process.env.HRMS_COVERAGE_OUTPUT_DIR = original;
   }
+});
+
+test("full-suite preserves the primary failure when independent cleanup also fails", async () => {
+  const { root, base } = fixture();
+  let caught;
+  try {
+    await runFullCoverageGate(root, base, "HEAD", {
+      ...fixtureCheckout,
+      prepareServices: async () => async () => { throw new Error("service cleanup failed"); },
+      launchWorker: () => { throw new Error("worker primary failure"); },
+    });
+  } catch (error) {
+    caught = error;
+  }
+  assert.match(caught?.message ?? "", /worker primary failure/);
+  assert.ok(caught?.cause instanceof AggregateError);
+  assert.match(caught.cause.errors[0].message, /service cleanup failed/);
 });
 
 test("full-suite explicit output is preserved and worker command failure stops later commands", async () => {
@@ -991,6 +1049,14 @@ test("sanitized coverage environment excludes ambient and ignored configuration"
     assert.equal(environment.HRMS_ENV_FILE, join(outputRoot, "no-env-file"));
     assert.equal(environment.NODE_ENV, "test");
     assert.equal(environment.APP_ENV, "local");
+    assert.equal(environment.TEST_DATABASE_URL, "postgresql://hrms_coverage:coverage@127.0.0.1:55433/hrms_coverage_test");
+    assert.equal(environment.VALKEY_URL, "redis://127.0.0.1:56380/15");
+    assert.equal(environment.BUILD_SHA, "coverage-exact-head");
+    assert.equal(environment.CLOUDINARY_MOCK_UPLOADS, "true");
+    assert.equal(environment.EMAIL_DELIVERY_MODE, "log");
+    assert.equal(environment.LOCAL_DEMO_PASSWORD, "coverage-local-demo-A1!");
+    assert.equal(environment.JWT_ACCESS_SECRET, "coverage-access-secret-at-least-32-characters");
+    assert.equal(environment.JWT_REFRESH_SECRET, "coverage-refresh-secret-at-least-32-characters");
     assert.equal(environment.HOME, join(outputRoot, "home"));
     assert.equal(environment.NPM_CONFIG_USERCONFIG, join(outputRoot, "no-user-npmrc"));
     assert.equal(environment.PYTHONNOUSERSITE, "1");
@@ -1004,6 +1070,128 @@ test("sanitized coverage environment excludes ambient and ignored configuration"
     else process.env.NODE_V8_COVERAGE = previousV8;
     if (previousPython === undefined) delete process.env.HRMS_COVERAGE_PYTHON;
     else process.env.HRMS_COVERAGE_PYTHON = previousPython;
+  }
+});
+
+test("coverage integration services require dedicated empty targets and clean owned Valkey state", async () => {
+  const environment = sanitizedCoverageEnvironment(join(tmpdir(), "hrms-service-preflight"));
+  const queries = [];
+  const client = {
+    query: async (sql, parameters) => {
+      queries.push([sql, parameters]);
+      return sql.includes("SELECT count(*)::int AS count") ? { rows: [{ count: 0 }] } : { rows: [] };
+    },
+    release: () => queries.push(["release"]),
+  };
+  const pool = { connect: async () => client, end: async () => queries.push(["pool.end"]) };
+  const valkeyCalls = [];
+  const valkey = {
+    connect: async () => valkeyCalls.push("connect"),
+    eval: async (...args) => { valkeyCalls.push(["eval", ...args]); return "OK"; },
+    quit: async () => valkeyCalls.push("quit"),
+    disconnect: () => valkeyCalls.push("disconnect"),
+  };
+  const token = `${"a".repeat(40)}:run-1`;
+  const cleanup = await prepareCoverageIntegrationServices(environment, token, { pool, valkey });
+  assert.ok(queries.some(([sql]) => sql.includes("pg_advisory_xact_lock")));
+  assert.ok(queries.some(([sql]) => sql.includes("hrms_coverage_run_guard")));
+  assert.ok(valkeyCalls.some((call) => Array.isArray(call) && call[0] === "eval" && call[1].includes("dbsize") && call.includes(token)));
+  await cleanup();
+  assert.ok(valkeyCalls.some((call) => Array.isArray(call) && call[0] === "eval"));
+  assert.equal(valkeyCalls.at(-1), "quit");
+
+  await assert.rejects(prepareCoverageIntegrationServices(
+    { ...environment, TEST_DATABASE_URL: "postgresql://hrms_coverage:coverage@127.0.0.1:5432/hrms_coverage_test" },
+    token,
+    { pool, valkey },
+  ), /dedicated 127\.0\.0\.1:55433/);
+
+  const occupiedClient = {
+    ...client,
+    query: async (sql) => sql.includes("SELECT count(*)::int AS count") ? { rows: [{ count: 1 }] } : { rows: [] },
+  };
+  await assert.rejects(prepareCoverageIntegrationServices(environment, token, {
+    pool: { connect: async () => occupiedClient, end: async () => {} },
+    valkey,
+  }), /database is not empty/);
+
+  const occupiedValkey = {
+    ...valkey,
+    eval: async (script) => script.includes("dbsize") ? 0 : "OK",
+  };
+  const freshPool = {
+    connect: async () => client,
+    end: async () => {},
+  };
+  await assert.rejects(
+    prepareCoverageIntegrationServices(environment, token, { pool: freshPool, valkey: occupiedValkey }),
+    /Valkey is populated or already claimed/,
+  );
+
+  const cleanupCalls = [];
+  let evalCount = 0;
+  const cleanupFailureValkey = {
+    ...valkey,
+    connect: async () => cleanupCalls.push("connect"),
+    eval: async () => {
+      evalCount += 1;
+      if (evalCount === 1) return "OK";
+      throw new Error("cleanup connection lost");
+    },
+    quit: async () => cleanupCalls.push("quit"),
+  };
+  const failingCleanup = await prepareCoverageIntegrationServices(environment, token, {
+    pool: freshPool,
+    valkey: cleanupFailureValkey,
+  });
+  await assert.rejects(failingCleanup(), /cleanup connection lost/);
+  assert.equal(cleanupCalls.at(-1), "quit");
+});
+
+test("coverage worker verifies the parent PostgreSQL and Valkey claims", async () => {
+  const environment = sanitizedCoverageEnvironment(join(tmpdir(), "hrms-service-claim"));
+  const token = `${"c".repeat(40)}:claim-check`;
+  const ended = [];
+  await verifyCoverageIntegrationServiceClaim(environment, token, {
+    pool: {
+      query: async () => ({ rows: [{ token }] }),
+      end: async () => ended.push("pool"),
+    },
+    valkey: {
+      connect: async () => {},
+      get: async () => token,
+      quit: async () => ended.push("valkey"),
+      disconnect: () => ended.push("disconnect"),
+    },
+  });
+  assert.deepEqual(ended, ["pool", "valkey"]);
+  await assert.rejects(verifyCoverageIntegrationServiceClaim(environment, token, {
+    pool: {
+      query: async () => ({ rows: [{ token: "wrong" }] }),
+      end: async () => {},
+    },
+  }), /PostgreSQL claim does not match/);
+});
+
+test("backend coverage measures unit and integration projects together", () => {
+  const { root } = fixture();
+  const outputRoot = mkdtempSync(join(tmpdir(), "hrms-integration-coverage-command-"));
+  roots.push(outputRoot);
+  const previous = process.env.HRMS_COVERAGE_OUTPUT_DIR;
+  process.env.HRMS_COVERAGE_OUTPUT_DIR = outputRoot;
+  const commands = [];
+  try {
+    const expectedHead = git(root, "rev-parse", "HEAD");
+    runFullCoverageWorker(root, outputRoot, expectedHead,
+      { node: "/trusted/node", pnpm: "/trusted/pnpm", python: "/trusted/python3", bash: "/trusted/bash" },
+      (command, args) => commands.push({ command, args }));
+    const backend = commands.find(({ args }) =>
+      args.includes("hrms_backend") && args.includes("--coverage") && args.includes("integration"));
+    assert.ok(backend, "backend coverage command must include the integration project");
+    assert.deepEqual(backend.args.filter((_argument, index) => backend.args[index - 1] === "--project"), ["unit", "integration"]);
+  } finally {
+    if (previous === undefined) delete process.env.HRMS_COVERAGE_OUTPUT_DIR;
+    else process.env.HRMS_COVERAGE_OUTPUT_DIR = previous;
   }
 });
 
@@ -1142,7 +1330,11 @@ test("full-suite worker isolates orchestrator V8 output from every coverage chil
 test("full-suite command reports pass, fail and explicit artifact preservation", async () => {
   const logs = [];
   const calls = [];
-  const pass = await runFullSuiteCommand("/synthetic/repo", ["--run-full-suite", "--base", "base", "--head", "head"], {
+  await assert.rejects(
+    runFullSuiteCommand("/synthetic/repo", ["--run-full-suite", "--base", "base"], { runGate: async () => assert.fail("gate must not run") }),
+    /confirm-disposable-services/,
+  );
+  const pass = await runFullSuiteCommand("/synthetic/repo", ["--run-full-suite", "--confirm-disposable-services", "--base", "base", "--head", "head"], {
     runGate: async (...args) => { calls.push(args); return { pass: true, lines: ["green"], coverageOutputRoot: "/temporary/removed" }; },
     log: (message) => logs.push(message),
   });
@@ -1154,7 +1346,7 @@ test("full-suite command reports pass, fail and explicit artifact preservation",
   assert.deepEqual(logs, ["green"]);
 
   const output = join(tmpdir(), "explicit-command-output");
-  const fail = await runFullSuiteCommand("/synthetic/repo", ["--run-full-suite", "--base", "base", "--coverage-output", output,
+  const fail = await runFullSuiteCommand("/synthetic/repo", ["--run-full-suite", "--confirm-disposable-services", "--base", "base", "--coverage-output", output,
     "--trusted-validator", "/trusted/changed-coverage.mjs"], {
     runGate: async (...args) => { calls.push(args); return { pass: false, lines: ["red"], coverageOutputRoot: output }; },
     log: (message) => logs.push(message),
@@ -1208,6 +1400,7 @@ test("read-only exact-commit checkout rejects an ordinary transient write and is
   let checkout;
   await assert.rejects(runFullCoverageGate(root, base, "HEAD", {
     tools: fixtureTools,
+    prepareServices: fixtureCheckout.prepareServices,
     launchWorker: ({ root: sourceRoot }) => {
       checkout = sourceRoot;
       const tracked = join(sourceRoot, "hrms_backend/src/decision.ts");
@@ -1233,6 +1426,7 @@ test("exact-commit checkout cleans up when installed package dependencies are ab
   let outputRoot;
   await assert.rejects(runFullCoverageGate(root, base, "HEAD", {
     tools: fixtureTools,
+    prepareServices: fixtureCheckout.prepareServices,
     launchWorker: () => assert.fail("worker must not launch without installed dependencies"),
     finalize: () => assert.fail("collector must not run without installed dependencies"),
   }).catch((error) => {
@@ -1254,6 +1448,7 @@ test("exact-commit checkout rejects tracked nonregular entries and cleanup is id
   mkdirSync(join(root, "hrms-client/node_modules"), { recursive: true });
   await assert.rejects(runFullCoverageGate(root, base, "HEAD", {
     tools: fixtureTools,
+    prepareServices: fixtureCheckout.prepareServices,
     launchWorker: () => assert.fail("worker must not run with a tracked symlink"),
   }), /unsupported tracked entry/);
   removeExactCommitCheckout(root, undefined);
@@ -1274,6 +1469,7 @@ test("exact-commit checkout applies read-only regular and executable modes befor
   let checked = false;
   const result = await runFullCoverageGate(root, base, "HEAD", {
     tools: fixtureTools,
+    prepareServices: fixtureCheckout.prepareServices,
     launchWorker: ({ root: checkout }) => {
       assert.equal((lstatSync(join(checkout, "scripts/agent/tool.sh")).mode & 0o777), 0o555);
       assert.equal((lstatSync(join(checkout, "hrms-client/package.json")).mode & 0o777), 0o444);
@@ -2062,9 +2258,10 @@ test("CLI builds and stamps an external Istanbul report", () => {
     cwd: root, env: { ...process.env, HRMS_COVERAGE_REPO_ROOT: root }, encoding: "utf8",
   });
   assert.equal(missingTools.status, 1);
-  assert.match(missingTools.stderr, /requires exact head and absolute trusted tool paths/);
+  assert.match(missingTools.stderr, /requires exact head, parent service claim and absolute trusted tool paths/);
   const invalidTools = spawnSync(process.execPath, [executable, "--full-suite-worker", "--coverage-output", workerOutput,
-    "--expected-head", git(root, "rev-parse", "HEAD"), "--node", "/missing/node", "--pnpm", "/missing/pnpm",
+    "--expected-head", git(root, "rev-parse", "HEAD"), "--service-claim-token", `${"f".repeat(40)}:fixture`,
+    "--node", "/missing/node", "--pnpm", "/missing/pnpm",
     "--python", "/missing/python", "--bash", "/missing/bash"], {
     cwd: root, env: { ...process.env, HRMS_COVERAGE_REPO_ROOT: root }, encoding: "utf8",
   });
@@ -2073,16 +2270,14 @@ test("CLI builds and stamps an external Istanbul report", () => {
 
   const noOpExecutable = resolveTrustedExecutable("true");
   const workerHead = git(root, "rev-parse", "HEAD");
-  const successfulWorker = spawnSync(process.execPath, [executable, "--full-suite-worker", "--coverage-output", workerOutput,
-    "--expected-head", workerHead, "--node", noOpExecutable, "--pnpm", noOpExecutable,
+  const unclaimedWorker = spawnSync(process.execPath, [executable, "--full-suite-worker", "--coverage-output", workerOutput,
+    "--expected-head", workerHead, "--service-claim-token", `${"f".repeat(40)}:fixture`,
+    "--node", noOpExecutable, "--pnpm", noOpExecutable,
     "--python", noOpExecutable, "--bash", noOpExecutable], {
     cwd: root, env: { ...process.env, HRMS_COVERAGE_REPO_ROOT: root }, encoding: "utf8",
   });
-  assert.equal(successfulWorker.status, 0, successfulWorker.stderr);
+  assert.equal(unclaimedWorker.status, 1);
+  assert.match(unclaimedWorker.stderr, /claim does not match|ECONNREFUSED/);
   assert.equal(git(root, "rev-parse", "HEAD"), workerHead);
   assert.equal(git(root, "status", "--porcelain=v1", "--untracked-files=all"), "");
-  for (const directory of ["external-input/node-resolver", "external-input/node-gate", "external-input/typescript",
-    "home", "xdg-config", "xdg-cache"]) {
-    assert.equal(lstatSync(join(workerOutput, directory)).isDirectory(), true, `${directory} worker boundary`);
-  }
 });

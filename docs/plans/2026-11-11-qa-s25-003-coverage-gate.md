@@ -2,7 +2,7 @@
 
 ## Objective And Success Criteria
 
-- Supply backend and frontend unit/component runners with reproducible coverage reports.
+- Supply backend unit/integration and frontend component runners with reproducible coverage reports.
 - Enforce coverage of every changed executable line and changed decision branch between the PR merge base and head, including new files. The gate fails when coverage or the base is missing and passes only after the corresponding behavior is exercised.
 - Keep independent assertion-quality review separate from numerical coverage.
 
@@ -28,7 +28,7 @@
 
 | Status | Step | Evidence/notes |
 | --- | --- | --- |
-| Implemented | Install compatible Vitest coverage/frontend testing dependencies and configure package scripts. | Vitest 4.1.6/V8 in both packages; React Testing Library/jsdom in frontend. |
+| Implemented; integration measurement correction pending verification | Install compatible Vitest coverage/frontend testing dependencies and configure package scripts. | Vitest 4.1.6/V8 in both packages; React Testing Library/jsdom in frontend. Backend coverage now selects both unit and integration projects so real PostgreSQL execution is measured. |
 | Implemented; review pending | Implement and test base/head changed-line and branch mapping. | Synthetic red/green, missing/stale, new-file, deletion-only and outside-source cases; see execution artifact. |
 | Implemented; latest exact-head evidence recorded | Numerically instrument external JS/TS/Python programs. | Node raw V8 is AST-remapped to Istanbul, isolated Vitest covers external TypeScript, and coverage.py line/arcs are converted without extending branch spans across target lines. The wrapper requires a clean worktree/index and exact HEAD at checked boundaries, generates reports outside the repository, and rejects stale/canonical-path/digest/Git-mode failures. These are correctness and accidental-mutation controls, not attacker-resistant same-user provenance. Exact head `1fd6d32f` produced full numeric coverage while leaving nine nonnumeric paths red. |
 | Partially implemented; owner bootstrap pending | Wire PR CI enforcement. | A candidate-controlled workflow cannot authenticate itself. The proposed organization required workflow checks out an independently reviewed immutable validator revision and runs it against the exact candidate SHA. It becomes authoritative only after the owner/admin pins it in a GitHub organization/enterprise ruleset; the external-App/CI fallback is documented. No hosted ruleset was changed. |
@@ -41,7 +41,7 @@
 - Existing IDs S25-057-U/P/N/F are revised in the pending sheet artifact. They map unit/component setup, CI merge-base mapping, negative uncovered branch, and missing/stale/ambiguous report recovery.
 - Nonnumeric partitions remain fail-closed: workflow/manifest/lock/config/shell changes stay red unless trusted tooling supplies proof for every changed semantic node or executable line and decision outcome. Content fragments, same-run receipts, mode and trace totals are insufficient.
 - Expected outcome is grounded in DEC-020, not current absence of tooling. No business-policy oracle is missing for this infrastructure task.
-- Affected executable branch inventory will be reconciled to final diff and added tests. Browser journey, tenant data, audit/outbox and PostgreSQL integration are N/A because this task changes test infrastructure, not product behavior.
+- Affected executable branch inventory will be reconciled to final diff and added tests. Browser journey and human UAT remain N/A for this infrastructure task. Disposable PostgreSQL/Valkey integration execution is now required measurement evidence because transaction code cannot be represented by unit-only coverage.
 
 ## Verification
 
@@ -49,6 +49,7 @@
 | --- | --- | --- |
 | Passed | Backend/frontend unit and coverage tests | Isolated local, `qa-artifacts/hrms/qa-s25-003-2026-11-11/execution.md` |
 | Passed | Diff-gate red/green, new-file and missing-report tests | Synthetic temporary git fixture and real rendered component branch |
+| Partial; full exact-head run pending | Combined backend unit/integration measurement | Focused local smoke passed 8/8 and produced positive PostgreSQL adapter coverage (584/831 statements and 104/305 branch outcomes). The full serial suite, final stamps and exact gate result remain pending and are not claimed by this smoke. |
 | Passed at reconciled exact head; trust hardening rerun pending | External report regressions and trusted bootstrap checks | At `1fd6d32f`, gate regressions 52/52, resolver 16/16, Python verifier/workflow tests 29/29, isolated TypeScript 16/16, backend 551/551, frontend 2/2 and 90 documentation references passed. New adversarial regressions keep a disabled workflow and dangerous untraced shell branch red. Candidate package lifecycle/pnpmfile hooks were then disabled and require a new exact-head rerun. No hosted or destructive probe ran. |
 | Numeric pass; intentional bootstrap red | Cumulative instrumentable and nonnumeric paths | Exact reconciled head `1fd6d32fa7c3189ec999bdd7de197eab18aa7700` measured 1,331/1,331 numeric lines and 394/394 numeric branches. Nine nonnumeric workflow/manifest/lock/config/shell paths remain red by design. This is not a completed required check or bootstrap approval. |
 | Passed locally | Package lint/typecheck/build and CI workflow syntax | Backend/frontend passed; YAML parsed; Vercel SSR smoke 200. CI runner itself awaits PR. |
@@ -57,7 +58,7 @@
 ## Risks, Compatibility And Recovery
 
 - A false-green gate could conceal security or payroll regressions. Reject missing coverage/base and review every exclusion.
-- Coverage instrumentation adds CI time; run only unit/component projects in this gate and leave existing integration/E2E matrix intact.
+- Coverage instrumentation adds CI time; the backend coverage gate now runs unit and integration projects together because the PostgreSQL adapter cannot be measured truthfully by unit tests alone. Contract/E2E remain in the existing backend matrix. CI uses isolated service containers and a 90-minute bound.
 - No schema/config migration. Rollback is reverting package scripts, gate and CI step; retain existing test commands.
 
 ## Handoff

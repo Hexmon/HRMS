@@ -12,6 +12,8 @@ const toolRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const repoRoot = process.env.HRMS_COVERAGE_REPO_ROOT ? resolve(process.env.HRMS_COVERAGE_REPO_ROOT) : toolRoot;
 const requireFromBackend = createRequire(join(toolRoot, "hrms_backend/package.json"));
 const ts = requireFromBackend("typescript");
+const { Pool: PostgresPool } = requireFromBackend("pg");
+const Valkey = requireFromBackend("iovalkey").default;
 const packages = {
   backend: { root: "hrms_backend", output: "backend" },
   frontend: { root: "hrms-client", output: "frontend" },
@@ -60,7 +62,7 @@ function isTestOrGenerated(path) {
 
 function isProductTestPath(path) {
   return /^(?:hrms_backend|hrms-client)\/src\//.test(path) &&
-    /(?:\.test\.[cm]?[jt]sx?$|\/src\/test\/)/.test(path);
+    /(?:\.test\.[cm]?[jt]sx?$|\/src\/(?:test|__tests__)\/)/.test(path);
 }
 
 function git(root, ...args) {
@@ -759,10 +761,152 @@ export function sanitizedCoverageEnvironment(outputRoot) {
     PYTHONDONTWRITEBYTECODE: "1",
     LANG: "C.UTF-8",
     TZ: "UTC",
-    TEST_DATABASE_URL: "postgresql://unused:unused@127.0.0.1:5432/hrms_coverage_unit_only",
+    BUILD_SHA: "coverage-exact-head",
+    TEST_DATABASE_URL: "postgresql://hrms_coverage:coverage@127.0.0.1:55433/hrms_coverage_test",
+    VALKEY_URL: "redis://127.0.0.1:56380/15",
+    CLOUDINARY_MOCK_UPLOADS: "true",
+    EMAIL_DELIVERY_MODE: "log",
+    LOCAL_DEMO_PASSWORD: "coverage-local-demo-A1!",
+    JWT_ACCESS_SECRET: "coverage-access-secret-at-least-32-characters",
+    JWT_REFRESH_SECRET: "coverage-refresh-secret-at-least-32-characters",
     HRMS_ENV_FILE: join(outputRoot, "no-env-file"),
     HRMS_COVERAGE_OUTPUT_DIR: outputRoot,
   };
+}
+
+export async function prepareCoverageIntegrationServices(environment, token, dependencies = {}) {
+  const databaseUrl = new URL(environment.TEST_DATABASE_URL);
+  const valkeyUrl = new URL(environment.VALKEY_URL);
+  if (databaseUrl.protocol !== "postgresql:" || databaseUrl.hostname !== "127.0.0.1" ||
+      databaseUrl.port !== "55433" || databaseUrl.pathname !== "/hrms_coverage_test") {
+    throw new Error("Coverage integration database must be the dedicated 127.0.0.1:55433/hrms_coverage_test service");
+  }
+  if (valkeyUrl.protocol !== "redis:" || valkeyUrl.hostname !== "127.0.0.1" ||
+      valkeyUrl.port !== "56380" || valkeyUrl.pathname !== "/15") {
+    throw new Error("Coverage integration Valkey must be the dedicated 127.0.0.1:56380/15 service");
+  }
+  if (!/^[0-9a-f]{40}:[A-Za-z0-9._-]+$/.test(token)) {
+    throw new Error("Coverage integration service token is malformed");
+  }
+
+  const pool = dependencies.pool ?? new PostgresPool({ connectionString: environment.TEST_DATABASE_URL });
+  let databaseMarked = false;
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('hrms_coverage_service_claim'))");
+      const occupied = await client.query(`
+        SELECT count(*)::int AS count
+        FROM pg_catalog.pg_class relation
+        JOIN pg_catalog.pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE relation.relkind IN ('r','p','v','m','S','f')
+          AND namespace.nspname NOT IN ('pg_catalog','information_schema')
+          AND namespace.nspname NOT LIKE 'pg_toast%'
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_catalog.pg_depend dependency
+            JOIN pg_catalog.pg_extension extension ON extension.oid = dependency.refobjid
+            WHERE dependency.classid = 'pg_class'::regclass
+              AND dependency.objid = relation.oid
+              AND dependency.deptype = 'e'
+          )
+      `);
+      if (Number(occupied.rows[0]?.count ?? 0) !== 0) {
+        throw new Error("Coverage integration database is not empty; recreate its disposable container before running");
+      }
+      await client.query("CREATE TABLE public.hrms_coverage_run_guard (token text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now())");
+      await client.query("INSERT INTO public.hrms_coverage_run_guard (token) VALUES ($1)", [token]);
+      await client.query("COMMIT");
+      databaseMarked = true;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  } finally {
+    await pool.end();
+  }
+
+  const valkey = dependencies.valkey ?? new Valkey(environment.VALKEY_URL, {
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+    enableOfflineQueue: false,
+  });
+  try {
+    await valkey.connect();
+    const claimed = await valkey.eval(
+      "if redis.call('dbsize') == 0 then return redis.call('set', KEYS[1], ARGV[1], 'NX') else return 0 end",
+      1,
+      "hrms:coverage:run-guard",
+      token,
+    );
+    if (claimed !== "OK") {
+      throw new Error("Coverage integration Valkey is populated or already claimed; recreate its disposable container before running");
+    }
+  } catch (error) {
+    await valkey.quit().catch(() => valkey.disconnect());
+    if (databaseMarked) {
+      throw new Error(`${error.message}; recreate the disposable PostgreSQL container before retrying`);
+    }
+    throw error;
+  }
+
+  return async () => {
+    let cleanupError;
+    try {
+      const result = await valkey.eval(
+        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('flushdb') else return 0 end",
+        1,
+        "hrms:coverage:run-guard",
+        token,
+      );
+      if (result !== "OK") throw new Error("Coverage integration Valkey ownership was lost before cleanup");
+    } catch (error) {
+      cleanupError = error;
+    } finally {
+      try {
+        await valkey.quit();
+      } catch (error) {
+        valkey.disconnect();
+        if (cleanupError) cleanupError = new AggregateError([cleanupError, error], "Coverage integration Valkey cleanup failed");
+        else cleanupError = error;
+      }
+    }
+    if (cleanupError) throw cleanupError;
+  };
+}
+
+export async function verifyCoverageIntegrationServiceClaim(environment, token, dependencies = {}) {
+  if (!/^[0-9a-f]{40}:[A-Za-z0-9._-]+$/.test(token)) {
+    throw new Error("Coverage integration service claim token is malformed");
+  }
+  const pool = dependencies.pool ?? new PostgresPool({ connectionString: environment.TEST_DATABASE_URL });
+  try {
+    const result = await pool.query("SELECT token FROM public.hrms_coverage_run_guard");
+    if (result.rows.length !== 1 || result.rows[0]?.token !== token) {
+      throw new Error("Coverage integration PostgreSQL claim does not match the parent run");
+    }
+  } finally {
+    await pool.end();
+  }
+  const valkey = dependencies.valkey ?? new Valkey(environment.VALKEY_URL, {
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+    enableOfflineQueue: false,
+  });
+  try {
+    await valkey.connect();
+    if (await valkey.get("hrms:coverage:run-guard") !== token) {
+      throw new Error("Coverage integration Valkey claim does not match the parent run");
+    }
+  } finally {
+    try {
+      await valkey.quit();
+    } catch {
+      valkey.disconnect();
+    }
+  }
 }
 
 const defaultFullSuiteResolvers = Object.freeze({ executable: resolveTrustedExecutable, python: resolveCoveragePython });
@@ -822,7 +966,9 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
     "src/__tests__/discovery-probes.unit.test.ts", "src/__tests__/disposable-probe-guard.unit.test.ts", "src/__tests__/walk-files.unit.test.ts",
     "--coverage", "--coverage.allowExternal=true", ...includes.flatMap((path) => ["--coverage.include", resolve(root, path)]),
     "--coverage.reporter=text", "--coverage.reporter=json", `--coverage.reportsDirectory=${typescriptReport}`], {}, ["NODE_V8_COVERAGE"]);
-  execute("backend coverage", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run", "--project", "unit", "--coverage", "--coverage.reporter=json", `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "backend"))}`], {}, ["NODE_V8_COVERAGE"]);
+  execute("backend unit and integration coverage", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
+    "--project", "unit", "--project", "integration", "--coverage", "--coverage.reporter=json",
+    `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "backend"))}`], {}, ["NODE_V8_COVERAGE"]);
   execute("frontend coverage", tools.pnpm, ["--dir", "hrms-client", "exec", "vitest", "run", "--coverage", "--coverage.reporter=json", `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "frontend"))}`], {}, ["NODE_V8_COVERAGE"]);
   return completed;
 }
@@ -843,6 +989,9 @@ export async function runFullCoverageGate(root, base, head = "HEAD", options = {
   const previousOutput = process.env.HRMS_COVERAGE_OUTPUT_DIR;
   const preserveOutput = options.preserveOutput === true || options.outputRoot !== undefined;
   let sourceRoot = undefined;
+  let cleanupServices = undefined;
+  let primaryError = undefined;
+  const serviceClaimToken = `${expectedHead}:${createHash("sha256").update(outputRoot).digest("hex").slice(0, 16)}`;
   try {
     if (existsSync(outputRoot)) {
       assertExternalArtifact(root, outputRoot, "full coverage output", true);
@@ -854,6 +1003,8 @@ export async function runFullCoverageGate(root, base, head = "HEAD", options = {
     const paths = fullSuitePaths(outputRoot);
     mkdirSync(paths.orchestratorV8, { recursive: true });
     const environment = sanitizedCoverageEnvironment(outputRoot);
+    const prepareServices = options.prepareServices ?? prepareCoverageIntegrationServices;
+    cleanupServices = await prepareServices(environment, serviceClaimToken);
     const tools = selectFullSuiteTools(options.tools, environment);
     assertExactCleanCommit(root, expectedHead, "full coverage launcher before checkout");
     const prepareCheckout = options.prepareCheckout ?? createExactCommitCheckout;
@@ -867,7 +1018,8 @@ export async function runFullCoverageGate(root, base, head = "HEAD", options = {
     const workerExecutor = options.execFile ?? execFileSync;
     const launchWorker = options.launchWorker ?? (() => workerExecutor(tools.node,
       [validatorScript, "--full-suite-worker", "--coverage-output", outputRoot,
-        "--expected-head", expectedHead, "--node", tools.node, "--pnpm", tools.pnpm, "--python", tools.python, "--bash", tools.bash], {
+        "--expected-head", expectedHead, "--service-claim-token", serviceClaimToken,
+        "--node", tools.node, "--pnpm", tools.pnpm, "--python", tools.python, "--bash", tools.bash], {
         cwd: sourceRoot,
         env: { ...environment, HRMS_COVERAGE_REPO_ROOT: sourceRoot, NODE_V8_COVERAGE: paths.orchestratorV8 },
         stdio: "inherit",
@@ -897,12 +1049,34 @@ export async function runFullCoverageGate(root, base, head = "HEAD", options = {
     });
     const result = await finalize({ root: sourceRoot, base, head: expectedHead, outputRoot, paths, expectedHead, tools });
     return { ...result, coverageOutputRoot: outputRoot };
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
     if (previousOutput === undefined) delete process.env.HRMS_COVERAGE_OUTPUT_DIR;
     else process.env.HRMS_COVERAGE_OUTPUT_DIR = previousOutput;
     const cleanupCheckout = options.cleanupCheckout ?? removeExactCommitCheckout;
-    if (sourceRoot && sourceRoot !== root) cleanupCheckout(root, sourceRoot);
-    if (!preserveOutput) rmSync(outputRoot, { recursive: true, force: true });
+    const cleanupErrors = [];
+    try {
+      if (sourceRoot && sourceRoot !== root) cleanupCheckout(root, sourceRoot);
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    try {
+      if (cleanupServices) await cleanupServices();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    try {
+      if (!preserveOutput) rmSync(outputRoot, { recursive: true, force: true });
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    if (cleanupErrors.length > 0) {
+      const cleanupFailure = new AggregateError(cleanupErrors, "Full coverage cleanup failed");
+      if (primaryError && typeof primaryError === "object") primaryError.cause = cleanupFailure;
+      else throw cleanupFailure;
+    }
   }
 }
 
@@ -1196,6 +1370,9 @@ export async function runFullSuiteCommand(root, args, dependencies = {}) {
   };
   const explicitOutput = value("--coverage-output");
   const preserveOutput = args.includes("--preserve-coverage") || explicitOutput !== undefined;
+  if (!args.includes("--confirm-disposable-services")) {
+    throw new Error("Full coverage suite requires --confirm-disposable-services after provisioning fresh isolated coverage containers");
+  }
   const runGate = dependencies.runGate ?? runFullCoverageGate;
   const log = dependencies.log ?? console.log;
   const result = await runGate(root, value("--base"), value("--head") ?? "HEAD", {
@@ -1216,14 +1393,17 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         throw new Error("Full coverage worker requires an absolute canonical --coverage-output path");
       }
       const expectedHead = argument("--expected-head");
+      const serviceClaimToken = argument("--service-claim-token");
       const tools = { node: argument("--node"), pnpm: argument("--pnpm"), python: argument("--python"), bash: argument("--bash") };
-      if (!expectedHead || Object.values(tools).some((value) => !value || !isAbsolute(value))) {
-        throw new Error("Full coverage worker requires exact head and absolute trusted tool paths");
+      if (!expectedHead || !serviceClaimToken || Object.values(tools).some((value) => !value || !isAbsolute(value))) {
+        throw new Error("Full coverage worker requires exact head, parent service claim and absolute trusted tool paths");
       }
-      replaceProcessEnvironment(sanitizedCoverageEnvironment(outputRoot));
+      const workerEnvironment = sanitizedCoverageEnvironment(outputRoot);
+      replaceProcessEnvironment(workerEnvironment);
       for (const [name, path] of Object.entries(tools)) {
         try { validateTrustedExecutable(path); } catch { throw new Error(`Full coverage worker received invalid ${name} executable`); }
       }
+      await verifyCoverageIntegrationServiceClaim(workerEnvironment, serviceClaimToken);
       runFullCoverageWorker(repoRoot, outputRoot, expectedHead, tools);
     } else if (process.argv.includes("--run-full-suite")) {
       process.exitCode = await runFullSuiteCommand(repoRoot, process.argv.slice(2));

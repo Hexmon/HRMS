@@ -221,11 +221,35 @@ jobs:
     permissions:
       contents: read
       actions: read
-    timeout-minutes: 30
+    # Real PostgreSQL integration execution contributes to the trusted backend
+    # coverage report, so use bounded disposable services and backend-sized time.
+    timeout-minutes: 90
     env:
       NODE_ENV: test
       APP_ENV: local
-      TEST_DATABASE_URL: postgresql://unused:unused@127.0.0.1:5432/hrms_coverage_unit_only
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5-alpine
+        env:
+          POSTGRES_DB: hrms_coverage_test
+          POSTGRES_USER: hrms_coverage
+          POSTGRES_PASSWORD: coverage
+        ports:
+          - 55433:5432
+        options: >-
+          --health-cmd "pg_isready -U hrms_coverage -d hrms_coverage_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      valkey:
+        image: valkey/valkey:9.0.3-alpine
+        ports:
+          - 56380:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Checkout actual PR or push head with base history
         uses: actions/checkout@v7
@@ -290,7 +314,7 @@ jobs:
             echo "Missing validated coverage baseline." >&2
             exit 1
           fi
-          node scripts/agent/changed-coverage.mjs --run-full-suite --base "$COVERAGE_BASE" --head HEAD
+          node scripts/agent/changed-coverage.mjs --run-full-suite --confirm-disposable-services --base "$COVERAGE_BASE" --head HEAD
 
   deploy-backend:
     name: Deploy backend
