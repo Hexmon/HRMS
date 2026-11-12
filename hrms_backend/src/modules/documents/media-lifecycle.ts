@@ -132,6 +132,12 @@ export class MediaLifecycleService {
         await this.recordSafeFailure(intent.id, intent.lease_owner, "object_head_failed_after_put");
         throw headError;
       }
+      if (!evidence) {
+        await this.recordSafeFailure(intent.id, intent.lease_owner, "object_not_visible_after_put");
+        throw conflict("Stored media is not yet visible; retry with the same idempotency key", {
+          intent_id: intent.id,
+        });
+      }
     }
     if (!evidence || !headMatchesIntent(evidence, intent)) {
       await this.quarantine(intent.id, intent.lease_owner, "provider_evidence_mismatch");

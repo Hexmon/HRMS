@@ -201,6 +201,22 @@ describe("durable media upload orchestration", () => {
     );
   });
 
+  it("keeps a completed PUT retryable while its object is not yet visible to HEAD", async () => {
+    const fixture = uploadFixture({ evidence: null });
+
+    await expect(fixture.service.upload(uploadInput())).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Stored media is not yet visible; retry with the same idempotency key",
+    });
+
+    expect(fixture.methods.recordSafeFailure).toHaveBeenCalledWith(
+      intentId,
+      "lease-1",
+      "object_not_visible_after_put",
+    );
+    expect(fixture.methods.quarantine).not.toHaveBeenCalled();
+  });
+
   it("quarantines a completed PUT when persisted identity markers do not match", async () => {
     const fixture = uploadFixture({
       evidence: providerEvidence({
