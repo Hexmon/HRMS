@@ -936,9 +936,11 @@ test("sanitized coverage environment excludes ambient and ignored configuration"
   const outputRoot = join(tmpdir(), "hrms-sanitized-output");
   const previousEnvFile = process.env.HRMS_ENV_FILE;
   const previousV8 = process.env.NODE_V8_COVERAGE;
+  const previousPython = process.env.HRMS_COVERAGE_PYTHON;
   process.env.HRMS_UNAPPROVED_SECRET = "must-not-propagate";
   process.env.HRMS_ENV_FILE = ".env.test";
   process.env.NODE_V8_COVERAGE = join(outputRoot, "orchestrator-v8");
+  process.env.HRMS_COVERAGE_PYTHON = join(outputRoot, "pinned", "python3");
   try {
     const environment = sanitizedCoverageEnvironment(outputRoot);
     assert.equal(environment.HRMS_UNAPPROVED_SECRET, undefined);
@@ -949,12 +951,15 @@ test("sanitized coverage environment excludes ambient and ignored configuration"
     assert.equal(environment.NPM_CONFIG_USERCONFIG, join(outputRoot, "no-user-npmrc"));
     assert.equal(environment.PYTHONNOUSERSITE, "1");
     assert.equal(environment.NODE_V8_COVERAGE, join(outputRoot, "orchestrator-v8"));
+    assert.equal(environment.HRMS_COVERAGE_PYTHON, join(outputRoot, "pinned", "python3"));
   } finally {
     delete process.env.HRMS_UNAPPROVED_SECRET;
     if (previousEnvFile === undefined) delete process.env.HRMS_ENV_FILE;
     else process.env.HRMS_ENV_FILE = previousEnvFile;
     if (previousV8 === undefined) delete process.env.NODE_V8_COVERAGE;
     else process.env.NODE_V8_COVERAGE = previousV8;
+    if (previousPython === undefined) delete process.env.HRMS_COVERAGE_PYTHON;
+    else process.env.HRMS_COVERAGE_PYTHON = previousPython;
   }
 });
 
@@ -975,7 +980,7 @@ test("full-suite dependency selection uses either exact injections or every trus
   const trustedBin = mkdtempSync(join(tmpdir(), "hrms-coverage-tools-"));
   roots.push(trustedBin);
   for (const name of ["pnpm", "python3", "bash"]) {
-    write(trustedBin, name, "#!/bin/sh\nexit 0\n");
+    write(trustedBin, name, name === "python3" ? "#!/bin/sh\nprintf '7.11.0\\n'\n" : "#!/bin/sh\nexit 0\n");
     chmodSync(join(trustedBin, name), 0o755);
   }
   const trustedDefaults = selectFullSuiteTools(undefined, { PATH: trustedBin });
@@ -1004,7 +1009,7 @@ test("trusted tool resolution binds an executable realpath and rejects missing t
   const directory = mkdtempSync(join(tmpdir(), "hrms-tools-"));
   roots.push(directory);
   const executable = join(directory, "python3");
-  writeFileSync(executable, "#!/bin/sh\nexit 0\n");
+  writeFileSync(executable, "#!/bin/sh\nprintf '7.11.0\\n'\n");
   chmodSync(executable, 0o755);
   assert.equal(resolveTrustedExecutable("python3", { PATH: directory }), realpathSync(executable));
   assert.equal(resolveTrustedExecutable(executable, { PATH: "" }), realpathSync(executable));
@@ -1021,6 +1026,41 @@ test("trusted tool resolution binds an executable realpath and rejects missing t
   symlinkSync(executable, linked);
   assert.throws(() => validateTrustedExecutable(linked), /symbolic link/);
   assert.throws(() => validateTrustedExecutable(directory), /not a regular file/);
+});
+
+test("pinned coverage Python ignores candidate PATH substitution and requires exact canonical version", () => {
+  const trusted = mkdtempSync(join(tmpdir(), "hrms-pinned-python-"));
+  const candidate = mkdtempSync(join(tmpdir(), "hrms-candidate-python-"));
+  roots.push(trusted, candidate);
+  const trustedPython = join(trusted, "python3");
+  const candidatePython = join(candidate, "python3");
+  writeFileSync(trustedPython, "#!/bin/sh\nprintf '7.11.0\\n'\n");
+  writeFileSync(candidatePython, "#!/bin/sh\nprintf '7.11.0\\n'\n");
+  chmodSync(trustedPython, 0o755);
+  chmodSync(candidatePython, 0o755);
+  assert.equal(resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: trustedPython,
+  }), trustedPython);
+
+  writeFileSync(trustedPython, "#!/bin/sh\nprintf '7.10.0\\n'\n");
+  assert.throws(() => resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: trustedPython,
+  }), /coverage 7\.11\.0 is required, found 7\.10\.0/);
+
+  writeFileSync(trustedPython, "#!/bin/sh\nexit 0\n");
+  assert.throws(() => resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: trustedPython,
+  }), /coverage 7\.11\.0 is required, found no version/);
+
+  const linkedPython = join(trusted, "linked-python3");
+  symlinkSync(candidatePython, linkedPython);
+  assert.throws(() => resolveCoveragePython({
+    PATH: candidate,
+    HRMS_COVERAGE_PYTHON: linkedPython,
+  }), /must not be a symbolic link/);
 });
 
 test("full-suite worker isolates orchestrator V8 output from every coverage child", () => {

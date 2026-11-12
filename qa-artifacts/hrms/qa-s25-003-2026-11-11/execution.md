@@ -235,3 +235,16 @@ The next hosted trusted-workflow run reached that diagnostic and identified the 
 The correction adds `.gitignore` itself as a tenth nonnumeric configuration path in the cumulative bootstrap diff. It remains red and requires owner review together with the existing nine paths; it is not silently waived. The numerical denominator remains **1,334 executable lines** and **395 decision branches**.
 
 The hosted run after the dependency-link correction progressed through exact-checkout creation, all resolver and gate regressions, Python verification and documentation validation. It then exposed a separate package-manager identity issue: canonicalizing the Corepack `pnpm` shim resolved it to Corepack's generic JavaScript dispatcher, which selected pnpm 12.18.0 instead of the required 10.25.0 inside the worker. The workflow now creates a regular read-only runner-temporary executable whose only command is `corepack pnpm@10.25.0 "$@"`, verifies its version, and prepends its directory through `GITHUB_PATH`. This preserves the validator's no-symlink executable rule while pinning the actual invoked package manager, not merely the initial setup command. Static workflow checks require the exact version, read-only mode and path publication.
+
+## Ordinary workflow Python identity correction (2026-11-12)
+
+PR #124 run `43153491320`, job `130968049766`, at exact reconciled head `f69c403c9a98cb478a284509c4301d4ec52ffc83` proved that setup-python and `python -m pip install coverage==7.11.0` succeeded. The ordinary coverage launcher then failed before any suite or measurement with: `Python with the coverage module is required (python3: not found on sanitized PATH; python: not found on sanitized PATH)`. The resolver had correctly rejected setup-python's symlinked shims, but unlike the trusted workflow, the ordinary workflow had not created a copied interpreter.
+
+The correction creates `$RUNNER_TEMP/hrms-coverage-python` with `python -m venv --copies`, installs exact coverage 7.11.0 through its `python3`, and validates canonical realpath equality, regular-file type, no symlink, executable mode and module version. The exact absolute path is passed as `HRMS_COVERAGE_PYTHON` through the sanitized environment; Python's directory is not appended to `GITHUB_PATH`. Resolver regressions prove a same-named candidate `python3` earlier in `PATH` is ignored, a wrong coverage version fails, and a symlinked explicit interpreter fails.
+
+Focused uncommitted-worktree results:
+
+- `node --test scripts/agent/changed-coverage.test.mjs`: **53/53 passed**.
+- `python3 -m unittest scripts.agent.tests.test_verification_scripts -v`: **16/16 passed**.
+
+No hosted rerun, numerical cumulative result, merge, deployment, ruleset change or green claim has been made for this correction. A clean committed-head wrapper run and the PR checks remain pending.
