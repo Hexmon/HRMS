@@ -68,9 +68,10 @@ jobs:
       - name: Prepare isolated deployment configuration
         env:
           HRMS_HYPERDRIVE_ID: ${{ secrets.HRMS_HYPERDRIVE_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_BUCKET_NAME }}
           WORKER_TARGET: ${{ inputs.target }}
           WORKER_STATE: ${{ inputs.state }}
-        run: node scripts/prepare-cloudflare-config.mjs "$WORKER_TARGET" "$WORKER_STATE"
+        run: pnpm exec tsx src/workers/cloudflare-deploy-config.ts "$WORKER_TARGET" "$WORKER_STATE"
 
       - name: Bundle before deployment
         env:

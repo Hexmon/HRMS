@@ -13,7 +13,7 @@ Do not commit real secret values. Store hosted secrets in GitHub, Render, Vercel
 
 ## Cloudflare Worker Bindings Per Environment
 
-- `MEDIA_BUCKET` — private R2 bucket binding used only for exact-key HEAD recovery; use a different bucket for dev, QA and production.
+- GitHub environment variable `R2_BUCKET_NAME` — exact private R2 bucket name used to generate the Worker `MEDIA_BUCKET` binding; it must match the corresponding Render API value and differ across dev, QA and production.
 - `HYPERDRIVE` — environment-specific PostgreSQL binding used for durable intent leases/finalization.
 
 These are provider bindings, not values to paste into source or chat. Keep the R2 bucket public development URL and custom domains disabled.

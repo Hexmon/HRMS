@@ -28,7 +28,7 @@ Hosted backend API and worker:
 - `R2_BUCKET_NAME`
 - `R2_REQUEST_TIMEOUT_MS` (default 10000, allowed 500–60000)
 - `R2_FORCE_PATH_STYLE=false`
-- Cloudflare Worker R2 binding `MEDIA_BUCKET` (environment-specific private bucket; this is a binding name, not a secret value)
+- GitHub environment variable `R2_BUCKET_NAME`, used by deployment to generate the Cloudflare Worker `MEDIA_BUCKET` binding (environment-specific private bucket; the name is not a secret)
 
 `R2_ENDPOINT` is allowed only for isolated local S3-compatible integration. Hosted QA/production reject it and derive the Cloudflare endpoint from the account ID.
 
@@ -39,7 +39,7 @@ Local unit/E2E runs may use `OBJECT_STORAGE_DRIVER=memory`. Hosted QA and produc
 1. Create one private bucket per environment. Do not share dev, QA and production.
 2. Keep the bucket public development URL disabled and do not attach a public custom domain.
 3. Create environment-specific S3 credentials limited to the intended bucket and required object operations.
-4. Store the S3 account/key/secret/bucket values in the matching Render API environment. Bind the same environment's private bucket to the Worker as `MEDIA_BUCKET`; the Worker does not need long-lived S3 credentials for HEAD recovery.
+4. Store the S3 account/key/secret/bucket values in the matching Render API environment. Set the same bucket name as the GitHub environment variable `R2_BUCKET_NAME`; deployment validates it and generates the Worker `MEDIA_BUCKET` binding. The Worker does not need long-lived S3 credentials for HEAD recovery.
 5. Never place R2 credentials in Vercel/frontend variables, GitHub logs, screenshots, commits or chat.
 6. Verify `/health/ready` reports object storage healthy without returning provider details.
 
