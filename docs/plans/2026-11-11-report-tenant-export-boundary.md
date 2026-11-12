@@ -103,5 +103,5 @@
 
 ## Handoff
 
-- `sprint-25/ten-s25-008` was created from fetched `origin/release-01=30783aa5` and fast-forwarded to QA `eb6e94a8`, independent of asset PR #118 and stacked on draft #116/#117.
-- Task source `18f97f1e` and integration correction `58d48b47` were pushed as draft [PR #121](https://github.com/Hexmon/HRMS/pull/121). The E2E correction above is pending its own commit/push/CI. No database migration or sheet write was performed. Hosted configuration, Render backend and Cloudflare services were not changed; each push created an automatic Vercel PR preview. Exact-head independent QA, browser and spreadsheet-file acceptance remain pending.
+- `sprint-25/ten-s25-008` was created from historical `release-01=30783aa5` and now contains the draft dependency chain through QA PR #117, asset PR #118 and holiday PR #122. It must be reconciled again after those prerequisites merge; its cumulative diff is not an independent report-only merge candidate.
+- Task source `18f97f1e`, integration correction `58d48b47`, E2E correction `e7e4fae4` and asset-summary regression correction `a52d2414` were pushed as draft [PR #121](https://github.com/Hexmon/HRMS/pull/121). Exact-head CI, cumulative coverage closure, prerequisite reconciliation and final independent review remain pending. No database migration or sheet write was performed. Hosted configuration, Render backend and Cloudflare services were not changed; each push created an automatic Vercel PR preview. Browser and spreadsheet-file acceptance remain pending.
