@@ -31,6 +31,9 @@ export function canAccessDocument(actor: AuthUser, document: DocumentMetadata, p
   if (document.metadata.generated === true || document.business_object_type.endsWith("_export") || document.document_type.endsWith("_export")) {
     return false;
   }
+  if (isEmployeeProofDocumentType(document.document_type)) {
+    return canAccessEmployeeProofDocument(actor, document);
+  }
   if (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor)) {
     return true;
   }

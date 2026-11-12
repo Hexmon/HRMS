@@ -397,24 +397,31 @@ describe("durable media lifecycle decisions", () => {
 
   it("limits employee-proof metadata and bytes to self and Admin", () => {
     for (const mode of ["metadata", "raw"] as const) {
-      expect(
-        durableReadAllowed(
-          accessRow({
-            document_type: "identity_proof",
-            owner_user_id: actorId,
-          }),
-          mode,
-        ),
-      ).toBe(true);
-      expect(
-        durableReadAllowed(
-          accessRow({
-            document_type: "address_proof",
-            roles: [Roles.Admin],
-          }),
-          mode,
-        ),
-      ).toBe(true);
+      for (const documentType of [
+        "identity_proof",
+        "address_proof",
+        "education_proof",
+        "experience_proof",
+      ]) {
+        expect(
+          durableReadAllowed(
+            accessRow({
+              document_type: documentType,
+              owner_user_id: actorId,
+            }),
+            mode,
+          ),
+        ).toBe(true);
+        expect(
+          durableReadAllowed(
+            accessRow({
+              document_type: documentType,
+              roles: [Roles.Admin],
+            }),
+            mode,
+          ),
+        ).toBe(true);
+      }
       for (const role of [
         Roles.HRManager,
         Roles.Auditor,
