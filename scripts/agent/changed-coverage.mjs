@@ -46,7 +46,7 @@ export function outsideExecutableOrConfig(path) {
   const name = path.split("/").at(-1);
   return /\.(?:[cm]?[jt]sx?|sh|py|sql)$/.test(path) ||
     /^\.github\/(?:workflows|actions)\/.*\.ya?ml$/.test(path) ||
-    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|vercel\.json|render\.ya?ml|Procfile|Makefile|justfile|\.npmrc|\.gitattributes|\.gitmodules)$/.test(name) ||
+    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|vercel\.json|render\.ya?ml|Procfile|Makefile|justfile|\.npmrc|\.gitignore|\.gitattributes|\.gitmodules)$/.test(name) ||
     /^(?:Dockerfile(?:\..+)?|.+\.Dockerfile|(?:docker-)?compose(?:[.-].+)?\.ya?ml)$/.test(name) ||
     /^(?:wrangler\.(?:jsonc?|toml)|tsconfig(?:\..+)?\.json|.+\.config\.(?:jsonc?|ya?ml|toml))$/.test(name) ||
     /^infra\/.*\.(?:jsonc?|ya?ml|toml)$/.test(path) ||
@@ -247,7 +247,10 @@ export function assertExternalArtifactDestination(root, path, label) {
 export function assertCleanRepository(root, label = "coverage input") {
   const status = git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all");
   if (status.length > 0) {
-    throw new Error(`${label}: repository worktree and index must be completely clean; commit the exact tested tree before stamping or verifying coverage`);
+    const entries = status.split("\0").filter(Boolean);
+    const summary = entries.slice(0, 20).map((entry) => JSON.stringify(entry)).join(", ");
+    const remainder = entries.length > 20 ? `, ... ${entries.length - 20} more` : "";
+    throw new Error(`${label}: repository worktree and index must be completely clean; commit the exact tested tree before stamping or verifying coverage; status entries: ${summary}${remainder}`);
   }
   return git(root, "rev-parse", "HEAD").trim();
 }

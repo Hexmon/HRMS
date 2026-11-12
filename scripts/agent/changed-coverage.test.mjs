@@ -10,6 +10,7 @@ import {
   addEvaluatedModuleStatements,
   assertExternalArtifact,
   assertExternalArtifactDestination,
+  assertCleanRepository,
   assertRegularRepositoryFile,
   buildExternalCoverage,
   changedLines,
@@ -689,6 +690,7 @@ test("package and deployment config changes fail instead of passing a zero-line 
     "hrms_backend/wrangler.jsonc",
     "hrms-client/vercel.json",
     "render.yaml",
+    ".gitignore",
     "hrms_backend/infra/docker/Dockerfile",
     "hrms_backend/infra/docker/docker-compose.qa.yml",
     ".github/workflows/deploy.yml",
@@ -1387,6 +1389,19 @@ test("whole-repository clean-tree checks reject every dirty or staged input clas
   writeCoverage(root, "external", JSON.stringify({ [absolute]: externalEntry(root, path) }));
   const stamp = stampExternalReport(root);
   assert.equal(stamp.head, git(root, "rev-parse", "HEAD"));
+
+  write(root, "bounded-diagnostic.txt", "untracked\n");
+  for (let index = 0; index < 20; index += 1) {
+    write(root, `diagnostic-${String(index).padStart(2, "0")}.txt`, "untracked\n");
+  }
+  assert.throws(
+    () => assertCleanRepository(root, "diagnostic fixture"),
+    /diagnostic fixture:.*status entries: "\?\? bounded-diagnostic\.txt".*\.\.\. 1 more/,
+  );
+  rmSync(join(root, "bounded-diagnostic.txt"));
+  for (let index = 0; index < 20; index += 1) {
+    rmSync(join(root, `diagnostic-${String(index).padStart(2, "0")}.txt`));
+  }
 
   for (const [dirtyPath, content] of [
     ["docs/readme.md", "dirty docs\n"],
