@@ -49,6 +49,7 @@ class VerificationScriptTests(unittest.TestCase):
     def test_branch_coverage_workflow_uses_canonical_pinned_python(self) -> None:
         workflow = (SOURCE.parents[1] / ".github" / "workflows" / "branch-ci-cd.yml").read_text(encoding="utf-8")
         self.assertIn('HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3', workflow)
+        self.assertEqual(workflow.count('HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3'), 2)
         self.assertIn('python -m venv --copies "$coverage_venv"', workflow)
         self.assertIn('coverage==7.11.0', workflow)
         self.assertIn('test "$(realpath "$HRMS_COVERAGE_PYTHON")" = "$HRMS_COVERAGE_PYTHON"', workflow)

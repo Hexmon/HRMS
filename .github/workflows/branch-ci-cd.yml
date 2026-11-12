@@ -226,7 +226,6 @@ jobs:
       NODE_ENV: test
       APP_ENV: local
       TEST_DATABASE_URL: postgresql://unused:unused@127.0.0.1:5432/hrms_coverage_unit_only
-      HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3
     steps:
       - name: Checkout actual PR or push head with base history
         uses: actions/checkout@v7
@@ -270,6 +269,8 @@ jobs:
 
       - name: Install pinned Python coverage runner
         shell: bash
+        env:
+          HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3
         run: |
           coverage_venv="$(dirname "$(dirname "$HRMS_COVERAGE_PYTHON")")"
           python -m venv --copies "$coverage_venv"
@@ -283,6 +284,7 @@ jobs:
       - name: Generate exact-commit reports and require changed coverage
         env:
           COVERAGE_BASE: ${{ github.event.pull_request.base.sha || steps.push-baseline.outputs.base }}
+          HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3
         run: |
           if [[ -z "$COVERAGE_BASE" ]]; then
             echo "Missing validated coverage baseline." >&2
