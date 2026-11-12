@@ -19,9 +19,13 @@ export function isEmployeeProofDocumentType(documentType: string): boolean {
 export function canAccessEmployeeProofDocument(
   actor: { id: string; roles: readonly string[] },
   document: { document_type: string; owner_user_id: string | null },
+  permission: "read" | "write" | "verify" | "audit" = "read",
 ): boolean {
-  return isEmployeeProofDocumentType(document.document_type) &&
-    (document.owner_user_id === actor.id || actor.roles.includes(Roles.Admin));
+  if (!isEmployeeProofDocumentType(document.document_type)) return false;
+  if (permission === "verify" || permission === "audit") {
+    return actor.roles.includes(Roles.Admin);
+  }
+  return document.owner_user_id === actor.id || actor.roles.includes(Roles.Admin);
 }
 
 export function canAccessDocument(actor: AuthUser, document: DocumentMetadata, permission: "read" | "write" | "verify" | "audit"): boolean {
@@ -32,7 +36,7 @@ export function canAccessDocument(actor: AuthUser, document: DocumentMetadata, p
     return false;
   }
   if (isEmployeeProofDocumentType(document.document_type)) {
-    return canAccessEmployeeProofDocument(actor, document);
+    return canAccessEmployeeProofDocument(actor, document, permission);
   }
   if (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor)) {
     return true;

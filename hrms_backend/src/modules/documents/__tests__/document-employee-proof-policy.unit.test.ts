@@ -31,6 +31,33 @@ describe("employee-proof policy in memory document paths", () => {
     expect(service.list(admin, { page: 1, page_size: 100 }).items).toHaveLength(proofTypes.length);
   });
 
+  it("denies self verification and limits Admin verification to the document company", async () => {
+    const { service, owner, admin, foreignAdmin, documents } = await fixture();
+    const document = documents[0]!;
+
+    expect(() => service.verify(owner, document.id)).toThrow(/verification denied/u);
+    expect(document.metadata).not.toHaveProperty("verified_by");
+    expect(() => service.verify(foreignAdmin, document.id)).toThrow(/verification denied/u);
+    expect(document.metadata).not.toHaveProperty("verified_by");
+
+    expect(service.verify(admin, document.id).metadata).toMatchObject({
+      verified_by: admin.id,
+      verified_at: expect.any(String),
+    });
+  });
+
+  it("denies a foreign-company Admin before metadata, list or provider access", async () => {
+    const { service, storage, foreignAdmin, documents } = await fixture();
+    const getObject = vi.spyOn(storage, "getObject");
+
+    for (const document of documents) {
+      expect(() => service.metadata(foreignAdmin, document.id)).toThrow(/access denied/u);
+      await expect(service.downloadContent(foreignAdmin, document.id)).rejects.toMatchObject({ statusCode: 403 });
+    }
+    expect(service.list(foreignAdmin, { page: 1, page_size: 100 })).toMatchObject({ items: [], total: 0 });
+    expect(getObject).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["HR", Roles.HRManager],
     ["Auditor", Roles.Auditor],
@@ -58,6 +85,11 @@ async function fixture() {
   store.objectStorage = storage;
   const owner = { ...store.users.find((user) => user.id === seedIds.employee1)!, roles: [Roles.Employee] };
   const admin = { ...store.users.find((user) => user.id === seedIds.admin)!, roles: [Roles.Admin] };
+  const foreignAdmin = { ...store.users.find((user) => user.id === seedIds.employee2)!, roles: [Roles.Admin] };
+  const companyId = store.userSessionPreferences.find((preference) => preference.user_id === owner.id)!.company_id!;
+  const foreignCompany = { ...store.companyProfiles[0]!, id: randomUUID() as UUID, company_slug: "proof-policy-foreign" };
+  store.companyProfiles.push(foreignCompany);
+  store.userSessionPreferences.find((preference) => preference.user_id === foreignAdmin.id)!.company_id = foreignCompany.id;
   const documents: DocumentMetadata[] = [];
 
   for (const documentType of proofTypes) {
@@ -65,6 +97,7 @@ async function fixture() {
     const storageKey = `employee-proof-policy/${id}`;
     const document: DocumentMetadata = {
       id,
+      company_id: companyId,
       business_object_type: "employee",
       business_object_id: owner.id,
       owner_user_id: owner.id,
@@ -87,7 +120,7 @@ async function fixture() {
     await storage.putObject(storageKey, Buffer.from("proof"));
   }
 
-  return { service: new DocumentService(store), storage, owner, admin, documents };
+  return { service: new DocumentService(store), storage, owner, admin, foreignAdmin, documents };
 }
 
 function makeActor(role: AuthUser["roles"][number]): AuthUser {
