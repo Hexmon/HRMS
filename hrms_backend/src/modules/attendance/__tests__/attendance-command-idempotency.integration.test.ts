@@ -647,6 +647,7 @@ describe("PostgreSQL attendance command idempotency", () => {
     expect(evidencePayload).toEqual({
       schema_version: 1,
       command_type: "check_in",
+      work_date: first.json().day_status.work_date,
       work_mode: "office",
       source_channel: "web",
     });
