@@ -1791,7 +1791,7 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   assert.throws(() => addUniqueRawCoverageEntry(unique, "covered", { path }), /Duplicate raw V8 coverage source/);
 });
 
-test("module-evaluation attribution covers runtime imports only from positive importer evidence", () => {
+test("module-evaluation attribution covers only static runtime modules from positive importer evidence", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-module-evaluation-"));
   roots.push(root);
   git(root, "init", "-q");
@@ -1806,7 +1806,8 @@ test("module-evaluation attribution covers runtime imports only from positive im
     "export { dependency } from './dependency.js';",
     "import { type InlineType, dependency as mixedDependency } from './dependency.js';",
     "export { type InlineExport, dependency as mixedExport } from './dependency.js';",
-    "dependency + 1;",
+    "void import('./unsafe.js');",
+    "arbitraryTopLevelCall();",
     "export const local = dependency;",
     "",
   ].join("\n");
@@ -1817,13 +1818,18 @@ test("module-evaluation attribution covers runtime imports only from positive im
   git(root, "commit", "-qm", "module sources");
   const baseEntry = {
     path: join(root, "scripts/agent/module.ts"),
-    statementMap: { 0: { start: { line: 11, column: 0 }, end: { line: 11, column: 32 } } },
-    s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
+    statementMap: {
+      0: { start: { line: 12, column: 0 }, end: { line: 12, column: 32 } },
+      1: { start: { line: 6, column: 0 }, end: { line: 6, column: 56 } },
+    },
+    s: { 0: 1, 1: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
   };
   const attributed = addEvaluatedModuleStatements(root, "scripts/agent/module.ts", baseEntry);
   const attributedLines = Object.values(attributed.statementMap).map((location) => location.start.line).sort((a, b) => a - b);
-  assert.deepEqual(attributedLines, [6, 7, 8, 9, 10, 11]);
+  assert.deepEqual(attributedLines, [6, 7, 8, 9, 12]);
   assert.ok(Object.values(attributed.s).every((count) => count > 0));
+  const unattributedExpressions = assessChangedFile("scripts/agent/module.ts", new Set([10, 11]), source, attributed);
+  assert.deepEqual(unattributedExpressions.uncovered, ["10 (not instrumented)", "11 (not instrumented)"]);
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {}, s: {}, fnMap: {}, f: {}, branchMap: {}, b: {} }).statementMap[0], undefined);
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {} }).statementMap[0], undefined);
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/check.py", baseEntry), baseEntry);

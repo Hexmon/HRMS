@@ -462,7 +462,7 @@ export function addEvaluatedModuleStatements(root, path, entry) {
     const staticModule = ts.isImportDeclaration(node) ||
       (ts.isExportDeclaration(node) && Boolean(node.moduleSpecifier));
     const typeOnly = isPureTypeImportDeclaration(node) || isPureTypeExportDeclaration(node);
-    if ((!staticModule || typeOnly) && !ts.isExpressionStatement(node)) continue;
+    if (!staticModule || typeOnly) continue;
     const start = source.getLineAndCharacterOfPosition(node.getStart(source));
     const end = source.getLineAndCharacterOfPosition(node.end);
     const line = start.line + 1;
