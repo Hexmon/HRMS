@@ -6,6 +6,7 @@ import {
   assertParentAuthorization,
   durableReadAllowed,
   headMatchesIntent,
+  lockMediaAuthorizationRows,
   mapDocument,
   requestFingerprint,
   type DurableMediaUploadInput,
@@ -102,6 +103,27 @@ function accessRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("durable media lifecycle decisions", () => {
+  it("uses the shared user-company-preference lock order with sorted users", async () => {
+    const calls: Array<{ sql: string; params: unknown[] }> = [];
+    const client = {
+      query: async (sql: string, params: unknown[] = []) => {
+        calls.push({ sql, params });
+        return { rows: [], rowCount: 0 };
+      },
+    } as unknown as PoolClient;
+
+    await lockMediaAuthorizationRows(client, companyId, parentId, "core_user", actorId);
+
+    expect(calls).toHaveLength(3);
+    expect(calls[0]?.sql).toContain("FROM core.users");
+    expect(calls[0]?.sql).toContain("ORDER BY id FOR UPDATE");
+    expect(calls[0]?.params[0]).toEqual([actorId, parentId]);
+    expect(calls[1]?.sql).toContain("FROM platform.company_profiles");
+    expect(calls[1]?.sql).toContain("FOR SHARE");
+    expect(calls[2]?.sql).toContain("FROM platform.user_session_preferences");
+    expect(calls[2]?.sql).toContain("ORDER BY user_id FOR UPDATE");
+  });
+
   it("serializes first proof creation and requires replacement once a proof is active", async () => {
     const input = uploadInput({
       actor: { ...actor(), id: parentId },

@@ -642,23 +642,18 @@ async function selectedCompanyIdForActor(client: PoolClient, actorId: UUID): Pro
 }
 
 /**
- * Acquire every row that media authorization may later upgrade in one stable
- * order. Company is always first, followed by sorted users and their selected
- * company preferences. This prevents two self/Admin uploads from each holding
- * a shared actor lock while waiting to upgrade the other's parent row.
+ * Acquire every row that media authorization may later upgrade in the same
+ * order as auth persistence: sorted users, company, then selected-company
+ * preferences. This prevents both media lock upgrades and user/company lock
+ * inversion with concurrent password, role or session persistence.
  */
-async function lockMediaAuthorizationRows(
+export async function lockMediaAuthorizationRows(
   client: PoolClient,
   companyId: UUID,
   actorId: UUID,
   parentType: MediaParentType,
   parentId: UUID,
 ): Promise<void> {
-  await client.query(
-    `SELECT id FROM platform.company_profiles WHERE id=$1
-     ${parentType === "company_profile" ? "FOR UPDATE" : "FOR SHARE"}`,
-    [companyId],
-  );
   const userIds = [...new Set([
     actorId,
     ...(parentType === "core_user" ? [parentId] : []),
@@ -666,6 +661,11 @@ async function lockMediaAuthorizationRows(
   await client.query(
     `SELECT id FROM core.users WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
     [userIds],
+  );
+  await client.query(
+    `SELECT id FROM platform.company_profiles WHERE id=$1
+     ${parentType === "company_profile" ? "FOR UPDATE" : "FOR SHARE"}`,
+    [companyId],
   );
   await client.query(
     `SELECT user_id FROM platform.user_session_preferences

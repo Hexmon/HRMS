@@ -4,7 +4,11 @@ import { authHeader, loginAs } from "#testing";
 import type { ObjectStoragePort } from "../../../platform/data-store.js";
 import { MemoryObjectStorage, ObjectStorageProviderError } from "../../../platform/object-storage.js";
 import { buildRealApp, buildRealAppReplica } from "../../../__tests__/real-infra.js";
-import { MediaLifecycleService, type DurableMediaUploadInput } from "../media-lifecycle.js";
+import {
+  lockMediaAuthorizationRows,
+  MediaLifecycleService,
+  type DurableMediaUploadInput,
+} from "../media-lifecycle.js";
 import { reconcileMedia, type JobQueue, type MediaBucket } from "../../../workers/cloudflare-jobs.js";
 
 describe("TEN-S25-021 durable media lifecycle", () => {
@@ -544,6 +548,42 @@ describe("TEN-S25-021 durable media lifecycle", () => {
     expect(result.rows[0]).toEqual({ active: 1, failed: 1, finalized: 1 });
   });
 
+  it("matches the auth user-company lock order under a real PostgreSQL barrier", async () => {
+    const employee = await loginAs(app, "E1");
+    const company = await companyParent(app, employee.user.id);
+    const authWriter = await app.store.pgPool!.connect();
+    const mediaWriter = await app.store.pgPool!.connect();
+    try {
+      await authWriter.query("BEGIN");
+      await mediaWriter.query("BEGIN");
+      await authWriter.query("SET LOCAL statement_timeout='5s'");
+      await mediaWriter.query("SET LOCAL application_name='media-lock-order-regression'");
+      await authWriter.query("SELECT id FROM core.users WHERE id=$1 FOR UPDATE", [employee.user.id]);
+
+      const mediaLocks = lockMediaAuthorizationRows(
+        mediaWriter,
+        company.companyId,
+        employee.user.id,
+        "core_user",
+        employee.user.id,
+      );
+      await waitForDatabaseLock(app, "media-lock-order-regression");
+
+      await authWriter.query(
+        "SELECT id FROM platform.company_profiles WHERE id=$1 FOR UPDATE",
+        [company.companyId],
+      );
+      await authWriter.query("COMMIT");
+      await mediaLocks;
+      await mediaWriter.query("COMMIT");
+    } finally {
+      await authWriter.query("ROLLBACK").catch(() => undefined);
+      await mediaWriter.query("ROLLBACK").catch(() => undefined);
+      authWriter.release();
+      mediaWriter.release();
+    }
+  });
+
   it("quarantines provider objects whose HEAD omits durable identity markers", async () => {
     const admin = await loginAs(app, "ADM");
     const parent = await companyParent(app, admin.user.id);
@@ -782,6 +822,21 @@ function concurrentProofStorage(): ObjectStoragePort {
     statObject: (key) => memory.statObject(key),
     removeObject: (key) => memory.removeObject(key),
   };
+}
+
+async function waitForDatabaseLock(app: FastifyInstance, applicationName: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const waiting = await app.store.pgPool!.query<{ waiting: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM pg_stat_activity
+         WHERE application_name=$1 AND wait_event_type='Lock'
+       ) AS waiting`,
+      [applicationName],
+    );
+    if (waiting.rows[0]?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Media writer did not reach the PostgreSQL lock barrier");
 }
 
 function multipartDocumentUpload(
