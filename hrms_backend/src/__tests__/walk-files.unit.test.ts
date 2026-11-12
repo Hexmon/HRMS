@@ -18,6 +18,8 @@ it("walkFiles skips generated root coverage but discovers nested source coverage
       .map((path) => relative(packageRoot, path));
     expect(files).toEqual([join("src", "modules", "coverage", "policy.ts")]);
     expect(walkFiles(join(packageRoot, "src"), () => true, packageRoot)).toEqual([source]);
+    expect(walkFiles(join(packageRoot, "missing"))).toEqual([]);
+    expect(walkFiles(join(packageRoot, "src"))).toEqual([source]);
   } finally {
     rmSync(packageRoot, { recursive: true, force: true });
   }

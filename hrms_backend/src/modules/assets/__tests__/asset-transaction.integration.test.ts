@@ -185,6 +185,31 @@ describe("asset transaction boundary", () => {
     expect(report.json().items.find((item: { id: string }) => item.id === asset.id)?.assigned_to_user_id).toBe(seedIds.employee1);
   });
 
+  it("uses the bounded indexed public QR lookup for valid and invalid tokens", async () => {
+    const manager = await loginAs(first, "AST");
+    const inventory = await first.inject({ method: "GET", url: "/api/v1/assets", headers: authHeader(manager.token) });
+    const asset = inventory.json().items[0] as { qr_hash: string };
+    const persistence = first.store.persistence;
+    if (!persistence?.assetReadStore || !persistence.assetPublicScan) throw new Error("Expected PostgreSQL asset persistence");
+    const originalAssetReadStore = persistence.assetReadStore.bind(persistence);
+    persistence.assetReadStore = async () => {
+      throw new Error("public QR scan must not hydrate the asset snapshot");
+    };
+    try {
+      const valid = await first.inject({ method: "POST", url: `/api/v1/assets/scan/${asset.qr_hash}` });
+      expect(valid.statusCode).toBe(200);
+      expect(valid.json()).toMatchObject({ qr_hash: asset.qr_hash });
+
+      const invalid = await Promise.all(Array.from({ length: 32 }, (_, index) => first.inject({
+        method: "POST",
+        url: `/api/v1/assets/scan/${index.toString(16).padStart(32, "0")}`,
+      })));
+      expect(invalid.every((response) => response.statusCode === 404)).toBe(true);
+    } finally {
+      persistence.assetReadStore = originalAssetReadStore;
+    }
+  });
+
   it("allocates a request code beyond imported gaps", async () => {
     const employee = await loginAs(first, "E1");
     const create = (assetType: string) => first.inject({ method: "POST", url: "/api/v1/assets/requests", headers: { ...authHeader(employee.token), "Idempotency-Key": randomUUID() }, payload: { request_type: "new", asset_type: assetType, reason: "Work device needed" } });
