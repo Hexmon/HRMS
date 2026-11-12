@@ -27,7 +27,7 @@
 | Complete | Add a bounded R2 adapter with injected-client unit seams and strict private configuration. | PUT/GET/HEAD/DELETE; exact-body length validation; 404 is missing, other failures are sanitized errors; no bucket listing or public URL. |
 | Complete | Replace active Cloudinary configuration and provider-specific DTO/product fields. | Generated OpenAPI/frontend contracts are provider-neutral. Current runtime/config/runbooks no longer require Cloudinary; dated historical evidence remains unchanged. |
 | Complete | Exercise memory and S3-compatible behavior, denial/no-provider-I/O paths, startup guards and consumer compatibility. | Disposable MinIO proves shared S3-compatible exact-byte behavior. PostgreSQL/Valkey tests use loopback disposable containers only. |
-| In progress | Run exact-head verification, changed coverage and independent security/QA review; commit/push a draft PR only if evidence is truthful. | Initial independent review rejected `df86ac6d`; fixes now cover tenant-authorized logo/profile delivery, EMS DTO redaction, safe verification artifacts, hard worker startup failure, disposable integration fencing, absolute operation deadlines and object-size caps. Exact-head full gate and rereview remain. |
+| In progress | Run exact-head verification, changed coverage and independent security/QA review; commit/push a draft PR only if evidence is truthful. | Initial independent review rejected `df86ac6d`; fixes at `702e7fb5` cover tenant-authorized logo/profile delivery, EMS DTO redaction, safe verification artifacts, hard worker startup failure, disposable integration fencing, absolute operation deadlines and object-size caps. Exact-head full gate passed; rereview and coverage remain. |
 
 ## Test Design And Shared Tracker
 
@@ -46,8 +46,9 @@
 | Passed | Real S3-compatible put/get/head/delete and failure behavior | Disposable local MinIO integration: 1/1; two adapter instances read exact bytes/content type and verified HEAD/delete/missing behavior. |
 | Passed | Document/expense authorization and PostgreSQL integration regressions | Focused document/admin suites passed 26/26 serially against disposable PostgreSQL/Valkey; full unit 613/613 and contracts 27/27 passed. |
 | Passed | Hosted-origin logo/profile byte delivery regression | PostgreSQL Admin company-logo and Core profile-photo journeys persist their document links and return exact authenticated image bytes to a current same-company user; focused suites 7/7. Frontend URL normalization rejects foreign origins and uses the authenticated blob client; frontend unit total 78/78. |
-| Passed | `./scripts/agent/verify-change.sh` | Exact worktree gate passed: agent checks 29/29, backend lint/typecheck/unit/contracts, 70-migration drift/FK gates, Queue DLQ/replay, frontend lint/typecheck 77/77 tests, production guard, Vercel SSR build/smoke and route/contract guards. Independent exact-head review is pending. |
+| Passed | `./scripts/agent/verify-change.sh` | Corrected exact head passed: agent checks 29/29, backend lint/typecheck and 615/615 unit tests, contracts 27/27, 70-migration drift/FK gates, Queue DLQ/replay, frontend lint/typecheck and 78/78 tests, production guard, Vercel SSR build/smoke and route/contract guards. |
 | Failed gate | Changed executable coverage at initial implementation commit | 268/377 executable lines and 55/81 branches, with 51 deletion/config paths unmeasured. This remains a draft/merge blocker; the threshold was not weakened. Exact corrected-head coverage is pending. |
+| Blocked locally | Trusted exact-head coverage orchestration | Backend coverage itself completed with 615/615 tests, but the trusted multi-runtime gate requires Python's `coverage` module, which is absent on this machine. No dependency was installed and no threshold was weakened; hosted trusted coverage must run after push. |
 | Blocked | Hosted R2/Render/Vercel, role-browser and human UAT | Requires owner-managed credentials/environment and human execution. |
 
 ## Risks, Compatibility And Recovery
@@ -63,4 +64,4 @@
 - Files/artifacts: this plan, implementation/tests, generated contracts, focused QA evidence and PR description.
 - Commands and results: `./scripts/agent/verify-change.sh` passed; focused backend suites 26/26; frontend focused suites 7/7; disposable MinIO integration 1/1; full backend unit 613/613; contracts 27/27; frontend unit 77/77; Vercel SSR smoke HTTP 200; 70 migrations verified.
 - Remaining blockers or human actions: hosted private bucket/credentials, environment wiring, browser/UAT, sheet readback, lifecycle/retention/scanner decisions.
-- Commit/PR/deployment references: stacked base `0b37042d`; implementation commit `df86ac6d`; corrective commit, push and draft PR pending; no deployment or hosted mutation.
+- Commit/PR/deployment references: stacked base `0b37042d`; implementation commit `df86ac6d`; corrective commit `702e7fb5`; push and draft PR pending; no deployment or hosted mutation.

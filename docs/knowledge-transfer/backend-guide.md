@@ -2,7 +2,7 @@
 
 Last verified from the repository: 2026-06-30.
 
-The backend lives in `hrms_backend/`. It is a standalone Node.js/TypeScript Fastify package with domain modules, PostgreSQL migrations, Valkey-backed runtime services, Cloudinary-backed object storage, Resend email delivery, OpenAPI generation, and Vitest test projects.
+The backend lives in `hrms_backend/`. It is a standalone Node.js/TypeScript Fastify package with domain modules, PostgreSQL migrations, Valkey-backed runtime services, private Cloudflare R2 object storage, Resend email delivery, OpenAPI generation, and Vitest test projects.
 
 ## Entry Points
 
@@ -12,7 +12,7 @@ The backend lives in `hrms_backend/`. It is a standalone Node.js/TypeScript Fast
 | `src/app.ts` | Builds the Fastify app, registers plugins/modules, creates data store/email delivery, wires persistence flushes. |
 | `src/plugins/config.ts` | Zod environment schema and production safety validation. |
 | `src/platform/data-store.ts` | Memory data store and shared persistence interfaces. |
-| `src/platform/postgres-data-store.ts` | PostgreSQL persistence adapter and Cloudinary object storage integration. |
+| `src/platform/postgres-data-store.ts` | PostgreSQL persistence adapter and private object-storage integration. |
 | `src/db/schema.ts` | Drizzle schema definitions for domain schemas. |
 | `src/db/migrations/` | Ordered SQL migrations. |
 | `src/workers/` | Outbox and attendance auto punch-out workers. |

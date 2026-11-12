@@ -2,7 +2,7 @@
 
 Last verified from the repository: 2026-06-30.
 
-This pack is for onboarding developers to the whole Hawkaii HRMS project. It explains the current full-stack system as it exists in this repository: a TanStack Start frontend, a Fastify backend, PostgreSQL domain schemas, Valkey-backed sessions/outbox streams, Cloudinary media storage, and Resend email delivery.
+This pack is for onboarding developers to the whole Hawkaii HRMS project. It explains the current full-stack system as it exists in this repository: a TanStack Start frontend, a Fastify backend, PostgreSQL domain schemas, Valkey-backed sessions/outbox streams, private Cloudflare R2 object storage, and Resend email delivery.
 
 ## Reading Order
 
