@@ -39,6 +39,7 @@ function activeEnvironment(mediaBucket?: { head(key: string): Promise<unknown> }
 describe("Cloudflare media Queue dispatch", () => {
   beforeEach(() => {
     mocks.reconcileMedia.mockClear();
+    vi.restoreAllMocks();
   });
 
   it("retries without acknowledgement when the private bucket binding is absent", async () => {
@@ -64,14 +65,16 @@ describe("Cloudflare media Queue dispatch", () => {
   it("passes the validated media job to reconciliation and acknowledges success", async () => {
     const decisions: string[] = [];
     const bucket = { head: vi.fn(async () => null) };
+    const env = activeEnvironment(bucket);
     await worker.queue({ queue: "hrms-background-jobs", messages: [{
       body: { kind: "media" },
       ack: () => decisions.push("ack"),
       retry: () => decisions.push("retry"),
-    }] }, activeEnvironment(bucket));
+    }] }, env);
 
     expect(mocks.reconcileMedia).toHaveBeenCalledOnce();
     expect(mocks.reconcileMedia.mock.calls[0]?.[1]).toBe(bucket);
+    expect(mocks.reconcileMedia.mock.calls[0]?.[2]).toBe(env.JOBS);
     expect(decisions).toEqual(["ack"]);
   });
 });

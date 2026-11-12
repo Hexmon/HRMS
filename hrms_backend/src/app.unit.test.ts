@@ -24,10 +24,13 @@ describe("app persistence flushing", () => {
     expect([
       "POST /api/v1/documents",
       "POST /api/v1/admin/company-profile/logo",
+      "POST /api/v1/ems/employees/user-1/documents",
       "POST /api/v1/core/users/user-1/profile-photo",
       "DELETE /api/v1/core/users/user-1/profile-photo",
     ].every(isTransactionOwnedMutationRoute)).toBe(true);
     expect(isTransactionOwnedMutationRoute("DELETE /api/v1/documents/document-1")).toBe(false);
+    expect(isTransactionOwnedMutationRoute("POST /api/v1/ems/employees/user-1/documents/extra")).toBe(false);
+    expect(isTransactionOwnedMutationRoute("PUT /api/v1/ems/employees/user-1/documents")).toBe(false);
     expect(isTransactionOwnedMutationRoute("POST /api/v1/core/users/user-1/profile-photo/extra")).toBe(false);
   });
 

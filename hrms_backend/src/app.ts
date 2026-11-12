@@ -285,6 +285,7 @@ export function isTransactionOwnedMutationRoute(routeKey: string): boolean {
     /^POST \/api\/v1\/expenses\/[^/]+\/(?:finance\/(?:approve|payment)|settlement)$/u.test(routeKey) ||
     routeKey === "POST /api/v1/notifications/read-all" ||
     /^POST \/api\/v1\/notifications\/[^/]+\/read$/u.test(routeKey) ||
+    /^POST \/api\/v1\/ems\/employees\/[^/]+\/documents$/u.test(routeKey) ||
     /^(?:POST|DELETE) \/api\/v1\/core\/users\/[^/]+\/profile-photo$/u.test(routeKey)
   );
 }
