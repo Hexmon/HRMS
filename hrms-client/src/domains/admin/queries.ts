@@ -45,7 +45,12 @@ export function useUploadCompanyLogoMutation() {
       idempotencyKey: string;
       expectedVersion: number;
       expectedPointerDocumentId: string | null;
-    }) => adminApi.uploadCompanyLogo(input.formData, input),
+    }) =>
+      adminApi.uploadCompanyLogo(input.formData, {
+        idempotencyKey: input.idempotencyKey,
+        expectedVersion: input.expectedVersion,
+        expectedPointerDocumentId: input.expectedPointerDocumentId,
+      }),
     onSuccess: (response) => {
       queryClient.setQueryData(
         queryKeys.detail("admin", "company-profile", "current"),
