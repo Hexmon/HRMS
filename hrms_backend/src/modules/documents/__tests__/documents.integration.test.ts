@@ -242,7 +242,7 @@ describe("document management integration", () => {
     expect(oversized.json().message).toBe("File is larger than the configured media upload limit");
   });
 
-  it("stores multipart uploads through expense and EMS document wrapper paths", async () => {
+  it("fails closed for SQL expense receipt uploads and stores EMS uploads", async () => {
     const employee = await loginAs(app, "E1");
 
     const createExpense = await app.inject({
