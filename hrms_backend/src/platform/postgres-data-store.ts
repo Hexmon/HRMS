@@ -3288,7 +3288,8 @@ class PostgresPersistence {
          LEFT JOIN platform.company_profiles company
            ON company.id = $2::uuid AND company.status = 'active'
           AND company.logo_document_id = metadata.id
-         LEFT JOIN core.users target ON target.profile_photo_document_id = metadata.id
+         LEFT JOIN core.users target
+           ON target.profile_photo_document_id = metadata.id AND target.deleted_at IS NULL
          LEFT JOIN platform.user_session_preferences target_pref ON target_pref.user_id = target.id`,
         [documentId, companyId],
       );

@@ -462,6 +462,23 @@ describe("core hierarchy API", () => {
     expect(peerRead.json().message).toBe(unknownRead.json().message);
     expect(getObject.mock.calls).toHaveLength(callsBeforeDeniedReads);
 
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET deleted_at=now() WHERE id=$1",
+      [employee.user.id],
+    );
+    const deletedTargetRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${document!.id}/content`,
+      headers: authHeader(admin.token)
+    });
+    expect(deletedTargetRead.statusCode).toBe(404);
+    expect(deletedTargetRead.json().message).toBe(unknownRead.json().message);
+    expect(getObject.mock.calls).toHaveLength(callsBeforeDeniedReads);
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET deleted_at=NULL WHERE id=$1",
+      [employee.user.id],
+    );
+
     const remove = await app.inject({
       method: "DELETE",
       url: `/api/v1/core/users/${employee.user.id}/profile-photo`,

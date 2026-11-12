@@ -62,6 +62,6 @@
 ## Handoff
 
 - Files/artifacts: this plan, implementation/tests, generated contracts, focused QA evidence and PR description.
-- Commands and results: `./scripts/agent/verify-change.sh` passed; focused backend suites 26/26; frontend focused suites 7/7; disposable MinIO integration 1/1; full backend unit 613/613; contracts 27/27; frontend unit 77/77; Vercel SSR smoke HTTP 200; 70 migrations verified.
-- Remaining blockers or human actions: hosted private bucket/credentials, environment wiring, browser/UAT, sheet readback, lifecycle/retention/scanner decisions.
-- Commit/PR/deployment references: stacked base `0b37042d`; implementation commit `df86ac6d`; corrective commit `702e7fb5`; push and draft PR pending; no deployment or hosted mutation.
+- Commands and results: corrected-head `./scripts/agent/verify-change.sh` passed before the final soft-delete policy regression; full backend unit 615/615, contracts 27/27, frontend unit 78/78, Vercel SSR smoke HTTP 200 and 70 migrations verified. Subsequent focused checks passed: private storage 14/14, Core PostgreSQL 5/5 including peer/unknown/soft-deleted-target denial without provider I/O, and frontend 78/78. GitHub repository/frontend/Vercel preview checks passed on the preceding draft head; the final pushed head must rerun CI.
+- Remaining blockers or human actions: merge PR #124 then update this stacked branch and rerun coverage; provision hosted private bucket/credentials; execute hosted R2 wiring, rendered browser/UAT and sheet readback; decide lifecycle/retention/scanner behavior.
+- Commit/PR/deployment references: stacked base `0b37042d`; implementation `df86ac6d`; hardening `702e7fb5`; active-doc reconciliation `60ae3af5`; authorization hardening `17bf1f1d`; draft PR #125. No merge or manual deployment/configuration mutation was performed.
