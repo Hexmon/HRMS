@@ -105,11 +105,27 @@ describe("bounded Cloudflare media reconciliation", () => {
 
     expect(String(poolQuery.mock.calls[0]?.[0])).toContain("provider_evidence_mismatch");
     expectLeaseGuard(poolQuery.mock.calls[0], row.id);
+    expectMutableStateGuard(poolQuery.mock.calls[0]);
     expect(poolQuery.mock.calls[0]?.[1]).toEqual([row.id, leaseOwner]);
     expect(String(poolQuery.mock.calls[0]?.[0])).not.toContain("state='object_confirmed'");
     expect(lifecycle.finalize).not.toHaveBeenCalled();
     expect(jobs.send).toHaveBeenCalledWith({ kind: "media" });
     expect(jobs.send).toHaveBeenCalledOnce();
+  });
+
+  it("does not count or requeue a provider mismatch after losing the lease", async () => {
+    const row = intent();
+    const { pool } = fakePool([row], undefined, undefined, [0]);
+    const jobs = queue();
+
+    await expect(reconcileMedia(pool, bucket(mismatchedHead(row, "size")), jobs, 1)).resolves.toEqual({
+      leased: 1,
+      finalized: 0,
+      quarantined: 0,
+      pending: 0,
+    });
+    expect(lifecycle.finalize).not.toHaveBeenCalled();
+    expect(jobs.send).not.toHaveBeenCalled();
   });
 
   it("keeps an old confirmed intent eligible, records matching HEAD evidence and finalizes once", async () => {
@@ -161,6 +177,21 @@ describe("bounded Cloudflare media reconciliation", () => {
     expect(jobs.send).toHaveBeenCalledOnce();
   });
 
+  it("does not finalize matching evidence after losing the lease", async () => {
+    const row = intent();
+    const { pool } = fakePool([row], undefined, undefined, [0]);
+    const jobs = queue();
+
+    await expect(reconcileMedia(pool, bucket(providerHead(row)), jobs, 1)).resolves.toEqual({
+      leased: 1,
+      finalized: 0,
+      quarantined: 0,
+      pending: 0,
+    });
+    expect(lifecycle.finalize).not.toHaveBeenCalled();
+    expect(jobs.send).not.toHaveBeenCalled();
+  });
+
   it.each([403, 404, 409])("quarantines a terminal %s finalization error", async (statusCode) => {
     const row = intent();
     const { pool, poolQuery } = fakePool([row]);
@@ -202,6 +233,68 @@ describe("bounded Cloudflare media reconciliation", () => {
     expect(poolQuery.mock.calls[1]?.[1]?.[2]).toBe("Error: worker operation failed");
     expect(jobs.send).not.toHaveBeenCalled();
   });
+
+  it("does not count a missing object after losing the lease", async () => {
+    const row = intent();
+    const { pool } = fakePool([row], undefined, undefined, [0]);
+
+    await expect(reconcileMedia(pool, bucket(null), queue(), 1)).resolves.toEqual({
+      leased: 1,
+      finalized: 0,
+      quarantined: 0,
+      pending: 0,
+    });
+  });
+
+  it("does not count a terminal finalize failure after losing the lease", async () => {
+    const row = intent();
+    const { pool } = fakePool([row], undefined, undefined, [1, 0]);
+    const jobs = queue();
+    lifecycle.finalize.mockRejectedValueOnce(Object.assign(new Error("terminal"), { statusCode: 409 }));
+
+    await expect(reconcileMedia(pool, bucket(providerHead(row)), jobs, 1)).resolves.toEqual({
+      leased: 1,
+      finalized: 0,
+      quarantined: 0,
+      pending: 0,
+    });
+    expect(jobs.send).not.toHaveBeenCalled();
+  });
+
+  it("does not count a transient finalize failure after losing the lease", async () => {
+    const row = intent();
+    const { pool } = fakePool([row], undefined, undefined, [1, 0]);
+    lifecycle.finalize.mockRejectedValueOnce(new Error("temporary"));
+
+    await expect(reconcileMedia(pool, bucket(providerHead(row)), queue(), 1)).resolves.toEqual({
+      leased: 1,
+      finalized: 0,
+      quarantined: 0,
+      pending: 0,
+    });
+  });
+
+  it.each([undefined, 403, 404, 409])(
+    "backs off a bucket HEAD failure with status %s without exposing its message",
+    async (statusCode) => {
+      const row = intent();
+      const { pool, poolQuery } = fakePool([row]);
+      const mediaBucket = bucket();
+      mediaBucket.head.mockRejectedValueOnce(Object.assign(
+        new Error("provider credential secret"),
+        statusCode === undefined ? {} : { statusCode },
+      ));
+
+      await expect(reconcileMedia(pool, mediaBucket, queue(), 1)).resolves.toEqual({
+        leased: 1,
+        finalized: 0,
+        quarantined: 0,
+        pending: 1,
+      });
+      expect(poolQuery.mock.calls[0]?.[1]?.[2]).toBe("Error: worker operation failed");
+      expect(lifecycle.finalize).not.toHaveBeenCalled();
+    },
+  );
 
   it("rolls back and releases the connection when lease selection fails", async () => {
     const failure = new Error("selection failed");
@@ -301,7 +394,12 @@ function queue(): JobQueue & { send: ReturnType<typeof vi.fn> } {
   return { send: vi.fn(async () => undefined) };
 }
 
-function fakePool(rows: IntentRow[], selectFailure?: Error, rollbackFailure?: Error) {
+function fakePool(
+  rows: IntentRow[],
+  selectFailure?: Error,
+  rollbackFailure?: Error,
+  poolRowCounts: number[] = [],
+) {
   const clientQuery = vi.fn(async (sql: string, _params?: unknown[]) => {
     if (sql === "ROLLBACK" && rollbackFailure) throw rollbackFailure;
     if (sql.includes("SELECT id,state,object_key")) {
@@ -312,7 +410,10 @@ function fakePool(rows: IntentRow[], selectFailure?: Error, rollbackFailure?: Er
   });
   const release = vi.fn();
   const connect = vi.fn(async () => ({ query: clientQuery, release }));
-  const poolQuery = vi.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+  const poolQuery = vi.fn(async (_sql: string, _params?: unknown[]) => ({
+    rows: [],
+    rowCount: poolRowCounts.shift() ?? 1,
+  }));
   return {
     pool: { connect, query: poolQuery } as unknown as Pool,
     clientQuery,

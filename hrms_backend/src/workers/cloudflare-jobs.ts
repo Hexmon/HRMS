@@ -218,11 +218,11 @@ export async function reconcileMedia(
   };
   const lifecycle = new MediaLifecycleService(pool, finalizeStorage);
   for (const row of rows) {
+    let finalizationStarted = false;
     try {
       const head = await bucket.head(row.object_key);
       if (!head) {
-        pending += 1;
-        await releaseMediaLease(pool, row.id, leaseOwner, "object_not_visible");
+        if (await releaseMediaLease(pool, row.id, leaseOwner, "object_not_visible")) pending += 1;
         continue;
       }
       const intentMarker = head.customMetadata?.["x-hrms-intent-id"];
@@ -230,17 +230,18 @@ export async function reconcileMedia(
       const checksumMarker = head.customMetadata?.["x-hrms-checksum-sha256"];
       if (head.size !== Number(row.measured_size_bytes) || intentMarker !== row.id ||
           documentMarker !== row.document_id || checksumMarker !== row.checksum_sha256) {
-        quarantined += 1;
-        await pool.query(
+        const mismatch = await pool.query(
           `UPDATE documents.media_upload_intents
            SET state='quarantined',last_safe_error='provider_evidence_mismatch',
                lease_owner=NULL,lease_expires_at=NULL,attempt_count=attempt_count+1,updated_at=now()
-           WHERE id=$1 AND lease_owner=$2`,
+           WHERE id=$1 AND lease_owner=$2
+             AND state IN ('prepared','uploading','retry_wait','object_confirmed')`,
           [row.id, leaseOwner],
         );
+        if (mismatch.rowCount === 1) quarantined += 1;
         continue;
       }
-      await pool.query(
+      const confirmation = await pool.query(
         `UPDATE documents.media_upload_intents
          SET state='object_confirmed',provider_etag=$3,provider_size_bytes=$4,
              provider_metadata=$5::jsonb,last_safe_error=NULL,attempt_count=attempt_count+1,updated_at=now()
@@ -252,21 +253,22 @@ export async function reconcileMedia(
           checksum_marker_present: checksumMarker === row.checksum_sha256,
         })],
       );
+      if (confirmation.rowCount !== 1) continue;
+      finalizationStarted = true;
       await lifecycle.finalize(row.id);
       finalized += 1;
     } catch (error) {
-      if (isTerminalMediaFinalizeError(error)) {
-        quarantined += 1;
-        await pool.query(
+      if (finalizationStarted && isTerminalMediaFinalizeError(error)) {
+        const terminal = await pool.query(
           `UPDATE documents.media_upload_intents
            SET state='quarantined',last_safe_error=$3,lease_owner=NULL,lease_expires_at=NULL,
                attempt_count=attempt_count+1,updated_at=now()
            WHERE id=$1 AND lease_owner=$2 AND state <> 'finalized'`,
           [row.id, leaseOwner, safeOutboxLastError(error).slice(0, 500)],
         );
+        if (terminal.rowCount === 1) quarantined += 1;
       } else {
-        pending += 1;
-        await releaseMediaLease(pool, row.id, leaseOwner, safeOutboxLastError(error));
+        if (await releaseMediaLease(pool, row.id, leaseOwner, safeOutboxLastError(error))) pending += 1;
       }
     }
   }
@@ -277,8 +279,8 @@ export async function reconcileMedia(
   return { leased: rows.length, finalized, quarantined, pending };
 }
 
-async function releaseMediaLease(pool: Pool, intentId: string, leaseOwner: string, safeError: string): Promise<void> {
-  await pool.query(
+async function releaseMediaLease(pool: Pool, intentId: string, leaseOwner: string, safeError: string): Promise<boolean> {
+  const released = await pool.query(
     `UPDATE documents.media_upload_intents
      SET state=CASE WHEN state='object_confirmed' THEN 'object_confirmed' ELSE 'retry_wait' END,
          lease_owner=NULL,
@@ -287,6 +289,7 @@ async function releaseMediaLease(pool: Pool, intentId: string, leaseOwner: strin
      WHERE id=$1 AND lease_owner=$2 AND state IN ('prepared','uploading','retry_wait','object_confirmed')`,
     [intentId, leaseOwner, safeError.slice(0, 500)],
   );
+  return released.rowCount === 1;
 }
 
 function isTerminalMediaFinalizeError(error: unknown): boolean {
