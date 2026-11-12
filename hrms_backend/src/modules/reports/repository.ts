@@ -19,8 +19,4 @@ export class ReportRepository {
     return this.store.expenseDocuments;
   }
 
-  departmentName(id: string): string {
-    const department = this.store.departments.find((candidate) => candidate.id === id);
-    return department?.name ?? "Unknown department";
-  }
 }

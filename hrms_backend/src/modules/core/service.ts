@@ -4,7 +4,7 @@ import { DocumentClassifications, EmploymentStatuses, Roles } from "#shared";
 import { badRequest, conflict, forbidden, notFound } from "../../platform/errors.js";
 import type { AuthTokenRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
-import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
+import { assertGeneratedExportAvailable, createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { DocumentService } from "../documents/service.js";
 import { appendCoreOutboxEvent } from "./events.js";
@@ -716,6 +716,7 @@ export class CoreService {
     const jobId = randomUUID();
     const columns = input.columns ?? defaultEmployeeExportColumns;
     const filters = this.validateExportFilters(actor, companyId, input.filters);
+    assertGeneratedExportAvailable(this.store);
     const rows = this.exportUserRows(actor, companyId, filters, columns);
     const generated = await createGeneratedExportDocument(this.store, {
       actor,

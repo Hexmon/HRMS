@@ -140,9 +140,12 @@ function RequestsScreen() {
                 status: "pending",
                 ...data,
               };
-              void addRequest(r)
+              return addRequest(r)
                 .then(() => toast.success(`${r.id} submitted`))
-                .catch((error) => toastApiError(error, "Asset request could not be submitted."));
+                .catch((error) => {
+                  toastApiError(error, "Asset request could not be submitted.");
+                  throw error;
+                });
             }}
           />
           {!isManagerOrAdmin && (
@@ -233,7 +236,9 @@ function AdminQueue({
               size="icon"
               variant="ghost"
               className="h-8 w-8 text-primary"
-              onClick={() => onDecide(r.id, "fulfilled", "Asset handed over")}
+              disabled
+              aria-label="Fulfillment unavailable until asset assignment is supported"
+              title="Fulfillment requires assigning an available asset to the requester"
             >
               <PackageCheck className="h-4 w-4" />
             </Button>
@@ -260,22 +265,31 @@ function RaiseForm({
       AssetRequest,
       "type" | "assetType" | "reason" | "priority" | "assetId" | "attachment"
     >,
-  ) => void;
+  ) => Promise<unknown>;
 }) {
   const [type, setType] = useState<RequestType>("new");
   const [assetType, setAssetType] = useState("Laptop");
   const [assetId, setAssetId] = useState("");
   const [reason, setReason] = useState("");
   const [priority, setPriority] = useState<RequestPriority>("normal");
+  const [pending, setPending] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
+    if (pending) return;
     if (!reason.trim()) {
       toast.error("Please add a reason.");
       return;
     }
-    onSubmit({ type, assetType, assetId: assetId || undefined, reason, priority });
-    setReason("");
-    setAssetId("");
+    setPending(true);
+    try {
+      await onSubmit({ type, assetType, assetId: assetId || undefined, reason, priority });
+      setReason("");
+      setAssetId("");
+    } catch {
+      /* The caller displays the error; preserve the draft for retry. */
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -365,6 +379,7 @@ function RaiseForm({
       <div className="mt-5 flex justify-end">
         <Button
           onClick={submit}
+          disabled={pending}
           className="rounded-full text-primary-foreground"
           style={{ background: "var(--gradient-primary)" }}
         >

@@ -6,7 +6,7 @@ OpenAPI title: Hawkaii HRMS API
 
 OpenAPI version: 0.1.0
 
-Documented operations: 281
+Documented operations: 283
 
 Use `openapi.json` for exact schemas and this index for frontend behavior notes.
 
@@ -2125,7 +2125,7 @@ Success body highlights:
 | `job_id` | string<uuid> | required | Employee export job UUID |
 | `export_id` | string<uuid> | required | Employee export job UUID |
 | `event_id` | string<uuid> | required | Source outbox event UUID |
-| `status` | string | required | - |
+| `status` | string | required | Legacy export metadata is not downloadable until private delivery is enabled. |
 | `outbox_status` | string | optional | - |
 | `format` | string enum("csv", "xlsx") | required | - |
 | `filters` | object | required | - |
@@ -7371,9 +7371,9 @@ Required: yes
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `format` | string enum("csv", "xlsx") | optional | default "csv" |
-| `report_type` | string | optional | default "expense" |
-| `filters` | object | optional | - |
+| `format` | string enum("csv", "xlsx") | required | - |
+| `report_type` | string enum("expense", "expenses", "expenses/register", "expenses/my", "expenses/manager-queue", "expenses/manager-history", "expenses/finance-dashboard", "expenses/finance-history", "hr", "hr/employees", "attendance", "attendance/summary", "leave", "leave-wfh", "leave-wfh/summary", "projects", "projects/summary", "timesheets", "timesheets/summary", "assets", "assets/summary", "helpdesk", "helpdesk/summary", "audit") | required | - |
+| `filters` | object | required | Both dates are required; the inclusive range may cover at most 12 calendar months. Results above 10,000 rows are rejected without truncation. |
 
 **Responses**
 | Status | Meaning |
@@ -7539,8 +7539,9 @@ Success body highlights:
 | Roles/scope | Asset Manager/Admin for mutations; scoped read/audit by policy. |
 
 **Path/query parameters**
-
-No path or query parameters.
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -7640,6 +7641,97 @@ Success body highlights:
 - Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
 - Respect `429` and `Retry-After`; never build tight retry loops.
 
+### GET /api/v1/assets/my
+
+| Field | Contract |
+|---|---|
+| Purpose | My assigned assets |
+| Frontend use | Asset inventory, assignment/return, QR scan, and software license screens. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Asset Manager/Admin for mutations; scoped read/audit by policy. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `page` | query | no | integer | default 1; minimum 1 |
+| `page_size` | query | no | integer | default 25; minimum 1 |
+| `sort` | query | no | string | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `items` | array of object | required | - |
+| `page` | integer | required | minimum 1 |
+| `page_size` | integer | required | minimum 1 |
+| `total` | integer | required | minimum 0 |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Paginated list: send `page` and `page_size`; do not fetch unbounded lists.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
+### GET /api/v1/assets/assignees
+
+| Field | Contract |
+|---|---|
+| Purpose | Asset assignment candidates |
+| Frontend use | Asset inventory, assignment/return, QR scan, and software license screens. |
+| Auth | Protected. Send either the HttpOnly session cookie or `Authorization: Bearer <access_token>`. |
+| Roles/scope | Asset Manager/Admin for mutations; scoped read/audit by policy. |
+
+**Path/query parameters**
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `q` | query | no | string | - |
+
+**Request body**
+
+No request body.
+
+**Responses**
+| Status | Meaning |
+|---|---|
+| `200` | Successful response. |
+| `400` | Validation failed or invalid business request. |
+| `401` | Authentication required or invalid session. |
+| `403` | Authenticated actor is not allowed to perform this action. |
+| `404` | Resource not found. |
+| `409` | Optimistic concurrency conflict. |
+| `429` | Rate limit exceeded. Retry after the documented delay. |
+| `500` | Unhandled server error. |
+
+Success body highlights:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `has_more` | boolean | required | True when more than 50 employees match; refine the search. |
+| `items` | array of object | required | - |
+
+**Frontend behavior notes**
+
+- Display backend `message` and retain `request_id` for support.
+- Treat `401` as authentication failure and `403` as real permission denial.
+- Respect `429` and `Retry-After`; never build tight retry loops.
+
 ### GET /api/v1/assets/{id}
 
 | Field | Contract |
@@ -7703,6 +7795,7 @@ Success body highlights:
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -7761,6 +7854,7 @@ Success body highlights:
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -7817,7 +7911,7 @@ Success body highlights:
 **Path/query parameters**
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
-| `qr_hash` | path | yes | string | minLength 1 |
+| `qr_hash` | path | yes | string | minLength 1; pattern ^[A-Za-z0-9_-]+$ |
 
 **Request body**
 
@@ -7862,8 +7956,9 @@ Success body highlights:
 | Roles/scope | Asset Manager/Admin for mutations; scoped read/audit by policy. |
 
 **Path/query parameters**
-
-No path or query parameters.
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -7955,8 +8050,9 @@ Schema: `object`.
 | Roles/scope | Asset Manager/Admin for mutations; scoped read/audit by policy. |
 
 **Path/query parameters**
-
-No path or query parameters.
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -8000,8 +8096,9 @@ Schema: `object`.
 | Roles/scope | Asset Manager/Admin for mutations; scoped read/audit by policy. |
 
 **Path/query parameters**
-
-No path or query parameters.
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -8153,6 +8250,7 @@ Success body highlights:
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -8207,6 +8305,7 @@ Success body highlights:
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -8257,6 +8356,7 @@ Success body highlights:
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -8358,6 +8458,7 @@ Success body highlights:
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -8461,8 +8562,9 @@ Success body highlights:
 | Roles/scope | Asset Manager/Admin for mutations; scoped read/audit by policy. |
 
 **Path/query parameters**
-
-No path or query parameters.
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -8516,6 +8618,7 @@ Success body highlights:
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -8619,6 +8722,7 @@ Success body highlights:
 | Name | In | Required | Type | Notes |
 |---|---|---:|---|---|
 | `id` | path | yes | string<uuid> | - |
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -8674,8 +8778,9 @@ Platform event routes are protected runtime integrations and should not be expos
 | Roles/scope | Protected runtime/platform event consumer; not a normal frontend screen API. |
 
 **Path/query parameters**
-
-No path or query parameters.
+| Name | In | Required | Type | Notes |
+|---|---|---:|---|---|
+| `idempotency-key` | header | yes | string | minLength 8; pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$ |
 
 **Request body**
 
@@ -12432,7 +12537,7 @@ Required: yes
 | `date` | string<date> | required | Holiday date |
 | `region` | string | optional | default "All" |
 | `optional` | boolean | optional | default false |
-| `expected_version` | integer | optional | minimum 1 |
+| `expected_version` | integer | optional | Required when changing an existing holiday. Omit for a new ID or an unchanged retry of the same ID and body. A missing ID with this field returns 404 rather than creating a holiday.; minimum 1 |
 
 **Responses**
 | Status | Meaning |

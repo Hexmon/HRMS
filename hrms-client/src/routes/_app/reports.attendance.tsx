@@ -7,6 +7,7 @@ import {
   type FacetOptions,
   type ReportFilters,
 } from "@/components/reports/report-shell";
+import { ReportError } from "@/components/reports/report-error";
 import { DataCard, StatusBadge, type Column } from "@/components/ui-kit";
 import { useEmployees } from "@/lib/employees-store";
 import { daysAgo, inDateRange, isoToday } from "@/lib/reports/utils";
@@ -262,7 +263,7 @@ function AttendanceReports() {
   }
 
   if (apiMode && reportQuery.error instanceof Error) {
-    return <div className="p-6 text-sm text-destructive">{reportQuery.error.message}</div>;
+    return <ReportError error={reportQuery.error} onRetry={() => void reportQuery.refetch()} />;
   }
 
   const baseFilter = (rows: AttRow[], f: ReportFilters) =>

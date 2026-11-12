@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ReportShell } from "@/components/reports/report-shell";
+import { ReportError } from "@/components/reports/report-error";
 import { StatusBadge, type Column } from "@/components/ui-kit";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { useTimesheetProductivitySummary, useTimesheetProjectSummary } from "@/domains/timesheets";
@@ -218,7 +219,16 @@ function TimesheetReports() {
   if (apiMode) {
     const error = reportQuery.error ?? productivityQuery.error ?? projectSummaryQuery.error;
     if (error instanceof Error) {
-      return <div className="p-6 text-sm text-destructive">{error.message}</div>;
+      return (
+        <ReportError
+          error={error}
+          onRetry={() => {
+            void reportQuery.refetch();
+            void productivityQuery.refetch();
+            void projectSummaryQuery.refetch();
+          }}
+        />
+      );
     }
   }
 

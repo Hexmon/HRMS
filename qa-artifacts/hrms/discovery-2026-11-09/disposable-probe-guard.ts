@@ -1,4 +1,34 @@
 /** Refuse network or database targets outside the disposable local probe stack. */
+import { pathToFileURL } from "node:url";
+
+type ProbeIo = {
+  stderr: Pick<NodeJS.WriteStream, "write">;
+  setExitCode: (code: number) => void;
+};
+
+const defaultProbeIo: ProbeIo = {
+  stderr: process.stderr,
+  setExitCode: (code) => { process.exitCode = code; },
+};
+
+export async function runProbeCli(
+  moduleUrl: string,
+  executable: string | undefined,
+  action: () => Promise<void>,
+  io?: ProbeIo,
+): Promise<boolean> {
+  const output = io ?? defaultProbeIo;
+  if (!executable || moduleUrl !== pathToFileURL(executable).href) return false;
+  try {
+    await action();
+    return true;
+  } catch (error) {
+    output.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    output.setExitCode(1);
+    return false;
+  }
+}
+
 export function requireLocalTestEnvironment(environment: NodeJS.ProcessEnv): void {
   let database: URL;
   let valkey: URL;

@@ -1,27 +1,13 @@
 // Reports module shared utilities
+import { downloadCsv } from "@/lib/csv";
 
 export function exportCsv(filename: string, rows: Record<string, unknown>[]) {
   if (rows.length === 0) {
-    const blob = new Blob(["No data\n"], { type: "text/csv" });
-    triggerDownload(blob, filename);
+    downloadCsv(filename, [["No data"]]);
     return;
   }
   const headers = Object.keys(rows[0]);
-  const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const csv = [
-    headers.join(","),
-    ...rows.map((r) => headers.map((h) => escape(r[h])).join(",")),
-  ].join("\n");
-  triggerDownload(new Blob([csv], { type: "text/csv" }), filename);
-}
-
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadCsv(filename, [headers, ...rows.map((row) => headers.map((header) => row[header]))]);
 }
 
 export function inDateRange(date: string | undefined, from?: string, to?: string): boolean {

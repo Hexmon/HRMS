@@ -16,6 +16,7 @@ import { Plus, Download } from "lucide-react";
 import type { Asset, AssetStatus } from "@/lib/mock/assets";
 import { AssetFormDrawer } from "@/components/assets/asset-form-drawer";
 import { toast } from "sonner";
+import { downloadCsv } from "@/lib/csv";
 
 export const Route = createFileRoute("/_app/assets/inventory")({ component: Inventory });
 
@@ -37,6 +38,7 @@ function Inventory() {
         if (status !== "all" && a.status !== status) return false;
         if (assignedFilter === "assigned" && !a.assignedTo) return false;
         if (assignedFilter === "unassigned" && a.assignedTo) return false;
+        if (warrantyF !== "all" && !a.warrantyExpiry) return false;
         const d = warrantyDaysLeft(a.warrantyExpiry);
         if (warrantyF === "active" && d <= 60) return false;
         if (warrantyF === "expiring" && (d < 0 || d > 60)) return false;
@@ -67,7 +69,7 @@ function Inventory() {
       render: (a) => (
         <div>
           <p className="text-sm font-medium">
-            {a.brand} {a.model}
+            {a.brand === "—" ? a.model : `${a.brand} ${a.model}`}
           </p>
           <p className="text-xs text-muted-foreground">{a.serial}</p>
         </div>
@@ -77,6 +79,7 @@ function Inventory() {
       key: "warranty",
       header: "Warranty",
       render: (a) => {
+        if (!a.warrantyExpiry) return <span className="text-sm text-muted-foreground">—</span>;
         const d = warrantyDaysLeft(a.warrantyExpiry);
         return (
           <span
@@ -103,14 +106,16 @@ function Inventory() {
       header: "Condition",
       render: (a) => (
         <span className="text-xs uppercase tracking-wider text-muted-foreground">
-          {a.condition}
+          {a.apiMissing?.condition ? "—" : a.condition}
         </span>
       ),
     },
     {
       key: "cost",
       header: "Cost",
-      render: (a) => <span className="text-sm font-medium">{fmtMoney(a.cost)}</span>,
+      render: (a) => (
+        <span className="text-sm font-medium">{a.apiMissing?.cost ? "—" : fmtMoney(a.cost)}</span>
+      ),
     },
   ];
 
@@ -159,31 +164,21 @@ function Inventory() {
       }
       return;
     }
-    const csv = [headers.join(",")]
-      .concat(
-        rows.map((a) =>
-          [
-            a.id,
-            a.type,
-            a.brand,
-            a.model,
-            a.serial,
-            a.status,
-            a.assignedTo ?? "",
-            a.location,
-            a.warrantyExpiry,
-            a.cost,
-          ].join(","),
-        ),
-      )
-      .join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "assets-inventory.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv("assets-inventory.csv", [
+      headers,
+      ...rows.map((a) => [
+        a.id,
+        a.type,
+        a.brand,
+        a.model,
+        a.serial,
+        a.status,
+        a.assignedTo ?? "",
+        a.location,
+        a.warrantyExpiry,
+        a.cost,
+      ]),
+    ]);
   };
 
   return (
@@ -237,15 +232,17 @@ function Inventory() {
           />
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={exportCsv}
-            disabled={isApiBacked && exportMutation.isPending}
-            className="rounded-full"
-          >
-            <Download className="mr-2 h-4 w-4" />
-            {isApiBacked && exportMutation.isPending ? "Exporting..." : "Export"}
-          </Button>
+          {!isApiBacked && (
+            <Button
+              variant="outline"
+              onClick={exportCsv}
+              disabled={isApiBacked && exportMutation.isPending}
+              className="rounded-full"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {isApiBacked && exportMutation.isPending ? "Exporting..." : "Export"}
+            </Button>
+          )}
           <Button
             onClick={() => setOpen(true)}
             className="rounded-full text-primary-foreground"

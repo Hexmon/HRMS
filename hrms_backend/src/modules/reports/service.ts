@@ -1,13 +1,11 @@
-import { randomUUID } from "node:crypto";
 import type { AttendanceApprovalState, AttendanceDayRecord, AuthUser, CoreUser, ExpensePayment, ExpenseTicket, OutboxEvent, ProjectRecord, UUID } from "#shared";
 import { addMoney, AssetStatuses, AttendanceApprovalStates, AttendanceDayClassifications, AttendancePresenceStates, AttendancePunctualityStates, compareMoney, ExpenseStatuses, HelpdeskTicketStatuses, ProjectMemberStatuses, ProjectStatuses, Roles, RequiredDocumentsByExpenseSubType } from "#shared";
 import type { ExpenseApprovalRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { ReportRepository } from "./repository.js";
 import { assertReportRole } from "./policy.js";
-import { forbidden, notFound } from "../../platform/errors.js";
-import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
+import { generatedExportUnavailable } from "./export-boundary.js";
+import { conflict, forbidden, notFound } from "../../platform/errors.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
-import { appendOutboxEvent } from "../expenses/events.js";
 import { canSeeProject } from "../projects/policy.js";
 import { matchesLegacyAttendanceStatus } from "../attendance/daily-projection.js";
 import {
@@ -173,7 +171,7 @@ export class ReportService {
       .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
       .map((log) => {
         const ticket = this.repository.tickets().find((candidate) => candidate.id === log.ticket_id);
-        const actorUser = this.store.users.find((user) => user.id === log.actor_user_id && !user.deleted_at);
+        const actorUser = ticket ? this.companyUser(log.actor_user_id, String(ticket.context_payload.company_id ?? "")) : null;
         return ticket
           ? {
               ticket: this.presentTicket(ticket),
@@ -247,7 +245,7 @@ export class ReportService {
       monthly_spend_trend: groupMoney(tickets, (ticket) => ticket.created_at.slice(0, 7), (ticket) => ticket.estimated_amount),
       spend_by_department: groupMoney(
         tickets,
-        (ticket) => this.repository.departmentName(ticket.department_id),
+        (ticket) => this.expenseDepartmentName(ticket),
         (ticket) => ticket.estimated_amount
       ),
       spend_by_expense_type: groupMoney(tickets, (ticket) => ticket.expense_type, (ticket) => ticket.estimated_amount),
@@ -271,7 +269,7 @@ export class ReportService {
         id: ticket.id,
         ticket_no: ticket.ticket_no,
         requester_user_id: ticket.requester_user_id,
-        requester_label: this.userLabel(ticket.requester_user_id),
+        requester_label: this.userLabel(ticket.requester_user_id, String(ticket.context_payload.company_id ?? "")),
         status: ticket.status,
         estimated_amount: ticket.estimated_amount,
         document_status: this.documentSummary(ticket).status
@@ -402,23 +400,32 @@ export class ReportService {
     });
   }
 
-  attendanceSummary(actor: AuthUser, query: ReportSummaryQuery) {
+  attendanceSummary(actor: AuthUser, query: ReportSummaryQuery, companyId: UUID) {
+    if (query.department_id || query.manager_user_id) {
+      throw conflict("Historical attendance department and manager ownership is not yet verified.");
+    }
+    const canReadCompanyHistory = actor.roles.some((role) =>
+      role === Roles.HRManager || role === Roles.Admin || role === Roles.Auditor
+    );
+    const explicitlySelfOnly =
+      (query.user_id === actor.id || query.employee_user_id === actor.id) &&
+      (!query.user_id || query.user_id === actor.id) &&
+      (!query.employee_user_id || query.employee_user_id === actor.id);
+    if (!canReadCompanyHistory && !explicitlySelfOnly && actor.roles.some((role) => role === Roles.Reviewer || role === Roles.Director)) {
+      throw conflict("Manager attendance reporting is unavailable until historical team ownership is verified.");
+    }
     const requestedEvidenceCategory =
       query.reporting_evidence_category ?? query.evidence_category;
     const candidateRecords = this.store.attendanceDayRecords
       .filter((record) => !record.deleted_at)
-      .filter((record) => this.canSeeUserReportRow(actor, record.employee_user_id, "attendance"))
+      .filter((record) => record.company_id === companyId)
+      .filter((record) => canReadCompanyHistory || record.employee_user_id === actor.id)
       .filter((record) => !query.user_id || record.employee_user_id === query.user_id)
       .filter((record) => !query.employee_user_id || record.employee_user_id === query.employee_user_id)
       .filter((record) => !query.status || matchesLegacyAttendanceStatus(record, query.status))
       .filter((record) => !query.date_from || record.work_date >= query.date_from)
       .filter((record) => !query.date_to || record.work_date <= query.date_to)
-      .filter((record) => !query.approval_state || record.approval_state === query.approval_state)
-      .filter((record) => !query.manager_user_id || this.isInRequestedManagerScope(actor, record.employee_user_id, query.manager_user_id))
-      .filter((record) => {
-        const user = this.user(record.employee_user_id);
-        return !query.department_id || user?.department_id === query.department_id;
-      });
+      .filter((record) => !query.approval_state || record.approval_state === query.approval_state);
     const evidenceIndex = buildAttendanceReportEvidenceIndex(this.store, candidateRecords);
     const evidenceFilteredRowContexts = candidateRecords
       .map((record) => ({
@@ -447,15 +454,18 @@ export class ReportService {
       );
     const rows = rowContexts
       .map(({ record, evidence }) => {
-        const user = this.user(record.employee_user_id);
+        const employee = this.companyUser(record.employee_user_id, companyId);
+        const department = employee
+          ? this.store.departments.find((candidate) => candidate.id === employee.department_id && candidate.company_id === companyId && !candidate.deleted_at)
+          : null;
         return {
           id: record.id,
           date: record.work_date,
           employee_user_id: record.employee_user_id,
-          employee_code: user?.employee_code ?? null,
-          employee: user?.full_name ?? record.employee_user_id,
-          department_id: user?.department_id ?? null,
-          department: user ? this.departmentName(user.department_id) : null,
+          employee_code: employee?.employee_code ?? null,
+          employee: employee?.full_name ?? "Historical identity unavailable",
+          department_id: department?.id ?? null,
+          department: department?.name ?? null,
           status: record.status,
           reporting_evidence_category: evidence.reporting_evidence_category,
           attendance_channels: evidence.attendance_channels,
@@ -517,7 +527,7 @@ export class ReportService {
         rows.filter((row) => row.reporting_evidence_category),
         (row) => row.reporting_evidence_category ?? "Unknown",
       ),
-      department_breakdown: groupCount(rows, (row) => row.department ?? "Unknown"),
+      department_breakdown: [],
       filters: this.appliedSummaryFilters(query)
     });
   }
@@ -812,7 +822,7 @@ export class ReportService {
         id: log.id,
         at: log.created_at,
         actor_user_id: log.actor_user_id,
-        actor: this.userLabel(log.actor_user_id) ?? log.actor_user_id,
+        actor: this.userLabel(log.actor_user_id, companyId) ?? log.actor_user_id,
         action: log.event_type,
         module: "Expenses",
         target: log.ticket_id,
@@ -828,7 +838,7 @@ export class ReportService {
         id: event.event_id,
         at: event.created_at,
         actor_user_id: typeof event.payload.actor_user_id === "string" ? event.payload.actor_user_id : null,
-        actor: typeof event.payload.actor_user_id === "string" ? this.userLabel(event.payload.actor_user_id) ?? event.payload.actor_user_id : "System",
+        actor: typeof event.payload.actor_user_id === "string" ? this.userLabel(event.payload.actor_user_id, companyId) ?? event.payload.actor_user_id : "System",
         action: event.event_type,
         module: reportModuleForEvent(event),
         target: event.aggregate_id,
@@ -849,48 +859,14 @@ export class ReportService {
     });
   }
 
-  async createExport(actor: AuthUser, input: { format: "csv" | "xlsx"; report_type: string; filters: Record<string, unknown> }) {
-    const aggregateId = randomUUID();
-    const rows = this.exportRows(actor, input.report_type, input.filters);
-    const columns = exportColumns(rows);
-    const generated = await createGeneratedExportDocument(this.store, {
-      actor,
-      businessObjectType: "report_export",
-      businessObjectId: aggregateId,
-      reportType: input.report_type,
-      format: input.format as GeneratedExportFormat,
-      rows,
-      columns,
-      filters: input.filters,
-      filePrefix: `report-${input.report_type}`
-    });
-    const event = appendOutboxEvent(this.store, {
-      aggregateType: "report_export",
-      aggregateId,
-      eventType: "reports.export.requested",
-      payload: {
-        actor_user_id: actor.id,
-        company_id: this.store.userSessionPreferences.find((preference) => preference.user_id === actor.id)?.company_id ?? null,
-        report_type: input.report_type,
-        format: input.format,
-        filters: input.filters,
-        status: generated.status,
-        adapter: generated.adapter,
-        download_document_id: generated.download_document_id,
-        download_url: generated.download_url,
-        file_name: generated.file_name,
-        row_count: generated.row_count,
-        size_bytes: generated.size_bytes,
-        generated_at: generated.generated_at
-      },
-      idempotencyKey: `report-export:${aggregateId}`
-    });
-    return this.presentExportJob(event);
+  async createExport(_actor: AuthUser, _input: { format: "csv" | "xlsx"; report_type: string; filters: Record<string, unknown> }) {
+    return generatedExportUnavailable();
   }
 
-  listExports(actor: AuthUser, query: ReportSummaryQuery) {
+  listExports(actor: AuthUser, query: ReportSummaryQuery, companyId: UUID) {
+    assertReportRole(actor, [Roles.HRManager, Roles.FinanceManager, Roles.Auditor, Roles.Admin]);
     const rows = this.reportExportEvents()
-      .filter((event) => this.canSeeExport(actor, event))
+      .filter((event) => this.canSeeExport(actor, event, companyId))
       .filter((event) => !query.report_type || event.payload.report_type === query.report_type)
       .filter((event) => !query.status || event.payload.status === query.status || event.status === query.status)
       .map((event) => this.presentExportJob(event))
@@ -898,12 +874,13 @@ export class ReportService {
     return page(rows, query.page, query.page_size);
   }
 
-  getExport(actor: AuthUser, id: UUID) {
+  getExport(actor: AuthUser, id: UUID, companyId: UUID) {
+    assertReportRole(actor, [Roles.HRManager, Roles.FinanceManager, Roles.Auditor, Roles.Admin]);
     const event = this.reportExportEvents().find((candidate) => candidate.aggregate_id === id || candidate.event_id === id);
     if (!event) {
       throw notFound("Export job not found");
     }
-    if (!this.canSeeExport(actor, event)) {
+    if (!this.canSeeExport(actor, event, companyId)) {
       throw forbidden("Export job access denied");
     }
     return this.presentExportJob(event);
@@ -1030,21 +1007,6 @@ export class ReportService {
     return false;
   }
 
-  private isInRequestedManagerScope(
-    actor: AuthUser,
-    userId: UUID,
-    managerUserId: UUID,
-  ): boolean {
-    const user = this.user(userId);
-    const manager = this.user(managerUserId);
-    if (!user || !manager) return false;
-    if (!this.canSeeUserReportRow(actor, manager.id, "attendance")) return false;
-    return (
-      user.id === manager.id ||
-      user.hierarchy_path.startsWith(`${manager.hierarchy_path}.`)
-    );
-  }
-
   private user(userId: UUID): CoreUser | null {
     return this.store.users.find((candidate) => candidate.id === userId && !candidate.deleted_at) ?? null;
   }
@@ -1053,12 +1015,19 @@ export class ReportService {
     return this.store.departments.find((candidate) => candidate.id === departmentId && !candidate.deleted_at)?.name ?? "Unknown department";
   }
 
+  private expenseDepartmentName(ticket: ExpenseTicket): string {
+    const companyId = ticket.context_payload.company_id;
+    if (typeof companyId !== "string") return "Unknown department";
+    return this.store.departments.find((candidate) =>
+      candidate.id === ticket.department_id && candidate.company_id === companyId && !candidate.deleted_at
+    )?.name ?? "Unknown department";
+  }
+
   private reportExportEvents(): OutboxEvent[] {
     return this.store.outbox.filter((event) => event.event_type === "reports.export.requested");
   }
 
-  private canSeeExport(actor: AuthUser, event: OutboxEvent): boolean {
-    const actorCompanyId = this.store.userSessionPreferences.find((preference) => preference.user_id === actor.id)?.company_id;
+  private canSeeExport(actor: AuthUser, event: OutboxEvent, actorCompanyId: UUID): boolean {
     // Never infer a legacy export's historical company from its creator's
     // *current* preference: an employee may have moved between companies.
     // Old events need a reviewed backfill before their metadata can be read.
@@ -1075,18 +1044,18 @@ export class ReportService {
       event_id: event.event_id,
       report_type: typeof event.payload.report_type === "string" ? event.payload.report_type : "unknown",
       format: typeof event.payload.format === "string" ? event.payload.format : "csv",
-      status: typeof event.payload.status === "string" ? event.payload.status : event.status,
+      status: "unavailable",
       outbox_status: event.status,
       created_by_user_id: typeof event.payload.actor_user_id === "string" ? event.payload.actor_user_id : null,
-      created_by: typeof event.payload.actor_user_id === "string" ? this.userLabel(event.payload.actor_user_id) : "System",
+      created_by: typeof event.payload.actor_user_id === "string" ? this.userLabel(event.payload.actor_user_id, String(event.payload.company_id ?? "")) : "System",
       filters: typeof event.payload.filters === "object" && event.payload.filters !== null ? event.payload.filters : {},
-      download_document_id: stringOrNull(event.payload.download_document_id),
-      download_url: stringOrNull(event.payload.download_url),
-      adapter: typeof event.payload.adapter === "string" ? event.payload.adapter : "outbox-queued-placeholder",
-      file_name: stringOrNull(event.payload.file_name),
+      download_document_id: null,
+      download_url: null,
+      adapter: "private-materializer-unavailable",
+      file_name: null,
       row_count: numberValue(event.payload.row_count),
-      size_bytes: numberOrNull(event.payload.size_bytes),
-      generated_at: stringOrNull(event.payload.generated_at),
+      size_bytes: null,
+      generated_at: null,
       created_at: event.created_at,
       updated_at: event.published_at ?? event.failed_at ?? event.created_at
     };
@@ -1102,7 +1071,10 @@ export class ReportService {
           return this.hrEmployees(actor, summaryQuery);
         case "attendance":
         case "attendance/summary":
-          return this.attendanceSummary(actor, summaryQuery);
+          return this.attendanceSummary(actor, summaryQuery, resolveActiveCompanyMembershipContext(this.store, {
+            userId: actor.id,
+            operation: "reports.attendance.export",
+          }).companyId);
         case "leave":
         case "leave-wfh":
         case "leave-wfh/summary":
@@ -1262,7 +1234,7 @@ export class ReportService {
 
   private presentManagerApproval(approval: ExpenseApprovalRecord) {
     const ticket = this.repository.tickets().find((candidate) => candidate.id === approval.ticket_id);
-    const approver = this.store.users.find((user) => user.id === approval.approver_user_id && !user.deleted_at);
+    const approver = ticket ? this.companyUser(approval.approver_user_id, String(ticket.context_payload.company_id ?? "")) : null;
     return ticket
       ? {
           ticket: this.presentTicket(ticket),
@@ -1284,21 +1256,22 @@ export class ReportService {
   }
 
   private presentTicket(ticket: ExpenseTicket) {
-    const requester = this.store.users.find((user) => user.id === ticket.requester_user_id && !user.deleted_at);
-    const department = this.store.departments.find((candidate) => candidate.id === ticket.department_id && !candidate.deleted_at);
-    const manager = ticket.manager_verifier_id ? this.store.users.find((user) => user.id === ticket.manager_verifier_id && !user.deleted_at) : null;
-    const backupManager = ticket.manager_backup_user_id ? this.store.users.find((user) => user.id === ticket.manager_backup_user_id && !user.deleted_at) : null;
+    const companyId = String(ticket.context_payload.company_id ?? "");
+    const requester = this.companyUser(ticket.requester_user_id, companyId);
+    const department = this.store.departments.find((candidate) => candidate.id === ticket.department_id && candidate.company_id === companyId && !candidate.deleted_at);
+    const manager = ticket.manager_verifier_id ? this.companyUser(ticket.manager_verifier_id, companyId) : null;
+    const backupManager = ticket.manager_backup_user_id ? this.companyUser(ticket.manager_backup_user_id, companyId) : null;
     const assignedFinanceActorId =
       (typeof ticket.route_snapshot.finance_approver_id === "string" ? ticket.route_snapshot.finance_approver_id : ticket.finance_approver_id) ?? null;
     const assignedFinanceActor = assignedFinanceActorId
-      ? this.store.users.find((user) => user.id === assignedFinanceActorId && !user.deleted_at) ?? null
+      ? this.companyUser(assignedFinanceActorId, companyId)
       : null;
     const primaryFinanceManagerId =
       typeof ticket.route_snapshot.primary_finance_manager_user_id === "string"
         ? ticket.route_snapshot.primary_finance_manager_user_id
         : null;
     const primaryFinanceManager = primaryFinanceManagerId
-      ? this.store.users.find((user) => user.id === primaryFinanceManagerId && !user.deleted_at) ?? null
+      ? this.companyUser(primaryFinanceManagerId, companyId)
       : null;
     const governanceNotes = Array.isArray(ticket.route_snapshot.notes)
       ? ticket.route_snapshot.notes.filter((note): note is string => typeof note === "string")
@@ -1467,8 +1440,8 @@ export class ReportService {
   private registerColumns(ticket: ExpenseTicket) {
     const payment = this.paymentSummary(ticket);
     return {
-      employee: this.userLabel(ticket.requester_user_id),
-      department: this.repository.departmentName(ticket.department_id),
+      employee: this.userLabel(ticket.requester_user_id, String(ticket.context_payload.company_id ?? "")),
+      department: this.expenseDepartmentName(ticket),
       status: ticket.status,
       approved_amount: payment?.approved_amount ?? null,
       actual_amount: ticket.actual_amount,
@@ -1506,8 +1479,14 @@ export class ReportService {
     };
   }
 
-  private userLabel(userId: UUID): string | null {
-    const user = this.store.users.find((candidate) => candidate.id === userId && !candidate.deleted_at);
+  private companyUser(userId: UUID, companyId: UUID) {
+    const currentCompanyId = this.store.userSessionPreferences.find((preference) => preference.user_id === userId)?.company_id;
+    if (currentCompanyId !== companyId) return null;
+    return this.store.users.find((candidate) => candidate.id === userId && !candidate.deleted_at) ?? null;
+  }
+
+  private userLabel(userId: UUID, companyId: UUID): string | null {
+    const user = this.companyUser(userId, companyId);
     return user ? `${user.employee_code} - ${user.full_name}` : null;
   }
 

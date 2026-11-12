@@ -694,10 +694,23 @@ describe("expense typed-owner read boundary on PostgreSQL", () => {
         cleanup.release();
       }
     }
+    const boundaryEnd = new Date();
+    const boundaryEndDate = boundaryEnd.toISOString().slice(0, 10);
+    const boundaryStartYear = boundaryEnd.getUTCFullYear() - 1;
+    const boundaryStartDay = Math.min(
+      boundaryEnd.getUTCDate(),
+      new Date(Date.UTC(boundaryStartYear, boundaryEnd.getUTCMonth() + 1, 0)).getUTCDate(),
+    );
+    const boundaryStartDate = [
+      boundaryStartYear.toString().padStart(4, "0"),
+      (boundaryEnd.getUTCMonth() + 1).toString().padStart(2, "0"),
+      boundaryStartDay.toString().padStart(2, "0"),
+    ].join("-");
+    const currentYear = boundaryEnd.getUTCFullYear();
     for (const range of [
-      "date_from=2026-01-01",
-      "date_to=2026-12-31",
-      "date_from=2025-11-11&date_to=2026-11-11",
+      `date_from=${currentYear}-01-01`,
+      `date_to=${currentYear}-12-31`,
+      `date_from=${boundaryStartDate}&date_to=${boundaryEndDate}`,
     ]) {
       const oneSidedOrBoundaryRange = await app.inject({
         method: "GET",

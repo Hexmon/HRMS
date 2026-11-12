@@ -55,14 +55,21 @@ def safe_config(path: Path, environment: dict[str, str]) -> bool:
     return all(is_disposable_url(effective.get(key)) for key in ("DATABASE_URL", "TEST_DATABASE_URL"))
 
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
+def main(arguments: list[str] | None = None, environment: dict[str, str] | None = None) -> int:
+    arguments = sys.argv[1:] if arguments is None else arguments
+    environment = dict(os.environ) if environment is None else environment
+    if len(arguments) != 1:
         print("Usage: assert-disposable-test-db.py <ignored-test-env-file>", file=sys.stderr)
-        raise SystemExit(2)
-    if not safe_config(Path(sys.argv[1]), dict(os.environ)):
+        return 2
+    if not safe_config(Path(arguments[0]), environment):
         print(
             "Database verification refused: DATABASE_URL and TEST_DATABASE_URL must both target local disposable test databases.",
             file=sys.stderr,
         )
-        raise SystemExit(1)
+        return 1
     print("Disposable database target preflight passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
