@@ -16,6 +16,14 @@ export function isEmployeeProofDocumentType(documentType: string): boolean {
   return employeeProofDocumentTypes.has(documentType);
 }
 
+export function isLegacyGeneratedDocument(
+  document: Pick<DocumentMetadata, "metadata" | "business_object_type" | "document_type">,
+): boolean {
+  return document.metadata.generated === true ||
+    document.business_object_type.endsWith("_export") ||
+    document.document_type.endsWith("_export");
+}
+
 export function canAccessEmployeeProofDocument(
   actor: { id: string; roles: readonly string[] },
   document: { document_type: string; owner_user_id: string | null },
@@ -32,7 +40,7 @@ export function canAccessDocument(actor: AuthUser, document: DocumentMetadata, p
   // Old generated exports may carry public storage URLs and have no durable
   // company owner. Deny every document path until private byte delivery and
   // an immutable tenant policy are installed.
-  if (document.metadata.generated === true || document.business_object_type.endsWith("_export") || document.document_type.endsWith("_export")) {
+  if (isLegacyGeneratedDocument(document)) {
     return false;
   }
   if (isEmployeeProofDocumentType(document.document_type)) {

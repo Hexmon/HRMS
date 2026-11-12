@@ -58,6 +58,36 @@ describe("employee-proof policy in memory document paths", () => {
     expect(getObject).not.toHaveBeenCalled();
   });
 
+  it("keeps generated-document denial ahead of every proof-specific service path", async () => {
+    const { service, store, storage, owner, admin, documents } = await fixture();
+    const source = documents[0]!;
+    const generated: DocumentMetadata = {
+      ...source,
+      id: randomUUID() as UUID,
+      storage_key: `employee-proof-policy/generated-${randomUUID()}`,
+      metadata: { generated: true },
+    };
+    store.documents.push(generated);
+    await storage.putObject(generated.storage_key, Buffer.from("generated-proof"));
+    const getObject = vi.spyOn(storage, "getObject");
+    const removeObject = vi.spyOn(storage, "removeObject");
+
+    for (const actor of [owner, admin]) {
+      expect(() => service.metadata(actor, generated.id)).toThrow(/access denied/u);
+      await expect(service.downloadContent(actor, generated.id)).rejects.toMatchObject({ statusCode: 403 });
+      expect(service.list(actor, { page: 1, page_size: 100 }).items)
+        .not.toEqual(expect.arrayContaining([expect.objectContaining({ id: generated.id })]));
+    }
+    expect(() => service.verify(admin, generated.id)).toThrow(/verification denied/u);
+    expect(() => service.accessLog(admin, generated.id, 1, 10)).toThrow(/access log denied/u);
+    await expect(service.delete(admin, generated.id)).rejects.toMatchObject({ statusCode: 403 });
+
+    expect(generated.metadata).toEqual({ generated: true });
+    expect(store.documents).toContain(generated);
+    expect(getObject).not.toHaveBeenCalled();
+    expect(removeObject).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["HR", Roles.HRManager],
     ["Auditor", Roles.Auditor],
@@ -120,7 +150,7 @@ async function fixture() {
     await storage.putObject(storageKey, Buffer.from("proof"));
   }
 
-  return { service: new DocumentService(store), storage, owner, admin, foreignAdmin, documents };
+  return { service: new DocumentService(store), store, storage, owner, admin, foreignAdmin, documents };
 }
 
 function makeActor(role: AuthUser["roles"][number]): AuthUser {

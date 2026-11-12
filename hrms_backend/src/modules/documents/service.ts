@@ -9,7 +9,12 @@ import { compressPdfBuffer, isPdfUpload, type PdfCompressionResult } from "../..
 import { appendOutboxEvent } from "../expenses/events.js";
 import { ExpenseService } from "../expenses/service.js";
 import { isTerminalExpenseStatus } from "../expenses/state-machine.js";
-import { canAccessDocument, canAccessEmployeeProofDocument, isEmployeeProofDocumentType } from "./policy.js";
+import {
+  canAccessDocument,
+  canAccessEmployeeProofDocument,
+  isEmployeeProofDocumentType,
+  isLegacyGeneratedDocument,
+} from "./policy.js";
 import { DocumentRepository } from "./repository.js";
 
 export type DocumentUploadInput = z.infer<typeof documentUploadSchema>;
@@ -115,6 +120,7 @@ export class DocumentService {
     permission: "read" | "write" | "verify" | "audit",
   ): boolean | null {
     if (!isEmployeeProofDocumentType(document.document_type)) return null;
+    if (isLegacyGeneratedDocument(document)) return false;
     if (!canAccessEmployeeProofDocument(actor, document, permission)) return false;
     if (document.owner_user_id === actor.id && (permission === "read" || permission === "write")) {
       return true;
