@@ -267,6 +267,163 @@ describe("durable media upload orchestration", () => {
       vi.useRealTimers();
     }
   });
+
+  it("returns or rejects a concurrent intent on the first bounded poll", async () => {
+    const terminal = intent({ state: "retry_wait", lease_owner: null });
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [terminal], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    const service = new MediaLifecycleService({ query } as unknown as Pool, {} as ObjectStoragePort);
+    const internals = service as unknown as {
+      awaitConcurrentIntent(id: UUID): Promise<IntentRow>;
+    };
+
+    await expect(internals.awaitConcurrentIntent(intentId)).resolves.toBe(terminal);
+    await expect(internals.awaitConcurrentIntent(intentId)).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Concurrent media upload intent disappeared",
+    });
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      "SELECT * FROM documents.media_upload_intents WHERE id=$1",
+      [intentId],
+    );
+  });
+
+  it("returns the final observed intent after bounded polling expires", async () => {
+    vi.useFakeTimers();
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    try {
+      const finalIntent = intent({ state: "uploading" });
+      const query = vi.fn();
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        query.mockResolvedValueOnce({ rows: [intent({ state: "prepared" })], rowCount: 1 });
+      }
+      query.mockResolvedValueOnce({ rows: [finalIntent], rowCount: 1 });
+      const service = new MediaLifecycleService({ query } as unknown as Pool, {} as ObjectStoragePort);
+      const internals = service as unknown as {
+        awaitConcurrentIntent(id: UUID): Promise<IntentRow>;
+      };
+
+      const outcome = internals.awaitConcurrentIntent(intentId);
+      await vi.runAllTimersAsync();
+
+      await expect(outcome).resolves.toBe(finalIntent);
+      expect(query).toHaveBeenCalledTimes(41);
+      expect(timeoutSpy.mock.calls.filter((call) => call[1] === 25)).toHaveLength(40);
+    } finally {
+      timeoutSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("claims a retryable intent with an opaque API lease and returns null when the CAS loses", async () => {
+    const claimed = intent();
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [claimed], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    const service = new MediaLifecycleService({ query } as unknown as Pool, {} as ObjectStoragePort);
+    const internals = service as unknown as {
+      claimIntentForPut(id: UUID): Promise<IntentRow | null>;
+    };
+
+    await expect(internals.claimIntentForPut(intentId)).resolves.toBe(claimed);
+    await expect(internals.claimIntentForPut(intentId)).resolves.toBeNull();
+    const firstSql = query.mock.calls[0]?.[0] as string;
+    const secondSql = query.mock.calls[1]?.[0] as string;
+    expect(firstSql).toContain("SET state='uploading',lease_owner=$2");
+    expect(firstSql).toContain("lease_expires_at=now()+interval '2 minutes'");
+    expect(firstSql).toContain("WHERE id=$1 AND state IN ('prepared','retry_wait')");
+    expect(firstSql).toContain("lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()");
+    expect(firstSql).toContain("RETURNING *");
+    expect(secondSql).toBe(firstSql);
+    expect(query.mock.calls[0]?.[1]?.[0]).toBe(intentId);
+    expect(query.mock.calls[0]?.[1]?.[1]).toMatch(/^api:[0-9a-f-]{36}$/);
+    expect(query.mock.calls[1]?.[1]?.[1]).toMatch(/^api:[0-9a-f-]{36}$/);
+    expect(query.mock.calls[1]?.[1]?.[1]).not.toBe(query.mock.calls[0]?.[1]?.[1]);
+  });
+
+  it("confirms provider evidence only when the upload lease CAS succeeds", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    const service = new MediaLifecycleService({ query } as unknown as Pool, {} as ObjectStoragePort);
+    const internals = service as unknown as {
+      confirmObject(id: UUID, leaseOwner: string, evidence: ReturnType<typeof providerEvidence>): Promise<void>;
+    };
+    const evidence = providerEvidence();
+
+    await expect(internals.confirmObject(intentId, "lease-1", evidence)).resolves.toBeUndefined();
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "SET state='object_confirmed',provider_etag=$2,provider_size_bytes=$3",
+    );
+    expect(query.mock.calls[0]?.[0]).toContain("provider_metadata=$4::jsonb");
+    expect(query.mock.calls[0]?.[0]).toContain("lease_owner=NULL,lease_expires_at=NULL");
+    expect(query.mock.calls[0]?.[0]).toContain("last_safe_error=NULL");
+    expect(query.mock.calls[0]?.[0]).toContain("WHERE id=$1 AND state='uploading' AND lease_owner=$5");
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      intentId,
+      "etag-1",
+      bytes.length,
+      JSON.stringify({ content_type: "application/pdf", intent_marker_present: true }),
+      "lease-1",
+    ]);
+    await expect(internals.confirmObject(intentId, "lease-1", evidence)).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Media upload lease changed before object confirmation",
+    });
+  });
+
+  it("persists retry and quarantine states with exact lease-scoped parameters", async () => {
+    const query = vi.fn(async (_sql: string, _params: unknown[] = []) => ({ rows: [], rowCount: 1 }));
+    const service = new MediaLifecycleService({ query } as unknown as Pool, {} as ObjectStoragePort);
+    const internals = service as unknown as {
+      recordSafeFailure(id: UUID, leaseOwner: string, reason: string): Promise<void>;
+      quarantine(id: UUID, leaseOwner: string, reason: string): Promise<void>;
+    };
+
+    await internals.recordSafeFailure(intentId, "lease-1", "object_put_failed");
+    await internals.quarantine(intentId, "lease-1", "provider_evidence_mismatch");
+
+    expect(query.mock.calls[0]?.[0]).toContain("state='retry_wait'");
+    expect(query.mock.calls[0]?.[0]).toContain("lease_owner=NULL,lease_expires_at=NULL");
+    expect(query.mock.calls[0]?.[0]).toContain("last_safe_error=$2");
+    expect(query.mock.calls[0]?.[0]).toContain("WHERE id=$1 AND state='uploading' AND lease_owner=$3");
+    expect(query.mock.calls[0]?.[1]).toEqual([intentId, "object_put_failed", "lease-1"]);
+    expect(query.mock.calls[1]?.[0]).toContain("state='quarantined'");
+    expect(query.mock.calls[1]?.[0]).toContain("attempt_count=attempt_count+1,last_safe_error=$2");
+    expect(query.mock.calls[1]?.[0]).toContain("lease_owner=NULL,lease_expires_at=NULL");
+    expect(query.mock.calls[1]?.[0]).toContain("WHERE id=$1 AND state='uploading' AND lease_owner=$3");
+    expect(query.mock.calls[1]?.[1]).toEqual([intentId, "provider_evidence_mismatch", "lease-1"]);
+  });
+
+  it("fails a finalized replay when committed metadata is unavailable", async () => {
+    const query = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+    const service = new MediaLifecycleService({ query } as unknown as Pool, {} as ObjectStoragePort);
+    const internals = service as unknown as {
+      finalizedResult(row: IntentRow): Promise<DurableMediaUploadResult>;
+    };
+
+    await expect(internals.finalizedResult(intent({ state: "finalized" }))).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Finalized media metadata is unavailable",
+      details: { intent_id: intentId },
+    });
+    expect(query).toHaveBeenCalledWith(
+      "SELECT * FROM documents.doc_metadata WHERE id=$1 AND lifecycle_state NOT IN ('staged','quarantined')",
+      [documentId],
+    );
+  });
+
+  it("delegates active metadata reads to the authorization path", async () => {
+    const service = new MediaLifecycleService({} as Pool, {} as ObjectStoragePort);
+    const document = {} as DocumentMetadata;
+    const authorizedActiveDocument = vi.fn(async () => document);
+    Object.assign(service, { authorizedActiveDocument });
+
+    await expect(service.activeDocument(actorId, documentId)).resolves.toBe(document);
+    expect(authorizedActiveDocument).toHaveBeenCalledWith(actorId, documentId, "metadata", true);
+  });
 });
 
 type ServiceMethods = {
