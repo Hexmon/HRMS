@@ -812,7 +812,7 @@ test("CLI stamps, passes, and fails on synthetic source and usage errors", () =>
   assert.match(invalidWorker.stderr, /absolute canonical/);
 });
 
-test("type, imports and comments are non-executable but uninstrumented runtime lines fail", () => {
+test("static imports and type syntax are non-executable while dynamic imports remain measured", () => {
   const content = "import type { X } from 'x';\n// a comment\ntype Id = string;\nlet pending: string;\ninterface Shape { value: string }\nexport type { X };\ndeclare const external: string;\nexport const value = 1;\n";
   const result = assessChangedFile("hrms_backend/src/extra.ts", new Set([1, 2, 3, 4, 5, 6, 7, 8]), content, undefined);
   assert.deepEqual(result.nonExecutable, [1, 2, 3, 4, 5, 6, 7]);
@@ -820,11 +820,22 @@ test("type, imports and comments are non-executable but uninstrumented runtime l
   assert.deepEqual(result.uncovered, ["8 (not instrumented)"]);
 
   const sideEffect = assessChangedFile("hrms_backend/src/side-effect.ts", new Set([1]), "import './register.js';\n", undefined);
-  assert.deepEqual(sideEffect.executable, [1]);
-  assert.deepEqual(sideEffect.uncovered, ["1 (not instrumented)"]);
+  assert.deepEqual(sideEffect.nonExecutable, [1]);
+  assert.deepEqual(sideEffect.uncovered, []);
   const valueImport = assessChangedFile("hrms_backend/src/import.ts", new Set([1]), "import { safe } from './unsafe.js';\n", undefined);
-  assert.deepEqual(valueImport.executable, [1]);
-  assert.deepEqual(valueImport.uncovered, ["1 (not instrumented)"]);
+  assert.deepEqual(valueImport.nonExecutable, [1]);
+  assert.deepEqual(valueImport.uncovered, []);
+  const dynamicImport = assessChangedFile("hrms_backend/src/dynamic.ts", new Set([1]),
+    "export const load = () => import('./runtime.js');\n", undefined);
+  assert.deepEqual(dynamicImport.executable, [1]);
+  assert.deepEqual(dynamicImport.uncovered, ["1 (not instrumented)"]);
+  const coveredDynamic = assessChangedFile("hrms_backend/src/dynamic.ts", new Set([1]),
+    "export const load = () => import('./runtime.js');\n", {
+      statementMap: { 0: { start: { line: 1, column: 0 }, end: { line: 1, column: 48 } } },
+      s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
+    });
+  assert.deepEqual(coveredDynamic.executable, [1]);
+  assert.deepEqual(coveredDynamic.uncovered, []);
   assert.equal(instrumentableExternal("node_modules/unsafe.js"), false);
   assert.equal(instrumentableExternal("tools/node_modules/unsafe.js"), false);
 });
@@ -1708,7 +1719,9 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   git(root, "commit", "-qm", "base");
   const base = git(root, "rev-parse", "HEAD");
   const path = "scripts/agent/probe.mjs";
-  write(root, path, "import assert from 'node:assert/strict';\nexport function decide(value) {\n  if (value) return 'yes';\n  return 'no';\n}\nassert.equal(decide(true), 'yes');\nassert.equal(decide(false), 'no');\n");
+  const dependencyPath = "scripts/agent/dependency.mjs";
+  write(root, dependencyPath, "globalThis.__dependencyInitialized = true;\n");
+  write(root, path, "import assert from 'node:assert/strict';\nimport './dependency.mjs';\nexport function decide(value) {\n  if (value) return 'yes';\n  return 'no';\n}\nassert.equal(globalThis.__dependencyInitialized, true);\nassert.equal(decide(true), 'yes');\nassert.equal(decide(false), 'no');\n");
   git(root, "add", ".");
   git(root, "commit", "-qm", "covered probe");
   const rawDirectory = join(dirname(coverageArtifactPath(root, "external")), "raw-node");
@@ -1729,9 +1742,13 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   assert.ok(entry);
   assert.ok(Object.values(entry.s).every((count) => count > 0));
   assert.ok(Object.values(entry.b).flat().every((count) => count > 0));
-  const imported = Object.entries(entry.statementMap).find(([, location]) => location.start.line === 1);
-  assert.ok(imported, "executed static import receives explicit module-evaluation coverage");
-  assert.ok(entry.s[imported[0]] > 0);
+  assert.equal(Object.values(entry.statementMap).some((location) => location.start.line === 1), false,
+    "static import syntax does not receive an invented statement count");
+  assert.equal(Object.values(entry.statementMap).some((location) => location.start.line === 2), false,
+    "side-effect import syntax does not receive an invented statement count");
+  const dependencyEntry = combined[join(root, dependencyPath)];
+  assert.ok(dependencyEntry, "the imported module's actual initialization remains instrumented");
+  assert.ok(Object.values(dependencyEntry.s).every((count) => count > 0));
   stampExternalReport(root);
   assert.equal(verify(root, base, "HEAD").pass, true);
 
@@ -1741,7 +1758,7 @@ test("raw Node V8 coverage is converted with real source and branch locations", 
   assert.throws(() => addUniqueRawCoverageEntry(unique, "covered", { path }), /Duplicate raw V8 coverage source/);
 });
 
-test("module-evaluation attribution covers value modules without inventing type-only execution", () => {
+test("module-evaluation attribution excludes static imports without hiding executable expressions", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-module-evaluation-"));
   roots.push(root);
   git(root, "init", "-q");
@@ -1767,7 +1784,7 @@ test("module-evaluation attribution covers value modules without inventing type-
   };
   const attributed = addEvaluatedModuleStatements(root, "scripts/agent/module.ts", baseEntry);
   const attributedLines = Object.values(attributed.statementMap).map((location) => location.start.line).sort((a, b) => a - b);
-  assert.deepEqual(attributedLines, [3, 4, 5, 6]);
+  assert.deepEqual(attributedLines, [4, 5, 6]);
   assert.ok(Object.values(attributed.s).every((count) => count > 0));
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {}, s: {}, fnMap: {}, f: {}, branchMap: {}, b: {} }).statementMap[0], undefined);
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {} }).statementMap[0], undefined);

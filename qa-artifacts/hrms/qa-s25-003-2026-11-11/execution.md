@@ -248,3 +248,11 @@ Focused uncommitted-worktree results:
 - `python3 -m unittest scripts.agent.tests.test_verification_scripts -v`: **16/16 passed**.
 
 No hosted rerun, numerical cumulative result, merge, deployment, ruleset change or green claim has been made for this correction. A clean committed-head wrapper run and the PR checks remain pending.
+
+## Static import denominator correction (2026-11-12)
+
+PR #125's task-local wrapper at exact clean head `cd4db65a` covered every changed decision and all runtime behavior, but reported **70/71 lines** because `hrms_backend/src/modules/ems/service.ts:24` was a new static value import declaration. Vitest/V8 produces no statement or function location for static `ImportDeclaration` syntax, so requiring a positive counter for that line creates an impossible denominator.
+
+The correction classifies every static import declaration—type, value, namespace, default, or side-effect—as non-executable syntax. It does not add a path exemption or evidence waiver. Dynamic `import(...)` expressions and their containing initializers/callbacks remain executable. The external-report converter no longer invents a module-evaluation statement for a static import line; a regression executes an imported module and confirms that module's actual initialization statement is still present and positively counted.
+
+At the first committed correction head, the focused gate passed **53/53** and the complete clean-head wrapper passed resolver **16/16**, gate **53/53**, Python verifier **30/30**, external TypeScript **16/16**, backend **551/551**, frontend **2/2**, and documentation validation for **90** files. Final numeric verification measured **1,333/1,333 changed executable lines** and **397/397 changed decision branches**. It remained intentionally red for the same ten nonnumeric workflow/configuration/mode paths; none was waived. Prior independent review does not apply to this new correction and exact final SHA.
