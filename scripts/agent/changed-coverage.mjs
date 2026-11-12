@@ -109,8 +109,8 @@ export function productionImportRisks(root) {
       }
     };
     const visit = (node) => {
-      if (ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
-      if (ts.isExportDeclaration(node) && !node.isTypeOnly && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
+      if (ts.isImportDeclaration(node) && !isPureTypeImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
+      if (ts.isExportDeclaration(node) && !isPureTypeExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
       if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference) && node.moduleReference.expression && ts.isStringLiteralLike(node.moduleReference.expression)) inspect(node.moduleReference.expression.text);
       if (ts.isCallExpression(node)) {
         const callee = node.expression.getText(source);
@@ -126,6 +126,24 @@ export function productionImportRisks(root) {
     visit(source);
   }
   return [...risks];
+}
+
+function isPureTypeImportDeclaration(node) {
+  if (!ts.isImportDeclaration(node)) return false;
+  const clause = node.importClause;
+  if (!clause) return false;
+  if (clause.isTypeOnly) return true;
+  if (clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) return false;
+  return clause.namedBindings.elements.length > 0 &&
+    clause.namedBindings.elements.every((element) => element.isTypeOnly);
+}
+
+function isPureTypeExportDeclaration(node) {
+  if (!ts.isExportDeclaration(node)) return false;
+  if (node.isTypeOnly) return true;
+  return Boolean(node.exportClause && ts.isNamedExports(node.exportClause) &&
+    node.exportClause.elements.length > 0 &&
+    node.exportClause.elements.every((element) => element.isTypeOnly));
 }
 
 export function sourceDigest(root, packageName) {
@@ -443,9 +461,7 @@ export function addEvaluatedModuleStatements(root, path, entry) {
   for (const node of source.statements) {
     const staticModule = ts.isImportDeclaration(node) ||
       (ts.isExportDeclaration(node) && Boolean(node.moduleSpecifier));
-    const typeOnly = ts.isImportDeclaration(node)
-      ? node.importClause?.isTypeOnly === true
-      : ts.isExportDeclaration(node) && node.isTypeOnly;
+    const typeOnly = isPureTypeImportDeclaration(node) || isPureTypeExportDeclaration(node);
     if ((!staticModule || typeOnly) && !ts.isExpressionStatement(node)) continue;
     const start = source.getLineAndCharacterOfPosition(node.getStart(source));
     const end = source.getLineAndCharacterOfPosition(node.end);
@@ -1029,9 +1045,9 @@ function nonExecutableLines(path, content) {
     for (let line = first; line <= last; line++) excluded.add(line);
   };
   const visit = (node) => {
-    if ((ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) ||
+    if (isPureTypeImportDeclaration(node) ||
         ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) ||
-        (ts.isExportDeclaration(node) && node.isTypeOnly) || node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)) {
+        isPureTypeExportDeclaration(node) || node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)) {
       mark(node);
       return;
     }

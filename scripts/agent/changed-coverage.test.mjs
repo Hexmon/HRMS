@@ -538,6 +538,15 @@ test("in-source test additions pass only when production module loads cannot rea
     { name: "glob", route: "export const route = import.meta.glob('./test/*.ts');\n" },
     { name: "createRequire", route: "import { createRequire } from 'node:module';\nexport const route = createRequire(import.meta.url);\n" },
     { name: "safe type import", route: "import type { Policy } from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "safe inline type import", route: "import { type Policy } from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "safe inline type re-export", route: "export { type Policy } from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "safe multiline inline type import", route: "import {\n  type Policy,\n  type OtherPolicy,\n} from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "safe multiline inline type re-export", route: "export {\n  type Policy,\n  type OtherPolicy,\n} from './test/policy';\nexport const route = true;\n", safe: true },
+    { name: "mixed inline import", route: "import { type Policy, allow } from './test/policy';\nexport const route = allow;\n" },
+    { name: "mixed inline re-export", route: "export { type Policy, allow as route } from './test/policy';\n" },
+    { name: "mixed multiline inline import", route: "import {\n  type Policy,\n  allow,\n} from './test/policy';\nexport const route = allow;\n" },
+    { name: "default with inline type import", route: "import policy, { type Policy } from './test/policy';\nexport const route = policy;\n" },
+    { name: "namespace import", route: "import * as policy from './test/policy';\nexport const route = policy;\n" },
     { name: "safe production import", route: "import { value } from './safe';\nexport const route = value;\n", safe: true, emptyConfig: true },
     { name: "safe unresolved package without aliases", route: "import 'missing-package';\nexport const route = true;\n", safe: true, emptyConfig: true },
     { name: "safe asset import", route: "import './styles.css?url';\nexport const route = true;\n", safe: true },
@@ -562,7 +571,8 @@ test("in-source test additions pass only when production module loads cannot rea
     assert.equal(result.pass, Boolean(scenario.safe), `${scenario.name}: ${result.lines.join("\n")}`);
     assert.equal(diff.outside.includes(testPath), !scenario.safe, scenario.name);
     assert.equal(diff.testSource.includes(testPath), Boolean(scenario.safe), scenario.name);
-    if (!scenario.safe) assert.ok(diff.importRisks.length > 0, scenario.name);
+    if (scenario.safe) assert.deepEqual(diff.importRisks, [], scenario.name);
+    else assert.ok(diff.importRisks.length > 0, scenario.name);
   }
 });
 
@@ -838,6 +848,29 @@ test("type-only imports are non-executable while runtime imports remain measured
   assert.deepEqual(coveredDynamic.uncovered, []);
   assert.equal(instrumentableExternal("node_modules/unsafe.js"), false);
   assert.equal(instrumentableExternal("tools/node_modules/unsafe.js"), false);
+});
+
+test("inline all-type imports and exports are non-executable without hiding mixed runtime forms", () => {
+  const cases = [
+    { source: "import { type Foo } from './types.js';\n", executable: false },
+    { source: "import {\n  type Foo,\n  type Bar,\n} from './types.js';\n", executable: false },
+    { source: "import type * as Types from './types.js';\n", executable: false },
+    { source: "export { type Foo } from './types.js';\n", executable: false },
+    { source: "export {\n  type Foo,\n  type Bar,\n} from './types.js';\n", executable: false },
+    { source: "export { type Foo };\n", executable: false },
+    { source: "import { type Foo, runtime } from './runtime.js';\n", executable: true },
+    { source: "import DefaultValue, { type Foo } from './runtime.js';\n", executable: true },
+    { source: "import * as Runtime from './runtime.js';\n", executable: true },
+    { source: "export { type Foo, runtime } from './runtime.js';\n", executable: true },
+    { source: "export * from './runtime.js';\n", executable: true },
+  ];
+  for (const [index, item] of cases.entries()) {
+    const lines = new Set(Array.from({ length: item.source.trimEnd().split("\n").length }, (_, line) => line + 1));
+    const result = assessChangedFile(`hrms_backend/src/inline-types-${index}.ts`, lines, item.source, undefined);
+    assert.equal(result.executable.length > 0, item.executable, item.source);
+    assert.equal(result.uncovered.length > 0, item.executable, item.source);
+    assert.equal(result.nonExecutable.length > 0, !item.executable, item.source);
+  }
 });
 
 test("full-suite launcher finalizes only after worker success and restores and removes temporary state", async () => {
@@ -1766,8 +1799,13 @@ test("module-evaluation attribution covers runtime imports only from positive im
   const source = [
     "import type { TypeOnly } from './types.js';",
     "export type { OtherType } from './types.js';",
+    "import { type InlineType } from './types.js';",
+    "export { type InlineExport } from './types.js';",
+    "export { type InlineLocal };",
     "import { dependency } from './dependency.js';",
     "export { dependency } from './dependency.js';",
+    "import { type InlineType, dependency as mixedDependency } from './dependency.js';",
+    "export { type InlineExport, dependency as mixedExport } from './dependency.js';",
     "dependency + 1;",
     "export const local = dependency;",
     "",
@@ -1779,12 +1817,12 @@ test("module-evaluation attribution covers runtime imports only from positive im
   git(root, "commit", "-qm", "module sources");
   const baseEntry = {
     path: join(root, "scripts/agent/module.ts"),
-    statementMap: { 0: { start: { line: 6, column: 0 }, end: { line: 6, column: 32 } } },
+    statementMap: { 0: { start: { line: 11, column: 0 }, end: { line: 11, column: 32 } } },
     s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
   };
   const attributed = addEvaluatedModuleStatements(root, "scripts/agent/module.ts", baseEntry);
   const attributedLines = Object.values(attributed.statementMap).map((location) => location.start.line).sort((a, b) => a - b);
-  assert.deepEqual(attributedLines, [3, 4, 5, 6]);
+  assert.deepEqual(attributedLines, [6, 7, 8, 9, 10, 11]);
   assert.ok(Object.values(attributed.s).every((count) => count > 0));
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {}, s: {}, fnMap: {}, f: {}, branchMap: {}, b: {} }).statementMap[0], undefined);
   assert.equal(addEvaluatedModuleStatements(root, "scripts/agent/module.ts", { statementMap: {} }).statementMap[0], undefined);
@@ -1806,15 +1844,32 @@ test("module-evaluation attribution handles runtime import forms and multiline d
     "} from './dependency.js';",
     "import * as namespaceValue from './dependency.js';",
     "import './register.js';",
-    "import type { TypeOnly } from './types.js';",
-    "export const local = defaultValue + namedValue + namespaceValue.value;",
+    "import {",
+    "  type PureOne,",
+    "  type PureTwo,",
+    "} from './types.js';",
+    "import {",
+    "  type MixedType,",
+    "  namedValue as mixedValue,",
+    "} from './dependency.js';",
+    "import DefaultWithType, { type PureOne as InlineType } from './dependency.js';",
+    "import type * as TypeNamespace from './types.js';",
+    "export {",
+    "  type PureOne,",
+    "  type PureTwo,",
+    "} from './types.js';",
+    "export {",
+    "  type PureOne,",
+    "  namedValue as mixedExport,",
+    "} from './dependency.js';",
+    "export const local = defaultValue + namedValue + namespaceValue.value + mixedValue + DefaultWithType;",
     "",
   ].join("\n"));
   git(root, "add", ".");
   git(root, "commit", "-qm", "import forms");
   const entry = addEvaluatedModuleStatements(root, path, {
     path: join(root, path),
-    statementMap: { 0: { start: { line: 7, column: 0 }, end: { line: 7, column: 72 } } },
+    statementMap: { 0: { start: { line: 24, column: 0 }, end: { line: 24, column: 110 } } },
     s: { 0: 1 }, fnMap: {}, f: {}, branchMap: {}, b: {},
   });
   const locations = Object.values(entry.statementMap);
@@ -1822,6 +1877,11 @@ test("module-evaluation attribution handles runtime import forms and multiline d
   assert.ok(locations.some((location) => location.start.line === 4));
   assert.ok(locations.some((location) => location.start.line === 5));
   assert.equal(locations.some((location) => location.start.line === 6), false);
+  assert.ok(locations.some((location) => location.start.line === 10 && location.end.line === 13));
+  assert.ok(locations.some((location) => location.start.line === 14));
+  assert.equal(locations.some((location) => location.start.line === 15), false);
+  assert.equal(locations.some((location) => location.start.line === 16), false);
+  assert.ok(locations.some((location) => location.start.line === 20 && location.end.line === 23));
   assert.ok(Object.values(entry.s).every((count) => count > 0));
 });
 
