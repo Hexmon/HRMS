@@ -32,7 +32,7 @@ export interface DurableMediaUploadInput {
   expectedPointerDocumentId?: UUID | null;
 }
 
-interface IntentRow {
+export interface IntentRow {
   id: UUID;
   company_id: UUID;
   actor_user_id: UUID;
@@ -719,7 +719,7 @@ async function assertParentAuthorization(
   throw conflict("Unsupported durable media parent type");
 }
 
-function assertExpectedParent(
+export function assertExpectedParent(
   row: { version?: number; logo_document_id?: UUID | null; profile_photo_document_id?: UUID | null } | undefined,
   input: DurableMediaUploadInput,
 ): void {
@@ -766,7 +766,7 @@ async function publishParentPointer(client: PoolClient, intent: IntentRow): Prom
   return null;
 }
 
-function requestFingerprint(input: DurableMediaUploadInput, checksum: string): string {
+export function requestFingerprint(input: DurableMediaUploadInput, checksum: string): string {
   return sha256(Buffer.from(JSON.stringify({
     operation: input.operation,
     parent_type: input.parentType,
@@ -784,7 +784,7 @@ function requestFingerprint(input: DurableMediaUploadInput, checksum: string): s
   })));
 }
 
-function headMatchesIntent(
+export function headMatchesIntent(
   evidence: NonNullable<Awaited<ReturnType<ObjectStoragePort["statObject"]>>>,
   intent: IntentRow,
 ): boolean {
@@ -799,7 +799,7 @@ function sha256(value: Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function mapDocument(row: Record<string, any>): DocumentMetadata {
+export function mapDocument(row: Record<string, any>): DocumentMetadata {
   return {
     id: row.id,
     company_id: row.company_id,
@@ -825,7 +825,7 @@ function mapDocument(row: Record<string, any>): DocumentMetadata {
   };
 }
 
-function durableReadAllowed(row: Record<string, any>, mode: "metadata" | "raw"): boolean {
+export function durableReadAllowed(row: Record<string, any>, mode: "metadata" | "raw"): boolean {
   const roles = Array.isArray(row.roles) ? row.roles as string[] : [];
   const has = (role: string) => roles.includes(role);
   if (row.document_type === "company_logo") return row.current_logo === true;
