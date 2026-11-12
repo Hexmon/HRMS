@@ -16,6 +16,11 @@ export interface MissingEmployeeProof {
   category: string;
 }
 
+export function isEmployeeProofPurpose(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return EMPLOYEE_PROOF_PURPOSES.some(({ documentType }) => documentType === normalized);
+}
+
 export function missingEmployeeProofs(
   existingDocumentTypes: readonly string[],
 ): MissingEmployeeProof[] {

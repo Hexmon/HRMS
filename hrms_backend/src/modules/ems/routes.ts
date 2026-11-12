@@ -14,19 +14,14 @@ import {
   paginationQuerySchema
 } from "#shared";
 import { conflict, unauthorized } from "../../platform/errors.js";
-import { EmsService } from "./service.js";
+import { EmsService, employeeProofDocumentTypes } from "./service.js";
 import { DocumentService, presentDocument } from "../documents/service.js";
 import { MediaLifecycleService } from "../documents/media-lifecycle.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
 const userIdParamSchema = z.object({ user_id: z.uuid() });
 const mediaIdempotencyKeySchema = z.string().trim().min(8).max(200);
-const employeeProofTypeSchema = z.enum([
-  "identity_proof",
-  "address_proof",
-  "education_proof",
-  "experience_proof",
-]);
+const employeeProofTypeSchema = z.enum(employeeProofDocumentTypes);
 
 const emsQuerySchema = paginationQuerySchema.extend({
   status: z.string().max(64).optional(),
@@ -35,7 +30,7 @@ const emsQuerySchema = paginationQuerySchema.extend({
   department_id: z.uuid().optional()
 });
 const emsDocumentQuerySchema = paginationQuerySchema.extend({
-  document_type: z.string().max(80).optional()
+  document_type: employeeProofTypeSchema.optional()
 });
 const emsDocumentUploadSchema = documentUploadSchema.omit({
   business_object_type: true,

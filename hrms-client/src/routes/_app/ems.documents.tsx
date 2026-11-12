@@ -40,7 +40,7 @@ import { useAuth } from "@/lib/auth";
 import { isUuid, pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
 import { queryKeys } from "@/shared/query";
 import { prepareDocumentUploadFile, uploadPolicyAccept } from "@/shared/uploads/documents";
-import { missingEmployeeProofs } from "@/shared/uploads/employee-proofs";
+import { isEmployeeProofPurpose, missingEmployeeProofs } from "@/shared/uploads/employee-proofs";
 import { createMediaIdempotencyKey } from "@/shared/uploads/media-command";
 
 export const Route = createFileRoute("/_app/ems/documents")({
@@ -131,10 +131,12 @@ function MyDocuments() {
   const uploadMutation = useEmsDocumentMutation(user?.id);
   const deleteMutation = useDocumentDeleteMutation();
   const apiDocumentRows = pageItems(documentsQuery.data);
-  const mappedApiDocuments: Doc[] = mapApiDocuments(apiDocumentRows).map((document) => ({
-    ...document,
-    documentType: document.category,
-  }));
+  const mappedApiDocuments: Doc[] = mapApiDocuments(apiDocumentRows)
+    .filter((document) => isEmployeeProofPurpose(document.category))
+    .map((document) => ({
+      ...document,
+      documentType: document.category,
+    }));
   const docs = apiEnabled
     ? [
         ...mappedApiDocuments,

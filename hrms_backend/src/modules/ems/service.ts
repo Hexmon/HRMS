@@ -45,6 +45,15 @@ export type EmsDocumentUploadInput = Omit<DocumentUploadBody, "business_object_t
   replace_document_id?: UUID;
 };
 
+export const employeeProofDocumentTypes = [
+  "identity_proof",
+  "address_proof",
+  "education_proof",
+  "experience_proof",
+] as const;
+
+const employeeProofDocumentTypeSet = new Set<string>(employeeProofDocumentTypes);
+
 const FIELD_LABELS: Record<string, string> = {
   personal_email: "Personal email",
   phone: "Phone",
@@ -478,7 +487,8 @@ export class EmsService {
       .filter((document) => ["employee", "core_user"].includes(document.business_object_type) &&
         document.business_object_id === userId && !document.deleted_at &&
         document.lifecycle_state !== "quarantined" && document.lifecycle_state !== "replaced" &&
-        document.lifecycle_state !== "tombstoned")
+        document.lifecycle_state !== "tombstoned" &&
+        employeeProofDocumentTypeSet.has(document.document_type))
       .filter((document) => canAccessDocument(authorizedActor, document, "read"));
     const filtered = query.document_type
       ? visible.filter((document) => document.document_type === query.document_type)

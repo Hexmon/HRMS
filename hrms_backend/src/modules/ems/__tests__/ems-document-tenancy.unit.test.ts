@@ -26,6 +26,10 @@ describe("EMS employee-document tenant boundary", () => {
 
   it("allows a durable read but fails upload closed without the PostgreSQL coordinator", async () => {
     const employee = await loginAs(app, "E1");
+    await new EmsService(store).attachEmployeeDocument(employee.user, employee.user.id, {
+      ...uploadPayload(),
+      document_type: "profile_photo",
+    });
     await expect(
       new EmsService(store).listEmployeeDocuments(employee.user, employee.user.id, {
         page: 1,
