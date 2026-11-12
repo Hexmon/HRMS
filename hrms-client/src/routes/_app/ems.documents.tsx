@@ -119,7 +119,7 @@ function statusToBadge(s: DocStatus) {
   return <StatusBadge status={m.status} label={m.label} />;
 }
 
-function MyDocuments() {
+export function MyDocuments() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const apiEnabled = useApiRouteEnabled(["/ems", "/documents"]);
@@ -219,21 +219,22 @@ function MyDocuments() {
       formData.set("file_name", prepared.file.name);
       formData.set("mime_type", prepared.file.type || "application/octet-stream");
       formData.set("size_bytes", String(prepared.file.size));
-      if (target && isUuid(target.id)) {
-        formData.set("replace_document_id", target.id);
+      const isReplacement = Boolean(target && isUuid(target.id));
+      if (isReplacement) {
+        formData.set("replace_document_id", target!.id);
       }
       const idempotencyKey = await createMediaIdempotencyKey({
         operation: "create_employee_document",
         parentId: user!.id,
         expectedVersion: null,
-        expectedPointerDocumentId: target && isUuid(target.id) ? target.id : null,
+        expectedPointerDocumentId: isReplacement ? target!.id : null,
         file: prepared.file,
         fileName: prepared.file.name,
         mimeType: prepared.file.type,
         documentType,
       });
       await uploadMutation.mutateAsync({ input: formData, idempotencyKey });
-      toast.success(target ? "Replacement uploaded" : "Document uploaded", {
+      toast.success(isReplacement ? "Replacement uploaded" : "Document uploaded", {
         description: `${prepared.file.name} is pending verification.`,
       });
       setUploadTarget(null);
