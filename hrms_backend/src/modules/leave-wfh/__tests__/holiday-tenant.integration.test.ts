@@ -171,6 +171,7 @@ describe("holiday tenant transaction boundary", () => {
   it("uses current SQL roles, preserves supplied version checks, and rolls back a row update if its event cannot commit", async () => {
     const admin = await loginAs(app, "ADM");
     const companyA = app.store.userSessionPreferences.find((row) => row.user_id === admin.user.id)?.company_id;
+    expect(companyA).toBeTruthy();
     const missingEditId = randomUUID();
     const missingEdit = await app.inject({ method: "PUT", url: `/api/v1/holidays/${missingEditId}`,
       headers: authHeader(admin.token), payload: holidayBody("Missing Edit", 1) });
@@ -230,6 +231,24 @@ describe("holiday tenant transaction boundary", () => {
     const freshRead = await other.inject({ method: "GET", url: "/api/v1/holidays?year=2026&page=1&page_size=25", headers: authHeader(admin.token) });
     expect(freshRead.statusCode).toBe(200);
     expect(freshRead.json().holidays.some((row: { id: string }) => row.id === deniedId)).toBe(false);
+
+    await pool.query("UPDATE core.user_roles SET status = 'active' WHERE user_id = $1 AND role_key = $2", [admin.user.id, Roles.Admin]);
+    await pool.query("UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1", [companyA]);
+    const inactiveCompanyId = randomUUID();
+    const inactiveCompany = await app.inject({ method: "PUT", url: `/api/v1/holidays/${inactiveCompanyId}`,
+      headers: authHeader(admin.token), payload: holidayBody("Inactive Company") });
+    expect(inactiveCompany.statusCode).toBe(400);
+    expect(await holiday(inactiveCompanyId)).toBeUndefined();
+    expect(await events(inactiveCompanyId)).toEqual([]);
+
+    await pool.query("UPDATE platform.company_profiles SET status = 'active' WHERE id = $1", [companyA]);
+    await pool.query("UPDATE core.users SET employment_status = 'suspended' WHERE id = $1", [admin.user.id]);
+    const suspendedUserId = randomUUID();
+    const suspendedUser = await app.inject({ method: "PUT", url: `/api/v1/holidays/${suspendedUserId}`,
+      headers: authHeader(admin.token), payload: holidayBody("Suspended User") });
+    expect(suspendedUser.statusCode).toBe(401);
+    expect(await holiday(suspendedUserId)).toBeUndefined();
+    expect(await events(suspendedUserId)).toEqual([]);
   });
 
   it("serializes competing same-company edits and a stale instance full flush cannot revert the committed holiday", async () => {
