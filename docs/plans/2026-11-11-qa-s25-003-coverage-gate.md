@@ -65,3 +65,7 @@
 
 - Task branch: sprint-25/qa-s25-003; parent/fork 74cb28d0; PR must target release-01 as draft until bootstrap is merged/reconciled.
 - Owner: Anurag Kumar. Lead owns commit, push, tracker and PR. This plan alone is not execution evidence.
+
+## 2026-11-13 semantic-contract follow-up
+
+The prior bootstrap-red disposition is superseded for the ten paths actually changed by this PR. `scripts/agent/changed-coverage.mjs` now runs trusted, path-specific semantic contracts for both workflows, both manifests, both lockfiles, both Vitest configurations, `.gitignore`, and `scripts/agent/verify-change.sh`. The contracts validate behavior-affecting structure and fail closed on disabled jobs, lifecycle hooks, mutable trusted actions, malformed lockfiles/configuration, unsafe ignore rules, or shell syntax/plan failures. Unknown nonnumeric paths remain unmeasured and red. The implementation is covered by the changed-coverage regression suite and must still be verified at the pushed exact head by both ordinary and trusted CI.

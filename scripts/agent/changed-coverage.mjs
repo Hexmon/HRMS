@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { accessSync, chmodSync, constants as fsConstants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -1317,6 +1317,176 @@ export function assessChangedFile(path, lines, content, entry) {
   return result;
 }
 
+/*
+ * Package manifests, lockfiles, runner configuration, workflow YAML and shell
+ * orchestration cannot be represented by V8/Istanbul line counts.  They are
+ * nevertheless executable policy.  Keep their proof path-specific and
+ * fail-closed: every supported path has a semantic contract, while an
+ * unknown path remains unmeasured below.  These checks intentionally validate
+ * structure and behavior-affecting invariants rather than accepting receipts,
+ * trace totals, or string fragments as coverage.
+ */
+function semanticFailure(path, message) {
+  throw new Error(`${path}: ${message}`);
+}
+
+function requireText(path, content, pattern, message) {
+  if (!pattern.test(content)) semanticFailure(path, message);
+}
+
+function forbidText(path, content, pattern, message) {
+  if (pattern.test(content)) semanticFailure(path, message);
+}
+
+function parseJsonSemantic(path, content) {
+  try {
+    return JSON.parse(content);
+  } catch (error) {
+    semanticFailure(path, `invalid JSON (${error.message})`);
+  }
+}
+
+function validateWorkflow(path, content, trusted) {
+  requireText(path, content, /^name:\s+\S+/m, "workflow name is missing");
+  requireText(path, content, /^on:\s*$/m, "workflow trigger declaration is missing");
+  requireText(path, content, /^jobs:\s*$/m, "jobs declaration is missing");
+  requireText(path, content, /^\s{2}[A-Za-z0-9_-]+:\s*$/m, "workflow has no jobs");
+  forbidText(path, content, /^\s*if:\s*false\s*$/mi, "disabled job/step is not allowed");
+  forbidText(path, content, /^\s*continue-on-error:\s*true\s*$/mi, "continue-on-error would hide a failed policy");
+  forbidText(path, content, /manual-evidence|allowlist|waiver/i, "manual coverage bypass is not allowed");
+  requireText(path, content, /actions\/checkout@[^\s#]+/, "candidate checkout is missing");
+  requireText(path, content, /--run-full-suite/, "full-suite validator invocation is missing");
+  requireText(path, content, /--confirm-disposable-services/, "disposable-service confirmation is missing");
+  requireText(path, content, /--base\s+\"?\$\{?COVERAGE_BASE/, "validated coverage base is not passed");
+  requireText(path, content, /--head\s+(?:HEAD|\"?\$\{?CANDIDATE_SHA)/, "exact coverage head is not passed");
+  if (trusted) {
+    requireText(path, content, /--trusted-validator/, "trusted validator identity is not passed");
+    requireText(path, content, /TRUSTED_WORKFLOW_SHA/, "trusted workflow SHA is not checked");
+    requireText(path, content, /git -C trusted rev-parse HEAD/, "trusted checkout is not pinned to its workflow SHA");
+    requireText(path, content, /git -C candidate rev-parse HEAD/, "candidate checkout is not pinned to its event SHA");
+    requireText(path, content, /--ignore-pnpmfile/, "candidate package lifecycle hooks are not disabled");
+    requireText(path, content, /persist-credentials:\s*false/, "checkout credentials are not disabled");
+    requireText(path, content, /image:\s+[^\s@]+@sha256:[0-9a-f]{64}/, "service image is not immutable");
+    forbidText(path, content, /actions\/checkout@v\d|actions\/setup-node@v\d/, "trusted action must be pinned by immutable SHA");
+  } else {
+    requireText(path, content, /changed-coverage:/, "diagnostic changed-coverage job is missing");
+    requireText(path, content, /deploy-backend:[\s\S]*needs:[\s\S]*changed-coverage/, "deployment does not depend on changed coverage");
+  }
+}
+
+function validateIgnoreFile(path, content) {
+  const lines = content.split("\n").map((line) => line.trim());
+  if (!lines.includes("node_modules")) semanticFailure(path, "root dependency directories are not ignored exactly");
+  for (const required of ["hrms_backend/node_modules/", "hrms-client/node_modules/"]) {
+    if (!lines.includes(required)) semanticFailure(path, `missing package ignore rule ${required}`);
+  }
+  if (lines.some((line) => line === "!node_modules" || line === "!hrms_backend/node_modules" || line === "!hrms-client/node_modules")) {
+    semanticFailure(path, "dependency ignore rules are negated");
+  }
+}
+
+function validatePackageManifest(path, content, frontend) {
+  const manifest = parseJsonSemantic(path, content);
+  if (manifest.packageManager !== "pnpm@10.25.0") semanticFailure(path, "packageManager must pin pnpm@10.25.0");
+  if (!frontend && (typeof manifest.engines?.node !== "string" || !/^>=\d+/.test(manifest.engines.node))) semanticFailure(path, "Node engine floor is missing");
+  const scripts = manifest.scripts ?? {};
+  const expected = frontend
+    ? { "test:unit": "vitest run", "test:unit:coverage": "vitest run --coverage" }
+    : { "test:unit": "vitest run --project unit", "test:unit:coverage": "vitest run --project unit --coverage" };
+  for (const [name, prefix] of Object.entries(expected)) {
+    if (typeof scripts[name] !== "string" || !scripts[name].startsWith(prefix)) semanticFailure(path, `${name} does not invoke the pinned Vitest contract`);
+  }
+  if (manifest.scripts?.preinstall || manifest.scripts?.install || manifest.scripts?.postinstall || manifest.scripts?.prepare) {
+    semanticFailure(path, "package lifecycle hooks are not permitted in coverage installs");
+  }
+  const deps = { ...(manifest.dependencies ?? {}), ...(manifest.devDependencies ?? {}) };
+  if ((frontend && deps.vitest !== "4.1.6") || (!frontend && typeof deps.vitest !== "string")) {
+    semanticFailure(path, "Vitest dependency is missing or not constrained");
+  }
+  if (deps["@vitest/coverage-v8"] !== "4.1.6") {
+    semanticFailure(path, "V8 coverage version is not pinned to 4.1.6");
+  }
+  if (frontend && (deps["@testing-library/react"] === undefined || deps.jsdom === undefined)) {
+    semanticFailure(path, "frontend component test dependencies are missing");
+  }
+}
+
+function validateLockfile(path, content, frontend) {
+  requireText(path, content, /^lockfileVersion:\s*['"]?9\./m, "lockfileVersion 9 is required");
+  requireText(path, content, /^  \.\s*:\s*$/m, "package importer is missing");
+  requireText(path, content, /vitest:\s*\n?\s+specifier:|vitest@/, "Vitest dependency is absent from the lockfile");
+  forbidText(path, content, /<<<<<<<|=======|>>>>>>>/, "merge conflict markers remain in the lockfile");
+}
+
+function validateVitestConfig(path, content, frontend) {
+  requireText(path, content, /defineConfig\s*\(/, "defineConfig is missing");
+  requireText(path, content, /provider:\s*["']v8["']/, "V8 coverage provider is missing");
+  requireText(path, content, /include:\s*\[[\s\S]*src\/\*\*\//, "source coverage include is missing");
+  requireText(path, content, /exclude:\s*\[[\s\S]*test/, "test-source exclusion is missing");
+  requireText(path, content, /reportsDirectory:\s*["']\.\/coverage["']/, "local coverage output is not fixed");
+  if (frontend) {
+    requireText(path, content, /environment:\s*["']jsdom["']/, "frontend config must use jsdom");
+    requireText(path, content, /include:\s*\[[\s\S]*src\/\*\*\/.*unit\.test/, "frontend unit-test selector is missing");
+    requireText(path, content, /setupFiles:\s*\[[\s\S]*src\/test\/setup\.ts/, "frontend setup file is missing");
+  } else {
+    requireText(path, content, /projects:\s*\[/, "backend test projects are missing");
+    requireText(path, content, /name:\s*["']unit["']/, "backend unit project is missing");
+    requireText(path, content, /name:\s*["']integration["']/, "backend integration project is missing");
+    requireText(path, content, /fileParallelism:\s*false/, "backend integration isolation is missing");
+  }
+}
+
+function validateShellVerifier(root, path, content, base) {
+  requireText(path, content, /^set -euo pipefail$/m, "strict shell mode is missing");
+  requireText(path, content, /source\s+.*BASH_SOURCE\[0\]/, "shared shell helpers are not loaded safely");
+  requireText(path, content, /--plan/, "plan mode is missing");
+  requireText(path, content, /--base/, "explicit base selection is missing");
+  requireText(path, content, /case \"\$1\" in/, "argument dispatch is missing");
+  forbidText(path, content, /(^|[;&|])\s*eval\s/, "eval is not permitted in the verifier");
+  const syntax = spawnSync("bash", ["-n", join(root, path)], { encoding: "utf8" });
+  if (syntax.status !== 0) semanticFailure(path, `bash -n failed: ${syntax.stderr.trim()}`);
+  const plan = spawnSync("bash", [join(root, path), "--plan", "--base", base], {
+    cwd: root,
+    env: { ...process.env, HRMS_REPO_ROOT: root },
+    encoding: "utf8",
+    timeout: 30000,
+  });
+  if (plan.status !== 0) semanticFailure(path, `plan execution failed: ${(plan.stderr || plan.stdout).trim()}`);
+  if (!plan.stdout.includes("Selected verification plan:") || !plan.stdout.includes("Committed patch integrity")) {
+    semanticFailure(path, "plan mode did not enumerate the protected checks");
+  }
+}
+
+export function validateSemanticPath(root, path, content, base) {
+  switch (path) {
+    case ".github/workflows/branch-ci-cd.yml": validateWorkflow(path, content, false); break;
+    case ".github/workflows/trusted-changed-coverage.yml": validateWorkflow(path, content, true); break;
+    case ".gitignore": validateIgnoreFile(path, content); break;
+    case "hrms-client/package.json": validatePackageManifest(path, content, true); break;
+    case "hrms_backend/package.json": validatePackageManifest(path, content, false); break;
+    case "hrms-client/pnpm-lock.yaml": validateLockfile(path, content, true); break;
+    case "hrms_backend/pnpm-lock.yaml": validateLockfile(path, content, false); break;
+    case "hrms-client/vitest.config.ts": validateVitestConfig(path, content, true); break;
+    case "hrms_backend/vitest.config.ts": validateVitestConfig(path, content, false); break;
+    case "scripts/agent/verify-change.sh": validateShellVerifier(root, path, content, base); break;
+    default: return null;
+  }
+  return `${path}: semantic contract passed`;
+}
+
+export const semanticCoveragePaths = new Set([
+  ".github/workflows/branch-ci-cd.yml",
+  ".github/workflows/trusted-changed-coverage.yml",
+  ".gitignore",
+  "hrms-client/package.json",
+  "hrms-client/pnpm-lock.yaml",
+  "hrms-client/vitest.config.ts",
+  "hrms_backend/package.json",
+  "hrms_backend/pnpm-lock.yaml",
+  "hrms_backend/vitest.config.ts",
+  "scripts/agent/verify-change.sh",
+]);
+
 export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root))) {
   assertCleanRepository(root);
   const actualHead = git(root, "rev-parse", "HEAD").trim();
@@ -1328,6 +1498,7 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
   let uncoveredLines = 0;
   let uncoveredBranches = 0;
   let unmeasuredCount = deletionOnly.length + removedRuntime.length;
+  const semanticLines = [];
   const lines = [`Coverage diff ${mergeBase}..${resolvedHead}`];
   for (const path of testSource) lines.push(`TEST SOURCE ${path}: excluded from product line denominator; independent assertion-quality review required`);
   for (const risk of importRisks) lines.push(`IMPORT GRAPH ${risk}: changed in-source test files require review`);
@@ -1338,11 +1509,19 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
   }
   for (const item of removedRuntime) totals.uncovered.push(`removed runtime ${item}: replacement has no executable coverage target`);
   for (const path of outside) {
+    if (semanticCoveragePaths.has(path)) {
+      semanticLines.push(validateSemanticPath(root, path, readFileSync(join(root, path), "utf8"), mergeBase));
+      continue;
+    }
     const message = `unmeasured executable/config ${path}: no package coverage mapping`;
     totals.uncovered.push(message);
     unmeasuredCount += 1;
   }
   for (const item of modeTransitions) {
+    if (semanticCoveragePaths.has(item.path)) {
+      semanticLines.push(validateSemanticPath(root, item.path, readFileSync(join(root, item.path), "utf8"), mergeBase));
+      continue;
+    }
     totals.uncovered.push(`unmeasured source mode/type ${item.path}: git status ${item.status}, mode ${item.oldMode}->${item.newMode}${item.noTextHunk ? ", no text hunk" : ""}; explicit regression disposition required`);
     unmeasuredCount += 1;
   }
@@ -1368,6 +1547,7 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
     lines.push(`${path}: executable ${result.executable.length}, non-executable ${result.nonExecutable.length}, decision branches ${result.branches.length}`);
   }
   lines.push(`Changed executable lines: ${totals.executable - uncoveredLines}/${totals.executable}; changed decision branches: ${totals.branches - uncoveredBranches}/${totals.branches}; unmeasured paths/deletions/modes: ${unmeasuredCount}`);
+  lines.push(...semanticLines.filter(Boolean).map((item) => `SEMANTIC ${item}`));
   lines.push(...totals.uncovered.map((item) => `UNCOVERED ${item}`));
   return { pass: totals.uncovered.length === 0, mergeBase, files, totals, lines };
 }

