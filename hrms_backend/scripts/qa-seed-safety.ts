@@ -1,9 +1,14 @@
-interface QaSeedEnvironment {
+export interface QaSeedEnvironment {
   APP_ENV?: string;
   NODE_ENV?: string;
   DATABASE_URL?: string;
   HRMS_QA_SEED_ALLOW?: string;
   HRMS_QA_SEED_CONFIRM_DATABASE?: string;
+}
+
+interface QaSeedPhases {
+  releaseSeed: () => Promise<unknown>;
+  extrasSeed: () => Promise<unknown>;
 }
 
 export function requireQaSeedTarget(env: QaSeedEnvironment): URL {
@@ -40,4 +45,13 @@ export function requireQaPersonaIdentity(
       `QA seed employee-code collision for ${String(employeeCode)}; existing identity does not match the deterministic persona.`,
     );
   }
+}
+
+export async function runGuardedQaSeed(
+  env: QaSeedEnvironment,
+  phases: QaSeedPhases,
+): Promise<void> {
+  requireQaSeedTarget(env);
+  await phases.releaseSeed();
+  await phases.extrasSeed();
 }
