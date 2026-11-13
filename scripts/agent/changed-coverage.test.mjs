@@ -124,6 +124,10 @@ test("semantic contracts fail closed for each workflow, manifest, lock, runner a
   ]);
   assert.throws(() => validateSemanticPath(root, "hrms-client/package.json", "{invalid", "origin/release-01"), /invalid JSON/);
   assert.throws(() => validateSemanticPath(root, ".gitignore", `${read(".gitignore")}\n!node_modules\n`, "origin/release-01"), /negated/);
+  for (const negation of ["!node_modules", "!hrms_backend/node_modules", "!hrms-client/node_modules"]) {
+    assert.throws(() => validateSemanticPath(root, ".gitignore", `${read(".gitignore")}\n${negation}\n`, "origin/release-01"), /negated/);
+  }
+  assert.throws(() => validateSemanticPath(root, "hrms-client/package.json", JSON.stringify({ packageManager: "pnpm@10.25.0" }), "origin/release-01"), /test:unit/);
   expectMutation("hrms_backend/package.json", [
     ["pnpm@10.25.0", "pnpm@9.0.0"],
     ["\"test:unit\": \"vitest run --project unit\"", "\"test:unit\": \"node tests.js\""],
@@ -172,7 +176,23 @@ test("semantic contracts fail closed for each workflow, manifest, lock, runner a
   assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell.replace('case "$1" in', 'case "$2" in'), "origin/release-01"), /argument dispatch/);
   assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", `${shell}\neval dangerous\n`, "origin/release-01"), /eval/);
   assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", `${shell}\nif (\n`, "origin/release-01"), /bash -n failed/);
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", `${shell}\nexit 1\n`, "origin/release-01"), /plan execution failed/);
   assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell.replace("Selected verification plan:", "Other plan:"), "origin/release-01"), /protected checks/);
+  assert.equal(validateSemanticPath(root, "unknown.config", "", "origin/release-01"), null);
+
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "hrms-semantic-mode-"));
+  roots.push(fixtureRoot);
+  write(fixtureRoot, "scripts/agent/verify-change.sh", shell);
+  write(fixtureRoot, "scripts/agent/lib.sh", read("scripts/agent/lib.sh"));
+  chmodSync(join(fixtureRoot, "scripts/agent/verify-change.sh"), 0o755);
+  git(fixtureRoot, "init", "-q");
+  git(fixtureRoot, "add", ".");
+  git(fixtureRoot, "commit", "-qm", "semantic base");
+  const fixtureBase = git(fixtureRoot, "rev-parse", "HEAD");
+  chmodSync(join(fixtureRoot, "scripts/agent/verify-change.sh"), 0o644);
+  git(fixtureRoot, "add", "-A");
+  git(fixtureRoot, "commit", "-qm", "semantic mode change");
+  assert.equal(verify(fixtureRoot, fixtureBase, "HEAD").pass, true);
 });
 
 function writeCoverage(root, packageName, content, name = "coverage-final.json") {
