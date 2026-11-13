@@ -790,7 +790,6 @@ export async function prepareCoverageIntegrationServices(environment, token, dep
   }
 
   const pool = dependencies.pool ?? new PostgresPool({ connectionString: environment.TEST_DATABASE_URL });
-  let databaseMarked = false;
   try {
     const client = await pool.connect();
     try {
@@ -817,7 +816,6 @@ export async function prepareCoverageIntegrationServices(environment, token, dep
       await client.query("CREATE TABLE public.hrms_coverage_run_guard (token text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now())");
       await client.query("INSERT INTO public.hrms_coverage_run_guard (token) VALUES ($1)", [token]);
       await client.query("COMMIT");
-      databaseMarked = true;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
@@ -846,10 +844,7 @@ export async function prepareCoverageIntegrationServices(environment, token, dep
     }
   } catch (error) {
     await valkey.quit().catch(() => valkey.disconnect());
-    if (databaseMarked) {
-      throw new Error(`${error.message}; recreate the disposable PostgreSQL container before retrying`);
-    }
-    throw error;
+    throw new Error(`${error.message}; recreate the disposable PostgreSQL container before retrying`, { cause: error });
   }
 
   return async () => {
@@ -1068,7 +1063,7 @@ export async function runFullCoverageGate(root, base, head = "HEAD", options = {
       cleanupErrors.push(error);
     }
     try {
-      if (!preserveOutput) rmSync(outputRoot, { recursive: true, force: true });
+      if (!preserveOutput) (options.cleanupOutput ?? rmSync)(outputRoot, { recursive: true, force: true });
     } catch (error) {
       cleanupErrors.push(error);
     }
@@ -1385,30 +1380,39 @@ export async function runFullSuiteCommand(root, args, dependencies = {}) {
   return result.pass ? 0 : 1;
 }
 
+export async function runFullCoverageWorkerCommand(root, args, dependencies = {}) {
+  const value = (name) => {
+    const index = args.indexOf(name);
+    return index >= 0 ? args[index + 1] : undefined;
+  };
+  const outputRoot = value("--coverage-output");
+  if (!outputRoot || !isAbsolute(outputRoot) || resolve(outputRoot) !== outputRoot) {
+    throw new Error("Full coverage worker requires an absolute canonical --coverage-output path");
+  }
+  const expectedHead = value("--expected-head");
+  const serviceClaimToken = value("--service-claim-token");
+  const tools = { node: value("--node"), pnpm: value("--pnpm"), python: value("--python"), bash: value("--bash") };
+  if (!expectedHead || !serviceClaimToken || Object.values(tools).some((tool) => !tool || !isAbsolute(tool))) {
+    throw new Error("Full coverage worker requires exact head, parent service claim and absolute trusted tool paths");
+  }
+  const workerEnvironment = sanitizedCoverageEnvironment(outputRoot);
+  (dependencies.replaceEnvironment ?? replaceProcessEnvironment)(workerEnvironment);
+  const validateExecutable = dependencies.validateExecutable ?? validateTrustedExecutable;
+  for (const [name, path] of Object.entries(tools)) {
+    try { validateExecutable(path); } catch { throw new Error(`Full coverage worker received invalid ${name} executable`); }
+  }
+  try {
+    await (dependencies.verifyClaim ?? verifyCoverageIntegrationServiceClaim)(workerEnvironment, serviceClaimToken);
+  } catch (error) {
+    throw new Error(`Full coverage worker service claim verification failed: ${error.message}`, { cause: error });
+  }
+  return (dependencies.runWorker ?? runFullCoverageWorker)(root, outputRoot, expectedHead, tools);
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     if (process.argv.includes("--full-suite-worker")) {
-      const outputRoot = argument("--coverage-output");
-      if (!outputRoot || !isAbsolute(outputRoot) || resolve(outputRoot) !== outputRoot) {
-        throw new Error("Full coverage worker requires an absolute canonical --coverage-output path");
-      }
-      const expectedHead = argument("--expected-head");
-      const serviceClaimToken = argument("--service-claim-token");
-      const tools = { node: argument("--node"), pnpm: argument("--pnpm"), python: argument("--python"), bash: argument("--bash") };
-      if (!expectedHead || !serviceClaimToken || Object.values(tools).some((value) => !value || !isAbsolute(value))) {
-        throw new Error("Full coverage worker requires exact head, parent service claim and absolute trusted tool paths");
-      }
-      const workerEnvironment = sanitizedCoverageEnvironment(outputRoot);
-      replaceProcessEnvironment(workerEnvironment);
-      for (const [name, path] of Object.entries(tools)) {
-        try { validateTrustedExecutable(path); } catch { throw new Error(`Full coverage worker received invalid ${name} executable`); }
-      }
-      try {
-        await verifyCoverageIntegrationServiceClaim(workerEnvironment, serviceClaimToken);
-      } catch (error) {
-        throw new Error(`Full coverage worker service claim verification failed: ${error.message}`, { cause: error });
-      }
-      runFullCoverageWorker(repoRoot, outputRoot, expectedHead, tools);
+      await runFullCoverageWorkerCommand(repoRoot, process.argv.slice(2));
     } else if (process.argv.includes("--run-full-suite")) {
       process.exitCode = await runFullSuiteCommand(repoRoot, process.argv.slice(2));
     } else if (process.argv.includes("--build-external-report")) {

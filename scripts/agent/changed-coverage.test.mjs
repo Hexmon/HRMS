@@ -21,6 +21,7 @@ import {
   verifyCoverageIntegrationServiceClaim,
   removeExactCommitCheckout,
   runFullCoverageGate,
+  runFullCoverageWorkerCommand,
   runFullCoverageWorker,
   runFullSuiteCommand,
   resolveCoveragePython,
@@ -1007,6 +1008,43 @@ test("full-suite preserves the primary failure when independent cleanup also fai
   assert.match(caught.cause.errors[0].message, /service cleanup failed/);
 });
 
+test("full-suite reports checkout, service and output cleanup failures without masking the primary failure", async () => {
+  const { root, base } = fixture();
+  let caught;
+  try {
+    await runFullCoverageGate(root, base, "HEAD", {
+      ...fixtureCheckout,
+      prepareServices: async () => async () => { throw new Error("service cleanup failed"); },
+      cleanupCheckout: () => { throw new Error("checkout cleanup failed"); },
+      cleanupOutput: () => { throw new Error("output cleanup failed"); },
+      prepareCheckout: async () => {
+        const checkout = mkdtempSync(join(tmpdir(), "hrms-cleanup-checkout-"));
+        roots.push(checkout);
+        execFileSync("git", ["clone", "-q", root, checkout]);
+        return checkout;
+      },
+      launchWorker: () => { throw new Error("worker primary failure"); },
+    });
+  } catch (error) {
+    caught = error;
+  }
+  assert.match(caught?.message ?? "", /worker primary failure/);
+  assert.ok(caught?.cause instanceof AggregateError);
+  assert.deepEqual(caught.cause.errors.map((error) => error.message), [
+    "checkout cleanup failed", "service cleanup failed", "output cleanup failed",
+  ]);
+});
+
+test("full-suite throws cleanup-only failures after a successful result", async () => {
+  const { root, base } = fixture();
+  await assert.rejects(runFullCoverageGate(root, base, "HEAD", {
+    ...fixtureCheckout,
+    cleanupOutput: () => { throw new Error("output cleanup only failed"); },
+    launchWorker: () => {},
+    finalize: () => ({ pass: true, lines: [] }),
+  }), (error) => error instanceof AggregateError && /Full coverage cleanup failed/.test(error.message));
+});
+
 test("full-suite explicit output is preserved and worker command failure stops later commands", async () => {
   const { root, base } = fixture();
   await assert.rejects(runFullCoverageGate(root, base, "HEAD", { ...fixtureCheckout, outputRoot: "relative-output" }), /absolute and canonical/);
@@ -1155,6 +1193,84 @@ test("coverage integration services require dedicated empty targets and clean ow
   assert.equal(cleanupCalls.at(-1), "quit");
 });
 
+test("coverage integration service failures preserve ownership and cleanup evidence", async () => {
+  const environment = sanitizedCoverageEnvironment(join(tmpdir(), "hrms-service-failures"));
+  const token = `${"d".repeat(40)}:failure-cases`;
+  const workingClient = {
+    query: async (sql) => sql.includes("SELECT count(*)::int AS count") ? { rows: [{ count: 0 }] } : { rows: [] },
+    release: () => {},
+  };
+  const poolFor = (client = workingClient) => ({ connect: async () => client, end: async () => {} });
+  const workingValkey = {
+    connect: async () => {},
+    eval: async () => "OK",
+    quit: async () => {},
+    disconnect: () => {},
+  };
+
+  await assert.rejects(prepareCoverageIntegrationServices(
+    { ...environment, VALKEY_URL: "redis://127.0.0.1:6379/15" }, token, { pool: poolFor(), valkey: workingValkey },
+  ), /dedicated 127\.0\.0\.1:56380/);
+  await assert.rejects(prepareCoverageIntegrationServices(environment, "bad token", { pool: poolFor(), valkey: workingValkey }), /token is malformed/);
+
+  const databaseCalls = [];
+  const databaseFailure = new Error("guard insert failed");
+  const failingClient = {
+    query: async (sql) => {
+      databaseCalls.push(sql);
+      if (sql.startsWith("INSERT")) throw databaseFailure;
+      if (sql === "ROLLBACK") throw new Error("rollback also failed");
+      return sql.includes("SELECT count(*)::int AS count") ? { rows: [{ count: 0 }] } : { rows: [] };
+    },
+    release: () => databaseCalls.push("release"),
+  };
+  await assert.rejects(prepareCoverageIntegrationServices(environment, token, {
+    pool: { connect: async () => failingClient, end: async () => databaseCalls.push("pool.end") }, valkey: workingValkey,
+  }), (error) => error === databaseFailure);
+  assert.deepEqual(databaseCalls.slice(-3), ["ROLLBACK", "release", "pool.end"]);
+
+  const prepareValkeyCalls = [];
+  const failingValkey = {
+    ...workingValkey,
+    connect: async () => { throw new Error("valkey connect failed"); },
+    quit: async () => { prepareValkeyCalls.push("quit"); throw new Error("quit failed"); },
+    disconnect: () => prepareValkeyCalls.push("disconnect"),
+  };
+  await assert.rejects(prepareCoverageIntegrationServices(environment, token, { pool: poolFor(), valkey: failingValkey }),
+    (error) => error.cause?.message === "valkey connect failed" && /recreate the disposable PostgreSQL/.test(error.message));
+  assert.deepEqual(prepareValkeyCalls, ["quit", "disconnect"]);
+
+  let cleanupResult = 0;
+  const cleanupCalls = [];
+  const cleanupValkey = {
+    ...workingValkey,
+    eval: async () => { cleanupResult += 1; return cleanupResult === 1 ? "OK" : 0; },
+    quit: async () => cleanupCalls.push("quit"),
+  };
+  const lostOwnershipCleanup = await prepareCoverageIntegrationServices(environment, token, { pool: poolFor(), valkey: cleanupValkey });
+  await assert.rejects(lostOwnershipCleanup(), /ownership was lost/);
+
+  let aggregateEval = 0;
+  const aggregateValkey = {
+    ...workingValkey,
+    eval: async () => { aggregateEval += 1; if (aggregateEval === 1) return "OK"; throw new Error("flush failed"); },
+    quit: async () => { throw new Error("quit failed"); },
+    disconnect: () => cleanupCalls.push("disconnect"),
+  };
+  const aggregateCleanup = await prepareCoverageIntegrationServices(environment, token, { pool: poolFor(), valkey: aggregateValkey });
+  await assert.rejects(aggregateCleanup(), (error) => error instanceof AggregateError && error.errors.length === 2);
+
+  let quitOnlyEval = 0;
+  const quitOnlyValkey = {
+    ...workingValkey,
+    eval: async () => { quitOnlyEval += 1; return "OK"; },
+    quit: async () => { if (quitOnlyEval > 1) throw new Error("cleanup quit failed"); },
+    disconnect: () => cleanupCalls.push("disconnect"),
+  };
+  const quitOnlyCleanup = await prepareCoverageIntegrationServices(environment, token, { pool: poolFor(), valkey: quitOnlyValkey });
+  await assert.rejects(quitOnlyCleanup(), /cleanup quit failed/);
+});
+
 test("coverage worker verifies the parent PostgreSQL and Valkey claims", async () => {
   const environment = sanitizedCoverageEnvironment(join(tmpdir(), "hrms-service-claim"));
   const token = `${"c".repeat(40)}:claim-check`;
@@ -1178,6 +1294,17 @@ test("coverage worker verifies the parent PostgreSQL and Valkey claims", async (
       end: async () => {},
     },
   }), /PostgreSQL claim does not match/);
+
+  await assert.rejects(verifyCoverageIntegrationServiceClaim(environment, "malformed", {}), /claim token is malformed/);
+  const disconnects = [];
+  await assert.rejects(verifyCoverageIntegrationServiceClaim(environment, token, {
+    pool: { query: async () => ({ rows: [{ token }] }), end: async () => {} },
+    valkey: {
+      connect: async () => {}, get: async () => "wrong", quit: async () => { throw new Error("quit failed"); },
+      disconnect: () => disconnects.push("disconnect"),
+    },
+  }), /Valkey claim does not match/);
+  assert.deepEqual(disconnects, ["disconnect"]);
 });
 
 test("backend coverage measures unit and integration projects together", () => {
@@ -1200,6 +1327,35 @@ test("backend coverage measures unit and integration projects together", () => {
     if (previous === undefined) delete process.env.HRMS_COVERAGE_OUTPUT_DIR;
     else process.env.HRMS_COVERAGE_OUTPUT_DIR = previous;
   }
+});
+
+test("full coverage worker command validates its trust boundary before invoking the worker", async () => {
+  const outputRoot = mkdtempSync(join(tmpdir(), "hrms-worker-command-"));
+  roots.push(outputRoot);
+  const expectedHead = "a".repeat(40);
+  const token = `${expectedHead}:worker-command`;
+  const tools = { node: "/trusted/node", pnpm: "/trusted/pnpm", python: "/trusted/python", bash: "/trusted/bash" };
+  const args = ["--coverage-output", outputRoot, "--expected-head", expectedHead, "--service-claim-token", token,
+    ...Object.entries(tools).flatMap(([name, path]) => [`--${name}`, path])];
+  const calls = [];
+  const result = await runFullCoverageWorkerCommand("/trusted/repository", args, {
+    replaceEnvironment: (environment) => calls.push(["environment", environment.HRMS_COVERAGE_OUTPUT_DIR]),
+    validateExecutable: (path) => calls.push(["validate", path]),
+    verifyClaim: async (environment, claim) => calls.push(["claim", environment.VALKEY_URL, claim]),
+    runWorker: (...workerArgs) => { calls.push(["worker", ...workerArgs]); return ["complete"]; },
+  });
+  assert.deepEqual(result, ["complete"]);
+  assert.equal(calls.filter(([type]) => type === "validate").length, 4);
+  assert.deepEqual(calls.at(-1), ["worker", "/trusted/repository", outputRoot, expectedHead, tools]);
+
+  await assert.rejects(runFullCoverageWorkerCommand("/trusted/repository", ["--coverage-output", "relative"], {}), /absolute canonical/);
+  await assert.rejects(runFullCoverageWorkerCommand("/trusted/repository", ["--coverage-output", outputRoot], {}), /requires exact head/);
+  await assert.rejects(runFullCoverageWorkerCommand("/trusted/repository", args, {
+    replaceEnvironment: () => {}, validateExecutable: () => { throw new Error("bad executable"); },
+  }), /received invalid node executable/);
+  await assert.rejects(runFullCoverageWorkerCommand("/trusted/repository", args, {
+    replaceEnvironment: () => {}, validateExecutable: () => {}, verifyClaim: async () => { throw new Error("claim missing"); },
+  }), (error) => /service claim verification failed: claim missing/.test(error.message) && error.cause?.message === "claim missing");
 });
 
 test("full-suite dependency selection uses either exact injections or every trusted default", () => {
