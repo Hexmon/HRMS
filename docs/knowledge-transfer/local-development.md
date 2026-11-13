@@ -148,8 +148,11 @@ This updates:
 - `hrms_backend/docs/api/openapi.json`
 - `hrms_backend/docs/api/frontend-contract/openapi.json`
 - `hrms_backend/docs/api/frontend-contract/ENDPOINT_INDEX.md`
+- `hrms-client/docs/api/openapi.json`
+- `hrms-client/docs/api/frontend-contract/openapi.json`
+- `hrms-client/docs/api/frontend-contract/ENDPOINT_INDEX.md`
 
-The frontend has mirrored API docs under `hrms-client/docs/api/`; keep them in sync if the project process requires mirrored client-side references.
+The generator synchronizes the frontend mirrors under `hrms-client/docs/api/`. `pnpm api:docs:verify` fails if the canonical file differs from the live Fastify schema or any generated mirror is missing or stale.
 
 ## Local Troubleshooting
 

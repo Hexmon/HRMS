@@ -7,7 +7,7 @@ import type {
   OutboxEvent,
   UUID,
 } from "#shared";
-import { AttendanceRegularizationStatuses } from "#shared";
+import { AttendanceRegularizationStatuses, parseStrictIsoInstant, validTimeZoneOrUtc } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import {
   deriveAttendanceReportingEvidenceCategory,
@@ -278,7 +278,15 @@ export function buildAttendanceReportEvidenceIndex(
 
   for (const punch of store.attendancePunches) {
     if (punch.deleted_at) continue;
-    const key = dayKey(punch.company_id, punch.employee_user_id, punch.occurred_at.slice(0, 10));
+    const workDate = evidenceWorkDate(
+      store,
+      punch.company_id,
+      punch.employee_user_id,
+      punch.work_date,
+      punch.occurred_at,
+    );
+    if (!workDate) continue;
+    const key = dayKey(punch.company_id, punch.employee_user_id, workDate);
     if (keys.has(key)) buckets.get(key)?.punches.push(punch);
   }
 
@@ -294,14 +302,28 @@ export function buildAttendanceReportEvidenceIndex(
     const companyId = stringValue(event.payload.company_id) as UUID | null;
     const employeeUserId = stringValue(event.payload.subject_employee_user_id) as UUID | null;
     if (!capturedAt || !companyId || !employeeUserId) continue;
-    const key = dayKey(companyId, employeeUserId, capturedAt.slice(0, 10));
+    const workDate = evidenceWorkDate(
+      store,
+      companyId,
+      employeeUserId,
+      stringValue(event.payload.work_date),
+      capturedAt,
+    );
+    if (!workDate) continue;
+    const key = dayKey(companyId, employeeUserId, workDate);
     if (keys.has(key)) buckets.get(key)?.provisionalEvents.push(event);
   }
 
   for (const warning of (store as StoreWithReportEvidence).attendanceMobileEvidenceWarnings ?? []) {
     if (warning.deleted_at) continue;
     const occurredAt = isoValue(warning.captured_at) ?? isoValue(warning.server_received_at);
-    const workDate = stringValue(warning.work_date) ?? occurredAt?.slice(0, 10);
+    const workDate = evidenceWorkDate(
+      store,
+      warning.company_id,
+      warning.employee_user_id,
+      stringValue(warning.work_date),
+      occurredAt,
+    );
     if (!workDate) continue;
     const key = dayKey(warning.company_id, warning.employee_user_id, workDate);
     if (keys.has(key)) buckets.get(key)?.mobileWarnings.push(warning);
@@ -822,6 +844,45 @@ function hasAcceptedOrProvisionalEvidence(
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function evidenceWorkDate(
+  store: MemoryDataStore,
+  companyId: UUID,
+  employeeUserId: UUID,
+  persistedWorkDate: string | null | undefined,
+  occurredAt: string | null | undefined,
+): string | null {
+  const persisted = calendarDateValue(persistedWorkDate);
+  if (persisted) return persisted;
+  if (!occurredAt) return null;
+  const instant = parseStrictIsoInstant(occurredAt);
+  if (!instant) return null;
+  const timeZone = validTimeZoneOrUtc(
+    store.users.find((user) => user.id === employeeUserId)?.timezone,
+    store.companyProfiles.find((company) => company.id === companyId)?.timezone,
+  );
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(instant);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return values.year && values.month && values.day
+    ? `${values.year}-${values.month}-${values.day}`
+    : null;
+}
+
+function calendarDateValue(value: unknown): string | null {
+  const candidate = stringValue(value);
+  if (!candidate || !/^\d{4}-\d{2}-\d{2}$/u.test(candidate)) return null;
+  const [year, month, day] = candidate.split("-").map(Number);
+  const normalized = new Date(Date.UTC(year!, month! - 1, day!));
+  return !Number.isNaN(normalized.getTime()) &&
+    normalized.toISOString().slice(0, 10) === candidate
+    ? candidate
+    : null;
 }
 
 function isoValue(value: string | Date | null | undefined): string | null {

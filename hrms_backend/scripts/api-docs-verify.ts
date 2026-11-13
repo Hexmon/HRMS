@@ -274,8 +274,10 @@ await app.ready();
 try {
   const spec = app.swagger() as OpenApiDocument;
   verifySpec(spec);
+  verifyGeneratedSpec(spec);
   verifyStandaloneBoundary();
   verifyNoSecrets(spec);
+  verifyContractMirrors();
 } finally {
   await app.close();
 }
@@ -619,6 +621,60 @@ function verifyNoSecrets(spec: OpenApiDocument): void {
   for (const pattern of forbiddenPatterns) {
     if (pattern.test(serialized)) {
       failures.push(`OpenAPI examples include forbidden secret-like value matching ${pattern}.`);
+    }
+  }
+}
+
+function verifyGeneratedSpec(spec: OpenApiDocument): void {
+  const generatedSpec = `${JSON.stringify(spec, null, 2)}\n`;
+  const canonicalPath = join(process.cwd(), "docs/api/openapi.json");
+  try {
+    if (readFileSync(canonicalPath, "utf8") !== generatedSpec) {
+      failures.push("docs/api/openapi.json is stale; run pnpm api:docs:generate and commit every generated mirror.");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    failures.push(`docs/api/openapi.json cannot be verified against the runtime contract: ${message}`);
+  }
+}
+
+function verifyContractMirrors(): void {
+  const canonicalOpenApiPath = join(process.cwd(), "docs/api/openapi.json");
+  const canonicalEndpointIndexPath = join(process.cwd(), "docs/api/frontend-contract/ENDPOINT_INDEX.md");
+  const mirrorComparisons = [
+    {
+      canonical: canonicalOpenApiPath,
+      mirror: join(process.cwd(), "docs/api/frontend-contract/openapi.json"),
+      label: "backend frontend-contract OpenAPI",
+    },
+    {
+      canonical: canonicalOpenApiPath,
+      mirror: join(process.cwd(), "../hrms-client/docs/api/openapi.json"),
+      label: "client OpenAPI",
+    },
+    {
+      canonical: canonicalOpenApiPath,
+      mirror: join(process.cwd(), "../hrms-client/docs/api/frontend-contract/openapi.json"),
+      label: "client frontend-contract OpenAPI",
+    },
+    {
+      canonical: canonicalEndpointIndexPath,
+      mirror: join(process.cwd(), "../hrms-client/docs/api/frontend-contract/ENDPOINT_INDEX.md"),
+      label: "client endpoint index",
+    },
+  ];
+
+  for (const comparison of mirrorComparisons) {
+    try {
+      if (readFileSync(comparison.canonical).equals(readFileSync(comparison.mirror))) {
+        continue;
+      }
+      failures.push(
+        `${comparison.label} is stale; run pnpm api:docs:generate from hrms_backend and commit every generated mirror.`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(`${comparison.label} cannot be verified: ${message}`);
     }
   }
 }

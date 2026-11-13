@@ -84,6 +84,30 @@ describe("PostgreSQL attendance projection rebuild service", () => {
     await expect(projectionCounts(app, companyId)).resolves.toEqual(before);
   });
 
+  it("changes the deterministic fingerprint when a fact gains an authoritative work date", async () => {
+    const before = await service().run(baseInput("reconcile"));
+    const punchId = idsFor(1).punch;
+    await app.store.pgPool!.query(
+      `INSERT INTO platform.outbox_events (
+         aggregate_type, aggregate_id, event_type, payload, idempotency_key
+       ) VALUES (
+         'attendance',$1::uuid,'attendance.punch.recorded',
+         jsonb_build_object('work_date',$2::text),
+         'attendance.punch.recorded:' || $1::uuid::text
+       )`,
+      [punchId, nextDay],
+    );
+
+    const after = await service().run(baseInput("reconcile"));
+
+    expect(after.effective_source_record_count).toBe(
+      before.effective_source_record_count,
+    );
+    expect(after.deterministic_source_fingerprint).not.toBe(
+      before.deterministic_source_fingerprint,
+    );
+  });
+
   it("atomically repairs corrupted projections and is idempotent on repeat", async () => {
     await insertCorruptedProjection(app, companyId);
 

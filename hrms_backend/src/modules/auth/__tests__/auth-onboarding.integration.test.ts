@@ -94,6 +94,9 @@ describe("auth onboarding and password APIs", () => {
     expect(loginBeforeBootstrap.statusCode).toBe(200);
     expect(loginBeforeBootstrap.json().user.roles).toEqual(["Employee"]);
     expect(loginBeforeBootstrap.json()).toMatchObject({ next_step: "company_bootstrap" });
+    const resumedBootstrapToken =
+      loginBeforeBootstrap.json().dev_only.company_bootstrap_token;
+    expect(typeof resumedBootstrapToken).toBe("string");
     const pendingSession = await app.inject({
       method: "GET",
       url: "/api/v1/auth/me",
@@ -104,8 +107,7 @@ describe("auth onboarding and password APIs", () => {
       setup_required: true,
       next_step: "company_bootstrap"
     });
-    const resumedBootstrapToken = pendingSession.json().dev_only.company_bootstrap_token;
-    expect(typeof resumedBootstrapToken).toBe("string");
+    expect(pendingSession.json().dev_only).toBeUndefined();
 
     const logoBody = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00]);
     const logoUpload = await multipartUpload(app, {

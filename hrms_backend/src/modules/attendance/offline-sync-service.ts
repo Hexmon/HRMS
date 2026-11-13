@@ -3,6 +3,7 @@ import type {
   AuthUser,
   UUID,
 } from "#shared";
+import { parseStrictIsoInstant, validTimeZoneOrUtc } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { badRequest, conflict, type AppError } from "../../platform/errors.js";
@@ -34,6 +35,7 @@ import {
   type AttendanceOfflineInboxRecord,
   type OfflineSyncSecuritySignalType,
 } from "./command-repository.js";
+import { canonicalJsonHash } from "./canonical-json.js";
 import {
   recordAttendanceDuplicateEvent,
   recordAttendanceLocationAccuracy,
@@ -471,6 +473,22 @@ export class AttendanceOfflineSyncService {
       };
     }
 
+    const evidencePayload = {
+      schema_version: 1,
+      contract_version: ATTENDANCE_OFFLINE_SYNC_CONTRACT_VERSION,
+      work_date: dateInTimeZone(event.captured_at, input.timeZone),
+      batch_id: input.batchId,
+      client_event_id: event.client_event_id,
+      sequence: event.sequence,
+      command_kind: event.command_kind,
+      source_channel: event.source,
+      event_type: event.event_type,
+      work_mode: event.work_mode,
+      metadata: event.metadata,
+      registered_device_id: input.registeredDeviceId,
+      location_evidence_supplied: Boolean(event.location),
+      source_event_hash: eventHash,
+    };
     const attendanceEvent = await tx.createAttendanceEvidenceEvent({
       companyId: input.companyId,
       employeeUserId: input.employeeUserId,
@@ -480,21 +498,8 @@ export class AttendanceOfflineSyncService {
       source: "mobile_offline",
       occurredAt: event.captured_at,
       receivedAt: input.serverReceivedAt,
-      payload: {
-        schema_version: 1,
-        contract_version: ATTENDANCE_OFFLINE_SYNC_CONTRACT_VERSION,
-        batch_id: input.batchId,
-        client_event_id: event.client_event_id,
-        sequence: event.sequence,
-        command_kind: event.command_kind,
-        source_channel: event.source,
-        event_type: event.event_type,
-        work_mode: event.work_mode,
-        metadata: event.metadata,
-        registered_device_id: input.registeredDeviceId,
-        location_evidence_supplied: Boolean(event.location),
-      },
-      payloadHash: eventHash,
+      payload: evidencePayload,
+      payloadHash: canonicalJsonHash(evidencePayload),
     });
     await tx.attachAttendanceEventToOfflineInbox({
       offlineInboxId: inbox.id,
@@ -520,6 +525,7 @@ export class AttendanceOfflineSyncService {
         subjectEmployeeUserId: input.employeeUserId,
         attendanceEventId: attendanceEvent.id,
         commandId: null,
+        workDate: dateInTimeZone(event.captured_at, input.timeZone),
         sourceChannel: "mobile_offline",
         verificationStatus: result.verification_status,
         provisionalReasonCode: result.reason_code ?? "offline_sync.accepted_unverified",
@@ -613,16 +619,20 @@ function offlineTimeZoneForUser(
   const company = store.companyProfiles.find(
     (candidate) => candidate.id === companyId,
   );
-  return user?.timezone ?? company?.timezone ?? "Asia/Kolkata";
+  return validTimeZoneOrUtc(user?.timezone, company?.timezone);
 }
 
 function dateInTimeZone(value: string, timeZone: string): string {
+  const instant = parseStrictIsoInstant(value);
+  if (!instant) {
+    throw badRequest("Offline attendance captured_at must be a valid ISO instant.");
+  }
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
+    timeZone: validTimeZoneOrUtc(timeZone),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date(value));
+  }).formatToParts(instant);
   const data = Object.fromEntries(parts.map((p) => [p.type, p.value]));
   return `${data.year}-${data.month}-${data.day}`;
 }

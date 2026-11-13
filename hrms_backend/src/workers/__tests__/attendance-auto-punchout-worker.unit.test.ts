@@ -282,6 +282,27 @@ describe("AttendanceAutoPunchoutWorker", () => {
     expect(store.attendancePunches.filter((punch) => punch.event_type === "check_out")).toHaveLength(1);
   });
 
+  it("falls back safely when a legacy company timezone is invalid", async () => {
+    const store = storeWithAutoPunchOut("18:30");
+    const service = new AttendanceService(store);
+    service.punch(user(store, "E1"), {
+      event_type: "check_in",
+      occurred_at: "2026-05-20T04:00:00.000Z",
+      work_mode: "office",
+      source: "web",
+      metadata: {},
+    });
+    store.companyProfiles.find((company) => company.status === "active")!.timezone =
+      "Asia/Kolkatta";
+
+    const result = await new AttendanceAutoPunchoutWorker(store).runScheduled({
+      referenceIso: "2026-05-20T19:00:00.000Z",
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.closed_sessions).toBe(1);
+  });
+
   it("runs catch-up once for missed auto punch-outs after worker startup", async () => {
     const store = storeWithAutoPunchOut("18:30");
     const service = new AttendanceService(store);

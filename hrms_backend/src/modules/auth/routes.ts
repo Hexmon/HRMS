@@ -94,7 +94,17 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery).sessionContext(request.actor);
+    const service = new AuthService(fastify.store, fastify.config.JWT_SECRET, fastify.emailDelivery);
+    const durable = fastify.store.persistence?.authSessionContext
+      ? await fastify.store.persistence.authSessionContext(request.actor.id)
+      : null;
+    if (!durable) {
+      return service.sessionContext(request.actor);
+    }
+    if (durable.kind === "membership") {
+      return service.sessionContextFromDurableMembership(durable.membership);
+    }
+    return service.sessionContextFromDurableBootstrap(durable);
   });
 
   fastify.patch("/session/preference", async (request) => {

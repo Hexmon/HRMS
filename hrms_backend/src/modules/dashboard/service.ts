@@ -1,6 +1,7 @@
-import type { AttendanceDayRecord, AuthUser, CoreUser, ExpenseTicket, LeaveRequest, TimesheetSubmission, UUID, WfhRequest } from "#shared";
-import { AssetStatuses, AttendanceEvidenceStates, AttendancePresenceStates, AttendancePunctualityStates, EmploymentStatuses, ExpenseStatuses, LeaveRequestStatuses, Roles, TimesheetStatuses } from "#shared";
-import type { MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
+import type { AttendanceDayRecord, AuthUser, CoreUser, ExpenseTicket, UUID } from "#shared";
+import { AttendanceEvidenceStates, AttendancePresenceStates, AttendancePunctualityStates, EmploymentStatuses, ExpenseStatuses, Roles } from "#shared";
+import { validTimeZoneOrUtc } from "#shared";
+import type { DashboardSummaryProjection, MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import {
   countAttendanceReportingEvidenceCategories,
@@ -66,6 +67,11 @@ export interface DashboardSummary {
     outbox_pending: number;
   };
   attendance: {
+    window: {
+      date_from: string;
+      date_to: string;
+      max_months: 12;
+    };
     evidence_categories: AttendanceReportingEvidenceCounts;
     source_categories: AttendanceReportSourceCategoryCounts;
   };
@@ -93,41 +99,100 @@ const FINANCE_PENDING_STATUSES = new Set<string>([
 export class DashboardService {
   constructor(private readonly store: MemoryDataStore) {}
 
+  summaryFromProjection(
+    actor: AuthUser,
+    activeRole: AuthUser["roles"][number],
+    projection: DashboardSummaryProjection,
+  ): DashboardSummary {
+    const expensePending = projection.approvals.expense_manager_pending
+      + projection.approvals.expense_finance_pending;
+    const leaveWfhPending = projection.approvals.leave_pending
+      + projection.approvals.wfh_pending;
+    const operations = projection.operations;
+    const workload = projection.workload;
+    return {
+      generated_at: nowIso(),
+      scope: {
+        actor_user_id: actor.id,
+        employee_code: actor.employee_code,
+        primary_role: activeRole,
+        roles: [...actor.roles],
+        visibility: this.canSeeSystemWide(actor) ? "all" : "self_and_descendants",
+      },
+      cards: [
+        metric("active_employees", "Active employees", projection.workforce.active_employees, "count", "core"),
+        metric("pending_expense_approvals", "Pending expense approvals", expensePending, "count", "expenses"),
+        metric("pending_timesheet_approvals", "Pending timesheet approvals", projection.approvals.timesheet_pending, "count", "timesheets"),
+        metric("pending_leave_wfh_approvals", "Pending Leave/WFH approvals", leaveWfhPending, "count", "leave_wfh"),
+        metric("attendance_exceptions", "Attendance exceptions", projection.attendance.exceptions, "count", "attendance"),
+        metric("assigned_assets", "Assigned assets", operations.assets_assigned, "count", "assets"),
+        metric("documents_pending_verification", "Documents pending verification", projection.approvals.document_verification_pending, "count", "documents"),
+        metric("submitted_hours", "Submitted hours", workload.submitted_hours_total, "hours", "timesheets"),
+      ],
+      workforce: projection.workforce,
+      approvals: {
+        ...projection.approvals,
+        expense_total_pending: expensePending,
+      },
+      operations,
+      attendance: {
+        window: projection.attendance.window,
+        evidence_categories: projection.attendance.evidence_categories,
+        source_categories: projection.attendance.source_categories,
+      },
+      workload,
+      attention: [
+        metric("pending_expense_approvals", "Expense approvals waiting", expensePending, "count", "expenses"),
+        metric("pending_timesheet_approvals", "Timesheets waiting", projection.approvals.timesheet_pending, "count", "timesheets"),
+        metric("pending_leave_wfh_approvals", "Leave/WFH approvals waiting", leaveWfhPending, "count", "leave_wfh"),
+        metric("attendance_exceptions", "Attendance exceptions", projection.attendance.exceptions, "count", "attendance"),
+        metric("asset_recovery_pending", "Asset recoveries pending", operations.assets_recovery_pending, "count", "assets"),
+        metric("outbox_pending", "Integration events pending", operations.outbox_pending, "count", "outbox"),
+      ].filter((item) => Number(item.value) > 0),
+      unavailable_features: dashboardSqlUnavailableFeatures(),
+    };
+  }
+
   summary(actor: AuthUser): DashboardSummary {
     const visibleUsers = this.visibleUsers(actor);
     const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
+    const currentCompany = this.store.companyProfiles.find(
+      (company) => company.id === this.companyIdForUser(actor.id),
+    );
+    const currentCompanyDate = dateInTimeZone(currentCompany?.timezone ?? "UTC");
+    const attendanceWindow = {
+      date_from: monthsBeforeDate(currentCompanyDate, 12),
+      date_to: currentCompanyDate,
+      max_months: 12 as const,
+    };
     const visibleTickets = this.visibleTickets(actor, visibleUserIds);
-    const visibleSubmissions = this.visibleTimesheetSubmissions(actor, visibleUserIds);
-    const visibleSegments = this.visibleWorkSegments(actor, visibleUserIds);
-    const visibleAttendance = this.visibleAttendanceDays(actor, visibleUserIds);
+    const visibleAttendance = this.visibleAttendanceDays(actor, visibleUserIds).filter(
+      (day) => day.work_date >= attendanceWindow.date_from
+        && day.work_date <= attendanceWindow.date_to,
+    );
     const canSeeAttendance = this.canSeeAttendanceReporting(actor, visibleUsers);
     const attendanceEvidence = canSeeAttendance
       ? this.attendanceEvidenceSummaries(visibleAttendance)
       : [];
-    const visibleLeaveRequests = this.visibleLeaveRequests(actor, visibleUserIds);
-    const visibleWfhRequests = this.visibleWfhRequests(actor, visibleUserIds);
-    const visibleAssets = this.visibleAssets(actor, visibleUserIds);
     const pendingManagerExpenses = visibleTickets.filter((ticket) => this.isManagerPendingFor(actor, ticket)).length;
     const pendingFinanceExpenses = visibleTickets.filter((ticket) => this.isFinancePendingFor(actor, ticket)).length;
-    const pendingTimesheets = visibleSubmissions.filter((submission) => this.isTimesheetPendingFor(actor, submission)).length;
-    const pendingLeaves = visibleLeaveRequests.filter((request) => this.isLeaveWfhPendingFor(actor, request)).length;
-    const pendingWfh = visibleWfhRequests.filter((request) => this.isLeaveWfhPendingFor(actor, request)).length;
-    const pendingDocuments = this.pendingDocumentVerificationCount(actor, visibleTickets, visibleUserIds);
+    const pendingTimesheets = 0;
+    const pendingLeaves = 0;
+    const pendingWfh = 0;
+    const pendingDocuments = this.pendingDocumentVerificationCount(visibleTickets);
     const operations = {
-      assets_total: visibleAssets.length,
-      assets_assigned: visibleAssets.filter((asset) => asset.status === AssetStatuses.Assigned).length,
-      assets_recovery_pending: this.store.assetRecoveryTickets.filter(
-        (ticket) => visibleUserIds.has(ticket.employee_user_id) && ticket.status !== "closed"
-      ).length,
-      notifications_pending: this.store.notifications.filter((notification) => this.isNotificationVisible(actor, visibleUserIds, notification.target_user_id) && notification.status === "pending").length,
-      outbox_pending: this.visibleOutboxEvents(actor, visibleUserIds).filter((event) => event.status === "pending" || event.status === "retry").length
+      assets_total: 0,
+      assets_assigned: 0,
+      assets_recovery_pending: 0,
+      notifications_pending: 0,
+      outbox_pending: this.visibleOutboxEvents(actor).filter((event) => event.status === "pending" || event.status === "retry").length
     };
     const workload = {
-      work_segments_total: visibleSegments.length,
-      submitted_hours_total: sumDecimal(visibleSegments.map((segment) => segment.hours)),
-      timesheet_submissions_total: visibleSubmissions.length,
-      timesheet_submissions_approved: visibleSubmissions.filter((submission) => submission.status === TimesheetStatuses.Approved).length,
-      timesheet_submissions_returned: visibleSubmissions.filter((submission) => submission.status === TimesheetStatuses.Returned).length
+      work_segments_total: 0,
+      submitted_hours_total: "0.00",
+      timesheet_submissions_total: 0,
+      timesheet_submissions_approved: 0,
+      timesheet_submissions_returned: 0
     };
     const activeEmployees = visibleUsers.filter((user) => user.employment_status === EmploymentStatuses.Active).length;
     const expensePending = pendingManagerExpenses + pendingFinanceExpenses;
@@ -168,6 +233,7 @@ export class DashboardService {
       },
       operations,
       attendance: {
+        window: attendanceWindow,
         evidence_categories: canSeeAttendance
           ? countAttendanceReportingEvidenceCategories(
               attendanceEvidence.map((evidence) => evidence.reporting_evidence_category),
@@ -188,20 +254,7 @@ export class DashboardService {
         metric("asset_recovery_pending", "Asset recoveries pending", operations.assets_recovery_pending, "count", "assets"),
         metric("outbox_pending", "Integration events pending", operations.outbox_pending, "count", "outbox")
       ].filter((item) => Number(item.value) > 0),
-      unavailable_features: [
-        {
-          key: "helpdesk",
-          label: "Helpdesk",
-          status: "not_implemented",
-          notes: "Helpdesk workflows are scheduled for Phase 4 and are not counted in this dashboard yet."
-        },
-        {
-          key: "projects_utilization",
-          label: "Projects and utilization",
-          status: "not_implemented",
-          notes: "Projects/utilization APIs are scheduled for Phase 4; current timesheet project codes remain lightweight metadata."
-        }
-      ]
+      unavailable_features: dashboardSqlUnavailableFeatures(),
     };
   }
 
@@ -228,16 +281,11 @@ export class DashboardService {
   }
 
   private visibleTickets(actor: AuthUser, visibleUserIds: Set<UUID>): ExpenseTicket[] {
+    const actorCompanyId = this.companyIdForUser(actor.id);
     const tickets = this.store.tickets
       .filter((ticket) => !ticket.deleted_at)
       .filter((ticket) =>
-        !this.hasActorCompanyScope(actor) ||
-        [
-          ticket.requester_user_id,
-          ticket.manager_verifier_id,
-          ticket.manager_backup_user_id,
-          ticket.finance_approver_id
-        ].some((userId) => userId != null && visibleUserIds.has(userId))
+        actorCompanyId == null || ticket.company_id === actorCompanyId
       );
     if (this.canSeeSystemWide(actor) || this.canSeeFinance(actor)) {
       return tickets;
@@ -251,69 +299,15 @@ export class DashboardService {
     );
   }
 
-  private visibleTimesheetSubmissions(actor: AuthUser, visibleUserIds: Set<UUID>): TimesheetSubmission[] {
-    const submissions = this.store.timesheetSubmissions
-      .filter((submission) => !submission.deleted_at)
-      .filter((submission) =>
-        !this.hasActorCompanyScope(actor) ||
-        visibleUserIds.has(submission.employee_user_id) ||
-        submission.current_approver_user_id === actor.id ||
-        (submission.current_approver_user_id != null && visibleUserIds.has(submission.current_approver_user_id))
-      );
-    if (this.canSeeSystemWide(actor)) {
-      return submissions;
-    }
-    return submissions.filter((submission) => visibleUserIds.has(submission.employee_user_id) || submission.current_approver_user_id === actor.id);
-  }
-
-  private visibleWorkSegments(actor: AuthUser, visibleUserIds: Set<UUID>): WorkSegment[] {
-    const segments = this.store.workSegments
-      .filter((segment) => !segment.deleted_at)
-      .filter((segment) => !this.hasActorCompanyScope(actor) || visibleUserIds.has(segment.employee_user_id));
-    if (this.canSeeSystemWide(actor)) {
-      return segments;
-    }
-    return segments.filter((segment) => visibleUserIds.has(segment.employee_user_id));
-  }
-
   private visibleAttendanceDays(actor: AuthUser, visibleUserIds: Set<UUID>) {
+    const actorCompanyId = this.companyIdForUser(actor.id);
     const days = this.store.attendanceDayRecords
       .filter((record) => !record.deleted_at)
-      .filter((record) => !this.hasActorCompanyScope(actor) || visibleUserIds.has(record.employee_user_id));
+      .filter((record) => actorCompanyId == null || record.company_id === actorCompanyId);
     if (this.canSeeSystemWide(actor)) {
       return days;
     }
     return days.filter((record) => visibleUserIds.has(record.employee_user_id));
-  }
-
-  private visibleLeaveRequests(actor: AuthUser, visibleUserIds: Set<UUID>): LeaveRequest[] {
-    const requests = this.store.leaveRequests
-      .filter((request) => !request.deleted_at)
-      .filter((request) =>
-        !this.hasActorCompanyScope(actor) ||
-        visibleUserIds.has(request.employee_user_id) ||
-        request.current_approver_user_id === actor.id ||
-        (request.current_approver_user_id != null && visibleUserIds.has(request.current_approver_user_id))
-      );
-    if (this.canSeeSystemWide(actor)) {
-      return requests;
-    }
-    return requests.filter((request) => visibleUserIds.has(request.employee_user_id) || request.current_approver_user_id === actor.id);
-  }
-
-  private visibleWfhRequests(actor: AuthUser, visibleUserIds: Set<UUID>): WfhRequest[] {
-    const requests = this.store.wfhRequests
-      .filter((request) => !request.deleted_at)
-      .filter((request) =>
-        !this.hasActorCompanyScope(actor) ||
-        visibleUserIds.has(request.employee_user_id) ||
-        request.current_approver_user_id === actor.id ||
-        (request.current_approver_user_id != null && visibleUserIds.has(request.current_approver_user_id))
-      );
-    if (this.canSeeSystemWide(actor)) {
-      return requests;
-    }
-    return requests.filter((request) => visibleUserIds.has(request.employee_user_id) || request.current_approver_user_id === actor.id);
   }
 
   private attendanceExceptionCount(
@@ -336,19 +330,6 @@ export class DashboardService {
     return records.map((record) => evidenceIndex.summaryFor(record));
   }
 
-  private visibleAssets(actor: AuthUser, visibleUserIds: Set<UUID>) {
-    const assets = this.store.assets
-      .filter((asset) => !asset.deleted_at)
-      .filter((asset) =>
-        !this.hasActorCompanyScope(actor) ||
-        (asset.current_assigned_user_id != null && visibleUserIds.has(asset.current_assigned_user_id))
-      );
-    if (this.canSeeSystemWide(actor)) {
-      return assets;
-    }
-    return assets.filter((asset) => asset.current_assigned_user_id && visibleUserIds.has(asset.current_assigned_user_id));
-  }
-
   private isManagerPendingFor(actor: AuthUser, ticket: ExpenseTicket): boolean {
     return (
       ticket.status === ExpenseStatuses.PendingManagerVerification &&
@@ -360,60 +341,34 @@ export class DashboardService {
     return FINANCE_PENDING_STATUSES.has(ticket.status) && (ticket.finance_approver_id === actor.id || this.canSeeFinance(actor));
   }
 
-  private isTimesheetPendingFor(actor: AuthUser, submission: TimesheetSubmission): boolean {
-    return (
-      submission.status === TimesheetStatuses.PendingApproval &&
-      (submission.current_approver_user_id === actor.id || this.canSeeSystemWide(actor))
-    );
-  }
-
-  private isLeaveWfhPendingFor(actor: AuthUser, request: LeaveRequest | WfhRequest): boolean {
-    return (
-      request.status === LeaveRequestStatuses.PendingManager &&
-      (request.current_approver_user_id === actor.id || this.canSeeSystemWide(actor))
-    );
-  }
-
-  private pendingDocumentVerificationCount(actor: AuthUser, visibleTickets: ExpenseTicket[], visibleUserIds: Set<UUID>): number {
+  private pendingDocumentVerificationCount(visibleTickets: ExpenseTicket[]): number {
     const visibleTicketIds = new Set(visibleTickets.map((ticket) => ticket.id));
-    return this.store.expenseDocuments.filter((document) => {
-      if (document.verification_status !== "pending") {
-        return false;
-      }
-      if (visibleTicketIds.has(document.ticket_id)) {
-        return true;
-      }
-      if (this.hasActorCompanyScope(actor)) {
-        return visibleUserIds.has(document.uploaded_by);
-      }
-      return visibleUserIds.has(document.uploaded_by) || this.canSeeFinance(actor) || this.canSeeSystemWide(actor);
-    }).length;
+    return this.store.expenseDocuments.filter(
+      (document) => document.verification_status === "pending"
+        && visibleTicketIds.has(document.ticket_id),
+    ).length;
   }
 
-  private isNotificationVisible(actor: AuthUser, visibleUserIds: Set<UUID>, targetUserId: UUID | null): boolean {
-    if (this.hasActorCompanyScope(actor)) {
-      return targetUserId === actor.id || (targetUserId ? visibleUserIds.has(targetUserId) : false);
-    }
-    return this.canSeeSystemWide(actor) || targetUserId === actor.id || (targetUserId ? visibleUserIds.has(targetUserId) : false);
-  }
-
-  private visibleOutboxEvents(actor: AuthUser, visibleUserIds: Set<UUID>) {
+  private visibleOutboxEvents(actor: AuthUser) {
     if (!this.canSeeSystemWide(actor)) {
       return [];
     }
     const actorCompanyId = this.companyIdForUser(actor.id);
     if (!actorCompanyId) {
-      return this.store.outbox;
+      return [];
     }
-    return this.store.outbox.filter((event) => event.aggregate_id === actorCompanyId || visibleUserIds.has(event.aggregate_id));
+    const ticketCompanyById = new Map(
+      this.store.tickets.map((ticket) => [ticket.id, ticket.company_id]),
+    );
+    return this.store.outbox.filter((event) =>
+      event.aggregate_type === "expense_ticket"
+        ? ticketCompanyById.get(event.aggregate_id) === actorCompanyId
+        : event.payload.company_id === actorCompanyId,
+    );
   }
 
   private companyIdForUser(userId: UUID): UUID | null {
     return this.store.userSessionPreferences.find((preference) => preference.user_id === userId)?.company_id ?? null;
-  }
-
-  private hasActorCompanyScope(actor: AuthUser): boolean {
-    return this.companyIdForUser(actor.id) != null;
   }
 
   private isInActorCompany(actor: AuthUser, user: CoreUser): boolean {
@@ -440,6 +395,53 @@ export class DashboardService {
   }
 }
 
+function dashboardSqlUnavailableFeatures(): DashboardSummary["unavailable_features"] {
+  return [
+    {
+      key: "timesheets_historical_ownership",
+      label: "Timesheet and work-segment metrics",
+      status: "not_implemented",
+      notes: "Hidden until timesheet and work-segment rows have immutable company ownership; current membership is not historical ownership evidence.",
+    },
+    {
+      key: "leave_wfh_historical_ownership",
+      label: "Leave and WFH metrics",
+      status: "not_implemented",
+      notes: "Hidden until leave and WFH rows have immutable company ownership; transferred users must not reassign history.",
+    },
+    {
+      key: "assets_historical_ownership",
+      label: "Asset and recovery metrics",
+      status: "not_implemented",
+      notes: "Hidden until asset assignment and recovery history has immutable company ownership.",
+    },
+    {
+      key: "notifications_historical_ownership",
+      label: "Notification metrics",
+      status: "not_implemented",
+      notes: "Hidden until dashboard notification history has a trusted company owner independent of current user membership.",
+    },
+    ...dashboardUnavailableFeatures(),
+  ];
+}
+
+function dashboardUnavailableFeatures(): DashboardSummary["unavailable_features"] {
+  return [
+    {
+      key: "helpdesk",
+      label: "Helpdesk",
+      status: "not_implemented",
+      notes: "Helpdesk workflows are scheduled for Phase 4 and are not counted in this dashboard yet.",
+    },
+    {
+      key: "projects_utilization",
+      label: "Projects and utilization",
+      status: "not_implemented",
+      notes: "Projects/utilization APIs are scheduled for Phase 4; current timesheet project codes remain lightweight metadata.",
+    },
+  ];
+}
+
 function metric(
   key: string,
   label: string,
@@ -456,10 +458,30 @@ function daysAgoDate(days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function sumDecimal(values: string[]): string {
-  const total = values.reduce((sum, value) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? sum + parsed : sum;
-  }, 0);
-  return total.toFixed(2);
+function monthsBeforeDate(currentDate: string, months: number): string {
+  const current = new Date(`${currentDate}T00:00:00.000Z`);
+  const targetMonthStart = new Date(Date.UTC(
+    current.getUTCFullYear(),
+    current.getUTCMonth() - months,
+    1,
+  ));
+  const lastDay = new Date(Date.UTC(
+    targetMonthStart.getUTCFullYear(),
+    targetMonthStart.getUTCMonth() + 1,
+    0,
+  )).getUTCDate();
+  targetMonthStart.setUTCDate(Math.min(current.getUTCDate(), lastDay));
+  return targetMonthStart.toISOString().slice(0, 10);
+}
+
+function dateInTimeZone(timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: validTimeZoneOrUtc(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = (type: "year" | "month" | "day") =>
+    parts.find((part) => part.type === type)?.value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
 }

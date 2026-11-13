@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs } from "#testing";
-import { buildRealApp } from "../../../__tests__/real-infra.js";
+import { buildRealApp, buildRealAppReplica } from "../../../__tests__/real-infra.js";
 import { recordApprovedRegularizationPayrollAdjustments } from "../payroll-period-service.js";
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -31,9 +31,10 @@ describe("regularization normalized items and actions", () => {
   }
 
   async function reopenWithoutReset(): Promise<void> {
+    const previousApp = app;
     await app.close();
     restoreDatabaseUrl();
-    app = await buildRealApp({ reset: false });
+    app = await buildRealAppReplica(previousApp);
     await app.ready();
   }
 
@@ -105,6 +106,7 @@ describe("regularization normalized items and actions", () => {
     actorUserId?: string;
     eventType?: "check_in" | "check_out";
     occurredAt: string;
+    workDate?: string;
   }): Promise<string> {
     const punchId = input.id ?? randomUUID();
     const actorUserId = input.actorUserId ?? input.employeeUserId;
@@ -116,11 +118,38 @@ describe("regularization normalized items and actions", () => {
        ) VALUES ($1,$2,$3,$4,$5,$6,'office','web','employee_manual_now','{}')`,
       [punchId, input.companyId, input.employeeUserId, actorUserId, eventType, input.occurredAt],
     );
+    if (input.workDate) {
+      await app.store.pgPool!.query(
+        `INSERT INTO platform.outbox_events (
+           aggregate_type, aggregate_id, event_type, payload, idempotency_key
+         ) VALUES (
+           'attendance',$1::uuid,'attendance.punch.recorded',
+           jsonb_build_object(
+             'company_id',$2::text,
+             'subject_employee_user_id',$3::text,
+             'punch_event_id',$1::uuid::text,
+             'punch_type',$4::text,
+             'occurred_at',$5::text,
+             'work_date',$6::text
+           ),
+           'attendance.punch.recorded:' || $1::uuid::text
+         )`,
+        [
+          punchId,
+          input.companyId,
+          input.employeeUserId,
+          eventType,
+          input.occurredAt,
+          input.workDate,
+        ],
+      );
+    }
     app.store.attendancePunches.push({
       id: punchId,
       company_id: input.companyId,
       employee_user_id: input.employeeUserId,
       actor_user_id: actorUserId,
+      work_date: input.workDate,
       event_type: eventType,
       occurred_at: input.occurredAt,
       work_mode: "office",
@@ -132,6 +161,97 @@ describe("regularization normalized items and actions", () => {
       deleted_at: null,
     });
     return punchId;
+  }
+
+  async function insertOvernightShiftFixture(input: {
+    companyId: string;
+    employeeUserId: string;
+    actorUserId: string;
+    workDate: string;
+  }): Promise<void> {
+    const templateId = randomUUID();
+    const versionId = randomUUID();
+    await app.store.pgPool!.query(
+      `UPDATE attendance.shift_instances
+          SET deleted_at=now()
+        WHERE company_id=$1 AND employee_user_id=$2 AND work_date=$3::date
+          AND deleted_at IS NULL`,
+      [input.companyId, input.employeeUserId, input.workDate],
+    );
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.shift_templates (
+         id, company_id, code, name, status, is_company_default, version
+       ) VALUES ($1,$2,$3,'Overnight regularization fixture','active',false,1)`,
+      [templateId, input.companyId, `overnight-${templateId}`],
+    );
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.shift_template_versions (
+         id, company_id, template_id, version_number, effective_from,
+         local_start_time, local_end_time, end_day_offset, timezone_strategy,
+         fixed_timezone, eligibility_open_before_start_minutes,
+         eligibility_close_after_end_minutes, created_by_user_id
+       ) VALUES (
+         $1,$2,$3,1,$4::date,'18:00','02:00',1,'fixed','UTC',60,60,$5
+       )`,
+      [versionId, input.companyId, templateId, input.workDate, input.actorUserId],
+    );
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.shift_instances (
+         company_id, employee_user_id, work_date, template_id,
+         template_version_id, resolved_timezone, scheduled_start_at,
+         scheduled_end_at, eligibility_start_at, eligibility_end_at,
+         generation_source
+       ) VALUES (
+         $1,$2,$3::date,$4,$5,'UTC',
+         ($3::date + time '18:00') AT TIME ZONE 'UTC',
+         (($3::date + 1) + time '02:00') AT TIME ZONE 'UTC',
+         ($3::date + time '17:00') AT TIME ZONE 'UTC',
+         (($3::date + 1) + time '03:00') AT TIME ZONE 'UTC',
+         'assignment'
+       )`,
+      [input.companyId, input.employeeUserId, input.workDate, templateId, versionId],
+    );
+  }
+
+  async function insertHistoricalShiftFixtures(): Promise<void> {
+    const employee = app.store.users.find((user) => user.employee_code === "E1");
+    if (!employee) throw new Error("Employee fixture was not found.");
+    const companyId = companyIdFor(employee.id);
+    const templateId = randomUUID();
+    const versionId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.shift_templates (
+         id, company_id, code, name, status, is_company_default, version
+       ) VALUES ($1,$2,$3,'Historical regularization fixture','active',false,1)`,
+      [templateId, companyId, `regularization-${templateId}`],
+    );
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.shift_template_versions (
+         id, company_id, template_id, version_number, effective_from,
+         local_start_time, local_end_time, end_day_offset, timezone_strategy,
+         fixed_timezone, eligibility_open_before_start_minutes,
+         eligibility_close_after_end_minutes
+       ) VALUES (
+         $1,$2,$3,1,'2026-05-01','03:00','15:00',0,'fixed','UTC',180,540
+       )`,
+      [versionId, companyId, templateId],
+    );
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.shift_instances (
+         company_id, employee_user_id, work_date, template_id,
+         template_version_id, resolved_timezone, scheduled_start_at,
+         scheduled_end_at, eligibility_start_at, eligibility_end_at,
+         generation_source
+       )
+       SELECT $1,$2,work_day::date,$3,$4,'UTC',
+              (work_day::date + time '03:00') AT TIME ZONE 'UTC',
+              (work_day::date + time '15:00') AT TIME ZONE 'UTC',
+              (work_day::date + time '00:00') AT TIME ZONE 'UTC',
+              ((work_day::date + 1) + time '00:00') AT TIME ZONE 'UTC',
+              'assignment'
+         FROM generate_series($5::date,$6::date,interval '1 day') AS work_day`,
+      [companyId, employee.id, templateId, versionId, "2026-05-13", "2026-05-28"],
+    );
   }
 
   async function insertAbsentDailyRecord(input: {
@@ -196,6 +316,7 @@ describe("regularization normalized items and actions", () => {
   beforeEach(async () => {
     app = await buildRealApp();
     await app.ready();
+    await insertHistoricalShiftFixtures();
   }, 30_000);
 
   afterEach(async () => {
@@ -531,6 +652,276 @@ describe("regularization normalized items and actions", () => {
        WHERE regularization_request_id IN ($1, $2)`,
       [replace.json().id, voidRequest.json().id],
     )).rows[0].count).toBe(2);
+  });
+
+  it("keeps an approved overnight replacement on its authoritative work date", async () => {
+    const employee = await loginAs(app, "E1");
+    const manager = await loginAs(app, "D1");
+    const companyId = companyIdFor(employee.user.id);
+    const workDate = "2026-05-20";
+    const targetId = await insertPunchFixture({
+      companyId,
+      employeeUserId: employee.user.id,
+      eventType: "check_out",
+      occurredAt: "2026-05-21T01:00:00.000Z",
+      workDate,
+    });
+    await insertOvernightShiftFixture({
+      companyId,
+      employeeUserId: employee.user.id,
+      actorUserId: manager.user.id,
+      workDate,
+    });
+
+    const request = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/regularizations",
+      headers: authHeader(employee.token),
+      payload: {
+        work_date: workDate,
+        reason: "Correct overnight checkout",
+        items: [{
+          operation: "replace",
+          target_punch_event_id: targetId,
+          event_type: "check_out",
+          occurred_at: "2026-05-21T01:15:00.000Z",
+        }],
+      },
+    });
+    expect(request.statusCode, request.body).toBe(200);
+
+    const approved = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/regularizations/${request.json().id}/decision`,
+      headers: authHeader(manager.token),
+      payload: { decision: "approve", expected_version: 1 },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+
+    const materialized = (await app.store.pgPool!.query<{
+      occurred_at: Date;
+      command_work_date: string;
+      evidence_work_date: string;
+      outbox_work_date: string;
+    }>(
+      `SELECT punch.occurred_at,
+              command.request_snapshot->>'work_date' AS command_work_date,
+              evidence.payload->>'work_date' AS evidence_work_date,
+              recorded.payload->>'work_date' AS outbox_work_date
+         FROM attendance.regularization_correction_applications application
+         JOIN attendance.punch_events punch
+           ON punch.id=application.replacement_punch_event_id
+         JOIN attendance.command_executions command
+           ON command.id=punch.command_execution_id
+          AND command.company_id=punch.company_id
+         JOIN attendance.attendance_events evidence
+           ON evidence.id=application.attendance_event_id
+          AND evidence.company_id=application.company_id
+         JOIN platform.outbox_events recorded
+           ON recorded.idempotency_key='attendance.punch.recorded:' || punch.id::text
+          AND recorded.event_type='attendance.punch.recorded'
+        WHERE application.regularization_request_id=$1`,
+      [request.json().id],
+    )).rows[0];
+    expect(materialized).toEqual({
+      occurred_at: new Date("2026-05-21T01:15:00.000Z"),
+      command_work_date: workDate,
+      evidence_work_date: workDate,
+      outbox_work_date: workDate,
+    });
+
+    const projectedDays = (await app.store.pgPool!.query<{
+      work_date: string;
+      last_check_out: Date | null;
+    }>(
+      `SELECT work_date::text AS work_date,last_check_out
+         FROM attendance.daily_records
+        WHERE company_id=$1 AND employee_user_id=$2
+          AND work_date IN ($3::date,($3::date + 1))
+        ORDER BY work_date`,
+      [companyId, employee.user.id, workDate],
+    )).rows;
+    expect(projectedDays).toEqual([{
+      work_date: workDate,
+      last_check_out: new Date("2026-05-21T01:15:00.000Z"),
+    }]);
+
+    expect((await outboxRows({
+      aggregateId: request.json().id,
+      eventType: "attendance.regularization.approved",
+    }))[0]?.payload.work_date).toBe(workDate);
+  });
+
+  it("allows an overnight ADD only inside the persisted historical shift", async () => {
+    const employee = await loginAs(app, "E1");
+    const manager = await loginAs(app, "D1");
+    const companyId = companyIdFor(employee.user.id);
+    const workDate = "2026-05-21";
+    await insertOvernightShiftFixture({
+      companyId,
+      employeeUserId: employee.user.id,
+      actorUserId: manager.user.id,
+      workDate,
+    });
+    const request = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/regularizations",
+      headers: authHeader(employee.token),
+      payload: {
+        work_date: workDate,
+        reason: "Add missed overnight checkout",
+        items: [{
+          operation: "add",
+          event_type: "check_out",
+          occurred_at: "2026-05-22T01:00:00.000Z",
+        }],
+      },
+    });
+    expect(request.statusCode, request.body).toBe(200);
+
+    const approved = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/regularizations/${request.json().id}/decision`,
+      headers: authHeader(manager.token),
+      payload: { decision: "approve", expected_version: 1 },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+
+    const recorded = (await app.store.pgPool!.query<{
+      occurred_at: Date;
+      work_date: string;
+    }>(
+      `SELECT punch.occurred_at,recorded.payload->>'work_date' AS work_date
+         FROM attendance.punch_events punch
+         JOIN platform.outbox_events recorded
+           ON recorded.idempotency_key='attendance.punch.recorded:' || punch.id::text
+        WHERE punch.regularization_request_id=$1`,
+      [request.json().id],
+    )).rows;
+    expect(recorded).toEqual([{
+      occurred_at: new Date("2026-05-22T01:00:00.000Z"),
+      work_date: workDate,
+    }]);
+  });
+
+  it("fails approval closed when the historical shift snapshot is missing", async () => {
+    const employee = await loginAs(app, "E1");
+    const manager = await loginAs(app, "D1");
+    const companyId = companyIdFor(employee.user.id);
+    const workDate = "2026-05-23";
+    await app.store.pgPool!.query(
+      `UPDATE attendance.shift_instances
+          SET deleted_at=now()
+        WHERE company_id=$1 AND employee_user_id=$2 AND work_date=$3::date`,
+      [companyId, employee.user.id, workDate],
+    );
+    const request = await app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/regularizations",
+      headers: authHeader(employee.token),
+      payload: {
+        work_date: workDate,
+        reason: "Missing historical shift must block approval",
+        items: [{
+          operation: "add",
+          event_type: "check_in",
+          occurred_at: "2026-05-23T03:30:00.000Z",
+        }],
+      },
+    });
+    expect(request.statusCode, request.body).toBe(200);
+
+    const approved = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/regularizations/${request.json().id}/decision`,
+      headers: authHeader(manager.token),
+      payload: { decision: "approve", expected_version: 1 },
+    });
+    expect(approved.statusCode).toBe(409);
+
+    expect((await app.store.pgPool!.query(
+      `SELECT status,version FROM attendance.regularization_requests WHERE id=$1`,
+      [request.json().id],
+    )).rows[0]).toMatchObject({ status: "pending", version: 1 });
+    expect((await app.store.pgPool!.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM attendance.punch_events
+        WHERE regularization_request_id=$1`,
+      [request.json().id],
+    )).rows[0]?.count).toBe(0);
+    expect((await app.store.pgPool!.query<{ count: number }>(
+      `SELECT count(*)::int AS count
+         FROM attendance.regularization_correction_applications
+        WHERE regularization_request_id=$1`,
+      [request.json().id],
+    )).rows[0]?.count).toBe(0);
+    expect(await outboxRows({
+      aggregateId: request.json().id,
+      eventType: "attendance.regularization.approved",
+    })).toHaveLength(0);
+  });
+
+  it("accepts the shift-window start and rejects both exclusive boundaries", async () => {
+    const employee = await loginAs(app, "E1");
+    const manager = await loginAs(app, "D1");
+
+    const submit = (workDate: string, occurredAt: string) => app.inject({
+      method: "POST",
+      url: "/api/v1/attendance/regularizations",
+      headers: authHeader(employee.token),
+      payload: {
+        work_date: workDate,
+        reason: "Exercise historical shift eligibility boundary",
+        items: [{ operation: "add", event_type: "check_in", occurred_at: occurredAt }],
+      },
+    });
+    const decide = (requestId: string) => app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/regularizations/${requestId}/decision`,
+      headers: authHeader(manager.token),
+      payload: { decision: "approve", expected_version: 1 },
+    });
+
+    const atStart = await submit("2026-05-24", "2026-05-24T00:00:00.000Z");
+    expect(atStart.statusCode, atStart.body).toBe(200);
+    expect((await decide(atStart.json().id)).statusCode).toBe(200);
+
+    const beforeStart = await submit("2026-05-25", "2026-05-24T23:59:59.999Z");
+    expect(beforeStart.statusCode, beforeStart.body).toBe(200);
+    expect((await decide(beforeStart.json().id)).statusCode).toBe(400);
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/regularizations/${beforeStart.json().id}/decision`,
+      headers: authHeader(manager.token),
+      payload: {
+        decision: "reject",
+        remarks: "Outside the historical shift",
+        expected_version: 1,
+      },
+    });
+    expect(rejected.statusCode, rejected.body).toBe(200);
+    expect(rejected.json().status).toBe("rejected");
+
+    const atEnd = await submit("2026-05-26", "2026-05-27T00:00:00.000Z");
+    expect(atEnd.statusCode, atEnd.body).toBe(200);
+    expect((await decide(atEnd.json().id)).statusCode).toBe(400);
+    const returned = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/regularizations/${atEnd.json().id}/decision`,
+      headers: authHeader(manager.token),
+      payload: {
+        decision: "return",
+        remarks: "Choose a time inside the historical shift",
+        expected_version: 1,
+      },
+    });
+    expect(returned.statusCode, returned.body).toBe(200);
+    expect(returned.json().status).toBe("returned");
+
+    expect((await app.store.pgPool!.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM attendance.punch_events
+        WHERE regularization_request_id=ANY($1::uuid[])`,
+      [[beforeStart.json().id, atEnd.json().id]],
+    )).rows[0]?.count).toBe(0);
   });
 
   it("allows one deterministic winner for concurrent approval", async () => {
@@ -1464,6 +1855,29 @@ describe("regularization normalized items and actions", () => {
       `SELECT status, version FROM attendance.regularization_requests WHERE id = $1`,
       [losingRequestId],
     )).rows[0]).toMatchObject({ status: "pending", version: 1 });
+
+    const rejectedLoser = await app.inject({
+      method: "POST",
+      url: `/api/v1/attendance/regularizations/${losingRequestId}/decision`,
+      headers: authHeader(reloadedManager.token),
+      payload: {
+        decision: "reject",
+        remarks: "Another request already corrected this punch",
+        expected_version: 1,
+      },
+    });
+    expect(rejectedLoser.statusCode, rejectedLoser.body).toBe(200);
+    expect(rejectedLoser.json()).toMatchObject({ status: "rejected", version: 2 });
+    expect((await reloadedPool.query(
+      `SELECT count(*)::int AS count FROM attendance.regularization_correction_applications
+       WHERE target_punch_event_id = $1`,
+      [targetId],
+    )).rows[0].count).toBe(1);
+    expect((await reloadedPool.query(
+      `SELECT count(*)::int AS count FROM attendance.punch_events
+       WHERE regularization_request_id = ANY($1::uuid[])`,
+      [requestIds],
+    )).rows[0].count).toBe(1);
   });
 
   it("emits safe approved and rejected regularization decision events once", async () => {

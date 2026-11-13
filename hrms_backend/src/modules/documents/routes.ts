@@ -1,7 +1,7 @@
-import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { documentUploadSchema, paginationQuerySchema } from "#shared";
-import { unauthorized } from "../../platform/errors.js";
+import { conflict, notFound, unauthorized } from "../../platform/errors.js";
 import { DocumentService } from "./service.js";
 
 const idParamSchema = z.object({ id: z.uuid() });
@@ -9,6 +9,22 @@ const documentListQuerySchema = paginationQuerySchema.extend({
   business_object_type: z.string().optional(),
   business_object_id: z.uuid().optional()
 });
+
+async function assertNoExpenseDocumentAccess(
+  fastify: FastifyInstance,
+  actorId: string,
+  documentId: string,
+  mode: "metadata" | "raw" | "workflow",
+): Promise<void> {
+  if (fastify.store.kind !== "postgres") return;
+  const access = await fastify.store.persistence?.classifyExpenseDocumentAccess?.(
+    actorId, documentId, mode,
+  );
+  if (access === "expense-authorized") {
+    throw conflict("Expense receipt access requires original-company parent authorization");
+  }
+  if (access !== "other") throw notFound("Document not found");
+}
 
 export const documentRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/documents", async (request) => {
@@ -28,6 +44,9 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
+    if (fastify.store.kind === "postgres") {
+      throw conflict("Expense receipt upload requires transaction-owned parent authorization");
+    }
     const upload = await parseDocumentUpload(request);
     const body = documentUploadSchema
       .omit({ business_object_type: true, business_object_id: true })
@@ -45,6 +64,9 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const query = documentListQuerySchema.parse(request.query);
+    if (fastify.store.kind === "postgres") {
+      throw conflict("Document list requires tenant-scoped receipt filtering");
+    }
     return new DocumentService(fastify.store).list(request.actor, query);
   });
 
@@ -60,6 +82,7 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
+    await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "metadata");
     return new DocumentService(fastify.store).metadata(request.actor, params.id);
   });
 
@@ -68,6 +91,7 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
+    await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "raw");
     return new DocumentService(fastify.store).downloadUrl(request.actor, params.id, fastify.config.API_BASE_URL);
   });
 
@@ -76,6 +100,7 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
+    await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "raw");
     const content = await new DocumentService(fastify.store).downloadContent(request.actor, params.id);
     reply
       .header("content-type", content.contentType)
@@ -89,6 +114,7 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
+    await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "workflow");
     return new DocumentService(fastify.store).delete(request.actor, params.id);
   });
 
@@ -97,6 +123,7 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
+    await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "workflow");
     return new DocumentService(fastify.store).verify(request.actor, params.id);
   });
 
@@ -106,6 +133,7 @@ export const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const query = paginationQuerySchema.parse(request.query);
+    await assertNoExpenseDocumentAccess(fastify, request.actor.id, params.id, "workflow");
     return new DocumentService(fastify.store).accessLog(request.actor, params.id, query.page, query.page_size);
   });
 };

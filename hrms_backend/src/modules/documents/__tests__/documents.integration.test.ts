@@ -160,8 +160,10 @@ describe("document management integration", () => {
       url: `/api/v1/documents?page=1&page_size=10&business_object_type=employee&business_object_id=${admin.user.id}`,
       headers: authHeader(admin.token)
     });
-    expect(list.statusCode).toBe(200);
-    expect(list.json().total).toBeGreaterThanOrEqual(3);
+    expect(list.statusCode).toBe(409);
+    expect(list.json().message).toBe(
+      "Document list requires tenant-scoped receipt filtering",
+    );
 
     const download = await app.inject({
       method: "POST",
@@ -240,18 +242,19 @@ describe("document management integration", () => {
     expect(oversized.json().message).toBe("File is larger than the configured media upload limit");
   });
 
-  it("stores multipart uploads through expense and EMS document wrapper paths", async () => {
+  it("fails closed for SQL expense receipt uploads and stores EMS uploads", async () => {
     const employee = await loginAs(app, "E1");
 
     const createExpense = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
+      headers: { ...authHeader(employee.token), "idempotency-key": "documents-expense-create-001" },
       payload: projectTravelPayload
     });
     expect(createExpense.statusCode).toBe(200);
 
     const receiptBody = Buffer.from("%PDF-1.4\nreceipt\n%%EOF\n", "utf8");
+    const expenseDocumentCount = app.store.expenseDocuments.length;
     const expenseUpload = await multipartUpload(app, {
       url: `/api/v1/expenses/${createExpense.json().id}/documents`,
       token: employee.token,
@@ -266,16 +269,11 @@ describe("document management integration", () => {
         body: receiptBody
       }
     });
-    expect(expenseUpload.statusCode).toBe(200);
-    expect(expenseUpload.json()).toMatchObject({
-      business_object_type: "expense_ticket",
-      business_object_id: createExpense.json().id,
-      document_type: "receipt",
-      file_name: "receipt.pdf",
-      mime_type: "application/pdf",
-      size_bytes: receiptBody.length
-    });
-    expect(app.store.expenseDocuments.some((document) => document.document_id === expenseUpload.json().id)).toBe(true);
+    expect(expenseUpload.statusCode).toBe(409);
+    expect(expenseUpload.json().message).toBe(
+      "Expense receipt upload requires transaction-owned parent authorization",
+    );
+    expect(app.store.expenseDocuments).toHaveLength(expenseDocumentCount);
 
     const imageBody = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00]);
     const emsUpload = await multipartUpload(app, {

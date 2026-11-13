@@ -15,6 +15,10 @@ function restoreDatabaseUrl(): void {
   }
 }
 
+function expenseCommandHeaders(token: string) {
+  return { ...authHeader(token), "idempotency-key": `report-expense-${randomUUID()}` };
+}
+
 describe("expanded expense reports", () => {
   let app: FastifyInstance;
 
@@ -40,7 +44,7 @@ describe("expanded expense reports", () => {
     const create = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
+      headers: expenseCommandHeaders(employee.token),
       payload: projectTravelPayload
     });
     expect(create.statusCode).toBe(200);
@@ -69,7 +73,7 @@ describe("expanded expense reports", () => {
     const managerVerify = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/manager/verify`,
-      headers: authHeader(manager.token),
+      headers: expenseCommandHeaders(manager.token),
       payload: { decision: "approve", expected_version: 1 }
     });
     expect(managerVerify.statusCode).toBe(200);
@@ -98,7 +102,7 @@ describe("expanded expense reports", () => {
     const financeApprove = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/finance/approve`,
-      headers: authHeader(finance.token),
+      headers: { ...authHeader(finance.token), "idempotency-key": "report-finance-approve" },
       payload: { decision: "verify", expected_version: 2 }
     });
     expect(financeApprove.statusCode).toBe(200);
@@ -106,7 +110,7 @@ describe("expanded expense reports", () => {
     const payment = await app.inject({
       method: "POST",
       url: `/api/v1/expenses/${ticket.id}/finance/payment`,
-      headers: authHeader(finance.token),
+      headers: { ...authHeader(finance.token), "idempotency-key": "report-finance-payment" },
       payload: {
         payment_date: "2026-05-04",
         amount: "500.00",
@@ -180,12 +184,28 @@ describe("non-expense reports", () => {
     const created = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
+      headers: expenseCommandHeaders(employee.token),
       payload: projectTravelPayload,
     });
     expect(created.statusCode).toBe(200);
     const ticketId = created.json().id as string;
-    expect(app.store.tickets.find((ticket) => ticket.id === ticketId)?.context_payload.company_id).toBe(originalCompanyId);
+    const persistedTicket = await app.store.pgPool!.query<{
+      company_id: string;
+      context_payload: { company_id?: string; requester_snapshot?: { employee_code?: string; full_name?: string } };
+    }>(
+      "SELECT company_id, context_payload FROM expenses.expense_tickets WHERE id = $1",
+      [ticketId],
+    );
+    expect(persistedTicket.rows[0]).toMatchObject({
+      company_id: originalCompanyId,
+      context_payload: {
+        company_id: originalCompanyId,
+        requester_snapshot: {
+          employee_code: employee.user.employee_code,
+          full_name: employee.user.full_name,
+        },
+      },
+    });
 
     const foreignEvent = appendOutboxEvent(app.store, {
       aggregateType: "report_export",
@@ -258,10 +278,14 @@ describe("non-expense reports", () => {
     expect(noCompanyAudit.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
 
     employeePreference.company_id = null;
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id = NULL WHERE user_id = $1",
+      [employee.user.id],
+    );
     const noCompanyExpense = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
+      headers: expenseCommandHeaders(employee.token),
       payload: projectTravelPayload,
     });
     expect(noCompanyExpense.statusCode).toBe(400);

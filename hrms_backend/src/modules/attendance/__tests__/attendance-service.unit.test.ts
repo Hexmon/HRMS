@@ -783,6 +783,78 @@ describe("AttendanceService.punch", () => {
       expect(result.total).toBe(1);
       expect(result.items).toHaveLength(1);
     });
+
+    it("uses persisted and employee-local work dates for provisional evidence", () => {
+      employee().timezone = "America/Los_Angeles";
+      const capturedAt = "2026-07-21T02:00:00.000Z";
+      const attendanceEventId = randomUUID();
+      store.outbox.push({
+        id: 18,
+        event_id: randomUUID(),
+        aggregate_type: "attendance",
+        aggregate_id: attendanceEventId,
+        event_type: "attendance.provisional.recorded",
+        payload: {
+          company_id: companyId(store),
+          subject_employee_user_id: employee().id,
+          attendance_event_id: attendanceEventId,
+          verification_status: "unverified",
+          captured_at: capturedAt,
+        },
+        idempotency_key: `attendance.provisional.recorded:${attendanceEventId}`,
+        status: "pending",
+        retry_count: 0,
+        available_at: capturedAt,
+        created_at: capturedAt,
+        published_at: null,
+        failed_at: null,
+        last_error: null,
+      });
+
+      const legacyFallback = service.dailyCalendar(employee(), {
+        page: 1,
+        page_size: 10,
+        date: "2026-07-20",
+      });
+      expect(legacyFallback.items[0]).toMatchObject({
+        work_date: "2026-07-20",
+        reporting_evidence_category: "provisional",
+      });
+
+      store.outbox[store.outbox.length - 1]!.payload.work_date = "2026-07-19";
+      const persistedOverride = service.dailyCalendar(employee(), {
+        page: 1,
+        page_size: 10,
+        date: "2026-07-19",
+      });
+      expect(persistedOverride.items[0]).toMatchObject({
+        work_date: "2026-07-19",
+        reporting_evidence_category: "provisional",
+      });
+
+      delete store.outbox[store.outbox.length - 1]!.payload.work_date;
+      store.outbox[store.outbox.length - 1]!.payload.captured_at =
+        "2026-02-31T00:00:00.000Z";
+      const normalizedImpossibleDate = service.dailyCalendar(employee(), {
+        page: 1,
+        page_size: 10,
+        date: "2026-03-03",
+      });
+      expect(normalizedImpossibleDate.items[0]?.reporting_evidence_category).not.toBe(
+        "provisional",
+      );
+
+      store.outbox[store.outbox.length - 1]!.payload.captured_at =
+        "2026-07-20-not-a-date";
+      const datePrefixedGarbage = service.dailyCalendar(employee(), {
+        page: 1,
+        page_size: 10,
+        date: "2026-07-20",
+      });
+      expect(datePrefixedGarbage.items[0]?.reporting_evidence_category).not.toBe(
+        "provisional",
+      );
+    });
   });
 
   describe("AttendanceService.regularizations", () => {
@@ -875,6 +947,59 @@ describe("AttendanceService.punch", () => {
         occurred_at: null,
       });
       expect(voidRequest.requested_punches).toEqual([]);
+    });
+
+    it("rejects overnight replacements when memory mode has no persisted historical shift", () => {
+      const target = service["repository"].addPunch({
+        company_id: companyId(store),
+        employee_user_id: employee().id,
+        actor_user_id: employee().id,
+        event_type: "check_out",
+        occurred_at: "2026-07-09T01:00:00.000Z",
+        work_mode: "office",
+        source: "web",
+        origin: "employee_manual_now",
+        metadata: {},
+      });
+      target.work_date = "2026-07-08";
+
+      expect(() => service.createRegularization(employee(), {
+        work_date: "2026-07-08",
+        reason: "Correct overnight checkout",
+        items: [{
+          operation: "replace",
+          target_punch_event_id: target.id,
+          event_type: "check_out",
+          occurred_at: "2026-07-09T01:15:00.000Z",
+        }],
+      })).toThrow(/historical shift window/iu);
+      expect(store.attendanceRegularizations).toHaveLength(0);
+    });
+
+    it("rejects replacement timestamps more than one day from the target", () => {
+      const target = service["repository"].addPunch({
+        company_id: companyId(store),
+        employee_user_id: employee().id,
+        actor_user_id: employee().id,
+        event_type: "check_out",
+        occurred_at: "2026-07-08T12:00:00.000Z",
+        work_mode: "office",
+        source: "web",
+        origin: "employee_manual_now",
+        metadata: {},
+      });
+
+      expect(() => service.createRegularization(employee(), {
+        work_date: "2026-07-08",
+        reason: "Invalid distant correction",
+        items: [{
+          operation: "replace",
+          target_punch_event_id: target.id,
+          event_type: "check_out",
+          occurred_at: "2026-07-10T12:00:01.000Z",
+        }],
+      })).toThrow(/historical shift window/iu);
+      expect(store.attendanceRegularizations).toHaveLength(0);
     });
 
     it("derives legacy punches from mixed normalized items and omits VOID", () => {

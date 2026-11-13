@@ -691,12 +691,42 @@ export class AuthService {
     });
   }
 
+  sessionContextFromDurableMembership(input: {
+    actor: AuthUser;
+    company: CompanyProfileRecord;
+    preference: UserSessionPreferenceRecord;
+    activeRole: RoleKey;
+  }): SessionContext {
+    return this.buildSessionContext({
+      user: input.actor,
+      company: input.company,
+      preference: input.preference,
+      activeRole: input.activeRole,
+      bootstrap: null,
+    });
+  }
+
+  sessionContextFromDurableBootstrap(input: {
+    actor: AuthUser;
+    company: CompanyProfileRecord;
+  }): SessionContext {
+    return this.buildSessionContext({
+      user: input.actor,
+      company: input.company,
+      preference: null,
+      activeRole: input.actor.roles[0] ?? Roles.Employee,
+      bootstrap: null,
+      bootstrapCompanyId: input.company.id,
+    });
+  }
+
   private buildSessionContext(input: {
     user: AuthUser;
     company: CompanyProfileRecord;
     preference: UserSessionPreferenceRecord | null;
     activeRole: RoleKey;
     bootstrap: GeneratedToken | null;
+    bootstrapCompanyId?: UUID | null;
   }): SessionContext {
     const {
       user,
@@ -705,6 +735,8 @@ export class AuthService {
       activeRole: activeRoleKey,
       bootstrap,
     } = input;
+    const bootstrapCompanyId =
+      bootstrap?.record.company_id ?? input.bootstrapCompanyId ?? null;
     const availableRoles = user.roles.map((role) => ({
       key: role,
       label: role,
@@ -752,12 +784,14 @@ export class AuthService {
           use_include_for_nested_data: true,
         },
       },
-      ...(bootstrap
+      ...(bootstrapCompanyId
         ? {
             setup_required: true,
             next_step: "company_bootstrap" as const,
-            company_id: bootstrap.record.company_id,
-            ...devOnly({ company_bootstrap_token: bootstrap.raw }),
+            company_id: bootstrapCompanyId,
+            ...(bootstrap
+              ? devOnly({ company_bootstrap_token: bootstrap.raw })
+              : {}),
           }
         : {}),
     };

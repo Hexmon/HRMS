@@ -82,11 +82,28 @@ describe("production user-flow smoke", () => {
     expect(timesheet).toMatchObject({ status: "Pending Approval" });
 
     const expense = await requestJson("POST", "/api/v1/expenses", employee.token, projectTravelPayload);
-    expect(expense).toMatchObject({ requester_user_id: employee.user.id, status: "Pending Manager Verification" });
+    expect(expense).toMatchObject({
+      id: expect.any(String),
+      status: "Pending Manager Verification",
+      version: 1,
+    });
+    expect(expense.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(Object.keys(expense).sort()).toEqual(["id", "status", "version"]);
+    const expenseDetail = await requestJson("GET", `/api/v1/expenses/${expense.id}`, employee.token);
+    expect(expenseDetail).toMatchObject({ id: expense.id, requester_user_id: employee.user.id });
+    const peerExpenseRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/expenses/${expense.id}`,
+      headers: authHeader(peer.token),
+    });
+    expect(peerExpenseRead.statusCode).toBe(403);
 
     const dashboard = await requestJson("GET", "/api/v1/dashboard/summary", manager.token);
     expect(dashboard.approvals.expense_manager_pending).toBeGreaterThanOrEqual(1);
-    expect(dashboard.approvals.timesheet_pending).toBeGreaterThanOrEqual(1);
+    expect(dashboard.approvals.timesheet_pending).toBe(0);
+    expect(dashboard.unavailable_features).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "timesheets_historical_ownership", status: "not_implemented" }),
+    ]));
 
     const checkIn = await requestJson("POST", "/api/v1/attendance/punches", employee.token, {
       event_type: "check_in",
@@ -223,7 +240,7 @@ describe("production user-flow smoke", () => {
       url,
       headers: {
         ...authHeader(token),
-        ...(url === "/api/v1/attendance/punches"
+        ...(url === "/api/v1/attendance/punches" || url === "/api/v1/expenses"
           ? { "idempotency-key": randomUUID() }
           : {}),
       },

@@ -251,6 +251,68 @@ export interface UserSessionPreferenceRecord {
   version: number;
 }
 
+export interface DurableSessionContext {
+  actor: AuthUser;
+  company: CompanyProfileRecord;
+  preference: UserSessionPreferenceRecord;
+  activeRole: AuthUser["roles"][number];
+}
+
+export type DurableAuthSessionContext =
+  | { kind: "membership"; membership: DurableSessionContext }
+  | {
+      kind: "company_bootstrap";
+      actor: AuthUser;
+      company: CompanyProfileRecord;
+    };
+
+export interface DashboardSummaryProjection {
+  workforce: {
+    visible_employees: number;
+    active_employees: number;
+    inactive_employees: number;
+    new_joiners_30d: number;
+    departments: Array<{
+      department_id: UUID;
+      department_code: string;
+      name: string;
+      active_employees: number;
+    }>;
+  };
+  approvals: {
+    expense_manager_pending: number;
+    expense_finance_pending: number;
+    timesheet_pending: number;
+    leave_pending: number;
+    wfh_pending: number;
+    document_verification_pending: number;
+  };
+  operations: {
+    assets_total: number;
+    assets_assigned: number;
+    assets_recovery_pending: number;
+    notifications_pending: number;
+    outbox_pending: number;
+  };
+  attendance: {
+    window: {
+      date_from: string;
+      date_to: string;
+      max_months: 12;
+    };
+    evidence_categories: Record<"verified" | "warning" | "provisional" | "review_required" | "rejected", number>;
+    source_categories: Record<"web" | "geo" | "mobile" | "manual" | "kiosk" | "system", number>;
+    exceptions: number;
+  };
+  workload: {
+    work_segments_total: number;
+    submitted_hours_total: string;
+    timesheet_submissions_total: number;
+    timesheet_submissions_approved: number;
+    timesheet_submissions_returned: number;
+  };
+}
+
 export interface AssetStateEventRecord {
   id: UUID;
   asset_id: UUID;
@@ -433,6 +495,9 @@ export interface ObjectStoragePort {
 
 export interface DataStorePersistence {
   flush(): Promise<void>;
+  authUser?(userId: UUID): Promise<AuthUser | null>;
+  authSessionContext?(userId: UUID): Promise<DurableAuthSessionContext>;
+  flushInitialSeed?(): Promise<void>;
   flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyLogo?(
@@ -444,8 +509,107 @@ export interface DataStorePersistence {
   ): Promise<void>;
   reload(): Promise<void>;
   attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
+  dashboardSummaryContext?(userId: UUID): Promise<{
+    session: DurableSessionContext;
+    projection: DashboardSummaryProjection;
+  }>;
+  notificationReadStore?(userId: UUID): Promise<DataStore>;
+  notificationMarkRead?(input: {
+    userId: UUID;
+    notificationId: UUID;
+    expectedVersion?: number;
+  }): Promise<{ notification: NotificationRecord; unreadCount: number }>;
+  notificationMarkAllRead?(input: {
+    userId: UUID;
+    type?: string;
+    before?: string;
+  }): Promise<{ updatedCount: number; unreadCount: number; hasMore: boolean }>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseReportReadContext?(userId: UUID, options?: {
+    audience?: "company" | "requester" | "manager_queue" | "manager_history" | "finance_assigned" | "finance_history" | "advance_aging" | "payment_register" | "audit";
+    filters?: {
+      status?: string;
+      expense_type?: string;
+      expense_sub_type?: string;
+      payment_type?: string;
+      department_id?: UUID;
+      requester_user_id?: UUID;
+      manager_user_id?: UUID;
+      finance_user_id?: UUID;
+      date_from?: string;
+      date_to?: string;
+      document_status?: "any" | "complete" | "missing" | "pending" | "not_required";
+    };
+  }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseReadContext?(userId: UUID, ticketId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
+  expenseMetadataContext?(userId: UUID): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    store: DataStore;
+  }>;
+  expenseFinanceCommand?(input: {
+    userId: UUID;
+    ticketId: UUID;
+    action: "finance.approve" | "finance.payment" | "settlement";
+    idempotencyKey: string;
+    requestHash: string;
+    expectedVersion: number;
+    run: (context: { actor: AuthUser; companyId: UUID; store: DataStore }) => ExpenseTicket;
+  }): Promise<Pick<ExpenseTicket, "id" | "status" | "version">>;
+  expenseMutationCommand?(input: {
+    userId: UUID;
+    ticketId?: UUID;
+    action:
+      | "create"
+      | "submit"
+      | "withdraw"
+      | "clarification"
+      | "manager.verify"
+      | "bills";
+    idempotencyKey: string;
+    requestHash: string;
+    run: (context: {
+      actor: AuthUser;
+      companyId: UUID;
+      store: DataStore;
+    }) => Pick<ExpenseTicket, "id" | "status" | "version">;
+  }): Promise<Pick<ExpenseTicket, "id" | "status" | "version">>;
+  expensePageContext?(userId: UUID, options: {
+    kind: "my" | "manager" | "finance";
+    page: number;
+    pageSize: number;
+    filters?: {
+      status?: string;
+      date_from?: string;
+      date_to?: string;
+      payment_type?: string;
+      expense_type?: string;
+      expense_sub_type?: string;
+      amount_min?: string;
+      amount_max?: string;
+      requester?: string;
+      department?: string;
+      document_status?: "any" | "complete" | "missing";
+      sla_bucket?: string;
+      sort?: string;
+    };
+  }): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore; total: number }>;
+  classifyExpenseDocumentAccess?(
+    userId: UUID,
+    documentId: UUID,
+    mode: "metadata" | "raw" | "workflow",
+  ): Promise<"other" | "expense-authorized" | "hidden">;
+  expenseDashboardContext?(userId: UUID, filters: {
+    status?: string;
+    date_from?: string;
+    date_to?: string;
+  }): Promise<{
+    actor: AuthUser;
+    companyId: UUID;
+    store: DataStore;
+    aggregate: Record<string, string | number>;
+  }>;
   close(): Promise<void>;
 }
 

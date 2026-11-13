@@ -74,5 +74,6 @@ describe("notifications", () => {
     });
     expect(all.statusCode).toBe(200);
     expect(all.json().unread_count).toBe(0);
+    expect(all.json().has_more).toBe(false);
   });
 });

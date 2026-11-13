@@ -7,6 +7,7 @@ import type {
   AuthUser,
   UUID,
 } from "#shared";
+import { validTimeZoneOrUtc } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { badRequest, conflict, type AppError } from "../../platform/errors.js";
 import {
@@ -493,7 +494,7 @@ export class AttendanceCommandService {
         )
       ).rows[0];
       if (!company) return null;
-      const timeZone = company.timezone ?? "Asia/Kolkata";
+      const timeZone = validTimeZoneOrUtc(company.timezone);
       const { policy, source: policySource } = await resolveAutoCheckoutPolicy(tx, {
         companyId: input.companyId,
         employeeUserId: input.employeeUserId,
@@ -851,6 +852,7 @@ export class AttendanceCommandService {
           const evidencePayload = {
             schema_version: 1,
             command_type: commandInput.event_type,
+            work_date: workDate,
             work_mode: commandInput.work_mode,
             source_channel: commandInput.source,
           };
@@ -1514,6 +1516,7 @@ export class AttendanceCommandService {
         const evidencePayload = {
           schema_version: 1,
           command_type: commandInput.event_type,
+          work_date: workDate,
           work_mode: commandInput.work_mode,
           source_channel: commandInput.source,
           manual_fallback: {
@@ -1779,6 +1782,7 @@ export class AttendanceCommandService {
         AttendanceCommandKind,
         "historical_correction" | "approved_regularization"
       >;
+      authoritativeWorkDate?: string;
       command: {
         event_type: AttendancePunchEventType;
         occurred_at: string;
@@ -1812,6 +1816,7 @@ export class AttendanceCommandService {
       metadata: input.command.metadata,
       linked_regularization_request_id:
         input.command.linked_regularization_request_id ?? null,
+      authoritative_work_date: input.authoritativeWorkDate ?? null,
     });
     const scope = `${ATTENDANCE_IDEMPOTENCY_SCOPE_PREFIX}:${input.commandKind}:${principal.companyId}`;
     const run = async (
@@ -1846,7 +1851,7 @@ export class AttendanceCommandService {
         subjectEmployeeUserId: principal.subjectEmployeeUserId,
         asOf: input.command.occurred_at,
       });
-      const workDate = dateInTimeZone(
+      const workDate = input.authoritativeWorkDate ?? dateInTimeZone(
         input.command.occurred_at,
         input.timeZone,
       );
@@ -1872,6 +1877,7 @@ export class AttendanceCommandService {
       const evidencePayload = {
         schema_version: 1,
         command_kind: input.commandKind,
+        work_date: workDate,
         reason: input.command.reason,
         linked_regularization_request_id:
           input.command.linked_regularization_request_id ?? null,
@@ -2091,8 +2097,10 @@ export class AttendanceCommandService {
             current_approver_user_id: UUID | null;
             status: string;
             version: number;
+            work_date: string;
           }>(
-            `SELECT company_id, employee_user_id, current_approver_user_id, status, version
+            `SELECT company_id, employee_user_id, current_approver_user_id, status, version,
+                work_date::text AS work_date
           FROM attendance.regularization_requests
           WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL FOR UPDATE`,
             [input.regularizationRequestId, input.companyId],
@@ -2101,6 +2109,11 @@ export class AttendanceCommandService {
         if (!locked || locked.employee_user_id !== input.employeeUserId) {
           throw conflict(
             "Attendance regularization request was modified by another actor.",
+          );
+        }
+        if (locked.work_date !== input.workDate) {
+          throw conflict(
+            "Attendance regularization work date changed before the decision.",
           );
         }
         if (
@@ -2154,11 +2167,40 @@ export class AttendanceCommandService {
                 employee_user_id: UUID;
                 event_type: AttendancePunchEventType;
                 occurred_at: Date;
+                work_date: string | null;
               }>(
-                `SELECT id, company_id, employee_user_id, event_type, occurred_at
-             FROM attendance.punch_events
-             WHERE id = ANY($1::uuid[]) AND company_id = $2 AND deleted_at IS NULL
-             FOR UPDATE`,
+                `SELECT punch.id, punch.company_id, punch.employee_user_id,
+                    punch.event_type, punch.occurred_at,
+                    COALESCE(
+                      CASE
+                        WHEN recorded.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                         AND pg_input_is_valid(recorded.payload->>'work_date','date')
+                          THEN recorded.payload->>'work_date'
+                        ELSE NULL
+                      END,
+                      session.work_date::text,
+                      regularization.work_date::text,
+                      CASE
+                        WHEN command.request_snapshot->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                         AND pg_input_is_valid(command.request_snapshot->>'work_date','date')
+                          THEN command.request_snapshot->>'work_date'
+                        ELSE NULL
+                      END
+                    ) AS work_date
+             FROM attendance.punch_events punch
+             LEFT JOIN platform.outbox_events recorded
+               ON recorded.idempotency_key='attendance.punch.recorded:' || punch.id::text
+              AND recorded.event_type='attendance.punch.recorded'
+             LEFT JOIN attendance.sessions session
+               ON session.id=punch.session_id AND session.company_id=punch.company_id
+             LEFT JOIN attendance.regularization_requests regularization
+               ON regularization.id=punch.regularization_request_id
+              AND regularization.company_id=punch.company_id
+             LEFT JOIN attendance.command_executions command
+               ON command.id=punch.command_execution_id AND command.company_id=punch.company_id
+             WHERE punch.id = ANY($1::uuid[]) AND punch.company_id = $2
+               AND punch.deleted_at IS NULL
+             FOR UPDATE OF punch`,
                 [targetIds, input.companyId],
               )
             ).rows
@@ -2166,6 +2208,25 @@ export class AttendanceCommandService {
         const targetById = new Map(
           targets.map((target) => [target.id, target]),
         );
+        const historicalShifts = (
+          await tx.query<{
+            eligibility_start_at: Date;
+            eligibility_end_at: Date;
+          }>(
+            `SELECT eligibility_start_at,eligibility_end_at
+             FROM attendance.shift_instances
+             WHERE company_id=$1 AND employee_user_id=$2 AND work_date=$3::date
+               AND deleted_at IS NULL
+             ORDER BY id LIMIT 2`,
+            [input.companyId, input.employeeUserId, locked.work_date],
+          )
+        ).rows;
+        if (input.decision === "approve" && historicalShifts.length !== 1) {
+          throw conflict(
+            "Attendance regularization cannot resolve an unambiguous historical shift.",
+          );
+        }
+        const historicalShift = historicalShifts[0] ?? null;
         const alreadyAppliedTargets = targetIds.length
           ? new Set(
               (
@@ -2179,6 +2240,7 @@ export class AttendanceCommandService {
             )
           : new Set<UUID>();
         for (const item of items) {
+          if (input.decision !== "approve") continue;
           if (item.operation === "add" || item.operation === "replace") {
             if (!item.event_type || !item.occurred_at) {
               throw badRequest(
@@ -2193,12 +2255,18 @@ export class AttendanceCommandService {
                 "Approved regularizations may materialize only check-in and check-out facts.",
               );
             }
-            if (
-              dateInTimeZone(item.occurred_at.toISOString(), input.timeZone) !==
-              input.workDate
-            ) {
+            if (!historicalShift) {
+              throw conflict(
+                "Attendance regularization requires one persisted historical shift.",
+              );
+            }
+            const occurredAtMs = item.occurred_at.getTime();
+            const withinHistoricalShift =
+              occurredAtMs >= historicalShift.eligibility_start_at.getTime() &&
+              occurredAtMs < historicalShift.eligibility_end_at.getTime();
+            if (!withinHistoricalShift) {
               throw badRequest(
-                "Requested punch timestamps must fall on the regularization work_date.",
+                "Requested punch timestamp falls outside the employee's historical shift window.",
               );
             }
           }
@@ -2231,10 +2299,9 @@ export class AttendanceCommandService {
               "Target punch type is not eligible for regularization correction.",
             );
           }
-          if (
-            dateInTimeZone(target.occurred_at.toISOString(), input.timeZone) !==
-            input.workDate
-          ) {
+          const targetWorkDate = target.work_date ??
+            dateInTimeZone(target.occurred_at.toISOString(), input.timeZone);
+          if (targetWorkDate !== locked.work_date) {
             throw badRequest(
               "Target punch must belong to the regularization work_date.",
             );
@@ -2330,6 +2397,7 @@ export class AttendanceCommandService {
                 idempotencyKey: `attendance.regularization.item:${item.id}`,
                 timeZone: input.timeZone,
                 commandKind: "approved_regularization",
+                authoritativeWorkDate: locked.work_date,
                 deferProjection: true,
                 command: {
                   event_type: item.event_type!,
@@ -2400,7 +2468,7 @@ export class AttendanceCommandService {
                 tx,
                 input.companyId,
                 input.employeeUserId,
-                input.workDate,
+                locked.work_date,
                 "office",
                 input.timeZone,
                 projectionPolicy!.graceMinutes,
@@ -2427,7 +2495,7 @@ export class AttendanceCommandService {
                     [
                       input.companyId,
                       input.employeeUserId,
-                      input.workDate,
+                      locked.work_date,
                       input.decision === "reject" ? "rejected" : "returned",
                     ],
                   )
@@ -2437,7 +2505,7 @@ export class AttendanceCommandService {
           await recordApprovedRegularizationPayrollAdjustments(tx, {
             companyId: input.companyId,
             employeeUserId: input.employeeUserId,
-            workDate: input.workDate,
+            workDate: locked.work_date,
             regularizationRequestId: input.regularizationRequestId,
             regularizationRequestItemIds: items.map((item) => item.id),
             correctedDay: day,
@@ -2449,7 +2517,7 @@ export class AttendanceCommandService {
             actorUserId: input.actor.id,
             subjectEmployeeUserId: input.employeeUserId,
             regularizationRequestId: input.regularizationRequestId,
-            workDate: input.workDate,
+            workDate: locked.work_date,
             decision: input.decision,
             previousStatus: "pending",
             nextStatus,
@@ -2577,6 +2645,7 @@ export class AttendanceCommandService {
         const evidencePayload = {
           schema_version: 1,
           command_kind: input.commandKind,
+          work_date: workDate,
           reason: input.command.reason,
           linked_regularization_request_id:
             input.command.linked_regularization_request_id ?? null,
@@ -3780,19 +3849,45 @@ async function projectHistoricalCorrectionDay(
       last_check_out: Date | null;
     }>(
       `SELECT
-       min(occurred_at) FILTER (WHERE event_type = 'check_in') AS first_check_in,
-       max(occurred_at) FILTER (WHERE event_type = 'check_out') AS last_check_out
-     FROM attendance.punch_events
-     WHERE punch_events.company_id = $1
-       AND punch_events.employee_user_id = $2
-       AND punch_events.deleted_at IS NULL
+       min(punch.occurred_at) FILTER (WHERE punch.event_type = 'check_in') AS first_check_in,
+       max(punch.occurred_at) FILTER (WHERE punch.event_type = 'check_out') AS last_check_out
+     FROM attendance.punch_events punch
+     LEFT JOIN platform.outbox_events recorded
+       ON recorded.idempotency_key='attendance.punch.recorded:' || punch.id::text
+      AND recorded.event_type='attendance.punch.recorded'
+     LEFT JOIN attendance.sessions session
+       ON session.id=punch.session_id AND session.company_id=punch.company_id
+     LEFT JOIN attendance.regularization_requests regularization
+       ON regularization.id=punch.regularization_request_id
+      AND regularization.company_id=punch.company_id
+     LEFT JOIN attendance.command_executions command
+       ON command.id=punch.command_execution_id AND command.company_id=punch.company_id
+     WHERE punch.company_id = $1
+       AND punch.employee_user_id = $2
+       AND punch.deleted_at IS NULL
        AND NOT EXISTS (
          SELECT 1
          FROM attendance.regularization_correction_applications application
-         WHERE application.company_id = punch_events.company_id
-           AND application.target_punch_event_id = punch_events.id
+         WHERE application.company_id = punch.company_id
+           AND application.target_punch_event_id = punch.id
        )
-       AND (punch_events.occurred_at AT TIME ZONE $3)::date = $4::date`,
+       AND COALESCE(
+         CASE
+           WHEN recorded.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            AND pg_input_is_valid(recorded.payload->>'work_date','date')
+             THEN recorded.payload->>'work_date'
+           ELSE NULL
+         END,
+         session.work_date::text,
+         regularization.work_date::text,
+         CASE
+           WHEN command.request_snapshot->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            AND pg_input_is_valid(command.request_snapshot->>'work_date','date')
+             THEN command.request_snapshot->>'work_date'
+           ELSE NULL
+         END,
+         to_char(punch.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD')
+       ) = $4`,
       [companyId, employeeUserId, timeZone, workDate],
     )
   ).rows[0];

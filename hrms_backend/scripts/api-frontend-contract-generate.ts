@@ -18,13 +18,22 @@ const tick = String.fromCharCode(96);
 const bar = String.fromCharCode(124);
 const apiPath = join(process.cwd(), "docs/api/openapi.json");
 const outputDir = join(process.cwd(), "docs/api/frontend-contract");
+const clientApiDir = join(process.cwd(), "..", "hrms-client", "docs", "api");
+const clientFrontendContractDir = join(clientApiDir, "frontend-contract");
 const spec = JSON.parse(readFileSync(apiPath, "utf8")) as OpenApiDocument;
 const operations = collectOperations(spec);
 
 mkdirSync(outputDir, { recursive: true });
-copyFileSync(apiPath, join(outputDir, "openapi.json"));
-writeFileSync(join(outputDir, "ENDPOINT_INDEX.md"), `${renderEndpointIndex()}\n`);
-console.log(`Frontend endpoint contract generated for ${operations.length} operations.`);
+const backendFrontendOpenApiPath = join(outputDir, "openapi.json");
+const backendEndpointIndexPath = join(outputDir, "ENDPOINT_INDEX.md");
+copyFileSync(apiPath, backendFrontendOpenApiPath);
+writeFileSync(backendEndpointIndexPath, `${renderEndpointIndex()}\n`);
+
+mkdirSync(clientFrontendContractDir, { recursive: true });
+copyFileSync(apiPath, join(clientApiDir, "openapi.json"));
+copyFileSync(backendFrontendOpenApiPath, join(clientFrontendContractDir, "openapi.json"));
+copyFileSync(backendEndpointIndexPath, join(clientFrontendContractDir, "ENDPOINT_INDEX.md"));
+console.log(`Frontend endpoint contract generated and client mirrors synchronized for ${operations.length} operations.`);
 
 function collectOperations(document: OpenApiDocument): OperationRow[] {
   const rows: OperationRow[] = [];

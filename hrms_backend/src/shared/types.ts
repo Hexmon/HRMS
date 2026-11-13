@@ -223,6 +223,9 @@ export interface CoreUser extends AuthUser {
 
 export interface ExpenseTicket {
   id: UUID;
+  company_id?: UUID | null;
+  owner_resolution_status?: "quarantined" | "typed_creation" | "audited_repair";
+  owner_resolution_reason?: string | null;
   ticket_no: string;
   requester_user_id: UUID;
   requester_role_snapshot: string;
@@ -258,6 +261,15 @@ export interface ExpenseTicket {
   closed_at: ISODateTime | null;
   deleted_at: ISODateTime | null;
 }
+
+// The legacy persisted shape can be quarantined and has no trusted owner.
+// New command construction must use the stronger type instead of relying on
+// a response-end SQL constraint to catch missing ownership.
+export type NewExpenseTicket = ExpenseTicket & {
+  company_id: UUID;
+  owner_resolution_status: "typed_creation";
+  owner_resolution_reason: null;
+};
 
 export interface ExpenseLineItem {
   id: UUID;
@@ -395,6 +407,7 @@ export interface AttendancePunch {
   employee_user_id: UUID;
   actor_user_id: UUID;
   company_id: UUID;
+  work_date?: ISODate;
   event_type: AttendancePunchEventType;
   occurred_at: ISODateTime;
   work_mode: "office" | "remote" | "wfh" | "field";

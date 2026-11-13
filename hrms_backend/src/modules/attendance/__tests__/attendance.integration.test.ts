@@ -88,6 +88,51 @@ async function createAttendancePolicy(
   return versionId;
 }
 
+async function insertHistoricalShiftFixture(
+  app: TestApp,
+  input: {
+    companyId: string;
+    employeeUserId: string;
+    workDate: string;
+  },
+): Promise<void> {
+  const templateId = randomUUID();
+  const versionId = randomUUID();
+  await app.store.pgPool!.query(
+    `INSERT INTO attendance.shift_templates (
+       id, company_id, code, name, status, is_company_default, version
+     ) VALUES ($1,$2,$3,'Historical regularization fixture','active',false,1)`,
+    [templateId, input.companyId, `regularization-${templateId}`],
+  );
+  await app.store.pgPool!.query(
+    `INSERT INTO attendance.shift_template_versions (
+       id, company_id, template_id, version_number, effective_from,
+       local_start_time, local_end_time, end_day_offset, timezone_strategy,
+       fixed_timezone, eligibility_open_before_start_minutes,
+       eligibility_close_after_end_minutes
+     ) VALUES (
+       $1,$2,$3,1,$4::date,'03:00','15:00',0,'fixed','UTC',180,540
+     )`,
+    [versionId, input.companyId, templateId, input.workDate],
+  );
+  await app.store.pgPool!.query(
+    `INSERT INTO attendance.shift_instances (
+       company_id, employee_user_id, work_date, template_id,
+       template_version_id, resolved_timezone, scheduled_start_at,
+       scheduled_end_at, eligibility_start_at, eligibility_end_at,
+       generation_source
+     ) VALUES (
+       $1,$2,$3::date,$4,$5,'UTC',
+       ($3::date + time '03:00') AT TIME ZONE 'UTC',
+       ($3::date + time '15:00') AT TIME ZONE 'UTC',
+       ($3::date + time '00:00') AT TIME ZONE 'UTC',
+       (($3::date + 1) + time '00:00') AT TIME ZONE 'UTC',
+       'assignment'
+     )`,
+    [input.companyId, input.employeeUserId, input.workDate, templateId, versionId],
+  );
+}
+
 function isWeekend(date: string): boolean {
   const day = new Date(date + "T00:00:00.000Z").getUTCDay();
   return day === 0 || day === 6;
@@ -1257,6 +1302,11 @@ describe("attendance", () => {
     const employee = await loginAs(app, "E1");
     const manager = await loginAs(app, "D1");
     const otherEmployee = await loginAs(app, "E2");
+    await insertHistoricalShiftFixture(app, {
+      companyId: ensureActiveCompany(app).id,
+      employeeUserId: employee.user.id,
+      workDate: "2026-05-21",
+    });
 
     const request = await app.inject({
       method: "POST",

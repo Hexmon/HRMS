@@ -30,6 +30,8 @@ import {
   ErrorCodes,
   EmploymentStatuses,
   Roles,
+  parseStrictIsoInstant,
+  validTimeZoneOrUtc,
 } from "#shared";
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
@@ -729,24 +731,34 @@ function todayDate(timeZone = "UTC"): string {
 }
 
 function dateInTimeZone(value: string, timeZone: string): string {
-  try {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(new Date(value));
-    const map = new Map(parts.map((part) => [part.type, part.value]));
-    const year = map.get("year");
-    const month = map.get("month");
-    const day = map.get("day");
-    if (year && month && day) {
-      return `${year}-${month}-${day}`;
-    }
-  } catch {
-    // Fall back to UTC below.
+  const instant = parseStrictIsoInstant(value);
+  if (!instant) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: validTimeZoneOrUtc(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(instant);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+  const year = map.get("year");
+  const month = map.get("month");
+  const day = map.get("day");
+  if (year && month && day) {
+    return `${year}-${month}-${day}`;
   }
-  return value.slice(0, 10);
+  return "";
+}
+
+function calendarDateValue(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
+    return null;
+  }
+  const [year, month, day] = value.split("-").map(Number);
+  const normalized = new Date(Date.UTC(year!, month! - 1, day!));
+  return !Number.isNaN(normalized.getTime()) &&
+    normalized.toISOString().slice(0, 10) === value
+    ? value
+    : null;
 }
 
 function monthRange(
@@ -1092,6 +1104,7 @@ export class AttendanceService {
       company_id: companyId,
       employee_user_id: subjectEmployeeUserId,
       actor_user_id: actor.id,
+      work_date: workDate,
       event_type: input.event_type,
       occurred_at: occurredAt,
       work_mode: input.work_mode,
@@ -2862,6 +2875,7 @@ export class AttendanceService {
           company_id: companyId,
           employee_user_id: current.employee_user_id,
           actor_user_id: actor.id,
+          work_date: current.work_date,
           event_type: applied.replacement_punch.event_type as AttendancePunchEventType,
           occurred_at: applied.replacement_punch.occurred_at as string,
           work_mode: "office",
@@ -3464,6 +3478,7 @@ export class AttendanceService {
           company_id: input.companyId,
           employee_user_id: input.employeeUserId,
           actor_user_id: input.employeeUserId,
+          work_date: input.workDate,
           event_type: AttendancePunchEventTypes.BreakEnd,
           occurred_at: closeAt,
           work_mode: input.lastOpenPunch.work_mode,
@@ -3479,6 +3494,7 @@ export class AttendanceService {
         company_id: input.companyId,
         employee_user_id: input.employeeUserId,
         actor_user_id: input.employeeUserId,
+        work_date: input.workDate,
         event_type: AttendancePunchEventTypes.CheckOut,
         occurred_at: closeAt,
         work_mode: input.lastOpenPunch.work_mode,
@@ -3547,7 +3563,7 @@ export class AttendanceService {
             closures.push(closure);
           }
         }
-        openWorkDate = dateInTimeZone(punch.occurred_at, timeZone);
+        openWorkDate = punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone);
         firstCheckIn = punch;
         lastOpenPunch = punch;
         continue;
@@ -3631,7 +3647,7 @@ export class AttendanceService {
         continue;
       }
       scannedUsers += 1;
-      const timeZone = this.company(companyId).timezone;
+      const timeZone = validTimeZoneOrUtc(this.company(companyId).timezone);
       const userClosures = this.autoPunchOutExpiredSessions(
         companyId,
         employeeUserId,
@@ -3740,9 +3756,17 @@ export class AttendanceService {
     const policy = this.attendancePolicy(companyId);
     const holiday = this.holidayForDate(companyId, workDate);
     const workingDay = this.isWorkingDay(companyId, workDate);
+    const shiftCompany = this.company(companyId);
+    const shiftEmployee = this.requireUser(employeeUserId);
     const shift = resolveEmployeeShift({
-      company: this.company(companyId),
-      employee: this.requireUser(employeeUserId),
+      company: {
+        ...shiftCompany,
+        timezone: validTimeZoneOrUtc(shiftCompany.timezone),
+      },
+      employee: {
+        ...shiftEmployee,
+        timezone: validTimeZoneOrUtc(shiftEmployee.timezone, shiftCompany.timezone),
+      },
       workDate,
       templates: [],
       versions: [],
@@ -3950,9 +3974,17 @@ export class AttendanceService {
         : workDate > localToday
           ? AttendanceDayClassifications.Future
           : AttendanceDayClassifications.WorkingDay;
+    const shiftCompany = this.company(companyId);
+    const shiftEmployee = this.requireUser(employeeUserId);
     const shift = resolveEmployeeShift({
-      company: this.company(companyId),
-      employee: this.requireUser(employeeUserId),
+      company: {
+        ...shiftCompany,
+        timezone: validTimeZoneOrUtc(shiftCompany.timezone),
+      },
+      employee: {
+        ...shiftEmployee,
+        timezone: validTimeZoneOrUtc(shiftEmployee.timezone, shiftCompany.timezone),
+      },
       workDate,
       templates: [],
       versions: [],
@@ -4018,10 +4050,10 @@ export class AttendanceService {
       .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at))
       .filter((punch) => {
         if (punch.event_type === AttendancePunchEventTypes.CheckIn) {
-          openWorkDate = dateInTimeZone(punch.occurred_at, timeZone);
+          openWorkDate = punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone);
         }
         const assignedWorkDate =
-          openWorkDate ?? dateInTimeZone(punch.occurred_at, timeZone);
+          openWorkDate ?? punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone);
         const include = assignedWorkDate === workDate;
         if (punch.event_type === AttendancePunchEventTypes.CheckOut) {
           openWorkDate = null;
@@ -4068,7 +4100,7 @@ export class AttendanceService {
       .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
     for (const punch of punches) {
       if (punch.event_type === AttendancePunchEventTypes.CheckIn) {
-        openWorkDate = dateInTimeZone(punch.occurred_at, timeZone);
+        openWorkDate = punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone);
       }
       if (punch.event_type === AttendancePunchEventTypes.CheckOut) {
         openWorkDate = null;
@@ -4275,7 +4307,6 @@ export class AttendanceService {
       reason: string;
       work_mode: "office" | "remote" | "wfh" | "field";
       metadata: Record<string, unknown>;
-      linked_regularization_request_id?: UUID;
     },
     idempotencyKey: string,
   ): Promise<Record<string, unknown>> {
@@ -4291,15 +4322,6 @@ export class AttendanceService {
     assertCanCreateHistoricalCorrection(actor);
     if (Date.parse(input.occurred_at) >= Date.parse(nowIso())) {
       throw badRequest("Historical correction occurrence time must be in the past.");
-    }
-    if (input.linked_regularization_request_id) {
-      const request = this.repository.findRegularization(
-        input.linked_regularization_request_id,
-        new Set([context.companyId]),
-      );
-      if (request.employee_user_id !== subject.id) {
-        throw forbidden("Linked regularization does not belong to the correction subject.");
-      }
     }
     if (this.store.kind === "postgres") {
       if (!this.store.pgPool) throw conflict("Attendance command service is unavailable.");
@@ -4357,13 +4379,15 @@ export class AttendanceService {
       linked_regularization_request_id?: UUID;
     },
     origin: Extract<AttendancePunch["origin"], "historical_correction" | "approved_regularization">,
+    authoritativeWorkDate?: string,
   ): Record<string, unknown> {
     const timeZone = this.timezoneForUser(subjectEmployeeUserId, companyId);
-    const workDate = dateInTimeZone(input.occurred_at, timeZone);
+    const workDate = authoritativeWorkDate ?? dateInTimeZone(input.occurred_at, timeZone);
     const punch = this.repository.addPunch({
       company_id: companyId,
       employee_user_id: subjectEmployeeUserId,
       actor_user_id: actor.id,
+      work_date: workDate,
       event_type: input.event_type,
       occurred_at: input.occurred_at,
       work_mode: input.work_mode,
@@ -4743,7 +4767,7 @@ export class AttendanceService {
       (candidate) => candidate.id === userId && !candidate.deleted_at,
     );
     const company = this.company(companyId);
-    return user?.timezone ?? company?.timezone ?? "Asia/Kolkata";
+    return validTimeZoneOrUtc(user?.timezone, company?.timezone);
   }
 
   private recordsForUsers(
@@ -4890,14 +4914,23 @@ export class AttendanceService {
         !review.deleted_at,
     );
     const offlineVerificationStatuses = this.store.outbox
-      .filter(
-        (event) =>
-          event.event_type === "attendance.provisional.recorded" &&
-          event.payload.company_id === record.company_id &&
-          event.payload.subject_employee_user_id === record.employee_user_id &&
-          typeof event.payload.captured_at === "string" &&
-          event.payload.captured_at.slice(0, 10) === record.work_date,
-      )
+      .filter((event) => {
+        if (
+          event.event_type !== "attendance.provisional.recorded" ||
+          event.payload.company_id !== record.company_id ||
+          event.payload.subject_employee_user_id !== record.employee_user_id ||
+          typeof event.payload.captured_at !== "string"
+        ) {
+          return false;
+        }
+        const workDate =
+          calendarDateValue(event.payload.work_date) ??
+          dateInTimeZone(
+            event.payload.captured_at,
+            this.timezoneForUser(record.employee_user_id, record.company_id),
+          );
+        return workDate === record.work_date;
+      })
       .map((event) => event.payload.verification_status);
     return {
       reviewRequired: reviews.some(
@@ -5077,6 +5110,7 @@ export class AttendanceService {
             linked_regularization_request_id: request.id,
           },
           "approved_regularization",
+          request.work_date,
         );
         replacementPunchEventId = result.punch_id as UUID;
       }
@@ -5136,6 +5170,29 @@ export class AttendanceService {
     }
     const targets = new Set<UUID>();
     const adds = new Set<string>();
+    const historicalShift = this.store.kind === "memory"
+      ? (() => {
+          const shiftCompany = this.company(companyId);
+          const shiftEmployee = this.requireUser(employeeUserId);
+          return resolveEmployeeShift({
+            company: {
+              ...shiftCompany,
+              timezone: validTimeZoneOrUtc(shiftCompany.timezone),
+            },
+            employee: {
+              ...shiftEmployee,
+              timezone: validTimeZoneOrUtc(
+                shiftEmployee.timezone,
+                shiftCompany.timezone,
+              ),
+            },
+            workDate,
+            templates: [],
+            versions: [],
+            assignments: [],
+          });
+        })()
+      : null;
     for (const item of items) {
       if (item.operation === "add" || item.operation === "replace") {
         if (!item.event_type || !item.occurred_at) {
@@ -5144,8 +5201,15 @@ export class AttendanceService {
         if (!([AttendancePunchEventTypes.CheckIn, AttendancePunchEventTypes.CheckOut] as string[]).includes(item.event_type)) {
           throw badRequest("Regularization items support only check-in and check-out events.");
         }
-        if (dateInTimeZone(item.occurred_at, timeZone) !== workDate) {
-          throw badRequest("Requested punch timestamps must fall on the regularization work_date.");
+        const occurredAt = Date.parse(item.occurred_at);
+        if (
+          historicalShift &&
+          (occurredAt < Date.parse(historicalShift.eligibility_start_at) ||
+            occurredAt >= Date.parse(historicalShift.eligibility_end_at))
+        ) {
+          throw badRequest(
+            "Requested punch timestamp falls outside the employee's historical shift window.",
+          );
         }
         const logicalKey = `${item.event_type}:${item.occurred_at}`;
         if (item.operation === "add" && adds.has(logicalKey)) {
@@ -5176,7 +5240,9 @@ export class AttendanceService {
       if (!([AttendancePunchEventTypes.CheckIn, AttendancePunchEventTypes.CheckOut] as string[]).includes(target.event_type)) {
         throw badRequest("Target punch type is not eligible for regularization correction.");
       }
-      if (dateInTimeZone(target.occurred_at, timeZone) !== workDate) {
+      const targetWorkDate = calendarDateValue(target.work_date) ??
+        dateInTimeZone(target.occurred_at, timeZone);
+      if (targetWorkDate !== workDate) {
         throw badRequest("Target punch must belong to the regularization work_date.");
       }
       if (this.store.attendanceRegularizationCorrectionApplications.some(
@@ -5306,10 +5372,16 @@ export class AttendanceService {
            ON offline.company_id = event.company_id
           AND offline.attendance_event_id = event.id
           AND offline.sync_status IN ('accepted', 'deferred')
+         LEFT JOIN platform.outbox_events provisional
+           ON provisional.idempotency_key='attendance.provisional.recorded:' || event.id::text
+          AND provisional.event_type='attendance.provisional.recorded'
          LEFT JOIN attendance.punch_events punch
            ON punch.company_id = event.company_id
           AND punch.command_execution_id = event.command_execution_id
           AND punch.deleted_at IS NULL
+         LEFT JOIN attendance.command_executions command
+           ON command.company_id = event.company_id
+          AND command.id = event.command_execution_id
          LEFT JOIN attendance.command_decisions command_decision
            ON command_decision.company_id = event.company_id
           AND command_decision.command_execution_id = event.command_execution_id
@@ -5321,7 +5393,37 @@ export class AttendanceService {
           AND reason.attendance_decision_id = audit_decision.id
         WHERE event.company_id = $1
           AND event.employee_user_id = $2
-          AND to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD') = $4
+          AND COALESCE(
+            CASE
+              WHEN event.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(event.payload->>'work_date', 'date')
+                THEN event.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN provisional.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(provisional.payload->>'work_date', 'date')
+                THEN provisional.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN offline.event_payload->>'captured_at' ~
+                     '^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,9})?(Z|[+-]((0[0-9]|1[0-3]):[0-5][0-9]|14:00))$'
+               AND pg_input_is_valid(
+                 offline.event_payload->>'captured_at',
+                 'timestamp with time zone'
+               )
+                THEN left(offline.event_payload->>'captured_at',10)
+              ELSE NULL
+            END,
+            CASE
+              WHEN command.request_snapshot->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(command.request_snapshot->>'work_date', 'date')
+                THEN command.request_snapshot->>'work_date'
+              ELSE NULL
+            END,
+            to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD')
+          ) = $4
         GROUP BY
           event.event_type,
           event.source,
@@ -5369,7 +5471,7 @@ export class AttendanceService {
           punch.company_id === companyId &&
           punch.employee_user_id === employeeUserId &&
           !punch.deleted_at &&
-          dateInTimeZone(punch.occurred_at, timeZone) === workDate,
+          (punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone)) === workDate,
       )
       .sort((left, right) => left.occurred_at.localeCompare(right.occurred_at))
       .map((punch) => ({
@@ -5515,15 +5617,55 @@ export class AttendanceService {
           command_decision.evidence_snapshot #>> '{geo_policy,work_site_id}'
         )::uuid AS work_site_id
          FROM attendance.attendance_events event
+         LEFT JOIN attendance.offline_event_inbox offline
+           ON offline.company_id=event.company_id
+          AND offline.attendance_event_id=event.id
+          AND offline.sync_status IN ('accepted','deferred')
+         LEFT JOIN platform.outbox_events provisional
+           ON provisional.idempotency_key='attendance.provisional.recorded:' || event.id::text
+          AND provisional.event_type='attendance.provisional.recorded'
          LEFT JOIN attendance.command_decisions command_decision
            ON command_decision.company_id = event.company_id
           AND command_decision.command_execution_id = event.command_execution_id
+         LEFT JOIN attendance.command_executions command
+           ON command.company_id = event.company_id
+          AND command.id = event.command_execution_id
          LEFT JOIN attendance.attendance_decisions audit_decision
            ON audit_decision.company_id = event.company_id
           AND audit_decision.attendance_event_id = event.id
         WHERE event.company_id = $1
           AND event.employee_user_id = $2
-          AND to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD') = $4
+          AND COALESCE(
+            CASE
+              WHEN event.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(event.payload->>'work_date', 'date')
+                THEN event.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN provisional.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(provisional.payload->>'work_date', 'date')
+                THEN provisional.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN offline.event_payload->>'captured_at' ~
+                     '^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,9})?(Z|[+-]((0[0-9]|1[0-3]):[0-5][0-9]|14:00))$'
+               AND pg_input_is_valid(
+                 offline.event_payload->>'captured_at',
+                 'timestamp with time zone'
+               )
+                THEN left(offline.event_payload->>'captured_at',10)
+              ELSE NULL
+            END,
+            CASE
+              WHEN command.request_snapshot->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(command.request_snapshot->>'work_date', 'date')
+                THEN command.request_snapshot->>'work_date'
+              ELSE NULL
+            END,
+            to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD')
+          ) = $4
           AND COALESCE(
             audit_decision.evaluation_context #>> '{geo_policy,work_site_id}',
             command_decision.evidence_snapshot #>> '{geo_policy,work_site_id}'
@@ -5603,9 +5745,36 @@ export class AttendanceService {
            ON offline.company_id = event.company_id
           AND offline.attendance_event_id = event.id
           AND offline.sync_status IN ('accepted', 'deferred')
+         LEFT JOIN platform.outbox_events provisional
+           ON provisional.idempotency_key='attendance.provisional.recorded:' || event.id::text
+          AND provisional.event_type='attendance.provisional.recorded'
         WHERE event.company_id = $1
           AND event.employee_user_id = $2
-          AND to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD') = $4
+          AND COALESCE(
+            CASE
+              WHEN event.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(event.payload->>'work_date', 'date')
+                THEN event.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN provisional.payload->>'work_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+               AND pg_input_is_valid(provisional.payload->>'work_date', 'date')
+                THEN provisional.payload->>'work_date'
+              ELSE NULL
+            END,
+            CASE
+              WHEN offline.event_payload->>'captured_at' ~
+                     '^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,9})?(Z|[+-]((0[0-9]|1[0-3]):[0-5][0-9]|14:00))$'
+               AND pg_input_is_valid(
+                 offline.event_payload->>'captured_at',
+                 'timestamp with time zone'
+               )
+                THEN left(offline.event_payload->>'captured_at',10)
+              ELSE NULL
+            END,
+            to_char(event.occurred_at AT TIME ZONE $3, 'YYYY-MM-DD')
+          ) = $4
         ORDER BY event.occurred_at ASC, event.event_type ASC`,
       [companyId, employeeUserId, timeZone, workDate],
     );
@@ -5996,7 +6165,7 @@ export class AttendanceService {
   private presentPunch(punch: AttendancePunch, timeZone: string) {
     return {
       ...punch,
-      work_date: dateInTimeZone(punch.occurred_at, timeZone),
+      work_date: punch.work_date ?? dateInTimeZone(punch.occurred_at, timeZone),
       time: timeText(punch.occurred_at, timeZone),
     };
   }

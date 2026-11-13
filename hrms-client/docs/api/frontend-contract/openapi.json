@@ -21661,6 +21661,8 @@
                         "expense_finance_pending",
                         "expense_total_pending",
                         "timesheet_pending",
+                        "leave_pending",
+                        "wfh_pending",
                         "document_verification_pending"
                       ],
                       "properties": {
@@ -21683,6 +21685,16 @@
                           "type": "integer",
                           "minimum": 0,
                           "example": 1
+                        },
+                        "leave_pending": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
+                        },
+                        "wfh_pending": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 0
                         },
                         "document_verification_pending": {
                           "type": "integer",
@@ -21733,10 +21745,41 @@
                     "attendance": {
                       "type": "object",
                       "required": [
+                        "window",
                         "evidence_categories",
                         "source_categories"
                       ],
                       "properties": {
+                        "window": {
+                          "type": "object",
+                          "required": [
+                            "date_from",
+                            "date_to",
+                            "max_months"
+                          ],
+                          "properties": {
+                            "date_from": {
+                              "type": "string",
+                              "format": "date",
+                              "description": "Inclusive rolling attendance window start",
+                              "example": "2026-05-04"
+                            },
+                            "date_to": {
+                              "type": "string",
+                              "format": "date",
+                              "description": "Inclusive rolling attendance window end",
+                              "example": "2026-05-04"
+                            },
+                            "max_months": {
+                              "type": "integer",
+                              "enum": [
+                                12
+                              ],
+                              "example": 12
+                            }
+                          },
+                          "additionalProperties": false
+                        },
                         "evidence_categories": {
                           "type": "object",
                           "required": [
@@ -25622,6 +25665,21 @@
             }
           }
         },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "example": "expense-command-019fc5b7"
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Required client-generated key. Reuse it only for an exact retry of the same expense command payload."
+          }
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -25637,10 +25695,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": false,
                   "required": [
                     "id",
-                    "ticket_no",
-                    "requester_user_id",
                     "status",
                     "version"
                   ],
@@ -25651,209 +25708,16 @@
                       "description": "Expense ticket UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
-                    "ticket_no": {
-                      "type": "string",
-                      "example": "EXP-2026-1042"
-                    },
-                    "requester_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Requester user UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "requester_role_snapshot": {
-                      "type": "string",
-                      "example": "Employee / Software Engineer"
-                    },
-                    "department_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Department UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "expense_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project",
-                        "SalesPreSales"
-                      ],
-                      "example": "Project"
-                    },
-                    "expense_sub_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project Travel",
-                        "Material Consumables",
-                        "Lodging & Boarding",
-                        "Client Meeting",
-                        "Demo / Presentation",
-                        "Marketing Event",
-                        "Sales Travel",
-                        "Misc Sales Expense"
-                      ],
-                      "example": "Project Travel"
-                    },
-                    "project_code": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "PRJ-100"
-                    },
-                    "client_name": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": null
-                    },
-                    "task_title": {
-                      "type": "string",
-                      "example": "Client implementation travel"
-                    },
-                    "estimated_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Estimated amount",
-                      "example": "12500.00"
-                    },
-                    "payment_type": {
-                      "type": "string",
-                      "enum": [
-                        "Advance",
-                        "ReimbursementAccrued"
-                      ],
-                      "example": "Advance"
-                    },
-                    "advance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Advance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "actual_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Actual amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "variance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Settlement variance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "payment_reference_no": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "NEFT-9931"
-                    },
-                    "assigned_finance_actor_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance-stage actor UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned manager verifier UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "D1 - Manager D1"
-                    },
-                    "finance_approver_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_approver_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "assigned_finance_actor_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "primary_finance_manager_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured primary finance manager UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "primary_finance_manager_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "finance_approval_backup_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured fallback finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_backup_applied": {
-                      "type": "boolean",
-                      "description": "True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup.",
-                      "example": false
-                    },
-                    "governance_warning_codes": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "Route/governance warning markers preserved from the ticket route snapshot.",
-                      "example": [
-                        "primary_finance_manager_assigned"
-                      ]
-                    },
                     "status": {
                       "type": "string",
-                      "example": "Manager Verified"
+                      "description": "Status after the command commits."
                     },
                     "version": {
                       "type": "integer",
                       "minimum": 1,
-                      "example": 4
-                    },
-                    "created_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Creation timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "updated_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Last update timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "submitted_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Submission timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
-                    },
-                    "closed_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Closure timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
+                      "description": "Committed optimistic-concurrency version."
                     }
-                  },
-                  "additionalProperties": true
+                  }
                 }
               }
             }
@@ -28589,6 +28453,19 @@
             "name": "id",
             "required": true,
             "description": "Resource UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "example": "expense-command-019fc5b7"
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Required client-generated key. Reuse it only for an exact retry of the same expense command payload."
           }
         ],
         "security": [
@@ -28606,10 +28483,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": false,
                   "required": [
                     "id",
-                    "ticket_no",
-                    "requester_user_id",
                     "status",
                     "version"
                   ],
@@ -28620,209 +28496,16 @@
                       "description": "Expense ticket UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
-                    "ticket_no": {
-                      "type": "string",
-                      "example": "EXP-2026-1042"
-                    },
-                    "requester_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Requester user UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "requester_role_snapshot": {
-                      "type": "string",
-                      "example": "Employee / Software Engineer"
-                    },
-                    "department_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Department UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "expense_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project",
-                        "SalesPreSales"
-                      ],
-                      "example": "Project"
-                    },
-                    "expense_sub_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project Travel",
-                        "Material Consumables",
-                        "Lodging & Boarding",
-                        "Client Meeting",
-                        "Demo / Presentation",
-                        "Marketing Event",
-                        "Sales Travel",
-                        "Misc Sales Expense"
-                      ],
-                      "example": "Project Travel"
-                    },
-                    "project_code": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "PRJ-100"
-                    },
-                    "client_name": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": null
-                    },
-                    "task_title": {
-                      "type": "string",
-                      "example": "Client implementation travel"
-                    },
-                    "estimated_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Estimated amount",
-                      "example": "12500.00"
-                    },
-                    "payment_type": {
-                      "type": "string",
-                      "enum": [
-                        "Advance",
-                        "ReimbursementAccrued"
-                      ],
-                      "example": "Advance"
-                    },
-                    "advance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Advance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "actual_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Actual amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "variance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Settlement variance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "payment_reference_no": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "NEFT-9931"
-                    },
-                    "assigned_finance_actor_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance-stage actor UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned manager verifier UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "D1 - Manager D1"
-                    },
-                    "finance_approver_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_approver_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "assigned_finance_actor_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "primary_finance_manager_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured primary finance manager UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "primary_finance_manager_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "finance_approval_backup_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured fallback finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_backup_applied": {
-                      "type": "boolean",
-                      "description": "True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup.",
-                      "example": false
-                    },
-                    "governance_warning_codes": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "Route/governance warning markers preserved from the ticket route snapshot.",
-                      "example": [
-                        "primary_finance_manager_assigned"
-                      ]
-                    },
                     "status": {
                       "type": "string",
-                      "example": "Manager Verified"
+                      "description": "Status after the command commits."
                     },
                     "version": {
                       "type": "integer",
                       "minimum": 1,
-                      "example": 4
-                    },
-                    "created_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Creation timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "updated_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Last update timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "submitted_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Submission timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
-                    },
-                    "closed_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Closure timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
+                      "description": "Committed optimistic-concurrency version."
                     }
-                  },
-                  "additionalProperties": true
+                  }
                 }
               }
             }
@@ -29147,6 +28830,19 @@
             "name": "id",
             "required": true,
             "description": "Resource UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "example": "expense-command-019fc5b7"
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Required client-generated key. Reuse it only for an exact retry of the same expense command payload."
           }
         ],
         "security": [
@@ -29164,306 +28860,29 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": false,
                   "required": [
-                    "expense",
-                    "version",
-                    "timeline_event"
+                    "id",
+                    "status",
+                    "version"
                   ],
                   "properties": {
-                    "expense": {
-                      "type": "object",
-                      "required": [
-                        "id",
-                        "ticket_no",
-                        "requester_user_id",
-                        "status",
-                        "version"
-                      ],
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "format": "uuid",
-                          "description": "Expense ticket UUID",
-                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                        },
-                        "ticket_no": {
-                          "type": "string",
-                          "example": "EXP-2026-1042"
-                        },
-                        "requester_user_id": {
-                          "type": "string",
-                          "format": "uuid",
-                          "description": "Requester user UUID",
-                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                        },
-                        "requester_role_snapshot": {
-                          "type": "string",
-                          "example": "Employee / Software Engineer"
-                        },
-                        "department_id": {
-                          "type": "string",
-                          "format": "uuid",
-                          "description": "Department UUID",
-                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                        },
-                        "expense_type": {
-                          "type": "string",
-                          "enum": [
-                            "Project",
-                            "SalesPreSales"
-                          ],
-                          "example": "Project"
-                        },
-                        "expense_sub_type": {
-                          "type": "string",
-                          "enum": [
-                            "Project Travel",
-                            "Material Consumables",
-                            "Lodging & Boarding",
-                            "Client Meeting",
-                            "Demo / Presentation",
-                            "Marketing Event",
-                            "Sales Travel",
-                            "Misc Sales Expense"
-                          ],
-                          "example": "Project Travel"
-                        },
-                        "project_code": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": "PRJ-100"
-                        },
-                        "client_name": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": null
-                        },
-                        "task_title": {
-                          "type": "string",
-                          "example": "Client implementation travel"
-                        },
-                        "estimated_amount": {
-                          "type": "string",
-                          "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                          "description": "Estimated amount",
-                          "example": "12500.00"
-                        },
-                        "payment_type": {
-                          "type": "string",
-                          "enum": [
-                            "Advance",
-                            "ReimbursementAccrued"
-                          ],
-                          "example": "Advance"
-                        },
-                        "advance_amount": {
-                          "type": "string",
-                          "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                          "description": "Advance amount",
-                          "example": "12500.00",
-                          "nullable": true
-                        },
-                        "actual_amount": {
-                          "type": "string",
-                          "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                          "description": "Actual amount",
-                          "example": "12500.00",
-                          "nullable": true
-                        },
-                        "variance_amount": {
-                          "type": "string",
-                          "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                          "description": "Settlement variance amount",
-                          "example": "12500.00",
-                          "nullable": true
-                        },
-                        "payment_reference_no": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": "NEFT-9931"
-                        },
-                        "assigned_finance_actor_user_id": {
-                          "type": "string",
-                          "format": "uuid",
-                          "description": "Assigned finance-stage actor UUID",
-                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                          "nullable": true
-                        },
-                        "manager_verifier_id": {
-                          "type": "string",
-                          "format": "uuid",
-                          "description": "Assigned manager verifier UUID",
-                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                          "nullable": true
-                        },
-                        "manager_verifier_label": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": "D1 - Manager D1"
-                        },
-                        "finance_approver_id": {
-                          "type": "string",
-                          "format": "uuid",
-                          "description": "Assigned finance approver UUID",
-                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                          "nullable": true
-                        },
-                        "finance_approver_label": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": "N1 - Finance Manager N1"
-                        },
-                        "assigned_finance_actor_label": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": "N1 - Finance Manager N1"
-                        },
-                        "primary_finance_manager_user_id": {
-                          "type": "string",
-                          "format": "uuid",
-                          "description": "Configured primary finance manager UUID",
-                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                          "nullable": true
-                        },
-                        "primary_finance_manager_label": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": "N1 - Finance Manager N1"
-                        },
-                        "finance_approval_backup_user_id": {
-                          "type": "string",
-                          "format": "uuid",
-                          "description": "Configured fallback finance approver UUID",
-                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                          "nullable": true
-                        },
-                        "finance_backup_applied": {
-                          "type": "boolean",
-                          "description": "True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup.",
-                          "example": false
-                        },
-                        "governance_warning_codes": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          },
-                          "description": "Route/governance warning markers preserved from the ticket route snapshot.",
-                          "example": [
-                            "primary_finance_manager_assigned"
-                          ]
-                        },
-                        "status": {
-                          "type": "string",
-                          "example": "Manager Verified"
-                        },
-                        "version": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "example": 4
-                        },
-                        "created_at": {
-                          "type": "string",
-                          "format": "date-time",
-                          "description": "Creation timestamp",
-                          "example": "2026-05-04T10:00:00.000Z"
-                        },
-                        "updated_at": {
-                          "type": "string",
-                          "format": "date-time",
-                          "description": "Last update timestamp",
-                          "example": "2026-05-04T10:00:00.000Z"
-                        },
-                        "submitted_at": {
-                          "type": "string",
-                          "format": "date-time",
-                          "description": "Submission timestamp",
-                          "example": "2026-05-04T10:00:00.000Z",
-                          "nullable": true
-                        },
-                        "closed_at": {
-                          "type": "string",
-                          "format": "date-time",
-                          "description": "Closure timestamp",
-                          "example": "2026-05-04T10:00:00.000Z",
-                          "nullable": true
-                        }
-                      },
-                      "additionalProperties": true
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Expense ticket UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "status": {
+                      "type": "string",
+                      "description": "Status after the command commits."
                     },
                     "version": {
                       "type": "integer",
                       "minimum": 1,
-                      "example": 2
-                    },
-                    "timeline_event": {
-                      "type": "object",
-                      "required": [
-                        "event_type",
-                        "label",
-                        "stage",
-                        "actor_user_id",
-                        "actor_name",
-                        "timestamp",
-                        "remarks",
-                        "status_from",
-                        "status_to"
-                      ],
-                      "properties": {
-                        "event_type": {
-                          "type": "string",
-                          "example": "expense.manager.approve"
-                        },
-                        "label": {
-                          "type": "string",
-                          "example": "Manager approve"
-                        },
-                        "stage": {
-                          "type": "string",
-                          "enum": [
-                            "requester",
-                            "manager",
-                            "finance",
-                            "documents",
-                            "closure"
-                          ],
-                          "example": "manager"
-                        },
-                        "actor_user_id": {
-                          "type": "string",
-                          "format": "uuid",
-                          "description": "Actor user UUID",
-                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                        },
-                        "actor_name": {
-                          "type": "string",
-                          "example": "D1 - Manager D1"
-                        },
-                        "timestamp": {
-                          "type": "string",
-                          "format": "date-time",
-                          "description": "Timeline event timestamp",
-                          "example": "2026-05-04T10:00:00.000Z"
-                        },
-                        "remarks": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": "Approved."
-                        },
-                        "status_from": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": "Pending Manager Verification"
-                        },
-                        "status_to": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": "Manager Verified"
-                        }
-                      },
-                      "additionalProperties": false
+                      "description": "Committed optimistic-concurrency version."
                     }
-                  },
-                  "additionalProperties": true
+                  }
                 }
               }
             }
@@ -29750,7 +29169,7 @@
         "tags": [
           "Expenses / Requester"
         ],
-        "description": "Appends a durable object-scoped clarification message and returns the current thread. Requester, assigned manager, assigned finance actor, Admin, and Auditor can read according to expense object policy.",
+        "description": "Appends a durable object-scoped clarification message and returns only the committed ticket identity/status/version. Up to 20 unique live documents coherently linked to this ticket may be referenced. Only the requester, currently authorized assigned manager, or currently authorized assigned finance actor may write; Admin/Auditor detail-read authority alone does not grant clarification write authority.",
         "requestBody": {
           "required": true,
           "content": {
@@ -29775,7 +29194,9 @@
                       "description": "Document metadata UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
-                    "default": []
+                    "default": [],
+                    "maxItems": 20,
+                    "uniqueItems": true
                   },
                   "expected_version": {
                     "type": "integer",
@@ -29799,6 +29220,19 @@
             "name": "id",
             "required": true,
             "description": "Resource UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "example": "expense-command-019fc5b7"
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Required client-generated key. Reuse it only for an exact retry of the same expense command payload."
           }
         ],
         "security": [
@@ -29816,30 +29250,29 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": false,
                   "required": [
-                    "clarification",
-                    "thread",
-                    "expense_version"
+                    "id",
+                    "status",
+                    "version"
                   ],
                   "properties": {
-                    "clarification": {
-                      "type": "object",
-                      "additionalProperties": true
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Expense ticket UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
-                    "thread": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                      }
+                    "status": {
+                      "type": "string",
+                      "description": "Status after the command commits."
                     },
-                    "expense_version": {
+                    "version": {
                       "type": "integer",
                       "minimum": 1,
-                      "example": 3
+                      "description": "Committed optimistic-concurrency version."
                     }
-                  },
-                  "additionalProperties": true
+                  }
                 }
               }
             }
@@ -30757,6 +30190,19 @@
             "name": "id",
             "required": true,
             "description": "Resource UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "example": "expense-command-019fc5b7"
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Required client-generated key. Reuse it only for an exact retry of the same expense command payload."
           }
         ],
         "security": [
@@ -30774,10 +30220,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": false,
                   "required": [
                     "id",
-                    "ticket_no",
-                    "requester_user_id",
                     "status",
                     "version"
                   ],
@@ -30788,209 +30233,16 @@
                       "description": "Expense ticket UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
-                    "ticket_no": {
-                      "type": "string",
-                      "example": "EXP-2026-1042"
-                    },
-                    "requester_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Requester user UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "requester_role_snapshot": {
-                      "type": "string",
-                      "example": "Employee / Software Engineer"
-                    },
-                    "department_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Department UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "expense_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project",
-                        "SalesPreSales"
-                      ],
-                      "example": "Project"
-                    },
-                    "expense_sub_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project Travel",
-                        "Material Consumables",
-                        "Lodging & Boarding",
-                        "Client Meeting",
-                        "Demo / Presentation",
-                        "Marketing Event",
-                        "Sales Travel",
-                        "Misc Sales Expense"
-                      ],
-                      "example": "Project Travel"
-                    },
-                    "project_code": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "PRJ-100"
-                    },
-                    "client_name": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": null
-                    },
-                    "task_title": {
-                      "type": "string",
-                      "example": "Client implementation travel"
-                    },
-                    "estimated_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Estimated amount",
-                      "example": "12500.00"
-                    },
-                    "payment_type": {
-                      "type": "string",
-                      "enum": [
-                        "Advance",
-                        "ReimbursementAccrued"
-                      ],
-                      "example": "Advance"
-                    },
-                    "advance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Advance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "actual_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Actual amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "variance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Settlement variance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "payment_reference_no": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "NEFT-9931"
-                    },
-                    "assigned_finance_actor_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance-stage actor UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned manager verifier UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "D1 - Manager D1"
-                    },
-                    "finance_approver_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_approver_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "assigned_finance_actor_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "primary_finance_manager_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured primary finance manager UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "primary_finance_manager_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "finance_approval_backup_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured fallback finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_backup_applied": {
-                      "type": "boolean",
-                      "description": "True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup.",
-                      "example": false
-                    },
-                    "governance_warning_codes": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "Route/governance warning markers preserved from the ticket route snapshot.",
-                      "example": [
-                        "primary_finance_manager_assigned"
-                      ]
-                    },
                     "status": {
                       "type": "string",
-                      "example": "Manager Verified"
+                      "description": "Status after the command commits."
                     },
                     "version": {
                       "type": "integer",
                       "minimum": 1,
-                      "example": 4
-                    },
-                    "created_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Creation timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "updated_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Last update timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "submitted_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Submission timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
-                    },
-                    "closed_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Closure timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
+                      "description": "Committed optimistic-concurrency version."
                     }
-                  },
-                  "additionalProperties": true
+                  }
                 }
               }
             }
@@ -32373,6 +31625,19 @@
             "name": "id",
             "required": true,
             "description": "Resource UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "example": "expense-command-019fc5b7"
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Required client-generated key. Reuse it only for an exact retry of the same expense command payload."
           }
         ],
         "security": [
@@ -32390,10 +31655,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": false,
                   "required": [
                     "id",
-                    "ticket_no",
-                    "requester_user_id",
                     "status",
                     "version"
                   ],
@@ -32404,209 +31668,16 @@
                       "description": "Expense ticket UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
-                    "ticket_no": {
-                      "type": "string",
-                      "example": "EXP-2026-1042"
-                    },
-                    "requester_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Requester user UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "requester_role_snapshot": {
-                      "type": "string",
-                      "example": "Employee / Software Engineer"
-                    },
-                    "department_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Department UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "expense_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project",
-                        "SalesPreSales"
-                      ],
-                      "example": "Project"
-                    },
-                    "expense_sub_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project Travel",
-                        "Material Consumables",
-                        "Lodging & Boarding",
-                        "Client Meeting",
-                        "Demo / Presentation",
-                        "Marketing Event",
-                        "Sales Travel",
-                        "Misc Sales Expense"
-                      ],
-                      "example": "Project Travel"
-                    },
-                    "project_code": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "PRJ-100"
-                    },
-                    "client_name": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": null
-                    },
-                    "task_title": {
-                      "type": "string",
-                      "example": "Client implementation travel"
-                    },
-                    "estimated_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Estimated amount",
-                      "example": "12500.00"
-                    },
-                    "payment_type": {
-                      "type": "string",
-                      "enum": [
-                        "Advance",
-                        "ReimbursementAccrued"
-                      ],
-                      "example": "Advance"
-                    },
-                    "advance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Advance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "actual_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Actual amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "variance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Settlement variance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "payment_reference_no": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "NEFT-9931"
-                    },
-                    "assigned_finance_actor_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance-stage actor UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned manager verifier UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "D1 - Manager D1"
-                    },
-                    "finance_approver_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_approver_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "assigned_finance_actor_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "primary_finance_manager_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured primary finance manager UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "primary_finance_manager_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "finance_approval_backup_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured fallback finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_backup_applied": {
-                      "type": "boolean",
-                      "description": "True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup.",
-                      "example": false
-                    },
-                    "governance_warning_codes": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "Route/governance warning markers preserved from the ticket route snapshot.",
-                      "example": [
-                        "primary_finance_manager_assigned"
-                      ]
-                    },
                     "status": {
                       "type": "string",
-                      "example": "Manager Verified"
+                      "description": "Status after the command commits."
                     },
                     "version": {
                       "type": "integer",
                       "minimum": 1,
-                      "example": 4
-                    },
-                    "created_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Creation timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "updated_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Last update timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "submitted_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Submission timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
-                    },
-                    "closed_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Closure timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
+                      "description": "Committed optimistic-concurrency version."
                     }
-                  },
-                  "additionalProperties": true
+                  }
                 }
               }
             }
@@ -32951,6 +32022,19 @@
             "name": "id",
             "required": true,
             "description": "Resource UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "example": "expense-command-019fc5b7"
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Required client-generated key. Reuse it only for an exact retry of the same expense command payload."
           }
         ],
         "security": [
@@ -32968,10 +32052,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": false,
                   "required": [
                     "id",
-                    "ticket_no",
-                    "requester_user_id",
                     "status",
                     "version"
                   ],
@@ -32982,209 +32065,16 @@
                       "description": "Expense ticket UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
-                    "ticket_no": {
-                      "type": "string",
-                      "example": "EXP-2026-1042"
-                    },
-                    "requester_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Requester user UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "requester_role_snapshot": {
-                      "type": "string",
-                      "example": "Employee / Software Engineer"
-                    },
-                    "department_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Department UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "expense_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project",
-                        "SalesPreSales"
-                      ],
-                      "example": "Project"
-                    },
-                    "expense_sub_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project Travel",
-                        "Material Consumables",
-                        "Lodging & Boarding",
-                        "Client Meeting",
-                        "Demo / Presentation",
-                        "Marketing Event",
-                        "Sales Travel",
-                        "Misc Sales Expense"
-                      ],
-                      "example": "Project Travel"
-                    },
-                    "project_code": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "PRJ-100"
-                    },
-                    "client_name": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": null
-                    },
-                    "task_title": {
-                      "type": "string",
-                      "example": "Client implementation travel"
-                    },
-                    "estimated_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Estimated amount",
-                      "example": "12500.00"
-                    },
-                    "payment_type": {
-                      "type": "string",
-                      "enum": [
-                        "Advance",
-                        "ReimbursementAccrued"
-                      ],
-                      "example": "Advance"
-                    },
-                    "advance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Advance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "actual_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Actual amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "variance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Settlement variance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "payment_reference_no": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "NEFT-9931"
-                    },
-                    "assigned_finance_actor_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance-stage actor UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned manager verifier UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "D1 - Manager D1"
-                    },
-                    "finance_approver_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_approver_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "assigned_finance_actor_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "primary_finance_manager_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured primary finance manager UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "primary_finance_manager_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "finance_approval_backup_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured fallback finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_backup_applied": {
-                      "type": "boolean",
-                      "description": "True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup.",
-                      "example": false
-                    },
-                    "governance_warning_codes": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "Route/governance warning markers preserved from the ticket route snapshot.",
-                      "example": [
-                        "primary_finance_manager_assigned"
-                      ]
-                    },
                     "status": {
                       "type": "string",
-                      "example": "Manager Verified"
+                      "description": "Status after the command commits."
                     },
                     "version": {
                       "type": "integer",
                       "minimum": 1,
-                      "example": 4
-                    },
-                    "created_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Creation timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "updated_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Last update timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "submitted_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Submission timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
-                    },
-                    "closed_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Closure timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
+                      "description": "Committed optimistic-concurrency version."
                     }
-                  },
-                  "additionalProperties": true
+                  }
                 }
               }
             }
@@ -33471,7 +32361,7 @@
         "tags": [
           "Finance Management"
         ],
-        "description": "Marks bills as submitted for a paid expense. Used before settlement and closure checks.",
+        "description": "The requester or current assigned Finance actor marks bills as submitted for a paid expense. Admin, Auditor, and unassigned Finance roles do not receive this mutation authority.",
         "requestBody": {
           "required": true,
           "content": {
@@ -33504,6 +32394,19 @@
             "name": "id",
             "required": true,
             "description": "Resource UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "example": "expense-command-019fc5b7"
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Required client-generated key. Reuse it only for an exact retry of the same expense command payload."
           }
         ],
         "security": [
@@ -33521,10 +32424,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": false,
                   "required": [
                     "id",
-                    "ticket_no",
-                    "requester_user_id",
                     "status",
                     "version"
                   ],
@@ -33535,209 +32437,16 @@
                       "description": "Expense ticket UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
-                    "ticket_no": {
-                      "type": "string",
-                      "example": "EXP-2026-1042"
-                    },
-                    "requester_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Requester user UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "requester_role_snapshot": {
-                      "type": "string",
-                      "example": "Employee / Software Engineer"
-                    },
-                    "department_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Department UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "expense_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project",
-                        "SalesPreSales"
-                      ],
-                      "example": "Project"
-                    },
-                    "expense_sub_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project Travel",
-                        "Material Consumables",
-                        "Lodging & Boarding",
-                        "Client Meeting",
-                        "Demo / Presentation",
-                        "Marketing Event",
-                        "Sales Travel",
-                        "Misc Sales Expense"
-                      ],
-                      "example": "Project Travel"
-                    },
-                    "project_code": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "PRJ-100"
-                    },
-                    "client_name": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": null
-                    },
-                    "task_title": {
-                      "type": "string",
-                      "example": "Client implementation travel"
-                    },
-                    "estimated_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Estimated amount",
-                      "example": "12500.00"
-                    },
-                    "payment_type": {
-                      "type": "string",
-                      "enum": [
-                        "Advance",
-                        "ReimbursementAccrued"
-                      ],
-                      "example": "Advance"
-                    },
-                    "advance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Advance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "actual_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Actual amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "variance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Settlement variance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "payment_reference_no": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "NEFT-9931"
-                    },
-                    "assigned_finance_actor_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance-stage actor UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned manager verifier UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "D1 - Manager D1"
-                    },
-                    "finance_approver_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_approver_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "assigned_finance_actor_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "primary_finance_manager_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured primary finance manager UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "primary_finance_manager_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "finance_approval_backup_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured fallback finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_backup_applied": {
-                      "type": "boolean",
-                      "description": "True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup.",
-                      "example": false
-                    },
-                    "governance_warning_codes": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "Route/governance warning markers preserved from the ticket route snapshot.",
-                      "example": [
-                        "primary_finance_manager_assigned"
-                      ]
-                    },
                     "status": {
                       "type": "string",
-                      "example": "Manager Verified"
+                      "description": "Status after the command commits."
                     },
                     "version": {
                       "type": "integer",
                       "minimum": 1,
-                      "example": 4
-                    },
-                    "created_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Creation timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "updated_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Last update timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "submitted_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Submission timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
-                    },
-                    "closed_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Closure timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
+                      "description": "Committed optimistic-concurrency version."
                     }
-                  },
-                  "additionalProperties": true
+                  }
                 }
               }
             }
@@ -34610,6 +33319,19 @@
             "name": "id",
             "required": true,
             "description": "Resource UUID path parameter"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "example": "expense-command-019fc5b7"
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "description": "Required client-generated key. Reuse it only for an exact retry of the same expense command payload."
           }
         ],
         "security": [
@@ -34627,10 +33349,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": false,
                   "required": [
                     "id",
-                    "ticket_no",
-                    "requester_user_id",
                     "status",
                     "version"
                   ],
@@ -34641,209 +33362,16 @@
                       "description": "Expense ticket UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
-                    "ticket_no": {
-                      "type": "string",
-                      "example": "EXP-2026-1042"
-                    },
-                    "requester_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Requester user UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "requester_role_snapshot": {
-                      "type": "string",
-                      "example": "Employee / Software Engineer"
-                    },
-                    "department_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Department UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
-                    },
-                    "expense_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project",
-                        "SalesPreSales"
-                      ],
-                      "example": "Project"
-                    },
-                    "expense_sub_type": {
-                      "type": "string",
-                      "enum": [
-                        "Project Travel",
-                        "Material Consumables",
-                        "Lodging & Boarding",
-                        "Client Meeting",
-                        "Demo / Presentation",
-                        "Marketing Event",
-                        "Sales Travel",
-                        "Misc Sales Expense"
-                      ],
-                      "example": "Project Travel"
-                    },
-                    "project_code": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "PRJ-100"
-                    },
-                    "client_name": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": null
-                    },
-                    "task_title": {
-                      "type": "string",
-                      "example": "Client implementation travel"
-                    },
-                    "estimated_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Estimated amount",
-                      "example": "12500.00"
-                    },
-                    "payment_type": {
-                      "type": "string",
-                      "enum": [
-                        "Advance",
-                        "ReimbursementAccrued"
-                      ],
-                      "example": "Advance"
-                    },
-                    "advance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Advance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "actual_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Actual amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "variance_amount": {
-                      "type": "string",
-                      "pattern": "^-?\\d{1,12}(\\.\\d{1,2})?$",
-                      "description": "Settlement variance amount",
-                      "example": "12500.00",
-                      "nullable": true
-                    },
-                    "payment_reference_no": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "NEFT-9931"
-                    },
-                    "assigned_finance_actor_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance-stage actor UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned manager verifier UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "manager_verifier_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "D1 - Manager D1"
-                    },
-                    "finance_approver_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_approver_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "assigned_finance_actor_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "primary_finance_manager_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured primary finance manager UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "primary_finance_manager_label": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "N1 - Finance Manager N1"
-                    },
-                    "finance_approval_backup_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Configured fallback finance approver UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "finance_backup_applied": {
-                      "type": "boolean",
-                      "description": "True when the requester is the configured primary finance manager and the finance stage is assigned to the configured backup.",
-                      "example": false
-                    },
-                    "governance_warning_codes": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "Route/governance warning markers preserved from the ticket route snapshot.",
-                      "example": [
-                        "primary_finance_manager_assigned"
-                      ]
-                    },
                     "status": {
                       "type": "string",
-                      "example": "Manager Verified"
+                      "description": "Status after the command commits."
                     },
                     "version": {
                       "type": "integer",
                       "minimum": 1,
-                      "example": 4
-                    },
-                    "created_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Creation timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "updated_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Last update timestamp",
-                      "example": "2026-05-04T10:00:00.000Z"
-                    },
-                    "submitted_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Submission timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
-                    },
-                    "closed_at": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "Closure timestamp",
-                      "example": "2026-05-04T10:00:00.000Z",
-                      "nullable": true
+                      "description": "Committed optimistic-concurrency version."
                     }
-                  },
-                  "additionalProperties": true
+                  }
                 }
               }
             }
@@ -75103,12 +73631,6 @@
                   "metadata": {
                     "type": "object",
                     "additionalProperties": true
-                  },
-                  "linked_regularization_request_id": {
-                    "type": "string",
-                    "format": "uuid",
-                    "description": "Linked regularization request UUID",
-                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                   }
                 },
                 "additionalProperties": false
@@ -131981,7 +130503,7 @@
         "tags": [
           "Notifications"
         ],
-        "description": "Marks all visible unread notifications as read, optionally scoped by type/category or timestamp.",
+        "description": "Marks up to 1,000 visible unread notifications as read, optionally scoped by type/category or timestamp. Repeat while has_more is true.",
         "requestBody": {
           "required": true,
           "content": {
@@ -132023,7 +130545,8 @@
                   "type": "object",
                   "required": [
                     "updated_count",
-                    "unread_count"
+                    "unread_count",
+                    "has_more"
                   ],
                   "properties": {
                     "updated_count": {
@@ -132035,6 +130558,10 @@
                       "type": "integer",
                       "minimum": 0,
                       "example": 0
+                    },
+                    "has_more": {
+                      "type": "boolean",
+                      "description": "True when another bounded batch remains and the client should repeat this command."
                     }
                   },
                   "additionalProperties": false

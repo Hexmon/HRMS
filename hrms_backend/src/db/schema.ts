@@ -1870,6 +1870,9 @@ export const expenseTickets = expenses.table(
   "expense_tickets",
   {
     id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id"),
+    ownerResolutionStatus: text("owner_resolution_status").notNull().default("quarantined"),
+    ownerResolutionReason: text("owner_resolution_reason"),
     ticketNo: text("ticket_no").notNull(),
     requesterUserId: uuid("requester_user_id").notNull(),
     requesterRoleSnapshot: text("requester_role_snapshot").notNull(),
@@ -1907,6 +1910,9 @@ export const expenseTickets = expenses.table(
   },
   (table) => [
     uniqueIndex("expenses_tickets_ticket_no_uq").on(table.ticketNo),
+    index("expense_tickets_company_status_updated_idx")
+      .on(table.companyId, table.status, table.updatedAt.desc(), table.id)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.companyId} IS NOT NULL`),
     index("expenses_tickets_requester_queue_idx").on(table.requesterUserId, table.status, table.createdAt),
     index("expenses_tickets_manager_queue_idx").on(table.managerVerifierId, table.status, table.createdAt),
     index("expenses_tickets_finance_queue_idx").on(table.financeApproverId, table.status, table.createdAt),
@@ -2030,6 +2036,40 @@ export const expenseAuditLogs = expenses.table(
     index("expenses_audit_actor_idx").on(table.actorUserId, table.createdAt),
     index("expenses_audit_event_idx").on(table.eventType, table.createdAt)
   ]
+);
+
+export const expenseOwnerRepairAudit = expenses.table("expense_owner_repair_audit", {
+  ticketId: uuid("ticket_id").primaryKey().references(() => expenseTickets.id, { onDelete: "restrict" }),
+  originalContextPayload: jsonb("original_context_payload").notNull(),
+  repairedCompanyId: uuid("repaired_company_id").notNull(),
+  evidenceReference: text("evidence_reference").notNull(),
+  evidenceSha256: text("evidence_sha256").notNull(),
+  reviewedBy: text("reviewed_by").notNull(),
+  appliedBy: text("applied_by").notNull(),
+  appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const expenseCommandResults = expenses.table(
+  "expense_command_results",
+  {
+    id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
+    actorUserId: uuid("actor_user_id").notNull(),
+    ticketId: uuid("ticket_id").notNull().references(() => expenseTickets.id, { onDelete: "restrict" }),
+    action: text("action").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    responseBody: jsonb("response_body").notNull(),
+    createdAt,
+  },
+  (table) => [
+    check(
+      "expense_command_results_action_check",
+      sql`${table.action} IN ('create','submit','withdraw','clarification','manager.verify','bills','finance.approve','finance.payment','settlement')`,
+    ),
+    unique("expense_command_results_company_id_actor_user_id_action_idempotency_key_key")
+      .on(table.companyId, table.actorUserId, table.action, table.idempotencyKey),
+  ],
 );
 
 export const expensePolicyRules = expenses.table("expense_policy_rules", {
@@ -2825,6 +2865,8 @@ export const schema = {
   expenseDocuments,
   expensePayments,
   expenseAuditLogs,
+  expenseOwnerRepairAudit,
+  expenseCommandResults,
   expensePolicyRules,
   docMetadata,
   docVersions,
