@@ -127,12 +127,12 @@ try {
     );
     requireQaPersonaIdentity(id, seededUser.rows[0]?.id, employeeCode);
     await client.query(
-      `INSERT INTO core.user_roles (id, company_id, user_id, role_key, status, effective_from)
-       VALUES ($1, $2, $3, $4, 'active', '2026-01-01')
+      `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
+       VALUES ($1, $2, $3, 'active', '2026-01-01')
        ON CONFLICT (id) DO UPDATE
-       SET company_id = EXCLUDED.company_id, user_id = EXCLUDED.user_id,
-           role_key = EXCLUDED.role_key, status = EXCLUDED.status, updated_at = now()`,
-      [uuidFromName(`qa-role-${employeeCode}`), defaultCompanyId, id, role]
+       SET user_id = EXCLUDED.user_id, role_key = EXCLUDED.role_key,
+           status = EXCLUDED.status, updated_at = now()`,
+      [uuidFromName(`qa-role-${employeeCode}`), id, role]
     );
     await client.query(
       `INSERT INTO platform.user_session_preferences

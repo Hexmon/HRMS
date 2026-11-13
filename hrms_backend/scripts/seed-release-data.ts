@@ -100,11 +100,9 @@ try {
       [id, employeeCode, email, fullName, departmentId, designationId, managerUserId, hierarchyPath, status]
     );
     await client.query(
-      `INSERT INTO core.user_roles (company_id, user_id, role_key, status, effective_from)
-       SELECT preference.company_id, $1, $2, 'active', '2026-01-01'
-       FROM platform.user_session_preferences preference
-       WHERE preference.user_id = $1 AND preference.company_id IS NOT NULL
-         AND NOT EXISTS (
+      `INSERT INTO core.user_roles (user_id, role_key, status, effective_from)
+       SELECT $1, $2, 'active', '2026-01-01'
+       WHERE NOT EXISTS (
          SELECT 1
          FROM core.user_roles
          WHERE user_id = $1

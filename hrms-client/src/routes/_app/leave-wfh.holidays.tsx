@@ -95,6 +95,7 @@ export function HolidaysPage() {
     if (submissionInFlight.current) return;
     submissionInFlight.current = true;
     const id = draftId.current ?? (draftId.current = createId());
+    const editSnapshot = editing;
     try {
       await mutation.mutateAsync({
         id,
@@ -103,10 +104,12 @@ export function HolidaysPage() {
           date,
           region: normalizedRegion,
           optional,
-          ...(editing ? { expected_version: editing.expectedVersion } : {}),
+          ...(editSnapshot ? { expected_version: editSnapshot.expectedVersion } : {}),
         },
       });
-      toast.success(editing ? `${normalizedName} updated` : `${normalizedName} added to holidays`);
+      toast.success(
+        editSnapshot ? `${normalizedName} updated` : `${normalizedName} added to holidays`,
+      );
       draftId.current = null;
       setEditing(null);
       setOpen(false);
@@ -116,14 +119,14 @@ export function HolidaysPage() {
       setOptional(false);
     } catch (error) {
       const staleEdit =
-        Boolean(editing) &&
+        Boolean(editSnapshot) &&
         error instanceof ApiError &&
         error.status === 409 &&
         error.details?.reason === "stale_version";
       const refreshed = await holidaysQuery.refetch();
       if (staleEdit) {
         const latest = holidaysFromResponse(refreshed.data).find(
-          (holiday) => holiday.id === editing.id,
+          (holiday) => holiday.id === editSnapshot?.id,
         );
         if (latest) setLatestConflict(latest);
       }
