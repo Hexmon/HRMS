@@ -13,6 +13,14 @@
 - Out: office-calendar policy and historical leave/timesheet calculations (TEN-S25-025, DEC-Q11), broad leave/WFH ownership (TEN-S25-014), other full-store writers.
 - Roles/tenants: active A/B Admin, HR Manager, Employee; local disposable PostgreSQL only.
 
+## Clean QA Candidate Reconciliation — 2026-11-13
+
+- The deployable candidate is `sprint-25/ten-s25-016-holiday-qa`, cut directly from the current `origin/release-01`. It contains no Asset implementation and no candidate-controlled changed-coverage workflow.
+- The older stacked Holiday branch and PR remain preserved as historical work. They must not be deployed because their ancestry includes unfinished Asset and QA-infrastructure changes.
+- Because `release-01` currently ends at migration 0064, this clean candidate owns `0065_holiday_company_unique_constraint.sql`. Any later Asset branch must rebase and take the next available migration numbers; applying 0067 first would make the repository migration order unsafe.
+- Local exact-head evidence at commit `10c8970a` passed backend unit 8/8, frontend component 8/8, disposable PostgreSQL integration 4/4, backend/frontend typecheck, backend lint, frontend lint with 43 pre-existing warnings and no errors, both production builds, API documentation verification, and the Docker Chromium Admin/HR/Employee journey 1/1. The migration-number correction requires a new exact-head PostgreSQL run and re-review before this evidence can become the final candidate record.
+- The browser journey found and fixed three test-oracle defects plus a real QA-seed defect: QA personas now receive and verify a company session preference copied from the release Admin company. No credential value is stored in tracked files or evidence.
+
 ## Evidence And Decisions
 
 - At QA parent `eb6e94a8`, `LeaveWfhRepository.upsertHoliday` treats a foreign ID as absent and pushes a same-ID A row; `PostgresPersistence.flushLeaveWfh` upserts by ID without a company match. `/holidays/:id` selects full-store flush. See `qa-artifacts/hrms/holiday-foreign-id-intake-2026-11-11/pending-holiday-foreign-uuid-cases.md`.
