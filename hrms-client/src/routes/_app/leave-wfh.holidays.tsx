@@ -10,22 +10,26 @@ import { DataCard, EmptyState, Modal } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Plus, MapPin, CalendarDays } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, MapPin, CalendarDays, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { holidaysFromResponse, useHolidayMutation, useHolidays } from "@/domains/leave-wfh";
 import { formatHolidayDate, isHolidayInMonth } from "@/domains/leave-wfh/calendar-date";
-import { userFacingErrorMessage } from "@/shared/api";
+import { ApiError, userFacingErrorMessage } from "@/shared/api";
+import type { Holiday } from "@/lib/leave-store";
 
 export const Route = createFileRoute("/_app/leave-wfh/holidays")({
   component: HolidaysPage,
 });
 
 const ADMIN: Role[] = ["hr_admin", "main_admin"];
+type HolidayView = Holiday & { expectedVersion: number };
 
 export function HolidaysPage() {
   const { activeRole } = useAuth();
   const isAdmin = !!activeRole && ADMIN.includes(activeRole);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<HolidayView | null>(null);
+  const [latestConflict, setLatestConflict] = useState<HolidayView | null>(null);
   const [name, setName] = useState("");
   const [date, setDate] = useState("");
   const [region, setRegion] = useState("");
@@ -53,13 +57,28 @@ export function HolidaysPage() {
   );
 
   const openForm = () => {
+    setEditing(null);
+    setLatestConflict(null);
     draftId.current ??= createId();
+    setOpen(true);
+  };
+
+  const openEditForm = (holiday: HolidayView) => {
+    draftId.current = holiday.id;
+    setEditing(holiday);
+    setLatestConflict(null);
+    setName(holiday.name);
+    setDate(holiday.date);
+    setRegion(holiday.region);
+    setOptional(holiday.optional);
     setOpen(true);
   };
 
   const closeForm = () => {
     if (submissionInFlight.current) return;
     draftId.current = null;
+    setEditing(null);
+    setLatestConflict(null);
     setOpen(false);
     setName("");
     setDate("");
@@ -67,8 +86,12 @@ export function HolidaysPage() {
     setOptional(false);
   };
 
-  const add = async () => {
-    if (!name || !date) return toast.error("Name and date are required");
+  const save = async () => {
+    const normalizedName = name.trim();
+    const normalizedRegion = region.trim() || "All";
+    if (normalizedName.length < 2 || !date) {
+      return toast.error("Enter a holiday name of at least 2 characters and a date");
+    }
     if (submissionInFlight.current) return;
     submissionInFlight.current = true;
     const id = draftId.current ?? (draftId.current = createId());
@@ -76,24 +99,35 @@ export function HolidaysPage() {
       await mutation.mutateAsync({
         id,
         input: {
-          name,
+          name: normalizedName,
           date,
-          region: region || "All",
+          region: normalizedRegion,
           optional,
+          ...(editing ? { expected_version: editing.expectedVersion } : {}),
         },
       });
-      toast.success(`${name} added to holidays`);
+      toast.success(editing ? `${normalizedName} updated` : `${normalizedName} added to holidays`);
       draftId.current = null;
+      setEditing(null);
       setOpen(false);
       setName("");
       setDate("");
       setRegion("");
       setOptional(false);
     } catch (error) {
+      const staleEdit = editing && error instanceof ApiError && error.status === 409;
+      const refreshed = await holidaysQuery.refetch();
+      if (staleEdit) {
+        const latest = holidaysFromResponse(refreshed.data).find(
+          (holiday) => holiday.id === editing.id,
+        );
+        if (latest) setLatestConflict(latest);
+      }
       toast.error(
-        `${errorMessage(error)} If the connection dropped, check the refreshed list or retry with the same details.`,
+        staleEdit
+          ? "This holiday changed after you opened it. The latest version was loaded; review your draft before retrying."
+          : `${errorMessage(error)} If the connection dropped, check the refreshed list or retry with the same details.`,
       );
-      void holidaysQuery.refetch();
     } finally {
       submissionInFlight.current = false;
     }
@@ -157,7 +191,20 @@ export function HolidaysPage() {
                           </p>
                         </div>
                       </div>
-                      <p className="text-sm font-medium">{formatHolidayDate(h.date)}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">{formatHolidayDate(h.date)}</p>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 rounded-full"
+                            onClick={() => openEditForm(h)}
+                            aria-label={`Edit ${h.name}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </li>
                   ))}
               </ul>
@@ -202,7 +249,7 @@ export function HolidaysPage() {
               {Array.from({ length: days }).map((_, i) => {
                 const d = i + 1;
                 const dateStr = `${cursor.y}-${String(cursor.m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-                const h = monthHolidays.find((x) => x.date === dateStr);
+                const dayHolidays = monthHolidays.filter((x) => x.date === dateStr);
                 const dow = new Date(cursor.y, cursor.m, d).getDay();
                 const isWknd = dow === 0 || dow === 6;
                 return (
@@ -210,15 +257,27 @@ export function HolidaysPage() {
                     key={d}
                     className={cn(
                       "min-h-[68px] rounded-xl border p-2 text-left text-xs transition",
-                      h ? "bg-primary-soft border-primary/30" : isWknd ? "bg-muted/40" : "bg-card",
+                      dayHolidays.length > 0
+                        ? "bg-primary-soft border-primary/30"
+                        : isWknd
+                          ? "bg-muted/40"
+                          : "bg-card",
                     )}
                   >
-                    <div className={cn("font-semibold", h && "text-primary")}>{d}</div>
-                    {h && (
-                      <div className="mt-1 line-clamp-2 text-[10px] font-medium leading-tight text-primary">
-                        {h.name}
-                      </div>
-                    )}
+                    <div className={cn("font-semibold", dayHolidays.length > 0 && "text-primary")}>
+                      {d}
+                    </div>
+                    <div className="mt-1 space-y-0.5">
+                      {dayHolidays.map((holiday) => (
+                        <div
+                          key={holiday.id}
+                          className="line-clamp-2 text-[10px] font-medium leading-tight text-primary"
+                          title={`${holiday.name} (${holiday.region})`}
+                        >
+                          {holiday.name}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
@@ -230,7 +289,7 @@ export function HolidaysPage() {
       <Modal
         open={open}
         onOpenChange={(nextOpen) => (nextOpen ? openForm() : closeForm())}
-        title="Add holiday"
+        title={editing ? "Edit holiday" : "Add holiday"}
         footer={
           <>
             <Button
@@ -243,15 +302,40 @@ export function HolidaysPage() {
             </Button>
             <Button
               className="rounded-full"
-              disabled={mutation.isPending}
-              onClick={() => void add()}
+              disabled={mutation.isPending || latestConflict !== null}
+              onClick={() => void save()}
             >
-              Add
+              {editing ? "Save changes" : "Add"}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
+          {latestConflict && (
+            <div role="alert" className="rounded-xl border border-warning/40 bg-warning/10 p-3">
+              <p className="text-sm font-medium">A newer version is available</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Your draft is preserved. Load the latest saved value before applying your changes
+                again: {latestConflict.name}, {latestConflict.date}, {latestConflict.region}.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2 rounded-full"
+                onClick={() => {
+                  setEditing(latestConflict);
+                  setName(latestConflict.name);
+                  setDate(latestConflict.date);
+                  setRegion(latestConflict.region);
+                  setOptional(latestConflict.optional);
+                  setLatestConflict(null);
+                }}
+              >
+                Load latest version
+              </Button>
+            </div>
+          )}
           <div>
             <Label htmlFor="hn">Name</Label>
             <Input

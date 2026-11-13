@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import type { Holiday } from "#shared";
+import { holidayUpsertSchema, type Holiday } from "#shared";
 import { createMemoryDataStore } from "../../../platform/data-store.js";
 import { LeaveWfhRepository } from "../repository.js";
 import { LeaveWfhService } from "../service.js";
@@ -29,6 +29,12 @@ function fixture() {
 }
 
 describe("holiday ID tenant ownership", () => {
+  it("trims holiday names and rejects whitespace-only input at the API boundary", () => {
+    expect(holidayUpsertSchema.parse({ name: "  Founders Day  ", date: day, region: "  All  " }))
+      .toMatchObject({ name: "Founders Day", region: "All" });
+    expect(() => holidayUpsertSchema.parse({ name: "   ", date: day, region: "All" })).toThrow();
+  });
+
   it("does not reuse a soft-deleted same-company UUID", () => {
     const { store, companyA, foreignHoliday, repository } = fixture();
     const tombstone = { ...foreignHoliday, id: randomUUID(), company_id: companyA, deleted_at: "2026-02-01T00:00:00.000Z" };
