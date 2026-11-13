@@ -138,6 +138,44 @@ describe("leave / WFH / holidays", () => {
     expect(overlap.statusCode).toBe(409);
   });
 
+  it("uses the employee company holidays for leave validation across a year boundary", async () => {
+    const employee = await loginAs(app, "E1");
+    const companyId = app.store.userSessionPreferences.find((row) => row.user_id === employee.user.id)?.company_id;
+    expect(companyId).toBeTruthy();
+
+    await app.store.pgPool!.query(
+      `INSERT INTO leave_wfh.holidays (id, company_id, name, holiday_date, region, optional)
+       VALUES ($1, $2, 'Year End Closure', '2026-12-31', 'All', false),
+              ($3, $2, 'New Year Closure', '2027-01-01', 'All', false)`,
+      [randomUUID(), companyId, randomUUID()],
+    );
+    // The startup snapshot must not be consulted: these rows were added after
+    // startup, and a foreign cached holiday must not affect this employee.
+    app.store.holidays.push({
+      id: randomUUID(), company_id: randomUUID(), name: "Foreign Closure",
+      holiday_date: "2026-12-30", region: "All", optional: false, version: 1,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null,
+    });
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/api/v1/leave/requests",
+      headers: authHeader(employee.token),
+      payload: { leave_type: "casual", date_from: "2026-12-31", date_to: "2027-01-01", reason: "Closure" },
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json().error.message).toContain("at least one company working day");
+
+    const allowed = await app.inject({
+      method: "POST",
+      url: "/api/v1/leave/requests",
+      headers: authHeader(employee.token),
+      payload: { leave_type: "casual", date_from: "2026-12-30", date_to: "2026-12-30", reason: "Working day" },
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.json().request.duration).toBe(1);
+  });
+
   it("submits WFH, supports HR monitor, and lets HR/Admin maintain holidays", async () => {
     const employee = await loginAs(app, "E1");
     const manager = await loginAs(app, "D1");
