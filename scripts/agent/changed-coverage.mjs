@@ -774,6 +774,33 @@ export function sanitizedCoverageEnvironment(outputRoot) {
   };
 }
 
+export function selectCoverageIntegrationPool(environment, dependencies = {}) {
+  return dependencies.pool ?? new PostgresPool({ connectionString: environment.TEST_DATABASE_URL });
+}
+
+export function selectCoverageIntegrationValkey(environment, dependencies = {}) {
+  return dependencies.valkey ?? new Valkey(environment.VALKEY_URL, {
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+    enableOfflineQueue: false,
+  });
+}
+
+export function coverageDatabaseObjectCount(result) {
+  if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) {
+    throw new Error("Coverage integration database object count result is malformed");
+  }
+  const row = result.rows[0];
+  if (!row || typeof row !== "object") {
+    throw new Error("Coverage integration database object count row is malformed");
+  }
+  const count = row.count;
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw new Error("Coverage integration database object count is malformed");
+  }
+  return count;
+}
+
 export async function prepareCoverageIntegrationServices(environment, token, dependencies = {}) {
   const databaseUrl = new URL(environment.TEST_DATABASE_URL);
   const valkeyUrl = new URL(environment.VALKEY_URL);
@@ -789,7 +816,7 @@ export async function prepareCoverageIntegrationServices(environment, token, dep
     throw new Error("Coverage integration service token is malformed");
   }
 
-  const pool = dependencies.pool ?? new PostgresPool({ connectionString: environment.TEST_DATABASE_URL });
+  const pool = selectCoverageIntegrationPool(environment, dependencies);
   try {
     const client = await pool.connect();
     try {
@@ -810,7 +837,7 @@ export async function prepareCoverageIntegrationServices(environment, token, dep
               AND dependency.deptype = 'e'
           )
       `);
-      if (Number(occupied.rows[0]?.count ?? 0) !== 0) {
+      if (coverageDatabaseObjectCount(occupied) !== 0) {
         throw new Error("Coverage integration database is not empty; recreate its disposable container before running");
       }
       await client.query("CREATE TABLE public.hrms_coverage_run_guard (token text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now())");
@@ -826,11 +853,7 @@ export async function prepareCoverageIntegrationServices(environment, token, dep
     await pool.end();
   }
 
-  const valkey = dependencies.valkey ?? new Valkey(environment.VALKEY_URL, {
-    lazyConnect: true,
-    maxRetriesPerRequest: 1,
-    enableOfflineQueue: false,
-  });
+  const valkey = selectCoverageIntegrationValkey(environment, dependencies);
   try {
     await valkey.connect();
     const claimed = await valkey.eval(
@@ -876,7 +899,7 @@ export async function verifyCoverageIntegrationServiceClaim(environment, token, 
   if (!/^[0-9a-f]{40}:[A-Za-z0-9._-]+$/.test(token)) {
     throw new Error("Coverage integration service claim token is malformed");
   }
-  const pool = dependencies.pool ?? new PostgresPool({ connectionString: environment.TEST_DATABASE_URL });
+  const pool = selectCoverageIntegrationPool(environment, dependencies);
   try {
     const result = await pool.query("SELECT token FROM public.hrms_coverage_run_guard");
     if (result.rows.length !== 1 || result.rows[0]?.token !== token) {
@@ -885,11 +908,7 @@ export async function verifyCoverageIntegrationServiceClaim(environment, token, 
   } finally {
     await pool.end();
   }
-  const valkey = dependencies.valkey ?? new Valkey(environment.VALKEY_URL, {
-    lazyConnect: true,
-    maxRetriesPerRequest: 1,
-    enableOfflineQueue: false,
-  });
+  const valkey = selectCoverageIntegrationValkey(environment, dependencies);
   try {
     await valkey.connect();
     if (await valkey.get("hrms:coverage:run-guard") !== token) {
@@ -922,6 +941,10 @@ export function selectFinalizerDependencies(options) {
     stampPackage: options.stampPackage ?? stampReport,
     verifyGate: options.verifyGate ?? verify,
   };
+}
+
+export function selectPrepareCoverageServices(options) {
+  return options.prepareServices ?? prepareCoverageIntegrationServices;
 }
 
 function replaceProcessEnvironment(environment) {
@@ -998,7 +1021,7 @@ export async function runFullCoverageGate(root, base, head = "HEAD", options = {
     const paths = fullSuitePaths(outputRoot);
     mkdirSync(paths.orchestratorV8, { recursive: true });
     const environment = sanitizedCoverageEnvironment(outputRoot);
-    const prepareServices = options.prepareServices ?? prepareCoverageIntegrationServices;
+    const prepareServices = selectPrepareCoverageServices(options);
     cleanupServices = await prepareServices(environment, serviceClaimToken);
     const tools = selectFullSuiteTools(options.tools, environment);
     assertExactCleanCommit(root, expectedHead, "full coverage launcher before checkout");

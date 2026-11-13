@@ -14,6 +14,7 @@ import {
   assertRegularRepositoryFile,
   buildExternalCoverage,
   changedLines,
+  coverageDatabaseObjectCount,
   coverageArtifactPath,
   instrumentableExternal,
   outsideExecutableOrConfig,
@@ -27,8 +28,11 @@ import {
   resolveCoveragePython,
   resolveTrustedExecutable,
   sanitizedCoverageEnvironment,
+  selectCoverageIntegrationPool,
+  selectCoverageIntegrationValkey,
   selectFinalizerDependencies,
   selectFullSuiteTools,
+  selectPrepareCoverageServices,
   stampExternalReport,
   stampReport,
   validateTrustedExecutable,
@@ -1115,6 +1119,46 @@ test("sanitized coverage environment excludes ambient and ignored configuration"
     else process.env.NODE_V8_COVERAGE = previousV8;
     if (previousPython === undefined) delete process.env.HRMS_COVERAGE_PYTHON;
     else process.env.HRMS_COVERAGE_PYTHON = previousPython;
+  }
+});
+
+test("coverage integration selectors bind injected clients and construct isolated defaults", async () => {
+  const environment = sanitizedCoverageEnvironment(join(tmpdir(), "hrms-service-selectors"));
+  const injectedPool = { connect: async () => {}, end: async () => {} };
+  const injectedValkey = { connect: async () => {}, disconnect: () => {} };
+  assert.equal(selectCoverageIntegrationPool(environment, { pool: injectedPool }), injectedPool);
+  assert.equal(selectCoverageIntegrationValkey(environment, { valkey: injectedValkey }), injectedValkey);
+
+  const defaultPool = selectCoverageIntegrationPool(environment);
+  const defaultValkey = selectCoverageIntegrationValkey(environment);
+  assert.equal(typeof defaultPool.connect, "function");
+  assert.equal(typeof defaultValkey.connect, "function");
+  await defaultPool.end();
+  defaultValkey.disconnect();
+
+  const injectedPrepare = async () => async () => {};
+  assert.equal(selectPrepareCoverageServices({ prepareServices: injectedPrepare }), injectedPrepare);
+  assert.equal(selectPrepareCoverageServices({}), prepareCoverageIntegrationServices);
+});
+
+test("coverage database object counts fail closed on missing and malformed results", () => {
+  assert.equal(coverageDatabaseObjectCount({ rows: [{ count: 0 }] }), 0);
+  assert.equal(coverageDatabaseObjectCount({ rows: [{ count: 2 }] }), 2);
+  for (const malformed of [
+    undefined,
+    {},
+    { rows: null },
+    { rows: [] },
+    { rows: [{ count: 0 }, { count: 1 }] },
+    { rows: [undefined] },
+    { rows: ["invalid row"] },
+    { rows: [{}] },
+    { rows: [{ count: "2" }] },
+    { rows: [{ count: "invalid" }] },
+    { rows: [{ count: -1 }] },
+    { rows: [{ count: 0.5 }] },
+  ]) {
+    assert.throws(() => coverageDatabaseObjectCount(malformed), /object count.*malformed/);
   }
 });
 
