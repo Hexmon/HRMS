@@ -11,6 +11,7 @@ import {
   ensureQaAdminCompanyContext,
   requireQaPersonaIdentity,
   requireQaSeedTarget,
+  rethrowAfterQaSeedRollback,
 } from "./qa-seed-safety.js";
 
 loadRuntimeEnv();
@@ -232,8 +233,7 @@ try {
 
   await client.query("COMMIT");
 } catch (error) {
-  await client.query("ROLLBACK");
-  throw error;
+  await rethrowAfterQaSeedRollback(client, error);
 } finally {
   await client.end();
 }

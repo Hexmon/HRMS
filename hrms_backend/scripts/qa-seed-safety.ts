@@ -26,6 +26,8 @@ interface QaAdminCompanyContextIds {
   preferenceId: string;
 }
 
+const qaCompanySlug = "hawkaii-hrms";
+
 export function requireQaSeedTarget(env: QaSeedEnvironment): URL {
   const appEnv = env.APP_ENV ?? (env.NODE_ENV === "production" ? "production" : "local");
   if (!new Set(["local", "qa"]).has(appEnv)) {
@@ -66,38 +68,58 @@ export async function ensureQaAdminCompanyContext(
   client: QaSeedSqlClient,
   ids: QaAdminCompanyContextIds,
 ): Promise<string> {
-  const current = await client.query<{ company_id: string }>(
-    `SELECT preference.company_id
+  const current = await client.query<{
+    company_id: string | null;
+    company_slug: string | null;
+    company_status: string | null;
+  }>(
+    `SELECT preference.company_id, company.company_slug, company.status AS company_status
      FROM platform.user_session_preferences preference
      JOIN core.users admin ON admin.id = preference.user_id
-     JOIN platform.company_profiles company ON company.id = preference.company_id
+     LEFT JOIN platform.company_profiles company ON company.id = preference.company_id
      WHERE preference.user_id = $1
-       AND admin.deleted_at IS NULL AND admin.employment_status = 'active'
-       AND company.status = 'active'`,
+       AND admin.deleted_at IS NULL AND admin.employment_status = 'active'`,
     [ids.adminUserId],
   );
-  if (current.rows[0]?.company_id) {
-    return current.rows[0].company_id;
+  const currentContext = current.rows[0];
+  if (currentContext) {
+    if (
+      currentContext.company_id !== ids.companyId ||
+      currentContext.company_slug !== qaCompanySlug ||
+      currentContext.company_status !== "active"
+    ) {
+      throw new Error(
+        "QA seed refused an Admin company preference that does not exactly match the deterministic QA company.",
+      );
+    }
+    return ids.companyId;
   }
 
-  const company = await client.query<{ id: string }>(
-    `INSERT INTO platform.company_profiles (
-       id, company_name, company_slug, timezone, locale, currency,
-       fiscal_year_start_month, working_week, work_hours_per_day,
-       status, bootstrap_completed_at
-     )
-     VALUES ($1, 'Hawkaii HRMS QA', 'hawkaii-hrms', 'Asia/Kolkata', 'en-IN', 'INR',
-       4, 'Mon-Fri', 8, 'active', now())
-     ON CONFLICT (company_slug) DO UPDATE
-     SET status = 'active',
-         bootstrap_completed_at = COALESCE(platform.company_profiles.bootstrap_completed_at, now()),
-         updated_at = now()
-     RETURNING id`,
-    [ids.companyId],
+  const sameSlug = await client.query<{ id: string; status: string }>(
+    `SELECT id, status
+     FROM platform.company_profiles
+     WHERE company_slug = $1
+     FOR UPDATE`,
+    [qaCompanySlug],
   );
-  const companyId = company.rows[0]?.id;
-  if (!companyId) {
-    throw new Error("QA seed could not create or recover its default company.");
+  const existingCompany = sameSlug.rows[0];
+  if (existingCompany && (existingCompany.id !== ids.companyId || existingCompany.status !== "active")) {
+    throw new Error(
+      "QA seed refused a company slug that does not exactly match the active deterministic QA company.",
+    );
+  }
+
+  if (!existingCompany) {
+    await client.query(
+      `INSERT INTO platform.company_profiles (
+         id, company_name, company_slug, timezone, locale, currency,
+         fiscal_year_start_month, working_week, work_hours_per_day,
+         status, bootstrap_completed_at
+       )
+       VALUES ($1, 'Hawkaii HRMS QA', $2, 'Asia/Kolkata', 'en-IN', 'INR',
+         4, 'Mon-Fri', 8, 'active', now())`,
+      [ids.companyId, qaCompanySlug],
+    );
   }
 
   await client.query(
@@ -105,17 +127,32 @@ export async function ensureQaAdminCompanyContext(
        id, user_id, active_role, company_id, landing_page, locale, timezone
      )
      VALUES ($1, $2, 'admin', $3, '/dashboard', 'en-IN', 'Asia/Kolkata')
-     ON CONFLICT (user_id) DO UPDATE
-     SET active_role = EXCLUDED.active_role,
-         company_id = EXCLUDED.company_id,
-         landing_page = EXCLUDED.landing_page,
-         locale = EXCLUDED.locale,
-         timezone = EXCLUDED.timezone,
-         updated_at = now(),
-         version = platform.user_session_preferences.version + 1`,
-    [ids.preferenceId, ids.adminUserId, companyId],
+     ON CONFLICT (user_id) DO NOTHING`,
+    [ids.preferenceId, ids.adminUserId, ids.companyId],
   );
-  return companyId;
+
+  const verified = await client.query<{ company_id: string }>(
+    `SELECT preference.company_id
+     FROM platform.user_session_preferences preference
+     JOIN platform.company_profiles company ON company.id = preference.company_id
+     WHERE preference.user_id = $1
+       AND preference.company_id = $2
+       AND company.company_slug = $3
+       AND company.status = 'active'`,
+    [ids.adminUserId, ids.companyId, qaCompanySlug],
+  );
+  if (verified.rows[0]?.company_id !== ids.companyId) {
+    throw new Error("QA seed could not establish the exact deterministic Admin company context.");
+  }
+  return ids.companyId;
+}
+
+export async function rethrowAfterQaSeedRollback(
+  client: QaSeedSqlClient,
+  primaryError: unknown,
+): Promise<never> {
+  await client.query("ROLLBACK").catch(() => undefined);
+  throw primaryError;
 }
 
 export async function runGuardedQaSeed(
