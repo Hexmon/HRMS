@@ -9,7 +9,7 @@
 
 ## Scope
 
-- In: holiday PUT authorization, persistence transaction, response flush selection, outbox, GET read consistency, legacy global-uniqueness migration, stable frontend create UUID and focused regression.
+- In: holiday PUT authorization, persistence transaction, response flush selection, outbox, GET read consistency, stable frontend create/edit UUID and version handling, multi-holiday calendar rendering, and focused regression.
 - Out: office-calendar policy and historical leave/timesheet calculations (TEN-S25-025, DEC-Q11), broad leave/WFH ownership (TEN-S25-014), other full-store writers.
 - Roles/tenants: active A/B Admin, HR Manager, Employee; local disposable PostgreSQL only.
 
@@ -21,6 +21,7 @@
 - A new UUID needs no `expected_version`; a missing UUID with `expected_version` is an edit intent and returns 404 without creating a row or event. An identical normalized retry of an existing UUID is a no-op even if the client missed the first response. Any changed update of an existing UUID requires its current `expected_version`, so two editors cannot silently overwrite each other.
 - A disposable fully migrated PostgreSQL database still had legacy `holidays_region_holiday_date_name_key` from migration 0004; migration 0027 dropped a differently named index. Migration 0028 already makes `company_id` NOT NULL and installs a full company-scoped unique index. Ordered holiday migration 0067 removes only the confirmed global constraint. Historical NULL company rows are rejected by 0028; this leaf does not assign an invented tenant to them.
 - Asset PR #118 (`2a682119`) already owns migrations 0065 and 0066. This holiday migration was initially numbered 0065 in an isolated worktree and was renumbered to 0067 before stacking. #118 must be merged/applied first; the migration runner does not safely apply a lower pending ID after a higher one. The final combined 0065/0066/0067 chain and shared persistence-file overlap need lead reconciliation and exact-head verification.
+- The service compares holiday names case-insensitively while migration 0067's index is case-sensitive. The SQL command serializes writes per company and performs the case-insensitive duplicate check inside that transaction, so supported API writes remain correct. A durable expression-index follow-up must be numbered only after the already-owned 0068–0071 migration chain; introducing 0072 into this narrow QA stack would make those lower migrations out-of-order later.
 
 ## Implementation Steps
 
@@ -31,6 +32,8 @@
 | Implemented, review pending | Keep GET current for company and preserve isolated memory-mode behavior | Request-local SQL list; memory mode denies foreign/deleted UUID reuse |
 | Implemented, review pending | Remove global holiday uniqueness; align declared company ownership | 0067 drops the live legacy constraint after asset 0065/0066; cross-company equal label/date/region is allowed, same-company duplicate remains rejected |
 | Implemented, review pending | Make create retries safe from UI through SQL/outbox | Stable draft UUID, refetch after uncertain result, unchanged command no-op, changed update requires current version |
+| Implemented, verification pending | Complete the visible update and calendar journeys | Admin/HR edit sends the displayed version, preserves a stale draft after 409/refetch, and the calendar renders every same-day regional holiday |
+| Deferred to ordered migration follow-up | Add a durable case-insensitive expression index | Application transaction already enforces the rule; do not introduce 0072 before owned migrations 0068–0071 |
 | Pending | Run targeted checks, changed coverage, senior and independent QA | Exact revision required |
 | Pending | Commit, push, draft release-01 PR; publish/read back sheet cases when access exists | Stack on #116/#117 |
 
@@ -63,7 +66,7 @@
 ## Risks, Compatibility And Recovery
 
 - Preserve PUT-create; SQL command must not fall back to full flush. A persistent adapter lacking this method fails with 500 before mutation. Changed updates now require `expected_version`; callers relying on implicit last-writer-wins must update.
-- The UI retains its draft UUID across a failed response and refetches the list. An unchanged same-UUID retry is idempotent. If a user edits the draft after an ambiguous commit, the changed request gets 409 until it provides the current version; it does not silently overwrite the committed holiday.
+- The UI retains its draft UUID across a failed response and refetches the list. An unchanged same-UUID retry is idempotent. Editing sends the displayed `expected_version`; a 409 keeps the user's draft open while refreshing the underlying list, so the user can review rather than silently overwrite a concurrent change.
 - The SQL GET is fresh, but leave duration, timesheet expected days/hours and some reports still calculate from hydrated holiday arrays on other instances. TEN-S25-025 and report ownership work must replace those paths before calendar consistency is complete.
 - New-binary full flush is version/owner guarded, but an old Render binary lacks that guard and can still overwrite during overlap, including from unrelated API mutations. Quiesce those writes and drain old binaries before applying asset 0065/0066 then holiday 0067; verify the combined schema, promote the new binary and resume traffic. See `docs/runbooks/holiday-sql-cutover.md`.
 - `platform/data-store.ts` and `platform/postgres-data-store.ts` overlap TEN-S25-008 report WIP. The copied pre-fix artifact overlaps draft docs PR #119; reconcile both without losing historical evidence after merge order is chosen.
