@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { QueryResultRow } from "pg";
 
 export interface QaSeedEnvironment {
@@ -9,6 +10,7 @@ export interface QaSeedEnvironment {
 }
 
 interface QaSeedPhases {
+  preflight?: () => Promise<unknown>;
   releaseSeed: () => Promise<unknown>;
   extrasSeed: () => Promise<unknown>;
 }
@@ -24,6 +26,12 @@ interface QaAdminCompanyContextIds {
   adminUserId: string;
   companyId: string;
   preferenceId: string;
+}
+
+export function deterministicQaCompanyId(): string {
+  const hash = createHash("sha256").update("company-default").digest("hex");
+  const variant = (8 + (Number.parseInt(hash.slice(16, 17), 16) % 4)).toString(16);
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-${variant}${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
 const qaCompanySlug = "hawkaii-hrms";
@@ -64,6 +72,49 @@ export function requireQaPersonaIdentity(
   }
 }
 
+export async function preflightQaAdminCompanyContext(
+  client: QaSeedSqlClient,
+  ids: QaAdminCompanyContextIds,
+): Promise<void> {
+  const company = await client.query<{ id: string; status: string }>(
+    `SELECT id, status
+     FROM platform.company_profiles
+     WHERE company_slug = $1`,
+    [qaCompanySlug],
+  );
+  const existingCompany = company.rows[0];
+  if (existingCompany && (existingCompany.id !== ids.companyId || existingCompany.status !== "active")) {
+    throw new Error(
+      "QA seed preflight refused a company slug that does not exactly match the active deterministic QA company.",
+    );
+  }
+
+  const admin = await client.query<{
+    employment_status: string;
+    deleted_at: string | null;
+    company_id: string | null;
+    active_role: string | null;
+  }>(
+    `SELECT admin.employment_status, admin.deleted_at,
+            preference.company_id, preference.active_role
+     FROM core.users admin
+     LEFT JOIN platform.user_session_preferences preference ON preference.user_id = admin.id
+     WHERE admin.id = $1`,
+    [ids.adminUserId],
+  );
+  const existingAdmin = admin.rows[0];
+  if (!existingAdmin) return;
+  if (existingAdmin.deleted_at || existingAdmin.employment_status !== "active") {
+    throw new Error("QA seed preflight refused an inactive or deleted deterministic release Admin.");
+  }
+  if (
+    existingAdmin.company_id !== null &&
+    (existingAdmin.company_id !== ids.companyId || existingAdmin.active_role !== "admin")
+  ) {
+    throw new Error("QA seed preflight refused a non-admin or foreign deterministic release Admin preference.");
+  }
+}
+
 export async function ensureQaAdminCompanyContext(
   client: QaSeedSqlClient,
   ids: QaAdminCompanyContextIds,
@@ -72,8 +123,9 @@ export async function ensureQaAdminCompanyContext(
     company_id: string | null;
     company_slug: string | null;
     company_status: string | null;
+    active_role: string | null;
   }>(
-    `SELECT preference.company_id, company.company_slug, company.status AS company_status
+    `SELECT preference.company_id, company.company_slug, company.status AS company_status, preference.active_role
      FROM platform.user_session_preferences preference
      JOIN core.users admin ON admin.id = preference.user_id
      LEFT JOIN platform.company_profiles company ON company.id = preference.company_id
@@ -86,7 +138,8 @@ export async function ensureQaAdminCompanyContext(
     if (
       currentContext.company_id !== ids.companyId ||
       currentContext.company_slug !== qaCompanySlug ||
-      currentContext.company_status !== "active"
+      currentContext.company_status !== "active" ||
+      currentContext.active_role !== "admin"
     ) {
       throw new Error(
         "QA seed refused an Admin company preference that does not exactly match the deterministic QA company.",
@@ -134,11 +187,15 @@ export async function ensureQaAdminCompanyContext(
   const verified = await client.query<{ company_id: string }>(
     `SELECT preference.company_id
      FROM platform.user_session_preferences preference
+     JOIN core.users admin ON admin.id = preference.user_id
      JOIN platform.company_profiles company ON company.id = preference.company_id
      WHERE preference.user_id = $1
        AND preference.company_id = $2
        AND company.company_slug = $3
-       AND company.status = 'active'`,
+       AND company.status = 'active'
+       AND admin.deleted_at IS NULL
+       AND admin.employment_status = 'active'
+       AND preference.active_role = 'admin'`,
     [ids.adminUserId, ids.companyId, qaCompanySlug],
   );
   if (verified.rows[0]?.company_id !== ids.companyId) {
@@ -160,6 +217,7 @@ export async function runGuardedQaSeed(
   phases: QaSeedPhases,
 ): Promise<void> {
   requireQaSeedTarget(env);
+  await phases.preflight?.();
   await phases.releaseSeed();
   await phases.extrasSeed();
 }

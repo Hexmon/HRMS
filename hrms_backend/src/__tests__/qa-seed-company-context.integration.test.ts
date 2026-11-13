@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ensureQaAdminCompanyContext } from "../../scripts/qa-seed-safety.js";
+import { ensureQaAdminCompanyContext, preflightQaAdminCompanyContext } from "../../scripts/qa-seed-safety.js";
 import { resetPostgresDatabase } from "../platform/postgres-data-store.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -37,6 +37,11 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
   async function runSeedContextWithMarker() {
     await client.query("BEGIN");
     try {
+      await preflightQaAdminCompanyContext(client, {
+        adminUserId,
+        companyId: expectedCompanyId,
+        preferenceId,
+      });
       await client.query(
         `INSERT INTO core.designations (id, designation_code, title, level, status)
          VALUES ($1, 'QA_SEED_MARKER', 'QA Seed Marker', 1, 'active')`,
@@ -76,7 +81,7 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
     );
 
     await expect(runSeedContextWithMarker()).rejects.toThrow(
-      /does not exactly match the deterministic QA company/,
+      /non-admin or foreign deterministic release Admin|does not exactly match the deterministic QA company/,
     );
     expect(await markerCount()).toBe(0);
     const companies = await client.query<{ id: string; company_slug: string; status: string }>(
@@ -156,5 +161,35 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
     );
     expect(second.rows).toEqual(first.rows);
     expect(await markerCount()).toBe(1);
+  });
+
+  it.each([
+    ["inactive", false, "inactive", null],
+    ["soft-deleted", true, "active", null],
+    ["non-admin role", false, "active", "employee"],
+  ])("refuses an %s deterministic Admin context before any marker write", async (_label, deleted, status, role) => {
+    const companyId = expectedCompanyId;
+    await client.query(
+      `INSERT INTO platform.company_profiles (id, company_name, company_slug, status)
+       VALUES ($1, 'Expected Company', $2, 'active')`,
+      [companyId, companySlug],
+    );
+    await client.query("UPDATE core.users SET employment_status = $1, deleted_at = $2 WHERE id = $3", [status, deleted ? new Date() : null, adminUserId]);
+    await client.query(
+      `INSERT INTO platform.user_session_preferences (id, user_id, active_role, company_id)
+       VALUES ($1, $2, $3, $4)`,
+      [preferenceId, adminUserId, role ?? "admin", companyId],
+    );
+
+    await expect(runSeedContextWithMarker()).rejects.toThrow();
+    expect(await markerCount()).toBe(0);
+    const state = await client.query<{ employment_status: string; deleted_at: Date | null; active_role: string; company_id: string }>(
+      `SELECT u.employment_status, u.deleted_at, p.active_role, p.company_id
+       FROM core.users u JOIN platform.user_session_preferences p ON p.user_id = u.id WHERE u.id = $1`,
+      [adminUserId],
+    );
+    expect(state.rows[0]?.employment_status).toBe(status);
+    expect(state.rows[0]?.active_role).toBe(role ?? "admin");
+    expect(state.rows[0]?.company_id).toBe(companyId);
   });
 });

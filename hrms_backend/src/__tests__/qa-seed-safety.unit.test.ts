@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ensureQaAdminCompanyContext,
+  preflightQaAdminCompanyContext,
   requireQaPersonaIdentity,
   requireQaSeedTarget,
   rethrowAfterQaSeedRollback,
@@ -60,6 +61,7 @@ describe("QA seed target guard", () => {
         company_id: "company-default",
         company_slug: "hawkaii-hrms",
         company_status: "active",
+        active_role: "admin",
       }],
     });
 
@@ -171,5 +173,31 @@ describe("QA seed target guard", () => {
       extrasSeed: async () => calls.push("extras"),
     });
     expect(calls).toEqual(["release", "extras"]);
+  });
+
+  it("runs deterministic preflight before release and extras phases", async () => {
+    const calls: string[] = [];
+    await runGuardedQaSeed(safe, {
+      preflight: async () => calls.push("preflight"),
+      releaseSeed: async () => calls.push("release"),
+      extrasSeed: async () => calls.push("extras"),
+    });
+    expect(calls).toEqual(["preflight", "release", "extras"]);
+  });
+
+  it("rejects an inactive or non-admin preflight context", async () => {
+    const inactive = vi.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ employment_status: "inactive", deleted_at: null, company_id: null, active_role: null }] });
+    await expect(preflightQaAdminCompanyContext({ query: inactive }, {
+      adminUserId: "admin-id", companyId: "company-default", preferenceId: "preference-id",
+    })).rejects.toThrow(/inactive or deleted/);
+
+    const nonAdmin = vi.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ employment_status: "active", deleted_at: null, company_id: "company-default", active_role: "employee" }] });
+    await expect(preflightQaAdminCompanyContext({ query: nonAdmin }, {
+      adminUserId: "admin-id", companyId: "company-default", preferenceId: "preference-id",
+    })).rejects.toThrow(/non-admin or foreign/);
   });
 });
