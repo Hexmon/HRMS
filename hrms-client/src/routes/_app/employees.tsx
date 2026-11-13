@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useEmployees } from "@/lib/employees-store";
+import { downloadCsv } from "@/lib/csv";
 import { useAuth } from "@/lib/auth";
 import {
   EMPLOYEE_STATUS_LABEL,
@@ -182,30 +183,22 @@ function EmployeesPage() {
       }
       return;
     }
-    const rows = filtered.map((e) =>
-      [
-        e.id,
-        e.name,
-        e.email,
-        e.department,
-        e.designation,
-        e.manager,
-        e.employmentType,
-        e.status,
-        e.loginEnabled ? "Enabled" : "Disabled",
-        e.joinedAt,
-      ]
-        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-        .join(","),
-    );
-    const csv = [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `hawkaii-employees-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const rows = filtered.map((e) => [
+      e.id,
+      e.name,
+      e.email,
+      e.department,
+      e.designation,
+      e.manager,
+      e.employmentType,
+      e.status,
+      e.loginEnabled ? "Enabled" : "Disabled",
+      e.joinedAt,
+    ]);
+    downloadCsv(`hawkaii-employees-${new Date().toISOString().slice(0, 10)}.csv`, [
+      headers,
+      ...rows,
+    ]);
     toast.success("Exported", { description: `${filtered.length} employees exported as CSV.` });
   };
 
@@ -313,15 +306,17 @@ function EmployeesPage() {
         description={`${visible.length} ${visible.length === 1 ? "person" : "people"} in your workspace.`}
         actions={
           <>
-            <ActionButton
-              variant="secondary"
-              size="sm"
-              icon={<Download className="h-4 w-4" />}
-              onClick={handleExport}
-              disabled={exportMutation.isPending}
-            >
-              {exportMutation.isPending ? "Queueing..." : "Export"}
-            </ActionButton>
+            {!isApiBacked && (
+              <ActionButton
+                variant="secondary"
+                size="sm"
+                icon={<Download className="h-4 w-4" />}
+                onClick={handleExport}
+                disabled={exportMutation.isPending}
+              >
+                {exportMutation.isPending ? "Queueing..." : "Export"}
+              </ActionButton>
+            )}
             {canEdit && (
               <ActionButton size="sm" icon={<Plus className="h-4 w-4" />} onClick={openAdd}>
                 Add employee

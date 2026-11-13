@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth";
 import { LEAVE_TYPE_LABEL, type LeaveRequest } from "@/lib/leave-store";
 import type { Role } from "@/lib/mock/roles";
 import { toast } from "sonner";
+import { downloadCsv } from "@/lib/csv";
 import { Download, Eye, Filter, CalendarDays } from "lucide-react";
 import {
   requestsFromPage,
@@ -121,16 +122,9 @@ function MonitorPage() {
       r.toDate,
       r.duration,
       r.status,
-      `"${r.reason.replace(/"/g, '""')}"`,
+      r.reason,
     ]);
-    const csv = [head, ...rows].map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `leave-wfh-${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`leave-wfh-${Date.now()}.csv`, [head, ...rows]);
     toast.success("Exported");
   };
 
@@ -265,15 +259,17 @@ function MonitorPage() {
             className="w-full lg:w-[160px]"
           />
           <div className="sm:col-span-2 lg:ml-auto">
-            <Button
-              size="sm"
-              className="w-full rounded-full sm:w-auto"
-              onClick={exportCsv}
-              disabled={exportMutation.isPending}
-            >
-              <Download className="mr-1.5 h-4 w-4" />{" "}
-              {exportMutation.isPending ? "Queueing" : "Export"}
-            </Button>
+            {!apiMode && (
+              <Button
+                size="sm"
+                className="w-full rounded-full sm:w-auto"
+                onClick={exportCsv}
+                disabled={exportMutation.isPending}
+              >
+                <Download className="mr-1.5 h-4 w-4" />{" "}
+                {exportMutation.isPending ? "Queueing" : "Export"}
+              </Button>
+            )}
           </div>
         </div>
       </Card>

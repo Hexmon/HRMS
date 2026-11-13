@@ -103,3 +103,15 @@ These are product-owner answers from the email-system discussion. They are targe
 | DEC-047 | The Accounts or Finance team may authorize final payslip release after review. | The owner deferred salary-spreadsheet details until payslip planning. Independent preparer/releaser, correction authority and exact permission mapping remain open. |
 
 The owner described present payroll practice as salary figures in a spreadsheet and manual email sending. That is operational context, not approval of a specific import schema, salary calculation or PDF template. The owner deferred spreadsheet details until a later payslip planning step; DEC-047 establishes Accounts/Finance release authority only.
+
+## Report And Export Checkpoint — 2026-11-11
+
+These owner answers define target rules for TEN-S25-008; they do not imply that source ownership, private storage, export materialization, or browser QA is complete.
+
+| ID | Owner-approved requirement | Remaining detail / affected work |
+| --- | --- | --- |
+| DEC-048 | Current authorized HR, Admin, or Auditor at the original company may read that company's historical reports after an employee transfers. | Original-company ownership must be persisted on the underlying record; current employee preference cannot prove it. Other historical-role and retention details remain open. TEN-S25-008/013/016. |
+| DEC-049 | One CSV or Excel export may cover at most 10,000 rows and 12 calendar months. Reject over-limit requests/results explicitly; never silently truncate. | Private object delivery and a bounded materializer remain R2-S25-001/TEN-S25-006/020/021 dependencies. TEN-S25-008/029. |
+| DEC-050 | Microsoft Excel and Google Sheets are the acceptance programs for CSV/XLSX exports. | Representative generated files must be opened in both applications to confirm formula-like cells stay literal; raw-byte assertions are partial evidence. TEN-S25-008/EXPORT-S25-001. |
+| DEC-051 | Current authorized Finance at the original company may view and finish settlement of that company's expense submitted before an employee transfers. | Scope to the ticket's persisted original `company_id` and current Finance authority; this does not grant Finance access to unrelated historical reports or resolve all retention rules. TEN-S25-007/008/016. |
+| DEC-052 | An authenticated active employee may read their own historical expense report after transfer, including tickets retained by the original company. | Scope solely by the persisted `requester_user_id`; do not broaden current-company role access or expose another requester's tickets. Receipt-file access remains governed by its separate document policy. TEN-S25-008. |

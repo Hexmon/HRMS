@@ -394,7 +394,7 @@ describe("Cloudflare outbox drain against PostgreSQL", () => {
     expect(after.json().today.next_allowed_actions).toContain("check_out");
   });
 
-  it("shows a worker-updated day in dashboard and attendance reports", async () => {
+  it("shows a worker-updated day in dashboard and attendance reports while blocking unsafe export", async () => {
     const employee = await loginAs(app, "E1");
     const companyId = app.store.userSessionPreferences.find((item) => item.user_id === employee.user.id)?.company_id;
     expect(companyId).toBeTruthy();
@@ -426,14 +426,22 @@ describe("Cloudflare outbox drain against PostgreSQL", () => {
     expect(dashboard.json().cards).toContainEqual(
       expect.objectContaining({ key: "attendance_exceptions", value: 1 }),
     );
+    const admin = await loginAs(app, "ADM");
+    const beforeExportOutbox = await app.store.pgPool!.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM platform.outbox_events",
+    );
     const exported = await app.inject({
       method: "POST",
       url: "/api/v1/reports/exports",
-      headers,
+      headers: authHeader(admin.token),
       payload: { format: "csv", report_type: "attendance", filters: { date_from: "2026-05-20", date_to: "2026-05-20" } },
     });
-    expect(exported.statusCode, exported.body).toBe(200);
-    expect(exported.json()).toMatchObject({ report_type: "attendance", row_count: 1 });
+    expect(exported.statusCode, exported.body).toBe(409);
+    expect(exported.json().code).toBe("WORKFLOW_CONFLICT");
+    const afterExportOutbox = await app.store.pgPool!.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM platform.outbox_events",
+    );
+    expect(afterExportOutbox.rows[0]?.count).toBe(beforeExportOutbox.rows[0]?.count);
   });
 
   it("shows Worker-published outbox status in dashboard and export detail without an API restart", async () => {

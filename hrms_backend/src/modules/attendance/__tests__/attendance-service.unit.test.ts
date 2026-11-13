@@ -1513,6 +1513,11 @@ describe("AttendanceService.punch", () => {
   });
 
   describe("AttendanceService.createExportJob", () => {
+    beforeEach(() => {
+      // Export renderer tests use an isolated private in-memory adapter.
+      store.objectStorage = new MemoryObjectStorage();
+    });
+
     it("allows admin to create an export job", async () => {
       const result = await service.createExportJob(admin(), {});
 

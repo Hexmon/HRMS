@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth";
+import { useApiRouteEnabled } from "@/shared/api";
 import { REPORT_CATEGORIES, visibleCategoriesForRole } from "./reports";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ const REPORT_COUNTS: Record<string, { count: number; description: string }> = {
 
 function ReportsDashboard() {
   const { activeRole } = useAuth();
+  const apiMode = useApiRouteEnabled(["/reports"]);
   const visible = visibleCategoriesForRole(activeRole ?? null);
 
   return (
@@ -98,11 +100,14 @@ function ReportsDashboard() {
             <FileBarChart2 className="mt-0.5 h-5 w-5 text-primary" />
             <div className="text-sm">
               <p className="font-medium text-foreground">
-                Every report supports filters &amp; export
+                {apiMode
+                  ? "Report availability is being verified"
+                  : "Every report supports filters & export"}
               </p>
               <p className="text-muted-foreground">
-                Date range, department, employee and status filters apply globally inside a report.
-                Exports use the active filters currently applied on screen.
+                {apiMode
+                  ? "Some reports are temporarily unavailable while historical company ownership is verified. Downloads will return after private export delivery is enabled."
+                  : "Date range, department, employee and status filters apply globally inside a report. Exports use the active filters currently applied on screen."}
               </p>
             </div>
           </div>

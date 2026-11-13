@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Plus, MapPin, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { holidaysFromResponse, useHolidayMutation, useHolidays } from "@/domains/leave-wfh";
+import { formatHolidayDate, isHolidayInMonth } from "@/domains/leave-wfh/calendar-date";
 import { userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/leave-wfh/holidays")({
@@ -21,7 +22,7 @@ export const Route = createFileRoute("/_app/leave-wfh/holidays")({
 
 const ADMIN: Role[] = ["hr_admin", "main_admin"];
 
-function HolidaysPage() {
+export function HolidaysPage() {
   const { activeRole } = useAuth();
   const isAdmin = !!activeRole && ADMIN.includes(activeRole);
   const [open, setOpen] = useState(false);
@@ -29,6 +30,8 @@ function HolidaysPage() {
   const [date, setDate] = useState("");
   const [region, setRegion] = useState("");
   const [optional, setOptional] = useState(false);
+  const draftId = useRef<string | null>(null);
+  const submissionInFlight = useRef(false);
 
   const today = new Date();
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
@@ -45,19 +48,33 @@ function HolidaysPage() {
   const list = holidaysFromResponse(holidaysQuery.data);
 
   const monthHolidays = useMemo(
-    () =>
-      list.filter((h) => {
-        const d = new Date(h.date);
-        return d.getFullYear() === cursor.y && d.getMonth() === cursor.m;
-      }),
+    () => list.filter((h) => isHolidayInMonth(h.date, cursor.y, cursor.m)),
     [list, cursor],
   );
 
+  const openForm = () => {
+    draftId.current ??= createId();
+    setOpen(true);
+  };
+
+  const closeForm = () => {
+    if (submissionInFlight.current) return;
+    draftId.current = null;
+    setOpen(false);
+    setName("");
+    setDate("");
+    setRegion("");
+    setOptional(false);
+  };
+
   const add = async () => {
     if (!name || !date) return toast.error("Name and date are required");
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    const id = draftId.current ?? (draftId.current = createId());
     try {
       await mutation.mutateAsync({
-        id: createId(),
+        id,
         input: {
           name,
           date,
@@ -66,13 +83,19 @@ function HolidaysPage() {
         },
       });
       toast.success(`${name} added to holidays`);
+      draftId.current = null;
       setOpen(false);
       setName("");
       setDate("");
       setRegion("");
       setOptional(false);
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(
+        `${errorMessage(error)} If the connection dropped, check the refreshed list or retry with the same details.`,
+      );
+      void holidaysQuery.refetch();
+    } finally {
+      submissionInFlight.current = false;
     }
   };
 
@@ -81,7 +104,7 @@ function HolidaysPage() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">Company-wide holiday calendar.</p>
         {isAdmin && (
-          <Button size="sm" className="rounded-full" onClick={() => setOpen(true)}>
+          <Button size="sm" className="rounded-full" onClick={openForm}>
             <Plus className="mr-1.5 h-4 w-4" /> Add holiday
           </Button>
         )}
@@ -134,14 +157,7 @@ function HolidaysPage() {
                           </p>
                         </div>
                       </div>
-                      <p className="text-sm font-medium">
-                        {new Date(h.date).toLocaleDateString(undefined, {
-                          weekday: "short",
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </p>
+                      <p className="text-sm font-medium">{formatHolidayDate(h.date)}</p>
                     </li>
                   ))}
               </ul>
@@ -159,6 +175,7 @@ function HolidaysPage() {
                   size="icon"
                   className="h-8 w-8 rounded-full"
                   onClick={prev}
+                  aria-label="Previous month"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
@@ -167,6 +184,7 @@ function HolidaysPage() {
                   size="icon"
                   className="h-8 w-8 rounded-full"
                   onClick={next}
+                  aria-label="Next month"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -211,11 +229,16 @@ function HolidaysPage() {
 
       <Modal
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(nextOpen) => (nextOpen ? openForm() : closeForm())}
         title="Add holiday"
         footer={
           <>
-            <Button variant="outline" className="rounded-full" onClick={() => setOpen(false)}>
+            <Button
+              variant="outline"
+              className="rounded-full"
+              disabled={mutation.isPending}
+              onClick={closeForm}
+            >
               Cancel
             </Button>
             <Button

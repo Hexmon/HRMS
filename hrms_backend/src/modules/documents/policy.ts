@@ -7,6 +7,12 @@ const restricted = new Set<DocumentClassification>([
 ]);
 
 export function canAccessDocument(actor: AuthUser, document: DocumentMetadata, permission: "read" | "write" | "verify" | "audit"): boolean {
+  // Old generated exports may carry public storage URLs and have no durable
+  // company owner. Deny every document path until private byte delivery and
+  // an immutable tenant policy are installed.
+  if (document.metadata.generated === true || document.business_object_type.endsWith("_export") || document.document_type.endsWith("_export")) {
+    return false;
+  }
   if (actor.roles.includes(Roles.Admin) || actor.roles.includes(Roles.Auditor)) {
     return true;
   }

@@ -247,6 +247,8 @@ describe("leave / WFH / holidays", () => {
     });
     expect(forbiddenUpdate.statusCode).toBe(403);
 
+    const documentCount = app.store.documents.length;
+    const eventCount = app.store.outbox.length;
     const exportJob = await app.inject({
       method: "POST",
       url: "/api/v1/leave-wfh/exports",
@@ -257,17 +259,10 @@ describe("leave / WFH / holidays", () => {
         format: "csv"
       }
     });
-    expect(exportJob.statusCode).toBe(200);
-    expect(exportJob.json()).toMatchObject({
-      status: "ready",
-      format: "csv",
-      adapter: `${app.store.objectStorage?.kind}-generated-csv`,
-      download_document_id: expect.any(String)
-    });
-    await expect(app.store.objectStorage?.statObject(app.store.documents.find((document) => document.id === exportJob.json().download_document_id)?.storage_key ?? "")).resolves.toMatchObject({
-      size: expect.any(Number)
-    });
-    expect(app.store.outbox.some((event) => event.event_type === "leave_wfh.export_requested" && event.aggregate_id === exportJob.json().job_id)).toBe(true);
+    expect(exportJob.statusCode).toBe(409);
+    expect(exportJob.json()).not.toHaveProperty("download_document_id");
+    expect(app.store.documents).toHaveLength(documentCount);
+    expect(app.store.outbox).toHaveLength(eventCount);
 
     const forbiddenExport = await app.inject({
       method: "POST",
