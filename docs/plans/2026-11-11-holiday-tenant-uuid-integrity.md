@@ -39,7 +39,7 @@
 
 ## Test Design And Shared Tracker
 
-- Sprint 25 leaf `TEN-S25-016-HOL`, under parent TEN-S25-016; case IDs `S25-035-HOL-U/P/N/F` without an additional parent estimate. Full local bodies and pre-fix probe: `qa-artifacts/hrms/holiday-foreign-id-intake-2026-11-11/pending-holiday-foreign-uuid-cases.md`. Shared workbook publication/readback is blocked by missing writable Google Drive connection.
+- Sprint 25 leaf `TEN-S25-016-HOL`, under parent TEN-S25-016; case IDs `S25-035-HOL-U/P/N/F` without an additional parent estimate. Full local bodies and pre-fix probe: `qa-artifacts/hrms/holiday-foreign-id-intake-2026-11-11/pending-holiday-foreign-uuid-cases.md`. The four leaf cases are published at `Sprint 25 Test Cases!A489:T492`, read back through the Sheets API and visually checked; all remain `Not Tested` until exact candidate evidence satisfies their complete steps.
 - U: A Admin/HR creates unused A UUID then updates it; correct company/version and one committed event per successful transition; B unchanged; Employee denied.
 - P: A Admin/HR PUT B UUID with absent/current/stale version; non-disclosing error; no A duplicate, B mutation, event or memory ghost, including a second instance and retry. Same-name A/B values independent.
 - N: malformed ID/body, protected client fields, missing UUID with supplied update version, stale/missing update version, same-company duplicate name/date/region; no write/event. A/B equal labels are allowed after holiday 0067.
@@ -61,7 +61,8 @@
 | Focused pass; combined stack pending | Backend typecheck, lint, unit, integration, contract/OpenAPI where changed | Final focused memory 7/7, SQL 1/1, API docs/consumer and typechecks passed; prior full task-local gate passed before final missing-ID guard |
 | Task-local pre-final-guard pass; combined stack pending | `./scripts/agent/verify-change.sh` and changed executable coverage | 0067 gate exit 0; exact combined #118+holiday gate and commit-based changed coverage remain required |
 | Partial, exact final head pending | Independent senior and QA review | Both reviewed clean `1fbdc30e` without running tests; lead follow-up fixes require re-review at the new commit |
-| Blocked | Rendered browser journey; shared sheet publication | Browser permission rejection; Google Drive unconnected |
+| Pending | Rendered real-backend browser journey | `hrms-client/e2e/holiday-real-user.spec.ts` is added and Playwright discovery passes; execution awaits the reconciled isolated candidate |
+| Published, Not Tested | Shared Sprint 25 leaf cases | `Sprint 25 Test Cases!A489:T492`; task row 35 is In Progress, not Completed |
 
 ## Risks, Compatibility And Recovery
 
