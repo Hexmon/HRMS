@@ -164,7 +164,7 @@ describe("leave / WFH / holidays", () => {
       payload: { leave_type: "casual", date_from: "2026-12-31", date_to: "2027-01-01", reason: "Closure" },
     });
     expect(rejected.statusCode).toBe(400);
-    expect(rejected.json().error.message).toContain("at least one company working day");
+    expect(rejected.json().message).toContain("at least one company working day");
 
     const allowed = await app.inject({
       method: "POST",
