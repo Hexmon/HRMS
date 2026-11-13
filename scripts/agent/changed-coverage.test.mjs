@@ -124,6 +124,7 @@ test("semantic contracts fail closed for each workflow, manifest, lock, runner a
   ]);
   assert.throws(() => validateSemanticPath(root, "hrms-client/package.json", "{invalid", "origin/release-01"), /invalid JSON/);
   assert.throws(() => validateSemanticPath(root, ".gitignore", `${read(".gitignore")}\n!node_modules\n`, "origin/release-01"), /negated/);
+  assert.doesNotThrow(() => validateSemanticPath(root, ".gitignore", read(".gitignore"), "origin/release-01"));
   for (const negation of ["!node_modules", "!hrms_backend/node_modules", "!hrms-client/node_modules"]) {
     assert.throws(() => validateSemanticPath(root, ".gitignore", `${read(".gitignore")}\n${negation}\n`, "origin/release-01"), /negated/);
   }
