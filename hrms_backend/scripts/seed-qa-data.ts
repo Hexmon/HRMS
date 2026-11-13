@@ -7,7 +7,11 @@ import { AssetStatuses, EmploymentStatuses, ExpenseSubTypes, Roles } from "#shar
 import { seedIds } from "../src/platform/data-store.js";
 import { getQaSeedEmails } from "../src/platform/seed-personas.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
-import { requireQaPersonaIdentity, requireQaSeedTarget } from "./qa-seed-safety.js";
+import {
+  ensureQaAdminCompanyContext,
+  requireQaPersonaIdentity,
+  requireQaSeedTarget,
+} from "./qa-seed-safety.js";
 
 loadRuntimeEnv();
 requireQaSeedTarget(process.env);
@@ -28,6 +32,8 @@ function sha256(value: string): string {
 }
 
 const ids = {
+  companyDefault: uuidFromName("company-default"),
+  adminPreference: uuidFromName(`session-preference-${seedIds.admin}`),
   departmentHr: uuidFromName("qa-department-hr"),
   designationHrManager: seedIds.designationHrManager,
   designationManager: uuidFromName("qa-designation-normal-manager"),
@@ -53,21 +59,11 @@ await client.connect();
 
 try {
   await client.query("BEGIN");
-
-  const defaultCompany = await client.query<{ company_id: string }>(
-    `SELECT preference.company_id
-     FROM platform.user_session_preferences preference
-     JOIN core.users admin ON admin.id = preference.user_id
-     JOIN platform.company_profiles company ON company.id = preference.company_id
-     WHERE preference.user_id = $1
-       AND admin.deleted_at IS NULL AND admin.employment_status = 'active'
-       AND company.status = 'active'`,
-    [seedIds.admin],
-  );
-  const defaultCompanyId = defaultCompany.rows[0]?.company_id;
-  if (!defaultCompanyId) {
-    throw new Error("QA seed requires the release Admin to have an active company preference.");
-  }
+  const defaultCompanyId = await ensureQaAdminCompanyContext(client, {
+    adminUserId: seedIds.admin,
+    companyId: ids.companyDefault,
+    preferenceId: ids.adminPreference,
+  });
 
   await client.query(
     `INSERT INTO core.designations (id, designation_code, title, level, status)

@@ -110,7 +110,10 @@ describe("holiday ID tenant ownership", () => {
       holiday_date: "2026-12-26",
       region: "A Region",
       optional: true,
-    })).toThrow(expect.objectContaining({ statusCode: 409 }));
+    })).toThrow(expect.objectContaining({
+      statusCode: 409,
+      details: expect.objectContaining({ reason: "missing_expected_version", id: newId }),
+    }));
     const updated = repository.upsertHoliday(newId, {
       company_id: companyA,
       name: "A Updated Day",
@@ -128,7 +131,41 @@ describe("holiday ID tenant ownership", () => {
       region: "A Region",
       optional: false,
       expected_version: 1,
-    })).toThrow(expect.objectContaining({ statusCode: 409 }));
+    })).toThrow(expect.objectContaining({
+      statusCode: 409,
+      details: expect.objectContaining({ reason: "stale_version", id: newId }),
+    }));
+  });
+
+  it("returns the stable duplicate reason used by the Holiday UI in memory mode", () => {
+    const { store, companyA, repository } = fixture();
+    const existing: Holiday = {
+      id: randomUUID(),
+      company_id: companyA,
+      name: "A Foundation Day",
+      holiday_date: "2026-12-26",
+      region: "A Region",
+      optional: false,
+      version: 1,
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+      deleted_at: null,
+    };
+    store.holidays.push(existing);
+
+    expect(() => repository.upsertHoliday(randomUUID(), {
+      company_id: companyA,
+      name: existing.name.toLowerCase(),
+      holiday_date: existing.holiday_date,
+      region: existing.region,
+      optional: true,
+    })).toThrow(expect.objectContaining({
+      statusCode: 409,
+      details: expect.objectContaining({
+        reason: "duplicate_holiday",
+        holiday_id: existing.id,
+      }),
+    }));
   });
 
   it("does not append another memory-mode outbox event for an unchanged same-ID retry", async () => {

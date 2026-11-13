@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
 import {
+  ensureQaAdminCompanyContext,
   requireQaPersonaIdentity,
   requireQaSeedTarget,
   runGuardedQaSeed,
@@ -52,6 +54,48 @@ describe("QA seed target guard", () => {
     );
   });
 
+  it("reuses an existing active Admin company context without rewriting seed state", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ company_id: "company-existing" }] });
+
+    await expect(ensureQaAdminCompanyContext({ query }, {
+      adminUserId: "admin-id",
+      companyId: "company-default",
+      preferenceId: "preference-id",
+    })).resolves.toBe("company-existing");
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it("idempotently bootstraps a fresh QA company and release Admin preference", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: "company-default" }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(ensureQaAdminCompanyContext({ query }, {
+      adminUserId: "admin-id",
+      companyId: "company-default",
+      preferenceId: "preference-id",
+    })).resolves.toBe("company-default");
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls[1]?.[0]).toContain("ON CONFLICT (company_slug) DO UPDATE");
+    expect(query.mock.calls[1]?.[1]).toEqual(["company-default"]);
+    expect(query.mock.calls[2]?.[0]).toContain("ON CONFLICT (user_id) DO UPDATE");
+    expect(query.mock.calls[2]?.[1]).toEqual(["preference-id", "admin-id", "company-default"]);
+  });
+
+  it("fails before creating a preference when the company upsert returns no identity", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(ensureQaAdminCompanyContext({ query }, {
+      adminUserId: "admin-id",
+      companyId: "company-default",
+      preferenceId: "preference-id",
+    })).rejects.toThrow(/could not create or recover its default company/);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
   it("guards the composite QA seed before either mutation phase starts", async () => {
     const calls: string[] = [];
     await expect(
@@ -73,5 +117,32 @@ describe("QA seed target guard", () => {
       extrasSeed: async () => calls.push("extras"),
     });
     expect(calls).toEqual(["release", "extras"]);
+  });
+});
+
+describe("Docker QA seed entrypoint", () => {
+  const compose = readFileSync(
+    new URL("../../infra/docker/docker-compose.qa.yml", import.meta.url),
+    "utf8",
+  );
+  const migrateService = compose.match(
+    /  hawkaii-hrms-migrate:\n(?<body>[\s\S]*?)(?=\n  hawkaii-hrms-api:)/u,
+  )?.groups?.body;
+
+  it("guards the composite seed before either seed phase can mutate QA data", () => {
+    expect(migrateService).toBeDefined();
+    expect(migrateService).toContain('HRMS_QA_SEED_ALLOW: "true"');
+    expect(migrateService).toContain("HRMS_QA_SEED_CONFIRM_DATABASE: hrms_platform_qa");
+    expect(migrateService).toContain(
+      'command: ["sh", "-lc", "pnpm db:migrate && pnpm qa:seed"]',
+    );
+    expect(migrateService).not.toContain("pnpm release:seed");
+    expect(migrateService).not.toContain("pnpm qa:seed:extras");
+  });
+
+  it("does not expose the seed mutation opt-in to long-running QA services", () => {
+    expect(compose).toContain("  APP_ENV: qa");
+    expect(compose.match(/HRMS_QA_SEED_ALLOW/gu)).toHaveLength(1);
+    expect(compose.match(/HRMS_QA_SEED_CONFIRM_DATABASE/gu)).toHaveLength(1);
   });
 });
