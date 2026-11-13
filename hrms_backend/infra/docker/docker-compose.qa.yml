@@ -3,8 +3,8 @@ x-backend-build: &backend-build
   dockerfile: infra/docker/Dockerfile
 
 x-backend-environment: &backend-environment
-  APP_ENV: qa
-  NODE_ENV: qa
+  APP_ENV: ${APP_ENV:-local}
+  NODE_ENV: ${NODE_ENV:-development}
   PORT: "3001"
   LOG_LEVEL: ${LOG_LEVEL:-info}
   DATABASE_URL: postgres://postgres:postgres@postgres:5432/hrms_platform_qa
