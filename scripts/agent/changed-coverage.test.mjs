@@ -77,6 +77,104 @@ test("semantic contracts validate supported non-line coverage paths and reject p
   assert.throws(() => validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow.replace("--head HEAD", "--head HEAD\n        continue-on-error: true"), "base"), /continue-on-error/);
 });
 
+test("semantic contracts fail closed for each workflow, manifest, lock, runner and shell invariant", () => {
+  const root = process.cwd();
+  const read = (path) => readFileSync(join(root, path), "utf8");
+  const expectMutation = (path, mutations) => {
+    const original = read(path);
+    for (const [needle, replacement] of mutations) {
+      assert.notEqual(original.indexOf(needle), -1, `${path}: missing mutation needle ${needle}`);
+      assert.throws(() => validateSemanticPath(root, path, original.split(needle).join(replacement), "origin/release-01"), /:/, `${path}: ${needle}`);
+    }
+  };
+
+  expectMutation(".github/workflows/branch-ci-cd.yml", [
+    ["name: Branch CI/CD", "title: Branch CI/CD"],
+    ["on:\n", "trigger:\n"],
+    ["jobs:\n", "tasks:\n"],
+    ["--run-full-suite", "--run-suite"],
+    ["--confirm-disposable-services", "--confirm-services"],
+    ["--base \"$COVERAGE_BASE\"", "--base \"$WRONG_BASE\""],
+    ["--head HEAD", "--head \"$WRONG_HEAD\""],
+    ["changed-coverage:", "coverage-job:"],
+    ["      - changed-coverage\n    if: >-", "      - other-coverage\n    if: >-"],
+  ]);
+  expectMutation(".github/workflows/trusted-changed-coverage.yml", [
+    ["--trusted-validator", "--validator"],
+    ["TRUSTED_WORKFLOW_SHA", "TRUSTED_WORKFLOW"],
+    ["git -C trusted rev-parse HEAD", "git -C trusted status --short"],
+    ["git -C candidate rev-parse HEAD", "git -C candidate status --short"],
+    ["--ignore-pnpmfile", "--ignore-scripts"],
+    ["persist-credentials: false", "persist-credentials: true"],
+    ["@sha256:", ":"],
+    ["actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683", "actions/checkout@v4"],
+  ]);
+  expectMutation(".gitignore", [
+    ["node_modules\n", "dependencies\n"],
+    ["hrms_backend/node_modules/", "hrms_backend/dependencies/"],
+    ["hrms-client/node_modules/", "hrms-client/dependencies/"],
+    ["node_modules\n", "!node_modules\n"],
+  ]);
+  expectMutation("hrms-client/package.json", [
+    ["pnpm@10.25.0", "pnpm@9.0.0"],
+    ["\"test:unit\": \"vitest run\"", "\"test:unit\": \"node tests.js\""],
+    ["\"test:unit:coverage\": \"vitest run --coverage", "\"test:unit:coverage\": \"node coverage.js"],
+    ["\"@vitest/coverage-v8\": \"4.1.6\"", "\"@vitest/coverage-v8\": \"3.0.0\""],
+    ["\"@testing-library/react\": \"^16.3.3\",\n", ""],
+  ]);
+  assert.throws(() => validateSemanticPath(root, "hrms-client/package.json", "{invalid", "origin/release-01"), /invalid JSON/);
+  assert.throws(() => validateSemanticPath(root, ".gitignore", `${read(".gitignore")}\n!node_modules\n`, "origin/release-01"), /negated/);
+  expectMutation("hrms_backend/package.json", [
+    ["pnpm@10.25.0", "pnpm@9.0.0"],
+    ["\"test:unit\": \"vitest run --project unit\"", "\"test:unit\": \"node tests.js\""],
+    ["\"vitest\": \"^4.0.15\"", "\"vitest\": 1"],
+    ["\"@vitest/coverage-v8\": \"4.1.6\"", "\"@vitest/coverage-v8\": \"3.0.0\""],
+    ["\"engines\": {", "\"engines\": {} , \"removed\": {"],
+  ]);
+  expectMutation("hrms-client/pnpm-lock.yaml", [
+    ["lockfileVersion: '9.0'", "lockfileVersion: '8.0'"],
+    ["  .:\n", "  root:\n"],
+    ["      vitest:\n", "      other:\n"],
+    ["packages:\n", "packages:\n<<<<<<< ours\n"],
+  ]);
+  expectMutation("hrms_backend/pnpm-lock.yaml", [
+    ["lockfileVersion: '9.0'", "lockfileVersion: '8.0'"],
+    ["  .:\n", "  root:\n"],
+    ["      vitest:\n", "      other:\n"],
+    ["packages:\n", "packages:\n======= theirs\n"],
+  ]);
+  expectMutation("hrms-client/vitest.config.ts", [
+    ["defineConfig({", "config({"],
+    ["provider: \"v8\"", "provider: \"c8\""],
+    ["include: [\"src/**/*.{ts,tsx}\"]", "include: [\"tests/**\"]"],
+    ["exclude: [\"src/**/*.test.{ts,tsx}\"", "exclude: [\"src/**/*.prod.{ts,tsx}\""],
+    ["reportsDirectory: \"./coverage\"", "reportsDirectory: \"/tmp/coverage\""],
+    ["environment: \"jsdom\"", "environment: \"node\""],
+    ["src/**/*.unit.test", "tests/**/*.unit.test"],
+    ["src/test/setup.ts", "tests/setup.ts"],
+  ]);
+  expectMutation("hrms_backend/vitest.config.ts", [
+    ["defineConfig({", "config({"],
+    ["provider: \"v8\"", "provider: \"c8\""],
+    ["include: [\"src/**/*.{ts,tsx}\"]", "include: [\"tests/**\"]"],
+    ["exclude: [\"src/**/*.test.{ts,tsx}\"", "exclude: [\"src/**/*.prod.{ts,tsx}\""],
+    ["reportsDirectory: \"./coverage\"", "reportsDirectory: \"/tmp/coverage\""],
+    ["projects: [", "suites: ["],
+    ["name: \"unit\"", "name: \"other\""],
+    ["name: \"integration\"", "name: \"other-integration\""],
+    ["fileParallelism: false", "fileParallelism: true"],
+  ]);
+  const shell = read("scripts/agent/verify-change.sh");
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell.replace("set -euo pipefail", "set -e"), "origin/release-01"), /strict shell mode/);
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell.replace("BASH_SOURCE[0]", "SOURCE[0]"), "origin/release-01"), /shared shell helpers/);
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell.split("--plan").join("--preview"), "origin/release-01"), /plan execution failed|plan mode/);
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell.split("--base").join("--from"), "origin/release-01"), /explicit base/);
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell.replace('case "$1" in', 'case "$2" in'), "origin/release-01"), /argument dispatch/);
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", `${shell}\neval dangerous\n`, "origin/release-01"), /eval/);
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", `${shell}\nif (\n`, "origin/release-01"), /bash -n failed/);
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell.replace("Selected verification plan:", "Other plan:"), "origin/release-01"), /protected checks/);
+});
+
 function writeCoverage(root, packageName, content, name = "coverage-final.json") {
   const fullPath = coverageArtifactPath(root, packageName, name);
   mkdirSync(dirname(fullPath), { recursive: true });

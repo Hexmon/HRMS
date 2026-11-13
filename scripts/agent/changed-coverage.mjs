@@ -1414,15 +1414,16 @@ function validatePackageManifest(path, content, frontend) {
 function validateLockfile(path, content, frontend) {
   requireText(path, content, /^lockfileVersion:\s*['"]?9\./m, "lockfileVersion 9 is required");
   requireText(path, content, /^  \.\s*:\s*$/m, "package importer is missing");
-  requireText(path, content, /vitest:\s*\n?\s+specifier:|vitest@/, "Vitest dependency is absent from the lockfile");
+  const importerSection = content.split("packages:\n", 1)[0];
+  requireText(path, importerSection, /^\s+vitest:\s*\n\s+specifier:/m, "Vitest dependency is absent from the lockfile importer");
   forbidText(path, content, /<<<<<<<|=======|>>>>>>>/, "merge conflict markers remain in the lockfile");
 }
 
 function validateVitestConfig(path, content, frontend) {
   requireText(path, content, /defineConfig\s*\(/, "defineConfig is missing");
   requireText(path, content, /provider:\s*["']v8["']/, "V8 coverage provider is missing");
-  requireText(path, content, /include:\s*\[[\s\S]*src\/\*\*\//, "source coverage include is missing");
-  requireText(path, content, /exclude:\s*\[[\s\S]*test/, "test-source exclusion is missing");
+  requireText(path, content, /coverage:\s*\{[\s\S]*include:\s*\[\s*["']src\/\*\*\/\*\.\{ts,tsx\}["']\s*\]/, "source coverage include is missing");
+  requireText(path, content, /coverage:\s*\{[\s\S]*exclude:\s*\[[\s\S]*src\/\*\*\/\*\.test\./, "test-source exclusion is missing");
   requireText(path, content, /reportsDirectory:\s*["']\.\/coverage["']/, "local coverage output is not fixed");
   if (frontend) {
     requireText(path, content, /environment:\s*["']jsdom["']/, "frontend config must use jsdom");
@@ -1442,18 +1443,30 @@ function validateShellVerifier(root, path, content, base) {
   requireText(path, content, /--plan/, "plan mode is missing");
   requireText(path, content, /--base/, "explicit base selection is missing");
   requireText(path, content, /case \"\$1\" in/, "argument dispatch is missing");
-  forbidText(path, content, /(^|[;&|])\s*eval\s/, "eval is not permitted in the verifier");
-  const syntax = spawnSync("bash", ["-n", join(root, path)], { encoding: "utf8" });
-  if (syntax.status !== 0) semanticFailure(path, `bash -n failed: ${syntax.stderr.trim()}`);
-  const plan = spawnSync("bash", [join(root, path), "--plan", "--base", base], {
-    cwd: root,
-    env: { ...process.env, HRMS_REPO_ROOT: root },
-    encoding: "utf8",
-    timeout: 30000,
-  });
-  if (plan.status !== 0) semanticFailure(path, `plan execution failed: ${(plan.stderr || plan.stdout).trim()}`);
-  if (!plan.stdout.includes("Selected verification plan:") || !plan.stdout.includes("Committed patch integrity")) {
-    semanticFailure(path, "plan mode did not enumerate the protected checks");
+  forbidText(path, content, /\beval\s/, "eval is not permitted in the verifier");
+  const semanticRoot = mkdtempSync(join(tmpdir(), "hrms-shell-semantic-"));
+  try {
+    const semanticScript = join(semanticRoot, "verify-change.sh");
+    const semanticLibDir = semanticRoot;
+    mkdirSync(semanticLibDir, { recursive: true });
+    writeFileSync(semanticScript, content, { mode: 0o755 });
+    const sharedLib = readFileSync(join(root, "scripts/agent/lib.sh"), "utf8")
+      .replace(/^HRMS_REPO_ROOT=.*$/m, 'HRMS_REPO_ROOT="${HRMS_REPO_ROOT:?}"');
+    writeFileSync(join(semanticLibDir, "lib.sh"), sharedLib, { mode: 0o644 });
+    const syntax = spawnSync("bash", ["-n", semanticScript], { encoding: "utf8" });
+    if (syntax.status !== 0) semanticFailure(path, `bash -n failed: ${syntax.stderr.trim()}`);
+    const plan = spawnSync("bash", [semanticScript, "--plan", "--base", base], {
+      cwd: root,
+      env: { ...process.env, HRMS_REPO_ROOT: root },
+      encoding: "utf8",
+      timeout: 30000,
+    });
+    if (plan.status !== 0) semanticFailure(path, `plan execution failed: ${(plan.stderr || plan.stdout).trim()}`);
+    if (!plan.stdout.includes("Selected verification plan:") || !plan.stdout.includes("Committed patch integrity")) {
+      semanticFailure(path, "plan mode did not enumerate the protected checks");
+    }
+  } finally {
+    rmSync(semanticRoot, { recursive: true, force: true });
   }
 }
 
