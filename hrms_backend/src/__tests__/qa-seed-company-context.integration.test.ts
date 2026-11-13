@@ -106,7 +106,7 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
       );
 
       await expect(runSeedContextWithMarker()).rejects.toThrow(
-        /company slug that does not exactly match/,
+        /company (slug|identity) that does not exactly match/,
       );
       expect(await markerCount()).toBe(0);
       const company = await client.query<{ id: string; status: string }>(
@@ -121,6 +121,46 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
       expect(preferences.rows[0]?.count).toBe(0);
     },
   );
+
+  it.each(["active", "inactive"])(
+    "refuses a %s foreign slug occupying the deterministic UUID before any marker write",
+    async (status) => {
+      await client.query(
+        `INSERT INTO platform.company_profiles (id, company_name, company_slug, status)
+         VALUES ($1, 'Foreign UUID Company', $2, $3)`,
+        [expectedCompanyId, `foreign-uuid-${status}`, status],
+      );
+
+      await expect(runSeedContextWithMarker()).rejects.toThrow(/company identity/);
+      expect(await markerCount()).toBe(0);
+      const company = await client.query<{ id: string; company_slug: string; status: string }>(
+        "SELECT id, company_slug, status FROM platform.company_profiles WHERE id = $1",
+        [expectedCompanyId],
+      );
+      expect(company.rows).toEqual([{ id: expectedCompanyId, company_slug: `foreign-uuid-${status}`, status }]);
+    },
+  );
+
+  it("refuses an Admin preference referencing a foreign slug at the deterministic UUID before any marker write", async () => {
+    await client.query(
+      `INSERT INTO platform.company_profiles (id, company_name, company_slug, status)
+       VALUES ($1, 'Foreign UUID Company', 'foreign-uuid-admin', 'active')`,
+      [expectedCompanyId],
+    );
+    await client.query(
+      `INSERT INTO platform.user_session_preferences (id, user_id, active_role, company_id)
+       VALUES ($1, $2, 'admin', $3)`,
+      [preferenceId, adminUserId, expectedCompanyId],
+    );
+
+    await expect(runSeedContextWithMarker()).rejects.toThrow(/company identity/);
+    expect(await markerCount()).toBe(0);
+    const preference = await client.query<{ company_id: string; active_role: string }>(
+      "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
+      [adminUserId],
+    );
+    expect(preference.rows).toEqual([{ company_id: expectedCompanyId, active_role: "admin" }]);
+  });
 
   it.each(["admin", "employee"])(
     "refuses an existing null-company preference with role %s before any marker write",

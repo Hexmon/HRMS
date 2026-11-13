@@ -91,10 +91,10 @@ Final executable revision `509f326a37c154951acf107af02bf18293eb2b6f` hardens det
 - repeating `docker ... compose ... up -d --wait` against the retained disposable volumes exited 0; migration logs recorded 0 applied/65 already applied and both seed phases successful;
 - the disposable Compose services, network and volumes were removed. The associated container `pnpm start` process exited with stack cleanup.
 
-Final executable revision `37b1c8c7` moves deterministic identity preflight before release-seed mutations, validates active Admin status/role including existing null-company preferences, and preserves release-seed primary errors. Exact evidence at this head:
+Final executable revision `37b1c8c7` moves deterministic identity preflight before release-seed mutations, validates active Admin status/role including existing null-company preferences and deterministic-UUID slug collisions, and preserves release-seed primary errors. Exact evidence at this head:
 
 - focused unit/config/Holiday suite: 34/34 passed;
-- real PostgreSQL deterministic-company suite: 9/9 passed, including preflight refusal before marker/release-equivalent writes for foreign preference, foreign same-slug UUID, inactive Admin, soft-deleted Admin, non-Admin role and existing null-company Admin/Employee preferences, plus exact-context idempotency;
+- real PostgreSQL deterministic-company suite: 12/12 passed, including preflight refusal before marker/release-equivalent writes for foreign preference, foreign same-slug UUID, foreign slug occupying the deterministic UUID (active/inactive, with and without an Admin preference), inactive Admin, soft-deleted Admin, non-Admin role and existing null-company Admin/Employee preferences, plus exact-context idempotency;
 - fresh local-default Compose stack: 65 migrations and both guarded seeds passed, API/outbox worker/PostgreSQL/Valkey became healthy, `/health/ready` returned `status=ok`, and a retained-volume rerun reported 0 applied/65 already applied with both seed phases successful; disposable services/volumes were removed.
 
 The broader baseline suites were executed at `8e0b0412`; the focused startup/config delta was tested at `09a9e987` and `509f326a`; deterministic preflight hardening is tested at final executable head `37b1c8c7`. These results do not substitute for changed-line/branch coverage, hosted QA or human acceptance.
