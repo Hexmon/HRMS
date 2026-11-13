@@ -52,6 +52,15 @@ await client.connect();
 try {
   await client.query("BEGIN");
 
+  const defaultCompany = await client.query<{ company_id: string | null }>(
+    "SELECT company_id FROM platform.user_session_preferences WHERE user_id = $1",
+    [seedIds.admin],
+  );
+  const defaultCompanyId = defaultCompany.rows[0]?.company_id;
+  if (!defaultCompanyId) {
+    throw new Error("QA seed requires the release Admin to have an active company preference.");
+  }
+
   await client.query(
     `INSERT INTO core.designations (id, designation_code, title, level, status)
      VALUES
@@ -115,6 +124,20 @@ try {
       [uuidFromName(`qa-role-${employeeCode}`), id, role]
     );
     await client.query(
+      `INSERT INTO platform.user_session_preferences
+       (id, user_id, active_role, company_id, landing_page, locale, timezone)
+       VALUES ($1, $2, $3, $4, '/dashboard', 'en-IN', 'Asia/Kolkata')
+       ON CONFLICT (user_id) DO UPDATE
+       SET active_role = EXCLUDED.active_role,
+           company_id = EXCLUDED.company_id,
+           landing_page = EXCLUDED.landing_page,
+           locale = EXCLUDED.locale,
+           timezone = EXCLUDED.timezone,
+           updated_at = now(),
+           version = platform.user_session_preferences.version + 1`,
+      [uuidFromName(`qa-session-preference-${employeeCode}`), id, role, defaultCompanyId]
+    );
+    await client.query(
       `INSERT INTO platform.user_credentials (id, user_id, password_hash, status)
        VALUES ($1, $2, $3, 'active')
        ON CONFLICT (user_id) DO UPDATE
@@ -128,6 +151,16 @@ try {
         hashPasswordSync(localDemoPassword, `hrms-local-${String(employeeCode).toLowerCase()}`)
       ]
     );
+  }
+
+  const personaPreferences = await client.query<{ count: number }>(
+    `SELECT count(*)::int AS count
+     FROM platform.user_session_preferences
+     WHERE company_id = $1 AND user_id = ANY($2::uuid[])`,
+    [defaultCompanyId, users.map(([id]) => id)],
+  );
+  if (personaPreferences.rows[0]?.count !== users.length) {
+    throw new Error("QA seed did not assign every persona to the release Admin company.");
   }
 
   await client.query(

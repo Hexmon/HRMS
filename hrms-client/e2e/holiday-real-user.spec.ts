@@ -23,14 +23,13 @@ test.describe("holiday real-user journey", () => {
     const adminPage = await adminContext.newPage();
     const stalePage = await adminContext.newPage();
     await login(adminPage, "admin@example.test");
-    await login(stalePage, "admin@example.test");
     await openHolidays(adminPage);
 
     await addHoliday(adminPage, { name: firstName, date, region: "IN", optional: false });
     await addHoliday(adminPage, { name: secondName, date, region: "US", optional: true });
     await adminPage.reload({ waitUntil: "networkidle" });
-    await expect(adminPage.getByText(firstName, { exact: true })).toBeVisible();
-    await expect(adminPage.getByText(secondName, { exact: true })).toBeVisible();
+    await expect(adminPage.getByRole("button", { name: `Edit ${firstName}` })).toBeVisible();
+    await expect(adminPage.getByRole("button", { name: `Edit ${secondName}` })).toBeVisible();
     await adminPage.getByRole("tab", { name: "Calendar" }).click();
     await expect(adminPage.getByText(firstName, { exact: true })).toBeVisible();
     await expect(adminPage.getByText(secondName, { exact: true })).toBeVisible();
@@ -39,17 +38,17 @@ test.describe("holiday real-user journey", () => {
     await stalePage.getByRole("button", { name: `Edit ${firstName}` }).click();
     await adminPage.getByRole("tab", { name: "List" }).click();
     await adminPage.getByRole("button", { name: `Edit ${firstName}` }).click();
-    await adminPage.getByLabel("Name").fill(adminUpdatedName);
+    await adminPage.getByLabel("Name", { exact: true }).fill(adminUpdatedName);
     await saveHoliday(adminPage, 200);
 
-    await stalePage.getByLabel("Region").fill("IN-SOUTH");
+    await stalePage.getByLabel("Region", { exact: true }).fill("IN-SOUTH");
     await saveHoliday(stalePage, 409);
     await expect(stalePage.getByText("A newer version is available")).toBeVisible();
-    await expect(stalePage.getByLabel("Region")).toHaveValue("IN-SOUTH");
+    await expect(stalePage.getByLabel("Region", { exact: true })).toHaveValue("IN-SOUTH");
     await expect(stalePage.getByRole("button", { name: "Save changes" })).toBeDisabled();
     await stalePage.getByRole("button", { name: "Load latest version" }).click();
-    await expect(stalePage.getByLabel("Name")).toHaveValue(adminUpdatedName);
-    await stalePage.getByLabel("Region").fill("IN-SOUTH");
+    await expect(stalePage.getByLabel("Name", { exact: true })).toHaveValue(adminUpdatedName);
+    await stalePage.getByLabel("Region", { exact: true }).fill("IN-SOUTH");
     await saveHoliday(stalePage, 200);
     await expect(stalePage.getByText(adminUpdatedName, { exact: true })).toBeVisible();
 
@@ -84,9 +83,9 @@ async function addHoliday(
   input: { name: string; date: string; region: string; optional: boolean },
 ): Promise<void> {
   await page.getByRole("button", { name: "Add holiday" }).click();
-  await page.getByLabel("Name").fill(input.name);
-  await page.getByLabel("Date").fill(input.date);
-  await page.getByLabel("Region").fill(input.region);
+  await page.getByLabel("Name", { exact: true }).fill(input.name);
+  await page.getByLabel("Date", { exact: true }).fill(input.date);
+  await page.getByLabel("Region", { exact: true }).fill(input.region);
   if (input.optional) await page.getByRole("switch").click();
   const response = page.waitForResponse(
     (candidate) =>
@@ -95,7 +94,7 @@ async function addHoliday(
   );
   await page.getByRole("button", { name: "Add", exact: true }).click();
   expect((await response).status()).toBe(200);
-  await expect(page.getByText(input.name, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Edit ${input.name}` })).toBeVisible();
 }
 
 async function saveHoliday(page: Page, expectedStatus: number): Promise<void> {
