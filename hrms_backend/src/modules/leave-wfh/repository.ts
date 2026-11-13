@@ -178,7 +178,10 @@ export class LeaveWfhRepository {
         candidate.name.toLowerCase() === input.name.toLowerCase()
     );
     if (duplicate) {
-      throw conflict("Holiday with the same name, date, and region already exists.", { holiday_id: duplicate.id });
+      throw conflict("Holiday with the same name, date, and region already exists.", {
+        holiday_id: duplicate.id,
+        reason: "duplicate_holiday",
+      });
     }
     const now = nowIso();
     if (!existing) {
@@ -202,10 +205,18 @@ export class LeaveWfhRepository {
       return existing;
     }
     if (input.expected_version === undefined) {
-      throw conflict("expected_version is required to change an existing holiday.", { aggregate: "holiday", id });
+      throw conflict("expected_version is required to change an existing holiday.", {
+        aggregate: "holiday",
+        id,
+        reason: "missing_expected_version",
+      });
     }
     if (existing.version !== input.expected_version) {
-      throw conflict("Holiday was modified by another actor.", { aggregate: "holiday", id });
+      throw conflict("Holiday was modified by another actor.", {
+        aggregate: "holiday",
+        id,
+        reason: "stale_version",
+      });
     }
     existing.name = input.name;
     existing.holiday_date = input.holiday_date;
