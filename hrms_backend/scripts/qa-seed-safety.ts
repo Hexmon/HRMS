@@ -92,10 +92,12 @@ export async function preflightQaAdminCompanyContext(
   const admin = await client.query<{
     employment_status: string;
     deleted_at: string | null;
+    preference_id: string | null;
     company_id: string | null;
     active_role: string | null;
   }>(
     `SELECT admin.employment_status, admin.deleted_at,
+            preference.id AS preference_id,
             preference.company_id, preference.active_role
      FROM core.users admin
      LEFT JOIN platform.user_session_preferences preference ON preference.user_id = admin.id
@@ -108,7 +110,7 @@ export async function preflightQaAdminCompanyContext(
     throw new Error("QA seed preflight refused an inactive or deleted deterministic release Admin.");
   }
   if (
-    existingAdmin.company_id !== null &&
+    existingAdmin.preference_id !== null &&
     (existingAdmin.company_id !== ids.companyId || existingAdmin.active_role !== "admin")
   ) {
     throw new Error("QA seed preflight refused a non-admin or foreign deterministic release Admin preference.");
